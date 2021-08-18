@@ -89,8 +89,8 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 
 static void __rrr_stats_engine_log_listener (
 		uint8_t *write_amount,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
@@ -117,7 +117,7 @@ static void __rrr_stats_engine_log_listener (
 		goto out;
 	}
 
-	size_t msg_size = strlen(message) + 1;
+	rrr_length msg_size = rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const (strlen(message)));
 
 	// Trim message if too long
 	if (msg_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
@@ -153,13 +153,13 @@ static int __rrr_stats_engine_message_pack (
 		const struct rrr_msg_stats *message,
 		int (*callback)(
 				struct rrr_msg *data,
-				size_t size,
+				rrr_length size,
 				void *callback_arg
 		),
 		void *callback_arg
 ) {
 	struct rrr_msg_stats_packed message_packed;
-	size_t total_size;
+	rrr_length total_size;
 
 	rrr_msg_stats_pack_and_flip (
 			&message_packed,
@@ -171,7 +171,7 @@ static int __rrr_stats_engine_message_pack (
 			(struct rrr_msg *) &message_packed,
 			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
-			message->timestamp
+			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
 
 	rrr_msg_checksum_and_to_network_endian (
@@ -191,12 +191,12 @@ static int __rrr_stats_engine_message_pack (
 
 int __rrr_stats_engine_multicast_send_intermediate (
 		struct rrr_msg *data,
-		size_t size,
+		rrr_length size,
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
 
-	int send_chunk_count_dummy = 0;
+	rrr_length send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
 			&send_chunk_count_dummy,
 			stats->client_collection,
@@ -701,7 +701,7 @@ int rrr_stats_engine_handle_obtain (
 	unsigned int iterations = 0;
 
 	do {
-		new_handle = rrr_rand();
+		new_handle = (unsigned int) rrr_rand();
 		if (++iterations % 100000 == 0) {
 			RRR_MSG_0("Warning: Huge number of handles in statistics engine (%i)\n", iterations);
 		}

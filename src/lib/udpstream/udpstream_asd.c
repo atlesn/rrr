@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 #include "src/lib/udpstream/udpstream.h"
 #include "udpstream_asd.h"
-#include "../buffer.h"
 #include "../read.h"
 #include "../ip/ip.h"
 #include "../event/event_collection.h"
@@ -132,8 +131,8 @@ struct rrr_udpstream_asd_control_msg {
 static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
 	struct rrr_udpstream_asd_control_msg result;
 
-	result.flags = application_data >> 32;
-	result.message_id = application_data & 0xffffffff;
+	result.flags = (uint32_t) (application_data >> 32);
+	result.message_id = (uint32_t) (application_data & 0xffffffff);
 
 	return result;
 }
@@ -945,14 +944,8 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	int ret = 0;
 
-
-#if SSIZE_MAX > RRR_LENGTH_MAX
-	if ((rrr_slength) receive_data->data_size > (rrr_slength) RRR_LENGTH_MAX) {
-		RRR_MSG_0("Received message too big in __rrr_udpstream_asd_receive_messages_callback\n");
-		ret = RRR_UDPSTREAM_ASD_HARD_ERR;
-		goto out;
-	}
-#endif
+	// If assertion fails, length of data must be checked
+	RRR_ASSERT(sizeof(receive_data->data_size)==sizeof(rrr_length),__rrr_udpstream_asd_overflow_check_required);
 
 	struct rrr_asd_receive_messages_final_callback_data callback_data = {
 			session,
@@ -962,7 +955,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	if ((ret = rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) joined_data,
-			(rrr_length) receive_data->data_size,
+			rrr_length_from_biglength_bug_const(receive_data->data_size),
 			__rrr_udpstream_asd_receive_messages_callback_final,
 			NULL,
 			NULL,
@@ -1173,7 +1166,7 @@ static void __rrr_udpstream_asd_event_periodic (
 int rrr_udpstream_asd_new (
 		struct rrr_udpstream_asd **target,
 		struct rrr_event_queue *queue,
-		unsigned int local_port,
+		uint16_t local_port,
 		const char *remote_host,
 		const char *remote_port,
 		uint32_t client_id,

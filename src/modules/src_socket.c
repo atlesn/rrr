@@ -51,7 +51,7 @@ struct socket_data {
 	struct rrr_instance_runtime_data *thread_data;
 	char *socket_path;
 	char *default_topic;
-	ssize_t default_topic_length;
+	uint16_t default_topic_length;
 	int receive_rrr_message;
 	int do_sync_byte_by_byte;
 	int do_unlink_if_exists;
@@ -94,28 +94,20 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 	struct sockaddr_un addr;
 	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
-		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
-				config->name, sizeof(addr.sun_path) - 1);
+		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %llu bytes\n",
+				config->name, (long long unsigned) sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}
 
 	// Message default topic
-	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
-		ret &= ~(RRR_SETTING_NOT_FOUND);
-		if (ret != 0) {
-			RRR_MSG_0("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_0("socket_default_topic for instance %s was not valid UTF-8\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		data->default_topic_length = strlen(data->default_topic);
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->default_topic,
+			&data->default_topic_length,
+			config,
+			"socket_default_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	// Receive full rrr message

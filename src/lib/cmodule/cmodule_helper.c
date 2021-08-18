@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_channel.h"
 #include "cmodule_struct.h"
 
-#include "../buffer.h"
+#include "../fifo_protected.h"
 #include "../modules.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
@@ -87,7 +87,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
 			(struct sockaddr *) &callback_data->addr_message.addr,
-			RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message),
+			(socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message),
 			callback_data->addr_message.protocol
 	);
 	message_new = NULL;
@@ -184,7 +184,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	if (node->addr_len > 0) {
 		memcpy(&addr_msg.addr, &node->addr, sizeof(addr_msg.addr));
 		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, node->addr_len);
-		addr_msg.protocol = node->protocol;
+		addr_msg.protocol = (uint8_t) node->protocol;
 	}
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
@@ -335,17 +335,16 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	EVENT_ADD(cmodule->input_queue_event);
 	EVENT_ACTIVATE(cmodule->input_queue_event);
 
-	uint16_t amount_new = (*amount > 32 ? 32 : *amount);
-	*amount -= amount_new;
+	uint16_t amount_new = (uint16_t) (*amount > 32 ? 32 : *amount);
+	*amount = (uint16_t) (*amount - amount_new);
 
 	int ret = rrr_poll_do_poll_delete (
 			&amount_new,
 			thread_data,
-			__rrr_cmodule_helper_poll_callback,
-			0
+			__rrr_cmodule_helper_poll_callback
 	);
 
-	*amount += amount_new;
+	*amount = (uint16_t) (*amount + amount_new);
 
 	if (RRR_LL_COUNT(&cmodule->input_queue) > 0) {
 		EVENT_ACTIVATE(cmodule->input_queue_event);
@@ -391,8 +390,8 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %i+%lu != %lu\n",
-				callback_data->worker->name, MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
+		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %llu+%llu != %llu\n",
+				callback_data->worker->name, (unsigned long long) MSG_TOTAL_SIZE(msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 	}
 
 	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
@@ -661,7 +660,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		return 1;
 	}
 
-	int output_buffer_count = 0;
+	unsigned int output_buffer_count = 0;
 	int output_buffer_ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
@@ -711,7 +710,7 @@ static int __rrr_cmodule_helper_event_periodic (
 	// rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 11, "input_counter", INSTANCE_D_COUNTERS(thread_data)->total_message_count);
 	rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "output_buffer_count", 0, output_buffer_count);
 
-	struct rrr_fifo_buffer_stats fifo_stats;
+	struct rrr_fifo_protected_stats fifo_stats;
 	if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
 		RRR_MSG_0("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
 		return 1;

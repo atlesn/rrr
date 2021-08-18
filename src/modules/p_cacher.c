@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/array.h"
 #include "../lib/event/event.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"
@@ -348,7 +349,7 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// We check stuff with the watchdog in case we are slow to process messages
 	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
-		ret = RRR_FIFO_SEARCH_STOP;
+		ret = RRR_FIFO_PROTECTED_SEARCH_STOP;
 		goto out;
 	}
 	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
@@ -450,7 +451,7 @@ static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	return rrr_poll_do_poll_delete (amount, thread_data, cacher_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, cacher_poll_callback);
 }
 
 static int cacher_event_periodic (void *arg) {

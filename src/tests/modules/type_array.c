@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instances.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
-#include "../../lib/buffer.h"
 #include "../../lib/message_holder/message_holder.h"
 #include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages/msg_msg.h"
@@ -166,8 +165,7 @@ int test_do_poll_loop (
 			&amount,
 			thread_data,
 			test_poll_callback_intermediate,
-			&callback_data_intermediate,
-			150
+			&callback_data_intermediate
 		);
 
 
@@ -186,6 +184,8 @@ int test_do_poll_loop (
 			TEST_MSG("Result of polling: %i\n",
 					test_result->result);
 		}
+
+		rrr_posix_usleep(100 * 1000); // 100ms
 	}
 
 	out:
@@ -194,7 +194,7 @@ int test_do_poll_loop (
 
 int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance *socket_metadata) {
 	char *socket_path = NULL;
-	int ret = 0;
+	ssize_t ret = 0;
 	int socket_fd = 0;
 
 	ret = rrr_instance_config_get_string_noconvert (&socket_path, socket_metadata->config, "socket_path");
@@ -220,8 +220,8 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 	else if (ret >= 0 && ret != sizeof(*data) - 1) {
-		TEST_MSG("Only %i of %llu bytes written in test_type_array_write_to_socket\n",
-				ret, (long long unsigned) sizeof(*data) - 1);
+		TEST_MSG("Only %lli of %llu bytes written in test_type_array_write_to_socket\n",
+				(long long int) ret, (long long unsigned) sizeof(*data) - 1);
 		ret = 1;
 		goto out;
 	}
@@ -234,7 +234,7 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		rrr_socket_close(socket_fd);
 	}
 	RRR_FREE_IF_NOT_NULL(socket_path);
-	return ret;
+	return (int) ret;
 }
 
 int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
@@ -732,7 +732,7 @@ struct test_type_array_mysql_data {
 	char *mysql_user;
 	char *mysql_password;
 	char *mysql_db;
-	unsigned int mysql_port;
+	uint16_t mysql_port;
 };
 
 int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) {
@@ -813,11 +813,11 @@ int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, 
 	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_password, mysql->config, "mysql_password");
 	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_db, mysql->config, "mysql_db");
 
-	rrr_setting_uint port;
-	if (rrr_instance_config_read_port_number (&port, mysql->config, "mysql_port") == RRR_SETTING_ERROR) {
+	if (rrr_instance_config_read_port_number (&data->mysql_port, mysql->config, "mysql_port") == RRR_SETTING_ERROR) {
 		ret |= 1;
 	}
-	else if (data->mysql_port == 0) {
+
+	if (data->mysql_port == 0) {
 		data->mysql_port = 5506;
 	}
 

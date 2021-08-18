@@ -45,24 +45,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_passwd");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"file",					"{PASSWORD_FILE}"},
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"username",				"{USERNAME}"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'c',	"create-user",			"[-c|--create-user]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'r',	"remove-user",			"[-r|--remove-user]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA |
-		 CMD_ARG_FLAG_ALLOW_EMPTY,	'p',	"permissions",			"[-p|--permissions[=]permission1,permission2,...]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'a',	"append-permissions",	"[-a|--append-permissions]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_ALLOW_EMPTY,	'P',	"password",				"[-P|--password[=]PASSWORD]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	's',	"stdout",				"[-s|--stdout]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'h',	"help",					"[-h|--help]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',   "file",                  "{PASSWORD_FILE}"},
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',   "username",              "{USERNAME}"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'c',    "create-user",           "[-c|--create-user]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'r',    "remove-user",           "[-r|--remove-user]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT |
+         CMD_ARG_FLAG_SPLIT_COMMA |
+         CMD_ARG_FLAG_ALLOW_EMPTY,    'p',    "permissions",           "[-p|--permissions[=]permission1,permission2,...]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'a',    "append-permissions",    "[-a|--append-permissions]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT |
+         CMD_ARG_FLAG_ALLOW_EMPTY,    'P',    "password",              "[-P|--password[=]PASSWORD]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    's',    "stdout",                "[-s|--stdout]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'h',    "help",                  "[-h|--help]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'v',    "version",               "[-v|--version]"},
+        {0,                           '\0',    NULL,                   NULL}
 };
 
 struct rrr_passwd_data {
@@ -90,10 +90,10 @@ static void __rrr_passwd_destroy_data (struct rrr_passwd_data *data) {
 }
 
 static int __rrr_passwd_add_permissions_from_cmd (struct rrr_passwd_data *data, struct cmd_data *cmd) {
-	for (int i = 0; 1; i++) {
+	for (cmd_arg_count i = 0; 1; i++) {
 		const char *permission_str = cmd_get_value(cmd, "permissions", i);
 		if (permission_str != NULL) {
-			for (int j = 0; 1; j++) {
+			for (cmd_arg_count j = 0; 1; j++) {
 				permission_str = cmd_get_subvalue(cmd, "permissions", i, j);
 				if (permission_str != NULL) {
 					if (rrr_passwd_permission_new_and_append(&data->permissions, permission_str)) {
@@ -250,12 +250,12 @@ static int __rrr_passwd_parse_config (struct rrr_passwd_data *data, struct cmd_d
 	return ret;
 }
 
-#define WRITE_AND_CHECK(str,len)													\
-	if (write(fd, str, len) < 0) {													\
-		RRR_MSG_0("Could not write to output file in process_line_callback\n");		\
-		ret = 1;																	\
-		goto out;																	\
-	}
+#define WRITE_AND_CHECK(str,len)                               \
+    if (write(fd, str, len) < 0) {                             \
+        RRR_MSG_0("Could not write to output file in process_line_callback\n"); \
+        ret = 1;                                               \
+        goto out;                                              \
+    }                                                          \
 
 struct process_line_callback_data {
 	struct rrr_passwd_data *data;
@@ -280,7 +280,7 @@ static int __rrr_passwd_write_user (
 	WRITE_AND_CHECK(":", 1);
 
 	if (data->do_append_permissions != 0 || RRR_LL_COUNT(&data->permissions) == 0) {
-		for (size_t i = 0; i < permissions_count; i++) {
+		for (rrr_length i = 0; i < permissions_count; i++) {
 			if (rrr_passwd_permission_new_and_append(&permissions_tmp, permissions[i]) != 0) {
 				RRR_MSG_0("Could not store original permission in write_user()\n");
 				ret = 1;
@@ -324,7 +324,7 @@ static int __rrr_passwd_process_line_callback (
 		const char *username,
 		const char *password_hash,
 		const char *permissions[],
-		size_t permissions_count,
+		rrr_length permissions_count,
 		void *arg
 ) {
 	struct process_line_callback_data *callback_data = arg;
@@ -387,7 +387,7 @@ static int __rrr_passwd_process_line_callback (
 static int __rrr_passwd_process (
 		struct rrr_passwd_data *data,
 		const char *input_data,
-		ssize_t input_data_size,
+		rrr_length input_data_size,
 		int fd
 ) {
 	int ret = 0;
@@ -451,7 +451,7 @@ int main (int argc, const char **argv, const char **env) {
 	rrr_strerror_init();
 
 	int fd_out = 0;
-	ssize_t passwd_file_size = 0;
+	rrr_biglength passwd_file_size = 0;
 	char *passwd_file_contents = NULL;
 	char *temporary_file_name = NULL;
 	char *oldfile_name = NULL;
@@ -493,7 +493,20 @@ int main (int argc, const char **argv, const char **env) {
 		}
 	}
 
-	if (rrr_socket_open_and_read_file(&passwd_file_contents, &passwd_file_size, data.filename, O_CREAT, S_IRUSR|S_IWUSR) != 0) {
+	if (rrr_socket_open_and_read_file (
+			&passwd_file_contents,
+			&passwd_file_size,
+			data.filename,
+			O_CREAT,
+			S_IRUSR|S_IWUSR
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (passwd_file_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Password file '%s' too large (%llu>%llu)\n",
+			data.filename, (long long unsigned) passwd_file_size, (long long unsigned) RRR_LENGTH_MAX);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -546,7 +559,12 @@ int main (int argc, const char **argv, const char **env) {
 		data.password = hash_tmp;
 	}
 
-	if (__rrr_passwd_process(&data, passwd_file_contents, passwd_file_size, fd_out) != 0) {
+	if (__rrr_passwd_process (
+			&data,
+			passwd_file_contents,
+			rrr_length_from_biglength_bug_const(passwd_file_size),
+			fd_out
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

@@ -123,8 +123,8 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 struct rrr_log_hook {
 	void (*log)(
 			uint8_t *write_amount,
-			unsigned short loglevel_translated,
-			unsigned short loglevel_orig,
+			uint8_t loglevel_translated,
+			uint8_t loglevel_orig,
 			const char *prefix,
 			const char *message,
 			void *private_arg
@@ -144,8 +144,8 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
 				uint8_t *write_amount,
-				unsigned short loglevel_translated,
-				unsigned short loglevel_orig,
+				uint8_t loglevel_translated,
+				uint8_t loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
@@ -218,8 +218,8 @@ void rrr_log_hook_unregister (
 }
 
 void rrr_log_hooks_call_raw (
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
 ) {
@@ -253,8 +253,8 @@ void rrr_log_hooks_call_raw (
 }
 
 static void __rrr_log_hooks_call (
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -280,7 +280,7 @@ static void __rrr_log_hooks_call (
 	wpos += size;
 
 	// Output may be trimmed
-	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - size, __format, args);
+	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - (size_t) size, __format, args);
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
 	rrr_log_hooks_call_raw (
@@ -291,10 +291,10 @@ static void __rrr_log_hooks_call (
 	);
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
-		unsigned short loglevel
+static uint8_t __rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
 ) {
-	unsigned short result = 0;
+	uint8_t result = 0;
 
 	switch (loglevel) {
 		case __RRR_LOG_PREFIX_0:
@@ -315,8 +315,8 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
 	return result;
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (
-		unsigned short loglevel
+static uint8_t __rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
 ) {
 	(void)(loglevel);
 	return RRR_RFC5424_LOGLEVEL_ERROR;
@@ -375,7 +375,7 @@ static void __rrr_log_sd_journal_sendv (
 #endif
 
 void rrr_log_printf_nolock (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -440,8 +440,11 @@ void rrr_log_printf_plain (
 
 void rrr_log_printn_plain (
 		const char *value,
-		size_t value_size
+		unsigned long long value_size
 ) {
+	if (value_size > INT_MAX) {
+		value_size = INT_MAX;
+	}
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
 		int ret = sd_journal_print(LOG_DEBUG, "%.*s", (int) value_size, value);
@@ -464,7 +467,7 @@ void rrr_log_printn_plain (
 }
 
 void rrr_log_printf (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -475,7 +478,7 @@ void rrr_log_printf (
 	va_start(args, __format);
 	va_copy(args_copy, args);
 
-	unsigned int loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
+	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
 
 #ifndef RRR_LOG_DISABLE_PRINT
 
@@ -512,7 +515,7 @@ void rrr_log_printf (
 
 void rrr_log_fprintf (
 		FILE *file,
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -523,7 +526,7 @@ void rrr_log_fprintf (
 	va_start(args, __format);
 	va_copy(args_copy, args);
 
-	unsigned int loglevel_translated = 0;
+	uint8_t loglevel_translated = 0;
 
 	if (rrr_config_global.rfc5424_loglevel_output) {
 		if (file == stderr) {

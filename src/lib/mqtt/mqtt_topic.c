@@ -94,7 +94,7 @@ int rrr_mqtt_topic_filter_validate_name (
 
 	return rrr_utf8_validate_and_iterate (
 			topic_filter,
-			strlen(topic_filter),
+			rrr_length_from_size_t_bug_const(strlen(topic_filter)),
 			__rrr_mqtt_topic_filter_char_is_ok,
 			&seq
 	);
@@ -112,7 +112,7 @@ int rrr_mqtt_topic_validate_name_with_end (
 
 	return rrr_utf8_validate_and_iterate (
 			topic_name,
-			end - topic_name,
+			rrr_length_from_ptr_sub_bug_const(end, topic_name),
 			__rrr_mqtt_topic_name_char_is_ok,
 			&seq
 	);
@@ -345,7 +345,7 @@ int rrr_mqtt_topic_tokenize_with_end (
 			token_end = end;
 		}
 
-		ssize_t len = token_end - pos;
+		rrr_length len = rrr_length_from_ptr_sub_bug_const (token_end, pos);
 		token = rrr_allocate(sizeof(*token) + len + 1);
 //		printf ("allocate token %p\n", token);
 		if (token == NULL) {

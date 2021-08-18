@@ -69,12 +69,12 @@ int rrr_net_transport_ctx_check_alive (
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_length read_attempts,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -95,22 +95,22 @@ int rrr_net_transport_ctx_close_when_send_complete_get (
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t size
+		rrr_biglength size
 );
 int rrr_net_transport_ctx_send_push_urgent (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t size
+		rrr_biglength size
 );
 int rrr_net_transport_ctx_send_push_const (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
-		ssize_t size
+		rrr_biglength size
 );
 int rrr_net_transport_ctx_send_push_const_urgent (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
-		ssize_t size
+		rrr_biglength size
 );
 int rrr_net_transport_ctx_send_push_nullsafe (
 		struct rrr_net_transport_handle *handle,

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 #include "net_transport_defines.h"
 
+#include "../rrr_types.h"
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
@@ -38,12 +39,15 @@ struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_nullsafe_str;
 
+#define RRR_NET_TRANSPORT_DESTROY_ARGS                         \
+    struct rrr_net_transport *transport
+    
 #define RRR_NET_TRANSPORT_CONNECT_ARGS                         \
     rrr_net_transport_handle *handle,                          \
     struct sockaddr *addr,                                     \
     socklen_t *socklen,                                        \
     struct rrr_net_transport *transport,                       \
-    unsigned int port,                                         \
+    uint16_t port,                                             \
     const char *host
 
 #define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD                                \
@@ -62,7 +66,7 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS                                      \
     struct rrr_net_transport *transport,                                            \
-    unsigned int port,                                                              \
+    uint16_t port,                                                                  \
     int do_ipv6,                                                                    \
     int (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS),  \
     void *callback_arg,                                                             \
@@ -86,15 +90,18 @@ struct rrr_nullsafe_str;
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
     void *final_callback_arg
 
+#define RRR_NET_TRANSPORT_CLOSE_ARGS                           \
+    struct rrr_net_transport_handle *handle
+
 #define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS                                     \
     uint64_t *bytes_read,                                                       \
     struct rrr_net_transport_handle *handle,                                    \
-    int read_attempts,                                                          \
-    ssize_t read_step_initial,                                                  \
-    ssize_t read_step_max_size,                                                 \
-    ssize_t read_max_size,                                                      \
+    const rrr_length read_attempts,                                             \
+    const rrr_biglength read_step_initial,                                      \
+    const rrr_biglength read_step_max_size,                                     \
+    const rrr_biglength read_max_size,                                          \
     uint64_t ratelimit_interval_us,                                             \
-    ssize_t ratelimit_max_bytes,                                                \
+    const rrr_biglength ratelimit_max_bytes,                                    \
     int (*get_target_size)(struct rrr_read_session *read_session, void *arg),   \
     void *get_target_size_arg,                                                  \
     int (*complete_callback)(struct rrr_read_session *read_session, void *arg), \
@@ -104,46 +111,42 @@ struct rrr_nullsafe_str;
     uint64_t *bytes_read,                                      \
     struct rrr_net_transport_handle *handle,                   \
     char *buf,                                                 \
-    size_t buf_size
+    rrr_biglength buf_size
 
-#define RRR_NET_TRANSPORT_POLL_ARGS                  \
-    unsigned char *want_read,                        \
-    unsigned char *want_write,                       \
+#define RRR_NET_TRANSPORT_POLL_ARGS                            \
+    struct rrr_net_transport_handle *handle
+
+#define RRR_NET_TRANSPORT_HANDSHAKE_ARGS                       \
+    struct rrr_net_transport_handle *handle
+
+#define RRR_NET_TRANSPORT_SEND_ARGS                            \
+    rrr_biglength *bytes_written,                              \
+    struct rrr_net_transport_handle *handle,                   \
+    const void *data,                                          \
+    rrr_biglength size
+
+#define RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS              \
+    const char **proto,                                        \
+    struct rrr_net_transport_handle *handle
 
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
 };
 
 struct rrr_net_transport_methods {
-	void (*destroy)(
-			struct rrr_net_transport *transport
-	);
+	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
 	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);
 	int (*accept)(RRR_NET_TRANSPORT_ACCEPT_ARGS);
 	// Only call close() from parent mode destroy function
-	int (*close)(
-			struct rrr_net_transport_handle *handle
-	);
+	int (*close)(RRR_NET_TRANSPORT_CLOSE_ARGS);
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
-	int (*send)(
-			ssize_t *bytes_written,
-			struct rrr_net_transport_handle *handle,
-			const void *data,
-			ssize_t size
-	);
-	int (*poll)(
-	    		struct rrr_net_transport_handle *handle
-	);
-	int (*handshake)(
-			struct rrr_net_transport_handle *handle
-	);
+	int (*send)(RRR_NET_TRANSPORT_SEND_ARGS);
+	int (*poll)(RRR_NET_TRANSPORT_POLL_ARGS);
+	int (*handshake)(RRR_NET_TRANSPORT_HANDSHAKE_ARGS);
 	int (*is_tls)(void);
-	void (*selected_proto_get)(
-			const char **proto,
-			struct rrr_net_transport_handle *handle
-	);
+	void (*selected_proto_get)(RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS);
 };
 
 struct rrr_net_transport_handle {

@@ -114,7 +114,7 @@ int rrr_ip_network_start_udp (
 		goto out_error;
 	}
 
-	if (data->port < 1 || data->port > 65535) {
+	if (data->port < 1) {
 		RRR_MSG_0 ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}
@@ -122,7 +122,7 @@ int rrr_ip_network_start_udp (
 	struct sockaddr_storage s;
 	memset(&s, '\0', sizeof(s));
 
-	size_t size = 0;
+	socklen_t size = 0;
 	if (do_ipv6) {
 		struct sockaddr_in6 *si = (struct sockaddr_in6 *) &s;
 		si->sin6_family = AF_INET6;
@@ -156,12 +156,12 @@ int rrr_ip_network_start_udp (
 }
 
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
 		void *data,
-		ssize_t size
+		rrr_biglength size
 ) {
 	int ret = 0;
 
@@ -189,7 +189,15 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
 		int err;
-		if (rrr_socket_sendto_nonblock(&err, written_bytes, ip_data->fd, data, size, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
+		if (rrr_socket_sendto_nonblock (
+				&err,
+				written_bytes,
+				ip_data->fd,
+				data,
+				size,
+				(struct sockaddr *) rp->ai_addr,
+				rp->ai_addrlen
+		) == 0) {
 			break;
 		}
 	}
@@ -321,14 +329,14 @@ static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {
 }
 
 int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
-		unsigned int port,
+		uint16_t port,
 		const char *host,
-		int (*callback)(const char *host, unsigned int port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
+		int (*callback)(const char *host, uint16_t port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	if (port < 1 || port > 65535) {
+	if (port < 1) {
 		RRR_BUG ("rrr_ip_network_resolve_ipv4_or_ipv6_with_callback: port was not in the range 1-65535 (got '%d')\n", port);
 	}
 
@@ -371,7 +379,7 @@ int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
-		unsigned int port,
+		uint16_t port,
 		const char *host
 ) {
 	int ret = 0;
@@ -380,7 +388,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 
 	*accept_data = NULL;
 
-	if (port < 1 || port > 65535) {
+	if (port < 1) {
 		RRR_BUG ("rrr_ip_network_connect_tcp_ipv4_or_ipv6: port was not in the range 1-65535 (got '%d')\n", port);
 	}
 
@@ -487,7 +495,7 @@ int rrr_ip_network_start_tcp (
 		goto out_error;
 	}
 
-	if (data->port < 1 || data->port > 65535) {
+	if (data->port < 1) {
 		RRR_MSG_0 ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}

@@ -34,7 +34,7 @@ static int __rrr_msgdb_common_ctrl_msg_send (
 		int fd,
 		rrr_u16 flags,
 		rrr_u32 arg,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -61,7 +61,7 @@ static int __rrr_msgdb_common_ctrl_msg_send (
 
 int rrr_msgdb_common_ctrl_msg_send_ack (
 		int fd,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_ACK, 0, send_callback, callback_arg);
@@ -69,7 +69,7 @@ int rrr_msgdb_common_ctrl_msg_send_ack (
 
 int rrr_msgdb_common_ctrl_msg_send_nack (
 		int fd,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_NACK, 0, send_callback, callback_arg);
@@ -77,7 +77,7 @@ int rrr_msgdb_common_ctrl_msg_send_nack (
 
 int rrr_msgdb_common_ctrl_msg_send_ping (
 		int fd,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_PING, 0, send_callback, callback_arg);
@@ -85,7 +85,7 @@ int rrr_msgdb_common_ctrl_msg_send_ping (
 
 int rrr_msgdb_common_ctrl_msg_send_pong (
 		int fd,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_PONG, 0, send_callback, callback_arg);
@@ -94,7 +94,7 @@ int rrr_msgdb_common_ctrl_msg_send_pong (
 int rrr_msgdb_common_ctrl_msg_send_tidy (
 		int fd,
 		uint32_t max_age_s,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_TIDY, max_age_s, send_callback, callback_arg);
@@ -103,7 +103,7 @@ int rrr_msgdb_common_ctrl_msg_send_tidy (
 int rrr_msgdb_common_msg_send (
 		int fd,
 		const struct rrr_msg_msg *msg,
-		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;

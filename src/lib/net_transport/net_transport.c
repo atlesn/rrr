@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "../log.h"
+#include "../rrr_types.h"
 #include "../allocator.h"
 
 #include "net_transport.h"
@@ -63,9 +64,6 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
 			result = node;
-			// Lock prior to releasing collection lock to prevent race conditions
-			// with anyone calling close(). Closers will try to lock this lock
-			// prior to destruction.
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
@@ -84,7 +82,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -94,7 +92,7 @@ static int __rrr_net_transport_handle_create_and_push (
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	if ((new_handle = rrr_allocate(sizeof(*new_handle))) == NULL) {
-		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
+		RRR_MSG_0("Could not allocate handle rrr_net_transport_handle_create_and_push\n");
 		ret = 1;
 		goto out;
 	}
@@ -102,8 +100,6 @@ static int __rrr_net_transport_handle_create_and_push (
 	memset(new_handle, '\0', sizeof(*new_handle));
 
 	new_handle->transport = transport;
-
-	// NOTE : These shallow members may be accessed with only collection lock held
 	new_handle->handle = handle;
 	new_handle->mode = mode;
 
@@ -133,7 +129,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -230,9 +226,6 @@ int rrr_net_transport_handle_close (
 	int did_destroy = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		// We are allowed to read the handle integer without handle lock
-		// held. When the handle integer is written, the collection lock
-		// is held. We should also be the same thread as the one who wrote it.
 		if (node->handle == transport_handle) {
 			ret = __rrr_net_transport_handle_destroy(node);
 			did_destroy = 1;
@@ -252,16 +245,12 @@ int rrr_net_transport_handle_close (
 }
 
 static int __rrr_net_transport_handle_send_nonblock (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
-		ssize_t size
+		rrr_biglength size
 ) {
 	int ret = 0;
-
-	if (size < 0) {
-		RRR_BUG("BUG: Size was < 0 in __rrr_net_transport_handle_send_nonblock\n");
-	}
 
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
 		RRR_BUG("BUG: Handle to __rrr_net_transport_handle_send_nonblock was not of CONNECTION type\n");
@@ -412,11 +401,11 @@ static void __rrr_net_transport_event_read (
 }
 
 static int __rrr_net_transport_event_write_send_chunk_callback (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
@@ -553,7 +542,7 @@ static int __rrr_net_transport_handle_events_setup_connected (
 
 static int __rrr_net_transport_connect (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *transport_handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg,
@@ -615,7 +604,7 @@ static int __rrr_net_transport_connect (
 
 int rrr_net_transport_connect_and_close_after_callback (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
@@ -625,7 +614,7 @@ int rrr_net_transport_connect_and_close_after_callback (
 
 int rrr_net_transport_connect (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
@@ -801,7 +790,7 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 ) {
@@ -856,7 +845,7 @@ static int __rrr_net_transport_event_setup (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
@@ -954,7 +943,7 @@ int rrr_net_transport_iterate_with_callback (
 					if (ret == 0) {
 						__rrr_net_transport_handle_destroy(node);
 						RRR_LL_ITERATE_SET_DESTROY();
-						RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
+						RRR_LL_ITERATE_NEXT();
 					}
 				}
 				else {
@@ -1011,11 +1000,21 @@ void rrr_net_transport_common_cleanup (
 }
 
 void rrr_net_transport_stats_get (
-		int *handle_count,
+		rrr_length *listening_count,
+		rrr_length *connected_count,
 		struct rrr_net_transport *transport
 ) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-	*handle_count = RRR_LL_COUNT(collection);
+	*listening_count = 0;
+	*connected_count = 0;
+
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			rrr_length_inc_bug(listening_count);
+		}
+		else {
+			rrr_length_inc_bug(connected_count);
+		}
+	RRR_LL_ITERATE_END();
 }
 
 static int __rrr_net_transport_new (
@@ -1029,7 +1028,7 @@ static int __rrr_net_transport_new (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
@@ -1123,7 +1122,7 @@ int rrr_net_transport_new (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),

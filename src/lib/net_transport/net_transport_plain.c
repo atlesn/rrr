@@ -78,7 +78,7 @@ struct rrr_net_transport_plain_allocate_and_add_callback_data {
 };
 
 static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_plain_allocate_and_add_callback_data *callback_data = arg;
 
@@ -181,7 +181,8 @@ static int __rrr_net_transport_plain_read_message (
 			complete_callback_arg,
 	};
 
-	while (--read_attempts >= 0) {
+	rrr_slength read_attempts_signed = read_attempts;
+	while (--read_attempts_signed >= 0) {
 		uint64_t bytes_read_tmp = 0;
 		ret = rrr_socket_read_message_default (
 				&bytes_read_tmp,
@@ -231,7 +232,7 @@ static int __rrr_net_transport_plain_read (
 		goto out;
 	}
 
-	ssize_t bytes_read_s = 0;
+	rrr_biglength bytes_read_s = 0;
 
 	ret = rrr_socket_read (
 			buf,
@@ -245,10 +246,6 @@ static int __rrr_net_transport_plain_read (
 
 	ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
 
-	if (bytes_read_s < 0) {
-		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
-	}
-
 	*bytes_read = bytes_read_s;
 
 	out:
@@ -256,19 +253,18 @@ static int __rrr_net_transport_plain_read (
 }
 
 static int __rrr_net_transport_plain_send (
-	ssize_t *written_bytes,
-	struct rrr_net_transport_handle *handle,
-	const void *data,
-	ssize_t size
+		RRR_NET_TRANSPORT_SEND_ARGS
 ) {
 	int ret = RRR_NET_TRANSPORT_SEND_OK;
 
-	*written_bytes = 0;
+	*bytes_written = 0;
 
-	ssize_t written_bytes_tmp = 0;
-	ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size);
+	const size_t size_truncated = (size_t) size;
 
-	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
+	rrr_biglength bytes_written_tmp = 0;
+	ret = rrr_socket_send_nonblock_check_retry(&bytes_written_tmp, handle->submodule_fd, data, size_truncated);
+
+	*bytes_written += (bytes_written_tmp > 0 ? bytes_written_tmp : 0);
 
 	return ret;
 }
@@ -384,13 +380,13 @@ int __rrr_net_transport_plain_accept (
 }
 
 static int __rrr_net_transport_plain_poll (
-		struct rrr_net_transport_handle *handle
+		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
 	return rrr_socket_check_alive (handle->submodule_fd);
 }
 
 static int __rrr_net_transport_plain_handshake (
-		struct rrr_net_transport_handle *handle
+		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
 	(void)(handle);
 	return RRR_NET_TRANSPORT_SEND_OK;
@@ -401,8 +397,7 @@ static int __rrr_net_transport_plain_is_tls (void) {
 }
 
 static void __rrr_net_transport_plain_selected_proto_get (
-		const char **proto,
-		struct rrr_net_transport_handle *handle
+		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	(void)(handle);
 	*proto = NULL;

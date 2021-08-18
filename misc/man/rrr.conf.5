@@ -1026,7 +1026,7 @@ Pushes a 64-bit integer. If the given number is unsigned, it will be stored as u
 .It $message->push_tag_fixp(tag, fixed_pointer)
 Pushes an RRR fixed pointer type. If a string is given, string notation like
 .B /^(10#|16#|)-?\\d+\\.\\d+$/
-is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given is stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
+is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given will be stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
 
 .It $message->push_tag(tag, value)
 Push a value or on array of values. The type will be identified automatically. Array values are passed by using a reference like 
@@ -1793,6 +1793,26 @@ Should the parsing fail, no error messages are printed unless debuglevel 2 is se
 
 If the original message which caused the query had a topic set, this topic will be present in generated messages. 
 
+.It http_receive_structured={yes|no}
+If set to yes, generated messages will be RRR array messages. The following fields will be available in the messages:
+
+.Bl -tag -width -indent
+.It http_response_code
+The HTTP response code.
+.sp
+.It http_content_type
+The content type from the HTTP header, or empty string if not present.
+.sp
+.It http_body
+The raw response body, or empty string if not present.
+.El
+
+The
+.B http_body
+tag will not be present for JSON messages.
+Also, if the JSON data in the response contains any of the above fields, both will be present in the message
+with the HTTP-response fields being placed first.
+
 .It http_receive_ignore_error_part_data={yes|no}
 If set to no, attempts will be made to create messages from the part data of any responses from the server, even
 if they are error responses (HTTP response code is less than 200 or more than 299).
@@ -2536,8 +2556,14 @@ or
 .B influxdb_fixed_fields .
 .SS voltmonitor (SA)
 Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
-and the measurement itself as an unsigned 64-bit integer with the tag
+and the measurement itself.
+
+The measurement will be stored as a signed 64-bit integer with the tag
 .B measurement.
+The time of the measurment in microseconds will be stored (duplicated) in
+.B timestamp_from
+and
+.B timestamp_to.
 .PP
 .Bl -tag -width -indent
 .It vm_calibration=FLOAT

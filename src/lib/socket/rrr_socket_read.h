@@ -22,11 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_READ_H
 #define RRR_SOCKET_READ_H
 
-#include <stdio.h>
-#include <inttypes.h>
 #include <sys/socket.h>
 
-#include "../util/linked_list.h"
+#include "../rrr_types.h"
 #include "../messages/msg.h"
 
 struct rrr_read_session;
@@ -34,9 +32,9 @@ struct rrr_read_session_collection;
 
 int rrr_socket_read (
 		char *buf,
-		ssize_t *read_bytes,
+		rrr_biglength *read_bytes,
 		int fd,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		struct sockaddr *src_addr,
 		socklen_t *src_addr_len,
 		int flags
@@ -45,12 +43,12 @@ int rrr_socket_read_message_default (
 		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max,
 		int socket_read_flags,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -62,7 +60,7 @@ int rrr_socket_read_message_split_callbacks (
 		int fd,
 		int read_flags_socket,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_length ratelimit_max_bytes,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg1,
 		void *callback_arg2

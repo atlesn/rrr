@@ -58,14 +58,12 @@ int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
+		void *callback_arg
 );
 int rrr_poll_do_poll_delete (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 );
 int rrr_poll_add_senders_to_broker (
 		struct rrr_instance **faulty_sender,

@@ -85,7 +85,7 @@ struct ipclient_data {
 
 	int (*queue_method)(struct rrr_msg_holder *entry, struct ipclient_data *data);
 
-	rrr_setting_uint src_port;
+	uint16_t src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
 
 	int need_network_restart;
@@ -152,9 +152,8 @@ static int ipclient_parse_config (struct ipclient_data *data, struct rrr_instanc
 		}
 	}
 
-	rrr_setting_uint src_port;
-	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
-		data->src_port = src_port;
+	if ((ret = rrr_instance_config_read_port_number(&data->src_port, config, "ipclient_src_port")) == 0) {
+		// OK
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND) {
 		data->src_port = RRR_IPCLIENT_DEFAULT_PORT;
@@ -300,7 +299,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 
 	(void)(arg2);
 
-	int ret = RRR_FIFO_OK;
+	int ret = 0;
 
 	struct rrr_msg_holder *entry = NULL;
 
@@ -340,7 +339,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		if (joined_data == NULL && ret != 0) {
 			RRR_BUG("Callback returned error but still set joined_data to NULL in ipclient_udpstream_allocator_intermediate\n");
 		}
-		ret = RRR_FIFO_GLOBAL_ERR;
+		ret = 1;
 	out:
 		pthread_cleanup_pop(1);
 		if (joined_data != NULL && ret == 0) {
@@ -392,7 +391,7 @@ static int ipclient_asd_reconnect (struct ipclient_data *data) {
 	if ((ret = rrr_udpstream_asd_new (
 			&data->udpstream_asd,
 			INSTANCE_D_EVENTS(data->thread_data),
-			(unsigned int) data->src_port,
+			data->src_port,
 			data->ip_default_remote,
 			data->ip_default_remote_port,
 			data->client_number,
@@ -456,7 +455,7 @@ static int ipclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	}
 	EVENT_ACTIVATE(data->event_send_queue);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, ipclient_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, ipclient_poll_callback);
 }
 
 static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -464,7 +463,7 @@ static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data;
 
-	int output_buffer_count = 0;
+	unsigned int output_buffer_count = 0;
 	int ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (

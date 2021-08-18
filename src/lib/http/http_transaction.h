@@ -40,7 +40,7 @@ struct rrr_http_transaction {
 	enum rrr_http_body_format request_body_format;
 
 	struct rrr_nullsafe_str *send_body;
-	rrr_length send_body_pos;
+	rrr_biglength send_body_pos;
 
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
@@ -96,7 +96,7 @@ int rrr_http_transaction_query_field_add (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type,
 		const struct rrr_type_value *value_orig
 );
@@ -140,7 +140,7 @@ int rrr_http_transaction_send_body_set_allocated (
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(int response_code, enum rrr_http_version protocol_version, void *arg),
+		int (*response_code_callback)(unsigned response_code, enum rrr_http_version protocol_version, void *arg),
 		int (*final_callback)(
 				struct rrr_http_part *request_part,
 				struct rrr_http_part *response_part,

@@ -340,10 +340,10 @@ static void __rrr_udpstream_frame_packed_dump (
 		const struct rrr_udpstream_frame_packed *frame
 ) {
 	struct rrr_string_builder string_builder = {0};
-	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("-- UDP-stream packed frame size %llu\n", (unsigned long long) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
 	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
-	RRR_DBG ("Total size   : %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Total size   : %llu\n", (unsigned long long) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Data size    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame));
 	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
 	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
@@ -447,9 +447,9 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		}
 #endif
 
-		int send_chunk_count = 0;
+		rrr_length send_chunk_count_dummy = 0;
 		if ((ret = rrr_socket_client_collection_sendto_push_const (
-				&send_chunk_count,
+				&send_chunk_count_dummy,
 				udpstream_data->clients,
 				udpstream_data->ip.fd,
 				addr,
@@ -777,10 +777,11 @@ static int __rrr_udpstream_read_get_target_size (
 		goto out;
 	}
 
-	ssize_t total_size = RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame);
+	rrr_biglength total_size = RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame);
 
 	if (RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) {
-		RRR_MSG_0("UDP-stream received data size exceeded maximum (%li > %i)\n", total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
+		RRR_MSG_0("UDP-stream received data size exceeded maximum (%" PRIrrrbl " > %i)\n",
+			total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -1303,7 +1304,7 @@ static int __rrr_udpstream_read_callback (
 		__rrr_udpstream_frame_packed_dump(frame);
 	}
 
-	if (read_session->rx_buf_wpos != (ssize_t) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame)) {
+	if (read_session->rx_buf_wpos != RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame)) {
 		RRR_MSG_0("Size mismatch in __rrr_udpstream_read_callback, packet was invalid\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
@@ -1390,7 +1391,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 			}
 
 			if (data->upstream_validator_callback) {
-				ssize_t target_size = 0;
+				rrr_biglength target_size = 0;
 
 				if ((ret = data->upstream_validator_callback (
 						&target_size,
@@ -1404,7 +1405,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 					goto loop_bottom_clenaup;
 				}
 
-				if (target_size != (int64_t) callback_data->accumulated_data_size) {
+				if (target_size != callback_data->accumulated_data_size) {
 					RRR_MSG_0("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
 							callback_data->stream->stream_id);
 					goto loop_bottom_clenaup;
@@ -2059,7 +2060,7 @@ void rrr_udpstream_close (
 
 static int __rrr_udpstream_bind (
 		struct rrr_ip_data *ip_data,
-		unsigned int local_port,
+		uint16_t local_port,
 		int do_ipv6
 ) {
 
@@ -2204,7 +2205,7 @@ static int __rrr_udpstream_events_create (
 
 int rrr_udpstream_bind_v6_priority (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 ) {
 	int ret = 0;
 
@@ -2247,7 +2248,7 @@ int rrr_udpstream_bind_v6_priority (
 
 int rrr_udpstream_bind_v4_only (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 ) {
 	int ret = 0;
 

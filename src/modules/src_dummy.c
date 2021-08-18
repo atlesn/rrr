@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/message_broker.h"
 #include "../lib/random.h"
+#include "../lib/array.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip.h"
@@ -56,7 +57,7 @@ struct dummy_data {
 	rrr_setting_uint sleep_interval_us;
 
 	char *topic;
-	size_t topic_len; // Optimization, don't calculate length for every message
+	uint16_t topic_len; // Optimization, don't calculate length for every message
 
 	char *array_tag;
 	struct rrr_array array_template;
@@ -120,7 +121,6 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_max_generated", max_generated, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, 0); // Set to 0 to indicate sleep controlled by event framework
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_array_tag", array_tag);
 
 	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
@@ -132,7 +132,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-	if ((rrr_biglength) data->random_payload_max_size > INT_MAX) {
+	if ((rrr_biglength) data->sleep_interval_us > INT_MAX) {
 		RRR_MSG_0("Parameter 'dummy_sleep_interval_us' exceeds maximum of %i in dummy instance %s\n",
 			INT_MAX,
 			config->name
@@ -141,16 +141,13 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-	if (data->topic != NULL) {
-		if ((data->topic_len = strlen(data->topic)) > RRR_MSG_TOPIC_MAX) {
-			RRR_MSG_0("Length of parameter 'dummy_topic' exceeds maximum (%llu>%i) in dummy instance %s\n",
-				(unsigned long long int) data->topic_len,
-				RRR_MSG_TOPIC_MAX,
-				config->name
-			);
-			ret = 1;
-			goto out;
-		}
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_len,
+			config,
+			"dummy_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
@@ -256,7 +253,7 @@ static void dummy_event_write_entry (
 
 		if (average_time_us <= data->sleep_interval_us) {
 			// Config parser must check integer sizes
-			rrr_posix_usleep((int) data->sleep_interval_us);
+			rrr_posix_usleep(rrr_size_from_biglength_bug_const(data->sleep_interval_us));
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;

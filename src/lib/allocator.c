@@ -61,7 +61,19 @@ The RRR Allocator (RRRA)
 static struct rrr_mmap_collection *rrr_allocator_collections = NULL;
 static struct rrr_mmap_collection_private_data rrr_allocator_private_datas[RRR_ALLOCATOR_GROUP_MAX + 1];
 
+static void *__rrr_allocate_failure (rrr_biglength size) {
+	RRR_MSG_0("Cannot allocate memory, too many bytes requested (%llu)\n",
+		(unsigned long long) size);
+	return NULL;
+}
+
+#define VERIFY_SIZE(b)                                            \
+	do {if (sizeof(b) > sizeof(size_t) && b > SIZE_MAX) {     \
+		return __rrr_allocate_failure(b);                 \
+	}} while (0)
+
 static void *__rrr_allocate (size_t bytes, size_t group_num) {
+
 	void *ptr = rrr_mmap_collections_allocate (
 			rrr_allocator_collections,
 			group_num,
@@ -75,22 +87,25 @@ static void *__rrr_allocate (size_t bytes, size_t group_num) {
 }
 
 /* Allocate memory from OS allocator */
-void *rrr_allocate (size_t bytes) {
-	return malloc(bytes);
+void *rrr_allocate (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	return malloc((size_t) bytes);
 }
 
 /* Allocate zeroed memory from OS allocator */
-void *rrr_allocate_zero (size_t bytes) {
-	void *ret = malloc(bytes);
+void *rrr_allocate_zero (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	void *ret = malloc((size_t) bytes);
 	if (ret) {
-		memset(ret, '\0', bytes);
+		memset(ret, '\0', (size_t) bytes);
 	}
 	return ret;
 }
 
 /* Allocate memory from group allocator */
-void *rrr_allocate_group (size_t bytes, size_t group) {
-	return __rrr_allocate(bytes, group);
+void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
+	VERIFY_SIZE(bytes);
+	return __rrr_allocate((size_t) bytes, group);
 }
 
 /* Frees both allocations done by OS allocator and group allocator */
@@ -120,7 +135,7 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 	}
 
 	if (ptr_old != NULL && ptr_new != NULL) {
-		memcpy(ptr_new, ptr_old, bytes_old);
+		memcpy(ptr_new, ptr_old, bytes_new > bytes_old ? bytes_old : bytes_new);
 		rrr_free(ptr_old);
 	}
 
@@ -128,19 +143,27 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 }
 
 /* Caller must ensure that old allocation is done by OS allocator */
-void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
+void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
 	(void)(bytes_old);
-	return realloc(ptr_old, bytes_new);
+	VERIFY_SIZE(bytes_new);
+	return realloc(ptr_old, (size_t) bytes_new);
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group) {
-	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, group);
+void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
+	VERIFY_SIZE(bytes_old);
+	VERIFY_SIZE(bytes_new);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
 }
 
 /* Duplicate string using OS allocator */
 char *rrr_strdup (const char *str) {
 	size_t size = strlen(str) + 1;
+
+	if (size == 0) {
+		RRR_MSG_0("Overflow in rrr_strdup\n");
+		return NULL;
+	}	
 
 	char *result = rrr_allocate(size);
 
@@ -198,12 +221,14 @@ void rrr_allocator_maintenance_nostats (void) {
 #include <stdlib.h>
 #include <string.h>
 
-void *rrr_allocate (size_t bytes) {
-	return malloc(bytes);
+void *rrr_allocate (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	return malloc((size_t) bytes);
 }
 
-void *rrr_allocate_group (size_t bytes, size_t group) {
+void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
 	(void)(group);
+	VERIFY_SIZE(bytes);
 	return rrr_allocate(bytes);
 }
 
@@ -211,13 +236,16 @@ void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
+void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
 	(void)(bytes_old);
+	VERIFY_SIZE(bytes_new);
 	return realloc(ptr_old, bytes_new);
 }
 
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group) {
+void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
 	(void)(group);
+	VERIFY_SIZE(bytes_new);
+	VERIFY_SIZE(bytes_old);
 	return rrr_reallocate(ptr_old, bytes_old, bytes_new);
 }
 
@@ -225,8 +253,9 @@ char *rrr_strdup (const char *str) {
 	return strdup(str);
 }
 
-void rrr_allocator_init (void) {
+int rrr_allocator_init (void) {
 	// Nothing to do
+	return 0;
 }
 
 void rrr_allocator_cleanup (void) {
