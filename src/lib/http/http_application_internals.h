@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_application.h"
 
+#include "../rrr_types.h"
+
 struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
@@ -40,17 +42,18 @@ struct rrr_http_transaction;
     const char *user_agent,                                    \
     const char *host,                                          \
     enum rrr_http_upgrade_mode upgrade_mode,                   \
+    enum rrr_http_version protocol_version,                    \
     struct rrr_http_transaction *transaction
 
 #define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \
     struct rrr_http_application *app
 
 #define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
-    ssize_t *received_bytes,                                                                     \
+    rrr_biglength *received_bytes,                                                               \
     struct rrr_http_application **upgraded_app,                                                  \
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \
-    ssize_t read_max_size,                                                                       \
+    rrr_biglength read_max_size,                                                                 \
     int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS), \
     void *unique_id_generator_callback_arg,                                                      \
     int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),           \
@@ -63,6 +66,8 @@ struct rrr_http_transaction;
     void *frame_callback_arg,                                                                    \
     int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),                                 \
     void *callback_arg,                                                                          \
+    int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),                         \
+    void *failure_callback_arg,                                                                  \
     int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),   \
     void *async_response_get_callback_arg
 
@@ -78,7 +83,7 @@ struct rrr_http_transaction;
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
 	void (*destroy)(struct rrr_http_application *);
-	uint64_t (*active_transaction_count_get)(struct rrr_http_application *);
+	uint64_t (*active_transaction_count_get_and_maintain)(struct rrr_http_application *);
 	int (*request_send_possible)(RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);

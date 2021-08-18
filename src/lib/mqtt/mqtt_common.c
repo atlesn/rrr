@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
@@ -238,7 +239,7 @@ int rrr_mqtt_common_data_init (
 	memset (data, '\0', sizeof(*data));
 
 	if (init_data->client_name != NULL && *(init_data->client_name) != '\0') {
-		if ((data->client_name = strdup(init_data->client_name)) == NULL) {
+		if ((data->client_name = rrr_strdup(init_data->client_name)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
 			ret = 1;
 			goto out;
@@ -344,7 +345,7 @@ int rrr_mqtt_common_data_init (
                 RRR_MSG_0(error_msg "\n");                                  \
                 goto out_reason_protocol_error;                             \
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint8_t) tmp_u32;                                   \
             break
 
 #define HANDLE_PROPERTY_U32_ON_OFF_TO_U8(target,id,error_msg)               \
@@ -354,7 +355,7 @@ int rrr_mqtt_common_data_init (
                 RRR_MSG_0(error_msg "\n");                                  \
                 goto out_reason_protocol_error;                             \
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint8_t) tmp_u32;                                   \
             break
 
 #define HANDLE_PROPERTY_U32_TO_U8(target,id)                                \
@@ -372,7 +373,7 @@ int rrr_mqtt_common_data_init (
             if (tmp_u32 > 0xffff) {                                         \
                 RRR_BUG("U16 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint16_t) tmp_u32;                                  \
             break
 
 #define HANDLE_PROPERTY_TO_COLLECTION(target,id)                                                    \
@@ -902,7 +903,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		// NOTE : Connection subsystem will notify session system when ACK is successfully
 		//        sent.
 
-		int send_queue_count_dummy = 0;
+		rrr_length send_queue_count_dummy = 0;
 
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -1052,7 +1053,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	next_ack->reason_v5 = reason_v5;
 	next_ack->packet_identifier = packet->packet_identifier;
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet (
@@ -1200,8 +1201,7 @@ static int __rrr_mqtt_common_send (
 
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
-	if (connection->session == NULL) {
-		// No CONNECT yet
+	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
 		goto out;
 	}
 

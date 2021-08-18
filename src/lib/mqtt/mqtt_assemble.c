@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_assemble.h"
 #include "mqtt_packet.h"
@@ -31,90 +32,90 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/rrr_endian.h"
 
-#define BUF_INIT() 																	\
-		int ret = RRR_MQTT_ASSEMBLE_OK;												\
-		*size = 0;																	\
-		*target = NULL;																\
-		struct rrr_mqtt_payload_buf_session _session;								\
-		struct rrr_mqtt_payload_buf_session *session = &_session;					\
-		do {if (rrr_mqtt_payload_buf_init(session) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
-		}} while(0)
+#define BUF_INIT()                                             \
+        int ret = RRR_MQTT_ASSEMBLE_OK;                        \
+        *size = 0;                                             \
+        *target = NULL;                                        \
+        struct rrr_mqtt_payload_buf_session _session;          \
+        struct rrr_mqtt_payload_buf_session *session = &_session;                \
+        do {if (rrr_mqtt_payload_buf_init(session) != RRR_MQTT_PAYLOAD_BUF_OK) { \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+        }} while(0)                                            \
 
-#define PUT_RAW(data,size) do {																	\
-		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
-			goto out;																			\
-		}} while (0)
+#define PUT_RAW(data,size) do {                                \
+        if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) { \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
-#define PUT_U8(byte) do {					\
-		uint8_t data = (byte);				\
-		PUT_RAW(&data, sizeof(uint8_t));	\
-		} while (0)
+#define PUT_U8(byte) do {                                      \
+        uint8_t data = (byte);                                 \
+        PUT_RAW(&data, sizeof(uint8_t));                       \
+        } while (0)                                            \
 
-#define PUT_U16(byte) do {					\
-		uint16_t data = rrr_htobe16(byte);		\
-		PUT_RAW(&data, sizeof(uint16_t));	\
-		} while (0)
+#define PUT_U16(byte) do {                                     \
+        uint16_t data = rrr_htobe16(byte);                     \
+        PUT_RAW(&data, sizeof(uint16_t));                      \
+        } while (0)                                            \
 
-#define PUT_U32(byte) do {					\
-		uint32_t data = rrr_htobe32(byte);		\
-		PUT_RAW(&data, sizeof(uint32_t));	\
-		} while (0)
+#define PUT_U32(byte) do {                                     \
+        uint32_t data = rrr_htobe32(byte);                     \
+        PUT_RAW(&data, sizeof(uint32_t));                      \
+        } while (0)                                            \
 
 
-#define PUT_RAW_WITH_LENGTH(data,size) do {														\
-		PUT_U16(size);																			\
-		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
-			goto out;																			\
-		}} while (0)
+#define PUT_RAW_WITH_LENGTH(data,size) do {                    \
+        PUT_U16(size);                                         \
+        if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) { \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
-#define PUT_AND_VERIFY_RAW_WITH_LENGTH(data,size,msg) do {			\
-			if ((data) == NULL) {									\
-				RRR_BUG("Data was null " msg "\n");					\
-			}														\
-			if (*(data) == '\0' && (size) > 0) {					\
-				RRR_BUG("Data was \\0 but length was > 0 " msg "\n");\
-			}														\
-			if ((size) > 0xffff) {									\
-				RRR_BUG("Data was too long " msg "\n");				\
-			}														\
-			PUT_RAW_WITH_LENGTH(data,size);							\
-		} while(0)
+#define PUT_AND_VERIFY_RAW_WITH_LENGTH(data,size,msg) do {     \
+            if ((data) == NULL) {                              \
+                RRR_BUG("Data was null " msg "\n");            \
+            }                                                  \
+            if (*(data) == '\0' && (size) > 0) {               \
+                RRR_BUG("Data was \\0 but length was > 0 " msg "\n"); \
+            }                                                  \
+            if ((size) > 0xffff) {                             \
+                RRR_BUG("Data was too long " msg "\n");        \
+            }                                                  \
+            PUT_RAW_WITH_LENGTH(data, (uint16_t) size);        \
+        } while(0)                                             \
 
-#define PUT_RAW_AT_OFFSET(data,size,offset) do {		\
-		if (rrr_mqtt_payload_buf_put_raw_at_offset (	\
-				session,								\
-				(data),									\
-				(size),									\
-				(offset)								\
-		) != RRR_MQTT_PAYLOAD_BUF_OK) {					\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
-			goto out;									\
-		}} while (0)
+#define PUT_RAW_AT_OFFSET(data,size,offset) do {               \
+        if (rrr_mqtt_payload_buf_put_raw_at_offset (           \
+                session,                                       \
+                (data),                                        \
+                (size),                                        \
+                (offset)                                       \
+        ) != RRR_MQTT_PAYLOAD_BUF_OK) {                        \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
-#define PUT_VARIABLE_INT(value) do {					\
-		if (rrr_mqtt_payload_buf_put_variable_int(		\
-				session,								\
-				(value)									\
-		) != RRR_MQTT_PAYLOAD_BUF_OK) {					\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
-			goto out;									\
-		}} while (0)
+#define PUT_VARIABLE_INT(value) do {                           \
+        if (rrr_mqtt_payload_buf_put_variable_int(             \
+                session,                                       \
+                (value)                                        \
+        ) != RRR_MQTT_PAYLOAD_BUF_OK) {                        \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
-#define PUT_U8_AT_OFFSET(byte,offset) do {						\
-		uint8_t data = (byte);									\
-		PUT_RAW_AT_OFFSET(&data, sizeof(uint8_t), offset);		\
-		} while (0)
+#define PUT_U8_AT_OFFSET(byte,offset) do {                     \
+        uint8_t data = (byte);                                 \
+        PUT_RAW_AT_OFFSET(&data, sizeof(uint8_t), offset);     \
+        } while (0)                                            \
 
-#define BUF_DESTROY_AND_RETURN(extra_ret_value)						\
-		goto out;													\
-		out:														\
-		*size = rrr_mqtt_payload_buf_get_touched_size(session);		\
-		*target = rrr_mqtt_payload_buf_extract_buffer(session);		\
-		rrr_mqtt_payload_buf_destroy (session);						\
-		return (ret | (extra_ret_value))
+#define BUF_DESTROY_AND_RETURN(extra_ret_value)                \
+        goto out;                                              \
+        out:                                                   \
+        *size = rrr_mqtt_payload_buf_get_touched_size(session); \
+        *target = rrr_mqtt_payload_buf_extract_buffer(session); \
+        rrr_mqtt_payload_buf_destroy (session);                \
+        return (ret | (extra_ret_value))                       \
 
 static int __rrr_mqtt_assemble_put_properties_callback (
 		const struct rrr_mqtt_property *property,
@@ -150,13 +151,13 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 			if (property->length > 0xffff) {
 				RRR_BUG("Length of BLOB field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
-			PUT_RAW_WITH_LENGTH(property->data, property->length);
+			PUT_RAW_WITH_LENGTH(property->data, (uint16_t) property->length);
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
 			if (property->length > 0xffff) {
 				RRR_BUG("Length of UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
-			PUT_RAW_WITH_LENGTH(property->data, property->length);
+			PUT_RAW_WITH_LENGTH(property->data, (uint16_t) property->length);
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 			if (property->sibling == NULL || property->sibling->sibling != NULL) {
@@ -165,8 +166,8 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 			if (property->length > 0xffff || property->sibling->length > 0xffff) {
 				RRR_BUG("Length of 2UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
-			PUT_RAW_WITH_LENGTH(property->data, property->length);
-			PUT_RAW_WITH_LENGTH(property->sibling->data, property->sibling->length);
+			PUT_RAW_WITH_LENGTH(property->data, (uint16_t) property->length);
+			PUT_RAW_WITH_LENGTH(property->sibling->data, (uint16_t) property->sibling->length);
 			break;
 		default:
 			RRR_BUG("Unknown property type %u in __rrr_mqtt_assemble_put_properties_callback\n",
@@ -183,8 +184,8 @@ static int __rrr_mqtt_assemble_put_properties (
 ) {
 	int ret = RRR_MQTT_ASSEMBLE_OK;
 
-	ssize_t total_size = 0;
-	ssize_t count = 0;
+	rrr_length total_size = 0;
+	rrr_length count = 0;
 	if (rrr_mqtt_property_collection_calculate_size (&total_size, &count, properties) != 0) {
 		RRR_MSG_0("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
 		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
@@ -211,7 +212,7 @@ static int __rrr_mqtt_assemble_put_properties (
 
 	const char *end = session->wpos;
 
-	if (end - begin != total_size) {
+	if ((rrr_length) (end - begin) != total_size) {
 		RRR_BUG("Size mismatch in __rrr_mqtt_assemble_put_properties\n");
 	}
 
@@ -233,7 +234,12 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	PUT_RAW_WITH_LENGTH(connect->protocol_version->name, strlen(connect->protocol_version->name));
+	size_t protocol_version_name_len = strlen(connect->protocol_version->name);
+	if (protocol_version_name_len > 0xffff) {
+		RRR_BUG("Bug: Protocol name length overflow in rrr_mqtt_assemble_connect\n");
+	}
+
+	PUT_RAW_WITH_LENGTH(connect->protocol_version->name, (uint16_t) protocol_version_name_len);
 	PUT_U8(connect->protocol_version->id);
 	PUT_U8(connect->connect_flags);
 	PUT_U16(connect->keep_alive);
@@ -316,7 +322,12 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	PUT_RAW_WITH_LENGTH(publish->topic, strlen(publish->topic));
+	size_t topic_len = strlen(publish->topic);
+	if (topic_len > 0xffff) {
+		RRR_BUG("Bug: Topic length overflow in rrr-rrr_mqtt_assemble_publish\n");
+	}
+
+	PUT_RAW_WITH_LENGTH(publish->topic, (uint16_t) topic_len);
 
 	// Note : The separate dup variable overrides the value in type_flags.
 	RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(publish, publish->dup);
@@ -368,17 +379,17 @@ int __rrr_mqtt_assemble_sub_usub_callback (struct rrr_mqtt_subscription *sub, vo
 	uint8_t flags = sub->qos_or_reason_v5;
 
 	if (callback_data->is_v5 != 0) {
-		flags |= sub->nl << 2;
-		flags |= sub->rap << 3;
-		flags |= sub->retain_handling << 4;
+		flags |= (uint8_t) (sub->nl << 2);
+		flags |= (uint8_t) (sub->rap << 3);
+		flags |= (uint8_t) (sub->retain_handling << 4);
 	}
 
-	ssize_t length = strlen(sub->topic_filter);
+	size_t length = strlen(sub->topic_filter);
 	if (length > 0xffff) {
 		RRR_BUG("Topic filter was too long in __rrr_mqtt_assemble_subscribe_callback\n");
 	}
 
-	PUT_RAW_WITH_LENGTH(sub->topic_filter,length);
+	PUT_RAW_WITH_LENGTH(sub->topic_filter, (uint16_t) length);
 	if (callback_data->has_topic_options) {
 		PUT_U8(flags);
 	}

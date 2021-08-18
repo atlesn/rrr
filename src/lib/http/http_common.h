@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read_constants.h"
 
+// Limits for HTTP1 only
+#define RRR_HTTP_PARSE_HEADROOM_LIMIT_KB 1024
+#define RRR_HTTP_PARSE_HEADER_LIMIT_KB 64
+
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_USER_AGENT "RRR/" PACKAGE_VERSION
 
@@ -44,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SOFT_ERROR              RRR_READ_SOFT_ERROR
 #define RRR_HTTP_BUSY                    RRR_READ_INCOMPLETE
 #define RRR_HTTP_NO_RESULT               RRR_READ_INCOMPLETE
+#define RRR_HTTP_DONE                    RRR_READ_EOF
 
 #define RRR_HTTP_PARSE_OK                RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR          RRR_READ_HARD_ERROR
@@ -96,6 +101,18 @@ enum rrr_http_application_type {
 	RRR_HTTP_APPLICATION_UNSPECIFIED,
 	RRR_HTTP_APPLICATION_HTTP1,
 	RRR_HTTP_APPLICATION_HTTP2
+};
+
+enum rrr_http_version {
+	RRR_HTTP_VERSION_UNSPECIFIED,
+	RRR_HTTP_VERSION_10,
+	RRR_HTTP_VERSION_11
+};
+
+enum rrr_http_connection {
+	RRR_HTTP_CONNECTION_UNSPECIFIED,
+	RRR_HTTP_CONNECTION_CLOSE,
+	RRR_HTTP_CONNECTION_KEEPALIVE
 };
 
 enum rrr_http_parse_type {
@@ -167,6 +184,14 @@ extern const char *rrr_http_application_str_http2;
 #define RRR_HTTP_APPLICATION_TO_STR(transport)                                                                                 \
     (transport == RRR_HTTP_APPLICATION_HTTP1 ? rrr_http_application_str_http1 :                                                \
     (transport == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 : ("unknown")                                    \
+    ))
+
+extern const char *rrr_http_version_str_10;
+extern const char *rrr_http_version_str_11;
+
+#define RRR_HTTP_VERSION_TO_STR(transport)                                                                                     \
+    (transport == RRR_HTTP_VERSION_10 ? rrr_http_version_str_10 :                                                              \
+    (transport == RRR_HTTP_VERSION_11 ? rrr_http_version_str_11 : ("unspecified")                                              \
     ))
 
 typedef uint64_t rrr_http_unique_id;

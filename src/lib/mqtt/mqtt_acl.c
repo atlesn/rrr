@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_acl.h"
 #include "mqtt_topic.h"
@@ -46,7 +47,7 @@ static void __rrr_mqtt_acl_user_entry_destroy (
 		struct rrr_mqtt_acl_user_entry *entry
 ) {
 	RRR_FREE_IF_NOT_NULL(entry->username);
-	free(entry);
+	rrr_free(entry);
 }
 
 static int __rrr_mqtt_acl_user_entry_new_and_append (
@@ -56,7 +57,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_acl_user_entry *user_entry = malloc(sizeof(*user_entry));
+	struct rrr_mqtt_acl_user_entry *user_entry = rrr_allocate(sizeof(*user_entry));
 
 	if (user_entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_acl_user_entry_new_and_append\n");
@@ -66,7 +67,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 
 	memset(user_entry, '\0', sizeof(*user_entry));
 
-	if ((user_entry->username = strdup(username)) == NULL) {
+	if ((user_entry->username = rrr_strdup(username)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for username in __rrr_mqtt_acl_user_entry_new_and_append\n");
 		ret = 1;
 		goto out_free;
@@ -79,7 +80,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 
 	goto out;
 	out_free:
-		free(user_entry);
+		rrr_free(user_entry);
 	out:
 		return ret;
 }
@@ -90,7 +91,7 @@ static void __rrr_mqtt_acl_entry_destroy (
 	RRR_LL_DESTROY(entry, struct rrr_mqtt_acl_user_entry, __rrr_mqtt_acl_user_entry_destroy(node));
 	rrr_mqtt_topic_token_destroy(entry->first_token); // Checks for NULL
 	RRR_FREE_IF_NOT_NULL(entry->topic_orig);
-	free(entry);
+	rrr_free(entry);
 }
 
 void rrr_mqtt_acl_entry_collection_clear (
@@ -106,7 +107,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_acl_entry *entry = malloc(sizeof(*entry));
+	struct rrr_mqtt_acl_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate entry in rrr_mqtt_acl_entry_collection_push_new\n");
 		ret = 1;
@@ -121,7 +122,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 		goto out_free;
 	}
 
-	if ((entry->topic_orig = strdup(topic_orig)) == NULL) {
+	if ((entry->topic_orig = rrr_strdup(topic_orig)) == NULL) {
 		RRR_MSG_0("Could not duplicate topic string in rrr_mqtt_acl_entry_collection_push_new\n");
 		ret = 1;
 		goto out_free_topic_tokens;
@@ -136,7 +137,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 	out_free_topic_tokens:
 		rrr_mqtt_topic_token_destroy(entry->first_token);
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }
@@ -159,8 +160,8 @@ static void __rrr_mqtt_acl_parse_spaces_and_comments (
 static int __rrr_mqtt_acl_parse_require_newline_or_eof (
 		struct rrr_parse_pos *pos
 ) {
-	int pos_orig = pos->pos;
-	int line_orig = pos->line;
+	rrr_length pos_orig = pos->pos;
+	rrr_length line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 	// OK, end of file reached after value
@@ -190,8 +191,8 @@ static int __rrr_mqtt_acl_parse_require_space_then_non_newline (
 ) {
 	int ret = 0;
 
-	int pos_orig = pos->pos;
-	int line_orig = pos->line;
+	rrr_length pos_orig = pos->pos;
+	rrr_length line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (pos_orig == pos->pos || line_orig != pos->line) {
 		RRR_MSG_0("Syntax error at line %i: Expected whitespace and then string after keyword\n", pos->line);
@@ -264,8 +265,8 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 ) {
 	int ret = 0;
 
-	int username_start = 0;
-	int username_end = 0;
+	rrr_length username_start = 0;
+	rrr_slength username_end = 0;
 
 	int action = 0;
 	char *username_tmp = NULL;
@@ -284,7 +285,12 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 		goto out;
 	}
 
-	if ((ret = rrr_parse_str_extract(&username_tmp, pos, username_start, (username_end - username_start) + 1)) != 0) {
+	if ((ret = rrr_parse_str_extract (
+			&username_tmp,
+			pos,
+			username_start,
+			rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(username_end, username_start))
+	)) != 0) {
 		RRR_MSG_0("Could not extract username in __rrr_mqtt_acl_parse_keyword_user\n");
 		goto out;
 	}
@@ -322,7 +328,7 @@ static int __rrr_mqtt_acl_parse_topic_block_body (
 	int ret = 0;
 
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		int pos_orig = pos->pos;
+		rrr_length pos_orig = pos->pos;
 
 		__rrr_mqtt_acl_parse_spaces_and_comments(pos);
 
@@ -391,8 +397,8 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 			goto out;
 		}
 
-		int topic_start = 0;
-		int topic_end = 0;
+		rrr_length topic_start = 0;
+		rrr_slength topic_end = 0;
 
 		rrr_parse_non_newline(pos, &topic_start, &topic_end);
 
@@ -403,7 +409,12 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 		}
 
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
-		if (rrr_parse_str_extract(&topic_tmp, pos, topic_start, (topic_end - topic_start) + 1) != 0) {
+		if (rrr_parse_str_extract (
+				&topic_tmp,
+				pos,
+				topic_start,
+				rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(topic_end, topic_start))
+		) != 0) {
 			RRR_MSG_0("Parsing failed at line %i\n", pos->line);
 			ret = 1;
 			goto out;
@@ -455,7 +466,7 @@ int rrr_mqtt_acl_entry_collection_populate_from_file (
 	int ret = 0;
 
 	char *contents = NULL;
-	ssize_t bytes = 0;
+	rrr_biglength bytes = 0;
 
 	if ((ret = rrr_socket_open_and_read_file (
 			&contents,
@@ -469,13 +480,18 @@ int rrr_mqtt_acl_entry_collection_populate_from_file (
 		goto out;
 	}
 
-	if (contents == NULL) {
+	if (contents == NULL || bytes <= 0) {
 		RRR_MSG_0("Warning: MQTT ACL file '%s' was empty\n", filename);
+		goto out;
+	}
+	else if (bytes > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Error: MQTT ACL file '%s' was too big\n", filename);
+		ret = 1;
 		goto out;
 	}
 
 	struct rrr_parse_pos parse_pos;
-	rrr_parse_pos_init(&parse_pos, contents, bytes);
+	rrr_parse_pos_init(&parse_pos, contents, rrr_length_from_biglength_bug_const(bytes));
 
 	if ((ret = __rrr_mqtt_acl_parse_topic_blocks(collection, &parse_pos)) != 0) {
 		RRR_MSG_0("Error while parsing MQTT ACL file '%s'\n", filename);

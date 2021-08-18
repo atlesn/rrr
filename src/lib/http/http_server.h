@@ -24,8 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#include "../../../config.h"
-
 #include "http_session.h"
 #include "http_server_common.h"
 
@@ -62,7 +60,7 @@ int rrr_http_server_start_plain (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit
+		rrr_length send_chunk_count_limit
 );
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
@@ -71,7 +69,7 @@ int rrr_http_server_start_tls (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 );

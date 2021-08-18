@@ -70,9 +70,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Not used in read framework, used by others
 #define RRR_READ_CONTINUE		16
+#define RRR_READ_PERFORMED		16
 
 // Read has been ratelimited
 #define RRR_READ_RATELIMIT		32
+
+
 
 // When adding more, be sure about your powers of 2. Note that if you add more, others
 // might start using them.

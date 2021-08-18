@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
+#include "allocator.h"
 
 #include "socket/rrr_socket.h"
 #include "settings.h"
@@ -35,23 +36,23 @@ static void __rrr_settings_list_destroy (
 		struct rrr_settings_list *list
 ) {
 	if (list->data != NULL) {
-		free(list->data);
+		rrr_free(list->data);
 	}
 	if (list->list != NULL) {
-		free(list->list);
+		rrr_free(list->list);
 	}
-	free(list);
+	rrr_free(list);
 }
 
 static int __rrr_settings_init (
 		struct rrr_instance_settings *target,
-		const int count
+		const rrr_length count
 ) {
 	int ret = 0;
 
 	memset(target, '\0', sizeof(*target));
 
-	target->settings = malloc(sizeof(*(target->settings)) * count);
+	target->settings = rrr_allocate(sizeof(*(target->settings)) * count);
 	if (target->settings == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_settings_init\n");
 		ret = 1;
@@ -70,15 +71,15 @@ static int __rrr_settings_init (
 
 	goto out;
 	out_free:
-		free(target->settings);
+		rrr_free(target->settings);
 	out:
 		return ret;
 }
 
 struct rrr_instance_settings *rrr_settings_new (
-		const int count
+		const rrr_length count
 ) {
-	struct rrr_instance_settings *ret = malloc(sizeof(*ret));
+	struct rrr_instance_settings *ret = rrr_allocate(sizeof(*ret));
 
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory for module settings structure");
@@ -86,7 +87,7 @@ struct rrr_instance_settings *rrr_settings_new (
 	}
 
 	if (__rrr_settings_init(ret, count) != 0) {
-		free(ret);
+		rrr_free(ret);
 		return NULL;
 	}
 
@@ -96,7 +97,7 @@ struct rrr_instance_settings *rrr_settings_new (
 static void __rrr_settings_destroy_setting (
 		struct rrr_setting *setting
 ) {
-	free(setting->data);
+	rrr_free(setting->data);
 }
 
 void rrr_settings_destroy (
@@ -119,8 +120,8 @@ void rrr_settings_destroy (
 	pthread_mutex_unlock(&target->mutex);
 	pthread_mutex_destroy(&target->mutex);
 
-	free(target->settings);
-	free(target);
+	rrr_free(target->settings);
+	rrr_free(target);
 }
 
 static void __rrr_settings_lock (
@@ -183,10 +184,7 @@ static struct rrr_setting *__rrr_settings_reserve_nolock (
 		return NULL;
 	}
 
-	int pos = target->settings_count;
-	target->settings_count++;
-
-	ret = &target->settings[pos];
+	ret = &target->settings[rrr_length_inc_bug_old_value(&target->settings_count)];
 
 	return ret;
 }
@@ -209,13 +207,13 @@ static int __rrr_settings_add_raw (
 		struct rrr_instance_settings *target,
 		const char *name,
 		const void *old_data,
-		const int size,
+		const rrr_length size,
 		rrr_u32 type,
 		int replace_existing
 ) {
 	int ret = 0;
 
-	void *new_data = malloc(size);
+	void *new_data = rrr_allocate(size);
 
 	if (new_data == NULL) {
 		RRR_MSG_0("Could not allocate memory for setting struct\n");
@@ -293,7 +291,7 @@ static int __rrr_settings_get_string_noconvert (
 		RRR_BUG("BUG: Data string type was not null terminated in rrr_settings_get_string_noconvert\n");
 	}
 
-	char *string = malloc(setting->data_size);
+	char *string = rrr_allocate(setting->data_size);
 	if (string == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_get_string_noconvert\n");
 		ret = 1;
@@ -383,7 +381,7 @@ static int __rrr_settings_traverse_split_commas (
 
 	out:
 	if (value != NULL) {
-		free(value);
+		rrr_free(value);
 	}
 	return ret;
 }
@@ -414,7 +412,7 @@ int rrr_settings_split_commas_to_array (
 
 	*target_ptr = NULL;
 
-	struct rrr_settings_list *target = malloc(sizeof(*target));
+	struct rrr_settings_list *target = rrr_allocate(sizeof(*target));
 	if (target == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
@@ -434,23 +432,32 @@ int rrr_settings_split_commas_to_array (
 		goto out;
 	}
 
-	int length = strlen(value);
+	size_t length = strlen(value);
 
-	target->data = malloc(length + 1);
+	if (length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Value too long ing rrr_settings_split_commas_to_array (%llu)\n", (long long unsigned) length);
+		ret = 1;
+		goto out;
+	}
+
+	target->data = rrr_allocate(length + 1);
 	if (target->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
 		goto out;
 	}
 
-	int elements = 1;
-	for (int i = 0; i < length; i++) {
+	rrr_length elements = 1;
+	for (rrr_length i = 0; i < length; i++) {
 		if (value[i] == ',') {
-			elements++;
+			if ((ret = rrr_length_inc_err(&elements)) != 0) {
+				RRR_MSG_0("Too many elements in rrr_settings_split_commas_to_array\n");
+				goto out;
+			}
 		}
 	}
 
-	target->list = malloc(elements * sizeof(char*));
+	target->list = rrr_allocate(elements * sizeof(char*));
 	if (target->list == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
@@ -459,15 +466,15 @@ int rrr_settings_split_commas_to_array (
 
 	strcpy(target->data, value);
 
-	int pos = 0;
+	rrr_length pos = 0;
 	target->list[pos] = target->data;
-	pos++;
+	rrr_length_inc_bug(&pos);
 
-	for (int i = 0; i < length; i++) {
+	for (rrr_length i = 0; i < length; i++) {
 		if (target->data[i] == ',') {
 			target->data[i] = '\0';
 			if (i + 1 < length && target->data[i + 1] != '\0') {
-				target->list[pos++] = target->data + i + 1;
+				target->list[rrr_length_inc_bug_old_value(&pos)] = target->data + i + 1;
 			}
 		}
 	}
@@ -476,7 +483,7 @@ int rrr_settings_split_commas_to_array (
 
 	out:
 	if (value != NULL) {
-		free(value);
+		rrr_free(value);
 	}
 
 	if (ret != 0 && target != NULL) {
@@ -489,15 +496,31 @@ int rrr_settings_split_commas_to_array (
 	return ret;
 }
 
+static int __rrr_settings_replace_or_add_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value,
+		int do_replace
+) {
+	const void *data = value;
+	size_t length = strlen(value);
+
+	if (length > RRR_LENGTH_MAX - 1) {
+		RRR_MSG_0("Value too long in rrr_settings_replace_or_add_string\n");
+		return 1;
+	}
+
+	rrr_length size = (rrr_length) length + 1;
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, do_replace);
+}
+
 int rrr_settings_replace_string (
 		struct rrr_instance_settings *target,
 		const char *name,
 		const char *value
 ) {
-	const void *data = value;
-	int size = strlen(value) + 1;
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 1);
+	return __rrr_settings_replace_or_add_string(target, name, value, 1 /* Do replace */);
 }
 
 int rrr_settings_add_string (
@@ -505,10 +528,7 @@ int rrr_settings_add_string (
 		const char *name,
 		const char *value
 ) {
-	const void *data = value;
-	int size = strlen(value) + 1;
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 0);
+	return __rrr_settings_replace_or_add_string(target, name, value, 0 /* Do not replace */);
 }
 
 int rrr_settings_replace_unsigned_integer (
@@ -516,10 +536,7 @@ int rrr_settings_replace_unsigned_integer (
 		const char *name,
 		rrr_setting_uint value
 ) {
-	const void *data = &value;
-	int size = sizeof(rrr_setting_uint);
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 1);
+	return __rrr_settings_add_raw(target, name, &value, sizeof(value), RRR_SETTINGS_TYPE_UINT, 1);
 }
 
 int rrr_settings_add_unsigned_integer (
@@ -527,10 +544,7 @@ int rrr_settings_add_unsigned_integer (
 		const char *name,
 		rrr_setting_uint value
 ) {
-	const void *data = &value;
-	int size = sizeof(rrr_setting_uint);
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 0);
+	return __rrr_settings_add_raw(target, name, &value, sizeof(value), RRR_SETTINGS_TYPE_UINT, 0);
 }
 
 int rrr_settings_setting_to_string_nolock (
@@ -542,16 +556,24 @@ int rrr_settings_setting_to_string_nolock (
 
 	char *value;
 	if (setting->type == RRR_SETTINGS_TYPE_STRING) {
-		if ((value = malloc(setting->data_size)) == NULL) {
+		if ((value = rrr_allocate(setting->data_size + 1)) == NULL) {
 			goto out_malloc_err;
 		}
 		sprintf(value, "%s", (char*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_UINT) {
-		if ((value = malloc(RRR_SETTINGS_UINT_AS_TEXT_MAX)) == NULL) {
+		if ((value = rrr_allocate(RRR_SETTINGS_UINT_AS_TEXT_MAX)) == NULL) {
 			goto out_malloc_err;
 		}
-		sprintf(value, "%llu", *((unsigned long long *) setting->data));
+		snprintf(value, RRR_SETTINGS_UINT_AS_TEXT_MAX, "%llu", *((unsigned long long *) setting->data));
+		value[RRR_SETTINGS_UINT_AS_TEXT_MAX - 1] = '\0';
+	}
+	else if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if ((value = rrr_allocate(RRR_SETTINGS_LDBL_AS_TEXT_MAX)) == NULL) {
+			goto out_malloc_err;
+		}
+		snprintf(value, RRR_SETTINGS_LDBL_AS_TEXT_MAX, "%Lf", *((rrr_setting_double *) setting->data));
+		value[RRR_SETTINGS_LDBL_AS_TEXT_MAX - 1] = '\0';
 	}
 	else {
 		RRR_BUG("BUG: Could not convert setting of type %d to string\n", setting->type);
@@ -579,6 +601,12 @@ int rrr_settings_setting_to_uint_nolock (
 			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
 		}
 		*target = *((rrr_setting_uint*) setting->data);
+	}
+	if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if (sizeof(rrr_setting_double) != setting->data_size) {
+			RRR_BUG("BUG: Setting double size mismatch\n");
+		}
+		*target = (rrr_setting_uint) *((rrr_setting_double*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
 		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
@@ -614,7 +642,67 @@ int rrr_settings_setting_to_uint_nolock (
 
 	out:
 	if (tmp_string != NULL) {
-		free(tmp_string);
+		rrr_free(tmp_string);
+	}
+
+	return ret;
+}
+
+int rrr_settings_setting_to_double_nolock (
+		rrr_setting_double *target,
+		struct rrr_setting *setting
+) {
+	int ret = 0;
+	char *tmp_string = NULL;
+	*target = 0;
+
+	if (setting->type == RRR_SETTINGS_TYPE_UINT) {
+		if (sizeof(rrr_setting_uint) != setting->data_size) {
+			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
+		}
+		*target = (rrr_setting_double) *((rrr_setting_uint*) setting->data);
+	}
+	if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if (sizeof(rrr_setting_double) != setting->data_size) {
+			RRR_BUG("BUG: Setting double size mismatch\n");
+		}
+		*target = *((rrr_setting_double*) setting->data);
+	}
+	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
+		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
+		if (ret != 0) {
+			RRR_MSG_0("Could not get string of '%s' while converting to double\n", setting->name);
+			goto out;
+		}
+
+		// strtoull will accept negative numbers, we need to check here first
+		for (unsigned const char *pos = (unsigned const char *) tmp_string; *pos != '\0'; pos++) {
+			if ((*pos < '0' || *pos > '9') && *pos != '.') {
+				RRR_MSG_0("Unknown character '%c' in supposed double '%s'\n",
+						*pos, tmp_string);
+				ret = 1;
+				goto out;
+			}
+		}
+
+		char *end;
+		rrr_setting_double tmp = strtod(tmp_string, &end);
+
+		if (*end != '\0') {
+			ret = RRR_SETTING_PARSE_ERROR;
+			RRR_MSG_0("Syntax error while converting setting '%s' with value '%s' to double\n", setting->name, tmp_string);
+			goto out;
+		}
+
+		*target = tmp;
+	}
+	else {
+		RRR_BUG("BUG: Could not convert setting of type %d to double\n", setting->type);
+	}
+
+	out:
+	if (tmp_string != NULL) {
+		rrr_free(tmp_string);
 	}
 
 	return ret;
@@ -668,6 +756,30 @@ int rrr_settings_read_unsigned_integer (
 	return ret;
 }
 
+int rrr_settings_read_double (
+		rrr_setting_double *target,
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	int ret = 0;
+	*target = 0;
+
+	__rrr_settings_lock(settings);
+
+	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(settings, name);
+	if (setting == NULL) {
+		ret = RRR_SETTING_NOT_FOUND;
+		goto out_unlock;
+	}
+
+	ret = rrr_settings_setting_to_double_nolock (target, setting);
+
+	out_unlock:
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
 int rrr_settings_check_yesno (
 		int *result,
 		struct rrr_instance_settings *settings,
@@ -695,7 +807,7 @@ int rrr_settings_check_yesno (
 
 	out:
 	if (string != NULL) {
-		free(string);
+		rrr_free(string);
 	}
 
 	return ret;
@@ -786,7 +898,7 @@ int rrr_settings_iterate (
 
 struct rrr_settings_update_used_callback_data {
 	const char *name;
-	int was_used;
+	rrr_u32 was_used;
 	int did_update;
 };
 
@@ -810,7 +922,7 @@ static int __rrr_settings_update_used_callback (
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,
-		int was_used,
+		rrr_u32 was_used,
 		int (*iterator)(
 				struct rrr_instance_settings *settings,
 				int (*callback)(struct rrr_setting *settings, void *callback_args),
@@ -840,7 +952,7 @@ static int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_set
 		goto out;
 	}
 
-	result = malloc(sizeof(*result));
+	result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in  __rrr_setting_pack\n");
 		ret = 1;
@@ -892,7 +1004,7 @@ int rrr_settings_iterate_packed (
 
 		ret = callback(setting_packed, callback_arg);
 
-		free(setting_packed);
+		rrr_free(setting_packed);
 
 		if (ret != 0) {
 			break;

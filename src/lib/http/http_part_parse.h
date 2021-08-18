@@ -22,32 +22,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_PART_PARSE_H
 #define RRR_HTTP_PART_PARSE_H
 
-#include <stdlib.h>
-
 #include "http_common.h"
+#include "../rrr_types.h"
 
 struct rrr_http_part;
 struct rrr_nullsafe_str;
 
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
-		size_t *target_size,
-		size_t *parsed_bytes,
+		rrr_biglength *target_size,
+		rrr_biglength *parsed_bytes,
 		const char *data_ptr,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
 int rrr_http_part_parse_request_data_set (
 		struct rrr_http_part *part,
-		size_t data_length,
-		enum rrr_http_application_type protocol_version,
+		rrr_biglength data_length,
+		enum rrr_http_application_type application_type,
+		enum rrr_http_version version,
 		const struct rrr_nullsafe_str *request_method,
 		const struct rrr_nullsafe_str *uri
 );
 int rrr_http_part_parse_response_data_set (
 		struct rrr_http_part *part,
-		size_t data_length
+		rrr_biglength data_length
 );
 
 #endif /* RRR_HTTP_PART_PARSE_H */

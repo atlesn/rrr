@@ -24,15 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_common.h"
 
-#include <unistd.h>
-#include <sys/socket.h>
+#include "../rrr_types.h"
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS      \
     struct rrr_net_transport_handle *handle,                   \
     struct rrr_http_transaction *transaction,                  \
     const char *data_ptr,                                      \
-    ssize_t overshoot_bytes,                                   \
-    enum rrr_http_application_type next_protocol_version
+    rrr_biglength overshoot_bytes,                                   \
+    enum rrr_http_application_type next_application_type
 
 #define RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS  \
     struct rrr_http_transaction *transaction,                  \
@@ -52,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS   \
     const char *application_topic,                                  \
-    void **data, ssize_t *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
+    void **data, rrr_biglength *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS     \
     const char *application_topic,                             \
@@ -61,6 +60,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS             \
     RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
+    void *arg
+
+#define RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS             \
+    struct rrr_net_transport_handle *handle,                   \
+    struct rrr_http_transaction *transaction,                  \
+    const char *error_msg,                                     \
     void *arg
 
 #define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS         \
@@ -80,7 +85,7 @@ void rrr_http_application_destroy_if_not_null (
 void rrr_http_application_destroy_if_not_null_void (
 		void *app_double_ptr
 );
-uint64_t rrr_http_application_active_transaction_count_get (
+uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 		struct rrr_http_application *app
 );
 int rrr_http_application_new (
@@ -99,17 +104,18 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *user_agent,
 		const char *host,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_transaction *transaction
 );
 int rrr_http_application_transport_ctx_need_tick (
 		struct rrr_http_application *app
 );
 int rrr_http_application_transport_ctx_tick (
-		ssize_t *received_bytes,
+		rrr_biglength *received_bytes,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
+		rrr_biglength read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
@@ -122,6 +128,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 );

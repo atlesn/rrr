@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "map.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
@@ -32,7 +33,7 @@ void rrr_map_item_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(item->tag);
 	RRR_FREE_IF_NOT_NULL(item->value);
-	free(item);
+	rrr_free(item);
 }
 
 void rrr_map_clear (
@@ -43,11 +44,11 @@ void rrr_map_clear (
 
 int rrr_map_item_new (
 		struct rrr_map_item **target,
-		ssize_t field_size
+		rrr_length field_size
 ) {
 	int ret = 0;
 
-	struct rrr_map_item *item = malloc(sizeof(*item));
+	struct rrr_map_item *item = rrr_allocate(sizeof(*item));
 	if (item == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
@@ -55,8 +56,8 @@ int rrr_map_item_new (
 	}
 	memset (item, '\0', sizeof(*item));
 
-	item->tag = malloc(field_size);
-	item->value = malloc(field_size);
+	item->tag = rrr_allocate(field_size);
+	item->value = rrr_allocate(field_size);
 
 	if (item->tag == NULL || item->value == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
@@ -131,9 +132,9 @@ static int __rrr_map_item_new_with_values (
 	struct rrr_map_item *item_new = NULL;
 
 	// Remember + 1 and minimum size 1
-	size_t tag_size = (tag != NULL ? strlen(tag) + 1 : 1);
-	size_t value_size = (value != NULL ? strlen(value) + 1 : 1);
-	size_t max_size = (tag_size > value_size ? tag_size : value_size);
+	rrr_length tag_size = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) + 1 : 1);
+	rrr_length value_size = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) + 1 : 1);
+	rrr_length max_size = (tag_size > value_size ? tag_size : value_size);
 
 	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
 		goto out;
@@ -237,7 +238,7 @@ int rrr_map_parse_pair (
 	int ret = 0;
 	struct rrr_map_item *column = NULL;
 
-	ssize_t input_length = strlen(input);
+	rrr_length input_length = rrr_length_from_size_t_bug_const(strlen(input));
 
 	if ((ret = rrr_map_item_new (&column, input_length + 1)) != 0) {
 		goto out;
@@ -247,11 +248,11 @@ int rrr_map_parse_pair (
 		strcpy(column->tag, input);
 	}
 	else {
-		char *delimeter_pos = strstr(input, delimeter);
-		size_t delimeter_length = strlen(delimeter);
+		const char *delimeter_pos = strstr(input, delimeter);
+		const size_t delimeter_length = strlen(delimeter);
 
 		if (delimeter_pos != NULL) {
-			strncpy(column->tag, input, delimeter_pos - input);
+			strncpy(column->tag, input, rrr_length_from_ptr_sub_bug_const(delimeter_pos, input));
 
 			const char *pos = delimeter_pos + delimeter_length;
 			if (*pos == '\0' || pos > (input + input_length)) {

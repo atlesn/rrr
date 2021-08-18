@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../log.h"
+#include "../allocator.h"
 #include "linux.h"
 #include "../socket/rrr_socket_read.h"
 #include "../rrr_strerror.h"
@@ -61,7 +62,7 @@ int rrr_input_linux_device_read_key (
 	*is_down = 0;
 
 	struct input_event event = {0};
-	ssize_t bytes_read = 0;
+	rrr_biglength bytes_read = 0;
 	if ((ret = rrr_socket_read (
 			(char *) &event,
 			&bytes_read,

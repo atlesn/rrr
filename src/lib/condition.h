@@ -23,8 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONDITION_H
 
 #include <sys/types.h>
-#include <inttypes.h>
 
+#include "rrr_types.h"
 #include "read_constants.h"
 #include "util/linked_list.h"
 
@@ -77,7 +77,7 @@ int rrr_condition_interpret (
 int rrr_condition_interpret_raw (
 		struct rrr_condition *target,
 		const char *buf,
-		size_t buf_length
+		rrr_length buf_length
 );
 int rrr_condition_iterate (
 		const struct rrr_condition *condition,

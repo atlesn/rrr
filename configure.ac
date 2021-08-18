@@ -1,7 +1,8 @@
-AC_INIT([Read Route Record],[1.16-0])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.16-0", [Full version])
+# Even minor version = development, odd minor version = stable
+AC_INIT([Read Route Record],[1.19-0])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.19-0", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 19, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -46,7 +47,6 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
-AC_ARG_WITH([eventfd],[AS_HELP_STRING([--without-eventfd],[build without the eventfd bindings event when available])],[enable_eventfd=no],[enable_eventfd=yes])
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
@@ -89,7 +89,8 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
+# -Wconversion
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wconversion -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
 AM_LDFLAGS=""
 
 AC_SUBST(AM_CFLAGS)
@@ -115,6 +116,9 @@ AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+
+AC_CHECK_LIB(rt, shm_open, [ LIBRT_LIBADD="-lrt" ], [ LIBRT_LIBADD="" ])
+AC_SUBST([LIBRT_LIBADD])
 
 AC_CHECK_HEADER([linux/input.h], [have_linux_input=yes], [have_linux_input=no])
 AM_CONDITIONAL([RRR_WITH_LINUX_INPUT], [test "x$have_linux_input" != xno])
@@ -174,30 +178,7 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
-
-AC_MSG_CHECKING([usage of eventfd()])
-AS_IF([test "x$enable_eventfd" != "xno"], [
-	AC_MSG_RESULT([yes])
-	AC_MSG_CHECKING([precense of eventfd()])
-	AC_RUN_IFELSE([
-		AC_LANG_SOURCE([[
-			#include <sys/eventfd.h>
-
-			int main (int argc, char *argv[]) {
-				int fd = eventfd(0, 0);
-				return 0;
-			}
-		]])
-	], [
-		AC_MSG_RESULT([yes])
-		AC_DEFINE([RRR_HAVE_EVENTFD], [1], [Linux-specific eventfd() is present])
-	], [
-		AC_MSG_RESULT([no])
-	])
-], [
-	AC_MSG_RESULT([no])
-])
-
+		
 AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
@@ -305,7 +286,6 @@ AC_SUBST([TLS_LDFLAGS])
 AC_SUBST([TLS_LIBADD])
 
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
-SHELL_VARS_EXPORT([RRR_WITH_OPENSSL_CRYPT], $enable_openssl_crypt)
 SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $enable_libressl)
 SHELL_VARS_EXPORT([RRR_WITH_AUTO_SSL], $enable_auto_ssl)
 
@@ -785,6 +765,17 @@ AS_IF([test "x$enable_openrc" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+MODULE_DIR="\${exec_prefix}/lib/rrr"
+AC_MSG_CHECKING([module installation directory])
+AC_MSG_RESULT([${MODULE_DIR}])
+
+CMODULE_DIR="\${exec_prefix}/lib/rrr/cmodules"
+AC_MSG_CHECKING([cmodule installation directory])
+AC_MSG_RESULT([${CMODULE_DIR}])
+
+AC_SUBST([MODULE_DIR])
+AC_SUBST([CMODULE_DIR])
+
 # Clear all automatically added libs. Library users must specify
 # libraries locally in Makefile.am
 LIBS=""
@@ -815,3 +806,6 @@ echo "rrr: disabling libtool depedency_libs variable"
 sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
 mv libtool.new libtool
 chmod +x libtool
+
+# Copy config.h file for installation together with other headers
+cp -f config.h src/lib/rrr-build-config.h

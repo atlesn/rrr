@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_common.h"
 #include "../log.h"
+#include "../allocator.h"
 
 PyObject *rrr_py_import_object (PyObject *dictionary, const char *symbol) {
 	PyObject *res = PyDict_GetItemString(dictionary, symbol);
@@ -127,12 +128,12 @@ void rrr_py_dump_dict_entries (PyObject *dict) {
 	}
 
     PyObject *keys = PyDict_Keys(dict);
-    int n = PyList_Size(keys);
+    Py_ssize_t n = PyList_Size(keys);
 
-    for (int i = 0; i < n; i++) {
+    for (Py_ssize_t i = 0; i < n; i++) {
     	PyObject *obj = PyList_GetItem(keys, i);
     	const char *key = PyUnicode_AsUTF8(obj);
-		printf ("-> [%i]: %s\n", i, key);
+		printf ("-> [%lli]: %s\n", (long long int) i, key);
     }
 
     RRR_Py_XDECREF(keys);

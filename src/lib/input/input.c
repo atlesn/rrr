@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "input.h"
 #include "../read_constants.h"
 #include "../socket/rrr_socket.h"
@@ -48,7 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define SPECIAL_RCTRL		(1<<6)
 
 struct map {
-	int key;
+	unsigned int key;
 	const char *lower;
 	const char *upper;
 };
@@ -165,9 +166,9 @@ static const struct map map[] = {
 };
 
 static const char *__rrr_input_device_keytoc (
-	struct rrr_input_special_key_state *special_key_state,
-	int key,
-	int is_down
+		struct rrr_input_special_key_state *special_key_state,
+		unsigned int key,
+		unsigned int is_down
 ) {
 	int *flags = &special_key_state->flags_mode_active;
 	int *flags_blocked = &special_key_state->flags_blocked;

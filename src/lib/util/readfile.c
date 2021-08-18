@@ -24,7 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 
-#include "log.h"
+#include "../log.h"
+#include "../allocator.h"
 #include "readfile.h"
 #include "../rrr_types.h"
 #include "../rrr_strerror.h"
@@ -72,9 +73,10 @@ int rrr_readfile_read (
 		goto out_close;
 	}
 
-	rrr_biglength size = size_signed;
+	rrr_biglength size = (rrr_biglength) size_signed;
 	if (max_size != 0 && size > max_size) {
-		RRR_MSG_0("File %s was too big (%" PRIrrrsl " > %" PRIrrrbl ")\n", filename, size, max_size);
+		RRR_MSG_0("File %s was too big (%" PRIrrrbl " > %llu)\n",
+			filename, size, (unsigned long long) max_size);
 		ret = 1;
 		goto out_close;
 	}
@@ -85,17 +87,17 @@ int rrr_readfile_read (
 		goto out_close;
 	}
 
-	file_data = malloc(size);
+	file_data = rrr_allocate(size);
 	if (file_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_readfile_read\n");
 		ret = 1;
 		goto out_close;
 	}
 
-	size_t bytes = fread(file_data, 1, size, file);
+	size_t bytes = fread(file_data, 1, rrr_size_from_biglength_bug_const(size), file);
 	if (bytes != size) {
-		RRR_MSG_0("The whole file %s was not read (result %lu): %s\n",
-				filename, bytes, rrr_strerror(ferror(file)));
+		RRR_MSG_0("The whole file %s was not read (result %llu): %s\n",
+				filename, (long long unsigned) bytes, rrr_strerror(ferror(file)));
 		ret = 1;
 		goto out_free;
 	}
@@ -105,7 +107,7 @@ int rrr_readfile_read (
 
 	goto out_close;
 	out_free:
-		free(file_data);
+		rrr_free(file_data);
 	out_close:
 		fclose(file);
 	out:

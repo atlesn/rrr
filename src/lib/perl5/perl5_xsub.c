@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <perl.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "perl5.h"
 #include "perl5_types.h"
 #include "perl5_xsub.h"
@@ -704,7 +705,7 @@ int rrr_perl5_settings_set (HV *settings, const char *key, const char *value) {
 	return (ret == 0 ? TRUE : FALSE);
 }
 
-static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *string, int always_print) {
+static int __rrr_perl5_debug_print (HV *debug, uint8_t debuglevel, const char *string, int always_print) {
 	(void)(debug);
 
 	if (!RRR_DEBUGLEVEL_OK(debuglevel)) {
@@ -729,11 +730,11 @@ static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *strin
 	return 0;
 }
 
-int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string) {
+int rrr_perl5_debug_msg (HV *debug, uint8_t debuglevel, const char *string) {
 	return (__rrr_perl5_debug_print(debug, debuglevel, string, 1) == 0 ? TRUE : FALSE); // 1 = Always print
 }
 
-int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string) {
+int rrr_perl5_debug_dbg (HV *debug, uint8_t debuglevel, const char *string) {
 	return (__rrr_perl5_debug_print(debug, debuglevel, string, 0) == 0 ? TRUE : FALSE); // 0 = Print if debuglevel is active
 }
 

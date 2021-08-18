@@ -1,0 +1,21 @@
+This directory contains a build system to build custom RRR cmodules. 
+
+Dependencies:
+- Installed RRR library present in system library directories
+- Installed RRR binary present in PATH
+- Installed RRR headers (/usr/include/rrr files)
+- Installed autotools and compiler
+
+Notes:
+The RRR signature of RRR library functions and sizes of data structures
+may change between versions. All custom cmodules should be updated as
+needed and re-built when the library is upgraded.
+
+Preparations:
+- Copy this whole directory to somewhere else outside the RRR source tree
+- Follow instructions in the file HOWTO to create a custom module
+
+Build:
+- Run ./autogen.sh
+- Run make
+- Run make install

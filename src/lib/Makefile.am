@@ -45,7 +45,7 @@ endif
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
-librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${AM_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
@@ -53,7 +53,7 @@ endif
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
-librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS}
+librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
@@ -81,12 +81,13 @@ websocket = websocket/websocket.c
 cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
-net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
+net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
+                net_transport/net_transport_ctx.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c
+       util/increment.c util/sha256.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -113,10 +114,10 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
+librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
-                    read.c rrr_mmap.c mmap_channel.c \
+                    read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
@@ -129,14 +130,18 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
+libadd_rrr_allocator = librrr_allocator.la
+librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
+librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
+
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
-librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${AM_CFLAGS}
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_gnu = librrr_gnu.la
 librrr_gnu_la_SOURCES = util/gnu.c
-librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${AM_CFLAGS}
 librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
@@ -185,7 +190,8 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}               \
+    ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Needed by http_fields
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_fields.h"
 #include "http_util.h"
@@ -32,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../array.h"
 #include "../type.h"
-#include "../json/json.h"
+#ifdef RRR_WITH_JSONC
+#	include "../json/json.h"
+#endif
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
@@ -44,7 +47,7 @@ void rrr_http_field_destroy(struct rrr_http_field *field) {
 	if (field->value_orig != NULL) {
 		rrr_type_value_destroy(field->value_orig);
 	}
-	free(field);
+	rrr_free(field);
 }
 
 int rrr_http_field_new_no_value_raw (
@@ -56,7 +59,7 @@ int rrr_http_field_new_no_value_raw (
 
 	*target = NULL;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
@@ -82,12 +85,18 @@ int rrr_http_field_new_no_value_raw (
 
 static int __rrr_http_field_new_no_value_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_field **target = arg;
 
-	return rrr_http_field_new_no_value_raw(target, str, len);
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP field too long to save (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (long long unsigned) RRR_LENGTH_MAX);
+		return 1;
+	}
+
+	return rrr_http_field_new_no_value_raw(target, str, (rrr_length) len);
 }
 
 int rrr_http_field_new_no_value (
@@ -151,7 +160,7 @@ int rrr_http_field_collection_iterate_const (
 
 static int __rrr_http_field_collection_dump_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	(void)(arg);
@@ -195,7 +204,7 @@ void rrr_http_field_collection_dump (
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			RRR_MSG_PLAIN(" (%" PRIrrrl " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
+			RRR_MSG_PLAIN(" (%" PRIrrr_nullsafe_len " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
 			rrr_nullsafe_str_with_raw_do_const (node->value, __rrr_http_field_collection_dump_callback, NULL);
 		}
 		else {
@@ -228,7 +237,7 @@ int rrr_http_field_collection_add (
 ) {
 	int ret = 0;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;
@@ -281,7 +290,7 @@ int rrr_http_field_collection_add (
 	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, len)) != 0) { goto out; }} while(0)
 
 #define REPLACE_STR_OR_OUT(target,str) \
-	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, strlen(str))) != 0) { goto out; }} while(0)
+	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, rrr_length_from_biglength_bug_const(strlen(str)))) != 0) { goto out; }} while(0)
 
 static int __rrr_http_field_value_to_strings (
 		const struct rrr_type_value *value,
@@ -508,6 +517,7 @@ int rrr_http_field_collection_to_raw_form_data (
 	return __rrr_http_field_collection_to_form_data(target, fields, 1);
 }
 
+#ifdef RRR_WITH_JSONC
 struct rrr_http_field_collection_to_json_value_callback_data {
 	struct rrr_array *target;
 	const struct rrr_nullsafe_str *value;
@@ -558,7 +568,9 @@ int rrr_http_field_collection_to_json (
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw_allocated(target, (void **) &json_tmp, strlen(json_tmp))) != 0) {
+	size_t json_length = strlen(json_tmp);
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw_allocated(target, (void **) &json_tmp, (rrr_nullsafe_len) json_length)) != 0) {
 		goto out;
 	}
 
@@ -567,3 +579,4 @@ int rrr_http_field_collection_to_json (
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
+#endif

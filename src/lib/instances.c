@@ -20,7 +20,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <unistd.h>
-
 #include <stdlib.h>
 
 #include "log.h"
@@ -31,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "allocator.h"
 #include "event/event_functions.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
@@ -108,8 +108,8 @@ static void __rrr_instance_destroy (
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
 
-	free(target->module_data);
-	free(target);
+	rrr_free(target->module_data);
+	rrr_free(target);
 }
 
 static int __rrr_instance_new (
@@ -117,7 +117,7 @@ static int __rrr_instance_new (
 ) {
 	int ret = 0;
 
-	struct rrr_instance *instance = malloc(sizeof(*instance));
+	struct rrr_instance *instance = rrr_allocate(sizeof(*instance));
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not allocate memory for instance_metadata\n");
@@ -187,7 +187,7 @@ static struct rrr_instance *__rrr_instance_load_module_new_and_save (
 		goto out;
 	}
 
-	struct rrr_instance_module_data *module_data = malloc(sizeof(*module_data));
+	struct rrr_instance_module_data *module_data = rrr_allocate(sizeof(*module_data));
 	memset(module_data, '\0', sizeof(*module_data));
 
 	module_init_data.init(module_data);
@@ -455,7 +455,7 @@ void rrr_instance_collection_clear (
 	RRR_LL_DESTROY(target, struct rrr_instance, __rrr_instance_destroy(node));
 }
 
-unsigned int rrr_instance_collection_count (
+int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 ) {
 	if (RRR_LL_COUNT(collection) < 0) {
@@ -468,7 +468,7 @@ void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
-	free(data);
+	rrr_free(data);
 }
 
 static int __rrr_instace_runtime_data_destroy_callback (
@@ -496,7 +496,7 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 ) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
-	struct rrr_instance_runtime_data *data = malloc(sizeof(*data));
+	struct rrr_instance_runtime_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_init_thread\n");
 		return NULL;
@@ -522,7 +522,7 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 
 	goto out;
 	out_free:
-		free(data);
+		rrr_free(data);
 		data = NULL;
 	out:
 		return data;
@@ -671,7 +671,45 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 	pthread_mutex_unlock(&thread->mutex);
 }
 
-#include "fork.h"
+struct rrr_instance_count_receivers_of_self_callback_data {
+	struct rrr_instance *self;
+	rrr_length count;
+};
+
+static int __rrr_instance_count_receivers_of_self_callback (
+		struct rrr_instance *instance,
+		void *arg
+) {
+	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
+	if (instance == callback_data->self) {
+		rrr_length_inc_bug(&callback_data->count);
+	}
+	return 0;
+}
+
+static rrr_length __rrr_instance_count_receivers_of_self (
+		struct rrr_instance *self
+) {
+	struct rrr_instance_collection *instances = self->module_data->all_instances;
+
+	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
+			self,
+			0
+	};
+
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
+		if (instance != self) {
+			rrr_instance_friend_collection_iterate (
+					&instance->senders,
+					__rrr_instance_count_receivers_of_self_callback,
+					&callback_data
+			);
+		}
+	RRR_LL_ITERATE_END();
+
+	return callback_data.count;
+}
 
 static void *__rrr_instance_thread_entry_intermediate (
 		struct rrr_thread *thread
@@ -739,9 +777,9 @@ static int __rrr_instance_thread_preload_enable_duplication_as_needed (
 	int ret = 0;
 
 	if (INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DUPLICATE) {
-		int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
+		rrr_length slots = __rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
 
-		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %i readers detected\n",
+		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %" PRIrrrl " readers detected\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), slots);
 
 		if ((ret = rrr_message_broker_setup_split_output_buffer (
@@ -836,7 +874,7 @@ static int __rrr_instance_collection_start_threads_check_wait_for_callback (
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
-		struct rrr_config *global_config,
+		struct rrr_instance_config_collection *config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
@@ -873,7 +911,7 @@ int rrr_instances_create_and_start_threads (
 		init_data.module = instance->module_data;
 		init_data.senders = &instance->senders;
 		init_data.cmd_data = cmd;
-		init_data.global_config = global_config;
+		init_data.global_config = config;
 		init_data.instance_config = instance->config;
 		init_data.stats = stats;
 		init_data.message_broker = message_broker;
@@ -948,23 +986,24 @@ int rrr_instances_create_and_start_threads (
 		return ret;
 }
 
-int rrr_instance_create_from_config (
+int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
-		struct rrr_config *config,
+		struct rrr_instance_config_collection *config,
 		const char **library_paths
 ) {
 	int ret = 0;
-	for (int i = 0; i < config->module_count; i++) {
-		ret = rrr_instance_load_and_save(instances, config->configs[i], library_paths);
+
+	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
+		ret = rrr_instance_load_and_save(instances, node, library_paths);
 		if (ret != 0) {
 			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",
-					config->configs[i]->name);
+					node->name);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {
 				RRR_MSG_0("-> %s\n", library_paths[j]);
 			}
 			goto out;
 		}
-	}
+	RRR_LL_ITERATE_END();
 
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
@@ -998,48 +1037,8 @@ int rrr_instance_create_from_config (
 	return ret;
 }
 
-struct rrr_instance_count_receivers_of_self_callback_data {
-	struct rrr_instance *self;
-	int count;
-};
-
-static int __rrr_instance_count_receivers_of_self_callback (
-		struct rrr_instance *instance,
-		void *arg
-) {
-	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
-	if (instance == callback_data->self) {
-		callback_data->count++;
-	}
-	return 0;
-}
-
-int rrr_instance_count_receivers_of_self (
-		struct rrr_instance *self
-) {
-	struct rrr_instance_collection *instances = self->module_data->all_instances;
-
-	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
-			self,
-			0
-	};
-
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		struct rrr_instance *instance = node;
-		if (instance != self) {
-			rrr_instance_friend_collection_iterate (
-					&instance->senders,
-					__rrr_instance_count_receivers_of_self_callback,
-					&callback_data
-			);
-		}
-	RRR_LL_ITERATE_END();
-
-	return callback_data.count;
-}
-
 int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-		int *delivery_entry_count,
+		unsigned int *delivery_entry_count,
 		int *delivery_ratelimit_active,
 		struct rrr_instance_runtime_data *thread_data
 ) {

@@ -27,12 +27,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/poll_helper.h"
-#include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages/msg_msg.h"
@@ -93,7 +93,7 @@ static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, buffer_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, buffer_poll_callback);
 }
 
 static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config_data *config) {

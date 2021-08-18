@@ -17,6 +17,8 @@
 #include <string.h>
 
 #include "base64.h"
+#include "../allocator.h"
+#include "../rrr_types.h"
 
 static const unsigned char base64_table[65] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -33,12 +35,12 @@ static const unsigned char base64_table[65] =
  * nul terminated to make it easier to use as a C string. The nul terminator is
  * not included in out_len.
  */
-unsigned char * rrr_base64_encode(const unsigned char *src, size_t len,
-			      size_t *out_len)
+unsigned char * rrr_base64_encode(const unsigned char *src, rrr_biglength len,
+			      rrr_biglength *out_len)
 {
 	unsigned char *out, *pos;
 	const unsigned char *end, *in;
-	size_t olen;
+	rrr_biglength olen;
 	int line_len;
 
 	olen = len * 4 / 3 + 4; /* 3-byte blocks to 4-byte */
@@ -46,7 +48,7 @@ unsigned char * rrr_base64_encode(const unsigned char *src, size_t len,
 	olen++; /* nul termination */
 	if (olen < len)
 		return NULL; /* integer overflow */
-	out = malloc(olen);
+	out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -86,7 +88,7 @@ unsigned char * rrr_base64_encode(const unsigned char *src, size_t len,
 
 	*pos = '\0';
 	if (out_len)
-		*out_len = pos - out;
+		*out_len = (rrr_biglength) (pos - out);
 	return out;
 }
 
@@ -101,11 +103,11 @@ unsigned char * rrr_base64_encode(const unsigned char *src, size_t len,
  *
  * Caller is responsible for freeing the returned buffer.
  */
-unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
-			      size_t *out_len)
+unsigned char * rrr_base64_decode(const unsigned char *src, rrr_biglength len,
+			      rrr_biglength *out_len)
 {
 	unsigned char dtable[256], *out, *pos, block[4], tmp;
-	size_t i, count, olen;
+	rrr_biglength i, count, olen;
 	int pad = 0;
 
 	memset(dtable, 0x80, 256);
@@ -123,7 +125,7 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 		return NULL;
 
 	olen = count / 4 * 3;
-	pos = out = malloc(olen);
+	pos = out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -138,9 +140,9 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 		block[count] = tmp;
 		count++;
 		if (count == 4) {
-			*pos++ = (block[0] << 2) | (block[1] >> 4);
-			*pos++ = (block[1] << 4) | (block[2] >> 2);
-			*pos++ = (block[2] << 6) | block[3];
+			*pos++ = (unsigned char) ((block[0] << 2) | (block[1] >> 4));
+			*pos++ = (unsigned char) ((block[1] << 4) | (block[2] >> 2));
+			*pos++ = (unsigned char) ((block[2] << 6) | block[3]);
 			count = 0;
 			if (pad) {
 				if (pad == 1)
@@ -149,7 +151,7 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 					pos -= 2;
 				else {
 					/* Invalid padding */
-					free(out);
+					rrr_free(out);
 					return NULL;
 				}
 				break;
@@ -157,7 +159,7 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 		}
 	}
 
-	*out_len = pos - out;
+	*out_len = (rrr_biglength) (pos - out);
 	return out;
 }
 
@@ -167,19 +169,19 @@ static const unsigned char base64url_table[65] =
 /*
  * Same as above function but base64url scheme is used (no newlines, no =, and +/ becomes -_)
  */
-unsigned char *rrr_base64url_encode(const unsigned char *src, size_t len,
-			      size_t *out_len)
+unsigned char *rrr_base64url_encode(const unsigned char *src, rrr_biglength len,
+			      rrr_biglength *out_len)
 {
 	unsigned char *out, *pos;
 	const unsigned char *end, *in;
-	size_t olen;
+	rrr_biglength olen;
 
 	olen = len * 4 / 3 + 4; /* 3-byte blocks to 4-byte */
 	olen += olen / 72; /* line feeds */
 	olen++; /* nul termination */
 	if (olen < len)
 		return NULL; /* integer overflow */
-	out = malloc(olen);
+	out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -207,15 +209,15 @@ unsigned char *rrr_base64url_encode(const unsigned char *src, size_t len,
 
 	*pos = '\0';
 	if (out_len)
-		*out_len = pos - out;
+		*out_len = (rrr_biglength) (pos - out);
 	return out;
 }
 
-unsigned char *rrr_base64url_decode(const unsigned char *src, size_t len,
-			      size_t *out_len)
+unsigned char *rrr_base64url_decode(const unsigned char *src, rrr_biglength len,
+			      rrr_biglength *out_len)
 {
 	unsigned char dtable[256], *out, *pos, block[4], tmp;
-	size_t i, count, olen;
+	rrr_biglength i, count, olen;
 
 	memset(dtable, 0x80, 256);
 	for (i = 0; i < sizeof(base64url_table) - 1; i++)
@@ -231,7 +233,7 @@ unsigned char *rrr_base64url_decode(const unsigned char *src, size_t len,
 		return NULL;
 
 	olen = count / 4 * 3;
-	pos = out = malloc(olen);
+	pos = out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -244,13 +246,13 @@ unsigned char *rrr_base64url_decode(const unsigned char *src, size_t len,
 		block[count] = tmp;
 		count++;
 		if (count == 4) {
-			*pos++ = (block[0] << 2) | (block[1] >> 4);
-			*pos++ = (block[1] << 4) | (block[2] >> 2);
-			*pos++ = (block[2] << 6) | block[3];
+			*pos++ = (unsigned char) ((block[0] << 2) | (block[1] >> 4));
+			*pos++ = (unsigned char) ((block[1] << 4) | (block[2] >> 2));
+			*pos++ = (unsigned char) ((block[2] << 6) | block[3]);
 			count = 0;
 		}
 	}
 
-	*out_len = pos - out;
+	*out_len = (rrr_biglength) (pos - out);
 	return out;
 }

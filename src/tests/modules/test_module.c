@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../../lib/log.h"
+#include "../../lib/allocator.h"
 
 #include "type_array.h"
 #include "../test.h"
@@ -93,7 +94,8 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	int ret = 0;
 	data_init(data);
 
-	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %llu\n",
+		thread_data, (long long unsigned) sizeof(*data));
 
 	pthread_cleanup_push(data_cleanup, data);
 
@@ -163,7 +165,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 
 	if (data->exit_delay_ms > 0) {
 		TEST_MSG("Exit delay configured, %" PRIrrrbl " ms\n", data->exit_delay_ms);
-		rrr_posix_usleep(data->exit_delay_ms * 1000);
+		rrr_posix_usleep(rrr_size_from_biglength_bug_const(data->exit_delay_ms * 1000));
 	}
 
 	/* We exit without looping which also makes the other loaded modules exit */

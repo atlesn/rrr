@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_message.h"
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../settings.h"
 #include "../read.h"
 #include "../socket/rrr_socket.h"
@@ -104,7 +105,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	}
 
 
-	rrr_msg_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
+	rrr_msg_addr_init_head(&message_addr, (rrr_u32) RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
 
 	// socket_send always handles memory of message
 	if ((ret = rrr_python3_socket_send(self, message, &message_addr)) != 0) {
@@ -238,6 +239,6 @@ int rrr_python3_socket_send (
 	}
 
 	pthread_mutex_unlock(&socket_data->send_lock);
-	free(message);
+	rrr_free(message);
 	return ret;
 }

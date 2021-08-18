@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "msg_addr.h"
 #include "msg.h"
 #include "../ip/ip_util.h"
@@ -35,7 +36,7 @@ int rrr_msg_addr_to_host (struct rrr_msg_addr *msg) {
 	return 0;
 }
 
-void rrr_msg_addr_init_head (struct rrr_msg_addr *target, uint64_t addr_len) {
+void rrr_msg_addr_init_head (struct rrr_msg_addr *target, rrr_u32 addr_len) {
 	rrr_msg_populate_head (
 			(struct rrr_msg *) target,
 			RRR_MSG_TYPE_MESSAGE_ADDR,
@@ -53,7 +54,7 @@ void rrr_msg_addr_init (struct rrr_msg_addr *target) {
 int rrr_msg_addr_new (struct rrr_msg_addr **target) {
 	*target = NULL;
 
-	struct rrr_msg_addr *result = malloc(sizeof(*result));
+	struct rrr_msg_addr *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memorty in rrr_msg_addr_new");
 		return 1;
@@ -88,7 +89,7 @@ int rrr_msg_addr_clone (
 
 void rrr_msg_addr_to_str (
 		char *target,
-		size_t target_size,
+		rrr_biglength target_size,
 		const struct rrr_msg_addr *msg
 ) {
 	rrr_ip_to_str (target, target_size, (const struct sockaddr *) msg->addr, sizeof(msg->addr));

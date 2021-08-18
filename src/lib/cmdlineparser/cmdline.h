@@ -2,7 +2,7 @@
 
 Command Line Parser
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdline_defines.h"
 
-#include "../../../config.h"
 #include "../util/linked_list.h"
 
 struct cmd_arg_value {
@@ -48,12 +47,12 @@ struct cmd_data {
 
 	const struct cmd_arg_rule *rules;
 
-	int argc;
+	cmd_arg_count argc;
 	const char **argv;
 };
 
 struct cmd_argv_copy {
-	int argc;
+	cmd_arg_count argc;
 	char **argv;
 };
 
@@ -102,7 +101,7 @@ int cmd_convert_uint64_10 (
 );
 int cmd_convert_integer_10 (
 		const char *value,
-		int *result
+		long int *result
 );
 int cmd_convert_float (
 		const char *value,

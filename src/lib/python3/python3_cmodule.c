@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "util/rrr_time.h"
+#include "../util/rrr_time.h"
 
 #include <string.h>
 #include <fcntl.h>
@@ -40,12 +40,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_socket.h"
 #include "../array.h"
 #include "../settings.h"
-#include "../buffer.h"
 #include "../fork.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../socket/rrr_socket.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
@@ -152,7 +152,7 @@ static int __rrr_py_get_rrr_objects (
 	int ret = 0;
 
 	// FIX IMPORT PATHS AND IMPORT STUFF. INITIALIZE GLOBAL OBJECTS.
-	int module_paths_total_size = 0;
+	size_t module_paths_total_size = 0;
 	for (int i = 0; i < module_paths_length; i++) {
 		module_paths_total_size += strlen(extra_module_paths[i]) + strlen("sys.path.append('')\n");
 	}
@@ -192,7 +192,7 @@ static int __rrr_py_get_rrr_objects (
 //			"from rrr_helper import *\n"
 	;
 
-	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
+	rrr_py_import_final = rrr_allocate(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
 	sprintf(rrr_py_import_final, rrr_py_import_template, extra_module_paths_concat);
 
 	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);

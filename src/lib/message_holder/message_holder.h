@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,7 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_HOLDER_H
 
 #include <sys/socket.h>
-#include <stdint.h>
+
+#include "../rrr_types.h"
 
 struct rrr_msg_holder;
 
@@ -38,6 +39,14 @@ void rrr_msg_holder_unlock (
 );
 void rrr_msg_holder_unlock_void (
 		void *entry
+);
+void rrr_msg_holder_private_data_clear (
+		struct rrr_msg_holder *entry
+);
+void rrr_msg_holder_private_data_set (
+		struct rrr_msg_holder *entry,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
 );
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
@@ -59,10 +68,10 @@ void rrr_msg_holder_decref_void (
 );
 int rrr_msg_holder_new (
 		struct rrr_msg_holder **result,
-		ssize_t data_length,
+		rrr_biglength data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		void *message
 );
 int rrr_msg_holder_clone_no_data (
@@ -72,15 +81,15 @@ int rrr_msg_holder_clone_no_data (
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length
+		rrr_biglength message_data_length
 );
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 );
 int rrr_msg_holder_address_matches (
 		const struct rrr_msg_holder *a,

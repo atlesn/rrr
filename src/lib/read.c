@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
+#include "allocator.h"
 #include "messages/msg_msg.h"
 #include "messages/msg_addr.h"
 #include "messages/msg_log.h"
@@ -37,11 +38,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 
+#define RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD  2 * 1024 * 1024
+#define RRR_READ_BIGALLOC_STEP                   1 * 1024 * 1024
+
 struct rrr_read_session *rrr_read_session_new (
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
-	struct rrr_read_session *read_session = malloc(sizeof(*read_session));
+	struct rrr_read_session *read_session = rrr_allocate(sizeof(*read_session));
 	if (read_session == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
@@ -49,7 +53,8 @@ struct rrr_read_session *rrr_read_session_new (
 	memset(read_session, '\0', sizeof(*read_session));
 
 	if (src_addr_len > sizeof(read_session->src_addr)) {
-		RRR_BUG("BUG: Address too long (%u>%lu) in rrr_read_session_new\n", src_addr_len, sizeof(read_session->src_addr));
+		RRR_BUG("BUG: Address too long (%u>%llu) in rrr_read_session_new\n",
+			src_addr_len, (long long unsigned) sizeof(read_session->src_addr));
 	}
 
 	read_session->last_read_time = rrr_time_get_64();
@@ -62,8 +67,8 @@ struct rrr_read_session *rrr_read_session_new (
 int rrr_read_session_cleanup (
 		struct rrr_read_session *read_session
 ) {
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
-	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
 	return 0;
 }
 
@@ -71,7 +76,7 @@ int rrr_read_session_destroy (
 		struct rrr_read_session *read_session
 ) {
 	rrr_read_session_cleanup(read_session);
-	free(read_session);
+	rrr_free(read_session);
 	return 0;
 }
 
@@ -166,12 +171,12 @@ void rrr_read_session_collection_remove_session (
 
 int rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		struct rrr_read_session *read_session_ratelimit,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -182,8 +187,8 @@ int rrr_read_message_using_callbacks (
 		),
 		int (*function_read) (
 				char *buf,
-				ssize_t *read_bytes,
-				ssize_t read_step_max_size,
+				rrr_biglength *read_bytes,
+				rrr_biglength read_step_max_size,
 				void *private_arg
 		),
 		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
@@ -207,7 +212,7 @@ int rrr_read_message_using_callbacks (
 
 	*bytes_read = 0;
 
-	ssize_t bytes = 0;
+	rrr_biglength bytes = 0;
 	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
 
@@ -226,8 +231,11 @@ int rrr_read_message_using_callbacks (
 				read_session_ratelimit->ratelimit_bytes = 0;
 			}
 			else if (read_session_ratelimit->ratelimit_bytes > ratelimit_max_bytes) {
-				RRR_DBG_7("Read ratelimited %lli > %lli within %" PRIu64 " us\n",
-					(long long int) read_session_ratelimit->ratelimit_bytes, (long long int) ratelimit_max_bytes, ratelimit_interval_us);
+				RRR_DBG_7("Read ratelimited %llu > %llu within %" PRIu64 " us\n",
+					(long long unsigned) read_session_ratelimit->ratelimit_bytes,
+					(long long unsigned) ratelimit_max_bytes,
+					ratelimit_interval_us
+				);
 				ret = RRR_READ_RATELIMIT;
 				goto out;
 			}
@@ -319,7 +327,8 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
+			RRR_SIZE_CHECK(bytes,"Read buffer too big A",ret = RRR_READ_SOFT_ERROR; goto out);
+			read_session->rx_buf_ptr = rrr_allocate_group((size_t) (bytes > read_step_max_size ? bytes : read_step_max_size), RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
 				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -338,12 +347,26 @@ int rrr_read_message_using_callbacks (
 
 	/* Check for expansion of buffer */
 	if (bytes > 0) {
-		*bytes_read = bytes;
+		*bytes_read = (uint64_t) bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
-			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
+			rrr_biglength expansion_max = read_session->target_size > RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD && read_step_max_size < RRR_READ_BIGALLOC_STEP
+				? RRR_READ_BIGALLOC_STEP
+				: read_step_max_size;
+
+			if (read_session->rx_buf_size + expansion_max > read_session->target_size) {
+				expansion_max = 0;
+			}
+
+			rrr_biglength new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
+
+			RRR_SIZE_CHECK(new_size,"Read buffer too big B",ret = RRR_READ_SOFT_ERROR; goto out);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
+
 			if (new_buf == NULL) {
-				RRR_MSG_0("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in rrr_read_message_using_callbacks\n",
+					(long long unsigned) read_session->rx_buf_size,
+					(long long unsigned) new_size
+				);
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -351,14 +374,14 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_buf_size = new_size;
 		}
 
-		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
+		rrr_memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
 		read_session->rx_buf_wpos += bytes;
 		read_session->last_read_time = rrr_time_get_64();
 	}
 
 	/* Check for max bytes read */
 	if (read_max_size > 0 && read_session->rx_buf_wpos > read_max_size) {
-		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%li>%li)\n",
+		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%" PRIrrrbl ">%" PRIrrrbl ")\n",
 				read_session->rx_buf_wpos, read_max_size);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -385,26 +408,24 @@ int rrr_read_message_using_callbacks (
 
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
-			if (read_session->rx_buf_skip < 0) {
-				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_read_message_using_callbacks\n");
-			}
+			RRR_DBG_7("Aligning buffer, skipping %" PRIrrrbl " bytes while reading from socket\n",
+				read_session->rx_buf_skip);
 
-			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
-
-			char *new_buf = malloc(read_session->rx_buf_size);
+			RRR_SIZE_CHECK(read_session->rx_buf_size,"Read buffer too big C",ret = RRR_READ_SOFT_ERROR; goto out);
+			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
-			memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, read_session->rx_buf_wpos - read_session->rx_buf_skip);
+			rrr_memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, read_session->rx_buf_wpos - read_session->rx_buf_skip);
 
 			// Put new buffer into overshoot so that it is picked up again
 			// in the next read loop
 			read_session->rx_overshoot = new_buf;
 			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
-			free(read_session->rx_buf_ptr);
+			rrr_free(read_session->rx_buf_ptr);
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
@@ -432,14 +453,15 @@ int rrr_read_message_using_callbacks (
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
 		read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
+		RRR_SIZE_CHECK(read_session->rx_overshoot_size,"Read buffer too big D",ret = RRR_READ_SOFT_ERROR; goto out);
+		read_session->rx_overshoot = rrr_allocate_group(read_session->rx_overshoot_size, RRR_ALLOCATOR_GROUP_MSG);
 		if (read_session->rx_overshoot == NULL) {
 			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;
 			goto out;
 		}
 
-		memcpy(read_session->rx_overshoot, read_session->rx_buf_ptr + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+		rrr_memcpy(read_session->rx_overshoot, read_session->rx_buf_ptr + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 	}
 
 	if (read_session->rx_buf_wpos == read_session->target_size && read_session->target_size > 0) {
@@ -451,7 +473,7 @@ int rrr_read_message_using_callbacks (
 				goto out;
 			}
 
-			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+			RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 			read_session->target_size = 0;
 			read_session->read_complete_method = 0;
@@ -475,9 +497,9 @@ int rrr_read_message_using_callbacks (
 }
 
 int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
-		ssize_t *result,
+		rrr_biglength *result,
 		void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		void *arg
 ) {
 	if (arg != NULL) {
@@ -486,11 +508,18 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	*result = 0;
 
+	if (data_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Message target length too long in rrr_read_common_get_session_target_length_from_message_and_checksum_raw (%llu>%llu)\n",
+			(unsigned long long) data_size,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
+
 	rrr_length target_size = 0;
 	int ret = rrr_msg_get_target_size_and_check_checksum(
 			&target_size,
 			(struct rrr_msg *) data,
-			data_size
+			(rrr_length) data_size
 	);
 
 	if (ret != 0) {
@@ -499,15 +528,6 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		}
 		goto out;
 	}
-
-#if RRR_LENGTH_MAX > SSIZE_MAX
-	if (target_size > SSIZE_MAX) {
-		RRR_MSG_0("Target size exceeded in rrr_read_common_get_session_target_length_from_message_and_checksum_raw: %" PRIrrrl ">%ld",
-				target_size, SSIZE_MAX);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-#endif
 
 	*result = target_size;
 
@@ -556,15 +576,20 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	const char *pos_max = (data->message_max_size != 0 ? read_session->rx_buf_ptr + data->message_max_size : NULL);
 	char *pos = read_session->rx_buf_ptr;
-	rrr_slength wpos = read_session->rx_buf_wpos;
 
-//	printf ("Array wpos: %li\n", wpos);
+	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Array data too long in rrr_read_common_get_session_target_length_from_array_tree (%llu>%llu)\n",
+			(unsigned long long) read_session->rx_buf_wpos,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
 
-	ssize_t import_length = 0;
+	const rrr_length wpos = (rrr_length) read_session->rx_buf_wpos;
+	rrr_length import_length = 0;
 
 	while (wpos > 0) {
 		if (pos_max != NULL && pos > pos_max) {
-			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%u)\n",
+			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrl ">%u)\n",
 					wpos, data->message_max_size);
 			return RRR_READ_SOFT_ERROR;
 		}
@@ -579,7 +604,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 		);
 
 		if (ret == 0) {
-			if (import_length <= 0) {
+			if (import_length == 0) {
 				RRR_MSG_0("Warning: Array definition produced a length of zero, possible configuration error. Check REWIND usage.\n");
 				return RRR_READ_SOFT_ERROR;
 			}

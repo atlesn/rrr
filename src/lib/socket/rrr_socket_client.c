@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_common.h"
@@ -54,7 +55,7 @@ struct rrr_socket_client_collection {
 	struct rrr_event_queue *queue;
 
 	// Called when a chunk is successfully sent or a client is destroyed with unsent data (if set)
-	void (*chunk_send_notify_callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg);
+	void (*chunk_send_notify_callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg);
 	void *chunk_send_notify_callback_arg;
 
 	// Called when a client FD is closed for whatever reason (if set)
@@ -62,7 +63,7 @@ struct rrr_socket_client_collection {
 	void *client_fd_close_callback_arg;
 
 	// Common settings
-	ssize_t read_step_max_size;
+	rrr_biglength read_step_max_size;
 	int read_flags_socket;
 
 	// Settings for array reading
@@ -164,7 +165,7 @@ static int __rrr_socket_client_fd_destroy (
 		rrr_socket_close(client_fd->fd);
 	}
 	RRR_FREE_IF_NOT_NULL(client_fd->addr_string);
-	free(client_fd);
+	rrr_free(client_fd);
 	return 0;
 }
 
@@ -179,7 +180,7 @@ static int __rrr_socket_client_fd_new (
 ) {
 	int ret = 0;
 
-	struct rrr_socket_client_fd *client_fd = malloc(sizeof(*client_fd));
+	struct rrr_socket_client_fd *client_fd = rrr_allocate(sizeof(*client_fd));
 	if (client_fd == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_fd_new\n");
 		ret = 1;
@@ -187,7 +188,7 @@ static int __rrr_socket_client_fd_new (
 	}
 
 	if (addr_string != NULL) {
-		if ((client_fd->addr_string = strdup(addr_string)) == NULL) {
+		if ((client_fd->addr_string = rrr_strdup(addr_string)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for address string in __rrr_socket_client_fd_new\n");
 			ret = 1;
 			goto out_free;
@@ -213,15 +214,15 @@ static int __rrr_socket_client_fd_new (
 
 	goto out;
 	out_free:
-		free(client_fd);
+		rrr_free(client_fd);
 	out:
 		return ret;
 }
 
 static void __rrr_socket_client_chunk_send_notify_success_callback (
 		const void *data,
-		ssize_t data_size,
-		ssize_t data_pos,
+		rrr_biglength data_size,
+		rrr_biglength data_pos,
 		void *chunk_private_data,
 		void *arg
 ) {
@@ -240,8 +241,8 @@ static void __rrr_socket_client_chunk_send_notify_success_callback (
 
 static void __rrr_socket_client_chunk_send_notify_fail_callback (
 		const void *data,
-		ssize_t data_size,
-		ssize_t data_pos,
+		rrr_biglength data_size,
+		rrr_biglength data_pos,
 		void *chunk_private_data,
 		void *arg
 ) {
@@ -281,7 +282,7 @@ static int __rrr_socket_client_destroy_dangerous (
 		rrr_socket_send_chunk_collection_clear(&client->send_chunks);
 	}
 	rrr_read_session_collection_clear(&client->read_sessions);
-	free(client);
+	rrr_free(client);
 	return 0;
 }
 
@@ -341,7 +342,7 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 
 	ret = __rrr_socket_client_private_data_create_as_needed(client);
 
-	if (RRR_LL_COUNT(&client->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) > 0) {
 		__rrr_socket_client_send_push_notify(client);
 	}
 
@@ -357,7 +358,7 @@ static int __rrr_socket_client_new_and_add (
 
 	*result = NULL;
 
-	struct rrr_socket_client *client = malloc (sizeof(*client));
+	struct rrr_socket_client *client = rrr_allocate (sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_new\n");
 		ret = 1;
@@ -402,7 +403,7 @@ void rrr_socket_client_collection_destroy (
 ) {
 	__rrr_socket_client_collection_clear(collection);
 	RRR_FREE_IF_NOT_NULL(collection->creator);
-	free(collection);
+	rrr_free(collection);
 }
 
 static void __rrr_socket_client_collection_find_and_destroy (
@@ -445,14 +446,14 @@ static int __rrr_socket_client_collection_new (
 
 	struct rrr_socket_client_collection *collection = NULL;
 
-	if ((collection = malloc(sizeof(*collection))) == NULL) {
+	if ((collection = rrr_allocate(sizeof(*collection))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	memset(collection, '\0', sizeof(*collection));
-	if ((collection->creator = strdup(creator)) == NULL) {
+	if ((collection->creator = rrr_strdup(creator)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for creator in rrr_socket_client_collection_init\n");
 		goto out_free;
 	}
@@ -465,7 +466,7 @@ static int __rrr_socket_client_collection_new (
 
 	goto out;
 	out_free:
-		free(collection);
+		rrr_free(collection);
 	out:
 		return ret;
 }
@@ -486,7 +487,7 @@ int rrr_socket_client_collection_count (
 
 void rrr_socket_client_collection_send_chunk_iterate (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*callback)(int *do_remove, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 ) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
@@ -601,7 +602,9 @@ static void __rrr_socket_client_return_value_process (
 		client->last_seen = rrr_time_get_64();
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
-		if (client->last_seen < timeout) {
+		if ((client->last_seen < timeout) &&
+		    (client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT && client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+		) {
 			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
 		}
@@ -741,7 +744,7 @@ static void __rrr_socket_client_event_write (
 		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
 	}
 
-	if (RRR_LL_COUNT(&client->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) > 0) {
 		TIMEOUT_UPDATE();
 	}
 
@@ -752,7 +755,7 @@ static void __rrr_socket_client_event_write (
 		goto destroy;
 	}
 
-	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) == 0) {
 		EVENT_REMOVE(client->connected_fd->event_write);
 		if (client->close_when_send_complete) {
 			RRR_DBG_7("Disconnecting fd %i in client collection as close when send complete is set and send buffer is empty\n",
@@ -909,22 +912,22 @@ static void __rrr_socket_client_event_read_ignore (
 	TIMEOUT_UPDATE();
 
 	char buf[1024];
-	ssize_t read_bytes = 0;
+	rrr_biglength read_bytes = 0;
 	struct sockaddr_storage addr;
 	socklen_t addr_len = sizeof(addr);
 
 	__rrr_socket_client_return_value_process (
-		collection,
-		client,
-		rrr_socket_read (
-			buf,
-			&read_bytes,
-			fd,
-			sizeof(buf),
-			(struct sockaddr *) &addr,
-			&addr_len,
-			collection->read_flags_socket
-		)
+			collection,
+			client,
+			rrr_socket_read (
+					buf,
+					&read_bytes,
+					fd,
+					sizeof(buf),
+					(struct sockaddr *) &addr,
+					&addr_len,
+					collection->read_flags_socket
+			)
 	);
 
 	if (read_bytes > 0) {
@@ -1111,10 +1114,10 @@ static int __rrr_socket_client_collection_connected_fd_push (
 }
 
 static int __rrr_socket_client_send_push (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		void **data,
-		ssize_t data_size
+		rrr_biglength data_size
 ) {
 	int ret = 0;
 
@@ -1126,7 +1129,8 @@ static int __rrr_socket_client_send_push (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
-			data_size
+			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1138,10 +1142,10 @@ static int __rrr_socket_client_send_push (
 }
 
 static int __rrr_socket_client_send_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		const void *data,
-		ssize_t data_size
+		rrr_biglength data_size
 ) {
 	int ret = 0;
 
@@ -1153,7 +1157,8 @@ static int __rrr_socket_client_send_push_const (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
-			data_size
+			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1165,10 +1170,10 @@ static int __rrr_socket_client_send_push_const (
 }
 
 static int __rrr_socket_client_send_push_const_with_private_data (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
@@ -1184,6 +1189,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 			&client->send_chunks,
 			data,
 			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
 			chunk_private_data_new,
 			chunk_private_data_arg,
 			chunk_private_data_destroy
@@ -1198,12 +1204,12 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 }
 
 static int __rrr_socket_client_sendto_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
@@ -1221,6 +1227,7 @@ static int __rrr_socket_client_sendto_push_const (
 			addr_len,
 			data,
 			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
 			chunk_private_data_new,
 			chunk_private_data_arg,
 			chunk_private_data_destroy
@@ -1265,11 +1272,11 @@ void rrr_socket_client_collection_close_outbound_when_send_complete (
 }
 
 void rrr_socket_client_collection_send_push_const_multicast (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const void *data,
-		ssize_t size,
-		int send_chunk_limit
+		rrr_biglength size,
+		rrr_length send_chunk_limit
 ) {
 	*send_chunk_count = 0;
 
@@ -1278,7 +1285,7 @@ void rrr_socket_client_collection_send_push_const_multicast (
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		int count_tmp = 0;
+		rrr_length count_tmp = 0;
 		int ret_tmp;
 		if ((ret_tmp = __rrr_socket_client_send_push_const (&count_tmp, node, data, size)) != 0) {
 			RRR_DBG_7("Send failed with return value %i during multicast send, destroying client\n", ret_tmp);
@@ -1345,11 +1352,11 @@ static struct rrr_socket_client *__rrr_socket_client_collection_find_by_fd (
 }
 
 int rrr_socket_client_collection_send_push (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		void **data,
-		ssize_t data_size
+		rrr_biglength data_size
 ) {
 	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
 
@@ -1366,11 +1373,11 @@ int rrr_socket_client_collection_send_push (
 }
 
 int rrr_socket_client_collection_send_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const void *data,
-		ssize_t data_size
+		rrr_biglength data_size
 ) {
 	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
 
@@ -1469,12 +1476,12 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 }
 
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
@@ -1600,7 +1607,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 		rrr_socket_close(tmp_fd);
 	}
 	for (size_t i = 0; i < address_count; i++) {
-		free(addresses[i]);
+		rrr_free(addresses[i]);
 	}
 	RRR_FREE_IF_NOT_NULL(addresses);
 	RRR_FREE_IF_NOT_NULL(address_lengths);
@@ -1611,11 +1618,11 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 }
 
 int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const char *addr_string,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
@@ -1662,13 +1669,13 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 }
 
 int rrr_socket_client_collection_sendto_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
@@ -1776,7 +1783,7 @@ int rrr_socket_client_collection_listen_fd_push (
 
 static void __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_flags_socket,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -1814,7 +1821,7 @@ int rrr_socket_client_collection_connected_fd_push (
 
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg),
+		void (*callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg),
 		void *callback_arg
 ) {
 	collection->chunk_send_notify_callback = callback;
@@ -1835,7 +1842,7 @@ void rrr_socket_client_collection_event_setup (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_flags_socket,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
@@ -1863,7 +1870,7 @@ void rrr_socket_client_collection_event_setup_raw (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -1894,7 +1901,7 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int read_flags_socket,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		unsigned int message_max_size,
 		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
 		void *array_callback_arg
