@@ -292,11 +292,20 @@ static void influxdb_send_data_callback (
 
 	// TODO : Better distinguishing of soft/hard errors from HTTP layer
 
+	const rrr_biglength length = rrr_http_query_builder_wpos_get(&query_builder);
+
+	if (length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Query size overflow in influxdb instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	if ((ret = rrr_http_transaction_query_field_add (
 			transaction,
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
-			rrr_http_query_builder_wpos_get(&query_builder),
+			(rrr_length) length,
 			NULL, // <-- No content-type
 			NULL  // <-- No original value
 	)) != 0) {
@@ -324,7 +333,7 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	ssize_t received_bytes = 0;
+	rrr_biglength received_bytes = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
@@ -335,6 +344,8 @@ static void influxdb_send_data_callback (
 				NULL,
 				influxdb_receive_http_response,
 				&response_callback_data,
+				NULL, /* Failure callback, not implemented in InfluxDB) */
+				NULL,
 				NULL,
 				NULL,
 				NULL,
@@ -376,7 +387,7 @@ static int influxdb_send_data (
 
 	ret |= rrr_net_transport_connect_and_close_after_callback (
 			data->transport,
-			(unsigned int) data->http_client_config.server_port,
+			data->http_client_config.server_port,
 			data->http_client_config.server,
 			influxdb_send_data_callback,
 			&callback_data
@@ -497,7 +508,7 @@ static int influxdb_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, influxdb_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, influxdb_poll_callback);
 
 	EVENT_ADD(influxdb_data->event_process_entries);
 	EVENT_ACTIVATE(influxdb_data->event_process_entries);
@@ -611,13 +622,11 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	if (rrr_net_transport_new (
+	if (rrr_net_transport_new_simple (
 			&transport,
 			&influxdb_data->net_transport_config,
 			0,
-			INSTANCE_D_EVENTS(thread_data),
-			NULL,
-			0
+			INSTANCE_D_EVENTS(thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");
 		goto out_message;

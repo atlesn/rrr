@@ -1,5 +1,6 @@
 sha1/sha
 sha1/shatest
+sha256/shatest
 tests/
 *.log
 test

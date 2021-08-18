@@ -55,7 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}} while (0)
 
 #define RRR_FORK_HANDLER_ALLOCATION_SIZE \
-	(sizeof(struct rrr_fork_handler) + sysconf(_SC_PAGESIZE))
+	(sizeof(struct rrr_fork_handler) + (size_t) sysconf(_SC_PAGESIZE))
 
 
 static void __rrr_fork_handler_lock (

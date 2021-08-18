@@ -1,3 +1,47 @@
+rrr (1.19-0) bullseye; urgency=medium
+
+  * Features:
+    * New cacher module (basic proxy server-like module)
+
+  * Fixes:
+    * Prevent connection timeouts in message DB
+    * Buld problems on Ubuntu Hirsute, Alpine and Void
+    * Incorrect thread startup sequence sometimes causing race
+      condition with log lock freezing threads (only with debug enabled).
+    * Stream reset was faulty in UDP-stream protocol
+    * Continuation after UDP-stream ID exhaustion
+    * Broken async responses in HTTP2 incl. crashes
+    * Incorrect handling of stream failures from remote in HTTP2
+    * Upgrade to HTTP2 returned Bad Request
+    * Blocking when httpserver with HTTP2 while waiting for response
+      from other module
+    * Data access after free when receiving http1 response (potential crash)
+    * Processor modules could stop receiving messages after some time,
+      fixed by converting them to use events.
+
+  * Improvements:
+    * MMAP and Memory Allocator performance using shared memory
+    * Adjustments in cmodules to prevent blocking under high message load
+    * Removal of not needed mutexes
+    * httpserver generates str type fields not blob
+    * Better queue management in httpclient under high load
+    * Improved performance in UDP-stream
+    * New simplified buffer without locking where this is not needed
+
+  * Under the hood:
+    * Improved misc. size and data length checks on 32 and 64 bits
+    * Add memory allocator test
+    * Module separations, standardizations, simplifications, code removal
+    * Other cleanups
+
+  * Fixes on development versions only:
+    * Fix rare race condition in allocator causing crash
+    * Fix misc. bad behaviour causing mmap exhaustion despite them
+      having more room.
+    * Other fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 17 Aug 2021 20:20:32 +0200
+
 rrr (1.18-3) buster; urgency=medium
 
   * Development release (update)

@@ -22,9 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MAP_H
 #define RRR_MAP_H
 
-#include <stdio.h>
-
 #include "util/linked_list.h"
+#include "rrr_types.h"
 
 #define RRR_MAP_ITERATE_BEGIN(map)									\
 	do { RRR_LL_ITERATE_BEGIN(map,struct rrr_map_item);				\
@@ -73,7 +72,7 @@ struct rrr_map_item {
 	RRR_LL_NODE(struct rrr_map_item);
 	char *tag;
 	char *value;
-	ssize_t value_size;
+	rrr_length value_size;
 };
 
 struct rrr_map {
@@ -81,7 +80,7 @@ struct rrr_map {
 };
 
 struct rrr_map_iterator {
-	ssize_t rpos;
+	rrr_length rpos;
 	struct rrr_map *source;
 	struct rrr_map_item *cur;
 };
@@ -110,7 +109,7 @@ void rrr_map_clear (
 );
 int rrr_map_item_new (
 		struct rrr_map_item **target,
-		ssize_t field_size
+		rrr_length field_size
 );
 int rrr_map_item_add (
 		struct rrr_map *map,

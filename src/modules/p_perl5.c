@@ -149,7 +149,14 @@ static int preload_perl5 (struct rrr_thread *thread) {
 	struct cmd_argv_copy *cmdline;
 	cmd_get_argv_copy(&cmdline, thread_data->init_data.cmd_data);
 
-	if ((ret = rrr_perl5_init3(cmdline->argc, cmdline->argv, NULL)) != 0) {
+	if (cmdline->argc > INT_MAX) {
+		RRR_MSG_0("argc overflow (%llu>%i) in perl5 instance %s\n",
+			(unsigned long long) cmdline->argc, INT_MAX, INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_destroy_cmdline;
+	}
+	
+	if ((ret = rrr_perl5_init3((int) cmdline->argc, cmdline->argv, NULL)) != 0) {
 		RRR_MSG_0("Could not initialize perl5 in preload_perl5 instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_destroy_cmdline;

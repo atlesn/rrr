@@ -53,12 +53,12 @@ void rrr_random_string(char *target, size_t target_size) {
 
 	size_t pos = 0;
 	while (pos < target_size) {
-		unsigned char rand = rrr_rand() % 0xff;
+		unsigned char rand = (unsigned char) (rrr_rand() % 0xff);
 		if ( (rand >= 'A' && rand <= 'Z') ||
 		     (rand >= 'a' && rand <= 'z') ||
 		     (rand >= '0' && rand <= '9')
 		) {
-			target[pos++] = rand;
+			target[pos++] = (char) rand;
 		}
 	}
 	target[target_size - 1] = '\0';

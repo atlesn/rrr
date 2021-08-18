@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_JSON_H
 #define RRR_JSON_H
 
+#include "../rrr_types.h"
 #include "../read_constants.h"
 
 #define RRR_JSON_OK                RRR_READ_OK
@@ -34,7 +35,7 @@ struct rrr_array;
 
 int rrr_json_to_arrays (
 		const char *data,
-		size_t data_size,
+		rrr_length data_size,
 		const int max_levels,
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg

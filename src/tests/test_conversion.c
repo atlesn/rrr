@@ -118,7 +118,7 @@ static int __rrr_test_conversion_push_field_str (
 			NULL,
 			1,
 			NULL,
-			strlen(str)
+			rrr_length_from_size_t_bug_const(strlen(str))
 	)) != 0) {
 		goto out;
 	}
@@ -230,7 +230,7 @@ int rrr_test_conversion(void) {
 		if ((ret = __rrr_test_conversion_validate_str (
 				node,
 				expected_results[i],
-				strlen(expected_results[i])
+				rrr_length_from_size_t_bug_const(strlen(expected_results[i]))
 		)) != 0) {
 			goto out;
 		}

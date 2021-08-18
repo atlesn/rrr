@@ -45,7 +45,7 @@ struct rrr_http_uri_flags {
 struct rrr_http_uri {
 	char *protocol;
 	char *host;
-	unsigned int port;
+	uint16_t port;
 	char *endpoint;
 };
 

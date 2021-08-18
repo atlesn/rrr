@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
 #include "../lib/messages/msg_msg.h"
@@ -63,6 +62,7 @@ struct averager_data {
 	rrr_setting_uint interval_s;
 
 	char *msg_topic;
+	uint16_t msg_topic_length;
 };
 
 // In seconds, keep x seconds of readings in the buffer
@@ -105,7 +105,7 @@ static int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 			if (averager_data->msg_topic != NULL) {
 				// This will re-allocate the message
-				if (rrr_msg_msg_topic_set(&dup_message, averager_data->msg_topic, (ssize_t) strlen(averager_data->msg_topic)) != 0) {
+				if (rrr_msg_msg_topic_set(&dup_message, averager_data->msg_topic, averager_data->msg_topic_length) != 0) {
 					RRR_MSG_0("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
@@ -158,10 +158,10 @@ static void averager_maintain_buffer(struct averager_data *data) {
 
 struct averager_calculation {
 	struct averager_data *data;
-	unsigned long int max;
-	unsigned long int min;
-	unsigned long int sum;
-	unsigned long int entries;
+	uint64_t max;
+	uint64_t min;
+	uint64_t sum;
+	uint64_t entries;
 
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
@@ -277,7 +277,7 @@ static int averager_spawn_message_callback (struct rrr_msg_holder *new_entry, vo
 			callback_data->array_tmp,
 			rrr_time_get_64(),
 			callback_data->data->msg_topic,
-			(callback_data->data->msg_topic != NULL ? (rrr_u16) strlen(callback_data->data->msg_topic) : 0)
+			callback_data->data->msg_topic_length
 	) != 0) {
 		RRR_MSG_0 ("Could not create message in averager_spawn_message of instance %s\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data));
@@ -383,8 +383,8 @@ static int averager_calculate_average(struct averager_data *data) {
 		return ret;
 	}
 
-	unsigned long int average = calculation.sum/calculation.entries;
-	RRR_DBG_2 ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
+	uint64_t average = calculation.sum / calculation.entries;
+	RRR_DBG_2 ("Average: %" PRIu64 ", Max: %" PRIu64 ", Min: %" PRIu64 ", Entries: %" PRIu64 "\n", average, calculation.max, calculation.min, calculation.entries);
 
 	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
 	// without newer timestamps getting written before older ones.
@@ -452,7 +452,7 @@ static int averager_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, averager_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, averager_poll_callback);
 
 	if (RRR_LL_COUNT(&data->output_list) > 0) {
 		EVENT_ACTIVATE(data->output_list_event);
@@ -481,11 +481,12 @@ static int averager_data_init(struct averager_data *data, struct rrr_instance_ru
 static int averager_parse_config (struct averager_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("avg_message_topic", msg_topic);
-	if (data->msg_topic != NULL && strlen(data->msg_topic) > RRR_MSG_TOPIC_MAX) {
-		RRR_MSG_0("Parameter avg_message_topic exceeds maximum length of %u in averager instance %s\n",
-				RRR_MSG_TOPIC_MAX, config->name);
-		ret = 1;
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->msg_topic,
+			&data->msg_topic_length,
+			config,
+			"avg_message_topic"
+	)) != 0) {
 		goto out;
 	}
 

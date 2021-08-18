@@ -36,7 +36,7 @@ int rrr_msg_addr_to_host (struct rrr_msg_addr *msg) {
 	return 0;
 }
 
-void rrr_msg_addr_init_head (struct rrr_msg_addr *target, uint64_t addr_len) {
+void rrr_msg_addr_init_head (struct rrr_msg_addr *target, rrr_u32 addr_len) {
 	rrr_msg_populate_head (
 			(struct rrr_msg *) target,
 			RRR_MSG_TYPE_MESSAGE_ADDR,
@@ -89,7 +89,7 @@ int rrr_msg_addr_clone (
 
 void rrr_msg_addr_to_str (
 		char *target,
-		size_t target_size,
+		rrr_biglength target_size,
 		const struct rrr_msg_addr *msg
 ) {
 	rrr_ip_to_str (target, target_size, (const struct sockaddr *) msg->addr, sizeof(msg->addr));

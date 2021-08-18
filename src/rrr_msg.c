@@ -295,7 +295,7 @@ static int __rrr_msg_read (
 	int ret = 0;
 
 	char *file_data = NULL;
-	ssize_t file_size = 0;
+	rrr_biglength file_size = 0;
 
 	RRR_MSG_1("== Filename: %s\n", file);
 
@@ -323,7 +323,7 @@ static int __rrr_msg_read (
 
 	struct rrr_msg *msg = (struct rrr_msg *) file_data;
 
-	if ((ret = __rrr_msg_to_host_and_dump(data, msg, file_size)) != 0) {
+	if ((ret = __rrr_msg_to_host_and_dump(data, msg, rrr_length_from_biglength_bug_const (file_size))) != 0) {
 		RRR_MSG_0("Failed to read message from file '%s'\n", file);
 		goto out;
 	}

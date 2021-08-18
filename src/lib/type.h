@@ -194,7 +194,7 @@ struct rrr_type_definition {
 	// These are for importing or exporting to and from raw data
 	// and rrr_array struct
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
-	void (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
+	int (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
 	int (*export)(RRR_TYPE_EXPORT_ARGS);
 
 	// These are for converting between work-copy rrr_array struct
@@ -221,6 +221,8 @@ struct rrr_type_value {
 	char *tag;
 	char *data;
 };
+
+#define RRR_TYPE_TAG_MAX RRR_LENGTH_MAX
 
 #define RRR_TYPE_VALUE_TMP_CREATE(name, data, tag, type, flags, tag_length, total_length, element_count)             \
     const struct rrr_type_value name = {                                                                             \
@@ -294,6 +296,10 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
 );
+int rrr_type_value_is_tag (
+		struct rrr_type_value *value,
+		const char *tag
+);
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,
@@ -339,7 +345,8 @@ int rrr_type_value_clone (
 		const struct rrr_type_value *source,
 		int do_clone_data
 );
-rrr_length rrr_type_value_get_export_length (
+int rrr_type_value_get_export_length (
+		rrr_length *result,
 		const struct rrr_type_value *value
 );
 int rrr_type_value_allocate_and_export (

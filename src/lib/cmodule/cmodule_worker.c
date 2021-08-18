@@ -139,8 +139,8 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 
 static void __rrr_cmodule_worker_log_hook (
 		uint8_t *amount_written,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
@@ -280,8 +280,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
 
 		if (MSG_TOTAL_SIZE(msg_msg) + sizeof(*msg_addr) != data_size) {
-			RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
-					MSG_TOTAL_SIZE(msg_msg), sizeof(*msg_addr), data_size);
+			RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %llu+%llu != %llu\n",
+					(unsigned long long) MSG_TOTAL_SIZE(msg_msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 		}
 
 		callback_data->worker->total_msg_mmap_to_fork++;
@@ -679,7 +679,7 @@ int rrr_cmodule_worker_main (
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	int log_hook_handle;
-	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
+	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
 		RRR_MSG_0("Re-init of event queue failed in rrr_cmodule_worker_main\n");

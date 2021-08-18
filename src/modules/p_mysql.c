@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -87,7 +86,7 @@ struct mysql_data {
 	char *mysql_db;
 	char *mysql_table;
 
-	unsigned int mysql_port;
+	uint16_t mysql_port;
 
 	int drop_unknown_messages;
 	int colplan;
@@ -725,7 +724,7 @@ static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *mysql_data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback);
 
 	EVENT_ADD(mysql_data->event_process_entries);
 	EVENT_ACTIVATE(mysql_data->event_process_entries);
@@ -859,11 +858,8 @@ static int mysql_parse_port (
 	int ret = 0;
 
 	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
-	rrr_setting_uint tmp_uint;
 
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "mysql_port");
-
-	if (ret != 0) {
+	if ((ret = rrr_instance_config_read_port_number (&data->mysql_port, config, "mysql_port")) != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name);
 			ret = 1;
@@ -961,7 +957,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	RRR_DBG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	RRR_DBG_1 ("mysql thread data is %p, size of private data: %llu\n", thread_data, (long long unsigned) sizeof(*data));
 
 	pthread_cleanup_push(mysql_stop, data);
 	pthread_cleanup_push(data_cleanup, data);

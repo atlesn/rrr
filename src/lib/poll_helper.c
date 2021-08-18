@@ -23,10 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
+#include "allocator.h"
 #include "poll_helper.h"
 #include "instances.h"
 #include "instance_config.h"
-#include "buffer.h"
+#include "fifo_protected.h"
 #include "message_broker.h"
 #include "message_holder/message_holder_struct.h"
 #include "message_holder/message_holder.h"
@@ -53,11 +54,15 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
+		char *topic_tmp = NULL;
+		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry->message);
+		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s' topic is '%s': %s\n",
 				INSTANCE_D_NAME(thread_data),
 				INSTANCE_D_TOPIC_STR(thread_data),
-				(does_match ? "MATCH" : "MISMATCH/DROPPED")
+				topic_tmp,
+				(*does_match ? "MATCH" : "MISMATCH/DROPPED")
 		);
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
 	}
 
 	out:
@@ -67,6 +72,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 struct rrr_poll_intermediate_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	void *arg;
 };
 
 static int __rrr_poll_intermediate_callback (
@@ -86,7 +92,7 @@ static int __rrr_poll_intermediate_callback (
 
 	if (does_match) {
 		// Callback unlocks
-		return callback_data->callback(entry, callback_data->thread_data);
+		return callback_data->callback(entry, callback_data->arg);
 	}
 
 	out:
@@ -94,15 +100,16 @@ static int __rrr_poll_intermediate_callback (
 		return ret;
 }
 
-int rrr_poll_do_poll_delete (
+int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		void *callback_arg
 ) {
 	struct rrr_poll_intermediate_callback_data callback_data = {
 		thread_data,
-		callback
+		callback,
+		callback_arg
 	};
 
 	int message_broker_flags = 0;
@@ -116,7 +123,14 @@ int rrr_poll_do_poll_delete (
 			INSTANCE_D_HANDLE(thread_data),
 			message_broker_flags,
 			__rrr_poll_intermediate_callback,
-			&callback_data,
-			wait_milliseconds
+			&callback_data
 	);
+}
+
+int rrr_poll_do_poll_delete (
+		uint16_t *amount,
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
+) {
+	return rrr_poll_do_poll_delete_custom_arg(amount, thread_data, callback, thread_data);
 }

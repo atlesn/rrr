@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <sys/socket.h>
 
-#include "buffer.h"
+#include "fifo_protected.h"
 #include "poll_helper.h"
 #include "event.h"
 #include "util/linked_list.h"
@@ -72,7 +72,7 @@ int rrr_message_broker_costumer_register (
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
-		int slots
+		rrr_length slots
 );
 int rrr_message_broker_get_next_unique_id (
 		uint64_t *result,
@@ -82,7 +82,7 @@ int rrr_message_broker_write_entry (
 		struct rrr_message_broker_costumer *costumer,
 		const struct sockaddr *addr,
 		socklen_t socklen,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -112,20 +112,19 @@ int rrr_message_broker_poll_delete (
 		struct rrr_message_broker_costumer *self,
 		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
+		void *callback_arg
 );
 int rrr_message_broker_set_ratelimit (
 		struct rrr_message_broker_costumer *costumer,
 		int set
 );
 int rrr_message_broker_get_entry_count_and_ratelimit (
-		int *entry_count,
+		unsigned int *entry_count,
 		int *ratelimit_active,
 		struct rrr_message_broker_costumer *costumer
 );
 int rrr_message_broker_get_fifo_stats (
-		struct rrr_fifo_buffer_stats *target,
+		struct rrr_fifo_protected_stats *target,
 		struct rrr_message_broker_costumer *costumer
 );
 struct rrr_event_queue *rrr_message_broker_event_queue_get (
