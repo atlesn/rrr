@@ -529,6 +529,8 @@ struct ip_read_array_callback_data {
 	struct ip_data *data;
 	struct rrr_array *array_final;
 	struct rrr_read_session *read_session;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
 	struct rrr_msg_holder_collection new_entries;
 };
 
@@ -558,8 +560,8 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			entry,
 			NULL,
 			0,
-			(const struct sockaddr *) &callback_data->read_session->src_addr,
-			callback_data->read_session->src_addr_len,
+			callback_data->addr,
+			callback_data->addr_len,
 			protocol
 	);
 
@@ -607,10 +609,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 }
 
 static int ip_array_callback (
-		struct rrr_read_session *read_session,
-		struct rrr_array *array_final,
-		void *private_data,
-		void *arg
+		RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS
 ) {
 	struct ip_data *data = arg;
 
@@ -622,6 +621,8 @@ static int ip_array_callback (
 			data,
 			array_final,
 			read_session,
+			addr,
+			addr_len,
 			{0}
 	};
 
