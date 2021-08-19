@@ -1366,13 +1366,26 @@ static void ip_timeout_check (
 	}
 }
 
+static int ip_entry_timestamp_compare (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	const struct rrr_msg_msg *message_a = a->message;
+	const struct rrr_msg_msg *message_b = b->message;
+
+	uint64_t timestamp_a = (a->endian_indicator ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (b->endian_indicator ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
+
+	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
+}
+
 static int ip_send_loop (
 		struct ip_data *ip_data
 ) {
 	int ret = 0;
 
 	if (ip_data->do_preserve_order) {
-		rrr_msg_holder_collection_sort(&ip_data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+		rrr_msg_holder_collection_sort(&ip_data->send_buffer, 1 /* Do lock */, ip_entry_timestamp_compare);
 	}
 
 	int timeout_count = 0;
