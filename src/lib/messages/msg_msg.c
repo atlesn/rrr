@@ -493,18 +493,6 @@ int rrr_msg_msg_topic_match (
 	return ret;
 }
 
-int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {
-	// Assume network order if crc32 is set
-	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
-
-	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
-}
-
-int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b) {
-	return rrr_msg_msg_timestamp_compare(message_a, message_b);
-}
-
 int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl) {
 	uint64_t limit = rrr_time_get_64() - ttl;
 	if (msg->timestamp < limit) {

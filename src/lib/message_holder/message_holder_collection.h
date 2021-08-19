@@ -38,7 +38,8 @@ void rrr_msg_holder_collection_clear_void (
 );
 void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
-		int (*compare)(void *message_a, void *message_b)
+		int do_lock,
+		int (*compare)(const struct rrr_msg_holder *a, const struct rrr_msg_holder *b)
 );
 
 #endif /* RRR_MESSAGE_HOLDER_COLLECTION_H */
