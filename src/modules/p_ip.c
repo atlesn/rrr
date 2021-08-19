@@ -92,9 +92,6 @@ struct ip_data {
 
 	struct rrr_socket_graylist tcp_graylist;
 
-	struct rrr_read_session_collection read_sessions_udp;
-	struct rrr_read_session_collection read_sessions_tcp;
-
 	struct rrr_array_tree *definitions;
 
 	int do_strip_array_separators;
@@ -150,8 +147,6 @@ static void ip_data_cleanup(void *arg) {
 	if (data->definitions != NULL) {
 		rrr_array_tree_destroy(data->definitions);
 	}
-	rrr_read_session_collection_clear(&data->read_sessions_udp);
-	rrr_read_session_collection_clear(&data->read_sessions_tcp);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
