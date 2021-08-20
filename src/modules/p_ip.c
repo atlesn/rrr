@@ -131,6 +131,8 @@ struct ip_data {
 
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
+
+	uint64_t entry_send_index_pos;
 };
 
 static void ip_data_cleanup(void *arg) {
@@ -658,11 +660,16 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
+	// Used for sorting (preserve order)
+	if ((entry->send_index = ++(ip_data->entry_send_index_pos)) == 0) {
+		RRR_MSG_0("Warning: Entry index counter wrapped in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+	}
 
 	// Used for timeout checks
 	entry->send_time = rrr_time_get_64();
+
+	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
@@ -1366,17 +1373,12 @@ static void ip_timeout_check (
 	}
 }
 
-static int ip_entry_timestamp_compare (
+static int ip_entry_index_compare (
 		const struct rrr_msg_holder *a,
 		const struct rrr_msg_holder *b
 ) {
-	const struct rrr_msg_msg *message_a = a->message;
-	const struct rrr_msg_msg *message_b = b->message;
-
-	uint64_t timestamp_a = (a->endian_indicator ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (b->endian_indicator ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
-
-	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
+	// Send index must be set in poll callback function
+	return (a->send_index > b->send_index) - (a->send_index < b->send_index);
 }
 
 static int ip_send_loop (
@@ -1385,7 +1387,7 @@ static int ip_send_loop (
 	int ret = 0;
 
 	if (ip_data->do_preserve_order) {
-		rrr_msg_holder_collection_sort(&ip_data->send_buffer, 1 /* Do lock */, ip_entry_timestamp_compare);
+		rrr_msg_holder_collection_sort(&ip_data->send_buffer, 1 /* Do lock */, ip_entry_index_compare);
 	}
 
 	int timeout_count = 0;
