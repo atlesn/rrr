@@ -497,16 +497,15 @@ If set to yes, complete RRR messages encoded for network will be sent.
 If set to no or left unset, messages with arrays will have their array packed and sent, and messages with other data will simply have their contents sent as is.
 
 .It ip_preserve_order={yes|no}
-Attempt to send messages in order according to their timestamp.
-Messages to a particular destination will be sent in order according to their creation timestamp.
-If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+Attempt to always send messages in order according to when they first arrived in the IP module.
+If messages time out before they are sent, order is guaranteed for the remaining messages in the queue.
 To ensure order in all situations, the parameter
 .B ip_persistent_timeout_ms
 should not be zero and
 .B ip_send_multiple_per_connection
 should be 'yes'.
-This will impact performance when destinations are unreachable.
-Defaults no no.
+Order preservation can impact performance when destinations are unreachable due to sorting.
+Defaults to no which means that order is not guaranteed when there are connection problems and retries.
 
 .It ip_send_multiple_per_connection={yes|no}
 If set to no, TCP connections are forced to be closed after a single message has been sent. Defaults to 'yes'.
