@@ -731,6 +731,12 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
+	if (data->server_port == 0) {
+		data->server_port = data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
+			? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
+			: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+	}
+
 	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
 	// subscribe to all topics once more.
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_client_debug_unsubscribe_cycle", do_debug_unsubscribe_cycle, 0);

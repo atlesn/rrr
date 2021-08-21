@@ -51,6 +51,7 @@ struct rrr_msg_holder {
 
 	// Available for modules
 	uint64_t send_time;
+	uint64_t send_index;
 
 	// Used by higher levels to control partial sends
 	rrr_biglength bytes_sent;
