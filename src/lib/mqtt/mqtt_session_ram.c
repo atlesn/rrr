@@ -1193,7 +1193,7 @@ struct preserve_publish_list {
 };
 
 static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback (RRR_FIFO_CLEAR_CALLBACK_ARGS) {
-	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+	struct rrr_mqtt_p *packet = *((struct rrr_mqtt_p **) data);
 	struct rrr_mqtt_p_publish *publish = *((struct rrr_mqtt_p_publish **) data);
 	struct preserve_publish_list *preserve_data = callback_data;
 
@@ -2979,10 +2979,11 @@ static int __rrr_mqtt_p_queue_publish_from_retain_callback (
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
+	// TODO : Delayed write no longer working
 	if (__rrr_mqtt_session_ram_reset_id_incref_and_add_to_to_remote_queue (
 			callback_data->ram_session,
 			(struct rrr_mqtt_p *) new_publish,
-			1 // <!-- Put publishes in delayed write queue to allow PUBACK to arrive first
+			1 // <!-- Put publishes in delayed write queue to allow SUBACK to arrive first
 	) != 0) {
 		RRR_MSG_0("Error while adding publish to queue in __rrr_mqtt_p_queue_publish_from_retain_callback\n");
 		ret = 1;
