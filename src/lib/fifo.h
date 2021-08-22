@@ -63,7 +63,8 @@ struct rrr_fifo {
 
 	rrr_length entry_count;
 
-	void (*free_entry)(void *arg);
+	void (*incref)(void *arg);
+	void (*decref)(void *arg);
 };
 
 void rrr_fifo_destroy (
@@ -72,9 +73,10 @@ void rrr_fifo_destroy (
 int rrr_fifo_init (
 		struct rrr_fifo *buffer
 );
-int rrr_fifo_init_custom_free (
+int rrr_fifo_init_custom_refcount (
 		struct rrr_fifo *buffer,
-		void (*custom_free)(void *arg)
+		void (*custom_incref)(void *arg),
+		void (*custom_decref)(void *arg)
 );
 
 static inline rrr_length rrr_fifo_get_entry_count (

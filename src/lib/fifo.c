@@ -32,13 +32,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/slow_noop.h"
 #include "util/rrr_time.h"
 
-static void __rrr_fifo_entry_destroy (
+static void __rrr_fifo_entry_incref_data (
 		struct rrr_fifo *buffer,
 		struct rrr_fifo_entry *entry
 ) {
 	if (entry->data != NULL) {
-		buffer->free_entry(entry->data);
+		buffer->incref(entry->data);
 	}
+}
+
+static void __rrr_fifo_entry_decref_data (
+		struct rrr_fifo *buffer,
+		struct rrr_fifo_entry *entry
+) {
+	if (entry->data != NULL) {
+		buffer->decref(entry->data);
+		entry->data = NULL;
+	}
+}
+
+static void __rrr_fifo_entry_destroy (
+		struct rrr_fifo *buffer,
+		struct rrr_fifo_entry *entry
+) {
+	__rrr_fifo_entry_decref_data(buffer, entry);
 	rrr_free(entry);
 }
 
@@ -47,16 +64,6 @@ static void __rrr_fifo_entry_destroy_simple_void (
 ) {
 	struct rrr_fifo_entry *entry = ptr;
 	rrr_free(entry);
-}
-
-static void __rrr_fifo_entry_destroy_data (
-		struct rrr_fifo *buffer,
-		struct rrr_fifo_entry *entry
-) {
-	if (entry->data != NULL) {
-		buffer->free_entry(entry->data);
-		entry->data = NULL;
-	}
 }
 
 static void __rrr_fifo_entry_release_data (
@@ -98,7 +105,13 @@ void rrr_fifo_destroy (
 	rrr_fifo_clear_with_callback(buffer, NULL, NULL);
 }
 
-static void __rrr_fifo_default_free (
+static void __rrr_fifo_default_incref (
+		void *ptr
+) {
+	(void)(ptr);
+}
+
+static void __rrr_fifo_default_decref (
 		void *ptr
 ) {
 	rrr_free(ptr);
@@ -109,17 +122,20 @@ int rrr_fifo_init (
 ) {
 	memset (buffer, '\0', sizeof(*buffer));
 
-	buffer->free_entry = &__rrr_fifo_default_free;
+	buffer->incref = &__rrr_fifo_default_incref;
+	buffer->decref = &__rrr_fifo_default_decref;
 
 	return 0;
 }
 
-int rrr_fifo_init_custom_free (
+int rrr_fifo_init_custom_refcount (
 		struct rrr_fifo *buffer,
-		void (*custom_free)(void *arg)
+		void (*custom_incref)(void *arg),
+		void (*custom_decref)(void *arg)
 ) {
 	int ret = rrr_fifo_init(buffer);
-	buffer->free_entry = custom_free;
+	buffer->incref = custom_incref;
+	buffer->decref = custom_decref;
 	return ret;
 }
 
@@ -441,6 +457,7 @@ static int __rrr_fifo_search_and_replace_call_again (
 			if (entry->data == NULL) {
 				RRR_BUG("Data from callback was NULL in rrr_fifo_write, must return DROP\n");
 			}
+			__rrr_fifo_entry_incref_data(buffer, entry);
 			__rrr_fifo_write_update_pointers(buffer, entry, order, 0);
 		}
 
@@ -510,7 +527,7 @@ int rrr_fifo_search_and_replace (
 			// If we are not asked to free, zero out the pointer to stop it from being
 			// destroyed by entry destroy functions
 			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
-				entry->data = NULL;
+				__rrr_fifo_entry_release_data(entry);
 			}
 
 			if ((actions & (RRR_FIFO_SEARCH_GIVE)) != 0 ) {
@@ -536,11 +553,13 @@ int rrr_fifo_search_and_replace (
 					RRR_BUG("BUG: Callback of fifo_search_and_replace tells us to replace, but the data pointer did not change\n");
 				}
 
-				__rrr_fifo_entry_destroy_data(buffer, entry);
+				__rrr_fifo_entry_decref_data(buffer, entry);
 
 				entry->data = data;
 				entry->size = size;
 				entry->order = order;
+
+				__rrr_fifo_entry_incref_data(buffer, entry);
 
 				rrr_length_inc_bug(&cleared_entries);
 				if ((ret = rrr_length_inc_err (&new_entries)) != 0) {
@@ -612,7 +631,7 @@ int rrr_fifo_read_clear_forward_all (
 				if ((ret_tmp & RRR_FIFO_SEARCH_FREE) != 0) {
 					// Callback wants us to free memory
 					ret_tmp = ret_tmp & ~(RRR_FIFO_SEARCH_FREE);
-					__rrr_fifo_entry_destroy_data(buffer, current);
+					__rrr_fifo_entry_decref_data(buffer, current);
 				}
 				else {
 					__rrr_fifo_entry_release_data(current);
@@ -829,6 +848,7 @@ int rrr_fifo_write (
 			RRR_BUG("Data from callback was NULL in rrr_fifo_write, must return DROP\n");
 		}
 
+		__rrr_fifo_entry_incref_data(buffer, entry);
 		__rrr_fifo_write_update_pointers (buffer, entry, order, do_ordered_write);
 		entry = NULL;
 
