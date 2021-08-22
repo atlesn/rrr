@@ -287,7 +287,7 @@ int rrr_fifo_search (
 			// If we are not asked to free, zero out the pointer to stop it from being
 			// destroyed by entry destroy functions
 			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
-				entry->data = NULL;
+				__rrr_fifo_entry_release_data(entry);
 			}
 
 			__rrr_fifo_entry_destroy(buffer, entry);
