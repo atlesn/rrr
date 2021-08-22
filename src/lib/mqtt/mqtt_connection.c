@@ -914,7 +914,6 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
-	int ret_destroy = 0;
 
 	struct rrr_mqtt_p_payload *payload = NULL;
 	char *network_data = NULL;
@@ -1078,7 +1077,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	out:
 	RRR_FREE_IF_NOT_NULL(send_data);
 	RRR_FREE_IF_NOT_NULL(network_data);
-	return ret | ret_destroy;
+	return ret;
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet (
