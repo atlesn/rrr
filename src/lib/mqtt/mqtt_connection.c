@@ -232,7 +232,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	RRR_DBG_2("Destroying connection %p, final destruction\n", connection);
 
-	rrr_fifo_clear(&connection->receive_queue.buffer);
+	rrr_fifo_clear(&connection->receive_buffer.buffer);
 
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 
@@ -270,7 +270,11 @@ static int __rrr_mqtt_conn_new (
 
 	memset (res, '\0', sizeof(*res));
 
-	if ((ret = rrr_fifo_init_custom_free(&res->receive_queue.buffer,	rrr_mqtt_p_standardized_decref)) != 0) {
+	if ((ret = rrr_fifo_init_custom_refcount (
+			&res->receive_buffer.buffer,
+			rrr_mqtt_p_standardized_incref,
+			rrr_mqtt_p_standardized_decref
+	)) != 0) {
 		RRR_MSG_0("Could not initialize buffers in __rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		goto out_free;

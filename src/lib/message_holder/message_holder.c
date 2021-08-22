@@ -177,6 +177,12 @@ void rrr_msg_holder_incref_while_locked (
 #endif
 }
 
+void rrr_msg_holder_incref_while_locked_void (
+		void *entry
+) {
+	rrr_msg_holder_incref_while_locked(entry);
+}
+
 void rrr_msg_holder_incref (
 		struct rrr_msg_holder *entry
 ) {

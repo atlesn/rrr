@@ -105,7 +105,7 @@ struct rrr_mqtt_conn {
 
 	struct rrr_mqtt_parse_session parse_session;
 
-	struct rrr_mqtt_p_queue receive_queue;
+	struct rrr_mqtt_p_queue receive_buffer;
 
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
