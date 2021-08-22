@@ -270,15 +270,11 @@ static int __rrr_mqtt_conn_new (
 
 	memset (res, '\0', sizeof(*res));
 
-	if ((ret = rrr_fifo_init_custom_refcount (
+	rrr_fifo_init_custom_refcount (
 			&res->receive_buffer.buffer,
 			rrr_mqtt_p_standardized_incref,
 			rrr_mqtt_p_standardized_decref
-	)) != 0) {
-		RRR_MSG_0("Could not initialize buffers in __rrr_mqtt_connection_new\n");
-		ret = RRR_MQTT_INTERNAL_ERROR;
-		goto out_free;
-	}
+	);
 
 	res->connect_time = res->last_read_time = res->last_write_time = rrr_time_get_64();
 	res->close_wait_time_usec = close_wait_time_usec;
@@ -309,9 +305,8 @@ static int __rrr_mqtt_conn_new (
 
 	goto out;
 
-	out_free:
-		rrr_free(res);
-
+//	out_free:
+//		rrr_free(res);
 	out:
 		return ret;
 }
