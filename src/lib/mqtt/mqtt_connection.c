@@ -71,6 +71,16 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
 #define CALL_EVENT_HANDLER_NO_REPEAT(event)	\
 		__rrr_mqtt_connection_call_event_handler(connection, event, 1, NULL)
 
+#define RRR_MQTT_CONN_TIMEOUTS_CHECK()                         \
+        short keepalive_reached = 0;                           \
+        short keepalive_exceeded = 0;                          \
+        __rrr_mqtt_conn_timeouts_check (&keepalive_reached, &keepalive_exceeded, connection)
+
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason)   \
+        if ((connection)->disconnect_reason_v5_ == 0) {        \
+            (connection)->disconnect_reason_v5_ = reason;      \
+        }                                                      \
+
 int rrr_mqtt_conn_set_client_id (
 		struct rrr_mqtt_conn *connection,
 		const char *id
@@ -311,6 +321,31 @@ static int __rrr_mqtt_conn_new (
 		return ret;
 }
 
+static void __rrr_mqtt_conn_timeouts_check (
+		short *keepalive_reached,
+		short *keepalive_exceeded,
+		struct rrr_mqtt_conn *connection
+) {
+	*keepalive_reached = 0;
+	*keepalive_exceeded = 0;
+
+	uint64_t limit_ping = connection->keep_alive;
+	uint64_t limit = (uint64_t) ((double) connection->keep_alive * 1.5);
+
+	limit_ping *= 1000000;
+	limit *= 1000000;
+
+	if (connection->last_read_time + limit < rrr_time_get_64()) {
+		*keepalive_exceeded = 1;
+	}
+
+	if ( connection->last_read_time + limit_ping < rrr_time_get_64() ||
+	     connection->last_write_time + limit_ping < rrr_time_get_64()
+	) {
+		*keepalive_reached = 1;
+	}
+}
+
 static int __rrr_mqtt_connection_disconnect_call_event_handler_if_needed (
 		struct rrr_mqtt_conn *connection
 ) {
@@ -343,8 +378,6 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 
 	int ret = RRR_MQTT_OK;
 
-//	printf("in iteratore disconnect state: %u\n", connection->state_flags);
-
 	// The session system must be informed (through broker/client event handlers) before close_wait expires
 	// in case the client re-connects before close_wait has finished. This prevents the new connection
 	// from experiencing the session being destroyed shortly after connecting.
@@ -356,10 +389,26 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	// will transition to CLOSE_WAIT. If a disconnect packet is already received or sent otherwise
 	// by non-error means, state is already CLOSE_WAIT here. For severe errors with V3.1 we do not
 	// send the packet, these errors will set a disconnect reason >= 0x80.
-	if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
+
+	RRR_MQTT_CONN_TIMEOUTS_CHECK();
+
+	if (keepalive_exceeded || connection->disconnect_reason_v5_ == RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT) {
+		RRR_DBG_1("Destroying connection %p client ID '%s', keep alive was exceeded. Reason is otherwise set to %u.\n",
+				connection,
+				(connection->client_id != NULL ? connection->client_id : "(empty)"),
+				connection->disconnect_reason_v5_
+		);
+
+		// Must destroy connection immediately without DISCONNECT packet. There is a reason defined
+		// in v5, but the same standard also instructs to close the connection without
+		// sending any DISCONNECT.
+
+		goto out;
+	}
+	else if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
 		if (connection->disconnect_reason_v5_ >= 0x80) {
 			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(connection->disconnect_reason_v5_);
-			RRR_MSG_0("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
+			RRR_DBG_1("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
 					connection->disconnect_reason_v5_,
 					(reason != NULL ? reason->description : "unknown error"),
 					(connection->client_id != NULL ? connection->client_id : "")
@@ -384,34 +433,38 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		}
 	}
 
-	if (connection->close_wait_time_usec > 0) {
-		uint64_t time_now = rrr_time_get_64();
-		if (connection->close_wait_start == 0) {
-			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
-					connection,
-					(connection->client_id != NULL ? connection->client_id : "(empty)"),
-					connection->disconnect_reason_v5_
-			);
+	if (connection->close_wait_time_usec == 0) {
+		goto out;
+	}
 
-			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
-				__rrr_mqtt_connection_close (connection);
-			}
+	uint64_t time_now = rrr_time_get_64();
+	if (connection->close_wait_start == 0) {
+		connection->close_wait_start = time_now;
+		RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
+				connection,
+				(connection->client_id != NULL ? connection->client_id : "(empty)"),
+				connection->disconnect_reason_v5_
+		);
+
+		if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
+			__rrr_mqtt_connection_close (connection);
 		}
-		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
+	}
+	if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
-					(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
-			// We can basically return anything apart from 1 to stop net transport from destroying connection.
-			// When we return 0, connection is destroyed.
-			ret = RRR_LL_DIDNT_DESTROY;
-			goto out;
-		}
-		RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
-				connection, connection->disconnect_reason_v5_);
+				(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
+		// We can basically return anything apart from 1 to stop net transport from destroying connection.
+		// When we return 0, connection is destroyed.
+		ret = RRR_LL_DIDNT_DESTROY;
+		goto out;
 	}
 
 	out:
-	return ret;
+		if (ret == RRR_MQTT_OK) {
+			RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
+					connection, connection->disconnect_reason_v5_);
+		}
+		return ret;
 }
 
 int rrr_mqtt_conn_set_data_from_connect_and_connack (
@@ -529,20 +582,17 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 	int ret = RRR_MQTT_OK;
 
 	if (connection->keep_alive > 0) {
-		uint64_t limit_ping = connection->keep_alive;
-		uint64_t limit = (uint64_t) ((double) connection->keep_alive * 1.5);
+		RRR_MQTT_CONN_TIMEOUTS_CHECK();
 
-		limit_ping *= 1000000;
-		limit *= 1000000;
-		if (connection->last_read_time + limit < rrr_time_get_64()) {
+		if (keepalive_reached) {
 			RRR_DBG_1("Keep-alive exceeded for connection\n");
+			RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT);
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
-		else if (exceeded_keep_alive_callback != NULL &&
-				(connection->last_read_time + limit_ping < rrr_time_get_64() ||
-				connection->last_write_time + limit_ping < rrr_time_get_64()) &&
-				(ret = exceeded_keep_alive_callback(handle, callback_arg)) != RRR_MQTT_OK
+		else if ((keepalive_exceeded) &&
+		         (exceeded_keep_alive_callback) != NULL &&
+                         (ret = exceeded_keep_alive_callback(handle, callback_arg)) != RRR_MQTT_OK
 		) {
 			RRR_MSG_0("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
 			goto out;
@@ -664,11 +714,6 @@ struct rrr_mqtt_conn_read_callback_data {
 	);
 	void *handler_callback_arg;
 };
-
-#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason) 	\
-		if ((connection)->disconnect_reason_v5_ == 0) {						\
-			(connection)->disconnect_reason_v5_ = reason;					\
-		}
 
 static int __rrr_mqtt_conn_read_get_target_size (
 		struct rrr_read_session *read_session,
@@ -826,8 +871,8 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
 				ret = RRR_SOCKET_READ_INCOMPLETE;
 			}
-			else if (ret != RRR_SOCKET_READ_INCOMPLETE && connection->disconnect_reason_v5_ == 0) {
-				connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
+				RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR);
 			}
 			goto out;
 		}
