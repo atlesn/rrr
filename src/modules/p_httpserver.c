@@ -125,9 +125,7 @@ static int httpserver_data_init (
 
 	data->thread_data = thread_data;
 
-	if (rrr_fifo_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
-		return 1;
-	}
+	rrr_fifo_init_custom_refcount(&data->buffer, rrr_msg_holder_incref_while_locked_void, rrr_msg_holder_decref_void);
 
 	return 0;
 }
@@ -1490,10 +1488,11 @@ static int httpserver_unique_id_generator_callback (
 
 static int httpserver_poll_callback_write (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_msg_holder *entry = arg;
-	rrr_msg_holder_incref_while_locked(entry);
+
 	*data = (char *) entry;
 	*size = sizeof(*entry);
 	*order = 0;
+
 	return RRR_FIFO_OK;
 }
 

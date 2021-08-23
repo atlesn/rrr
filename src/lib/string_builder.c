@@ -36,17 +36,16 @@ void rrr_string_builder_unchecked_append (
 		const char *str
 ) {
 	const rrr_biglength length = strlen(str);
-	const rrr_biglength size = length + 1;
-	if (size < length) {
-		RRR_BUG("Overflow in rrr_string_builder_unchecked_append\n");
-	}
-	string_builder->wpos += length;
 
-	if (string_builder->wpos + 1 < length) {
-		RRR_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
-	}
+	rrr_biglength size = length;
+	rrr_biglength_add_bug (&size, 1);
+
+	rrr_biglength new_wpos = string_builder->wpos;
+	rrr_biglength_add_bug(&new_wpos, length);
 
 	rrr_memcpy(string_builder->buf + string_builder->wpos, str, size);
+
+	string_builder->wpos = new_wpos;
 }
 
 static void __rrr_string_builder_unchecked_append_raw (
