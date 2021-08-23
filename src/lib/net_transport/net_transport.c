@@ -352,6 +352,7 @@ static void __rrr_net_transport_event_hard_read_timeout (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+	struct rrr_net_transport *transport = handle->transport;
 
 	(void)(fd);
 	(void)(flags);
@@ -361,7 +362,8 @@ static void __rrr_net_transport_event_hard_read_timeout (
 
 	int ret_tmp = RRR_READ_EOF;
 	CHECK_READ_WRITE_RETURN();
-	__rrr_net_transport_handle_remove_and_destroy(handle->transport, handle);
+	// Use stored pointer to transport in case handle has already been freed
+	__rrr_net_transport_handle_remove_and_destroy(transport, handle);
 }
 
 static void __rrr_net_transport_event_handshake (
