@@ -237,12 +237,13 @@ int rrr_msg_holder_new (
 		goto out_free;
 	}
 
-	// Avoid usercount bug trap, write once again while holding the lock below
+	// Avoid usercount bug trap, initialize usercount once again later while holding the lock
 	entry->usercount = 99999;
 
 	rrr_msg_holder_lock(entry);
 
-	RRR_LL_NODE_INIT(entry);
+	// Ensure all fields are written to while lock is held
+	RRR_MESSAGE_HOLDER_ZERO_ALL(entry);
 
 	if (addr == NULL) {
 		memset(&entry->addr, '\0', sizeof(entry->addr));
