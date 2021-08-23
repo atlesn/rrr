@@ -431,7 +431,7 @@ static int cacher_process (
 				goto out;
 			}
 			if (result_found) {
-				if (!data->do_memory_consume_requests) {
+				if (!data->do_memory_consume_requests && data->do_forward_requests) {
 					*do_forward = 1;
 				}
 
