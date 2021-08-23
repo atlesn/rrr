@@ -595,7 +595,8 @@ static void cacher_event_tidy (
 		RRR_DBG_1("Peridoc tidy in cacher instance %s: No memory TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
 	}
 	else {
-		RRR_DBG_1("cacher instance %s tidy memory cache...\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_DBG_1("cacher instance %s tidy memory cache, entry count is %i...\n",
+			INSTANCE_D_NAME(data->thread_data), RRR_LL_COUNT(&data->memory_cache));
 
 		int deleted_entries = 0;
 		cacher_tidy_memory_cache(&deleted_entries, data);
