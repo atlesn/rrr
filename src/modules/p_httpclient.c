@@ -1724,6 +1724,7 @@ static int httpclient_entry_choose_method (
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
+	const struct rrr_msg_msg *message = entry->message;
 
 	// We need to sneak-peak into the message to figure out if 
 	// it will become a PUT request.
@@ -1738,9 +1739,18 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	if (RRR_DEBUGLEVEL_3) {
-		struct rrr_msg_msg *message = entry->message;
+	if (data->taint_tag != NULL && *(data->taint_tag) != '\0') {
+		if (MSG_IS_ARRAY(message) && rrr_array_message_has_tag(message, data->taint_tag)) {
+			RRR_DBG_3("httpclient instance %s received tainted message (by tag '%s') with timestamp %" PRIu64 ", ignoring.\n",
+					INSTANCE_D_NAME(thread_data),
+					data->taint_tag,
+					message->timestamp
+			);
+			goto out_ignore;
+		}
+	}
 
+	if (RRR_DEBUGLEVEL_3) {
 		char *topic_tmp = NULL;
 
 		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
@@ -1769,6 +1779,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_LL_APPEND(&data->from_senders_queue, entry);
 	}
 
+	out_ignore:
 	rrr_msg_holder_unlock(entry);
 	return 0;
 }
