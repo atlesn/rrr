@@ -1,4 +1,4 @@
-.Dd 2021-07-22
+.Dd 2021-08-21
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1977,6 +1977,8 @@ Optional parameter.
 .It cacher_forward_requests={yes|no}
 If set to yes, messages which are treated as requests are passed to the output buffer.
 Defaults to no.
+See also
+.B cacher_memory_consume_requests.
 
 .It cacher_forward_data={yes|no}
 If set to yes, messages which are not treated as requests (thus are to be stored) are passed to the output buffer.
@@ -1986,8 +1988,16 @@ Defaults to no.
 If set to yes, messages without topic are forwarded.
 If set to no or left unset, messages without a topic are dropped and an error message is produced.
 
+.It cacher_memory_consume_requests={yes|no}
+If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the
+.B cacher_forward_requests
+parameter.
+If set to no or left unset, the parameter
+.B cacher_forward_requests
+will control whether the request is forwarded or not.
+
 .It cacher_empty_is_delete={yes|no}
-If set to yes, and empty message which otherwise would be stored will instead cause deletion of any previously stored message with mathcing topic.
+If set to yes, an empty message which otherwise would be stored will instead cause deletion of any previously stored message with mathcing topic.
 If set to no, empty messages will be stored.
 
 .It cacher_no_update={yes|no}
@@ -1998,6 +2008,13 @@ Defaults to no.
 Any messages received from other modules with an age older than the set value is silently dropped.
 In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.
 Defaults to 0 which means that TTL check is not performed.
+
+.It cacher_memory_ttl_seconds=SECONDS
+Messages which are to be stored in the message database will also be stored in the memory cache and deleted after this specified TTL expires.
+When a request message is received and a matching message is found in the memory cache, the cached message will be passed to the output buffer and the message database will not be consulted.
+The memory cache is checked for TTL when potential matches are found or every 5 minutes.
+If set to 0 or left unset, memory cache is not used.
+
 .El
 
 .SS mqttbroker (N)
