@@ -240,7 +240,7 @@ static void cacher_tidy_memory_cache (
 
 struct cacher_send_to_msgdb_callback_final_data {
 	const char *topic;
-	struct rrr_msg_msg *msg;
+	const struct rrr_msg_msg *msg;
 	int do_delete;
 };
 
@@ -252,7 +252,14 @@ static int cacher_send_to_msgdb_callback_final (
 
 	int ret = 0;
 
-	MSG_SET_TYPE(callback_data->msg, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
+	struct rrr_msg_msg *msg_new = rrr_msg_msg_duplicate (callback_data->msg);
+	if (msg_new == NULL) {
+		RRR_MSG_0("Could not duplicate message in cacher_send_to_msgdb_callback_final\n");
+		ret = 1;
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, callback_data->msg)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
@@ -276,13 +283,14 @@ static int cacher_send_to_msgdb_callback_final (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_new);
 	return ret;
 }
 
 static int cacher_send_to_msgdb (
 		struct cacher_data *data,
 		const char *topic,
-		struct rrr_msg_msg *msg,
+		const struct rrr_msg_msg *msg,
 		int do_delete
 ) {
 	int ret = 0;
@@ -363,7 +371,7 @@ static int cacher_store (
 		struct cacher_data *data,
 		const char *topic,
 		const struct rrr_msg_holder *entry,
-		struct rrr_msg_msg *msg,
+		const struct rrr_msg_msg *msg,
 		int do_delete
 ) {
 	int ret = 0;
@@ -383,11 +391,11 @@ static int cacher_store (
 static int cacher_process (
 		int *do_forward,
 		struct cacher_data *data,
-		struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg = entry->message;
+	const struct rrr_msg_msg *msg = entry->message;
 
 	char *topic_tmp = NULL;
 
