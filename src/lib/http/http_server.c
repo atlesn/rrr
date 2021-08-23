@@ -348,39 +348,42 @@ static int __rrr_http_server_read_callback (
 
 	int ret = 0;
 
-	for (int i = 0; i < 1; i++) {
-		rrr_biglength received_bytes_dummy = 0;
-		if ((ret = rrr_http_session_transport_ctx_tick_server (
-				&received_bytes_dummy,
-				handle,
-				RRR_HTTP_SERVER_READ_MAX,
-				http_server->callbacks.unique_id_generator_callback,
-				http_server->callbacks.unique_id_generator_callback_arg,
-				__rrr_http_server_upgrade_verify_callback,
-				http_server,
-				__rrr_http_server_websocket_handshake_callback,
-				http_server,
-				__rrr_http_server_receive_callback,
-				http_server,
-				http_server->callbacks.async_response_get_callback,
-				http_server->callbacks.async_response_get_callback_arg,
-				__rrr_http_server_websocket_get_response_callback,
-				http_server,
-				__rrr_http_server_websocket_frame_callback,
-				http_server
-		)) != 0) {
-			if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
-				RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
-						RRR_NET_TRANSPORT_CTX_FD(handle));
-			}
-			goto out;
-		}
+	int again_max = 5;
 
-		if (!rrr_http_session_transport_ctx_need_tick(handle)) {
-			break;
-		}
+	rrr_biglength received_bytes_dummy = 0;
 
-		// Need tick usually only happens at most one time (and we allow at most one)
+	again:
+	if ((ret = rrr_http_session_transport_ctx_tick_server (
+			&received_bytes_dummy,
+			handle,
+			RRR_HTTP_SERVER_READ_MAX,
+			http_server->callbacks.unique_id_generator_callback,
+			http_server->callbacks.unique_id_generator_callback_arg,
+			__rrr_http_server_upgrade_verify_callback,
+			http_server,
+			__rrr_http_server_websocket_handshake_callback,
+			http_server,
+			__rrr_http_server_receive_callback,
+			http_server,
+			http_server->callbacks.async_response_get_callback,
+			http_server->callbacks.async_response_get_callback_arg,
+			__rrr_http_server_websocket_get_response_callback,
+			http_server,
+			__rrr_http_server_websocket_frame_callback,
+			http_server
+	)) != 0) {
+		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
+					RRR_NET_TRANSPORT_CTX_FD(handle));
+		}
+		goto out;
+	}
+
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		if (again_max--) {
+			goto again;
+		}
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
