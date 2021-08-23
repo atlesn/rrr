@@ -101,6 +101,8 @@ struct httpclient_data {
 
 	int do_meta_tags_ignore;
 
+	char *taint_tag;
+
 	char *method_tag;
 	int do_method_tag_force;
 
@@ -513,6 +515,7 @@ static int httpclient_create_message_from_json_callback (
 	struct rrr_array array_tmp = {0};
 
 	const struct rrr_array *array_to_use = callback_data->array;
+
 	if (RRR_LL_COUNT(callback_data->structured_data) > 0) {
 		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
 			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_json_callback\n");
@@ -909,6 +912,16 @@ static int httpclient_final_callback (
 				RRR_MSG_0("Failed to push content type to array in httpclient_final_callback B\n");
 				goto out;
 			}
+		}
+	}
+
+	if (httpclient_data->taint_tag != NULL && *(httpclient_data->taint_tag) != '\0') {
+		if ((ret = rrr_array_push_value_vain_with_tag (
+				&structured_data,
+				httpclient_data->taint_tag
+		)) != 0) {
+			RRR_MSG_0("Failed to push taint tag value to array in httpclient_final_callback\n");
+			goto out;
 		}
 	}
 
@@ -1817,6 +1830,8 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
+
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
@@ -2129,6 +2144,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
+	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
 	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
