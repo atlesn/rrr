@@ -584,13 +584,13 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 	if (connection->keep_alive > 0) {
 		RRR_MQTT_CONN_TIMEOUTS_CHECK();
 
-		if (keepalive_reached) {
+		if (keepalive_exceeded) {
 			RRR_DBG_1("Keep-alive exceeded for connection\n");
 			RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT);
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
-		else if ((keepalive_exceeded) &&
+		else if ((keepalive_reached) &&
 		         (exceeded_keep_alive_callback) != NULL &&
                          (ret = exceeded_keep_alive_callback(handle, callback_arg)) != RRR_MQTT_OK
 		) {
