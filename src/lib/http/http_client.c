@@ -604,8 +604,6 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		// This usually only happens at most one time unless there is some error condition,
-		// after which we break out after a few rounds.
 		if (again_max--) {
 			goto again;
 		}
