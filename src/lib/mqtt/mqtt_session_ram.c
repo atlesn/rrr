@@ -1407,6 +1407,7 @@ static int __rrr_mqtt_session_ram_heartbeat (
 struct ram_process_ack_callback_data {
 	struct rrr_mqtt_p *ack_packet;
 	unsigned int found;
+	int is_outbound;
 	struct rrr_mqtt_session_ram *ram_session;
 };
 
@@ -1428,6 +1429,8 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 	// held by the PUBLISH packet with user count 1, and we DECREF this pointer
 	// if a QoS packet field is already filled
 	RRR_MQTT_P_INCREF(ack_packet);
+
+	// printf("Outbound %i vs %i ACK %s BUF %s\n", ack_callback_data->is_outbound, packet->is_outbound, RRR_MQTT_P_GET_TYPE_NAME(ack_packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC ||
@@ -1456,41 +1459,43 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		goto out;
 	}
 
-	if ((RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBACK ||
-			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREC ||
-			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREL ||
-			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBCOMP
-		) && RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_PUBLISH
-	) {
-		RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
-				"but %s was found with matching packet ID %u\n",
-				RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_PUBLISH),
-				RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
-				RRR_MQTT_P_GET_TYPE_NAME(packet),
-				RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
-		);
-	}
-	else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_SUBACK &&
-			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_SUBSCRIBE
-	) {
-		RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
-				"but %s was found with matching packet ID %u\n",
-				RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_SUBACK),
-				RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
-				RRR_MQTT_P_GET_TYPE_NAME(packet),
-				RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
-		);
-	}
-	else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_UNSUBACK &&
-			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_UNSUBSCRIBE
-	) {
-		RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
-				"but %s was found with matching packet ID %u\n",
-				RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_UNSUBACK),
-				RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
-				RRR_MQTT_P_GET_TYPE_NAME(packet),
-				RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
-		);
+	if (ack_callback_data->is_outbound == packet->is_outbound) {
+		if ((RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBACK ||
+				RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREC ||
+				RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREL ||
+				RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBCOMP
+			) && RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_PUBLISH
+		) {
+			RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
+					"but %s was found with matching packet ID %u\n",
+					RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_PUBLISH),
+					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
+			);
+		}
+		else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_SUBACK &&
+				RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_SUBSCRIBE
+		) {
+			RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
+					"but %s was found with matching packet ID %u\n",
+					RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_SUBACK),
+					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
+			);
+		}
+		else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_UNSUBACK &&
+				RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_UNSUBSCRIBE
+		) {
+			RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
+					"but %s was found with matching packet ID %u\n",
+					RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_UNSUBACK),
+					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
+			);
+		}
 	}
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
@@ -1664,7 +1669,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 
 static int __rrr_mqtt_session_ram_process_iterate_ack (
 		unsigned int *match_count,
-		struct rrr_mqtt_p_queue *queue,
+		int is_outbound,
 		struct rrr_mqtt_p *packet,
 		struct rrr_mqtt_session_ram *ram_session
 ) {
@@ -1673,11 +1678,12 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 	struct ram_process_ack_callback_data callback_data = {
 			packet,
 			0, // Initialize found counter
+			is_outbound, // For bugchecks
 			ram_session
 	};
 
 	ret = rrr_fifo_read (
-			&queue->buffer,
+			(is_outbound ? &ram_session->to_remote_buffer.buffer : &ram_session->from_remote_buffer.buffer),
 			__rrr_mqtt_session_ram_process_ack_callback,
 			&callback_data
 	);
@@ -1936,7 +1942,7 @@ static int __rrr_mqtt_session_ram_process_ack (
 
 	if ((ret = __rrr_mqtt_session_ram_process_iterate_ack (
 			match_count,
-			(packet_was_outbound ? &ram_session->to_remote_buffer : &ram_session->from_remote_buffer),
+			packet_was_outbound,
 			packet,
 			ram_session
 	)) != 0) {
