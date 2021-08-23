@@ -125,7 +125,7 @@ static int cacher_get_from_msgdb_callback (
 	}
 
 	if (msg_tmp != NULL) {
-		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested)\n",
+		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested) from message DB\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data),
 				msg_tmp->timestamp
 		);
@@ -337,7 +337,7 @@ static int cacher_save_to_memory_cache (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->memory_cache, 0; rrr_msg_holder_decref(node));
 
 	if (!do_delete) {
-		if ((ret = rrr_msg_holder_util_clone_no_locking (
+		if ((ret = rrr_msg_holder_util_clone_no_locking_no_metadata (
 				&entry_new,
 				entry
 		)) != 0) {
