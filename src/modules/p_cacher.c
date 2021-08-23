@@ -417,12 +417,15 @@ static int cacher_process (
 		goto out;
 	}
 
+	//////////////////////////
+	// Request 
+	/////////////////////
+
 	if (data->request_tag != NULL && rrr_array_message_has_tag(msg, data->request_tag)) {
-		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s'%s\n",
+		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s'\n",
 				INSTANCE_D_NAME(data->thread_data),
 				msg->timestamp,
-				topic_tmp,
-				data->do_forward_requests ? " (and forwarding)" : ""
+				topic_tmp
 		);
 
 		if (data->message_memory_ttl_us > 0) {
@@ -434,19 +437,41 @@ static int cacher_process (
 				if (!data->do_memory_consume_requests && data->do_forward_requests) {
 					*do_forward = 1;
 				}
+	
+				RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition after memory result is %s\n",
+						INSTANCE_D_NAME(data->thread_data),
+						msg->timestamp,
+						topic_tmp,
+						*do_forward ? "'yes'" : "'no'"
+				);
 
 				goto out;
 			}
 		}
 
-		ret = cacher_get_from_msgdb(data, topic_tmp);
+		if ((ret = cacher_get_from_msgdb(data, topic_tmp)) != 0) {
+			RRR_MSG_0("Warning: Request to message DB failed in cacher instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+			ret = 0;
+		}
 
 		if (data->do_forward_requests) {
 			*do_forward = 1;
 		}
 
+		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition (default) is %s\n",
+				INSTANCE_D_NAME(data->thread_data),
+				msg->timestamp,
+				topic_tmp,
+				*do_forward ? "'yes'" : "'no'"
+		);
+
 		goto out;
 	}
+
+	//////////////////////////
+	// Store or delete
+	/////////////////////
 
 	if (data->do_no_update) {
 		if (data->do_forward_other) {
