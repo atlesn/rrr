@@ -27,9 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../allocator.h"
 #include "http_part.h"
+#include "http_part_multipart.h"
 #include "http_fields.h"
 #include "http_util.h"
 #include "http_header_fields.h"
+#include "../array.h"
 #include "../string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
@@ -78,6 +80,7 @@ const struct rrr_http_field *__rrr_http_part_header_field_subvalue_get (
 void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LL_DESTROY(part, struct rrr_http_part, rrr_http_part_destroy(node));
 	rrr_http_header_field_collection_clear(&part->headers);
+	rrr_array_collection_clear(&part->arrays);
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, rrr_free(node));
 	rrr_http_field_collection_clear(&part->fields);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
@@ -494,13 +497,38 @@ static int __rrr_http_part_query_fields_from_uri_extract_callback (
 	return ret;
 }
 
-int rrr_http_part_fields_from_uri_extract (
+static int __rrr_http_part_fields_from_uri_extract (
 		struct rrr_http_part *target
 ) {
 	return rrr_nullsafe_str_chr(target->request_uri_nullsafe, '?', __rrr_http_part_query_fields_from_uri_extract_callback, target);
 }
 
-int rrr_http_part_fields_from_post_extract (
+struct rrr_http_part_fields_from_post_data_extract_json_callback_data {
+	struct rrr_http_part *target;
+};
+
+static int __rrr_http_part_fields_from_post_extract_json_callback (
+		const struct rrr_array *array,
+		void *arg
+) {
+	struct rrr_http_part_fields_from_post_data_extract_json_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_array *new_array = NULL;
+
+	if ((ret = rrr_array_clone (&new_array, array)) != 0) {
+		RRR_MSG_0("Failed to clone array in __rrr_http_part_fields_from_post_extract_json_callback\n");
+		goto out;
+	}
+
+	RRR_LL_APPEND(&callback_data->target->arrays, new_array);
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_part_fields_from_post_extract (
 		struct rrr_http_part *target,
 		const char *data_ptr
 ) {
@@ -563,11 +591,64 @@ int rrr_http_part_fields_from_post_extract (
 			field_tmp = NULL;
 		RRR_LL_ITERATE_END();
 	}
+#ifdef RRR_WITH_JSONC
+	else if (__rrr_http_part_content_type_equals(target, "application/json")) {
+		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
+
+		rrr_length json_length;
+		if (rrr_length_from_biglength_err(&json_length, data_length) != 0) {
+			RRR_MSG_0("JSON data in HTTP body too big, cannot be stored (%" PRIrrrbl ">%llu)\n",
+					data_length, (unsigned long long) RRR_LENGTH_MAX);
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+
+		struct rrr_http_part_fields_from_post_data_extract_json_callback_data callback_data = {
+			target
+		};
+
+		if ((ret = rrr_http_util_json_to_arrays (
+				data_start,
+				json_length,
+				__rrr_http_part_fields_from_post_extract_json_callback,
+				&callback_data
+		)) != 0) {
+			RRR_MSG_0("Failed to parse JSON in HTTP request body, return was %i\n", ret);
+			// Mask hard errors (allocation failures)
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+	}
+#endif
 
 	out:
 	if (field_tmp != NULL) {
 		rrr_http_field_destroy(field_tmp);
 	}
+	return ret;
+}
+
+int rrr_http_part_multipart_and_fields_process (
+		struct rrr_http_part *part,
+		const char *data_or_null
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_http_part_fields_from_uri_extract(part)) != 0) {
+		goto out;
+	}
+
+	if (data_or_null != NULL) {
+		if ((ret = rrr_http_part_multipart_process(part, data_or_null)) != 0) {
+			goto out;
+		}
+
+		if ((ret = __rrr_http_part_fields_from_post_extract(part, data_or_null)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
 	return ret;
 }
 

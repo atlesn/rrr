@@ -450,7 +450,7 @@ static int __rrr_post_read_callback (struct rrr_read_session *read_session, stru
 		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			array_final,
 			rrr_time_get_64(),

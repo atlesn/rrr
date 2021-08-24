@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_part.h"
 #include "http_part_parse.h"
-#include "http_part_multipart.h"
 #include "http_util.h"
 #include "http_common.h"
 #include "../random.h"
@@ -889,15 +888,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 	const char *data_to_use = (merged_chunks != NULL ? merged_chunks : read_session->rx_buf_ptr);
 
-	if ((ret = rrr_http_part_multipart_process(transaction->request_part, data_to_use)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data_to_use)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+	if ((ret = rrr_http_part_multipart_and_fields_process (transaction->request_part, data_to_use)) != 0) {
 		goto out;
 	}
 

@@ -332,7 +332,7 @@ static int mqttclient_publish (
 		);
 
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, reading) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, reading) != 0) {
 			RRR_MSG_0("Could not create temporary array collection in mqttclient_publish of MQTT client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
@@ -1043,7 +1043,7 @@ static int __mqttclient_try_create_array_message_from_publish_callback (
 	int ret = 0;
 
 	struct rrr_msg_msg *message = NULL;
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			array,
 			rrr_time_get_64(),

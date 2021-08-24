@@ -418,7 +418,7 @@ static int influxdb_process_entry (
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array, reading) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array, reading) != 0) {
 		RRR_MSG_0("Error while parsing incoming array in influxdb instance %s\n",
 				INSTANCE_D_NAME(influxdb_data->thread_data));
 		ret = 0;

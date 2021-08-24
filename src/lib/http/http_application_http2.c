@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_part.h"
 #include "http_part_parse.h"
-#include "http_part_multipart.h"
 #include "http_header_fields.h"
 #include "http_util.h"
 #include "../net_transport/net_transport.h"
@@ -476,24 +475,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		if (data != NULL) {
-			if ((ret = rrr_http_part_multipart_process(transaction->request_part, data)) != 0) {
-				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-					goto out_send_response_bad_request;
-				}
-				goto out;
-			}
-
-			if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data)) != 0) {
-				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-					goto out_send_response_bad_request;
-				}
-				goto out;
-			}
-
-		}
-
-		if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+		if ((ret = rrr_http_part_multipart_and_fields_process (transaction->request_part, data)) != 0) {
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;
 			}

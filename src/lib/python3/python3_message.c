@@ -1571,7 +1571,7 @@ struct rrr_msg_msg *rrr_python3_rrr_message_get_message (struct rrr_msg_addr *me
 			goto out_err;
 		}
 
-		if (rrr_array_new_message_from_collection (
+		if (rrr_array_new_message_from_array (
 				&new_msg,
 				&array_tmp,
 				ret->timestamp,
@@ -1667,7 +1667,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, msg) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, msg) != 0) {
 		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
