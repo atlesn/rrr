@@ -296,6 +296,7 @@ struct rrr_http_application_http1_receive_data {
 	struct rrr_http_application_http1 *http1;
 	rrr_biglength received_bytes; // Used only for stall timeout and sleeping
 	struct rrr_http_application **upgraded_application;
+	const struct rrr_http_rules *rules;
 	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
 	int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS);
@@ -830,7 +831,7 @@ static int __rrr_http_application_http1_request_upgrade_try (
 			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
 	}
-	else if (upgrade_h2c != NULL) {
+	else if (!receive_data->rules->do_no_server_http2 && upgrade_h2c != NULL) {
 		if ((ret = __rrr_http_application_http1_request_upgrade_try_http2 (
 				receive_data->upgraded_application,
 				receive_data,
@@ -888,7 +889,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 	const char *data_to_use = (merged_chunks != NULL ? merged_chunks : read_session->rx_buf_ptr);
 
-	if ((ret = rrr_http_part_multipart_and_fields_process (transaction->request_part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_multipart_and_fields_process (transaction->request_part, data_to_use, receive_data->rules->do_no_body_parse)) != 0) {
 		goto out;
 	}
 
@@ -1105,7 +1106,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 
 #ifdef RRR_WITH_NGHTTP2
-	if (read_session->parse_pos == 0 && receive_data->unique_id_generator_callback != NULL) {
+	if (!receive_data->rules->do_no_server_http2 && read_session->parse_pos == 0 && receive_data->unique_id_generator_callback != NULL) {
 		// Is server
 
 		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
@@ -1615,6 +1616,7 @@ static int __rrr_http_application_http1_tick (
 					http1,
 					*received_bytes,
 					upgraded_app,
+					rules,
 					unique_id_generator_callback,
 					unique_id_generator_callback_arg,
 					upgrade_verify_callback,
