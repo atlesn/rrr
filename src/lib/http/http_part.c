@@ -630,7 +630,8 @@ static int __rrr_http_part_fields_from_post_extract (
 
 int rrr_http_part_multipart_and_fields_process (
 		struct rrr_http_part *part,
-		const char *data_or_null
+		const char *data_or_null,
+		short no_body_parse
 ) {
 	int ret = 0;
 
@@ -638,7 +639,7 @@ int rrr_http_part_multipart_and_fields_process (
 		goto out;
 	}
 
-	if (data_or_null != NULL) {
+	if (!no_body_parse && data_or_null != NULL) {
 		if ((ret = rrr_http_part_multipart_process(part, data_or_null)) != 0) {
 			goto out;
 		}

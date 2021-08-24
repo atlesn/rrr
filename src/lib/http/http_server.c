@@ -66,7 +66,6 @@ static int __rrr_http_server_unique_id_generator_callback_dummy (
 
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2,
 		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -82,7 +81,6 @@ int rrr_http_server_new (
 
 	memset(server, '\0', sizeof(*server));
 
-	server->disable_http2 = disable_http2;
 	server->callbacks = *callbacks;
 
 	// Must be set for HTTP application to run in server mode
@@ -100,6 +98,17 @@ int rrr_http_server_new (
 	out:
 		return ret;
 }
+
+#define RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(name)              \
+    void RRR_PASTE(rrr_http_server_set_,name) (                \
+            struct rrr_http_server *server,                    \
+            int set                                            \
+    ) {                                                        \
+        server->rules.RRR_PASTE(do_,name) = (set != 0);              \
+    }                                                          \
+
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
@@ -155,7 +164,7 @@ static int __rrr_http_server_upgrade_verify_callback (
 
 	(void)(from);
 
-	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->disable_http2) {
+	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->rules.do_no_server_http2) {
 		*do_upgrade = 0;
 	}
 	else {
@@ -357,6 +366,7 @@ static int __rrr_http_server_read_callback (
 			&received_bytes_dummy,
 			handle,
 			RRR_HTTP_SERVER_READ_MAX,
+			&http_server->rules,
 			http_server->callbacks.unique_id_generator_callback,
 			http_server->callbacks.unique_id_generator_callback_arg,
 			__rrr_http_server_upgrade_verify_callback,
@@ -564,7 +574,7 @@ int rrr_http_server_start_tls (
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
 
-	if (server->disable_http2) {
+	if (server->rules.do_no_server_http2) {
 		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
 	}
 

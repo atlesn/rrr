@@ -179,7 +179,8 @@ int rrr_http_part_chunks_iterate (
 );
 int rrr_http_part_multipart_and_fields_process (
 		struct rrr_http_part *part,
-		const char *data_or_null
+		const char *data_or_null,
+		short no_body_parse
 );
 int rrr_http_part_chunks_merge (
 		char **result_data,

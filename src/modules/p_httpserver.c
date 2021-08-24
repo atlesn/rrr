@@ -77,6 +77,7 @@ struct httpserver_data {
 
 	struct rrr_map http_fields_accept;
 
+	int do_http_no_body_parse;
 	int do_http_fields_accept_any;
 	int do_allow_empty_messages;
 	int do_receive_full_request;
@@ -190,6 +191,8 @@ static int httpserver_parse_config (
 				config->name);
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_no_body_parse", do_http_no_body_parse, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_fields_accept_any", do_http_fields_accept_any, 0);
 
@@ -1664,11 +1667,13 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		&callback_data
 	};
 
-	if (rrr_http_server_new(&data->http_server, data->do_disable_http2, &callbacks) != 0) {
+	if (rrr_http_server_new(&data->http_server, &callbacks) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	rrr_http_server_set_no_body_parse(data->http_server, data->do_http_no_body_parse);
 
 	if (httpserver_start_listening(data) != 0) {
 		goto out_message;
