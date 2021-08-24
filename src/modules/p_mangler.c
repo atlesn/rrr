@@ -144,7 +144,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection (
+	if ((ret = rrr_array_message_append_to_array (
 			&array_version_dummy,
 			&array_from_message,
 			(const struct rrr_msg_msg *) entry->message
@@ -189,7 +189,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_LL_ITERATE_END();
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message_new,
 			&array_new,
 			rrr_time_get_64(),

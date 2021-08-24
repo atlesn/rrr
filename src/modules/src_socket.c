@@ -171,7 +171,7 @@ static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, v
 
 	struct rrr_msg_msg *message = NULL;
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			&data->array_tmp,
 			rrr_time_get_64(),

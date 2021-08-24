@@ -217,7 +217,7 @@ static int averager_process_message (
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 		RRR_MSG_0("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
@@ -272,7 +272,7 @@ static int averager_spawn_message_callback (struct rrr_msg_holder *new_entry, vo
 
 	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 			&message,
 			callback_data->array_tmp,
 			rrr_time_get_64(),

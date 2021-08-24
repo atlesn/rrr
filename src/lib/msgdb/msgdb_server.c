@@ -554,7 +554,7 @@ static int __rrr_msgdb_server_idx (
 		}
 	RRR_LL_ITERATE_END();
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&msg_tmp,
 			&results_tmp_topics,
 			rrr_time_get_64(),

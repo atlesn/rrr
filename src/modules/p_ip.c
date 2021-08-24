@@ -584,7 +584,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			rrr_array_strip_type(callback_data->array_final, &rrr_type_definition_sep);
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&message_new,
 				callback_data->array_final,
 				rrr_time_get_64(),
@@ -1274,7 +1274,7 @@ static int ip_push_message (
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;

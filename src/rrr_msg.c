@@ -140,7 +140,7 @@ static int __rrr_msg_msg_callback (
 		}
 
 		uint16_t array_version = 0;
-		if ((ret = rrr_array_message_append_to_collection(&array_version, &array_tmp, msg)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&array_version, &array_tmp, msg)) != 0) {
 			goto out;
 		}
 
@@ -380,7 +380,7 @@ static int __rrr_msg_selftest (
 			goto out;
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&msg_msg,
 				&array_tmp,
 				rrr_time_get_64(),

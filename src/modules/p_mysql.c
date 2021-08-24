@@ -355,7 +355,7 @@ static int mysql_colplan_array_bind_execute (
 
 	uint16_t array_version = 0;
 
-	if (rrr_array_message_append_to_collection(&array_version, &collection, entry->message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version, &collection, entry->message) != 0) {
 		RRR_MSG_0("Could not convert array message to data collection in mysql\n");
 		ret = 1;
 		goto out_cleanup;

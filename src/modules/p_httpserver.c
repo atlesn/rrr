@@ -456,7 +456,7 @@ static int httpserver_write_message_callback (
 	struct rrr_msg_msg *new_message = NULL;
 
 	if (RRR_LL_COUNT(callback_data->array) > 0) {
-		ret = rrr_array_new_message_from_collection (
+		ret = rrr_array_new_message_from_array (
 				&new_message,
 				callback_data->array,
 				rrr_time_get_64(),
@@ -767,7 +767,7 @@ static int httpserver_async_response_get_extract_data (
 
 	if (MSG_IS_ARRAY(msg)) {
 		uint16_t array_version = 0;
-		if ((ret = rrr_array_message_append_to_collection(&array_version, target, msg)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&array_version, target, msg)) != 0) {
 			goto out;
 		}
 	}
@@ -1049,13 +1049,52 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if ((ret = httpserver_receive_callback_send_array_message (
-			data,
-			&target_array,
-			handle,
-			response_data->request_topic
-	)) != 0) {
-		goto out;
+	if (RRR_LL_COUNT(&transaction->request_part->arrays) > 0) {
+		if ((ret = rrr_array_push_value_u64_with_tag (
+				&target_array,
+				"http_request_partials",
+				rrr_length_from_slength_bug_const (RRR_LL_COUNT(&transaction->request_part->arrays))
+		)) != 0) {
+			RRR_MSG_0("Failed to push array message count to array while processing HTTP request part\n");
+			goto out;
+		}
+
+		// Move partials counter to the beginning
+		rrr_array_rotate_forward(&target_array);
+
+		const int target_array_orig_length = RRR_LL_COUNT(&target_array);
+
+		// Generate one message for every array in array the collection. The
+		// structural fields and field from any request URI will be present
+		// first in all the messages.
+
+		RRR_LL_ITERATE_BEGIN(&transaction->request_part->arrays, struct rrr_array);
+			rrr_array_trim(&target_array, target_array_orig_length);
+
+			if ((ret = rrr_array_append_from (&target_array, node)) != 0) {
+				RRR_MSG_0("Failed to merge arrays while processing array data in HTTP request part\n");
+				goto out;
+			}
+
+			if ((ret = httpserver_receive_callback_send_array_message (
+					data,
+					&target_array,
+					handle,
+					response_data->request_topic
+			)) != 0) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	}
+	else {
+		if ((ret = httpserver_receive_callback_send_array_message (
+				data,
+				&target_array,
+				handle,
+				response_data->request_topic
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	//////////////////////
