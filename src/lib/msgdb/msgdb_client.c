@@ -291,7 +291,6 @@ static int __rrr_msgdb_client_send_empty (
 			(unsigned long long) topic_len,
 			(unsigned long long) UINT16_MAX
 		);
-		ret = 1;
 		goto out;
 	}
 
