@@ -38,10 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
 #include "../lib/map.h"
 #include "../lib/type.h"
 #include "../lib/type_conversion.h"
+#include "../lib/helpers/string_builder.h"
 
 struct mangler_data {
 	struct rrr_instance_runtime_data *thread_data;

@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_msg.h"
 #include "../allocator.h"
 #include "../rrr_types.h"
-#include "../string_builder.h"
 #include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
 #include "../util/posix.h"
+#include "../helpers/string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../mqtt/mqtt_topic.h"
 

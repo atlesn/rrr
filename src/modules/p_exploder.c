@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 
 struct exploder_data {
 		struct rrr_instance_runtime_data *thread_data;

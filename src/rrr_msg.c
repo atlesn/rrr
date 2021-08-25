@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
 #include "lib/array.h"
-#include "lib/string_builder.h"
+#include "lib/helpers/string_builder.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/messages/msg.h"

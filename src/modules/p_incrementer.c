@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
