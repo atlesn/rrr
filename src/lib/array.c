@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "helpers/nullsafe_str.h"
 #include "parse.h"
 
-static int __rrr_array_clone (
+static int __rrr_array_clone_values (
 		struct rrr_array *target,
 		const struct rrr_array *source,
 		int do_clone_data
@@ -77,7 +77,7 @@ int rrr_array_clone_without_data (
 		struct rrr_array *target,
 		const struct rrr_array *source
 ) {
-	return __rrr_array_clone(target, source, 0);
+	return __rrr_array_clone_values(target, source, 0);
 }
 
 int rrr_array_append_from (
@@ -88,7 +88,7 @@ int rrr_array_append_from (
 
 	struct rrr_array tmp = {0};
 
-	if ((ret = __rrr_array_clone(&tmp, source, 1)) != 0) {
+	if ((ret = __rrr_array_clone_values(&tmp, source, 1)) != 0) {
 		RRR_MSG_0("Could not clone array in rrr_array_append_from\n");
 		goto out;
 	}
@@ -97,6 +97,35 @@ int rrr_array_append_from (
 
 	out:
 	rrr_array_clear(&tmp);
+	return ret;
+}
+
+int rrr_array_clone (
+		struct rrr_array **target,
+		const struct rrr_array *source
+) {
+	int ret = 0;
+
+	struct rrr_array *array = NULL;
+
+	*target = NULL;
+
+	if ((array = rrr_allocate_zero(sizeof(*array))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_array_clone\n");
+		goto out;
+	}
+
+	if ((ret = rrr_array_append_from (array, source)) != 0) {
+		goto out;
+	}
+
+	*target = array;
+	array = NULL;
+
+	out:
+	if (array != NULL) {
+		rrr_array_destroy(array);
+	}
 	return ret;
 }
 
@@ -115,7 +144,7 @@ int rrr_array_append_from (
     } while(0);
 
 int rrr_array_push_value_vain_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag
 ) {
 	struct rrr_type_value *new_value = NULL;
@@ -141,7 +170,7 @@ int rrr_array_push_value_vain_with_tag (
 		goto out;
 	}
 
-	RRR_LL_APPEND(collection, new_value);
+	RRR_LL_APPEND(array, new_value);
 	new_value = NULL;
 
 	out:
@@ -152,7 +181,7 @@ int rrr_array_push_value_vain_with_tag (
 }
 
 static int __rrr_array_push_value_64_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		uint64_t value,
 		const struct rrr_type_definition *definition,
@@ -193,7 +222,7 @@ static int __rrr_array_push_value_64_with_tag (
 		goto out;
 	}
 
-	RRR_LL_APPEND(collection, new_value);
+	RRR_LL_APPEND(array, new_value);
 	new_value = NULL;
 
 	out:
@@ -204,12 +233,12 @@ static int __rrr_array_push_value_64_with_tag (
 }
 
 int rrr_array_push_value_u64_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		uint64_t value
 ) {
 	return __rrr_array_push_value_64_with_tag(
-			collection,
+			array,
 			tag,
 			value,
 			&rrr_type_definition_h,
@@ -218,12 +247,12 @@ int rrr_array_push_value_u64_with_tag (
 }
 
 int rrr_array_push_value_i64_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		int64_t value
 ) {
 	return __rrr_array_push_value_64_with_tag(
-			collection,
+			array,
 			tag,
 			(uint64_t ) value,
 			&rrr_type_definition_h,
@@ -232,7 +261,7 @@ int rrr_array_push_value_i64_with_tag (
 }
 
 static int __rrr_array_push_value_x_with_tag_with_size (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const char *value,
 		rrr_length value_size,
@@ -260,7 +289,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 		goto out;
 	}
 
-	RRR_LL_APPEND(collection, new_value);
+	RRR_LL_APPEND(array, new_value);
 
 	memcpy(new_value->data, value, value_size);
 
@@ -269,12 +298,12 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 }
 
 int rrr_array_push_value_fixp_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		rrr_fixp value
 ) {
 	return __rrr_array_push_value_x_with_tag_with_size (
-			collection,
+			array,
 			tag,
 			(const char *) &value,
 			sizeof(value),
@@ -283,7 +312,7 @@ int rrr_array_push_value_fixp_with_tag (
 }
 
 int rrr_array_push_value_str_with_tag_with_size (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const char *value,
 		rrr_length value_size
@@ -291,7 +320,7 @@ int rrr_array_push_value_str_with_tag_with_size (
 	// Don't use the import function, it reads strings with quotes around it
 
 	return __rrr_array_push_value_x_with_tag_with_size (
-			collection,
+			array,
 			tag,
 			value,
 			value_size,
@@ -300,13 +329,13 @@ int rrr_array_push_value_str_with_tag_with_size (
 }
 
 int rrr_array_push_value_blob_with_tag_with_size (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const char *value,
 		rrr_length value_size
 ) {
 	return __rrr_array_push_value_x_with_tag_with_size (
-			collection,
+			array,
 			tag,
 			value,
 			value_size,
@@ -315,7 +344,7 @@ int rrr_array_push_value_blob_with_tag_with_size (
 }
 
 struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data {
-	struct rrr_array *collection;
+	struct rrr_array *array;
 	const char *tag;
 	const struct rrr_type_definition *definition;
 };
@@ -334,7 +363,7 @@ static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 	}
 
 	return __rrr_array_push_value_x_with_tag_with_size (
-			callback_data->collection,
+			callback_data->array,
 			callback_data->tag,
 			str,
 			(rrr_length) len,
@@ -343,12 +372,12 @@ static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 }
 
 int rrr_array_push_value_blob_with_tag_nullsafe (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const struct rrr_nullsafe_str *str
 ) {
 	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data callback_data = {
-			collection,
+			array,
 			tag,
 			&rrr_type_definition_blob
 	};
@@ -361,12 +390,12 @@ int rrr_array_push_value_blob_with_tag_nullsafe (
 }
 
 int rrr_array_push_value_str_with_tag_nullsafe (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const struct rrr_nullsafe_str *str
 ) {
 	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data callback_data = {
-			collection,
+			array,
 			tag,
 			&rrr_type_definition_str
 	};
@@ -379,7 +408,7 @@ int rrr_array_push_value_str_with_tag_nullsafe (
 }
 
 int rrr_array_push_value_str_with_tag (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const char *tag,
 		const char *value
 ) {
@@ -393,7 +422,7 @@ int rrr_array_push_value_str_with_tag (
 	}
 
 	return rrr_array_push_value_str_with_tag_with_size(
-			collection,
+			array,
 			tag,
 			value,
 			(rrr_length) value_size
@@ -465,28 +494,28 @@ int rrr_array_get_value_signed_64_by_tag (
 }
 
 void rrr_array_strip_type (
-		struct rrr_array *collection,
+		struct rrr_array *array,
 		const struct rrr_type_definition *definition
 ) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
 		if (node->definition == definition) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(array, 0; rrr_type_value_destroy(node));
 }
 
-void rrr_array_clear (struct rrr_array *collection) {
-	RRR_LL_DESTROY(collection,struct rrr_type_value,rrr_type_value_destroy(node));
+void rrr_array_clear (struct rrr_array *array) {
+	RRR_LL_DESTROY(array,struct rrr_type_value,rrr_type_value_destroy(node));
 }
 
-void rrr_array_clear_void (void *collection) {
-	rrr_array_clear(collection);
+void rrr_array_clear_void (void *array) {
+	rrr_array_clear(array);
 }
 
-void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_array *collection, const char *tag) {
+void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_array *array, const char *tag) {
 	*cleared_count = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
 		if (node->tag == NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
@@ -494,12 +523,56 @@ void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_arr
 			RRR_LL_ITERATE_SET_DESTROY();
 			(*cleared_count)++;
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(array, 0; rrr_type_value_destroy(node));
 }
 
-void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+void rrr_array_clear_by_tag (struct rrr_array *array, const char *tag) {
 	unsigned int cleared_count_dummy = 0;
-	rrr_array_clear_by_tag_checked(&cleared_count_dummy, collection, tag);
+	rrr_array_clear_by_tag_checked(&cleared_count_dummy, array, tag);
+}
+
+void rrr_array_destroy (struct rrr_array *array) {
+	rrr_array_clear(array);
+	rrr_free(array);
+}
+
+void rrr_array_collection_clear (struct rrr_array_collection *collection) {
+	RRR_LL_DESTROY(collection, struct rrr_array, rrr_array_destroy(node));
+}
+
+void rrr_array_trim (struct rrr_array *array, int target_length) {
+	if (target_length > RRR_LL_COUNT(array) || target_length < 0) {
+		RRR_BUG("BUG: Target length was > array length or negative in rrr_array_trim (%i vs %i)\n",
+				target_length, RRR_LL_COUNT(array));
+	}
+
+	// Note : Reverse iteration
+	RRR_LL_ITERATE_BEGIN_REVERSE(array, struct rrr_type_value);
+		if (RRR_LL_COUNT(array) > target_length) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(array, 0; rrr_type_value_destroy(node));
+}
+
+void rrr_array_rotate_reverse (struct rrr_array *array) {
+	if (RRR_LL_COUNT(array) == 0) {
+		return;
+	}
+
+	struct rrr_type_value *first = RRR_LL_SHIFT(array);
+	RRR_LL_APPEND(array, first);
+}
+
+void rrr_array_rotate_forward (struct rrr_array *array) {
+	if (RRR_LL_COUNT(array) == 0) {
+		return;
+	}
+
+	struct rrr_type_value *last = RRR_LL_POP(array);
+	RRR_LL_UNSHIFT(array, last);
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (
@@ -597,7 +670,7 @@ static int __rrr_array_get_exported_length (
 	return 0;
 }
 
-static int __rrr_array_collection_iterate_chosen_tags (
+static int __rrr_array_array_iterate_chosen_tags (
 		int *found_tags,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags,
@@ -634,7 +707,7 @@ static int __rrr_array_collection_iterate_chosen_tags (
 					ret = 0;
 					goto out;
 				}
-				RRR_MSG_0("Error from callback in __rrr_array_collection_iterate_chosen_tags\n");
+				RRR_MSG_0("Error from callback in __rrr_array_array_iterate_chosen_tags\n");
 				ret = 1;
 				goto out;
 			}
@@ -650,7 +723,7 @@ struct pack_callback_data {
 	char *write_pos;
 };
 
-static int __rrr_array_collection_pack_callback (const struct rrr_type_value *node, void *arg) {
+static int __rrr_array_array_pack_callback (const struct rrr_type_value *node, void *arg) {
 	int ret = 0;
 
 	struct pack_callback_data *data = arg;
@@ -658,7 +731,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	uint8_t type = node->definition->type;
 
 	if (node->definition->pack == NULL) {
-		RRR_BUG("No pack function defined for type %u in __rrr_array_collection_pack_callback\n", type);
+		RRR_BUG("No pack function defined for type %u in __rrr_array_array_pack_callback\n", type);
 	}
 
 	struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) data->write_pos;
@@ -675,7 +748,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	uint8_t new_type = 0;
 	rrr_length written_bytes = 0;
 	if (node->definition->pack(data->write_pos, &written_bytes, &new_type, node) != 0) {
-		RRR_MSG_0("Error while packing data of type %u in __rrr_array_collection_pack_callback\n", node->definition->type);
+		RRR_MSG_0("Error while packing data of type %u in __rrr_array_array_pack_callback\n", node->definition->type);
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
@@ -689,7 +762,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	head->total_length = rrr_htobe32(written_bytes);
 
 	if (written_bytes < node->total_stored_length) {
-		RRR_BUG("Size mismatch in __rrr_array_collection_pack_callback, too few bytes written\n");
+		RRR_BUG("Size mismatch in __rrr_array_array_pack_callback, too few bytes written\n");
 	}
 
 	out:
@@ -720,7 +793,7 @@ static int __rrr_array_selected_tags_split_callback (const struct rrr_type_value
 		const rrr_length element_size = node->total_stored_length / node->element_count;
 
 		if (element_size * node->element_count != node->total_stored_length) {
-			RRR_MSG_0("Invalid total store length in array value in __rrr_array_collection_split_callback, not divisible by element size\n");
+			RRR_MSG_0("Invalid total store length in array value in __rrr_array_array_split_callback, not divisible by element size\n");
 			ret = 1;
 			goto out;
 		}
@@ -754,7 +827,7 @@ int rrr_array_selected_tags_split (
 		callback_arg
 	};
 
-	return __rrr_array_collection_iterate_chosen_tags (
+	return __rrr_array_array_iterate_chosen_tags (
 			found_tags,
 			definition,
 			tags,
@@ -763,18 +836,18 @@ int rrr_array_selected_tags_split (
 	);
 }
 
-static int __rrr_array_collection_export_callback (const struct rrr_type_value *node, void *arg) {
+static int __rrr_array_array_export_callback (const struct rrr_type_value *node, void *arg) {
 	int ret = 0;
 
 	struct pack_callback_data *data = arg;
 
 	if (node->definition->export == NULL) {
-		RRR_BUG("No export function defined for type %u in __rrr_array_collection_export_callback\n", node->definition->type);
+		RRR_BUG("No export function defined for type %u in __rrr_array_array_export_callback\n", node->definition->type);
 	}
 
 	rrr_length written_bytes = 0;
 	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
-		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_collection_export_callback\n", node->definition->type);
+		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_array_export_callback\n", node->definition->type);
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
@@ -785,14 +858,14 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 			node->definition->identifier, written_bytes, data->written_bytes_total);
 
 	if (written_bytes < node->total_stored_length) {
-		RRR_BUG("Size mismatch in __rrr_array_collection_export_callback, too few bytes written\n");
+		RRR_BUG("Size mismatch in __rrr_array_array_export_callback, too few bytes written\n");
 	}
 
 	out:
 	return ret;
 }
 
-static int __rrr_array_collection_pack_or_export (
+static int __rrr_array_array_pack_or_export (
 		char *target,
 		int *found_tags,
 		rrr_biglength *written_bytes_final,
@@ -810,21 +883,21 @@ static int __rrr_array_collection_pack_or_export (
 
 	callback_data.write_pos = target;
 
-	if ((ret = __rrr_array_collection_iterate_chosen_tags (
+	if ((ret = __rrr_array_array_iterate_chosen_tags (
 			found_tags,
 			definition,
 			tags,
 			method,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error %i from iterator in __rrr_array_collection_pack_or_export\n", ret);
+		RRR_MSG_0("Error %i from iterator in __rrr_array_array_pack_or_export\n", ret);
 		goto out;
 	}
 
 	*written_bytes_final = callback_data.written_bytes_total;
 
 	if (callback_data.write_pos > target + target_size) {
-		RRR_BUG("Buffer write outside bounds in __rrr_array_collection_pack_or_export\n");
+		RRR_BUG("Buffer write outside bounds in __rrr_array_array_pack_or_export\n");
 	}
 
 	out:
@@ -867,14 +940,14 @@ int rrr_array_selected_tags_export (
 		goto out;
 	}
 
-	if ((ret = __rrr_array_collection_pack_or_export (
+	if ((ret = __rrr_array_array_pack_or_export (
 			result,
 			found_tags,
 			target_size,
 			(rrr_length) total_data_length,
 			definition,
 			tags,
-			__rrr_array_collection_export_callback
+			__rrr_array_array_export_callback
 	)) != 0) {
 		RRR_MSG_0("Error while converting array in rrr_array_selected_tags_export return was %i\n", ret);
 		goto out;
@@ -888,7 +961,7 @@ int rrr_array_selected_tags_export (
 	return ret;
 }
 
-int rrr_array_new_message_from_collection (
+int rrr_array_new_message_from_array (
 		struct rrr_msg_msg **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
@@ -917,7 +990,7 @@ int rrr_array_new_message_from_collection (
 	}
 
 	if ((message = rrr_msg_msg_new_array(time, topic_length, (rrr_u32) total_data_length)) == NULL) {
-		RRR_MSG_0("Could not create message for data collection (size was %llu)\n",
+		RRR_MSG_0("Could not create message for data array (size was %llu)\n",
 				(unsigned long long) total_data_length);
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
@@ -933,16 +1006,16 @@ int rrr_array_new_message_from_collection (
 	rrr_biglength written_bytes_total = 0;
 	int found_tags = 0;
 
-	if ((ret = __rrr_array_collection_pack_or_export (
+	if ((ret = __rrr_array_array_pack_or_export (
 			MSG_DATA_PTR(message),
 			&found_tags,
 			&written_bytes_total,
 			(rrr_length) MSG_DATA_LENGTH(message),
 			definition,
 			NULL, // Process all elements
-			__rrr_array_collection_pack_callback
+			__rrr_array_array_pack_callback
 	)) != 0) {
-		RRR_MSG_0("Error while converting array in rrr_array_new_message_from_collection return was %i\n", ret);
+		RRR_MSG_0("Error while converting array in rrr_array_new_message_from_array return was %i\n", ret);
 		goto out;
 	}
 
@@ -1164,11 +1237,11 @@ int rrr_array_message_clone_value_by_tag (
 	);
 }
 
-struct rrr_array_message_append_to_collection_callback_data {
+struct rrr_array_message_append_to_array_callback_data {
 	struct rrr_array *target_tmp;
 };
 
-static int __rrr_array_message_append_to_collection_callback (
+static int __rrr_array_message_append_to_array_callback (
 		const char *data_start,
 		const struct rrr_type_definition *type,
 		rrr_type_flags flags,
@@ -1177,7 +1250,7 @@ static int __rrr_array_message_append_to_collection_callback (
 		rrr_length element_count,
 		void *arg
 ) {
-	struct rrr_array_message_append_to_collection_callback_data *callback_data = arg;
+	struct rrr_array_message_append_to_array_callback_data *callback_data = arg;
 	int ret = 0;
 
 	struct rrr_type_value *template = NULL;
@@ -1193,7 +1266,7 @@ static int __rrr_array_message_append_to_collection_callback (
 			NULL,
 			total_length
 	)) != 0) {
-		RRR_MSG_0("Could not allocate value in __rrr_array_message_append_to_collection_callbackn\n");
+		RRR_MSG_0("Could not allocate value in __rrr_array_message_append_to_array_callbackn\n");
 		goto out;
 	}
 
@@ -1212,7 +1285,7 @@ static int __rrr_array_message_append_to_collection_callback (
 	return ret;
 }
 
-int rrr_array_message_append_to_collection (
+int rrr_array_message_append_to_array (
 		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
@@ -1221,13 +1294,13 @@ int rrr_array_message_append_to_collection (
 
 	struct rrr_array target_tmp = {0};
 
-	struct rrr_array_message_append_to_collection_callback_data callback_data = {
+	struct rrr_array_message_append_to_array_callback_data callback_data = {
 			&target_tmp
 	};
 
 	if ((ret =  rrr_array_message_iterate (
 			message_orig,
-			__rrr_array_message_append_to_collection_callback,
+			__rrr_array_message_append_to_array_callback,
 			&callback_data
 	)) != 0) {
 		goto out;

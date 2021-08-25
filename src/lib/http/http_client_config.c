@@ -74,7 +74,6 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_port");
 	if ((ret = rrr_instance_config_read_optional_port_number (&data->server_port, config, config_string)) != 0) {
 		RRR_MSG_0("Error while parsing %s setting for instance %s\n", config_string, config->name);
-		ret = 1;
 		goto out;
 	}
 

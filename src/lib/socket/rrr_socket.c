@@ -1222,7 +1222,7 @@ int rrr_socket_sendto_nonblock (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength size,
+		const rrr_biglength size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
@@ -1261,7 +1261,7 @@ int rrr_socket_sendto_nonblock (
 			fd, size, done_bytes_total, addr_len);
 
 	// Truncate to size_t
-	const size_t send_size = __rrr_socket_send_size_from_biglength(size);
+	const size_t send_size = __rrr_socket_send_size_from_biglength(size - done_bytes_total);
 
 	if (addr == NULL || addr_len == 0) {
 		done_bytes = send(fd, data + done_bytes_total, send_size, flags);
@@ -1296,7 +1296,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_DBG_7("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
+				RRR_MSG_0("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
@@ -1372,7 +1372,7 @@ int rrr_socket_sendto_blocking (
 				&written_bytes,
 				fd,
 				data + written_bytes_total,
-				size,
+				rrr_biglength_sub_bug_const(size, written_bytes_total),
 				addr,
 				addr_len
 		)) != 0) {

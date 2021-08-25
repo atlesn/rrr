@@ -137,7 +137,7 @@ static inline void __rrr_types_checked_length_counter_sub (rrr_slength *target, 
 static inline void rrr_length_sub_bug (rrr_length *a, rrr_length b) {
 	rrr_length r = *a - b;
 	if (r > *a) {
-		RRR_BUG("Bug: Underflow in rrr_types_length_sub_bug input was %" PRIrrrl " and %" PRIrrrl "\n", *a, b);
+		RRR_BUG("Bug: Underflow in rrr_length_sub_bug input was %" PRIrrrl " and %" PRIrrrl "\n", *a, b);
 	}
 	*a = r;
 }
@@ -215,12 +215,12 @@ static inline void rrr_biglength_from_ssize_sub_bug (rrr_biglength *a, ssize_t b
 
 static inline int rrr_length_from_ptr_sub_err (rrr_length *r, const void *a, const void *b) {
 	if (b > a) {
-		RRR_MSG_0("Underflow in rrr_length_from_ptr_sub_bug_const\n");
+		RRR_MSG_0("Underflow in rrr_length_from_ptr_sub_err\n");
 		return 1;
 	}
 	uintptr_t tmp = (uintptr_t) a - (uintptr_t) b;
 	if (tmp > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Overflow in rrr_length_from_ptr_sub_bug_const\n");
+		RRR_MSG_0("Overflow in rrr_length_from_ptr_sub_err\n");
 		return 1;
 	}
 	*r = (rrr_length) tmp;
@@ -258,6 +258,13 @@ static inline rrr_length rrr_length_from_biglength_sub_bug_const (rrr_biglength 
 		RRR_BUG("Overflow in rrr_length_from_biglength_sub_bug_const\n");
 	}
 	return (rrr_length) r;
+}
+
+static inline rrr_biglength rrr_biglength_sub_bug_const (rrr_biglength a, rrr_biglength b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_biglength_sub_bug_const\n");
+	}
+	return a - b;
 }
 
 static inline rrr_length rrr_length_from_slength_bug_const (rrr_slength a) {
@@ -369,19 +376,19 @@ static inline rrr_length rrr_length_from_size_t_bug_const (size_t a) {
 	return tmp;
 }
 
-#define RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(name)				\
-	rrr_slength name = 0
+#define RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(name)            \
+    rrr_slength name = 0                                       \
 
-#define RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(name, op_u64)		\
-	__rrr_types_checked_length_counter_add(&(name), op_u64)
+#define RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(name, op_u64)     \
+    __rrr_types_checked_length_counter_add(&(name), op_u64)    \
 
-#define RRR_TYPES_CHECKED_LENGTH_COUNTER_SUB(name, op_u64)		\
-	__rrr_types_checked_length_counter_sub(&(name), op_u64)
+#define RRR_TYPES_CHECKED_LENGTH_COUNTER_SUB(name, op_u64)     \
+    __rrr_types_checked_length_counter_sub(&(name), op_u64)    \
 
-#define RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(value,msg_str)											\
-	do {if (value > RRR_LENGTH_MAX) {															\
-		RRR_BUG("BUG: length of " RRR_QUOTE(value) " exceeded maximum value in " msg_str "\n");	\
-	}} while(0)
+#define RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(value,msg_str)        \
+    do {if (value > RRR_LENGTH_MAX) {                          \
+        RRR_BUG("BUG: length of " RRR_QUOTE(value) " exceeded maximum value in " msg_str "\n"); \
+    }} while(0)                                                \
 
 /*
  * Types for array framework

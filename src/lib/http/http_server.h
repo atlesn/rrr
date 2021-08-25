@@ -40,7 +40,7 @@ struct rrr_http_server {
 
 	struct rrr_http_server_callbacks callbacks;
 
-	int disable_http2;
+	struct rrr_http_rules rules;
 };
 
 void rrr_http_server_destroy (
@@ -51,8 +51,11 @@ void rrr_http_server_destroy_void (
 );
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2,
 		const struct rrr_http_server_callbacks *callbacks
+);
+void rrr_http_server_set_no_body_parse (
+		struct rrr_http_server *server,
+		int set
 );
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,

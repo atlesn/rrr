@@ -88,6 +88,10 @@ int rrr_message_broker_write_entry (
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );
+int rrr_message_broker_clone_and_write_entry_no_unlock (
+		struct rrr_message_broker_costumer *costumer,
+		const struct rrr_msg_holder *entry
+);
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker_costumer *costumer,
 		const struct rrr_msg_holder *entry

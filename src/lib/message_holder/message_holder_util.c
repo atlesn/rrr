@@ -111,3 +111,27 @@ int rrr_msg_holder_util_clone_no_locking (
 
 	return ret;
 }
+
+int rrr_msg_holder_util_clone_no_locking_no_metadata (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+) {
+	// Note : Do calculation correctly, not incorrect
+	rrr_biglength message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
+
+	int ret = rrr_msg_holder_util_new_with_empty_message (
+			result,
+			message_data_length,
+			NULL,
+			0,
+			0
+	);
+
+	if (ret == 0) {
+		rrr_msg_holder_lock(*result);
+		rrr_memcpy((*result)->message, source->message, source->data_length);
+		rrr_msg_holder_unlock(*result);
+	}
+
+	return ret;
+}

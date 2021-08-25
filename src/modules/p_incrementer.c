@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -106,7 +106,7 @@ static int incrementer_get_id_from_msgdb_callback (
 
 	if (msg_tmp != NULL) {
 		uint16_t version_dummy;
-		if ((ret = rrr_array_message_append_to_collection(&version_dummy, &array_tmp, msg_tmp)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_tmp, msg_tmp)) != 0) {
 			RRR_MSG_0("Failed to extract array from message from message DB in incrementer_get_id_from_msgdb_callback\n");
 			goto out;
 		}
@@ -250,7 +250,7 @@ static int incrementer_update_id_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&msg_tmp,
 			&array_tmp,
 			rrr_time_get_64(),
@@ -427,7 +427,7 @@ static int incrementer_process_id (
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection (
+	if ((ret = rrr_array_message_append_to_array (
 			&array_version_dummy,
 			&array_tmp,
 			(const struct rrr_msg_msg *) entry->message
