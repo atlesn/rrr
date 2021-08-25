@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_part.h"
 #include "http_part_parse.h"
-#include "http_part_multipart.h"
 #include "http_header_fields.h"
 #include "http_util.h"
 #include "../net_transport/net_transport.h"
@@ -309,6 +308,7 @@ static int __rrr_http_application_http2_request_send (
 struct rrr_http_application_http2_callback_data {
 	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
+	const struct rrr_http_rules *rules;
 	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
@@ -476,24 +476,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		if (data != NULL) {
-			if ((ret = rrr_http_part_multipart_process(transaction->request_part, data)) != 0) {
-				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-					goto out_send_response_bad_request;
-				}
-				goto out;
-			}
-
-			if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data)) != 0) {
-				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-					goto out_send_response_bad_request;
-				}
-				goto out;
-			}
-
-		}
-
-		if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+		if ((ret = rrr_http_part_multipart_and_fields_process (transaction->request_part, data, callback_data->rules->do_no_body_parse)) != 0) {
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;
 			}
@@ -660,6 +643,7 @@ static int __rrr_http_application_http2_tick (
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
 			handle,
+			rules,
 			unique_id_generator_callback,
 			unique_id_generator_callback_arg,
 			callback,

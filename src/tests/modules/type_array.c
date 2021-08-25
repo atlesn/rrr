@@ -248,7 +248,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 
 	if (MSG_IS_ARRAY(message)) {
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 			TEST_MSG("Could not create array collection in test_averager_callback\n");
 			ret = 1;
 			goto out;
@@ -374,7 +374,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &collection, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
 		ret = 1;
 		goto out;
@@ -502,7 +502,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	for (int i = 5; i < 9; i++) {
 		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
 	}
-	TEST_MSG("Type 9: %u\n", types[4]->definition->type);
+	TEST_MSG("Type 9: %u\n", types[9]->definition->type);
 	for (int i = 10; i < 11; i++) {
 		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_BLOB(types[i]->definition->type) ? "OK" : "NOT OK"));
 	}

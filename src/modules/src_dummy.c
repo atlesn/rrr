@@ -189,7 +189,7 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 //	printf("Dummy new %" PRIu64 "\n", time);
 
 	if (RRR_LL_COUNT(&data->array_template) > 0) {
-		if ((ret = rrr_array_new_message_from_collection(
+		if ((ret = rrr_array_new_message_from_array(
 			&reading,
 			&data->array_template,
 			rrr_time_get_64(),
