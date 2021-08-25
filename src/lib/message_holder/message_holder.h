@@ -51,6 +51,9 @@ void rrr_msg_holder_private_data_set (
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_incref_while_locked_void (
+		void *entry
+);
 void rrr_msg_holder_incref (
 		struct rrr_msg_holder *entry
 );

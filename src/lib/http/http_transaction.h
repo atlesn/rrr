@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "http_common.h"
-#include "../string_builder.h"
+#include "../type.h"
 
 struct rrr_http_part;
 struct rrr_http_header_field;

@@ -39,5 +39,9 @@ int rrr_msg_holder_util_clone_no_locking (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 );
+int rrr_msg_holder_util_clone_no_locking_no_metadata (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+);
 
 #endif /* RRR_MESSAGE_HOLDER_UTIL_H */

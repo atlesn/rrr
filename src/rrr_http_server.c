@@ -277,7 +277,6 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_server_new (
 			&http_server,
-			0, // Don't disable http2
 			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;
