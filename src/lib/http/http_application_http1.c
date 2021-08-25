@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_common.h"
 #include "../random.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../websocket/websocket.h"
 #include "../net_transport/net_transport.h"
 #include "../util/gnu.h"

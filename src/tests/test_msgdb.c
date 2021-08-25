@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fork.h"
 #include "../lib/array.h"
 #include "../lib/random.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "test.h"
 
 #define MSGDB_CMD        "../.libs/rrr_msgdb"

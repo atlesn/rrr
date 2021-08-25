@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_header_fields.h"
 #include "../array.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"

@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/rrr_readdir.h"
 #include "../util/sha256.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../rrr_strerror.h"
 #include "../read.h"
 #include "../array.h"

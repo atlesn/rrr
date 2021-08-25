@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/rrr_mysql.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/message_broker.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/util/linked_list.h"
@@ -238,7 +238,7 @@ static const char *append_error_string = "Error while appending to mysql query s
 	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
 
 #define APPEND_UNCHECKED(str) \
-	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
+	rrr_string_builder_unchecked_append(&string_builder, str)
 
 static int mysql_colplan_array_create_sql (
 		char **target,
