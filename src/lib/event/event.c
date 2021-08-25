@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../rrr_config.h"
 #include "../rrr_path_max.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_eventfd.h"
 #include "../util/gnu.h"

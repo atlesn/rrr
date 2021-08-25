@@ -238,9 +238,9 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 	if (topic != NULL) {
-		if (strlen(data->topic) > RRR_MSG_TOPIC_MAX) {
+		if (strlen(topic) > RRR_MSG_TOPIC_MAX) {
 			RRR_MSG_0("Error: Specified topic too long (%llu>%llu)\n",
-				(long long unsigned) strlen(data->topic),
+				(long long unsigned) strlen(topic),
 				(long long unsigned) RRR_MSG_TOPIC_MAX);
 			ret = 1;
 			goto out;
@@ -450,7 +450,7 @@ static int __rrr_post_read_callback (struct rrr_read_session *read_session, stru
 		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			array_final,
 			rrr_time_get_64(),

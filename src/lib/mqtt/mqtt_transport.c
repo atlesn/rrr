@@ -268,7 +268,7 @@ int rrr_mqtt_transport_iterate (
 	int ret = 0;
 
 	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
-		ret |= rrr_net_transport_iterate_with_callback (
+		ret |= rrr_net_transport_iterate_by_mode_and_do (
 				node,
 				mode,
 				callback,

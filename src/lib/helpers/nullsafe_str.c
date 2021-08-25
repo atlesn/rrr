@@ -871,3 +871,24 @@ int rrr_nullsafe_str_foreach_byte_do (
 
 	return ret;
 }
+
+void rrr_nullsafe_str_trim (
+		struct rrr_nullsafe_str *nullsafe
+) {
+	if (nullsafe->len == 0) {
+		return;
+	}
+
+	char *str = nullsafe->str;
+
+	// Note : loop wraps from 0 to max then exits
+	for (rrr_nullsafe_len i = nullsafe->len - 1; i < nullsafe->len; i--) {
+		if (str[i] == ' ') {
+			str[i] = '\0';
+			nullsafe->len--;
+		}
+		else {
+			break;
+		}
+	}
+}

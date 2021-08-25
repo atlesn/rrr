@@ -121,6 +121,11 @@ enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_MULTIPART
 };
 
+struct rrr_http_rules {
+	short do_no_server_http2;
+	short do_no_body_parse;
+};
+
 extern const char *rrr_http_transport_str_any;
 extern const char *rrr_http_transport_str_http;
 extern const char *rrr_http_transport_str_https;

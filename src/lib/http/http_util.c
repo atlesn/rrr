@@ -37,6 +37,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
 
+#ifdef RRR_WITH_JSONC
+#include "../json/json.h"
+#endif
+
+#define RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS 5
+
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||
 			(c >= 'A' && c <= 'Z') ||
@@ -1308,4 +1314,13 @@ const char *rrr_http_util_iana_response_phrase_from_status_code (
 
 	out_unknown:
 	return "Unknown status";
+}
+
+int rrr_http_util_json_to_arrays (
+		const char *data,
+		rrr_length data_size,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
+) {
+	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }

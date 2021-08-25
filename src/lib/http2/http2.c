@@ -460,7 +460,7 @@ static int __rrr_http2_on_frame_recv_callback (
 	(void)(session);
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %llu\n", frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
+	RRR_DBG_7 ("http2 recv frame type %" PRIu8 " stream %" PRIi32 " length %llu\n", frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
 
 	if (frame->hd.type == NGHTTP2_PING) {
 		session->last_ping_receive_time = rrr_time_get_64();

@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/event/event.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/http/http_client.h"
@@ -51,7 +51,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
-#include "../lib/json/json.h"
 #include "../lib/msgdb/msgdb_client.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
@@ -61,7 +60,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX               500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
-#define RRR_HTTPCLIENT_JSON_MAX_LEVELS                   4
 #define RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT            100000
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
@@ -90,7 +88,9 @@ struct httpclient_data {
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
 	int do_receive_part_data;
+#ifdef RRR_WITH_JSONC
 	int do_receive_json_data;
+#endif
 	int do_receive_ignore_error_part_data;
 	int do_receive_404_as_empty_part;
 	int do_receive_structured;
@@ -100,6 +100,8 @@ struct httpclient_data {
 	int do_endpoint_from_topic_force;
 
 	int do_meta_tags_ignore;
+
+	char *taint_tag;
 
 	char *method_tag;
 	int do_method_tag_force;
@@ -315,7 +317,7 @@ static int httpclient_create_array_message (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			(struct rrr_msg_msg **) &new_entry->message,
 			array,
 			rrr_time_get_64(),
@@ -494,6 +496,8 @@ static int httpclient_final_callback_receive_data (
 	);
 }
 
+#ifdef RRR_WITH_JSONC
+
 struct httpclient_create_message_from_json_broker_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct rrr_http_transaction *transaction;
@@ -513,6 +517,7 @@ static int httpclient_create_message_from_json_callback (
 	struct rrr_array array_tmp = {0};
 
 	const struct rrr_array *array_to_use = callback_data->array;
+
 	if (RRR_LL_COUNT(callback_data->structured_data) > 0) {
 		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
 			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_json_callback\n");
@@ -582,7 +587,7 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 
 	int ret = 0;
 
-	if (len > UINT32_MAX) {
+	if (len > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Data size overflow while creating message from HTTP json response data in httpclient instance %s (%llu>%llu).\n",
 			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data),
 			(unsigned long long) len,
@@ -592,15 +597,14 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_json_to_arrays (
+	if ((ret = rrr_http_util_json_to_arrays (
 			str,
-			(rrr_u32) len,
-			RRR_HTTPCLIENT_JSON_MAX_LEVELS,
+			rrr_length_from_biglength_bug_const(len),
 			httpclient_create_message_from_json_array_callback,
 			callback_data
 	)) != 0) {
 		// Let hard error only propagate
-		if (ret == RRR_JSON_PARSE_INCOMPLETE || ret == RRR_JSON_PARSE_ERROR) {
+		if (ret == RRR_HTTP_PARSE_INCOMPLETE || ret == RRR_HTTP_PARSE_SOFT_ERR) {
 			RRR_DBG_2("HTTP client instance %s: JSON parsing of data from server failed, possibly invalid data\n",
 					INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
 			ret = 0;
@@ -636,6 +640,8 @@ static int httpclient_final_callback_receive_json (
 			&callback_data
 	);
 }
+
+#endif /* RRR_WITH_JSONC */
 
 static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
 	int ret = 0;
@@ -912,6 +918,16 @@ static int httpclient_final_callback (
 		}
 	}
 
+	if (httpclient_data->taint_tag != NULL && *(httpclient_data->taint_tag) != '\0') {
+		if ((ret = rrr_array_push_value_vain_with_tag (
+				&structured_data,
+				httpclient_data->taint_tag
+		)) != 0) {
+			RRR_MSG_0("Failed to push taint tag value to array in httpclient_final_callback\n");
+			goto out;
+		}
+	}
+
 	// Condition must always be checked regardless of other configuration parameters
 	if (transaction->response_part->response_code == 404 && httpclient_data->do_receive_404_as_empty_part) {
 		RRR_DBG_3("httpclient instance %s creating empty data message for 404 response\n",
@@ -953,6 +969,7 @@ static int httpclient_final_callback (
 		);
 	}
 
+#ifdef RRR_WITH_JSONC
 	if (httpclient_data->do_receive_json_data) {
 		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
@@ -965,6 +982,7 @@ static int httpclient_final_callback (
 				&structured_data
 		);
 	}
+#endif /* RRR_WITH_JSONC */
 
 	out:
 	rrr_array_clear(&structured_data);
@@ -1034,7 +1052,7 @@ static int httpclient_message_values_get (
 	int ret = 0;
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, target_array, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, target_array, message) != 0) {
 		RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -1711,6 +1729,7 @@ static int httpclient_entry_choose_method (
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
+	const struct rrr_msg_msg *message = entry->message;
 
 	// We need to sneak-peak into the message to figure out if 
 	// it will become a PUT request.
@@ -1725,9 +1744,18 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	if (RRR_DEBUGLEVEL_3) {
-		struct rrr_msg_msg *message = entry->message;
+	if (data->taint_tag != NULL && *(data->taint_tag) != '\0') {
+		if (MSG_IS_ARRAY(message) && rrr_array_message_has_tag(message, data->taint_tag)) {
+			RRR_DBG_3("httpclient instance %s received tainted message (by tag '%s') with timestamp %" PRIu64 ", ignoring.\n",
+					INSTANCE_D_NAME(thread_data),
+					data->taint_tag,
+					message->timestamp
+			);
+			goto out_ignore;
+		}
+	}
 
+	if (RRR_DEBUGLEVEL_3) {
 		char *topic_tmp = NULL;
 
 		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
@@ -1756,6 +1784,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_LL_APPEND(&data->from_senders_queue, entry);
 	}
 
+	out_ignore:
 	rrr_msg_holder_unlock(entry);
 	return 0;
 }
@@ -1792,7 +1821,16 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
+#ifdef RRR_WITH_JSONC
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
+#else
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_receive_json_data",
+		RRR_MSG_0("Parameter 'http_receive_json_data' is set in httpclient instance %s but RRR is not compiled with JSON support.\n",
+			config->name);
+		ret = 1;
+		goto out;
+	);
+#endif /* RRR_WITH_JSONC */
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_ignore_error_part_data", do_receive_ignore_error_part_data, 1 /* Default is yes */);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_404_as_empty_part", do_receive_404_as_empty_part, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_structured", do_receive_structured, 0);
@@ -1816,6 +1854,8 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);
@@ -2129,6 +2169,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
+	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
 	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);

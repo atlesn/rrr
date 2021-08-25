@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/crc32.h"
 #include "../util/posix.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../ip/ip_util.h"
 
 // Configuration
@@ -757,12 +757,14 @@ static int __rrr_udpstream_frame_packed_validate (
 }
 
 static int __rrr_udpstream_read_get_target_size (
-		struct rrr_read_session *read_session,
-		void *arg
+		RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS
 ) {
 	int ret = RRR_SOCKET_OK;
 
 	(void)(arg);
+	(void)(addr);
+	(void)(addr_len);
+	(void)(private_data);
 
 	struct rrr_udpstream_frame_packed *frame = (struct rrr_udpstream_frame_packed *) read_session->rx_buf_ptr;
 
@@ -1279,9 +1281,7 @@ static int __rrr_udpstream_handle_received_frame (
 }
 
 static int __rrr_udpstream_read_callback (
-		struct rrr_read_session *read_session,
-		void *private_data,
-		void *arg
+		RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -1325,8 +1325,8 @@ static int __rrr_udpstream_read_callback (
 	if ((ret = __rrr_udpstream_handle_received_frame (
 			data,
 			frame,
-			(const struct sockaddr *) &read_session->src_addr,
-			read_session->src_addr_len
+			addr,
+			addr_len
 	)) != 0) {
 		RRR_MSG_0("Error while pushing received frame to buffer in __rrr_udpstream_read_callback\n");
 		goto out;
