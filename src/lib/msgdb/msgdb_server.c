@@ -554,7 +554,7 @@ static int __rrr_msgdb_server_idx (
 		}
 	RRR_LL_ITERATE_END();
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&msg_tmp,
 			&results_tmp_topics,
 			rrr_time_get_64(),
@@ -674,16 +674,15 @@ static int __rrr_msgdb_server_tidy (
 			goto out;
 		}
 
-		if ((ret = __rrr_msgdb_server_open_and_read_file (
+		if (__rrr_msgdb_server_open_and_read_file (
 				(struct rrr_msg_msg **) &msg_tmp,
 				path_tmp,
 				1, /* Head only */
 				NULL /* No topic to verify */
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy. Deleting file.\n",
 					path_tmp
 			);
-			ret = 0;
 			goto delete;
 		}
 

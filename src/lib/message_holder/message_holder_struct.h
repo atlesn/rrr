@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 //#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 
+// Note : When adding fields, update the zeroing macro below
+
 struct rrr_msg_holder {
 	RRR_LL_NODE(struct rrr_msg_holder);
 	pthread_mutex_t lock;
@@ -62,5 +64,34 @@ struct rrr_msg_holder {
 	void *private_data;
 	void (*private_data_destroy)(void *private_data);
 };
+
+// Zero all fields except from the lock.
+
+#define __RRR_MESSAGE_HOLDER_ZERO_ALL(entry)                   \
+    RRR_LL_NODE_INIT(entry);                                   \
+    entry->usercount = 0;                                      \
+    entry->data_length = 0;                                    \
+    memset (&entry->addr, '\0', sizeof(entry->addr));          \
+    entry->addr_len = 0;                                       \
+    entry->protocol = 0;                                       \
+    entry->source = NULL;                                      \
+    entry->message = NULL;                                     \
+    entry->buffer_time = 0;                                    \
+    entry->send_time = 0;                                      \
+    entry->send_index = 0;                                     \
+    entry->bytes_sent = 0;                                     \
+    entry->bytes_to_send = 0;                                  \
+    entry->endian_indicator = 0;                               \
+    entry->private_data = NULL;                                \
+    entry->private_data_destroy = NULL                         \
+
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+    #define RRR_MESSAGE_HOLDER_ZERO_ALL(entry)                 \
+        entry->lock_recursion_count = 0;                       \
+	__RRR_MESSAGE_HOLDER_ZERO_ALL(entry)
+#else
+    #define RRR_MESSAGE_HOLDER_ZERO_ALL(entry)                 \
+	__RRR_MESSAGE_HOLDER_ZERO_ALL(entry)
+#endif
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

@@ -144,6 +144,7 @@ int rrr_http_session_transport_ctx_tick_server (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
+		const struct rrr_http_rules *rules,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),

@@ -125,7 +125,7 @@ static int exploder_process_value (
 		}
 
 		struct rrr_msg_msg *msg_new = NULL;
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&msg_new,
 				&array_new,
 				timestamp,
@@ -187,7 +187,7 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message)) != 0) {
+	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message)) != 0) {
 		RRR_MSG_0("Failed to get array values from message in exploder instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_drop;
