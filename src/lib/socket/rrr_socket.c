@@ -1372,7 +1372,7 @@ int rrr_socket_sendto_blocking (
 				&written_bytes,
 				fd,
 				data + written_bytes_total,
-				size,
+				rrr_biglength_sub_bug_const(size, written_bytes_total),
 				addr,
 				addr_len
 		)) != 0) {
