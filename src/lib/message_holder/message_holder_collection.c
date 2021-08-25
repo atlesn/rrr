@@ -42,22 +42,34 @@ void rrr_msg_holder_collection_clear_void (
 
 void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
-		int (*compare)(void *message_a, void *message_b)
+		int do_lock,
+		int (*compare)(const struct rrr_msg_holder *a, const struct rrr_msg_holder *b)
 ) {
 	struct rrr_msg_holder_collection tmp = {0};
 
-	// TODO : This is probably a bad sorting algorithm
+	if (do_lock) {
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
+			rrr_msg_holder_lock(node);
+		RRR_LL_ITERATE_END();
+	}
 
 	while (RRR_LL_COUNT(target) != 0) {
 		struct rrr_msg_holder *smallest = RRR_LL_FIRST(target);
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
-			if (compare(node->message, smallest->message) < 0) {
+			if (compare(node, smallest) < 0) {
 				smallest = node;
 			}
 		RRR_LL_ITERATE_END();
 
 		RRR_LL_REMOVE_NODE_NO_FREE(target, smallest);
 		RRR_LL_APPEND(&tmp, smallest);
+	}
+
+	if (do_lock) {
+		// All nodes now in tmp list
+		RRR_LL_ITERATE_BEGIN(&tmp, struct rrr_msg_holder);
+			rrr_msg_holder_unlock(node);
+		RRR_LL_ITERATE_END();
 	}
 
 	*target = tmp;

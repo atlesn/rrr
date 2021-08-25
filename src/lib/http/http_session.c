@@ -249,6 +249,7 @@ static int __rrr_http_session_transport_ctx_tick (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
+		const struct rrr_http_rules *rules,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_args,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
@@ -288,6 +289,7 @@ static int __rrr_http_session_transport_ctx_tick (
 			session->application,
 			handle,
 			read_max_size,
+			rules,
 			unique_id_generator_callback,
 			unique_id_generator_callback_args,
 			upgrade_verify_callback,
@@ -338,10 +340,13 @@ int rrr_http_session_transport_ctx_tick_client (
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 ) {
+	struct rrr_http_rules rules_dummy = {0};
+
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
 			handle,
 			read_max_size,
+			&rules_dummy,
 			NULL,
 			NULL,
 			NULL,
@@ -365,6 +370,7 @@ int rrr_http_session_transport_ctx_tick_server (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
+		const struct rrr_http_rules *rules,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
@@ -384,6 +390,7 @@ int rrr_http_session_transport_ctx_tick_server (
 			received_bytes,
 			handle,
 			read_max_size,
+			rules,
 			unique_id_generator_callback,
 			unique_id_generator_callback_arg,
 			upgrade_verify_callback,

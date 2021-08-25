@@ -29,6 +29,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "../util/base64.h"
 
+static int __rrr_http_header_field_trim_name_if_required (
+		struct rrr_http_header_field *field
+) {
+	if ((field->definition->flags & RRR_HTTP_HEADER_FIELD_TRIM) != 0) {
+		rrr_nullsafe_str_trim(RRR_LL_FIRST(&field->fields)->name);
+	}
+
+	if (rrr_nullsafe_str_len(RRR_LL_FIRST(&field->fields)->name) == 0) {
+		RRR_MSG_0("HTTP field '%s' was empty after trimming spaces\n",
+			field->definition->name_lowercase);
+		return RRR_HTTP_PARSE_SOFT_ERR;
+	}
+
+	return RRR_HTTP_PARSE_OK;
+}
+
 static int __rrr_http_header_parse_single_value_verify (struct rrr_http_header_field *field) {
 	if (!rrr_nullsafe_str_isset(field->name)) {
 		RRR_BUG("BUG: Name not set for header field in __rrr_http_header_parse_verify_single_value\n");
@@ -51,6 +67,10 @@ static int __rrr_http_header_parse_single_value_verify (struct rrr_http_header_f
 		return RRR_HTTP_PARSE_SOFT_ERR;
 	}
 
+	if ((field->definition->flags & RRR_HTTP_HEADER_FIELD_TRIM) != 0) {
+		rrr_nullsafe_str_trim(RRR_LL_FIRST(&field->fields)->name);
+	}
+
 	return RRR_HTTP_PARSE_OK;
 }
 
@@ -60,6 +80,8 @@ static int __rrr_http_header_parse_single_unsigned_value (RRR_HTTP_HEADER_FIELD_
 	if ((ret = __rrr_http_header_parse_single_value_verify(field)) != RRR_HTTP_PARSE_OK) {
 		goto out;
 	}
+
+	__rrr_http_header_field_trim_name_if_required(field);
 
 	struct rrr_http_field *subvalue = RRR_LL_FIRST(&field->fields);
 
@@ -93,6 +115,10 @@ static int __rrr_http_header_parse_single_string_value (RRR_HTTP_HEADER_FIELD_PA
 	int ret = RRR_HTTP_PARSE_OK;
 
 	if ((ret = __rrr_http_header_parse_single_value_verify(field)) != RRR_HTTP_PARSE_OK) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_header_field_trim_name_if_required(field)) != RRR_HTTP_PARSE_OK) {
 		goto out;
 	}
 
@@ -193,6 +219,10 @@ static int __rrr_http_header_parse_first_string_value (RRR_HTTP_HEADER_FIELD_PAR
 
 	if (field->value != NULL) {
 		RRR_BUG("BUG: value was not NULL in __rrr_http_header_parse_first_string_value\n");
+	}
+
+	if ((ret = __rrr_http_header_field_trim_name_if_required(field)) != RRR_HTTP_PARSE_OK) {
+		goto out;
 	}
 
 	if (rrr_nullsafe_str_dup (&field->value, subvalue->name) != 0) {
@@ -315,8 +345,9 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"connection",             RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
         {"upgrade",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"content-disposition",    0,                                       __rrr_http_header_parse_content_disposition_value},
-        {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_unsigned_value},
-        {"content-type",           0,                                       __rrr_http_header_parse_content_type_value},
+        {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS |
+	                           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_single_unsigned_value},
+        {"content-type",           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_content_type_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
 	                           RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME, NULL},
