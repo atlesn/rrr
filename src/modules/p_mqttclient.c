@@ -332,7 +332,7 @@ static int mqttclient_publish (
 		);
 
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, reading) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, reading) != 0) {
 			RRR_MSG_0("Could not create temporary array collection in mqttclient_publish of MQTT client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
@@ -731,6 +731,12 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
+	if (data->server_port == 0) {
+		data->server_port = data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
+			? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
+			: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+	}
+
 	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
 	// subscribe to all topics once more.
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_client_debug_unsubscribe_cycle", do_debug_unsubscribe_cycle, 0);
@@ -1037,7 +1043,7 @@ static int __mqttclient_try_create_array_message_from_publish_callback (
 	int ret = 0;
 
 	struct rrr_msg_msg *message = NULL;
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			array,
 			rrr_time_get_64(),

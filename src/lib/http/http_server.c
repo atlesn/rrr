@@ -66,7 +66,6 @@ static int __rrr_http_server_unique_id_generator_callback_dummy (
 
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2,
 		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -82,7 +81,6 @@ int rrr_http_server_new (
 
 	memset(server, '\0', sizeof(*server));
 
-	server->disable_http2 = disable_http2;
 	server->callbacks = *callbacks;
 
 	// Must be set for HTTP application to run in server mode
@@ -100,6 +98,17 @@ int rrr_http_server_new (
 	out:
 		return ret;
 }
+
+#define RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(name)              \
+    void RRR_PASTE(rrr_http_server_set_,name) (                \
+            struct rrr_http_server *server,                    \
+            int set                                            \
+    ) {                                                        \
+        server->rules.RRR_PASTE(do_,name) = (set != 0);              \
+    }                                                          \
+
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
@@ -155,7 +164,7 @@ static int __rrr_http_server_upgrade_verify_callback (
 
 	(void)(from);
 
-	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->disable_http2) {
+	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->rules.do_no_server_http2) {
 		*do_upgrade = 0;
 	}
 	else {
@@ -348,39 +357,43 @@ static int __rrr_http_server_read_callback (
 
 	int ret = 0;
 
-	for (int i = 0; i < 1; i++) {
-		rrr_biglength received_bytes_dummy = 0;
-		if ((ret = rrr_http_session_transport_ctx_tick_server (
-				&received_bytes_dummy,
-				handle,
-				RRR_HTTP_SERVER_READ_MAX,
-				http_server->callbacks.unique_id_generator_callback,
-				http_server->callbacks.unique_id_generator_callback_arg,
-				__rrr_http_server_upgrade_verify_callback,
-				http_server,
-				__rrr_http_server_websocket_handshake_callback,
-				http_server,
-				__rrr_http_server_receive_callback,
-				http_server,
-				http_server->callbacks.async_response_get_callback,
-				http_server->callbacks.async_response_get_callback_arg,
-				__rrr_http_server_websocket_get_response_callback,
-				http_server,
-				__rrr_http_server_websocket_frame_callback,
-				http_server
-		)) != 0) {
-			if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
-				RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
-						RRR_NET_TRANSPORT_CTX_FD(handle));
-			}
-			goto out;
-		}
+	int again_max = 5;
 
-		if (!rrr_http_session_transport_ctx_need_tick(handle)) {
-			break;
-		}
+	rrr_biglength received_bytes_dummy = 0;
 
-		// Need tick usually only happens at most one time (and we allow at most one)
+	again:
+	if ((ret = rrr_http_session_transport_ctx_tick_server (
+			&received_bytes_dummy,
+			handle,
+			RRR_HTTP_SERVER_READ_MAX,
+			&http_server->rules,
+			http_server->callbacks.unique_id_generator_callback,
+			http_server->callbacks.unique_id_generator_callback_arg,
+			__rrr_http_server_upgrade_verify_callback,
+			http_server,
+			__rrr_http_server_websocket_handshake_callback,
+			http_server,
+			__rrr_http_server_receive_callback,
+			http_server,
+			http_server->callbacks.async_response_get_callback,
+			http_server->callbacks.async_response_get_callback_arg,
+			__rrr_http_server_websocket_get_response_callback,
+			http_server,
+			__rrr_http_server_websocket_frame_callback,
+			http_server
+	)) != 0) {
+		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
+					RRR_NET_TRANSPORT_CTX_FD(handle));
+		}
+		goto out;
+	}
+
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		if (again_max--) {
+			goto again;
+		}
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
@@ -561,7 +574,7 @@ int rrr_http_server_start_tls (
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
 
-	if (server->disable_http2) {
+	if (server->rules.do_no_server_http2) {
 		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
 	}
 

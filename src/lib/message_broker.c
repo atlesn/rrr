@@ -920,10 +920,7 @@ static void __rrr_message_broker_clone_and_write_entry_slot_callback (
 	rrr_msg_holder_unlock(entry);
 }
 
-// Note : Used by inject functions. entry is not properly const
-//        as we will call unlock() on function out. entry
-//        must be handed to us in locked state
-int rrr_message_broker_clone_and_write_entry (
+int rrr_message_broker_clone_and_write_entry_no_unlock (
 		struct rrr_message_broker_costumer *costumer,
 		const struct rrr_msg_holder *entry
 ) {
@@ -947,7 +944,7 @@ int rrr_message_broker_clone_and_write_entry (
 				__rrr_message_broker_clone_and_write_entry_callback,
 				(void *) entry
 		) != 0) {
-			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry\n");
+			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry_no_unlock\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -961,8 +958,21 @@ int rrr_message_broker_clone_and_write_entry (
 	);
 
 	out:
+	return ret;
+}
+
+// Note : Used by inject functions. entry is not properly const
+//        as we will call unlock() on function out. entry
+//        must be handed to us in locked state
+int rrr_message_broker_clone_and_write_entry (
+		struct rrr_message_broker_costumer *costumer,
+		const struct rrr_msg_holder *entry
+) {
+	int ret = rrr_message_broker_clone_and_write_entry_no_unlock (costumer, entry);
+
 	// Cast away const OK
 	rrr_msg_holder_unlock((struct rrr_msg_holder *) entry);
+
 	return ret;
 }
 

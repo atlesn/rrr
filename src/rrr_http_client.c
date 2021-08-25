@@ -552,7 +552,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 			goto out;
 		}
 		else {
-			if ((ret = rrr_array_new_message_from_collection(&msg_tmp, &array, rrr_time_get_64(), NULL, 0)) != 0) {
+			if ((ret = rrr_array_new_message_from_array(&msg_tmp, &array, rrr_time_get_64(), NULL, 0)) != 0) {
 				RRR_MSG_0("Failed to create RRR array message from input data\n");
 				goto out;
 			}
