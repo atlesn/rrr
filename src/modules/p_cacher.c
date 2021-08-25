@@ -40,6 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_collection.h"
+#include "../lib/message_holder/message_holder_util.h"
 #include "../lib/msgdb/msgdb_client.h"
 
 struct cacher_data {
@@ -55,11 +57,17 @@ struct cacher_data {
 	rrr_setting_uint message_ttl_seconds;
 	uint64_t message_ttl_us;
 
+	rrr_setting_uint message_memory_ttl_seconds;
+	uint64_t message_memory_ttl_us;
+
 	int do_forward_requests;
 	int do_forward_data;
 	int do_forward_other;
+	int do_memory_consume_requests;
 	int do_empty_is_delete;
 	int do_no_update;
+
+	struct rrr_msg_holder_collection memory_cache;
 };
 
 static void cacher_data_init(struct cacher_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -70,15 +78,22 @@ static void cacher_data_init(struct cacher_data *data, struct rrr_instance_runti
 
 static void cacher_data_cleanup(void *arg) {
 	struct cacher_data *data = arg;
+
 	rrr_event_collection_clear(&data->events);
+
 	rrr_msgdb_client_close(&data->msgdb_conn);
+
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->request_tag);
+
+	RRR_DBG_1("Cacher instance %s: Memory cache count at cleanup is %i\n",
+		INSTANCE_D_NAME(data->thread_data), RRR_LL_COUNT(&data->memory_cache));
+	rrr_msg_holder_collection_clear(&data->memory_cache);
 }
 
 struct cacher_get_from_msgdb_callback_data {
 	struct cacher_data *data;
-	const char *tag;
+	const char *topic;
 };
 
 struct cacher_get_from_msgdb_broker_callback_data {
@@ -105,12 +120,12 @@ static int cacher_get_from_msgdb_callback (
 
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->tag))) {
+	if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->topic))) {
 		goto out;
 	}
 
 	if (msg_tmp != NULL) {
-		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested)\n",
+		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested) from message DB\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data),
 				msg_tmp->timestamp
 		);
@@ -139,13 +154,13 @@ static int cacher_get_from_msgdb_callback (
 
 static int cacher_get_from_msgdb (
 		struct cacher_data *data,
-		const char *tag
+		const char *topic
 ) {
 	int ret = 0;
 
 	struct cacher_get_from_msgdb_callback_data callback_data = {
 		data,
-		tag
+		topic
 	};
 
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
@@ -163,8 +178,69 @@ static int cacher_get_from_msgdb (
 	return ret;
 }
 
+static int cacher_get_from_memory_cache (
+		int *result_found,
+		struct cacher_data *data,
+		const char *topic
+) {
+	int ret = 0;
+
+	*result_found = 0;
+
+	RRR_LL_ITERATE_BEGIN(&data->memory_cache, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+
+		const struct rrr_msg_msg *msg = node->message;
+
+		if (rrr_msg_msg_ttl_ok(msg, data->message_memory_ttl_us)) {
+			// NULL topic is used for tidy operation
+			if (topic != NULL && rrr_msg_msg_topic_equals(msg, topic)) {
+				RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested) from memory cache\n",
+						INSTANCE_D_NAME(data->thread_data),
+						msg->timestamp
+				);
+
+				if ((ret = rrr_message_broker_clone_and_write_entry (
+						INSTANCE_D_BROKER_ARGS(data->thread_data),
+						node
+				)) != 0) {
+					RRR_MSG_0("Failed to write message from memory cache to output buffer in cacher instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+					// return value propagates, must unlock at loop out
+				}
+
+				*result_found = 1;
+	
+				RRR_LL_ITERATE_LAST();
+			}
+		}
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->memory_cache, 0; rrr_msg_holder_decref(node));
+
+	return ret;
+}
+
+static void cacher_tidy_memory_cache (
+		int *deleted_entries,
+		struct cacher_data *data
+) {
+	*deleted_entries = 0;
+
+	int count_before = RRR_LL_COUNT(&data->memory_cache);
+
+	int result_found_dummy = 0;
+	cacher_get_from_memory_cache(&result_found_dummy, data, NULL);
+
+	*deleted_entries = count_before - RRR_LL_COUNT(&data->memory_cache);
+}
+
 struct cacher_send_to_msgdb_callback_final_data {
-	struct rrr_msg_msg *msg;
+	const char *topic;
+	const struct rrr_msg_msg *msg;
 	int do_delete;
 };
 
@@ -176,9 +252,16 @@ static int cacher_send_to_msgdb_callback_final (
 
 	int ret = 0;
 
-	MSG_SET_TYPE(callback_data->msg, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
+	struct rrr_msg_msg *msg_new = rrr_msg_msg_duplicate (callback_data->msg);
+	if (msg_new == NULL) {
+		RRR_MSG_0("Could not duplicate message in cacher_send_to_msgdb_callback_final\n");
+		ret = 1;
+		goto out;
+	}
 
-	if ((ret = rrr_msgdb_client_send(conn, callback_data->msg)) != 0) {	
+	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg_new)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
@@ -200,28 +283,24 @@ static int cacher_send_to_msgdb_callback_final (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_new);
 	return ret;
 }
 
 static int cacher_send_to_msgdb (
-	struct cacher_data *data,
-	struct rrr_msg_msg *msg,
-	int do_delete
+		struct cacher_data *data,
+		const char *topic,
+		const struct rrr_msg_msg *msg,
+		int do_delete
 ) {
 	int ret = 0;
-
-	char *topic_tmp = NULL;
 
 	if (data->msgdb_socket == NULL) {
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, msg)) != 0) {
-		RRR_MSG_0("Failed to get topic from message in cacher_send_to_msgdb_callback\n");
-		goto out;
-	}
-
 	struct cacher_send_to_msgdb_callback_final_data callback_data = {
+		topic,
 		msg,
 		do_delete
 	};
@@ -238,18 +317,86 @@ static int cacher_send_to_msgdb (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	return ret;
+}
+
+static int cacher_save_to_memory_cache (
+		struct cacher_data *data,
+		const char *topic,
+		const struct rrr_msg_holder *entry,
+		int do_delete
+) {
+	int ret = 0;
+
+	struct rrr_msg_holder *entry_new = NULL;
+
+	// Always delete to remove any duplicate
+	RRR_LL_ITERATE_BEGIN(&data->memory_cache, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+
+		const struct rrr_msg_msg *msg = node->message;
+
+		if (rrr_msg_msg_topic_equals(msg, topic)) {
+			RRR_LL_ITERATE_LAST();
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->memory_cache, 0; rrr_msg_holder_decref(node));
+
+	if (!do_delete) {
+		if ((ret = rrr_msg_holder_util_clone_no_locking_no_metadata (
+				&entry_new,
+				entry
+		)) != 0) {
+			RRR_MSG_0("Failed to clone entry while adding to memory cache in cacher instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+
+		rrr_msg_holder_lock(entry_new);
+		RRR_LL_APPEND(&data->memory_cache, entry_new);
+		rrr_msg_holder_unlock(entry_new);
+		entry_new = NULL;
+	}
+
+	out:
+	if (entry_new != NULL) {
+		rrr_msg_holder_decref(entry_new);
+	}
+	return ret;
+}
+
+static int cacher_store (
+		struct cacher_data *data,
+		const char *topic,
+		const struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg,
+		int do_delete
+) {
+	int ret = 0;
+
+	if ((ret = cacher_send_to_msgdb (data, topic, msg, do_delete)) != 0) {
+		goto out;
+	}
+
+	if (data->message_memory_ttl_us > 0 && (ret = cacher_save_to_memory_cache (data, topic, entry, do_delete)) != 0) {
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
 static int cacher_process (
 		int *do_forward,
 		struct cacher_data *data,
-		struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg = entry->message;
+	const struct rrr_msg_msg *msg = entry->message;
+
 	char *topic_tmp = NULL;
 
 	if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(msg, data->message_ttl_us)) {
@@ -278,22 +425,61 @@ static int cacher_process (
 		goto out;
 	}
 
+	//////////////////////////
+	// Request 
+	/////////////////////
+
 	if (data->request_tag != NULL && rrr_array_message_has_tag(msg, data->request_tag)) {
-		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s'%s\n",
+		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s'\n",
 				INSTANCE_D_NAME(data->thread_data),
 				msg->timestamp,
-				topic_tmp,
-				data->do_forward_requests ? " (and forwarding)" : ""
+				topic_tmp
 		);
 
-		ret = cacher_get_from_msgdb(data, topic_tmp);
+		if (data->message_memory_ttl_us > 0) {
+			int result_found = 0;
+			if ((ret = cacher_get_from_memory_cache(&result_found, data, topic_tmp)) != 0) {
+				goto out;
+			}
+			if (result_found) {
+				if (!data->do_memory_consume_requests && data->do_forward_requests) {
+					*do_forward = 1;
+				}
+	
+				RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition after memory result is %s\n",
+						INSTANCE_D_NAME(data->thread_data),
+						msg->timestamp,
+						topic_tmp,
+						*do_forward ? "'yes'" : "'no'"
+				);
+
+				goto out;
+			}
+		}
+
+		if ((ret = cacher_get_from_msgdb(data, topic_tmp)) != 0) {
+			RRR_MSG_0("Warning: Request to message DB failed in cacher instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+			ret = 0;
+		}
 
 		if (data->do_forward_requests) {
 			*do_forward = 1;
 		}
 
+		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition (default) is %s\n",
+				INSTANCE_D_NAME(data->thread_data),
+				msg->timestamp,
+				topic_tmp,
+				*do_forward ? "'yes'" : "'no'"
+		);
+
 		goto out;
 	}
+
+	//////////////////////////
+	// Store or delete
+	/////////////////////
 
 	if (data->do_no_update) {
 		if (data->do_forward_other) {
@@ -322,8 +508,10 @@ static int cacher_process (
 				: ""
 	);
 
-	if ((ret = cacher_send_to_msgdb (
+	if ((ret = cacher_store (
 			data,
+			topic_tmp,
+			entry,
 			msg,
 			MSG_DATA_LENGTH(msg) == 0 && data->do_empty_is_delete
 				? 1 /* Delete command */
@@ -419,22 +607,36 @@ static void cacher_event_tidy (
 	struct cacher_data *data = thread_data->private_data;
 
 	if (data->message_ttl_seconds == 0) {
-		RRR_MSG_0("Peridoc tidy in cacher instance %s: Not TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
-		return;
+		RRR_DBG_1("Peridoc tidy in cacher instance %s: No TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+	}
+	else { 
+		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
+
+		int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
+				&data->msgdb_conn,
+				data->msgdb_socket,
+				INSTANCE_D_EVENTS(data->thread_data),
+				cacher_event_tidy_callback,
+				data
+		);
+
+		RRR_DBG_1("cacher instance %s tidy message database completed with status %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret_tmp);
 	}
 
-	RRR_DBG_1("cacher instance %s tidy...\n", INSTANCE_D_NAME(data->thread_data));
+	if (data->message_memory_ttl_seconds == 0) {
+		RRR_DBG_1("Peridoc tidy in cacher instance %s: No memory TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+	}
+	else {
+		RRR_DBG_1("cacher instance %s tidy memory cache, entry count is %i...\n",
+			INSTANCE_D_NAME(data->thread_data), RRR_LL_COUNT(&data->memory_cache));
 
-	int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
-			&data->msgdb_conn,
-			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			cacher_event_tidy_callback,
-			data
-	);
+		int deleted_entries = 0;
+		cacher_tidy_memory_cache(&deleted_entries, data);
 
-	RRR_DBG_1("cacher instance %s tidy completed with status %i\n",
-			INSTANCE_D_NAME(data->thread_data), ret_tmp);
+		RRR_DBG_1("cacher instance %s tidy memory cache completed, %i %s removed\n",
+				INSTANCE_D_NAME(data->thread_data), deleted_entries, (deleted_entries == 1 ? "message" : "messages"));
+	}
 
 	// Check for encourage stop, return code does not always
 	// propagate from msgdb client and we also cannot 
@@ -474,10 +676,12 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_requests", do_forward_requests, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_data", do_forward_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_other", do_forward_other, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_memory_consume_requests", do_memory_consume_requests, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_empty_is_delete", do_empty_is_delete, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_no_update", do_no_update, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_memory_ttl_seconds", message_memory_ttl_seconds, 0);
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter message_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
@@ -489,7 +693,18 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 		goto out;
 	}
 
+	if (data->message_memory_ttl_seconds > UINT32_MAX) {
+		RRR_MSG_0("Parameter message_memory_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
+			config->name,
+			(unsigned long long int) data->message_memory_ttl_seconds,
+			(unsigned long long int) UINT32_MAX
+		);
+		ret = 1;
+		goto out;
+	}
+
 	data->message_ttl_us = data->message_ttl_seconds * 1000 * 1000;
+	data->message_memory_ttl_us = data->message_memory_ttl_seconds * 1000 * 1000;
 
 	out:
 	return ret;

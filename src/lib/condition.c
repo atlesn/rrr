@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
-#include "string_builder.h"
 #include "allocator.h"
+#include "helpers/string_builder.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 #include "util/posix.h"

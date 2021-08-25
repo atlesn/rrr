@@ -212,36 +212,67 @@ static int __rrr_net_transport_handle_destroy (
 	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
 	rrr_free(handle);
-	// Always return success because we always free() regardless of callback result
+
 	return RRR_LL_DID_DESTROY;
 }
 
-int rrr_net_transport_handle_close (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle
+struct rrr_net_transport_handle_close_callback_data {
+	int found;
+};
+
+static int __rrr_net_transport_handle_close_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
 ) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+	struct rrr_net_transport_handle_close_callback_data *callback_data = arg;
 
-	int ret = 0;
-	int did_destroy = 0;
+	(void)(handle);
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (node->handle == transport_handle) {
-			ret = __rrr_net_transport_handle_destroy(node);
-			did_destroy = 1;
+	callback_data->found = 1;
+
+	// Makes iterator destroy the connection
+	return RRR_READ_EOF;
+}
+
+static int __rrr_net_transport_handle_close (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_handle_close_callback_data callback_data = {
+		0
+	};
+
+	// In case a pre-destroy function is not ready to destroy, this cause the
+	// read function to just call close() again. The handle is destroyed when
+	// pre-destroy finally returns OK (see iterator code). If the hard read
+	// timeout is reached, the handle will be destroyed regardless of what
+	// the pre-destroy function returns.
+
+	handle->close_now = 1;
+
+	int ret = rrr_net_transport_iterate_by_handle_and_do (
+			handle->transport,
+			handle,
+			__rrr_net_transport_handle_close_callback,
+			&callback_data
+	);
+
+	if (callback_data.found != 1) {
+		RRR_BUG("BUG: Handle %p not found in rrr_net_transport_cyx_close\n", handle);
+	}
+
+	return ret;
+}
+
+static void __rrr_net_transport_handle_remove_and_destroy (
+		struct rrr_net_transport *transport,
+		struct rrr_net_transport_handle *handle
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node == handle) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
-
-	if (did_destroy != 1) {
-		RRR_MSG_0("Could not find transport handle %i in rrr_net_transport_close\n", transport_handle);
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&transport->handles, 0; __rrr_net_transport_handle_destroy(node));
 }
 
 static int __rrr_net_transport_handle_send_nonblock (
@@ -286,9 +317,14 @@ static void __rrr_net_transport_handle_event_read_add_if_needed (
 	}
 }
 
+#define CHECK_CLOSE_NOW()                                                                                      \
+    if (handle->close_now) { ret_tmp = RRR_READ_EOF; goto check_read_write_return; }
+
 #define CHECK_READ_WRITE_RETURN()                                                                              \
+    goto check_read_write_return;                                                                              \
+    check_read_write_return:                                                                                   \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
-        rrr_net_transport_handle_close(handle->transport, handle->handle);                                     \
+        __rrr_net_transport_handle_close(handle);                                                              \
     } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
         rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
         EVENT_ACTIVATE(handle->event_read);                                                                    \
@@ -316,6 +352,7 @@ static void __rrr_net_transport_event_hard_read_timeout (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+	struct rrr_net_transport *transport = handle->transport;
 
 	(void)(fd);
 	(void)(flags);
@@ -325,6 +362,8 @@ static void __rrr_net_transport_event_hard_read_timeout (
 
 	int ret_tmp = RRR_READ_EOF;
 	CHECK_READ_WRITE_RETURN();
+	// Use stored pointer to transport in case handle has already been freed
+	__rrr_net_transport_handle_remove_and_destroy(transport, handle);
 }
 
 static void __rrr_net_transport_event_handshake (
@@ -351,7 +390,7 @@ static void __rrr_net_transport_event_handshake (
 				handle->submodule_fd, ret_tmp);
 
 		ret_tmp = RRR_READ_EOF;
-		goto check_return;
+		goto check_read_write_return;
 	}
 
 	RRR_DBG_7("net transport fd %i handshake complete\n",
@@ -366,7 +405,6 @@ static void __rrr_net_transport_event_handshake (
 	EVENT_REMOVE(handle->event_handshake);
 	EVENT_ADD(handle->event_read);
 
-	check_return:
 	CHECK_READ_WRITE_RETURN();
 }
 
@@ -380,6 +418,8 @@ static void __rrr_net_transport_event_read (
 	(void)(fd);
 
 	int ret_tmp = 0;
+
+	CHECK_CLOSE_NOW();
 
 	if (!handle->handshake_complete) {
 		EVENT_REMOVE(handle->event_read);
@@ -595,7 +635,7 @@ static int __rrr_net_transport_connect (
 
 	// Safe to pass in pointer, transport is only accessed if it exists in the list
 	if (close_after_callback) {
-		rrr_net_transport_handle_close (transport, transport_handle);
+		__rrr_net_transport_handle_close (handle);
 	}
 
 	out:
@@ -907,9 +947,10 @@ void rrr_net_transport_notify_read_all_connected (
 	RRR_LL_ITERATE_END();
 }
 
-int rrr_net_transport_iterate_with_callback (
+static int __rrr_net_transport_iterate_with_callback (
 		struct rrr_net_transport *transport,
-		enum rrr_net_transport_socket_mode mode,
+		enum rrr_net_transport_socket_mode search_mode,
+		struct rrr_net_transport_handle *search_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 ) {
@@ -918,44 +959,83 @@ int rrr_net_transport_iterate_with_callback (
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (mode == RRR_NET_TRANSPORT_SOCKET_MODE_ANY || mode == node->mode) {
-			if ((ret = callback (
-					node,
-					arg
-			)) != 0) {
-				if (ret == RRR_READ_INCOMPLETE) {
-					ret = 0;
-					RRR_LL_ITERATE_NEXT();
-				}
-				else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-					ret = 0;
-					// For nice treatment of remote, for instance send a disconnect packet
-					if (node->application_ptr_iterator_pre_destroy != NULL) {
-						ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
-					}
+		if (search_mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && search_mode != node->mode) {
+			RRR_LL_ITERATE_NEXT();
+		}
 
-					if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-						RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
-						RRR_LL_ITERATE_BREAK();
-					}
+		if (search_handle != NULL) {
+			if (search_handle != node) {
+				RRR_LL_ITERATE_NEXT();
+			}
 
-					// When pre_destroy returns 0 or is not set, go ahead with destruction
-					if (ret == 0) {
-						__rrr_net_transport_handle_destroy(node);
-						RRR_LL_ITERATE_SET_DESTROY();
-						RRR_LL_ITERATE_NEXT();
-					}
+			// There can only be one match if we match on handle
+			RRR_LL_ITERATE_LAST();
+		}
+
+		if ((ret = callback (
+				node,
+				arg
+		)) != 0) {
+			if (ret == RRR_READ_INCOMPLETE) {
+				ret = 0;
+			}
+			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
+				ret = 0;
+				// For nice treatment of remote, for instance send a disconnect packet
+				if (node->application_ptr_iterator_pre_destroy != NULL) {
+					ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
 				}
-				else {
-					RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
-					ret = 1;
-					RRR_LL_ITERATE_LAST();
+
+				if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+					RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
+					RRR_LL_ITERATE_BREAK();
 				}
+
+				// When pre_destroy returns 0 or is not set, go ahead with destruction
+				if (ret == 0) {
+					__rrr_net_transport_handle_destroy(node);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+			}
+			else {
+				RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
+				ret = 1;
+				RRR_LL_ITERATE_LAST();
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 
 	return ret;
+}
+
+int rrr_net_transport_iterate_by_mode_and_do (
+		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	return __rrr_net_transport_iterate_with_callback (
+			transport,
+			mode,
+			NULL,
+			callback,
+			arg
+	);
+}
+
+int rrr_net_transport_iterate_by_handle_and_do (
+		struct rrr_net_transport *transport,
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	return __rrr_net_transport_iterate_with_callback (
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
+			handle,
+			callback,
+			arg
+	);
 }
 
 int rrr_net_transport_match_data_set (
@@ -986,11 +1066,14 @@ int rrr_net_transport_check_handshake_complete (
 	return ret;
 }
 
-
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	// If application wishes a pre-destroy function to be called, the
+	// iterator function must be used to close the connections prior
+	// to calling cleanup.
 
 	RRR_LL_DESTROY(
 			collection,
