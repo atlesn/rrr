@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/crc32.h"
 #include "../util/posix.h"
-#include "../string_builder.h"
+#include "../helpers/string_builder.h"
 #include "../ip/ip_util.h"
 
 // Configuration
