@@ -142,6 +142,7 @@ do_test_simple test_incrementer.conf
 
 do_test_simple test_cacher_1.conf 
 do_test_simple test_cacher_2.conf 
+do_test_simple test_cacher_3.conf 
 
 rm -rf /tmp/rrr-test-msgdb* || exit 1
 # End message DB tests

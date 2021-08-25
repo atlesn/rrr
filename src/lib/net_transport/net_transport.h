@@ -103,10 +103,6 @@ int rrr_net_transport_handle_allocate_and_add (
 );
 #endif
 
-int rrr_net_transport_handle_close (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle
-);
 int rrr_net_transport_connect_and_close_after_callback (
 		struct rrr_net_transport *transport,
 		uint16_t port,
@@ -151,9 +147,15 @@ int rrr_net_transport_is_tls (
 void rrr_net_transport_notify_read_all_connected (
 		struct rrr_net_transport *transport
 );
-int rrr_net_transport_iterate_with_callback (
+int rrr_net_transport_iterate_by_mode_and_do (
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+);
+int rrr_net_transport_iterate_by_handle_and_do (
+		struct rrr_net_transport *transport,
+		struct rrr_net_transport_handle *handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );

@@ -291,7 +291,6 @@ static int __rrr_msgdb_client_send_empty (
 			(unsigned long long) topic_len,
 			(unsigned long long) UINT16_MAX
 		);
-		ret = 1;
 		goto out;
 	}
 
@@ -342,7 +341,7 @@ int rrr_msgdb_client_cmd_idx_with_wait_callback (
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, target_paths, msg_tmp)) != 0) {
+	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, target_paths, msg_tmp)) != 0) {
 		goto out;
 	}
 

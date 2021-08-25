@@ -179,7 +179,7 @@ int rrr_socket_sendto_nonblock (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength size_big,
+		const rrr_biglength size_big,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );

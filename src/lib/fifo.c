@@ -32,13 +32,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/slow_noop.h"
 #include "util/rrr_time.h"
 
-static void __rrr_fifo_entry_destroy (
+static void __rrr_fifo_entry_incref_data (
 		struct rrr_fifo *buffer,
 		struct rrr_fifo_entry *entry
 ) {
 	if (entry->data != NULL) {
-		buffer->free_entry(entry->data);
+		buffer->incref(entry->data);
 	}
+}
+
+static void __rrr_fifo_entry_decref_data (
+		struct rrr_fifo *buffer,
+		struct rrr_fifo_entry *entry
+) {
+	if (entry->data != NULL) {
+		buffer->decref(entry->data);
+		entry->data = NULL;
+	}
+}
+
+static void __rrr_fifo_entry_destroy (
+		struct rrr_fifo *buffer,
+		struct rrr_fifo_entry *entry
+) {
+	__rrr_fifo_entry_decref_data(buffer, entry);
 	rrr_free(entry);
 }
 
@@ -47,16 +64,6 @@ static void __rrr_fifo_entry_destroy_simple_void (
 ) {
 	struct rrr_fifo_entry *entry = ptr;
 	rrr_free(entry);
-}
-
-static void __rrr_fifo_entry_destroy_data (
-		struct rrr_fifo *buffer,
-		struct rrr_fifo_entry *entry
-) {
-	if (entry->data != NULL) {
-		buffer->free_entry(entry->data);
-		entry->data = NULL;
-	}
 }
 
 static void __rrr_fifo_entry_release_data (
@@ -98,29 +105,36 @@ void rrr_fifo_destroy (
 	rrr_fifo_clear_with_callback(buffer, NULL, NULL);
 }
 
-static void __rrr_fifo_default_free (
+static void __rrr_fifo_default_incref (
+		void *ptr
+) {
+	(void)(ptr);
+}
+
+static void __rrr_fifo_default_decref (
 		void *ptr
 ) {
 	rrr_free(ptr);
 }
 
-int rrr_fifo_init (
-		struct rrr_fifo *buffer
+void rrr_fifo_init_custom_refcount (
+		struct rrr_fifo *buffer,
+		void (*custom_incref)(void *arg),
+		void (*custom_decref)(void *arg)
 ) {
 	memset (buffer, '\0', sizeof(*buffer));
-
-	buffer->free_entry = &__rrr_fifo_default_free;
-
-	return 0;
+	buffer->incref = custom_incref;
+	buffer->decref = custom_decref;
 }
 
-int rrr_fifo_init_custom_free (
-		struct rrr_fifo *buffer,
-		void (*custom_free)(void *arg)
+void rrr_fifo_init (
+		struct rrr_fifo *buffer
 ) {
-	int ret = rrr_fifo_init(buffer);
-	buffer->free_entry = custom_free;
-	return ret;
+	rrr_fifo_init_custom_refcount (
+		buffer,
+		&__rrr_fifo_default_incref,
+		&__rrr_fifo_default_decref
+	);
 }
 
 /*
@@ -271,7 +285,7 @@ int rrr_fifo_search (
 			// If we are not asked to free, zero out the pointer to stop it from being
 			// destroyed by entry destroy functions
 			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
-				entry->data = NULL;
+				__rrr_fifo_entry_release_data(entry);
 			}
 
 			__rrr_fifo_entry_destroy(buffer, entry);
@@ -441,7 +455,11 @@ static int __rrr_fifo_search_and_replace_call_again (
 			if (entry->data == NULL) {
 				RRR_BUG("Data from callback was NULL in rrr_fifo_write, must return DROP\n");
 			}
+			__rrr_fifo_entry_incref_data(buffer, entry);
 			__rrr_fifo_write_update_pointers(buffer, entry, order, 0);
+			if ((ret = rrr_length_inc_err (&buffer->entry_count)) != 0) {
+				goto loop_out;
+			}
 		}
 
 		loop_out:
@@ -475,13 +493,6 @@ int rrr_fifo_search_and_replace (
 ) {
 	int ret = 0;
 
-	if (rrr_fifo_get_entry_count(buffer) == 0) {
-		goto out;
-	}
-
-	rrr_length cleared_entries = 0;
-	rrr_length new_entries = 0;
-
 	struct rrr_fifo_entry *entry;
 	struct rrr_fifo_entry *next;
 	struct rrr_fifo_entry *prev = NULL;
@@ -510,7 +521,7 @@ int rrr_fifo_search_and_replace (
 			// If we are not asked to free, zero out the pointer to stop it from being
 			// destroyed by entry destroy functions
 			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
-				entry->data = NULL;
+				__rrr_fifo_entry_release_data(entry);
 			}
 
 			if ((actions & (RRR_FIFO_SEARCH_GIVE)) != 0 ) {
@@ -529,23 +540,25 @@ int rrr_fifo_search_and_replace (
 				}
 
 				__rrr_fifo_entry_destroy(buffer, entry);
-				rrr_length_inc_bug(&cleared_entries);
+				rrr_length_dec_bug (&buffer->entry_count);
 			}
 			else {
 				if (entry->data == data) {
 					RRR_BUG("BUG: Callback of fifo_search_and_replace tells us to replace, but the data pointer did not change\n");
 				}
 
-				__rrr_fifo_entry_destroy_data(buffer, entry);
+				__rrr_fifo_entry_decref_data(buffer, entry);
 
 				entry->data = data;
 				entry->size = size;
 				entry->order = order;
 
-				rrr_length_inc_bug(&cleared_entries);
-				if ((ret = rrr_length_inc_err (&new_entries)) != 0) {
-					break;
+				__rrr_fifo_entry_incref_data(buffer, entry);
+
+				if ((ret = rrr_length_inc_err (&buffer->entry_count)) != 0) {
+					goto out;
 				}
+				rrr_length_dec_bug (&buffer->entry_count);
 			}
 
 			entry = prev;
@@ -564,11 +577,6 @@ int rrr_fifo_search_and_replace (
 
 	if (ret == RRR_FIFO_OK && call_again_after_looping) {
 		ret = __rrr_fifo_search_and_replace_call_again(buffer, callback, callback_arg);
-	}
-
-	rrr_length_sub_bug (&buffer->entry_count, cleared_entries);
-	if ((ret = rrr_length_add_err (&buffer->entry_count, new_entries)) != 0) {
-		goto out;
 	}
 
 	out:
@@ -612,7 +620,7 @@ int rrr_fifo_read_clear_forward_all (
 				if ((ret_tmp & RRR_FIFO_SEARCH_FREE) != 0) {
 					// Callback wants us to free memory
 					ret_tmp = ret_tmp & ~(RRR_FIFO_SEARCH_FREE);
-					__rrr_fifo_entry_destroy_data(buffer, current);
+					__rrr_fifo_entry_decref_data(buffer, current);
 				}
 				else {
 					__rrr_fifo_entry_release_data(current);
@@ -829,6 +837,7 @@ int rrr_fifo_write (
 			RRR_BUG("Data from callback was NULL in rrr_fifo_write, must return DROP\n");
 		}
 
+		__rrr_fifo_entry_incref_data(buffer, entry);
 		__rrr_fifo_write_update_pointers (buffer, entry, order, do_ordered_write);
 		entry = NULL;
 
@@ -852,4 +861,35 @@ int rrr_fifo_write (
 	}
 
 	return ret;
+}
+
+int rrr_fifo_merge (
+		struct rrr_fifo *buffer_target,
+		struct rrr_fifo *buffer_source
+) {
+	if (buffer_source->entry_count == 0) {
+		return 0;
+	}
+
+	if (rrr_length_add_err(&buffer_target->entry_count, buffer_source->entry_count) != 0) {
+		RRR_MSG_0("Could not merge buffers, target buffer entry count would overflow\n");
+		return 1;
+	}
+
+	if (buffer_target->gptr_last) {
+		// Add after last element
+		buffer_target->gptr_last->next = buffer_source->gptr_first;
+	}
+	else {
+		// Add to empty buffer
+		buffer_target->gptr_first = buffer_source->gptr_first;
+	}
+
+	buffer_target->gptr_last = buffer_source->gptr_last;
+
+	buffer_source->entry_count = 0;
+	buffer_source->gptr_first = NULL;
+	buffer_source->gptr_last = NULL;
+
+	return 0;
 }

@@ -127,7 +127,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 	uint64_t result_accumulator = 0;
 
 	if (http_client->transport_keepalive_plain != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_plain,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_active_transaction_count_get_callback,
@@ -136,7 +136,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 	}
 
 	if (http_client->transport_keepalive_tls != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_tls,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_active_transaction_count_get_callback,
@@ -160,7 +160,7 @@ void rrr_http_client_websocket_response_available_notify (
 		struct rrr_http_client *http_client
 ) {
 	if (http_client->transport_keepalive_plain != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_plain,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_websocket_response_available_notify_callback,
@@ -169,7 +169,7 @@ void rrr_http_client_websocket_response_available_notify (
 	}
 
 	if (http_client->transport_keepalive_tls != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_tls,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_websocket_response_available_notify_callback,
@@ -604,8 +604,6 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		// This usually only happens at most one time unless there is some error condition,
-		// after which we break out after a few rounds.
 		if (again_max--) {
 			goto again;
 		}

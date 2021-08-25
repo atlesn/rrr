@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "type.h"
 #include "parse.h"
-#include "string_builder.h"
+#include "helpers/string_builder.h"
 #include "allocator.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
