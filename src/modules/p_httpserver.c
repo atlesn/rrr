@@ -965,6 +965,10 @@ static int httpserver_async_response_get_and_process (
 		);
 		rrr_msg_holder_unlock(callback_data.entry);
 
+		if (ret != 0) {
+			goto out;
+		}
+
 		/////////////
 		// Process //
 		/////////////
