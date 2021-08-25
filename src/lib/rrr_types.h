@@ -260,6 +260,13 @@ static inline rrr_length rrr_length_from_biglength_sub_bug_const (rrr_biglength 
 	return (rrr_length) r;
 }
 
+static inline rrr_biglength rrr_biglength_sub_bug_const (rrr_biglength a, rrr_biglength b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_biglength_sub_bug_const\n");
+	}
+	return a - b;
+}
+
 static inline rrr_length rrr_length_from_slength_bug_const (rrr_slength a) {
 	if (a > RRR_LENGTH_MAX) {
 		RRR_BUG("Overflow in rrr_length_from_slength_bug_const\n");
