@@ -607,7 +607,7 @@ static int __rrr_perl5_hv_to_message_process_array (
 		goto out;
 	}
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 			&message_tmp,
 			&array_tmp,
 			0,
@@ -842,7 +842,7 @@ static int __rrr_perl5_message_to_hv (
     rrr_array_clear(array);
     if (MSG_IS_ARRAY(message)) {
 	    	uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, array, message) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, array, message) != 0) {
 			RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_to_hv\n");
 			ret = 1;
 			goto out;

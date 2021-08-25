@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_header_fields.h"
 
+#include "../array.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
 #include "../helpers/nullsafe_str.h"
@@ -83,6 +84,7 @@ struct rrr_http_part {
 
 	struct rrr_http_header_field_collection headers;
 	struct rrr_http_field_collection fields;
+	struct rrr_array_collection arrays;
 	struct rrr_http_chunks chunks;
 
 	unsigned int response_code;
@@ -175,12 +177,10 @@ int rrr_http_part_chunks_iterate (
 		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
-int rrr_http_part_fields_from_uri_extract (
-		struct rrr_http_part *target
-);
-int rrr_http_part_fields_from_post_extract (
-		struct rrr_http_part *target,
-		const char *data_ptr
+int rrr_http_part_multipart_and_fields_process (
+		struct rrr_http_part *part,
+		const char *data_or_null,
+		short no_body_parse
 );
 int rrr_http_part_chunks_merge (
 		char **result_data,

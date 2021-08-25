@@ -44,7 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
-#include "../lib/fifo.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip.h"
 #include "../lib/stats/stats_instance.h"
@@ -59,7 +58,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct mqtt_broker_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_fifo local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
 	uint16_t server_port_plain;
 	uint16_t server_port_tls;
@@ -82,7 +80,6 @@ struct mqtt_broker_data {
 
 static void mqttbroker_data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
-	rrr_fifo_clear(&data->local_buffer);
 	RRR_FREE_IF_NOT_NULL(data->password_file);
 	RRR_FREE_IF_NOT_NULL(data->acl_file);
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
@@ -95,23 +92,10 @@ static int mqttbroker_data_init (
 		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
-	int ret = 0;
 
 	data->thread_data = thread_data;
 
-	ret |= rrr_fifo_init(&data->local_buffer);
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not initialize fifo buffer in mqtt broker data_init\n");
-		goto out;
-	}
-
-	out:
-	if (ret != 0) {
-		mqttbroker_data_cleanup(data);
-	}
-
-	return ret;
+	return 0;
 }
 
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
@@ -138,7 +122,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		data->server_port_plain = RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
 	}
 	if (data->server_port_tls == 0) {
-		data->server_port_plain = RRR_MQTT_DEFAULT_SERVER_PORT_TLS;
+		data->server_port_tls = RRR_MQTT_DEFAULT_SERVER_PORT_TLS;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
