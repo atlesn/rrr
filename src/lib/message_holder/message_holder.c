@@ -143,6 +143,7 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
 		rrr_msg_holder_private_data_clear(entry);
+		rrr_instance_friend_collection_clear(&entry->nexthops);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);
@@ -285,23 +286,53 @@ int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 ) {
-	int ret = rrr_msg_holder_new (
-			result,
+	int ret = 0;
+
+	*result = NULL;
+
+	struct rrr_msg_holder *entry = NULL;
+
+	if ((ret = rrr_msg_holder_new (
+			&entry,
 			0,
 			(struct sockaddr *) &source->addr,
 			source->addr_len,
 			source->protocol,
 			NULL
-	);
-
-	if (ret == 0) {
-		rrr_msg_holder_lock(*result);
-		(*result)->buffer_time = source->buffer_time;
-		(*result)->send_time = source->send_time;
-		rrr_msg_holder_unlock(*result);
+	)) != 0) {
+		goto out;
 	}
 
+	rrr_msg_holder_lock(entry);
+
+	entry->buffer_time = source->buffer_time;
+	entry->send_time = source->send_time;
+
+	ret = rrr_instance_friend_collection_append_from (&entry->nexthops, &source->nexthops);
+
+	rrr_msg_holder_unlock(entry);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to clone nexthops list in %s\n", __func__);
+		goto out;
+	}
+
+	*result = entry;
+	entry = NULL;
+
+	out:
+	if (entry != NULL) {
+		rrr_msg_holder_decref(entry);
+	}
 	return ret;
+}
+
+int rrr_msg_holder_nexthop_ok (
+		const struct rrr_msg_holder *entry,
+		const struct rrr_instance *instance
+) {
+	return rrr_instance_friend_collection_check_empty (&entry->nexthops) ||
+	       rrr_instance_friend_collection_check_exists (&entry->nexthops, instance);
 }
 
 void rrr_msg_holder_set_data_unlocked (
