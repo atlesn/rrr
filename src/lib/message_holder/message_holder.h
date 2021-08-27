@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 struct rrr_instance;
+struct rrr_instance_friend_collection;
 
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
@@ -81,6 +82,13 @@ int rrr_msg_holder_new (
 int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
+);
+void rrr_msg_holder_nexthops_reset (
+		struct rrr_msg_holder *entry
+);
+int rrr_msg_holder_nexthops_set (
+		struct rrr_msg_holder *entry,
+		const struct rrr_instance_friend_collection *hops
 );
 int rrr_msg_holder_nexthop_ok (
 		const struct rrr_msg_holder *entry,

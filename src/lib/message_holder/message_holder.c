@@ -327,6 +327,25 @@ int rrr_msg_holder_clone_no_data (
 	return ret;
 }
 
+void rrr_msg_holder_nexthops_reset (
+		struct rrr_msg_holder *entry
+) {
+	rrr_instance_friend_collection_clear (&entry->nexthops);
+}
+
+int rrr_msg_holder_nexthops_set (
+		struct rrr_msg_holder *entry,
+		const struct rrr_instance_friend_collection *hops
+) {
+	rrr_msg_holder_nexthops_reset(entry);
+
+	if (hops == NULL || RRR_LL_COUNT(hops) == 0) {
+		return 0;
+	}
+
+	return rrr_instance_friend_collection_append_from (&entry->nexthops, hops);
+}
+
 int rrr_msg_holder_nexthop_ok (
 		const struct rrr_msg_holder *entry,
 		const struct rrr_instance *instance

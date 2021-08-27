@@ -633,6 +633,7 @@ static int ip_array_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			ip_array_callback_broker,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -644,6 +645,7 @@ static int ip_array_callback (
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&callback_data.new_entries,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -1464,9 +1466,10 @@ static int ip_send_loop (
 					node->endian_indicator = 0;
 				}
 
-				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 						INSTANCE_D_BROKER_ARGS(ip_data->thread_data),
 						node,
+						NULL,
 						INSTANCE_D_CANCEL_CHECK_ARGS(ip_data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",

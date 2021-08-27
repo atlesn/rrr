@@ -204,9 +204,10 @@ static int ipclient_receive_callback(struct rrr_msg_holder *entry, void *arg) {
 
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing to output buffer in ipclient instance %s\n",

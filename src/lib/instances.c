@@ -415,6 +415,16 @@ static int __rrr_instance_add_senders (
 	return ret;
 }
 
+int rrr_instance_has_sender (
+		const struct rrr_instance *instance,
+		const struct rrr_instance *sender
+) {
+	return rrr_instance_friend_collection_check_exists (
+			&instance->senders,
+			sender
+	);
+}
+
 void rrr_instance_collection_clear (
 		struct rrr_instance_collection *target
 ) {

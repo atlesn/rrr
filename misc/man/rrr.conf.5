@@ -1,4 +1,4 @@
-.Dd 2021-08-26
+.Dd 2021-08-27
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2052,6 +2052,13 @@ Defaults to no.
 .It cacher_forward_other={yes|no}
 If set to yes, messages without topic are forwarded.
 If set to no or left unset, messages without a topic are dropped and an error message is produced.
+
+.It cacher_request_receivers=INSTANCE NAME,...
+.It cacher_data_receivers=INSTANCE NAME,...
+.It cacher_other_receivers=INSTANCE NAME,..
+Define a list of readers of this cacher instance to receive request, data or other messages.
+The instances defined must have this cacher instance defined as a sender.
+If left undefined for one or more of the message types, all readers will receive this type.
 
 .It cacher_memory_consume_requests={yes|no}
 If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the
