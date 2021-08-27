@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
 #include "../instance_friends.h"
+#include "message_holder.h"
 
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 //#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
@@ -53,7 +54,7 @@ struct rrr_msg_holder {
 	uint64_t buffer_time;
 
 	// If populated, instances which are not defined will ignore this message
-	struct rrr_instance_friend_collection nexthops;
+	rrr_msg_holder_nexthops nexthops;
 
 	// Available for modules
 	uint64_t send_time;

@@ -335,7 +335,7 @@ void rrr_msg_holder_nexthops_reset (
 
 int rrr_msg_holder_nexthops_set (
 		struct rrr_msg_holder *entry,
-		const struct rrr_instance_friend_collection *hops
+		const rrr_msg_holder_nexthops *hops
 ) {
 	rrr_msg_holder_nexthops_reset(entry);
 

@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 struct rrr_instance;
-struct rrr_instance_friend_collection;
+typedef struct rrr_instance_friend_collection rrr_msg_holder_nexthops;
 
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
@@ -88,7 +88,7 @@ void rrr_msg_holder_nexthops_reset (
 );
 int rrr_msg_holder_nexthops_set (
 		struct rrr_msg_holder *entry,
-		const struct rrr_instance_friend_collection *hops
+		const rrr_msg_holder_nexthops *hops
 );
 int rrr_msg_holder_nexthop_ok (
 		const struct rrr_msg_holder *entry,

@@ -2058,6 +2058,10 @@ If set to no or left unset, messages without a topic are dropped and an error me
 .It cacher_other_receivers=INSTANCE NAME,..
 Define a list of readers of this cacher instance to receive request, data or other messages.
 The instances defined must have this cacher instance defined as a sender.
+Note that
+.B
+duplicate=yes
+should be set when there are multiple readers of the cacher module.
 If left undefined for one or more of the message types, all readers will receive this type.
 
 .It cacher_memory_consume_requests={yes|no}

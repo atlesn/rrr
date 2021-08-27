@@ -594,7 +594,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	void *callback_arg;
 	int (*check_cancel_callback)(void *arg);
 	void *check_cancel_callback_arg;
-	const struct rrr_instance_friend_collection *nexthops;
+	const rrr_msg_holder_nexthops *nexthops;
 };
 
 struct rrr_message_broker_message_holder_double_pointer {
@@ -613,7 +613,7 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 		int *write_drop,
 		int *write_again,
 		struct rrr_msg_holder *entry,
-		const struct rrr_instance_friend_collection *nexthops,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg
 ) {
@@ -830,7 +830,7 @@ int rrr_message_broker_write_entry (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		uint8_t protocol,
-		const struct rrr_instance_friend_collection *nexthops,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -895,7 +895,7 @@ int rrr_message_broker_write_entry (
 
 struct rrr_message_broker_clone_and_write_entry_callback_data {
 	const struct rrr_msg_holder *source;
-	const struct rrr_instance_friend_collection *nexthops;
+	const rrr_msg_holder_nexthops *nexthops;
 };
 
 static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
@@ -935,7 +935,7 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECT
 }
 
 struct rrr_message_broker_clone_and_write_entry_slot_callback_data {
-	const struct rrr_instance_friend_collection *nexthops;
+	const rrr_msg_holder_nexthops *nexthops;
 };
 				
 static void __rrr_message_broker_clone_and_write_entry_slot_callback (
@@ -955,7 +955,7 @@ static void __rrr_message_broker_clone_and_write_entry_slot_callback (
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker_costumer *costumer,
 		const struct rrr_msg_holder *entry,
-		const struct rrr_instance_friend_collection *nexthops
+		const rrr_msg_holder_nexthops *nexthops
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -1021,7 +1021,7 @@ static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_PROTECTED_W
 int rrr_message_broker_incref_and_write_entry_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry,
-		const struct rrr_instance_friend_collection *nexthops,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
@@ -1088,7 +1088,7 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_PROTEC
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder_collection *collection,
-		const struct rrr_instance_friend_collection *nexthops,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
