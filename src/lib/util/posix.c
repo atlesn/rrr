@@ -35,11 +35,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <poll.h>
+#include <unistd.h>
 
 #include "../log.h"
 #include "../rrr_strerror.h"
 #include "../rrr_types.h"
 #include "posix.h"
+
+void rrr_posix_msleep_signal_safe (int mseconds) {
+	struct pollfd pollfd = {0};
+
+	pollfd.fd = STDIN_FILENO;
+	pollfd.events = POLLIN;
+
+	poll(&pollfd, 1, mseconds);
+}
 
 int rrr_posix_usleep(size_t useconds) {
 	size_t part_useconds = (useconds % 1000000);

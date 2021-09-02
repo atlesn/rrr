@@ -19,6 +19,7 @@ test_LDADD = -ldl -lpthread -lm -L../lib/.libs -lrrr ${jsonc_libadd}
 test_SOURCES = test.c \
 	../main.c \
 	test_usleep.c \
+	test_msleep_signal_safe.c \
 	test_fixp.c \
 	test_inet.c \
 	test_condition.c \
