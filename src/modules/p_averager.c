@@ -217,7 +217,7 @@ static int averager_process_message (
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 		RRR_MSG_0("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
@@ -272,7 +272,7 @@ static int averager_spawn_message_callback (struct rrr_msg_holder *new_entry, vo
 
 	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 			&message,
 			callback_data->array_tmp,
 			rrr_time_get_64(),
@@ -345,6 +345,7 @@ static int averager_spawn_message (
 			NULL,
 			0,
 			0,
+			NULL,
 			averager_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -439,6 +440,7 @@ static void averager_event_output_list (
 	if (rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&data->output_list,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not write to output buffer in averager instance %s\n",

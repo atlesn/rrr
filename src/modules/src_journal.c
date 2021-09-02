@@ -326,7 +326,7 @@ static int journal_write_message_callback (struct rrr_msg_holder *entry, void *a
 		goto out;
 	}
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 				&reading,
 				&queue_entry->array,
 				queue_entry->timestamp,
@@ -446,6 +446,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				NULL,
 				0,
 				0,
+				NULL,
 				journal_write_message_callback,
 				&callback_data,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)

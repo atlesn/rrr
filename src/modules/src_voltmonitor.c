@@ -364,7 +364,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_msg_holder *entry, voi
 
 	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 			&message,
 			callback_data->array_tmp,
 			callback_data->time_now,
@@ -416,6 +416,7 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, int value) 
 			NULL,
 			0,
 			0,
+			NULL,
 			voltmonitor_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -453,7 +454,7 @@ static int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
 	}
 

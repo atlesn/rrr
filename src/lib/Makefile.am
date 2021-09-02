@@ -98,7 +98,7 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
 
-helpers = helpers/nullsafe_str.c
+helpers = helpers/nullsafe_str.c helpers/string_builder.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
@@ -119,7 +119,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     message_broker.c map.c array.c array_tree.c \
                     read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
-                    string_builder.c random.c condition.c \
+                    random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \

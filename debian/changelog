@@ -1,8 +1,45 @@
-rrr (1.19-0buster2) buster; urgency=medium
+rrr (1.19-1buster1) buster; urgency=medium
 
-  * Buster release.
+  * Buster release
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 18 Aug 2021 19:51:43 +0200
+ -- Atle Solbakken <atle@atle>  Thu, 02 Sep 2021 19:31:43 +0200
+
+rrr (1.19-1) bullseye; urgency=medium
+
+  * Features:
+    * HTTP server can extract values from JSON
+    * Option in HTTP server to prevent any body from being parsed
+    * Added memory cache in cacher module
+    * Message taint option in httpclient to prevent messages from
+      backfiring.
+
+  * Fixes:
+    * Crash in MQTT client upon reconnect attempts due to incorrect
+      cast.
+    * Fix non-working will and retain messages in MQTT broker.
+    * Incorrect default port numbers in MQTT broker
+    * MQTT ping messages were not being sent
+    * Sending in httpserver stopped for longer data if nothing else
+      were added to be sent or read.
+    * Messages were sorted in reverse order in IP module
+    * Ensure correct sorting in IP module by using and index
+      instead of timestamp.
+    * Missing default port number in mqtt client
+    * Incorrect byte counting in misc. send functions causing
+      problems with longer messages.
+    * Broken SQL generation in mysql module due to error in
+      string builder.
+    * Allow spaces after certain HTTP/1 header fields
+    * Missing IP information in messages arriving on TCP in IP
+      module.
+    * Minor errors in debug messages.
+
+  * Under the hood:
+    * Incref/decref abstraction added to FIFO buffer to reduce
+      complexity in mqtt.
+    * Misc. cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 25 Aug 2021 21:23:13 +0200
 
 rrr (1.19-0) bullseye; urgency=medium
 

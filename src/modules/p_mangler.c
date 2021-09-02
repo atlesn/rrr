@@ -38,10 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
 #include "../lib/map.h"
 #include "../lib/type.h"
 #include "../lib/type_conversion.h"
+#include "../lib/helpers/string_builder.h"
 
 struct mangler_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -144,7 +144,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection (
+	if ((ret = rrr_array_message_append_to_array (
 			&array_version_dummy,
 			&array_from_message,
 			(const struct rrr_msg_msg *) entry->message
@@ -189,7 +189,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_LL_ITERATE_END();
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message_new,
 			&array_new,
 			rrr_time_get_64(),
@@ -218,9 +218,10 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry->data_length = MSG_TOTAL_SIZE((const struct rrr_msg_msg *) entry->message);
 		}
 	out_write:
-		ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		ret = rrr_message_broker_incref_and_write_entry_unsafe (
 				INSTANCE_D_BROKER_ARGS(thread_data),
 				entry,
+				NULL,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		);
 	out_drop:

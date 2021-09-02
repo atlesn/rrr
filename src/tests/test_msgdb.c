@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fork.h"
 #include "../lib/array.h"
 #include "../lib/random.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 #include "test.h"
 
 #define MSGDB_CMD        "../.libs/rrr_msgdb"
@@ -270,7 +270,7 @@ static int __rrr_test_msgdb_get_index (
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, result_msg)) != 0) {
+	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, result_msg)) != 0) {
 		goto out;
 	}
 
@@ -366,7 +366,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 		goto out;
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (&msg, &array_tmp, rrr_time_get_64(), topic, (rrr_u16) strlen(topic))) != 0) {
+	if ((ret = rrr_array_new_message_from_array (&msg, &array_tmp, rrr_time_get_64(), topic, (rrr_u16) strlen(topic))) != 0) {
 		goto out;
 	}
 

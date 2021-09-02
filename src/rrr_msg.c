@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
 #include "lib/array.h"
-#include "lib/string_builder.h"
+#include "lib/helpers/string_builder.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/messages/msg.h"
@@ -140,7 +140,7 @@ static int __rrr_msg_msg_callback (
 		}
 
 		uint16_t array_version = 0;
-		if ((ret = rrr_array_message_append_to_collection(&array_version, &array_tmp, msg)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&array_version, &array_tmp, msg)) != 0) {
 			goto out;
 		}
 
@@ -307,10 +307,7 @@ static int __rrr_msg_read (
 	RRR_MSG_1("== Size: %lli\n", (long long signed) file_size);
 
 #if SSIZE_MAX > RRR_LENGTH_MAX
-	if (file_size < (ssize_t) sizeof(struct rrr_msg) || file_size > (rrr_slength) RRR_LENGTH_MAX) {
-#else
-	if (file_size < (ssize_t) sizeof(struct rrr_msg)) {
-#endif
+	if (file_size > (rrr_slength) RRR_LENGTH_MAX) {
 		RRR_MSG_0("File size of file '%s' was out of range while reading (must have %llu <= size <= %llu, got %lli)\n",
 			file,
 			(long long unsigned) sizeof(struct rrr_msg),
@@ -320,10 +317,47 @@ static int __rrr_msg_read (
 		ret = 1;
 		goto out;
 	}
+#endif
+
+	const rrr_length file_size_final = rrr_length_from_biglength_bug_const(file_size);
 
 	struct rrr_msg *msg = (struct rrr_msg *) file_data;
 
-	if ((ret = __rrr_msg_to_host_and_dump(data, msg, rrr_length_from_biglength_bug_const (file_size))) != 0) {
+	rrr_length target_size = 0;
+	if ((ret = rrr_msg_get_target_size_and_check_checksum (
+			&target_size,
+			msg,
+			file_size_final
+	)) != 0) {
+		if (ret == RRR_MSG_READ_INCOMPLETE) {
+			RRR_MSG_0("Header of file '%s' was incomplete, file is too small\n",
+				file,
+				file_size_final,
+				target_size
+			);
+			ret = 1;
+			goto out;
+		}
+		else {
+			RRR_MSG_0("Header CRC32 checksum failed for file '%s'\n",
+				file
+			);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (target_size  != file_size_final) {
+		RRR_MSG_0("Actual size of file '%s' did not match reported size in the header (%" PRIrrrl "<>%" PRIrrrl ")\n",
+			file,
+			file_size_final,
+			target_size
+		);
+		ret = 1;
+		goto out;
+	};
+
+	if ((ret = __rrr_msg_to_host_and_dump(data, msg, file_size_final)) != 0) {
 		RRR_MSG_0("Failed to read message from file '%s'\n", file);
 		goto out;
 	}
@@ -380,7 +414,7 @@ static int __rrr_msg_selftest (
 			goto out;
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&msg_msg,
 				&array_tmp,
 				rrr_time_get_64(),

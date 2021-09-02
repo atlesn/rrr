@@ -572,7 +572,7 @@ static int file_read_array_write_callback (struct rrr_msg_holder *entry, void *a
 
 	uint64_t time = rrr_time_get_64();
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&new_message,
 			callback_data->array_final,
 			time,
@@ -622,6 +622,7 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_array_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->file_data->thread_data)
@@ -788,7 +789,7 @@ static int file_read_all_to_message_write_callback_structured (
 	uint64_t time = rrr_time_get_64();
 
 	struct rrr_msg_msg *reading = NULL;
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&reading,
 			&array_tmp,
 			time,
@@ -860,6 +861,7 @@ static int file_read_all_to_message_complete_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_all_to_message_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "event.h"
 #include "util/linked_list.h"
+#include "message_holder/message_holder.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
 #define RRR_MESSAGE_BROKER_POST		RRR_MESSAGE_BROKER_OK
@@ -41,7 +42,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_SENDERS_MAX                64
 #define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX  RRR_MESSAGE_BROKER_SENDERS_MAX
 
-struct rrr_msg_holder;
 struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
 struct rrr_message_broker_costumer;
@@ -83,6 +83,7 @@ int rrr_message_broker_write_entry (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		uint8_t protocol,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -90,17 +91,20 @@ int rrr_message_broker_write_entry (
 );
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker_costumer *costumer,
-		const struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *nexthops
 );
-int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+int rrr_message_broker_incref_and_write_entry_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder_collection *collection,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );

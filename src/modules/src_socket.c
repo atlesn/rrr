@@ -171,7 +171,7 @@ static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, v
 
 	struct rrr_msg_msg *message = NULL;
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message,
 			&data->array_tmp,
 			rrr_time_get_64(),
@@ -198,9 +198,23 @@ static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, v
 	return ret;
 }
 
-static int socket_read_raw_data_callback (struct rrr_read_session *read_session, void *private_data, void *arg) {
+static int socket_read_raw_get_target_size_callback (
+		RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS
+) {
+	(void)(addr);
+	(void)(addr_len);
+	(void)(private_data);
+
+	return rrr_read_common_get_session_target_length_from_array_tree(read_session, arg);
+}
+
+static int socket_read_raw_complete_callback (
+		RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS
+) {
 	struct socket_data *data = arg;
 
+	(void)(addr);
+	(void)(addr_len);
 	(void)(private_data);
 	(void)(read_session);
 
@@ -209,6 +223,7 @@ static int socket_read_raw_data_callback (struct rrr_read_session *read_session,
 			NULL,
 			0,
 			0,
+			NULL,
 			socket_read_raw_data_broker_callback,
 			data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -268,6 +283,7 @@ static int socket_read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void 
 			NULL,
 			0,
 			0,
+			NULL,
 			socket_read_message_broker_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -322,9 +338,9 @@ static int socket_start (
 				NULL,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				rrr_read_common_get_session_target_length_from_array_tree,
+				socket_read_raw_get_target_size_callback,
 				raw_callback_data,
-				socket_read_raw_data_callback,
+				socket_read_raw_complete_callback,
 				data
 		);
 	}

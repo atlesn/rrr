@@ -77,6 +77,7 @@ struct httpserver_data {
 
 	struct rrr_map http_fields_accept;
 
+	int do_http_no_body_parse;
 	int do_http_fields_accept_any;
 	int do_allow_empty_messages;
 	int do_receive_full_request;
@@ -125,9 +126,7 @@ static int httpserver_data_init (
 
 	data->thread_data = thread_data;
 
-	if (rrr_fifo_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
-		return 1;
-	}
+	rrr_fifo_init_custom_refcount(&data->buffer, rrr_msg_holder_incref_while_locked_void, rrr_msg_holder_decref_void);
 
 	return 0;
 }
@@ -192,6 +191,8 @@ static int httpserver_parse_config (
 				config->name);
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_no_body_parse", do_http_no_body_parse, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_fields_accept_any", do_http_fields_accept_any, 0);
 
@@ -458,7 +459,7 @@ static int httpserver_write_message_callback (
 	struct rrr_msg_msg *new_message = NULL;
 
 	if (RRR_LL_COUNT(callback_data->array) > 0) {
-		ret = rrr_array_new_message_from_collection (
+		ret = rrr_array_new_message_from_array (
 				&new_message,
 				callback_data->array,
 				rrr_time_get_64(),
@@ -748,6 +749,7 @@ static int httpserver_receive_callback_send_array_message (
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_write_message_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -769,7 +771,7 @@ static int httpserver_async_response_get_extract_data (
 
 	if (MSG_IS_ARRAY(msg)) {
 		uint16_t array_version = 0;
-		if ((ret = rrr_array_message_append_to_collection(&array_version, target, msg)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&array_version, target, msg)) != 0) {
 			goto out;
 		}
 	}
@@ -964,6 +966,10 @@ static int httpserver_async_response_get_and_process (
 		);
 		rrr_msg_holder_unlock(callback_data.entry);
 
+		if (ret != 0) {
+			goto out;
+		}
+
 		/////////////
 		// Process //
 		/////////////
@@ -1051,13 +1057,52 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if ((ret = httpserver_receive_callback_send_array_message (
-			data,
-			&target_array,
-			handle,
-			response_data->request_topic
-	)) != 0) {
-		goto out;
+	if (RRR_LL_COUNT(&transaction->request_part->arrays) > 0) {
+		if ((ret = rrr_array_push_value_u64_with_tag (
+				&target_array,
+				"http_request_partials",
+				rrr_length_from_slength_bug_const (RRR_LL_COUNT(&transaction->request_part->arrays))
+		)) != 0) {
+			RRR_MSG_0("Failed to push array message count to array while processing HTTP request part\n");
+			goto out;
+		}
+
+		// Move partials counter to the beginning
+		rrr_array_rotate_forward(&target_array);
+
+		const int target_array_orig_length = RRR_LL_COUNT(&target_array);
+
+		// Generate one message for every array in array the collection. The
+		// structural fields and field from any request URI will be present
+		// first in all the messages.
+
+		RRR_LL_ITERATE_BEGIN(&transaction->request_part->arrays, struct rrr_array);
+			rrr_array_trim(&target_array, target_array_orig_length);
+
+			if ((ret = rrr_array_append_from (&target_array, node)) != 0) {
+				RRR_MSG_0("Failed to merge arrays while processing array data in HTTP request part\n");
+				goto out;
+			}
+
+			if ((ret = httpserver_receive_callback_send_array_message (
+					data,
+					&target_array,
+					handle,
+					response_data->request_topic
+			)) != 0) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	}
+	else {
+		if ((ret = httpserver_receive_callback_send_array_message (
+				data,
+				&target_array,
+				handle,
+				response_data->request_topic
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	//////////////////////
@@ -1467,6 +1512,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -1490,10 +1536,11 @@ static int httpserver_unique_id_generator_callback (
 
 static int httpserver_poll_callback_write (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_msg_holder *entry = arg;
-	rrr_msg_holder_incref_while_locked(entry);
+
 	*data = (char *) entry;
 	*size = sizeof(*entry);
 	*order = 0;
+
 	return RRR_FIFO_OK;
 }
 
@@ -1626,11 +1673,13 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		&callback_data
 	};
 
-	if (rrr_http_server_new(&data->http_server, data->do_disable_http2, &callbacks) != 0) {
+	if (rrr_http_server_new(&data->http_server, &callbacks) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	rrr_http_server_set_no_body_parse(data->http_server, data->do_http_no_body_parse);
 
 	if (httpserver_start_listening(data) != 0) {
 		goto out_message;

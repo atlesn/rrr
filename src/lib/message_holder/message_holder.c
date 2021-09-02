@@ -143,6 +143,7 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
 		rrr_msg_holder_private_data_clear(entry);
+		rrr_instance_friend_collection_clear(&entry->nexthops);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);
@@ -175,6 +176,12 @@ void rrr_msg_holder_incref_while_locked (
 #ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry incref %p to %i\n", entry, entry->usercount);
 #endif
+}
+
+void rrr_msg_holder_incref_while_locked_void (
+		void *entry
+) {
+	rrr_msg_holder_incref_while_locked(entry);
 }
 
 void rrr_msg_holder_incref (
@@ -231,12 +238,13 @@ int rrr_msg_holder_new (
 		goto out_free;
 	}
 
-	// Avoid usercount bug trap, write once again while holding the lock below
+	// Avoid usercount bug trap, initialize usercount once again later while holding the lock
 	entry->usercount = 99999;
 
 	rrr_msg_holder_lock(entry);
 
-	RRR_LL_NODE_INIT(entry);
+	// Ensure all fields are written to while lock is held
+	RRR_MESSAGE_HOLDER_ZERO_ALL(entry);
 
 	if (addr == NULL) {
 		memset(&entry->addr, '\0', sizeof(entry->addr));
@@ -278,23 +286,72 @@ int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 ) {
-	int ret = rrr_msg_holder_new (
-			result,
+	int ret = 0;
+
+	*result = NULL;
+
+	struct rrr_msg_holder *entry = NULL;
+
+	if ((ret = rrr_msg_holder_new (
+			&entry,
 			0,
 			(struct sockaddr *) &source->addr,
 			source->addr_len,
 			source->protocol,
 			NULL
-	);
-
-	if (ret == 0) {
-		rrr_msg_holder_lock(*result);
-		(*result)->buffer_time = source->buffer_time;
-		(*result)->send_time = source->send_time;
-		rrr_msg_holder_unlock(*result);
+	)) != 0) {
+		goto out;
 	}
 
+	rrr_msg_holder_lock(entry);
+
+	entry->buffer_time = source->buffer_time;
+	entry->send_time = source->send_time;
+
+	ret = rrr_instance_friend_collection_append_from (&entry->nexthops, &source->nexthops);
+
+	rrr_msg_holder_unlock(entry);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to clone nexthops list in %s\n", __func__);
+		goto out;
+	}
+
+	*result = entry;
+	entry = NULL;
+
+	out:
+	if (entry != NULL) {
+		rrr_msg_holder_decref(entry);
+	}
 	return ret;
+}
+
+void rrr_msg_holder_nexthops_reset (
+		struct rrr_msg_holder *entry
+) {
+	rrr_instance_friend_collection_clear (&entry->nexthops);
+}
+
+int rrr_msg_holder_nexthops_set (
+		struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *hops
+) {
+	rrr_msg_holder_nexthops_reset(entry);
+
+	if (hops == NULL || RRR_LL_COUNT(hops) == 0) {
+		return 0;
+	}
+
+	return rrr_instance_friend_collection_append_from (&entry->nexthops, hops);
+}
+
+int rrr_msg_holder_nexthop_ok (
+		const struct rrr_msg_holder *entry,
+		const struct rrr_instance *instance
+) {
+	return rrr_instance_friend_collection_check_empty (&entry->nexthops) ||
+	       rrr_instance_friend_collection_check_exists (&entry->nexthops, instance);
 }
 
 void rrr_msg_holder_set_data_unlocked (

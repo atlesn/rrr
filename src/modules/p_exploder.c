@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
+#include "../lib/helpers/string_builder.h"
 
 struct exploder_data {
 		struct rrr_instance_runtime_data *thread_data;
@@ -125,7 +125,7 @@ static int exploder_process_value (
 		}
 
 		struct rrr_msg_msg *msg_new = NULL;
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&msg_new,
 				&array_new,
 				timestamp,
@@ -140,9 +140,10 @@ static int exploder_process_value (
 		entry_new->data_length = MSG_TOTAL_SIZE(msg_new);
 	}
 
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry_new,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -187,7 +188,7 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message)) != 0) {
+	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message)) != 0) {
 		RRR_MSG_0("Failed to get array values from message in exploder instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_drop;
@@ -227,9 +228,10 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out_write:
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 

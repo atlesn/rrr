@@ -80,10 +80,10 @@ static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 	int ret = 0;
 
-	// This will unlock the entry
 	if (rrr_message_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER_ARGS(thread_data),
-			message
+			message,
+			NULL
 	) != 0) {
 		RRR_MSG_0("Could not inject message in dummy instance %s\n",
 				INSTANCE_D_NAME(thread_data));
@@ -92,6 +92,7 @@ static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	}
 
 	out:
+	rrr_msg_holder_unlock(message);
 	return ret;
 }
 
@@ -189,7 +190,7 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 //	printf("Dummy new %" PRIu64 "\n", time);
 
 	if (RRR_LL_COUNT(&data->array_template) > 0) {
-		if ((ret = rrr_array_new_message_from_collection(
+		if ((ret = rrr_array_new_message_from_array(
 			&reading,
 			&data->array_template,
 			rrr_time_get_64(),
@@ -267,6 +268,7 @@ static void dummy_event_write_entry (
 			NULL,
 			0,
 			0,
+			NULL,
 			dummy_write_message_callback,
 			data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)

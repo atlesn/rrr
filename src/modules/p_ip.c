@@ -92,9 +92,6 @@ struct ip_data {
 
 	struct rrr_socket_graylist tcp_graylist;
 
-	struct rrr_read_session_collection read_sessions_udp;
-	struct rrr_read_session_collection read_sessions_tcp;
-
 	struct rrr_array_tree *definitions;
 
 	int do_strip_array_separators;
@@ -134,6 +131,8 @@ struct ip_data {
 
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
+
+	uint64_t entry_send_index_pos;
 };
 
 static void ip_data_cleanup(void *arg) {
@@ -150,8 +149,6 @@ static void ip_data_cleanup(void *arg) {
 	if (data->definitions != NULL) {
 		rrr_array_tree_destroy(data->definitions);
 	}
-	rrr_read_session_collection_clear(&data->read_sessions_udp);
-	rrr_read_session_collection_clear(&data->read_sessions_tcp);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
@@ -534,6 +531,8 @@ struct ip_read_array_callback_data {
 	struct ip_data *data;
 	struct rrr_array *array_final;
 	struct rrr_read_session *read_session;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
 	struct rrr_msg_holder_collection new_entries;
 };
 
@@ -563,8 +562,8 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			entry,
 			NULL,
 			0,
-			(const struct sockaddr *) &callback_data->read_session->src_addr,
-			callback_data->read_session->src_addr_len,
+			callback_data->addr,
+			callback_data->addr_len,
 			protocol
 	);
 
@@ -585,7 +584,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			rrr_array_strip_type(callback_data->array_final, &rrr_type_definition_sep);
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&message_new,
 				callback_data->array_final,
 				rrr_time_get_64(),
@@ -612,10 +611,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 }
 
 static int ip_array_callback (
-		struct rrr_read_session *read_session,
-		struct rrr_array *array_final,
-		void *private_data,
-		void *arg
+		RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS
 ) {
 	struct ip_data *data = arg;
 
@@ -627,6 +623,8 @@ static int ip_array_callback (
 			data,
 			array_final,
 			read_session,
+			addr,
+			addr_len,
 			{0}
 	};
 
@@ -635,6 +633,7 @@ static int ip_array_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			ip_array_callback_broker,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -646,6 +645,7 @@ static int ip_array_callback (
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&callback_data.new_entries,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -662,11 +662,16 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
+	// Used for sorting (preserve order)
+	if ((entry->send_index = ++(ip_data->entry_send_index_pos)) == 0) {
+		RRR_MSG_0("Warning: Entry index counter wrapped in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+	}
 
 	// Used for timeout checks
 	entry->send_time = rrr_time_get_64();
+
+	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
@@ -1271,7 +1276,7 @@ static int ip_push_message (
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
@@ -1370,13 +1375,21 @@ static void ip_timeout_check (
 	}
 }
 
+static int ip_entry_index_compare (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	// Send index must be set in poll callback function
+	return (a->send_index > b->send_index) - (a->send_index < b->send_index);
+}
+
 static int ip_send_loop (
 		struct ip_data *ip_data
 ) {
 	int ret = 0;
 
 	if (ip_data->do_preserve_order) {
-		rrr_msg_holder_collection_sort(&ip_data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+		rrr_msg_holder_collection_sort(&ip_data->send_buffer, 1 /* Do lock */, ip_entry_index_compare);
 	}
 
 	int timeout_count = 0;
@@ -1453,9 +1466,10 @@ static int ip_send_loop (
 					node->endian_indicator = 0;
 				}
 
-				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 						INSTANCE_D_BROKER_ARGS(ip_data->thread_data),
 						node,
+						NULL,
 						INSTANCE_D_CANCEL_CHECK_ARGS(ip_data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
