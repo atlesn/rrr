@@ -33,6 +33,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../util/linked_list.h"
 
+#define RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS \
+    struct rrr_read_session *read_session,                  \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    void *private_data,                                     \
+    void *arg
+
+#define RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS        \
+    struct rrr_read_session *read_session,                  \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    void *private_data,                                     \
+    void *arg
+
+#define RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS               \
+    struct rrr_read_session *read_session,                  \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    struct rrr_array *array_final,                          \
+    void *private_data,                                     \
+    void *arg
+
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
 struct rrr_read_session;
@@ -179,6 +201,7 @@ void rrr_socket_client_collection_event_setup (
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 );
+
 void rrr_socket_client_collection_event_setup_raw (
 		struct rrr_socket_client_collection *collection,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -186,11 +209,12 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
+		int (*complete_callback)(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS),
 		void *complete_callback_arg
 );
+
 void rrr_socket_client_collection_event_setup_array_tree (
 		struct rrr_socket_client_collection *collection,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -201,7 +225,7 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int do_sync_byte_by_byte,
 		rrr_biglength read_step_max_size,
 		unsigned int message_max_size,
-		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
+		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
 		void *array_callback_arg
 );
 void rrr_socket_client_collection_event_setup_ignore (

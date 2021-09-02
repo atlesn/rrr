@@ -243,5 +243,8 @@ int rrr_nullsafe_str_foreach_byte_do (
 		int (*callback)(char byte, void *arg),
 		void *callback_arg
 );
+void rrr_nullsafe_str_trim (
+		struct rrr_nullsafe_str *nullsafe
+);
 
 #endif /* RRR_NULLSAFE_STR_H */

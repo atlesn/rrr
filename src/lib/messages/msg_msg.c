@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_msg.h"
 #include "../allocator.h"
 #include "../rrr_types.h"
-#include "../string_builder.h"
 #include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
 #include "../util/posix.h"
+#include "../helpers/string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../mqtt/mqtt_topic.h"
 
@@ -491,18 +491,6 @@ int rrr_msg_msg_topic_match (
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_mqtt_topic_token_destroy(entry_first_token);
 	return ret;
-}
-
-int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {
-	// Assume network order if crc32 is set
-	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
-
-	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
-}
-
-int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b) {
-	return rrr_msg_msg_timestamp_compare(message_a, message_b);
 }
 
 int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl) {

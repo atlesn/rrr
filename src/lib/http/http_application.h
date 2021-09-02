@@ -78,6 +78,7 @@ struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
 struct rrr_nullsafe_str;
+struct rrr_http_rules;
 
 void rrr_http_application_destroy_if_not_null (
 		struct rrr_http_application **app
@@ -116,6 +117,7 @@ int rrr_http_application_transport_ctx_tick (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
+		const struct rrr_http_rules *rules,
 		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
