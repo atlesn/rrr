@@ -73,9 +73,10 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			(long long unsigned int) message->timestamp
 	);
 
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
@@ -152,16 +153,20 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
-	// This will also unlock
-	if (rrr_message_broker_clone_and_write_entry (
+	int ret = 0;
+
+	if ((ret = rrr_message_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER_ARGS(thread_data),
-			message
-	) != 0) {
+			message,
+			NULL
+	)) != 0) {
 		RRR_MSG_0("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
-		return 1;
+		goto out;
 	}
 
-	return 0;
+	out:
+	rrr_msg_holder_unlock(message);
+	return ret;
 }
 
 static struct rrr_module_operations module_operations = {
