@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
+#include "../instance_friends.h"
+#include "message_holder.h"
 
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 //#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
@@ -50,6 +52,9 @@ struct rrr_msg_holder {
 
 	// Message broker updates this on writes to buffer
 	uint64_t buffer_time;
+
+	// If populated, instances which are not defined will ignore this message
+	rrr_msg_holder_nexthops nexthops;
 
 	// Available for modules
 	uint64_t send_time;
@@ -77,6 +82,7 @@ struct rrr_msg_holder {
     entry->source = NULL;                                      \
     entry->message = NULL;                                     \
     entry->buffer_time = 0;                                    \
+    RRR_LL_DANGEROUS_CLEAR_HEAD(&entry->nexthops);             \
     entry->send_time = 0;                                      \
     entry->send_index = 0;                                     \
     entry->bytes_sent = 0;                                     \

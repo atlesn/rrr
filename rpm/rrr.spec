@@ -61,6 +61,7 @@ chown -R rrr:rrr /var/lib/rrr || true
 /usr/lib/rrr/mangler.*
 /usr/lib/rrr/msgdb.*
 /usr/lib/rrr/incrementer.*
+/usr/lib/rrr/cacher.*
 /usr/lib/tmpfiles.d/rrr.conf
 /var/lib/rrr/.placeholder
 

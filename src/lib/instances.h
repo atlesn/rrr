@@ -148,6 +148,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
+#define INSTANCE_D_INSTANCES(thread_data) thread_data->init_data.module->all_instances
 
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
@@ -162,6 +163,10 @@ int rrr_instance_count_library_users (
 );
 void rrr_instance_unload_all(
 		struct rrr_instance_collection *target
+);
+int rrr_instance_has_sender (
+		const struct rrr_instance *instance,
+		const struct rrr_instance *sender
 );
 void rrr_instance_collection_clear (
 		struct rrr_instance_collection *target
