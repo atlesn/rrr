@@ -14,8 +14,8 @@ fi
 
 
 TEST="./test -e test_env.conf $1 $2 $3 $4"
-TEST_SOCKET=.rrr_test.sock
-TEST_DATA_FILE=.test_data.tmp
+TEST_SOCKET=/tmp/rrr-test.sock
+TEST_DATA_FILE=/tmp/rrr-test-data.tmp
 TEST_DATA_GENERATOR=./make_test_data
 TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
 
@@ -26,7 +26,7 @@ SEND_IP=./send_ip
 SEND_IP_PORT=2222
 
 SEND_FIFO=./send_fifo
-SEND_FIFO_FILENAME=/tmp/rrr_test_fifo.sock
+SEND_FIFO_FILENAME=/tmp/rrr-test-fifo.sock
 
 SEND_WEBSOCKET="../rrr_http_client"
 SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /x -w"
