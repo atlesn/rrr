@@ -44,12 +44,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "posix.h"
 
 void rrr_posix_msleep_signal_safe (int mseconds) {
+	int pipefd[2] = {0};
+
+	if (pipe(pipefd) != 0) {
+		pipefd[0] = STDIN_FILENO;
+	}
+
 	struct pollfd pollfd = {0};
 
-	pollfd.fd = STDIN_FILENO;
+	pollfd.fd = pipefd[0];
 	pollfd.events = POLLIN;
 
 	poll(&pollfd, 1, mseconds);
+
+	if (pipefd[0] > 0 && pipefd[0] != STDIN_FILENO) {
+		close(pipefd[0]);
+	}
+	if (pipefd[1] > 0) {
+		close(pipefd[1]);
+	}
 }
 
 int rrr_posix_usleep(size_t useconds) {
