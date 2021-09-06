@@ -253,6 +253,7 @@ static int cacher_send_to_msgdb_wait_callback (
 		void *arg
 ) {
 	struct cacher_data *data = arg;
+	sched_yield();
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
 }
 
