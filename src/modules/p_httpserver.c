@@ -79,6 +79,7 @@ struct httpserver_data {
 	struct rrr_map http_fields_accept;
 
 	rrr_setting_uint request_max_mb;
+	rrr_biglength request_max_size;
 
 	int do_http_no_body_parse;
 	int do_http_fields_accept_any;
@@ -190,6 +191,12 @@ static int httpserver_parse_config (
 	);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
+	data->request_max_size = data->request_max_mb;
+	if (((ret = rrr_biglength_mul_err(&data->request_max_size, 1024 * 1024))) != 0) {
+		RRR_MSG_0("Overflow in parameter 'http_request_max_mb' of httpserver instance %s, value too large\n",
+				config->name);
+		goto out;
+	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_fields_accept for instance %s\n",

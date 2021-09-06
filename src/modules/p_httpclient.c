@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
 #define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX             5
 #define RRR_HTTPCLIENT_DEFAULT_CONCURRENT_CONNECTIONS    10
+#define RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB           10
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX               500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
@@ -83,6 +84,9 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection from_msgdb_queue;
 
 	struct rrr_msgdb_client_conn msgdb_conn;
+
+	rrr_setting_uint response_max_mb;
+	rrr_biglength response_max_size;
 
 	int do_no_data;
 	int do_rrr_msg_to_array;
@@ -1817,6 +1821,14 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_response_max_mb", response_max_mb, RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB);
+	data->response_max_size = data->response_max_mb;
+	if (((ret = rrr_biglength_mul_err(&data->response_max_size, 1024 * 1024))) != 0) {
+		RRR_MSG_0("Overflow in parameter 'http_response_max_mb' of httpclient instance %s, value too large\n",
+				config->name);
+		goto out;
+	}
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
@@ -2284,6 +2296,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	) != 0) {
 		goto out_message;
 	}
+
+	rrr_http_client_set_response_max_size(data->http_client, data->response_max_size);
 
 	if (data->msgdb_socket != NULL) {
 		if (rrr_event_collection_push_periodic (
