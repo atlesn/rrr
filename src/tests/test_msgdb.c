@@ -131,7 +131,7 @@ static int __rrr_test_msgdb_await_and_check_msg (
 
 	struct rrr_msg_msg *result_msg = NULL;
 
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
+	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
 		TEST_MSG("Non-zero return %i from await msg\n", ret);
 		ret = 1;
 		goto out;
@@ -190,7 +190,7 @@ static int __rrr_test_msgdb_send_empty (
 
 	MSG_SET_TYPE(msg, type);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 
@@ -220,11 +220,11 @@ static int __rrr_test_msgdb_get_msg (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_GET);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
+	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
 		TEST_MSG("Non-zero return %i from await msg\n", ret);
 		ret = 1;
 		goto out;
@@ -253,11 +253,11 @@ static int __rrr_test_msgdb_get_index (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_IDX);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
+	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
 		TEST_MSG("Non-zero return %i from await msg\n", ret);
 		ret = 1;
 		goto out;
@@ -324,7 +324,7 @@ static int __rrr_test_msgdb_get_and_check_msg (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_GET);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 
@@ -372,7 +372,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 
@@ -383,7 +383,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 	MSG_SET_TYPE(msg, MSG_TYPE_GET);
 
 	// Data is ignored for GET messages, we simply change the type
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
 		goto out;
 	}
 

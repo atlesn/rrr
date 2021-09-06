@@ -718,7 +718,7 @@ static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, v
 
 	struct rrr_array paths = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx_with_wait_callback (&paths, conn, __httpclient_msgdb_wait_callback, data)) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx (&paths, conn, __httpclient_msgdb_wait_callback, data)) != 0) {
 		goto out;
 	}
 
@@ -814,7 +814,7 @@ static int httpclient_msgdb_notify_send_callback (struct rrr_msgdb_client_conn *
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg, __httpclient_msgdb_wait_callback, callback_data->data)) != 0) {	
 		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from send was %i\n",
 			ret);
 		goto out;

@@ -249,7 +249,15 @@ static void cacher_tidy_memory_cache (
 	*deleted_entries = count_before - RRR_LL_COUNT(&data->memory_cache);
 }
 
+static int cacher_send_to_msgdb_wait_callback (
+		void *arg
+) {
+	struct cacher_data *data = arg;
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
+}
+
 struct cacher_send_to_msgdb_callback_final_data {
+	struct cacher_data *data;
 	const char *topic;
 	const struct rrr_msg_msg *msg;
 	int do_delete;
@@ -272,7 +280,7 @@ static int cacher_send_to_msgdb_callback_final (
 
 	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg_new)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg_new, cacher_send_to_msgdb_wait_callback, callback_data->data)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
@@ -311,6 +319,7 @@ static int cacher_send_to_msgdb (
 	}
 
 	struct cacher_send_to_msgdb_callback_final_data callback_data = {
+		data,
 		topic,
 		msg,
 		do_delete

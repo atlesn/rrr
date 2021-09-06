@@ -1360,7 +1360,9 @@ int rrr_socket_sendto_blocking (
 		const void *data,
 		rrr_biglength size,
 		struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
@@ -1385,9 +1387,17 @@ int rrr_socket_sendto_blocking (
 			}
 			ret = 0;
 		}
+
 		written_bytes_total += written_bytes;
+
 		RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",
 				fd, written_bytes_total, written_bytes);
+
+		if (wait_callback) {
+			if ((ret = wait_callback(wait_callback_arg)) != 0) {
+				goto out;
+			}
+		}
 	}
 
 	out:
@@ -1397,9 +1407,11 @@ int rrr_socket_sendto_blocking (
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
-		rrr_biglength size
+		rrr_biglength size,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
-	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
+	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0, wait_callback, wait_callback_arg);
 }
 
 int rrr_socket_check_alive (int fd) {
