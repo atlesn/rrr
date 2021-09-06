@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../read_constants.h"
+#include "../rrr_types.h"
 
 // Limits for HTTP1 only
 #define RRR_HTTP_PARSE_HEADROOM_LIMIT_KB 1024
@@ -124,6 +125,7 @@ enum rrr_http_parse_type {
 struct rrr_http_rules {
 	short do_no_server_http2;
 	short do_no_body_parse;
+	rrr_biglength server_request_max_size;
 };
 
 extern const char *rrr_http_transport_str_any;

@@ -1428,6 +1428,9 @@ Port to use for TLS listening, defaults to 443.
 .It http_server_port_plain=PORT
 Port to use for plaintext listening, defaults to 80.
 
+.It http_server_request_max_mb=MEGABYTES
+Maximum size in megabytes for requests. A value of 0 indicates unlimited request size. Defaults to 10.
+
 .It http_server_fields_accept=HTTP FIELD[->ARRAY TAG][,...]
 Specify a comma separated list POST and GET fields to allow from clients. Fields not specified here are ignored unless
 .B http_server_fields_accept_any

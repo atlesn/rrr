@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
 #define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
+#define RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB                   10
 
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
@@ -76,6 +77,8 @@ struct httpserver_data {
 #endif
 
 	struct rrr_map http_fields_accept;
+
+	rrr_setting_uint request_max_mb;
 
 	int do_http_no_body_parse;
 	int do_http_fields_accept_any;
@@ -185,6 +188,8 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_fields_accept for instance %s\n",
@@ -1678,6 +1683,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	}
 
 	rrr_http_server_set_no_body_parse(data->http_server, data->do_http_no_body_parse);
+	rrr_http_server_set_server_request_max_size(data->http_server, data->request_max_mb * 1024 * 1024);
 
 	if (httpserver_start_listening(data) != 0) {
 		goto out_message;
