@@ -296,6 +296,7 @@ static int __rrr_socket_send_chunk_collection_send (
 			)) != 0) {
 				if (ret == RRR_SOCKET_WRITE_INCOMPLETE) {
 					node->data_pos += written_bytes;
+					ret = 0;
 				}
 				goto out;
 			}

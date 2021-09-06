@@ -1228,6 +1228,8 @@ int rrr_socket_sendto_nonblock (
 ) {
 	int ret = RRR_SOCKET_OK;
 
+	// This function never returns INCOMPLETE, use the check_retry functions for this
+
 	*err = 0;
 	*written_bytes = 0;
 	rrr_biglength done_bytes_total = 0;
@@ -1254,6 +1256,7 @@ int rrr_socket_sendto_nonblock (
 	if (--max_retries == 0) {
 		RRR_DBG_7("fd %i max retries reached in rrr_socket_sendto_nonblock\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
+		*err = EAGAIN;
 		goto out;
 	}
 
@@ -1380,6 +1383,7 @@ int rrr_socket_sendto_blocking (
 				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
 				goto out;
 			}
+			ret = 0;
 		}
 		written_bytes_total += written_bytes;
 		RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",

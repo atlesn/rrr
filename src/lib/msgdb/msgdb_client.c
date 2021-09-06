@@ -246,7 +246,9 @@ int rrr_msgdb_client_send (
 
 	char *topic_tmp = NULL;
 
-	if (RRR_DEBUGLEVEL_2) {
+	uint64_t send_start = 0;
+
+	if (RRR_DEBUGLEVEL_3) {
 		if (rrr_msg_msg_topic_get(&topic_tmp, msg) == 0) {
 			RRR_DBG_3("msgdb fd %i %s size %llu topic '%s'\n",
 				conn->fd, MSG_TYPE_NAME(msg), (long long unsigned int) MSG_TOTAL_SIZE(msg), topic_tmp);
@@ -254,10 +256,16 @@ int rrr_msgdb_client_send (
 		else {
 			RRR_MSG_0("Warning: Failed to allocate memory for debug message in rrr_msgdb_client_send\n");
 		}
+
+		send_start = rrr_time_get_64();
 	}
 
 	if ((ret = rrr_msgdb_common_msg_send (conn->fd, msg, __rrr_msgdb_client_send_callback, NULL)) != 0) {
 		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG_3("msgdb fd %i send time %" PRIu64 "ms\n", conn->fd, (rrr_time_get_64() - send_start) / 1000);
 	}
 
 	out:
