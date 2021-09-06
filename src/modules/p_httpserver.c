@@ -761,6 +761,7 @@ static int httpserver_receive_callback_send_array_message (
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_write_message_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -1523,6 +1524,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

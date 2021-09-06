@@ -345,6 +345,7 @@ static int averager_spawn_message (
 			NULL,
 			0,
 			0,
+			NULL,
 			averager_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -439,6 +440,7 @@ static void averager_event_output_list (
 	if (rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&data->output_list,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not write to output buffer in averager instance %s\n",

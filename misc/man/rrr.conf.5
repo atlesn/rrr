@@ -1,4 +1,4 @@
-.Dd 2021-08-21
+.Dd 2021-08-27
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1922,15 +1922,21 @@ Using the socket is the only way to communicate with the message DB, it cannot r
 
 Currently only internal modules may use the message DB, and the methods GET, PUT, DEL and IDX are available to them. 
 
-Messages are stored with all fields in network byte order. They are checksummed, and any modifications will stop the message DB from reading them.
+Messages are stored with all fields in network byte order. The may be deleted and moved in and out of the storage directory at any time, but any modifications
+may render message checksums invalid. The utility
+.Xr rrr_msg(1)
+can be used to check and read messages which are stored on disk.
 
-Messages may be deleted manually from the database directory at any time, or moved out and back in.
-They should however not be renamed or moved inside the hirarchy as their location would then no longer match the topic set inside the message.
+.B ANY FILES in the specified directory which cannot be read, will be interpreted as corrupt RRR-messages and WILL BE DELETED.
+
+The following configuraton parameters are available in the
+.B msgdb
+module:
 
 .Bl -tag -width -indent
 .It msgdb_directory=DIRECTORY
 The directroy to store files in. Defaults to '/var/lib/rrr/msgdb'.
-Multiple instances of the Message DB should not use the same directory.
+Multiple instances of the Message DB should not use the same directory and the directory must not be used to store anything else.
 
 .It msgdb_socket=FILENAME
 The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
@@ -2052,6 +2058,17 @@ Defaults to no.
 .It cacher_forward_other={yes|no}
 If set to yes, messages without topic are forwarded.
 If set to no or left unset, messages without a topic are dropped and an error message is produced.
+
+.It cacher_request_receivers=INSTANCE NAME,...
+.It cacher_data_receivers=INSTANCE NAME,...
+.It cacher_other_receivers=INSTANCE NAME,..
+Define a list of readers of this cacher instance to receive request, data or other messages.
+The instances defined must have this cacher instance defined as a sender.
+Note that
+.B
+duplicate=yes
+should be set when there are multiple readers of the cacher module.
+If left undefined for one or more of the message types, all readers will receive this type.
 
 .It cacher_memory_consume_requests={yes|no}
 If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the
@@ -2818,4 +2835,5 @@ Converts vain fields to empty str fields.
 .Xr rrr(1),
 .Xr rrr_post(1),
 .Xr rrr_stats(1),
+.Xr rrr_msg(1),
 .Xr rrr_python3(5)

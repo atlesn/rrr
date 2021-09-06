@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
+#include "../lib/instance_friends.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
@@ -68,6 +69,10 @@ struct cacher_data {
 	int do_no_update;
 
 	struct rrr_msg_holder_collection memory_cache;
+
+	struct rrr_instance_friend_collection receivers_data;
+	struct rrr_instance_friend_collection receivers_requests;
+	struct rrr_instance_friend_collection receivers_other;
 };
 
 static void cacher_data_init(struct cacher_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -89,6 +94,10 @@ static void cacher_data_cleanup(void *arg) {
 	RRR_DBG_1("Cacher instance %s: Memory cache count at cleanup is %i\n",
 		INSTANCE_D_NAME(data->thread_data), RRR_LL_COUNT(&data->memory_cache));
 	rrr_msg_holder_collection_clear(&data->memory_cache);
+
+	rrr_instance_friend_collection_clear(&data->receivers_data);
+	rrr_instance_friend_collection_clear(&data->receivers_requests);
+	rrr_instance_friend_collection_clear(&data->receivers_other);
 }
 
 struct cacher_get_from_msgdb_callback_data {
@@ -139,6 +148,7 @@ static int cacher_get_from_msgdb_callback (
 				NULL,
 				0,
 				0,
+				&callback_data->data->receivers_data,
 				cacher_get_from_msgdb_broker_callback,
 				&broker_callback_data,
 				INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->data->thread_data)
@@ -202,7 +212,8 @@ static int cacher_get_from_memory_cache (
 
 				if ((ret = rrr_message_broker_clone_and_write_entry (
 						INSTANCE_D_BROKER_ARGS(data->thread_data),
-						node
+						node,
+						&data->receivers_data
 				)) != 0) {
 					RRR_MSG_0("Failed to write message from memory cache to output buffer in cacher instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
@@ -389,11 +400,13 @@ static int cacher_store (
 }
 
 static int cacher_process (
-		int *do_forward,
+		const struct rrr_instance_friend_collection **do_forward_to,
 		struct cacher_data *data,
 		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
+
+	*do_forward_to = NULL;
 
 	const struct rrr_msg_msg *msg = entry->message;
 
@@ -411,7 +424,7 @@ static int cacher_process (
 					INSTANCE_D_NAME(data->thread_data),
 					msg->timestamp
 			);
-			*do_forward = 1;
+			*do_forward_to = &data->receivers_other;
 		}
 		else {
 			RRR_MSG_0("Warning: Received a message in cacher instance %s without a topic, dropping it per configuration\n",
@@ -443,14 +456,14 @@ static int cacher_process (
 			}
 			if (result_found) {
 				if (!data->do_memory_consume_requests && data->do_forward_requests) {
-					*do_forward = 1;
+					*do_forward_to = &data->receivers_requests;
 				}
 	
 				RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition after memory result is %s\n",
 						INSTANCE_D_NAME(data->thread_data),
 						msg->timestamp,
 						topic_tmp,
-						*do_forward ? "'yes'" : "'no'"
+						*do_forward_to != NULL ? "'yes'" : "'no'"
 				);
 
 				goto out;
@@ -464,14 +477,14 @@ static int cacher_process (
 		}
 
 		if (data->do_forward_requests) {
-			*do_forward = 1;
+			*do_forward_to = &data->receivers_requests;
 		}
 
 		RRR_DBG_2("cacher instance %s request message with timestamp %" PRIu64 " with topic '%s' forward decition (default) is %s\n",
 				INSTANCE_D_NAME(data->thread_data),
 				msg->timestamp,
 				topic_tmp,
-				*do_forward ? "'yes'" : "'no'"
+				*do_forward_to != NULL ? "'yes'" : "'no'"
 		);
 
 		goto out;
@@ -487,7 +500,7 @@ static int cacher_process (
 					INSTANCE_D_NAME(data->thread_data),
 					msg->timestamp
 			);
-			*do_forward = 1;
+			*do_forward_to = &data->receivers_other;
 		}
 		else {
 			RRR_MSG_0("Warning: Received a message in cacher instance %s which will be dropped without processing (updates and forwarding is disabled and message is not a reqest)\n",
@@ -521,7 +534,7 @@ static int cacher_process (
 	}
 
 	if (data->do_forward_data) {
-		*do_forward = 1;
+		*do_forward_to = &data->receivers_data;
 	}
 
 	out:
@@ -544,16 +557,18 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Do not produce errors for message process failures, just drop them
 
-	int do_forward = 0;
-	if (cacher_process(&do_forward, data, entry) != 0) {
+	const struct rrr_instance_friend_collection *forward_to = NULL;
+
+	if (cacher_process(&forward_to, data, entry) != 0) {
 		RRR_MSG_0("Warning: Failed to process message in cacher instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (do_forward && (ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if (forward_to != NULL && (ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data), 
 			entry,
+			forward_to,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Failed to write entry in cacher_poll_callback of instance %s\n",
@@ -661,6 +676,41 @@ static int cacher_event_periodic (void *arg) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
+static int cacher_parse_receivers (
+		struct rrr_instance_friend_collection *target,
+		struct cacher_data *data,
+		struct rrr_instance_config_data *config,
+		const char *setting
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+			target,
+			INSTANCE_D_INSTANCES(data->thread_data),
+			config,
+			setting
+	)) != 0) {
+		RRR_MSG_0("Failed to add receivers from %s in cacher instance %s\n",
+			setting, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(target, struct rrr_instance_friend);
+		if (!rrr_instance_has_sender (node->instance, INSTANCE_D_INSTANCE(data->thread_data))) {
+			RRR_MSG_0("Specified receiver %s in %s of cacher instance %s does not have this cacher instance specified as sender\n",
+				INSTANCE_M_NAME(node->instance),
+				setting,
+				INSTANCE_D_NAME(data->thread_data)
+			);
+			ret = 1;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+	
+	out:
+	return ret;
+}
+
 static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -705,6 +755,14 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	data->message_ttl_us = data->message_ttl_seconds * 1000 * 1000;
 	data->message_memory_ttl_us = data->message_memory_ttl_seconds * 1000 * 1000;
+
+	ret |= cacher_parse_receivers (&data->receivers_requests, data, config, "cacher_request_receivers");
+	ret |= cacher_parse_receivers (&data->receivers_data, data, config, "cacher_data_receivers");
+	ret |= cacher_parse_receivers (&data->receivers_other, data, config, "cacher_other_receivers");
+
+	if (ret != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

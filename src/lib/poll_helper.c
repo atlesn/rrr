@@ -69,6 +69,19 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 	return ret;
 }
 
+static void __rrr_poll_intermediate_callback_nexthop_check (
+		int *nexthop_ok,
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_msg_holder *entry
+) {
+	*nexthop_ok = rrr_msg_holder_nexthop_ok(entry, INSTANCE_D_INSTANCE(thread_data));
+
+	RRR_DBG_3("Result of nexthop check while polling in instance %s: %s\n",
+		INSTANCE_D_NAME(thread_data),
+		*nexthop_ok ? "OK" : "NOT OK/DROPPED"
+	);
+}
+
 struct rrr_poll_intermediate_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
@@ -83,6 +96,7 @@ static int __rrr_poll_intermediate_callback (
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	int does_match = 1;
+	int nexthop_ok = 1;
 
 	if (callback_data->thread_data->init_data.topic_first_token != NULL) {
 		if ((ret = __rrr_poll_intermediate_callback_topic_filter(&does_match, callback_data->thread_data, entry)) != 0) {
@@ -90,7 +104,9 @@ static int __rrr_poll_intermediate_callback (
 		}
 	}
 
-	if (does_match) {
+	__rrr_poll_intermediate_callback_nexthop_check(&nexthop_ok, callback_data->thread_data, entry);
+
+	if (does_match && nexthop_ok) {
 		// Callback unlocks
 		return callback_data->callback(entry, callback_data->arg);
 	}

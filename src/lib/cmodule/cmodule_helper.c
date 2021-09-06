@@ -115,6 +115,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			NULL,
 			0,
 			0,
+			NULL,
 			__rrr_cmodule_helper_read_final_callback,
 			callback_data,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,

@@ -36,21 +36,25 @@ struct rrr_instance_friend_collection {
 };
 
 int rrr_instance_friend_collection_check_empty (
-		struct rrr_instance_friend_collection *collection
+		const struct rrr_instance_friend_collection *collection
 );
 int rrr_instance_friend_collection_check_exists (
-		struct rrr_instance_friend_collection *collection,
-		struct rrr_instance *sender
-	);
+		const struct rrr_instance_friend_collection *collection,
+		const struct rrr_instance *sender
+);
 int rrr_instance_friend_collection_append (
 		struct rrr_instance_friend_collection *collection,
 		struct rrr_instance *sender
+);
+int rrr_instance_friend_collection_append_from (
+		struct rrr_instance_friend_collection *target,
+		const struct rrr_instance_friend_collection *source
 );
 void rrr_instance_friend_collection_clear (
 		struct rrr_instance_friend_collection *collection
 );
 int rrr_instance_friend_collection_count (
-		struct rrr_instance_friend_collection *collection
+		const struct rrr_instance_friend_collection *collection
 );
 int rrr_instance_friend_collection_iterate (
 		struct rrr_instance_friend_collection *collection,
