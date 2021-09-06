@@ -889,7 +889,7 @@ int rrr_msgdb_server_new (
 			__rrr_msgdb_server_client_new_void,
 			__rrr_msgdb_server_client_destroy_void,
 			NULL,
-			4096,
+			1 * 1024 * 1024, // 1 MB
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			__rrr_msgdb_server_read_msg_msg_callback,
 			NULL,
