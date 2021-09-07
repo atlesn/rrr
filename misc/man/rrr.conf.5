@@ -1,4 +1,4 @@
-.Dd 2021-08-27
+.Dd 2021-09-07
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2062,7 +2062,8 @@ If set to no or left unset, messages without a topic are dropped and an error me
 .It cacher_request_receivers=INSTANCE NAME,...
 .It cacher_data_receivers=INSTANCE NAME,...
 .It cacher_other_receivers=INSTANCE NAME,..
-Define a list of readers of this cacher instance to receive request, data or other messages.
+.It cacher_revive_receivers=INSTANCE NAME,...
+Define a list of readers of this cacher instance to receive request, data, other or revived messages.
 The instances defined must have this cacher instance defined as a sender.
 Note that
 .B
@@ -2096,6 +2097,14 @@ Messages which are to be stored in the message database will also be stored in t
 When a request message is received and a matching message is found in the memory cache, the cached message will be passed to the output buffer and the message database will not be consulted.
 The memory cache is checked for TTL when potential matches are found or every 5 minutes.
 If set to 0 or left unset, memory cache is not used.
+
+.It cacher_revive_age_seconds=SECONDS
+Messages in the cache older than the specified age in seconds will be read out and put into the output buffer.
+If set to 0 or left unset, message revive will be deactivated.
+
+.It cacher_revive_interval_seconds=SECONDS
+Specify how often cacher will check for messages to revive.
+Defaults to 60 seconds (1 minute), the minimum value is 1 second.
 
 .El
 
