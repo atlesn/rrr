@@ -1,3 +1,23 @@
+rrr (1.20-0) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * Option in cacher to revive messages older than a specified age
+    * Control maximum response size in httpclient
+    * Control maximum request size in httpserver
+
+  * Improvements:
+    * Performance for larger messages in misc. modules
+
+  * Fixes:
+    * Busy-waiting on thread state change causing long startup times
+    * Cacher getting killed off on large writes to message DB
+    * Large messages sometimes failing to be sent due to incorrect
+      return values in some send functions
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 08 Sep 2021 00:52:53 +0200
+
 rrr (1.19-1) bullseye; urgency=medium
 
   * Features:
