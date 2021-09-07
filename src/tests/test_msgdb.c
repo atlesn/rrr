@@ -238,39 +238,15 @@ static int __rrr_test_msgdb_get_msg (
 
 static int __rrr_test_msgdb_get_index (
 		struct rrr_msgdb_client_conn *conn,
+		uint32_t min_age_s,
 		int expected_paths_length
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg = NULL;
-	struct rrr_msg_msg *result_msg = NULL;
 	struct rrr_array array_tmp = {0};
 	struct rrr_string_builder value_tmp = {0};
 
-	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
-		goto out;
-	}
-
-	MSG_SET_TYPE(msg, MSG_TYPE_IDX);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
-		TEST_MSG("Non-zero return %i from await msg\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if (result_msg == NULL) {
-		TEST_MSG("No index returned from msgdb\n");
-		ret = 1;
-		goto out;
-	}
-
-	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, result_msg)) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx(&array_tmp, conn, min_age_s, NULL, NULL)) != 0) {
 		goto out;
 	}
 
@@ -300,8 +276,6 @@ static int __rrr_test_msgdb_get_index (
 	out:
 	rrr_string_builder_clear(&value_tmp);
 	rrr_array_clear(&array_tmp);
-	RRR_FREE_IF_NOT_NULL(msg);
-	RRR_FREE_IF_NOT_NULL(result_msg);
 	return ret;
 }
 
@@ -455,7 +429,13 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	if ((ret = __rrr_test_msgdb_get_index (&conn, 5)) != 0) {
+	// Zero seconds min age, should return all messages stored by now
+	if ((ret = __rrr_test_msgdb_get_index (&conn, 0, 5)) != 0) {
+		goto out;
+	}
+
+	// Long minimum age, should return zero messages
+	if ((ret = __rrr_test_msgdb_get_index (&conn, 0xffffffff, 0)) != 0) {
 		goto out;
 	}
 
@@ -501,6 +481,11 @@ static int __rrr_test_msgdb(void) {
 
 	// Invalid GET, should be tidied
 	if ((ret = __rrr_test_msgdb_get_and_check_msg (&conn, "a/b/c", NULL)) != 0) {
+		goto out;
+	}
+
+	// Should return no messages, everything should be cleaned up
+	if ((ret = __rrr_test_msgdb_get_index (&conn, 0, 0)) != 0) {
 		goto out;
 	}
 

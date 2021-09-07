@@ -324,6 +324,7 @@ static int __rrr_msgdb_client_wait_callback (
 int rrr_msgdb_client_cmd_idx (
 		struct rrr_array *target_paths,
 		struct rrr_msgdb_client_conn *conn,
+		uint32_t min_age_s,
 		int (*wait_callback)(void *arg),
 		void *wait_callback_arg
 ) {
@@ -331,7 +332,17 @@ int rrr_msgdb_client_cmd_idx (
 
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, "")) != 0) {
+	struct rrr_msgdb_client_send_callback_data callback_data = {
+		wait_callback,
+		wait_callback_arg
+	};
+
+	if ((ret = rrr_msgdb_common_ctrl_msg_send_idx (
+			conn->fd,
+			min_age_s,
+			__rrr_msgdb_client_send_callback,
+			&callback_data
+	)) != 0) {
 		goto out;
 	}
 

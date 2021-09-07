@@ -718,7 +718,12 @@ static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, v
 
 	struct rrr_array paths = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx (&paths, conn, __httpclient_msgdb_wait_callback, data)) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx (
+			&paths,
+			conn,
+			0 /* Min age 0 seconds */, 
+			__httpclient_msgdb_wait_callback, data
+	)) != 0) {
 		goto out;
 	}
 
