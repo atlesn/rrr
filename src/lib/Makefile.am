@@ -118,7 +118,8 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
                     read.c mmap_channel.c rrr_shm.c \
-                    instances.c instance_friends.c poll_helper.c modules.c \
+                    instances.c instance_friends.c modules.c \
+		    poll_helper.c msgdb_helper.c \
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \

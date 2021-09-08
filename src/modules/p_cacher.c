@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 
 #include "../lib/poll_helper.h"
+#include "../lib/msgdb_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/instance_friends.h"
@@ -253,98 +254,6 @@ static void cacher_tidy_memory_cache (
 	*deleted_entries = count_before - RRR_LL_COUNT(&data->memory_cache);
 }
 
-static int cacher_send_to_msgdb_wait_callback (
-		void *arg
-) {
-	struct cacher_data *data = arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-struct cacher_send_to_msgdb_callback_final_data {
-	struct cacher_data *data;
-	const char *topic;
-	const struct rrr_msg_msg *msg;
-	int do_delete;
-};
-
-static int cacher_send_to_msgdb_callback_final (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_send_to_msgdb_callback_final_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_msg_msg *msg_new = rrr_msg_msg_duplicate (callback_data->msg);
-	if (msg_new == NULL) {
-		RRR_MSG_0("Could not duplicate message in cacher_send_to_msgdb_callback_final\n");
-		ret = 1;
-		goto out;
-	}
-
-	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg_new, cacher_send_to_msgdb_wait_callback, callback_data->data)) != 0) {	
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
-			ret);
-		goto out;
-	}
-
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0) {
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from await ack was %i\n",
-			ret);
-		ret = 1;
-		goto out;
-	}
-
-	if (!callback_data->do_delete && !positive_ack) {
-		// Ensure failure is returned upon negative ACK (only relevant for stores)
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, negative ACK received\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_new);
-	return ret;
-}
-
-static int cacher_send_to_msgdb (
-		struct cacher_data *data,
-		const char *topic,
-		const struct rrr_msg_msg *msg,
-		int do_delete
-) {
-	int ret = 0;
-
-	if (data->msgdb_socket == NULL) {
-		goto out;
-	}
-
-	struct cacher_send_to_msgdb_callback_final_data callback_data = {
-		data,
-		topic,
-		msg,
-		do_delete
-	};
-
-	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
-			&data->msgdb_conn,
-			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			cacher_send_to_msgdb_callback_final,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_0("Failed to send message to message DB in cacher_send_to_msgdb\n");
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int cacher_save_to_memory_cache (
 		struct cacher_data *data,
 		const char *topic,
@@ -401,7 +310,14 @@ static int cacher_store (
 ) {
 	int ret = 0;
 
-	if ((ret = cacher_send_to_msgdb (data, topic, msg, do_delete)) != 0) {
+	if (data->msgdb_socket != NULL && (ret = rrr_msgdb_helper_send_to_msgdb (
+			&data->msgdb_conn,
+			data->thread_data,
+			data->msgdb_socket,
+			topic,
+			msg,
+			do_delete
+	)) != 0) {
 		goto out;
 	}
 
