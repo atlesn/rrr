@@ -621,7 +621,7 @@ static int __rrr_instance_config_friend_collection_populate_from_config_callback
 int rrr_instance_config_friend_collection_populate_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances,
-		struct rrr_instance_config_data *config,
+		const struct rrr_instance_config_data *config,
 		const char *setting
 ) {
 	int ret = 0;
@@ -640,6 +640,41 @@ int rrr_instance_config_friend_collection_populate_from_config (
 		goto out;
 	}
 
+	out:
+	return ret;
+}
+
+int rrr_instance_config_friend_collection_populate_receivers_from_config (
+		struct rrr_instance_friend_collection *target,
+		struct rrr_instance_collection *instances_all,
+		const struct rrr_instance *instance,
+		const struct rrr_instance_config_data *config,
+		const char *setting
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+			target,
+			instances_all,
+			config,
+			setting
+	)) != 0) {
+		RRR_MSG_0("Failed to add receivers from %s in %s\n", setting, __func__);
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(target, struct rrr_instance_friend);
+		if (!rrr_instance_has_sender (node->instance, instance)) {
+			RRR_MSG_0("Specified receiver %s in %s of instance %s does not have this instance specified as sender\n",
+				INSTANCE_M_NAME(node->instance),
+				setting,
+				INSTANCE_M_NAME(instance)
+			);
+			ret = 1;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+	
 	out:
 	return ret;
 }
