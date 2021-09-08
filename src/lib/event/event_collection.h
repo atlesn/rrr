@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_EVENT_COLLECTION
-#define RRR_EVENT_COLLECTION
+#ifndef RRR_EVENT_COLLECTION_H
+#define RRR_EVENT_COLLECTION_H
 
 #include <stddef.h>
 
@@ -35,6 +35,9 @@ struct rrr_event_collection {
 	struct event_base *event_base;
 	struct event *events[RRR_EVENT_COLLECTION_MAX];
 	size_t event_count;
+#ifdef __cplusplus
+	rrr_event_collection() : event_base(NULL), event_count(0) {};
+#endif
 };
 
 void rrr_event_collection_init (
@@ -50,13 +53,13 @@ void rrr_event_collection_clear_void (
 int rrr_event_collection_push_oneshot (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg
 );
 int rrr_event_collection_push_periodic (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 );
@@ -64,7 +67,7 @@ int rrr_event_collection_push_read (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
 		int fd,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 );
@@ -72,9 +75,9 @@ int rrr_event_collection_push_write (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
 		int fd,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 );
 
-#endif /* RRR_EVENT_COLLECTION */
+#endif /* RRR_EVENT_COLLECTION_H */

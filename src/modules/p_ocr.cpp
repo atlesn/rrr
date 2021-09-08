@@ -19,6 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../lib/instance_config.hpp"
+#include "../lib/event/event_collection.hpp"
+
+#include <string>
+
+extern "C" {
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -30,54 +37,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 
 #include "../lib/poll_helper.h"
-#include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/instance_friends.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/event/event.h"
-#include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/message_holder/message_holder_util.h"
-#include "../lib/msgdb/msgdb_client.h"
+#include "../lib/msgdb/msgdb_client.hpp"
 
 #define RRR_OCR_DEFAULT_INPUT_TAG "ocr_input_data"
 
 struct ocr_data {
 	struct rrr_instance_runtime_data *thread_data;
 
-	struct rrr_event_collection events;
+	rrr::event::collection events;
+	rrr::msgdb::client msgdb_conn;
 
-	struct rrr_msgdb_client_conn msgdb_conn;
+	std::string msgdb_socket;
+	std::string input_data_tag;
 
-	char *msgdb_socket;
-	char *input_data_tag;
+	ocr_data(struct rrr_instance_runtime_data *thread_data) :
+		thread_data(thread_data),
+		events(INSTANCE_D_EVENTS(thread_data)),
+		msgdb_conn(),
+		msgdb_socket(""),
+		input_data_tag("")
+	{}
 };
 
-static void ocr_data_init(struct ocr_data *data, struct rrr_instance_runtime_data *thread_data) {
-	memset(data, '\0', sizeof(*data));
-	data->thread_data = thread_data;
-	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-}
-
 static void ocr_data_cleanup(void *arg) {
-	struct ocr_data *data = arg;
-
-	rrr_event_collection_clear(&data->events);
-
-	rrr_msgdb_client_close(&data->msgdb_conn);
-
-	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
-	RRR_FREE_IF_NOT_NULL(data->input_data_tag);
+	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(arg);
+	delete data;
 }
 
 static int ocr_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_runtime_data *thread_data = arg;
-	struct ocr_data *data = thread_data->private_data;
+	struct rrr_instance_runtime_data *thread_data = reinterpret_cast<struct rrr_instance_runtime_data *>(arg);
+	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
 
 	int ret = 0;
 
@@ -118,45 +118,38 @@ static int ocr_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 static int ocr_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
-	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct rrr_thread *thread = reinterpret_cast<struct rrr_thread *>(arg);
+	struct rrr_instance_runtime_data *thread_data = reinterpret_cast<struct rrr_instance_runtime_data *>(thread->private_data);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, ocr_poll_callback);
 }
 
 static int ocr_event_periodic (void *arg) {
-	struct rrr_thread *thread = arg;
+	struct rrr_thread *thread = reinterpret_cast<struct rrr_thread *>(arg);
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
 static int ocr_parse_config (struct ocr_data *data, struct rrr_instance_config_data *config) {
-	int ret = 0;
+	using namespace rrr::instance_config::parse;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ocr_msgdb_socket", msgdb_socket);
-	if (data->msgdb_socket == NULL || *(data->msgdb_socket) == '\0') {
-		RRR_MSG_0("Required aramenter ocr_msgdb_socket missing in ocr instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
+	try {
+		utf8_optional(data->input_data_tag, config, "ocr_input_data_tag", "");
+		utf8_optional(data->msgdb_socket, config, "ocr_msgdb_socket", "");
+	}
+	catch (parse_error e) {
+		RRR_MSG_0("Configuration parsing failed for ocr instance %s: %s\n", config->name, e.what());
+		return 1;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("ocr_input_tag", input_data_tag, RRR_OCR_DEFAULT_INPUT_TAG);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ocr_msgdb_socket", msgdb_socket);
-	if (ret != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	return 0;
 }
 
 static void *thread_entry_ocr (struct rrr_thread *thread) {
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct ocr_data *data = thread_data->private_data = thread_data->private_memory;
+	struct rrr_instance_runtime_data *thread_data = reinterpret_cast<struct rrr_instance_runtime_data *>(thread->private_data);
+	struct ocr_data *data = new ocr_data(thread_data);
+	thread_data->private_data = data;
 
 	RRR_DBG_1 ("ocr thread thread_data is %p\n", thread_data);
-
-	ocr_data_init(data, thread_data);
 
 	pthread_cleanup_push(ocr_data_cleanup, data);
 
@@ -214,3 +207,4 @@ void unload(void) {
 	RRR_DBG_1 ("Destroy ocr module\n");
 }
 
+} /* extern "C" */

@@ -22,6 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TYPES_H
 #define RRR_TYPES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -410,5 +414,9 @@ typedef uint64_t rrr_type_be;
 typedef uint64_t rrr_type_h;
 typedef uint64_t rrr_type_istr;
 typedef uint64_t rrr_type_ustr;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* RRR_TYPES_H */

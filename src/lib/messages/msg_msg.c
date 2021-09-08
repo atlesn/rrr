@@ -64,8 +64,8 @@ struct rrr_msg_msg *rrr_msg_msg_new_array (
 
 int rrr_msg_msg_new_empty (
 		struct rrr_msg_msg **final_result,
-		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 msg_type,
+		rrr_u8 msg_class,
 		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
@@ -94,8 +94,8 @@ int rrr_msg_msg_new_empty (
 			0
 	);
 
-	MSG_SET_TYPE(result, type);
-	MSG_SET_CLASS(result, class);
+	MSG_SET_TYPE(result, msg_type);
+	MSG_SET_CLASS(result, msg_class);
 
 	result->timestamp = timestamp;
 	result->topic_length = topic_length;
@@ -107,8 +107,8 @@ int rrr_msg_msg_new_empty (
 
 int rrr_msg_msg_new_with_data (
 		struct rrr_msg_msg **final_result,
-		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 msg_type,
+		rrr_u8 msg_class,
 		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,
@@ -117,8 +117,8 @@ int rrr_msg_msg_new_with_data (
 ) {
 	if (rrr_msg_msg_new_empty (
 			final_result,
-			type,
-			class,
+			msg_type,
+			msg_class,
 			timestamp,
 			topic_length,
 			data_length
@@ -138,8 +138,8 @@ int rrr_msg_msg_new_with_data (
 
 struct rrr_msg_msg_new_with_data_nullsafe_callback_data {
 	struct rrr_msg_msg **final_result;
-	rrr_u8 type;
-	rrr_u8 class;
+	rrr_u8 msg_type;
+	rrr_u8 msg_class;
 	rrr_u64 timestamp;
 	const char *topic;
 	rrr_u16 topic_length;
@@ -160,8 +160,8 @@ static int __rrr_msg_msg_new_with_data_nullsafe_callback (
 
 	return rrr_msg_msg_new_with_data (
 			callback_data->final_result,
-			callback_data->type,
-			callback_data->class,
+			callback_data->msg_type,
+			callback_data->msg_class,
 			callback_data->timestamp,
 			callback_data->topic,
 			callback_data->topic_length,
@@ -172,8 +172,8 @@ static int __rrr_msg_msg_new_with_data_nullsafe_callback (
 
 int rrr_msg_msg_new_with_data_nullsafe (
 		struct rrr_msg_msg **final_result,
-		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 msg_type,
+		rrr_u8 msg_class,
 		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,
@@ -181,8 +181,8 @@ int rrr_msg_msg_new_with_data_nullsafe (
 ) {
 	struct rrr_msg_msg_new_with_data_nullsafe_callback_data callback_data = {
 			final_result,
-			type,
-			class,
+			msg_type,
+			msg_class,
 			timestamp,
 			topic,
 			topic_length
@@ -207,13 +207,13 @@ int rrr_msg_msg_to_string (
 		goto out;
 	}
 
-	const char *type;
+	const char *msg_type;
 	switch (MSG_TYPE(message)) {
 	case MSG_TYPE_MSG:
-		type = MSG_TYPE_MSG_STRING;
+		msg_type = MSG_TYPE_MSG_STRING;
 		break;
 	case MSG_TYPE_TAG:
-		type = MSG_TYPE_TAG_STRING;
+		msg_type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
 		RRR_MSG_0 ("Unknown type %" PRIu32 " in message while converting to string\n", MSG_TYPE(message));
@@ -221,13 +221,13 @@ int rrr_msg_msg_to_string (
 		goto out;
 	}
 
-	const char *class;
+	const char *msg_class;
 	switch (MSG_CLASS(message)) {
 	case MSG_CLASS_DATA:
-		class = MSG_CLASS_DATA_STRING;
+		msg_class = MSG_CLASS_DATA_STRING;
 		break;
 	case MSG_CLASS_ARRAY:
-		class = MSG_CLASS_ARRAY_STRING;
+		msg_class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
 		RRR_MSG_0 ("Unknown class %" PRIu32 " in message while converting to string\n", MSG_CLASS(message));
@@ -236,8 +236,8 @@ int rrr_msg_msg_to_string (
 	}
 
 	sprintf(target, "%s:%s:%" PRIu64,
-			type,
-			class,
+			msg_type,
+			msg_class,
 			message->timestamp
 	);
 

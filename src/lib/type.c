@@ -1347,16 +1347,16 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 }
 
 void rrr_type_value_destroy (
-		struct rrr_type_value *template
+		struct rrr_type_value *value
 ) {
-	if (template == NULL) {
+	if (value == NULL) {
 		return;
 	}
-	RRR_FREE_IF_NOT_NULL(template->import_length_ref);
-	RRR_FREE_IF_NOT_NULL(template->element_count_ref);
-	RRR_FREE_IF_NOT_NULL(template->tag);
-	RRR_FREE_IF_NOT_NULL(template->data);
-	rrr_free(template);
+	RRR_FREE_IF_NOT_NULL(value->import_length_ref);
+	RRR_FREE_IF_NOT_NULL(value->element_count_ref);
+	RRR_FREE_IF_NOT_NULL(value->tag);
+	RRR_FREE_IF_NOT_NULL(value->data);
+	rrr_free(value);
 }
 
 int rrr_type_value_is_tag (
@@ -1654,7 +1654,7 @@ int rrr_type_value_allocate_and_export (
 		goto out;
 	}
 
-	if (node->definition->export(buf_tmp, &buf_size, node) != 0) {
+	if (node->definition->exp(buf_tmp, &buf_size, node) != 0) {
 		RRR_MSG_0("Error while exporting in rrr_type_value_allocate_and_export \n");
 		ret = 1;
 		goto out;
@@ -1719,7 +1719,7 @@ int rrr_type_value_allocate_and_import_raw (
 
 	rrr_length parsed_bytes = 0;
 
-	if (definition->import (
+	if (definition->imp (
 			value,
 			&parsed_bytes,
 			data_start,

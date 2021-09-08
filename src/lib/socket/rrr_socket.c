@@ -73,7 +73,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_socket_private_data {
 	RRR_LL_NODE(struct rrr_socket_private_data);
-	enum rrr_socket_private_data_class class;
+	enum rrr_socket_private_data_class private_data_class;
 	void *data;
 };
 
@@ -113,7 +113,7 @@ void __rrr_socket_private_data_collection_clear (
 
 int __rrr_socket_private_data_collection_allocate_and_push (
 		struct rrr_socket_private_data_collection *collection,
-		enum rrr_socket_private_data_class class,
+		enum rrr_socket_private_data_class private_data_class,
 		size_t size
 ) {
 	int ret = 0;
@@ -136,7 +136,7 @@ int __rrr_socket_private_data_collection_allocate_and_push (
 
 	memset(new_data, '\0', sizeof(size));
 
-	new_node->class = class;
+	new_node->private_data_class = private_data_class;
 	new_node->data = new_data;
 	RRR_LL_PUSH(collection, new_node);
 
@@ -327,7 +327,7 @@ int rrr_socket_get_options_from_fd (
 
 void *rrr_socket_get_private_data_from_fd (
 		int fd,
-		enum rrr_socket_private_data_class class,
+		enum rrr_socket_private_data_class private_data_class,
 		size_t size
 ) {
 	void *result = NULL;
@@ -338,13 +338,13 @@ void *rrr_socket_get_private_data_from_fd (
 		if (node->options.fd == fd) {
 			struct rrr_socket_holder *socket_holder = node;
 			RRR_LL_ITERATE_BEGIN(&socket_holder->private_data, struct rrr_socket_private_data);
-				if (node->class == class) {
+				if (node->private_data_class == private_data_class) {
 					result = node->data;
 					goto out;
 				}
 			RRR_LL_ITERATE_END();
 
-			if (__rrr_socket_private_data_collection_allocate_and_push(&socket_holder->private_data, class, size) != 0) {
+			if (__rrr_socket_private_data_collection_allocate_and_push(&socket_holder->private_data, private_data_class, size) != 0) {
 				goto out;
 			}
 			result = RRR_LL_LAST(&socket_holder->private_data);

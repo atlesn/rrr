@@ -54,7 +54,7 @@ cacher_la_LDFLAGS = ${module_ldflags}
 cacher_la_SOURCES = p_cacher.c
 
 ocr_la_LDFLAGS = ${module_ldflags}
-ocr_la_SOURCES = p_ocr.c
+ocr_la_SOURCES = p_ocr.cpp
 
 mqttclient_la_LDFLAGS = ${module_ldflags}
 mqttclient_la_SOURCES = p_mqttclient.c

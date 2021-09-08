@@ -61,7 +61,7 @@ static int __rrr_event_collection_push (
 		struct rrr_event_collection *collection,
 		int fd,
 		short flags,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 ) {
@@ -113,7 +113,7 @@ static int __rrr_event_collection_push (
 int rrr_event_collection_push_oneshot (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg
 ) {
 	return __rrr_event_collection_push(target, collection, -1, 0, callback, arg, 0);
@@ -122,7 +122,7 @@ int rrr_event_collection_push_oneshot (
 int rrr_event_collection_push_periodic (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 ) {
@@ -133,7 +133,7 @@ int rrr_event_collection_push_read (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
 		int fd,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 ) {
@@ -144,7 +144,7 @@ int rrr_event_collection_push_write (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
 		int fd,
-		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
 ) {

@@ -35,6 +35,7 @@ AS_IF([test "x${EGCC}" != "x"], [
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_INSTALL
 #AC_PROG_YACC
 #AM_PROG_LEX
