@@ -554,29 +554,18 @@ static int cacher_parse_receivers (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+	if ((ret = rrr_instance_config_friend_collection_populate_receivers_from_config (
 			target,
 			INSTANCE_D_INSTANCES(data->thread_data),
+			INSTANCE_D_INSTANCE(data->thread_data),
 			config,
 			setting
 	)) != 0) {
 		RRR_MSG_0("Failed to add receivers from %s in cacher instance %s\n",
-			setting, INSTANCE_D_NAME(data->thread_data));
+				setting, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_LL_ITERATE_BEGIN(target, struct rrr_instance_friend);
-		if (!rrr_instance_has_sender (node->instance, INSTANCE_D_INSTANCE(data->thread_data))) {
-			RRR_MSG_0("Specified receiver %s in %s of cacher instance %s does not have this cacher instance specified as sender\n",
-				INSTANCE_M_NAME(node->instance),
-				setting,
-				INSTANCE_D_NAME(data->thread_data)
-			);
-			ret = 1;
-			goto out;
-		}
-	RRR_LL_ITERATE_END();
-	
 	out:
 	return ret;
 }
