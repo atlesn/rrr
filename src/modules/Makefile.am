@@ -35,7 +35,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
-	msgdb.la incrementer.la cacher.la \
+	msgdb.la incrementer.la cacher.la ocr.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
@@ -52,6 +52,9 @@ incrementer_la_SOURCES = p_incrementer.c
 
 cacher_la_LDFLAGS = ${module_ldflags}
 cacher_la_SOURCES = p_cacher.c
+
+ocr_la_LDFLAGS = ${module_ldflags}
+ocr_la_SOURCES = p_ocr.c
 
 mqttclient_la_LDFLAGS = ${module_ldflags}
 mqttclient_la_SOURCES = p_mqttclient.c

@@ -2024,10 +2024,30 @@ If IDn2 < IDl, then IDn = IDn2 + m
 .br
 \(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
 
+.SS ocr (PA)
+The
+.B ocr
+module looks for characters in pixel buffers.
+
+The algorithm performing optical character recognition must be trained by providing human feedback to results.
+
+.Bl -tag -width -indent
+
+.It ocr_msgdb_socket=PATH
+Path to the socket of the Message DB to use for storing training data.
+If left unset, training data will be stored in memory only.
+
+.It ocr_input_data_tag=TAG
+The array tag in which to find input images to be processed.
+Defaults to 'ocr_input_data'.
+
+.El
+
+
 .SS cacher (PA)
 The
 .B cacher
-uses a message database to store messages on disk.
+module uses a message database to store messages on disk.
 Messages received are stored into the database, and it is possible to have messages read back
 by passing in request messages.
 
