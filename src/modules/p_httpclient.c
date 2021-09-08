@@ -791,8 +791,7 @@ static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr
 			&data->msgdb_conn,
 			data->msgdb_socket,
 			data->thread_data,
-			(const struct rrr_msg_msg *) entry_locked->message,
-			0 /* Do not delete */
+			(const struct rrr_msg_msg *) entry_locked->message
 	);
 }
 
