@@ -31,11 +31,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msgdb/msgdb_client.h"
 #include "messages/msg_msg.h"
 
-static int __rrr_msgdb_helper_send_to_msgdb_wait_callback (
+static int __rrr_msgdb_helper_short_wait_callback (
 		void *arg
 ) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	sched_yield();
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(thread_data));
+}
+
+static int __rrr_msgdb_helper_long_wait_callback (
+		void *arg
+) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	rrr_posix_usleep(5 * 1000); // 5 ms
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(thread_data));
 }
 
@@ -61,7 +69,7 @@ static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
 
 	MSG_SET_TYPE(msg_new,  MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg_new, __rrr_msgdb_helper_send_to_msgdb_wait_callback, callback_data->thread_data)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg_new, __rrr_msgdb_helper_short_wait_callback, callback_data->thread_data)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in %s, return from send was %i\n",
 			__func__, ret);
 		goto out;
@@ -437,6 +445,45 @@ int rrr_msgdb_helper_iterate_min_age_to_broker (
 			min_age_s,
 			ttl_us,
 			__rrr_msgdb_helper_get_from_msgdb_to_broker_callback,
+			&callback_data
+	);
+}
+
+struct rrr_msgdb_helper_tidy_callback_data {
+	struct rrr_instance_runtime_data *thread_data;
+	const rrr_length ttl_s;
+};
+
+static int __rrr_msgdb_helper_tidy_callback (
+		struct rrr_msgdb_client_conn *conn,
+		void *arg
+) {
+	struct rrr_msgdb_helper_tidy_callback_data *callback_data = arg;
+
+	return rrr_msgdb_client_cmd_tidy_with_wait_callback (
+			conn,
+			callback_data->ttl_s,
+			__rrr_msgdb_helper_long_wait_callback,
+			callback_data->thread_data
+	);
+}
+
+int rrr_msgdb_helper_tidy (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		rrr_length ttl_s
+) {
+	struct rrr_msgdb_helper_tidy_callback_data callback_data = {
+		thread_data,
+		ttl_s
+	};
+
+	return rrr_msgdb_client_conn_ensure_with_callback (
+			conn,
+			socket,
+			INSTANCE_D_EVENTS(thread_data),
+			__rrr_msgdb_helper_tidy_callback,
 			&callback_data
 	);
 }

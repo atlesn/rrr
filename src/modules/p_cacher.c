@@ -449,30 +449,6 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
-static int cacher_event_tidy_wait_callback (
-		void *arg
-) {
-	struct cacher_data *data = arg;
-
-	rrr_posix_usleep(5 * 1000); // 5 ms
-
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-static int cacher_event_tidy_callback (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_data *data = arg;
-
-	return rrr_msgdb_client_cmd_tidy_with_wait_callback (
-			conn,
-			rrr_length_from_biglength_bug_const(data->message_ttl_seconds),
-			cacher_event_tidy_wait_callback,
-			data
-	);
-}
-
 static void cacher_event_tidy (
 		int fd,
 		short flags,
@@ -491,12 +467,11 @@ static void cacher_event_tidy (
 	else { 
 		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
 
-		int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
+		int ret_tmp = rrr_msgdb_helper_tidy (
 				&data->msgdb_conn,
 				data->msgdb_socket,
-				INSTANCE_D_EVENTS(data->thread_data),
-				cacher_event_tidy_callback,
-				data
+				data->thread_data,
+				rrr_length_from_biglength_bug_const(data->message_ttl_seconds)
 		);
 
 		RRR_DBG_1("cacher instance %s tidy message database completed with status %i\n",

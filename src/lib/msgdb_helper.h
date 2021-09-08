@@ -75,5 +75,11 @@ int rrr_msgdb_helper_iterate_min_age_to_broker (
 		rrr_length min_age_s,
 		uint64_t ttl_us
 );
+int rrr_msgdb_helper_tidy (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		rrr_length ttl_s
+);
 
 #endif /* RRR_MSGDB_HELPER_H */
