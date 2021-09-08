@@ -382,6 +382,10 @@ static int __rrr_msgdb_helper_iterate_min_age_callback (
 		}
 
 		if ((ret = callback_data->callback (&msg_tmp, callback_data->callback_arg)) != 0) {
+			if (ret == RRR_MSGDB_HELPER_ITERATE_STOP) {
+				ret = 0; // Mask return value
+				RRR_LL_ITERATE_BREAK();
+			}
 			goto out;
 		}
 
@@ -446,6 +450,24 @@ int rrr_msgdb_helper_iterate_min_age_to_broker (
 			ttl_us,
 			__rrr_msgdb_helper_get_from_msgdb_to_broker_callback,
 			&callback_data
+	);
+}
+
+int rrr_msgdb_helper_iterate (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(struct rrr_msg_msg **msg, void *arg),
+		void *callback_arg
+) {
+	return rrr_msgdb_helper_iterate_min_age (
+			conn,
+			socket,
+			thread_data,
+			0,
+			0,
+			callback,
+			callback_arg
 	);
 }
 

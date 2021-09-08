@@ -23,6 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_HELPER_H
 
 #include "rrr_types.h"
+#include "read_constants.h"
+
+#define RRR_MSGDB_HELPER_ITERATE_STOP RRR_READ_EOF
 
 struct rrr_msgdb_client_conn;
 struct rrr_instance_runtime_data;
@@ -74,6 +77,13 @@ int rrr_msgdb_helper_iterate_min_age_to_broker (
 		const char *debug_reason,
 		rrr_length min_age_s,
 		uint64_t ttl_us
+);
+int rrr_msgdb_helper_iterate (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(struct rrr_msg_msg **msg, void *arg),
+		void *callback_arg
 );
 int rrr_msgdb_helper_tidy (
 		struct rrr_msgdb_client_conn *conn,
