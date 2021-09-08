@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 
 #include "../lib/poll_helper.h"
+#include "../lib/msgdb_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/instance_friends.h"
@@ -104,92 +105,18 @@ static void cacher_data_cleanup(void *arg) {
 	rrr_instance_friend_collection_clear(&data->receivers_other);
 }
 
-struct cacher_broker_callback_data {
-	struct rrr_msg_msg **msg_ptr;
-};
-
-static int cacher_broker_callback (struct rrr_msg_holder *new_entry, void *arg) {
-	struct cacher_broker_callback_data *callback_data = arg;
-
-	rrr_msg_holder_set_data_unlocked(new_entry, *callback_data->msg_ptr, MSG_TOTAL_SIZE(*callback_data->msg_ptr));
-	*callback_data->msg_ptr = NULL;
-
-	rrr_msg_holder_unlock(new_entry);
-	return 0;
-}
-
-struct cacher_get_from_msgdb_callback_data {
-	struct cacher_data *data;
-	const char *topic;
-};
-
-static int cacher_get_from_msgdb_callback (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_get_from_msgdb_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_msg_msg *msg_tmp = NULL;
-
-	if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->topic))) {
-		goto out;
-	}
-
-	if (msg_tmp != NULL) {
-		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested) from message DB\n",
-				INSTANCE_D_NAME(callback_data->data->thread_data),
-				msg_tmp->timestamp
-		);
-
-		struct cacher_broker_callback_data broker_callback_data = {
-			&msg_tmp
-		};
-
-		if ((ret = rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER_ARGS(callback_data->data->thread_data),
-				NULL,
-				0,
-				0,
-				&callback_data->data->receivers_data,
-				cacher_broker_callback,
-				&broker_callback_data,
-				INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->data->thread_data)
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	return ret;
-}
-
 static int cacher_get_from_msgdb (
 		struct cacher_data *data,
 		const char *topic
 ) {
-	int ret = 0;
-
-	struct cacher_get_from_msgdb_callback_data callback_data = {
-		data,
-		topic
-	};
-
-	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
+	return rrr_msgdb_helper_get_from_msgdb_to_broker (
 			&data->msgdb_conn,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			cacher_get_from_msgdb_callback,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_0("Failed to get message from  message DB in cacher_get_id_from_msgdb\n");
-		goto out;
-	}
-
-	out:
-	return ret;
+			data->thread_data,
+			topic,
+			&data->receivers_data,
+			"requested"
+	);
 }
 
 static int cacher_get_from_memory_cache (
@@ -253,98 +180,6 @@ static void cacher_tidy_memory_cache (
 	*deleted_entries = count_before - RRR_LL_COUNT(&data->memory_cache);
 }
 
-static int cacher_send_to_msgdb_wait_callback (
-		void *arg
-) {
-	struct cacher_data *data = arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-struct cacher_send_to_msgdb_callback_final_data {
-	struct cacher_data *data;
-	const char *topic;
-	const struct rrr_msg_msg *msg;
-	int do_delete;
-};
-
-static int cacher_send_to_msgdb_callback_final (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_send_to_msgdb_callback_final_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_msg_msg *msg_new = rrr_msg_msg_duplicate (callback_data->msg);
-	if (msg_new == NULL) {
-		RRR_MSG_0("Could not duplicate message in cacher_send_to_msgdb_callback_final\n");
-		ret = 1;
-		goto out;
-	}
-
-	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg_new, cacher_send_to_msgdb_wait_callback, callback_data->data)) != 0) {	
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
-			ret);
-		goto out;
-	}
-
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0) {
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from await ack was %i\n",
-			ret);
-		ret = 1;
-		goto out;
-	}
-
-	if (!callback_data->do_delete && !positive_ack) {
-		// Ensure failure is returned upon negative ACK (only relevant for stores)
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, negative ACK received\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_new);
-	return ret;
-}
-
-static int cacher_send_to_msgdb (
-		struct cacher_data *data,
-		const char *topic,
-		const struct rrr_msg_msg *msg,
-		int do_delete
-) {
-	int ret = 0;
-
-	if (data->msgdb_socket == NULL) {
-		goto out;
-	}
-
-	struct cacher_send_to_msgdb_callback_final_data callback_data = {
-		data,
-		topic,
-		msg,
-		do_delete
-	};
-
-	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
-			&data->msgdb_conn,
-			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			cacher_send_to_msgdb_callback_final,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_0("Failed to send message to message DB in cacher_send_to_msgdb\n");
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int cacher_save_to_memory_cache (
 		struct cacher_data *data,
 		const char *topic,
@@ -401,8 +236,27 @@ static int cacher_store (
 ) {
 	int ret = 0;
 
-	if ((ret = cacher_send_to_msgdb (data, topic, msg, do_delete)) != 0) {
-		goto out;
+	if (data->msgdb_socket != NULL) {
+		if (do_delete) {
+			if ((ret = rrr_msgdb_helper_delete (
+					&data->msgdb_conn,
+					data->msgdb_socket,
+					data->thread_data,
+					msg
+			)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			if ((ret = rrr_msgdb_helper_send_to_msgdb (
+					&data->msgdb_conn,
+					data->msgdb_socket,
+					data->thread_data,
+					msg
+			)) != 0) {
+				goto out;
+			}
+		}
 	}
 
 	if (data->message_memory_ttl_us > 0 && (ret = cacher_save_to_memory_cache (data, topic, entry, do_delete)) != 0) {
@@ -595,30 +449,6 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
-static int cacher_event_tidy_wait_callback (
-		void *arg
-) {
-	struct cacher_data *data = arg;
-
-	rrr_posix_usleep(5 * 1000); // 5 ms
-
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-static int cacher_event_tidy_callback (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_data *data = arg;
-
-	return rrr_msgdb_client_cmd_tidy_with_wait_callback (
-			conn,
-			rrr_length_from_biglength_bug_const(data->message_ttl_seconds),
-			cacher_event_tidy_wait_callback,
-			data
-	);
-}
-
 static void cacher_event_tidy (
 		int fd,
 		short flags,
@@ -637,12 +467,11 @@ static void cacher_event_tidy (
 	else { 
 		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
 
-		int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
+		int ret_tmp = rrr_msgdb_helper_tidy (
 				&data->msgdb_conn,
 				data->msgdb_socket,
-				INSTANCE_D_EVENTS(data->thread_data),
-				cacher_event_tidy_callback,
-				data
+				data->thread_data,
+				rrr_length_from_biglength_bug_const(data->message_ttl_seconds)
 		);
 
 		RRR_DBG_1("cacher instance %s tidy message database completed with status %i\n",
@@ -674,93 +503,6 @@ static void cacher_event_tidy (
 	}
 }
 
-static int cacher_event_revive_wait_callback (
-		void *arg
-) {
-	struct cacher_data *data = arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-static int cacher_event_revive_callback (
-		struct rrr_msgdb_client_conn *conn,
-		void *arg
-) {
-	struct cacher_data *data = arg;
-
-	int ret = 0;
-
-	struct rrr_array files = {0};
-	char *path_tmp = NULL;
-	struct rrr_msg_msg *msg_tmp = NULL;
-
-	if ((ret = rrr_msgdb_client_cmd_idx (
-			&files,
-			conn,
-			rrr_length_from_biglength_bug_const(data->revive_age_seconds),
-			cacher_event_revive_wait_callback,
-			data
-	)) != 0) {
-		goto out;
-	}
-
-	RRR_LL_ITERATE_BEGIN(&files, struct rrr_type_value);
-		RRR_FREE_IF_NOT_NULL(path_tmp);
-		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
-			RRR_MSG_0("Failed to extract path in %s of cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-
-	 	RRR_FREE_IF_NOT_NULL(msg_tmp);
-		if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, path_tmp)) != 0) {
-			RRR_MSG_0("Failed to get message in %s of cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-
-		if (msg_tmp == NULL) {
-			// Message no longer exists
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(msg_tmp, data->message_ttl_us)) {
-			// TTL expired
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (revived) from message DB\n",
-				INSTANCE_D_NAME(data->thread_data),
-				msg_tmp->timestamp
-		);
-
-		struct cacher_broker_callback_data callback_data = {
-			&msg_tmp
-		};
-
-		if ((ret = rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER_ARGS(data->thread_data),
-				NULL,
-				0,
-				0,
-				&data->receivers_revive,
-				cacher_broker_callback,
-				&callback_data,
-				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
-		)) != 0) {
-			goto out;
-		}
-
-		if ((ret = rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data))) != 0) {
-			goto out;
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	RRR_FREE_IF_NOT_NULL(path_tmp);
-	rrr_array_clear(&files);
-	return ret;
-}
-
 static void cacher_event_revive (
 		int fd,
 		short flags,
@@ -773,12 +515,14 @@ static void cacher_event_revive (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data;
 
-	int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
+	int ret_tmp = rrr_msgdb_helper_iterate_min_age_to_broker (
 			&data->msgdb_conn,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			cacher_event_revive_callback,
-			data
+			data->thread_data,
+			&data->receivers_revive,
+			"revived",
+			rrr_length_from_biglength_bug_const(data->revive_age_seconds),
+			data->message_ttl_us
 	);
 
 	if (ret_tmp == RRR_THREAD_STOP) {

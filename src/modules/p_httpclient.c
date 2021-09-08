@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
+#include "../lib/msgdb_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
@@ -650,40 +651,41 @@ static int httpclient_final_callback_receive_json (
 
 #endif /* RRR_WITH_JSONC */
 
-static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
+struct httpclient_msgdb_poll_callback_data {
+	struct httpclient_data *data;
+	const uint64_t time_start;
+};
+
+static int httpclient_msgdb_poll_callback (struct rrr_msg_msg **msg, void *arg) {
+	struct httpclient_msgdb_poll_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+
 	int ret = 0;
 
 	struct rrr_msg_holder *entry = NULL;
 	char *topic_tmp = NULL;
-	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = path->definition->to_str(&topic_tmp, path)) != 0) {
-		goto out;
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_msg_msg_topic_get(&topic_tmp, *msg);
+		RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(*msg)->timestamp,
+				topic_tmp != NULL ? topic_tmp : ""
+		);
 	}
-
-	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp) || msg_tmp == NULL) {
-		// Don't return failure on this error
-		goto out;
-	}
-
-	RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
-			INSTANCE_D_NAME(data->thread_data),
-			msg_tmp->timestamp,
-			topic_tmp
-	);
 
 	if ((ret = rrr_msg_holder_new (
 			&entry,
-			MSG_TOTAL_SIZE(msg_tmp),
+			MSG_TOTAL_SIZE(*msg),
 			NULL,
 			0,
 			0,
-			msg_tmp
+			*msg
 	)) != 0) {
 		goto out;
 	}
 
-	msg_tmp = NULL;
+	*msg = NULL;
 
 	entry->send_time = rrr_time_get_64();
 
@@ -700,141 +702,43 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 	if (entry != NULL) {
 		rrr_msg_holder_decref(entry);
 	}
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
-}
 
-static int __httpclient_msgdb_wait_callback (void *callback_arg) {
-	struct httpclient_data *data = callback_arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_data *data = callback_arg;
-
-	int ret = 0;
-
-	struct rrr_array paths = {0};
-
-	if ((ret = rrr_msgdb_client_cmd_idx (
-			&paths,
-			conn,
-			0 /* Min age 0 seconds */, 
-			__httpclient_msgdb_wait_callback, data
-	)) != 0) {
-		goto out;
-	}
-
-	int max = RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX;
-
-	const uint64_t loop_begin_time = rrr_time_get_64();
-	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
-		// Max loop time 1 second
-		if (rrr_time_get_64() - loop_begin_time > 1 * 1000 * 1000) {
-			RRR_LL_ITERATE_BREAK();
-		}
-
-		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-		if ((ret = httpclient_msgdb_poll_callback_get_msg (data, node)) != 0) {
-			RRR_LL_ITERATE_BREAK();
-		}
-		if (--max == 0) {
-			RRR_LL_ITERATE_BREAK();
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	rrr_array_clear(&paths);
-	return ret;
+	// Loop limit 1 second
+	return ret == 0
+		? rrr_time_get_64() - callback_data->time_start > 1 * 1000 * 1000
+			? RRR_MSGDB_HELPER_ITERATE_STOP
+			: 0
+		: ret
+	;
 }
 
 static void httpclient_msgdb_poll (struct httpclient_data *data) {
-	if (rrr_msgdb_client_conn_ensure_with_callback (
+	struct httpclient_msgdb_poll_callback_data callback_data = {
+		data,
+		rrr_time_get_64()
+	};
+
+	if (rrr_msgdb_helper_iterate (
 			&data->msgdb_conn,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
+			data->thread_data,
 			httpclient_msgdb_poll_callback,
-			data
+			&callback_data
 	) != 0) {
 		RRR_MSG_0("Warning: Failed to poll message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
 }
 
-struct httpclient_msgdb_delete_callback_data {
-	struct httpclient_data *data;
-	const struct rrr_msg_msg *msg;
-};
-
-static int httpclient_msgdb_delete_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_msgdb_delete_callback_data *callback_data = callback_arg;
-
-	int ret = 0;
-
-	char *topic_tmp = NULL;
-
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, callback_data->msg)) != 0) {
-		goto out;
-	}
-
-	ret = rrr_msgdb_client_cmd_del(conn, topic_tmp);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
-}
-
 static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
-	struct httpclient_msgdb_delete_callback_data callback_data = {
-		data,
-		msg
-	};
-
-	if (rrr_msgdb_client_conn_ensure_with_callback (
+	if (rrr_msgdb_helper_delete (
 			&data->msgdb_conn,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			httpclient_msgdb_delete_callback,
-			&callback_data
+			data->thread_data,
+			msg
 	) != 0) {
 		RRR_MSG_0("Warning: Failed to delete from message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
-}
-
-struct httpclient_msgdb_notify_send_callback_data {
-	struct httpclient_data *data;
-	struct rrr_msg_holder *entry_locked;
-};
-
-static int httpclient_msgdb_notify_send_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_msgdb_notify_send_callback_data *callback_data = callback_arg;
-
-	struct rrr_msg_msg *msg = callback_data->entry_locked->message;
-	const uint8_t type_orig = MSG_TYPE(msg);
-
-	int ret = 0;
-
-	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg, __httpclient_msgdb_wait_callback, callback_data->data)) != 0) {	
-		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from send was %i\n",
-			ret);
-		goto out;
-	}
-
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from await ack was %i positive ack was %i\n",
-			ret, positive_ack);
-		goto out;
-	}
-
-	out:
-	MSG_SET_TYPE(msg, type_orig);
-	return ret;
 }
 
 #define HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() \
@@ -848,17 +752,11 @@ static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr
 		return 0;
 	}
 
-	struct httpclient_msgdb_notify_send_callback_data callback_data = {
-		data,
-		entry_locked
-	};
-
-	return rrr_msgdb_client_conn_ensure_with_callback (	
+	return rrr_msgdb_helper_send_to_msgdb (
 			&data->msgdb_conn,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			httpclient_msgdb_notify_send_callback,
-			&callback_data
+			data->thread_data,
+			(const struct rrr_msg_msg *) entry_locked->message
 	);
 }
 
