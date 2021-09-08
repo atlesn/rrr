@@ -40,9 +40,7 @@ static int __rrr_msgdb_helper_send_to_msgdb_wait_callback (
 
 struct rrr_msgdb_helper_send_to_msgdb_callback_final_data {
 	struct rrr_instance_runtime_data *thread_data;
-	const char *topic;
 	const struct rrr_msg_msg *msg;
-	int do_delete;
 };
 
 static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
@@ -60,7 +58,7 @@ static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
 		goto out;
 	}
 
-	MSG_SET_TYPE(msg_new, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
+	MSG_SET_TYPE(msg_new,  MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg_new, __rrr_msgdb_helper_send_to_msgdb_wait_callback, callback_data->thread_data)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in %s, return from send was %i\n",
@@ -76,8 +74,8 @@ static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
 		goto out;
 	}
 
-	if (!callback_data->do_delete && !positive_ack) {
-		// Ensure failure is returned upon negative ACK (only relevant for stores)
+	if (!positive_ack) {
+		// Ensure failure is returned upon negative ACK
 		RRR_DBG_7("Failed to send message to msgdb in %s, negative ACK received\n", __func__);
 		ret = 1;
 		goto out;
@@ -90,11 +88,9 @@ static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
 
 int rrr_msgdb_helper_send_to_msgdb (
 		struct rrr_msgdb_client_conn *conn,
-		struct rrr_instance_runtime_data *thread_data,
 		const char *socket,
-		const char *topic,
-		const struct rrr_msg_msg *msg,
-		int do_delete
+		struct rrr_instance_runtime_data *thread_data,
+		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
@@ -104,9 +100,7 @@ int rrr_msgdb_helper_send_to_msgdb (
 
 	struct rrr_msgdb_helper_send_to_msgdb_callback_final_data callback_data = {
 		thread_data,
-		topic,
-		msg,
-		do_delete
+		msg
 	};
 
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
@@ -117,6 +111,56 @@ int rrr_msgdb_helper_send_to_msgdb (
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Failed to send message to message DB in %s of instance %s\n",
+			__func__, INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_msgdb_helper_delete_callback_data {
+	const struct rrr_msg_msg *msg;
+};
+
+static int __rrr_msgdb_helper_delete_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
+	struct rrr_msgdb_helper_delete_callback_data *callback_data = callback_arg;
+
+	int ret = 0;
+
+	char *topic_tmp = NULL;
+
+	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, callback_data->msg)) != 0) {
+		goto out;
+	}
+
+	ret = rrr_msgdb_client_cmd_del(conn, topic_tmp);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	return ret;
+}
+
+int rrr_msgdb_helper_delete (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		const struct rrr_msg_msg *msg
+) {
+	struct rrr_msgdb_helper_delete_callback_data callback_data = {
+		msg
+	};
+
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
+			conn,
+			socket,
+			INSTANCE_D_EVENTS(thread_data),
+			__rrr_msgdb_helper_delete_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_0("Failed to delete message from message DB in %s of instance %s\n",
 			__func__, INSTANCE_D_NAME(thread_data));
 		goto out;
 	}

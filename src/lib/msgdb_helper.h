@@ -28,11 +28,15 @@ struct rrr_msg_msg;
 
 int rrr_msgdb_helper_send_to_msgdb (
 		struct rrr_msgdb_client_conn *conn,
-		struct rrr_instance_runtime_data *thread_data,
 		const char *socket,
-		const char *topic,
-		const struct rrr_msg_msg *msg,
-		int do_delete
+		struct rrr_instance_runtime_data *thread_data,
+		const struct rrr_msg_msg *msg
+);
+int rrr_msgdb_helper_delete (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_instance_runtime_data *thread_data,
+		const struct rrr_msg_msg *msg
 );
 
 #endif /* RRR_MSGDB_HELPER_H */

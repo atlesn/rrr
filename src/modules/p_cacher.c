@@ -310,15 +310,27 @@ static int cacher_store (
 ) {
 	int ret = 0;
 
-	if (data->msgdb_socket != NULL && (ret = rrr_msgdb_helper_send_to_msgdb (
-			&data->msgdb_conn,
-			data->thread_data,
-			data->msgdb_socket,
-			topic,
-			msg,
-			do_delete
-	)) != 0) {
-		goto out;
+	if (data->msgdb_socket != NULL) {
+		if (do_delete) {
+			if ((ret = rrr_msgdb_helper_delete (
+					&data->msgdb_conn,
+					data->msgdb_socket,
+					data->thread_data,
+					msg
+			)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			if ((ret = rrr_msgdb_helper_send_to_msgdb (
+					&data->msgdb_conn,
+					data->msgdb_socket,
+					data->thread_data,
+					msg
+			)) != 0) {
+				goto out;
+			}
+		}
 	}
 
 	if (data->message_memory_ttl_us > 0 && (ret = cacher_save_to_memory_cache (data, topic, entry, do_delete)) != 0) {
