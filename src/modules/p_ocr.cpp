@@ -20,7 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "../lib/instance_config.hpp"
+#include "../lib/poll_helper.hpp"
 #include "../lib/event/event_collection.hpp"
+#include "../lib/msgdb/msgdb_client.hpp"
 
 #include <string>
 
@@ -36,7 +38,6 @@ extern "C" {
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 
-#include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_friends.h"
 #include "../lib/threads.h"
@@ -48,7 +49,6 @@ extern "C" {
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/message_holder/message_holder_util.h"
-#include "../lib/msgdb/msgdb_client.hpp"
 
 #define RRR_OCR_DEFAULT_INPUT_TAG "ocr_input_data"
 
@@ -75,11 +75,14 @@ static void ocr_data_cleanup(void *arg) {
 	delete data;
 }
 
-static int ocr_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_runtime_data *thread_data = reinterpret_cast<struct rrr_instance_runtime_data *>(arg);
+static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance_runtime_data *thread_data) {
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
 
 	int ret = 0;
+
+	RRR_MSG_1("Poll callback\n");
+
+	throw rrr::exp::hard("Crisis");
 
 	goto out;
 
@@ -113,15 +116,19 @@ static int ocr_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}*/
 
 	out:
-		rrr_msg_holder_unlock(entry);
-		return ret;
+	rrr_msg_holder_unlock(entry);
 }
 
 static int ocr_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = reinterpret_cast<struct rrr_thread *>(arg);
 	struct rrr_instance_runtime_data *thread_data = reinterpret_cast<struct rrr_instance_runtime_data *>(thread->private_data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, ocr_poll_callback);
+	rrr::poll_helper::amount a(*amount);
+	RRR_EXP_TO_RET(poll_delete(a, thread_data, ocr_poll_callback));
+
+	*amount = a.a;
+
+	return 0;
 }
 
 static int ocr_event_periodic (void *arg) {

@@ -95,7 +95,13 @@ AS_IF([ test -f ".development" ], [
 	AC_MSG_RESULT([none])
 ])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_WARNINGS -D_XOPEN_SOURCE=700"
+
+
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_WARNINGS -D_XOPEN_SOURCE=700"
+
+AM_CXXFLAGS="$AM_CFLAGS -std=c++17"
+AM_CFLAGS="$AM_CFLAGS -std=c11"
+
 AM_LDFLAGS=""
 
 AC_SUBST(AM_CFLAGS)
