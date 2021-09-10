@@ -1049,6 +1049,19 @@ static int httpserver_receive_callback (
 		}
 	}
 
+	{
+		// Used with CORS: Allow all headers which the client wishes to send
+		const struct rrr_http_header_field *access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
+		if (access_control_request_headers != NULL) {
+			if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-response-headers", access_control_request_headers->value)) != 0) {
+				RRR_MSG_0("Failed to push request-headers header in httpserver_receive_callback\n");
+				ret = 1;
+				goto out;
+			}
+		}
+
+	}
+
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");

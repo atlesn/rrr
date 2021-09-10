@@ -83,6 +83,11 @@ int rrr_http_header_field_new_with_value (
 		const char *name,
 		const char *value
 );
+int rrr_http_header_field_new_with_value_nullsafe (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+);
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,
 		rrr_length *parsed_bytes,
