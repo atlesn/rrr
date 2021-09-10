@@ -224,6 +224,25 @@ int rrr_http_part_header_field_push (
 	return ret;
 }
 
+int rrr_http_part_header_field_push_nullsafe (
+		struct rrr_http_part *part,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new_with_value_nullsafe(&field, name, value)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_APPEND(&part->headers, field);
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_header_field_push_if_not_exists (
 		struct rrr_http_part *part,
 		const char *name,

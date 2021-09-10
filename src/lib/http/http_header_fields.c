@@ -341,6 +341,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"accept",                 RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-language",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
+	{"access-control-request-headers",
+	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"cache-control",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"connection",             RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
         {"upgrade",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -489,6 +491,34 @@ int rrr_http_header_field_new_with_value (
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, rrr_length_from_size_t_bug_const (strlen(value)))) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
+		goto out_destroy;
+	}
+
+	*result = field;
+
+	goto out;
+	out_destroy:
+		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
+}
+
+int rrr_http_header_field_new_with_value_nullsafe (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new_raw(&field, name, rrr_length_from_size_t_bug_const (strlen(name)))) != 0) {
+		RRR_MSG_0("Could not create header field in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace(&field->value, value)) != 0) {
+		RRR_MSG_0("Could not allocate memory for value in %s\n", __func__);
 		goto out_destroy;
 	}
 
