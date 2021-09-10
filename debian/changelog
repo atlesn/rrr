@@ -2,6 +2,9 @@ rrr (1.20-1) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
+  * Changes:
+    * Automatic restart of RRR deamon upon failure
+
   * Features:
     * Option in cacher to revive messages older than a specified age
     * Control maximum response size in httpclient
@@ -16,6 +19,9 @@ rrr (1.20-1) bullseye; urgency=medium
     * Large messages sometimes failing to be sent due to incorrect
       return values in some send functions
     * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+
+  * Under the hood:
+    * Common Message DB functions for httpclient and cacher
 
  -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Sep 2021 17:38:07 +0200
 
