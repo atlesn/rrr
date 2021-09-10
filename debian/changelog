@@ -1,4 +1,4 @@
-rrr (1.20-0) bullseye; urgency=medium
+rrr (1.20-1) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -15,8 +15,9 @@ rrr (1.20-0) bullseye; urgency=medium
     * Cacher getting killed off on large writes to message DB
     * Large messages sometimes failing to be sent due to incorrect
       return values in some send functions
+    * Send allow-origin header in OPTIONS responses to satisfy preflight checks
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 08 Sep 2021 00:52:53 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Sep 2021 17:38:07 +0200
 
 rrr (1.19-1) bullseye; urgency=medium
 

@@ -1041,6 +1041,14 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
@@ -1120,14 +1128,6 @@ static int httpserver_receive_callback (
 	//////////////////////
 	// PREPARE RESPONSE //
 	////////////////////// 
-
-	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
-		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
-			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
-			ret = 1;
-			goto out;
-		}
-	}
 
 	if (data->cache_control_header != NULL && *(data->cache_control_header) != '\0') {
 		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Cache-Control", data->cache_control_header)) != 0) {
