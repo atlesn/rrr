@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Magick++.h>
 
+#include <functional>
 #include <vector>
 
 #include "../rrr_types.hpp"
@@ -35,12 +36,64 @@ namespace rrr::magick {
 		T y;
 		coordinate(T x, T y) : x(x), y(y) {}
 	};
-
+/*
 	template<typename T> class pixel {
 		public:
 		T v;
 		pixel(T v) : v(v) {}
+		pixel(const T &p) : v(p.v) {}
+		T operator= (T v) {
+			return this->v = v;
+		}
+		pixel<T> operator= (const pixel<T> &p) {
+			return this->v = p.v;
+		}
 	};
+*/
+	template<typename T> class map {
+		public:
+		class element {
+			public:
+			T v;
+			element() : v(0) {}
+			element(T v) : v(v) {}
+			T operator= (T &v) {
+				return element::v = v;
+			}
+		};
+
+		private:
+		const size_t size_x;
+		const size_t size_y;
+		std::vector<element> v;
+
+		public:
+		map(size_t x, size_t y) : size_x(x), size_y(y), v(x * y) {
+			v.insert(v.begin(), x * y, element(0));
+		}
+		T get (size_t x, size_t y) const {
+			return v[x + y * size_x].v;
+		}
+		T set(size_t x, size_t y) {
+			v[x + y * size_x] = element(1);
+			return 1;
+		}
+		T set(size_t x, size_t y, T value) {
+			v[x + y * size_x].v = value;
+			return value;
+		}
+		size_t count() {
+			size_t count = 0;
+			for (size_t i = 0; i < v.size(); i++) {
+				if (v[i].v != 0) {
+					count++;
+				}
+			}
+			return count;
+		}
+	};
+
+	typedef map<uint8_t> edges;
 
 	void load();
 	void unload();
@@ -51,7 +104,7 @@ namespace rrr::magick {
 		short do_debug;
 
 		static const uint16_t pixel_max = UINT16_MAX;
-		std::vector<pixel<uint16_t>> pixels;
+		map<uint16_t> pixels;
 
 		const size_t rows;
 		const size_t cols;
@@ -60,6 +113,14 @@ namespace rrr::magick {
 		
 		const double max_range_combined;
 
+		template <typename A, typename B> void edges_get (
+				float threshold,
+				A getter,
+				B setter,
+				rrr_length a_max,
+				rrr_length b_max
+		);
+
 		public:
 		pixbuf(const rrr::types::data_const &d);
 
@@ -67,7 +128,8 @@ namespace rrr::magick {
 			do_debug = true;
 		}
 
-		std::vector<coordinate<rrr_length>> horizontal_edges_get(float threshold);
+		edges edges_get(float threshold);
+		void edges_dump (const std::string &target_file_no_extension, const edges &m);
 	};
 }
 

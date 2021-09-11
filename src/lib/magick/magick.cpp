@@ -20,14 +20,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <iostream>
-
-#include <pthread.h>
+#include <unistd.h>
 
 #include "magick.hpp"
 #include "../exception.hpp"
 #include "../util/macro_utils.hpp"
 
 extern "C" {
+#include <pthread.h>
 #include "../util/rrr_time.h"
 }
 
@@ -57,56 +57,54 @@ namespace rrr::magick {
 		do_debug(false),
 		rows(image.rows()),
 		cols(image.columns()),
-		size(rows*cols),
+		size(image.rows() * image.columns()),
 		channels(image.channels()),
-		max_range_combined(((double) QuantumRange) * channels)
+		max_range_combined(((double) QuantumRange) * channels),
+		pixels(image.rows(), image.columns())
 	{
 		image.modifyImage();
-		pixels.reserve(size);
 
-		printf("Size: %lu, Channels: %lu\n", size, channels);
+		printf("Size: %lu x %lu (%lu), Channels: %lu\n", rows, cols, size, channels);
 
 		const Magick::Quantum *pixel_cache = image.getConstPixels(0, 0, cols, rows);
 
 		const MagickCore::Quantum *qpos = pixel_cache;
-		for (size_t i = 0; i < size; i++) {
-			double sum = 0;
-			for (size_t j = 0; j < channels; j++) {
-				sum += *(qpos+j);
+		for (size_t a = 0; a < rows; a++) {
+			for (size_t b = 0; b < cols; b++) {
+				double sum = 0;
+				for (size_t j = 0; j < channels; j++) {
+					sum += *(qpos+j);
+				}
+				sum = sum / max_range_combined;
+				pixels.set(a, b, (uint16_t) (sum * pixel_max));
+	//			printf("%lu\n", (long unsigned) pixels.back().v);
+				qpos += channels;
 			}
-			sum = sum / max_range_combined;
-			pixels.emplace_back(sum * pixel_max);
-//			printf("%lu\n", (long unsigned) pixels.back().v);
-			qpos += channels;
 		}
 	}
 	catch (std::exception &e) {
 		throw rrr::exp::soft(std::string("Failed to create image from buffer in " + RRR_FUNC + ": ") + e.what());
 	}
 
-	std::vector<coordinate<rrr_length>> pixbuf::horizontal_edges_get(float threshold) {
-		uint64_t time_start = rrr_time_get_64();
-
-		std::vector<coordinate<rrr_length>> result;
-
-		result.reserve(rows * 2);
-
+	template <typename A, typename B> void pixbuf::edges_get (
+			float threshold,
+			A getter,
+			B setter,
+			rrr_length a_max,
+			rrr_length b_max
+	) {
 		const rrr_slength diff_threshold_pos = (rrr_slength) (threshold * max_range_combined);
-		const rrr_length edge_length_max = (cols / 10 > 0 ? cols / 10 : 10);
+		const rrr_length edge_length_max = (b_max / 10 > 0 ? b_max / 10 : 10);
 
-		uint64_t comparisons = 0;
-
-		for (rrr_length y = 0; y < rows; y++) {
-			const size_t rowpos = cols * y;
-			for (rrr_length x = 0; x < cols; x++) {
+		for (rrr_length a = 0; a < a_max; a++) {
+			for (rrr_length b = 0; b < b_max; b++) {
 				rrr_slength diff_accumulated = 0;
 				rrr_slength direction = 0;
-				const pixel<uint16_t> &p1 = pixels[rowpos + x];
+				const uint16_t p1 = getter(a, b);
 //				printf("Begin at %" PRIrrrl " x %" PRIrrrl " value %llu/%li\n", x, y, (long long unsigned) p1.v, diff_threshold_pos);
-				for (rrr_length x_search = x + 1; x_search < x_search + edge_length_max && x_search < cols; x_search++) {
-					comparisons++;
-					const pixel<uint16_t> &p2 = pixels[rowpos + x_search];
-					rrr_slength diff = (rrr_slength) p1.v - (rrr_slength) p2.v;
+				for (rrr_length b_search = b + 1; b_search < b_search + edge_length_max && b_search < b_max; b_search++) {
+					const uint16_t p2 = getter(a, b_search);
+					rrr_slength diff = (rrr_slength) p1 - (rrr_slength) p2;
 					if (diff == 0) {
 						break;
 					}
@@ -120,17 +118,66 @@ namespace rrr::magick {
 						break;
 					}
 					if (diff_accumulated * direction > diff_threshold_pos) {
-//						printf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", x, x_search, y, diff_accumulated);
-						result.emplace_back((x + x_search) / 2, y);
-						x = x_search;
+//						printf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
+						setter(a, b);
+//						b = b_search;
 						break;
 					}
 				}
 			}
 		}
+	}
 
-		std::cout << "Found " << result.size() << " edges compared " << comparisons <<  " factor " << ((float) comparisons / (float) size) << " time " << (rrr_time_get_64() - time_start) << std::endl;
+	edges pixbuf::edges_get(float threshold) {
+		uint64_t time_start = rrr_time_get_64();
+
+		edges result(rows, cols);
+
+		// Get horizontal
+		edges_get (
+			threshold,
+			[&](rrr_length a, rrr_length b) {
+				return pixels.get(a, b);
+			},
+			[&](rrr_length a, rrr_length b) {
+				return result.set(a, b);
+			},
+			rows,
+			cols
+		);
+
+		// Get vertical
+		edges_get (
+			threshold,
+			[&](rrr_length a, rrr_length b) {
+				return pixels.get(b, a);
+			},
+			[&](rrr_length a, rrr_length b) {
+				return result.set(b, a);
+			},
+			cols,
+			rows
+		);
+
+		std::cout << "Found " << result.count() << " edges time " << (rrr_time_get_64() - time_start) << std::endl;
 
 		return result;
+	}
+
+	void pixbuf::edges_dump (const std::string &target_file_no_extension, const edges &m) {
+		Magick::Image tmp(image);
+		tmp.magick("png");
+		tmp.type(Magick::TrueColorAlphaType);
+
+		for (size_t x = 0; x < cols; x++) {
+			for (size_t y = 0; y < rows; y++) {
+				if (m.get(y, x)) {
+					tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0, 1.0));
+				}
+			}
+		}
+
+		tmp.syncPixels();
+		tmp.write(target_file_no_extension);
 	}
 }

@@ -52,6 +52,7 @@ extern "C" {
 #include "../lib/message_holder/message_holder_util.h"
 
 #define RRR_OCR_DEFAULT_INPUT_TAG "ocr_input_data"
+#define RRR_OCR_DEFAULT_DEBUG_FILE "/tmp/debug"
 
 __attribute__((constructor)) void load(void);
 void init(struct rrr_instance_module_data *data);
@@ -99,7 +100,9 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	try {
 		const rrr::array::array array(msg);
 		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
-		image.horizontal_edges_get(0.3);
+		rrr::magick::edges edges = image.edges_get(0.2);
+		image.edges_dump(RRR_OCR_DEFAULT_DEBUG_FILE, edges);
+
 	}
 	catch (rrr::exp::soft e) {
 		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());
