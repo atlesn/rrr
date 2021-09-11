@@ -74,7 +74,13 @@ struct ocr_data {
 		msgdb_conn(),
 		msgdb_socket(""),
 		input_data_tag("")
-	{}
+	{
+		rrr::magick::load();
+	}
+
+	~ocr_data() {
+		rrr::magick::unload();
+	}
 };
 
 static void ocr_data_cleanup(void *arg) {
@@ -93,6 +99,7 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	try {
 		const rrr::array::array array(msg);
 		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
+		image.horizontal_edges_get(0.3);
 	}
 	catch (rrr::exp::soft e) {
 		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());

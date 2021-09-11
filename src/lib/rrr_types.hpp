@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TYPES_HPP
 #define RRR_TYPES_HPP
 
+#include "exception.hpp"
+#include "util/macro_utils.hpp"
+
 extern "C" {
 #include "rrr_types.h"
 }
@@ -34,6 +37,13 @@ namespace rrr::types {
 		data_const() = default;
 		data_const(const void *d, rrr_length l) : d(d), l(l) {}
 	};
+
+	static inline rrr_length length_from_size_t_exp_const (size_t x) {
+		if (x > RRR_LENGTH_MAX) {
+			throw new rrr::exp::soft("Overflow in " + RRR_FUNC);
+		}
+		return (rrr_length) x;
+	}
 }
 
 #endif /* RRR_TYPES_HPP */

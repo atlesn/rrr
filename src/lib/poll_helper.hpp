@@ -67,8 +67,12 @@ namespace rrr::poll_helper {
 		catch (rrr::exp::bug &e) {
 			throw e;
 		}
+		catch (std::exception &e) {
+			RRR_BUG("Unknown exception in %s, trigger abort: %s\n", __func__, e.what());
+			return 1;
+		}
 		catch (...) {
-			RRR_MSG_0("Unknown exception in %s, trigger hard error\n", __func__);
+			RRR_BUG("Unknown exception in %s, trigger abort\n", __func__);
 			return 1;
 		}
 		return 0;
