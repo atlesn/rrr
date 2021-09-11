@@ -55,6 +55,7 @@ AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable O
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
+AC_ARG_WITH([magick],[AS_HELP_STRING([--without-magick],[build without the Magick++ bindings])],[enable_magick=no],[enable_magick=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
@@ -114,6 +115,7 @@ SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
+SHELL_VARS_EXPORT([RRR_WITH_MAGICK], $enable_magick)
 
 SHELL_VARS_OUTPUT
 
@@ -127,6 +129,7 @@ AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+AM_CONDITIONAL([RRR_WITH_MAGICK], [test "x$enable_magick" != xno])
 
 AC_CHECK_LIB(rt, shm_open, [ LIBRT_LIBADD="-lrt" ], [ LIBRT_LIBADD="" ])
 AC_SUBST([LIBRT_LIBADD])
@@ -305,6 +308,27 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+AC_MSG_CHECKING([Magick++ enabled])
+AS_IF([test "x$enable_magick" = xno], [
+	AC_MSG_RESULT([Not compiling with Magick++])
+], [
+	AC_MSG_RESULT([yes])
+	
+	AC_MSG_CHECKING([Magick++ CFLAGS])
+	MAGICK_CFLAGS=`pkg-config Magick++ --cflags`
+	AS_IF([test $? -ne 0 -o "x$MAGICK_CFLAGS" == "x"], [
+		AC_MSG_ERROR([pkg-config failed for Magick++, maybe the library is not installed.])
+	])
+	AC_MSG_RESULT([$MAGICK_CFLAGS])
+
+	AC_MSG_CHECKING([Magick++ LIBS])
+	MAGICK_LIBS=`pkg-config Magick++ --libs`
+	AS_IF([test $? -ne 0 -o "x$MAGICK_LIBS" == "x"], [
+		AC_MSG_ERROR([pkg-config failed for Magick++, maybe the library is not installed.])
+	])
+	AC_MSG_RESULT([$MAGICK_LIBS])
+])
+
 # Make sure Perl-test does not include any libraries
 LIBS=""
 
@@ -329,11 +353,11 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_CHECKING([Perl5 >= 5.026])
 	if test x"${PERL5_REVISION}" != "x5"; then
 		AC_MSG_RESULT([no])
-		AC_MSG_ERROR("Perl5 is required but not found")
+		AC_MSG_ERROR([Perl5 is required but not found])
 	fi
 	if test ${PERL5_VERSION} -lt 26; then
 		AC_MSG_RESULT([no])
-		AC_MSG_ERROR("Perl 5 version >= 26 is required but not found");
+		AC_MSG_ERROR([Perl 5 version >= 26 is required but not found]);
 	fi
 	AC_MSG_RESULT([yes])
 
@@ -430,7 +454,7 @@ AS_IF([test "x$enable_python3" = xno], [
 
 	AC_MSG_CHECKING([python version >= 3.7 or forced version])
 	if test "x${python3}" = "x"; then
-		AC_MSG_ERROR("Supported version of python3 not found")
+		AC_MSG_ERROR([Supported version of python3 not found])
 	fi
 	AC_MSG_RESULT([${python3}])
 
@@ -455,7 +479,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	if test x"${PYTHON3_CONFIG}" = x"yes"; then
 		AC_DEFINE([RRR_WITH_PYTHON3], [1], [Build with python3 support], [])
 	else
-		AC_MSG_ERROR("Could not find python3-config for ${python3}")
+		AC_MSG_ERROR([Could not find python3-config for ${python3}])
 	fi
 
 	PYTHON3_CFLAGS=`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'`
@@ -481,7 +505,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		AC_MSG_RESULT([no])
 		echo -e "Include path is: "
 		$python3_config_bin --includes
-		AC_MSG_ERROR("Python3 test failed")
+		AC_MSG_ERROR([Python3 test failed])
 	fi
 	
 	AC_MSG_CHECKING([PyTypeObject tp_print member])

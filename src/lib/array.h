@@ -133,6 +133,12 @@ int rrr_array_get_value_signed_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_raw_by_tag (
+		const void **data,
+		rrr_length *size,
+		const struct rrr_array *array,
+		const char *tag
+);
 void rrr_array_strip_type (
 		struct rrr_array *array,
 		const struct rrr_type_definition *definition

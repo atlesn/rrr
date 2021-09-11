@@ -493,6 +493,32 @@ int rrr_array_get_value_signed_64_by_tag (
 	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
 }
 
+int rrr_array_get_value_raw_by_tag (
+		const void **data,
+		rrr_length *size,
+		const struct rrr_array *array,
+		const char *tag
+) {
+	int ret = 0;
+
+	*data = NULL;
+	*size = 0;
+
+	const struct rrr_type_value *value = NULL;
+
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
+		RRR_MSG_0("Could not find value '%s' in array while getting raw value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	*data = value->data;
+	*size = value->total_stored_length;
+
+	out:
+	return ret;
+}
+
 void rrr_array_strip_type (
 		struct rrr_array *array,
 		const struct rrr_type_definition *definition

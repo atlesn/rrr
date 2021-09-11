@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.hpp"
 #include "../lib/event/event_collection.hpp"
 #include "../lib/msgdb/msgdb_client.hpp"
+#include "../lib/arrayxx.hpp"
+#include "../lib/type.hpp"
 
 #include <string>
 
@@ -37,12 +39,10 @@ extern "C" {
 
 #include "../lib/log.h"
 #include "../lib/allocator.h"
-
 #include "../lib/instances.h"
 #include "../lib/instance_friends.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/array.h"
 #include "../lib/event/event.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
@@ -51,6 +51,12 @@ extern "C" {
 #include "../lib/message_holder/message_holder_util.h"
 
 #define RRR_OCR_DEFAULT_INPUT_TAG "ocr_input_data"
+
+__attribute__((constructor)) void load(void);
+void init(struct rrr_instance_module_data *data);
+void unload(void);
+
+} /* extern "C" */
 
 struct ocr_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -77,45 +83,21 @@ static void ocr_data_cleanup(void *arg) {
 
 static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance_runtime_data *thread_data) {
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
+	const struct rrr_msg_msg *msg = reinterpret_cast<struct rrr_msg_msg *>(entry->message);
 
 	int ret = 0;
 
 	RRR_MSG_1("Poll callback\n");
 
-	throw rrr::exp::hard("Crisis");
-
-	goto out;
-
-	// We check stuff with the watchdog in case we are slow to process messages
-/*
-	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
-		ret = RRR_FIFO_PROTECTED_SEARCH_STOP;
-		goto out;
+	try {
+		const rrr::array::array array(msg);
+		const rrr::type::data_const image = array.get_value_raw_by_tag(data->input_data_tag);
+		printf("%" PRIrrrl "\n", image.l);
 	}
-	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+	catch (rrr::exp::soft e) {
+		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());
+	}
 
-	// Do not produce errors for message process failures, just drop them
-
-
-	const struct rrr_instance_friend_collection *forward_to = NULL;
-	if (ocr_process(&forward_to, data, entry) != 0) {
-		RRR_MSG_0("Warning: Failed to process message in ocr instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}*/
-
-/*	if (forward_to != NULL && (ret = rrr_message_broker_incref_and_write_entry_unsafe (
-			INSTANCE_D_BROKER_ARGS(data->thread_data), 
-			entry,
-			forward_to,
-			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
-	)) != 0) {
-		RRR_MSG_0("Failed to write entry in ocr_poll_callback of instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}*/
-
-	out:
 	rrr_msg_holder_unlock(entry);
 }
 
@@ -213,5 +195,3 @@ void init(struct rrr_instance_module_data *data) {
 void unload(void) {
 	RRR_DBG_1 ("Destroy ocr module\n");
 }
-
-} /* extern "C" */
