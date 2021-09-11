@@ -327,6 +327,9 @@ AS_IF([test "x$enable_magick" = xno], [
 		AC_MSG_ERROR([pkg-config failed for Magick++, maybe the library is not installed.])
 	])
 	AC_MSG_RESULT([$MAGICK_LIBS])
+
+	AC_SUBST([MAGICK_CFLAGS])
+	AC_SUBST([MAGICK_LIBS])
 ])
 
 # Make sure Perl-test does not include any libraries

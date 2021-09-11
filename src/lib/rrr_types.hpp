@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,12 +19,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <Magick++/Blob.h>
-#include <Magick++/Image.h>
+#ifndef RRR_TYPES_HPP
+#define RRR_TYPES_HPP
 
-#include "magick.hpp"
-
-namespace rrr::magick {
-	pixbuf::pixbuf(const rrr::types::data_const &d) : image(Magick::Blob(d.d, d.l)) {
-	}
+extern "C" {
+#include "rrr_types.h"
 }
+
+namespace rrr::types {
+	class data_const {
+		public:
+		const void *d;
+		rrr_length l;
+		data_const() = default;
+		data_const(const void *d, rrr_length l) : d(d), l(l) {}
+	};
+}
+
+#endif /* RRR_TYPES_HPP */

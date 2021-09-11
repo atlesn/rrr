@@ -22,14 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TYPE_HPP
 #define RRR_TYPE_HPP
 
-#include "rrr_types.h"
+#include "rrr_types.hpp"
+
+extern "C" {
+#include "type.h"
+}
 
 namespace rrr::type {
-	struct data_const {
-		const void *d;
-		rrr_length l;
-		data_const() = default;
-		data_const(const void *d, rrr_length l) : d(d), l(l) {}
+	class data_const : public rrr::types::data_const {
+		using rrr::types::data_const::data_const;
 	};
 }
 

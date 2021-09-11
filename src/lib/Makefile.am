@@ -62,7 +62,7 @@ endif
 if RRR_WITH_MAGICK
 libadd_magick = librrrmagick.la
 librrrmagick_la_SOURCES = magick/magick.cpp
-librrrmagick_la_CFLAGS = ${MAGICK_CFLAGS} ${AM_CFLAGS}
+librrrmagick_la_CXXFLAGS = ${MAGICK_CFLAGS} ${AM_CXXFLAGS}
 librrrmagick_la_LIBS = ${MAGICK_LIBS}
 magick_extra_ld = ${MAGICK_LIBS}
 endif
@@ -131,7 +131,6 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
-		    exception.cpp arrayxx.cpp \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
@@ -139,6 +138,10 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
 		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
+
+libadd_rrr_cxx = librrr_cxx.la
+librrr_cxx_la_SOURCES = exception.cpp arrayxx.cpp
+librrr_cxx_la_CXXFLAGS = ${AM_CXXFLAGS} -O5
 
 libadd_rrr_allocator = librrr_allocator.la
 librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
@@ -188,6 +191,7 @@ libadd_rrr_sha1 = sha1/libsha1.la
 sha1_libsha1_la_SOURCES = sha1/sha1.c
 
 libadd_all =                         \
+    ${libadd_rrr_cxx}                \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
     ${libadd_jsonc}                  \

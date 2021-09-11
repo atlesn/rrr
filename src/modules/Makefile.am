@@ -31,6 +31,13 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
+if RRR_WITH_MAGICK
+ocr_la_SOURCES = p_ocr.cpp
+ocr_la_CXXFLAGS = ${MAGICK_CFLAGS} ${AM_CXXFLAGS}
+# Magick++ libraries are linked in librrr
+ocr_la_LDFLAGS = ${module_ldflags}
+endif
+
 lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
@@ -52,9 +59,6 @@ incrementer_la_SOURCES = p_incrementer.c
 
 cacher_la_LDFLAGS = ${module_ldflags}
 cacher_la_SOURCES = p_cacher.c
-
-ocr_la_LDFLAGS = ${module_ldflags}
-ocr_la_SOURCES = p_ocr.cpp
 
 mqttclient_la_LDFLAGS = ${module_ldflags}
 mqttclient_la_SOURCES = p_mqttclient.c

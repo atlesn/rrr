@@ -19,12 +19,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <Magick++/Blob.h>
+#ifndef RRR_MAGICK_HPP
+#define RRR_MAGICK_HPP
+
 #include <Magick++/Image.h>
 
-#include "magick.hpp"
+#include "../rrr_types.hpp"
 
 namespace rrr::magick {
-	pixbuf::pixbuf(const rrr::types::data_const &d) : image(Magick::Blob(d.d, d.l)) {
-	}
+	class pixbuf {
+		Magick::Image image;
+
+		public:
+		pixbuf(const rrr::types::data_const &d);
+	};
 }
+
+#endif /* RRR_MAGICK_HPP */

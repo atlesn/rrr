@@ -21,10 +21,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/instance_config.hpp"
 #include "../lib/poll_helper.hpp"
-#include "../lib/event/event_collection.hpp"
-#include "../lib/msgdb/msgdb_client.hpp"
 #include "../lib/arrayxx.hpp"
 #include "../lib/type.hpp"
+#include "../lib/event/event_collection.hpp"
+#include "../lib/msgdb/msgdb_client.hpp"
+#include "../lib/magick/magick.hpp"
 
 #include <string>
 
@@ -91,8 +92,7 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 
 	try {
 		const rrr::array::array array(msg);
-		const rrr::type::data_const image = array.get_value_raw_by_tag(data->input_data_tag);
-		printf("%" PRIrrrl "\n", image.l);
+		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
 	}
 	catch (rrr::exp::soft e) {
 		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());
