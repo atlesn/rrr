@@ -35,6 +35,9 @@ namespace rrr::exp {
 	int soft::num() noexcept {
 		return RRR_READ_SOFT_ERROR;
 	}
+	int eof::num() noexcept {
+		return RRR_READ_EOF;
+	}
 
 	void check_and_throw (int ret, const std::string &msg) {
 		if (ret == RRR_READ_OK) {

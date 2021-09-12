@@ -54,6 +54,11 @@ namespace rrr::exp {
 		soft(const std::string &msg) : normal(msg + " - soft error") {}
 		virtual int num() noexcept override;
 	};
+	struct eof : normal {
+		eof(const std::string &msg) : normal(msg + " - eof error") {}
+		eof() : normal("EOF") {}
+		virtual int num() noexcept override;
+	};
 
 	void check_and_throw (int ret, const std::string &msg);
 }

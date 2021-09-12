@@ -171,13 +171,95 @@ namespace rrr::magick {
 
 		for (size_t x = 0; x < cols; x++) {
 			for (size_t y = 0; y < rows; y++) {
-				if (m.get(y, x)) {
-					tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0, 1.0));
-				}
+				switch (m.get(y, x)) {
+					case 0:
+						break;
+					case 1:
+						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0, 1.0));
+						break;
+					case 2:
+						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 0.0, 0, 1.0));
+						break;
+					default:
+						break;
+				};
 			}
 		}
 
 		tmp.syncPixels();
 		tmp.write(target_file_no_extension);
+	}
+
+	edges pixbuf::outlines_get (const edges &m) {
+		edges outlines = m;
+		coordinate<size_t> pos;
+		try {
+			do {
+				std::vector<coordinate<size_t>> path;
+				path.reserve(100);
+
+				// Get a starting point
+				printf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+				pos = outlines.get_next_set (
+						pos,
+						[&](const coordinate<size_t> &c) {
+							if (outlines.get(c.a, c.b) != 1)
+								return false;
+							const size_t count = outlines.neighbours_count(c, 7);
+							return (count <= 6 && count >= 2);
+						}
+				);
+				const int retry_max = 2;
+				int retries = 0;
+				do {
+					// Walk around edge
+					outlines.set(pos, 2);
+//					printf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+					uint16_t constraint_mask = 0;
+					try {
+						pos = m.get_next_neighbour (
+								constraint_mask,
+								pos,
+								[&](const coordinate<size_t> &c) {
+									if (outlines.get(c.a, c.b) != 1)
+										return false;
+									const size_t count = outlines.neighbours_count(c, 7);
+//									printf("Count %lu %lu: %lu\n", c.a, c.b, count);
+									return (count <= 6 && count >= 2);
+								}
+						);
+						path.push_back(pos);
+						if (constraint_mask & (outlines.BL|outlines.BB|outlines.BR)) {
+							printf("Constrain top\n");
+							constraint_mask = outlines.TL|outlines.TT|outlines.TR;
+						}
+						else if (constraint_mask & (outlines.TL|outlines.TT|outlines.TR)) {
+							printf("Constrain Bottom\n");
+							constraint_mask = outlines.BL|outlines.BB|outlines.BR;
+						}
+						else if (constraint_mask & (outlines.TL|outlines.LL|outlines.BL)) {
+							printf("Constrain rigt\n");
+							constraint_mask = outlines.TR|outlines.RR|outlines.BR;
+						}
+						else if (constraint_mask & (outlines.TR|outlines.RR|outlines.BR)) {
+							printf("Constrain left\n");
+							constraint_mask = outlines.TL|outlines.LL|outlines.BL;
+						}
+					}
+					catch (rrr::exp::eof &e) {
+						if (path.size() < retry_max || retries == retry_max) {
+							printf("- Stop %lu %lu\n", pos.a, pos.b);
+							break;
+						}
+//						printf("- Retry\n");
+						pos = path[path.size() - ++retries];
+					}
+				} while(1);
+			} while(1);
+		}
+		catch (rrr::exp::eof &e) {
+			printf("EOF %lu %lu\n", pos.a, pos.b);
+		}
+		return outlines;
 	}
 }
