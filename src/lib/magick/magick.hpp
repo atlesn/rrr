@@ -134,6 +134,24 @@ namespace rrr::magick {
 			}
 			return count;
 		}
+		static void mask_dump (uint8_t mask) {
+			printf("TR: %i RR: %i BR: %i BB: %i BL: %i LL: %i TL: %i TT: %i\n",
+					(mask & TR) != 0,
+					(mask & RR) != 0,
+					(mask & BR) != 0,
+					(mask & BB) != 0,
+					(mask & BL) != 0,
+					(mask & LL) != 0,
+					(mask & TL) != 0,
+					(mask & TT) != 0
+			);
+		}
+		static uint8_t mask_widen (uint8_t mask) {
+			return mask | (mask << 1 | mask >> 1) | (mask & TR ? TT : 0) | (mask & TT ? TR : 0);
+		}
+		static uint8_t mask_widen_cw (uint8_t mask) {
+			return mask | (mask >> 1) | (mask & TR ? TT : 0);
+		}
 		template<typename F> coordinate<size_t> get_next_set(const coordinate<size_t> &start, F filter) const {
 			coordinate<size_t> pos = start;
 			do {
@@ -144,8 +162,10 @@ namespace rrr::magick {
 			} while (1);
 			return pos;
 		}
-		template<typename F> coordinate<size_t> get_next_neighbour(uint16_t &constraint_mask, const coordinate<size_t> &start, F filter) const {
+		template<typename F> coordinate<size_t> get_next_neighbour( const coordinate<size_t> &start, F filter) const {
 			coordinate<size_t> pos;
+
+			uint16_t constraint_mask = 0;
 
 			// Checks must be performed in circular order, these checks start with the top right and go clockwise
 			if (!(
@@ -164,18 +184,25 @@ namespace rrr::magick {
 
 			return pos;
 		}
-		size_t neighbours_count(const coordinate<size_t> pos, size_t max) const {
+		size_t neighbours_count(uint8_t &mask, const coordinate<size_t> pos, size_t max, T value) const {
+			uint8_t mask_out = 0;
 			T count = 0;
-			((pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) && ++count >= max) ||
-			 (pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) && ++count >= max) ||
-			 (pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) && ++count >= max) ||
-			 (pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) && ++count >= max) ||
-			 (pos.a > 0        && get(pos.a-1, pos.b) && ++count >= max) ||
-			 (pos.a < size_a-1 && get(pos.a+1, pos.b) && ++count >= max) ||
-			 (pos.b > 0        && get(pos.a, pos.b-1) && ++count >= max) ||
-			 (pos.b < size_b-1 && get(pos.a, pos.b+1) && ++count >= max)
+			((mask & TL && pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && (mask_out |= TL) && ++count >= max) ||
+			 (mask & TR && pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && (mask_out |= TR) && ++count >= max) ||
+			 (mask & BL && pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && (mask_out |= BL) && ++count >= max) ||
+			 (mask & BR && pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) == value && (mask_out |= BR) && ++count >= max) ||
+			 (mask & TT && pos.a > 0        && get(pos.a-1, pos.b) == value && (mask_out |= TT) && ++count >= max) ||
+			 (mask & BB && pos.a < size_a-1 && get(pos.a+1, pos.b) == value && (mask_out |= BB) && ++count >= max) ||
+			 (mask & LL && pos.b > 0        && get(pos.a, pos.b-1) == value && (mask_out |= LL) && ++count >= max) ||
+			 (mask & RR && pos.b < size_b-1 && get(pos.a, pos.b+1) == value && (mask_out |= RR) && ++count >= max) ||
+			 0
 			);
+			mask = mask_out;
 			return count;
+		}
+		size_t neighbours_count(const coordinate<size_t> pos, size_t max, T value) const {
+			uint8_t mask = 0xff;
+			return neighbours_count(mask, pos, max, value);
 		}
 	};
 
@@ -201,6 +228,7 @@ namespace rrr::magick {
 
 		template <typename A, typename B> void edges_get (
 				float threshold,
+				rrr_length edge_length_max,
 				A getter,
 				B setter,
 				rrr_length a_max,
@@ -214,7 +242,7 @@ namespace rrr::magick {
 			do_debug = true;
 		}
 
-		edges edges_get(float threshold);
+		edges edges_get(float threshold, rrr_length edge_length_max);
 		void edges_dump (const std::string &target_file_no_extension, const edges &m);
 
 		edges outlines_get (const edges &m);

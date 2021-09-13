@@ -93,15 +93,18 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
 	const struct rrr_msg_msg *msg = reinterpret_cast<struct rrr_msg_msg *>(entry->message);
 
-	int ret = 0;
-
 	RRR_MSG_1("Poll callback\n");
+
+	static int filename_count = 0;
+	filename_count++;
 
 	try {
 		const rrr::array::array array(msg);
 		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
-		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.2));
-		image.edges_dump(RRR_OCR_DEFAULT_DEBUG_FILE, edges);
+		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.4, 5));
+		printf("Dumping %i...\n", filename_count);
+		image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges);
+		printf("DONE\n");
 
 	}
 	catch (rrr::exp::soft e) {

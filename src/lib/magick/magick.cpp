@@ -64,7 +64,7 @@ namespace rrr::magick {
 	{
 		image.modifyImage();
 
-		printf("Size: %lu x %lu (%lu), Channels: %lu\n", rows, cols, size, channels);
+		//printf("Size: %lu x %lu (%lu), Channels: %lu\n", rows, cols, size, channels);
 
 		const Magick::Quantum *pixel_cache = image.getConstPixels(0, 0, cols, rows);
 
@@ -77,7 +77,7 @@ namespace rrr::magick {
 				}
 				sum = sum / max_range_combined;
 				pixels.set(a, b, (uint16_t) (sum * pixel_max));
-	//			printf("%lu\n", (long unsigned) pixels.back().v);
+	//			//printf("%lu\n", (long unsigned) pixels.back().v);
 				qpos += channels;
 			}
 		}
@@ -88,21 +88,21 @@ namespace rrr::magick {
 
 	template <typename A, typename B> void pixbuf::edges_get (
 			float threshold,
+			rrr_length edge_length_max,
 			A getter,
 			B setter,
 			rrr_length a_max,
 			rrr_length b_max
 	) {
 		const rrr_slength diff_threshold_pos = (rrr_slength) (threshold * max_range_combined);
-		const rrr_length edge_length_max = (b_max / 10 > 0 ? b_max / 10 : 10);
 
 		for (rrr_length a = 0; a < a_max; a++) {
 			for (rrr_length b = 0; b < b_max; b++) {
 				rrr_slength diff_accumulated = 0;
 				rrr_slength direction = 0;
 				const uint16_t p1 = getter(a, b);
-//				printf("Begin at %" PRIrrrl " x %" PRIrrrl " value %llu/%li\n", x, y, (long long unsigned) p1.v, diff_threshold_pos);
-				for (rrr_length b_search = b + 1; b_search < b_search + edge_length_max && b_search < b_max; b_search++) {
+//				//printf("Begin at %" PRIrrrl " x %" PRIrrrl " value %llu/%li\n", a, b, (long long unsigned) p1, diff_threshold_pos);
+				for (rrr_length b_search = b + 1; b_search < b + edge_length_max && b_search < b_max; b_search++) {
 					const uint16_t p2 = getter(a, b_search);
 					rrr_slength diff = (rrr_slength) p1 - (rrr_slength) p2;
 					if (diff == 0) {
@@ -114,12 +114,19 @@ namespace rrr::magick {
 						direction = direction_test;
 					}
 					else if (direction != direction_test) {
-//						printf("Direction swap at %" PRIrrrl " x %" PRIrrrl "\n", x_search, y);
+//						//printf("Direction swap at %" PRIrrrl " x %" PRIrrrl "\n", x_search, y);
 						break;
 					}
 					if (diff_accumulated * direction > diff_threshold_pos) {
-//						printf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
-						setter(a, b);
+//						//printf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
+						if (diff_accumulated > 0) {
+							setter(a, b_search);
+							setter(a, b_search-1);
+						}
+						else {
+							setter(a, b);
+							setter(a, b+1);
+						}
 //						b = b_search;
 						break;
 					}
@@ -128,7 +135,7 @@ namespace rrr::magick {
 		}
 	}
 
-	edges pixbuf::edges_get(float threshold) {
+	edges pixbuf::edges_get(float threshold, rrr_length edge_length_max) {
 		uint64_t time_start = rrr_time_get_64();
 
 		edges result(rows, cols);
@@ -136,6 +143,7 @@ namespace rrr::magick {
 		// Get horizontal
 		edges_get (
 			threshold,
+			edge_length_max,
 			[&](rrr_length a, rrr_length b) {
 				return pixels.get(a, b);
 			},
@@ -149,6 +157,7 @@ namespace rrr::magick {
 		// Get vertical
 		edges_get (
 			threshold,
+			edge_length_max,
 			[&](rrr_length a, rrr_length b) {
 				return pixels.get(b, a);
 			},
@@ -175,10 +184,13 @@ namespace rrr::magick {
 					case 0:
 						break;
 					case 1:
-						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0, 1.0));
+						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0.0, 1.0));
 						break;
 					case 2:
-						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 0.0, 0, 1.0));
+						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 0.0, 0.0, 1.0));
+						break;
+					case 3:
+						tmp.pixelColor(x, y, Magick::ColorRGB(0.0, 0.0, 1.0, 1.0));
 						break;
 					default:
 						break;
@@ -187,78 +199,90 @@ namespace rrr::magick {
 		}
 
 		tmp.syncPixels();
-		tmp.write(target_file_no_extension);
+		tmp.write(target_file_no_extension + ".png");
 	}
 
 	edges pixbuf::outlines_get (const edges &m) {
 		edges outlines = m;
 		coordinate<size_t> pos;
 		try {
+			coordinate<size_t> pos_prev_start = pos;
 			do {
-				std::vector<coordinate<size_t>> path;
-				path.reserve(100);
-
 				// Get a starting point
-				printf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
-				pos = outlines.get_next_set (
-						pos,
+				//printf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+				pos_prev_start = pos = outlines.get_next_set (
+						pos_prev_start,
 						[&](const coordinate<size_t> &c) {
 							if (outlines.get(c.a, c.b) != 1)
 								return false;
-							const size_t count = outlines.neighbours_count(c, 7);
+							const size_t count = outlines.neighbours_count(c, 7, 1);
 							return (count <= 6 && count >= 2);
 						}
 				);
-				const int retry_max = 2;
-				int retries = 0;
+				// Walk around edge
+				std::vector<coordinate<size_t>> path;
+				path.reserve(100);
+				outlines.set(pos, 2);
+				path.push_back(pos);
+				int retry_max = 8;
 				do {
-					// Walk around edge
-					outlines.set(pos, 2);
-//					printf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
-					uint16_t constraint_mask = 0;
+					const coordinate<size_t> pos_start = pos;
+					//printf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+					uint8_t mask_blank = 0xff;
 					try {
-						pos = m.get_next_neighbour (
-								constraint_mask,
-								pos,
-								[&](const coordinate<size_t> &c) {
-									if (outlines.get(c.a, c.b) != 1)
-										return false;
-									const size_t count = outlines.neighbours_count(c, 7);
-//									printf("Count %lu %lu: %lu\n", c.a, c.b, count);
-									return (count <= 6 && count >= 2);
-								}
-						);
+						outlines.neighbours_count(mask_blank, pos, 8, 0);
+//						outlines.mask_dump(mask_blank);
+						mask_blank = outlines.mask_widen(mask_blank);
+//						outlines.mask_dump(mask_blank);
+
+						try {
+							pos = m.get_next_neighbour (
+									pos,
+									[&](const coordinate<size_t> &c) {
+										if (outlines.get(c.a, c.b) != 1)
+											return false;
+										uint8_t mask_blank_tmp = mask_blank;
+										const size_t count_blank = outlines.neighbours_count(mask_blank_tmp, c, 8, 0);
+										const size_t count = outlines.neighbours_count(c, 7, 1);
+										const size_t count_used = outlines.neighbours_count(c, 3, 2);
+										//printf("- Count %lu %lu: %lu used %lu blank %lu\n", c.a, c.b, count, count_used, count_blank);
+										return (count <= 6 && count_blank >= 2 && count_blank <= 6 && count_used <= 2);
+									}
+							);
+						}
+						catch (rrr::exp::eof &e) {
+							//printf("Ban %lu %lu\n", pos.a, pos.b);
+							outlines.set(pos, 3); /* Ban pixel */
+							if (retry_max-- && path.size() >= 2) {
+								path.pop_back();
+								pos = path.back();
+								//printf("-> Retry %lu %lu\n", pos.a, pos.b);
+								continue;
+							}
+							throw e;
+						}
+
+						outlines.set(pos, 2);
 						path.push_back(pos);
-						if (constraint_mask & (outlines.BL|outlines.BB|outlines.BR)) {
-							printf("Constrain top\n");
-							constraint_mask = outlines.TL|outlines.TT|outlines.TR;
-						}
-						else if (constraint_mask & (outlines.TL|outlines.TT|outlines.TR)) {
-							printf("Constrain Bottom\n");
-							constraint_mask = outlines.BL|outlines.BB|outlines.BR;
-						}
-						else if (constraint_mask & (outlines.TL|outlines.LL|outlines.BL)) {
-							printf("Constrain rigt\n");
-							constraint_mask = outlines.TR|outlines.RR|outlines.BR;
-						}
-						else if (constraint_mask & (outlines.TR|outlines.RR|outlines.BR)) {
-							printf("Constrain left\n");
-							constraint_mask = outlines.TL|outlines.LL|outlines.BL;
-						}
 					}
 					catch (rrr::exp::eof &e) {
-						if (path.size() < retry_max || retries == retry_max) {
-							printf("- Stop %lu %lu\n", pos.a, pos.b);
-							break;
+						if (path.size() < 10) {
+							//printf("Ban short path %lu\n", path.size());
+							for (int i = 0; i < path.size(); i++) {
+								outlines.set(path[i], 3); /* Ban pixel */
+							}
 						}
-//						printf("- Retry\n");
-						pos = path[path.size() - ++retries];
+						else {
+							//printf("- Stop %lu %lu\n", pos.a, pos.b);
+							outlines.set(pos, 3); /* Ban pixel */
+						}
+						break;
 					}
 				} while(1);
 			} while(1);
 		}
 		catch (rrr::exp::eof &e) {
-			printf("EOF %lu %lu\n", pos.a, pos.b);
+			//printf("EOF %lu %lu\n", pos.a, pos.b);
 		}
 		return outlines;
 	}
