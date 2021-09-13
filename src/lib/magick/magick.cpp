@@ -64,7 +64,7 @@ namespace rrr::magick {
 	{
 		image.modifyImage();
 
-		printf("Size: %lu x %lu (%lu), Channels: %lu\n", rows, cols, size, channels);
+		//pritnf("Size: %lu x %lu (%lu), Channels: %lu\n", rows, cols, size, channels);
 
 		const Magick::Quantum *pixel_cache = image.getConstPixels(0, 0, cols, rows);
 
@@ -77,7 +77,7 @@ namespace rrr::magick {
 				}
 				sum = sum / max_range_combined;
 				pixels.set(a, b, (pixel_value) (sum * pixel_max));
-	//			printf("%lu\n", (long unsigned) pixels.back().v);
+	//			//pritnf("%lu\n", (long unsigned) pixels.back().v);
 				qpos += channels;
 			}
 		}
@@ -101,7 +101,7 @@ namespace rrr::magick {
 				rrr_slength diff_accumulated = 0;
 				rrr_slength direction = 0;
 				const pixel_value p1 = getter(a, b);
-//				printf("Begin at %" PRIrrrl " x %" PRIrrrl " value %llu/%li\n", a, b, (long long unsigned) p1, diff_threshold_pos);
+//				//pritnf("Begin at %" PRIrrrl " x %" PRIrrrl " value %llu/%li\n", a, b, (long long unsigned) p1, diff_threshold_pos);
 				for (rrr_length b_search = b + 1; b_search < b + edge_length_max && b_search < b_max; b_search++) {
 					const pixel_value p2 = getter(a, b_search);
 					rrr_slength diff = (rrr_slength) p1 - (rrr_slength) p2;
@@ -114,11 +114,11 @@ namespace rrr::magick {
 						direction = direction_test;
 					}
 					else if (direction != direction_test) {
-//						printf("Direction swap at %" PRIrrrl " x %" PRIrrrl "\n", x_search, y);
+//						//pritnf("Direction swap at %" PRIrrrl " x %" PRIrrrl "\n", x_search, y);
 						break;
 					}
 					if (diff_accumulated * direction > diff_threshold_pos) {
-//						printf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
+//						//pritnf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
 						if (diff_accumulated > 0) {
 //							setter(a, b-1, -1);
 							setter(a, b_search, 1);
@@ -212,13 +212,13 @@ namespace rrr::magick {
 		uint64_t time_start = rrr_time_get_64();
 		edges outlines = m;
 		mappos pos_prev;
-		std::vector<std::vector<mappos>> paths;
+		mappath_group paths;
 		try {
 			mappos pos;
 			edge_value pos_value = 0;
 			do {
 				// Get a starting point
-				//printf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+				//pritnf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
 				pos = pos_prev = outlines.get_next_set (
 						pos_prev,
 						[&](const mappos &c) {
@@ -235,18 +235,17 @@ namespace rrr::magick {
 				);
 
 				// Walk around edge
-				std::vector<mappos> path;
-				path.reserve(100);
+				mappath path_new(100);
 
 				pos_value = outlines.get(pos);
 				outlines.set(pos, 2);
 
-				path.push_back(pos);
+				path_new.push(pos);
 
 				int retry_max = 8;
 				do {
 					const mappos pos_start = pos;
-					//printf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+					//pritnf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
 					edgemask mask_blank;
 					try {
 						outlines.neighbours_count(mask_blank, pos, 8, 0);
@@ -257,7 +256,7 @@ namespace rrr::magick {
 							pos = m.get_next_neighbour (
 									pos,
 									[&](const mappos &c) {
-										if (path.size() > 10 && c == path[0]) {
+										if (path_new.count() > 10 && c == path_new[0]) {
 											// Origin reached
 											return true;
 										}
@@ -269,42 +268,41 @@ namespace rrr::magick {
 										const size_t count_neg = outlines.neighbours_count(c, 7, -pos_value);
 										const size_t count_blank = outlines.neighbours_count(mask_blank_tmp, c, 8, 0);
 										const size_t count_used = outlines.neighbours_count(c, 3, 2);
-										//printf("- Count %lu %lu: %lu used %lu blank %lu\n", c.a, c.b, count, count_used, count_blank);
+										//pritnf("- Count %lu %lu: %lu used %lu blank %lu\n", c.a, c.b, count, count_used, count_blank);
 										return (count <= 6 && count_blank >= 2 && count_blank <= 6 && count_used <= 2);
 									}
 							);
 						}
 						catch (rrr::exp::eof &e) {
-							//printf("Ban %lu %lu\n", pos.a, pos.b);
+							//pritnf("Ban %lu %lu\n", pos.a, pos.b);
 							outlines.set(pos, 3); /* Ban pixel */
-							if (retry_max-- && path.size() >= 2) {
-								path.pop_back();
-								pos = path.back();
-								//printf("-> Retry %lu %lu\n", pos.a, pos.b);
+							if (retry_max-- && path_new.count() >= 2) {
+								pos = path_new.pop_skip();
+								//pritnf("-> Retry %lu %lu\n", pos.a, pos.b);
 								continue;
 							}
 							throw e;
 						}
 
 						outlines.set(pos, 2);
-						path.push_back(pos);
+						path_new.push(pos);
 
-						if (path.size() > 10 && pos == path[0]) {
-							//printf("- Stop, circle made %lu %lu\n", pos.a, pos.b);
+						if (path_new.count() > 10 && pos == path_new[0]) {
+							//pritnf("- Stop, circle made %lu %lu\n", pos.a, pos.b);
 							throw rrr::exp::eof();
 						}
 					}
 					catch (rrr::exp::eof &e) {
-						if (path.size() < 10) {
-							//printf("Ban short path %lu\n", path.size());
-							for (int i = 0; i < path.size(); i++) {
-								outlines.set(path[i], 3); /* Ban pixel */
+						if (path_new.count() < 10) {
+							//pritnf("Ban short path %lu\n", path_new.count());
+							for (int i = 0; i < path_new.count(); i++) {
+								outlines.set(path_new[i], 3); /* Ban pixel */
 							}
 						}
 						else {
-							//printf("- Stop %lu %lu\n", pos.a, pos.b);
+							//pritnf("- Stop %lu %lu\n", pos.a, pos.b);
 							outlines.set(pos, 3); /* Ban pixel */
-							paths.push_back(path);
+							paths.push(path_new);
 						}
 						break;
 					}
@@ -312,13 +310,16 @@ namespace rrr::magick {
 			} while(1);
 		}
 		catch (rrr::exp::eof &e) {
-			size_t size_total = 0;
-			for (size_t i = 0; i < paths.size(); i++) {
-				size_total += paths[i].size() * sizeof(mappos);
-			}
-			//printf("EOF %lu paths found total size %lu\n", paths.size(), size_total);
 		}
-		std::cout << "Found " << paths.size() << " outlines time " << (rrr_time_get_64() - time_start) << std::endl;
+
+		std::cout << "Found " << paths.count() << " outlines time " << (rrr_time_get_64() - time_start) << std::endl;
+
+		paths.split([&](const mappath_friends &friends) {
+			const mappath *path = friends.first();
+			const mappos pos = path->start();
+			printf ("- Friends %lu %lu : %lu\n", pos.a, pos.b, friends.count());
+		});
+
 		return outlines;
 	}
 }

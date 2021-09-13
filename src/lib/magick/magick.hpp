@@ -42,8 +42,11 @@ namespace rrr::magick {
 		public:
 		T a;
 		T b;
-		coordinate(T a, T b) : a(a), b(b) {}
 		coordinate() : a(0), b(0) {}
+		void reset() {
+			a = 0;
+			b = 0;
+		}
 		void step(T max_a, T max_b) {
 			if (++b >= max_b) {
 				b = 0;
@@ -66,6 +69,150 @@ namespace rrr::magick {
 			this->a = src.a;
 			this->b = src.b;
 			return *this;
+		}
+		void update_min(const coordinate<T> &src) {
+			if (a == 0 || a < src.a)
+				a = src.a;
+			if (b == 0 || b < src.b)
+				b = src.b;
+		}
+		void update_max(const coordinate<T> &src) {
+			if (a > src.a)
+				a = src.a;
+			if (b > src.b)
+				b = src.b;
+		}
+		bool in_box(const coordinate<T> &test, const T size) const {
+			const size_t box_tl_a = test.a - (size > a ? a : size); 
+			const size_t box_tl_b = test.b - (size > b ? b : size);
+			const size_t box_br_a = test.a + size; 
+			const size_t box_br_b = test.b + size;
+			return (a >= box_tl_a && b >= box_tl_b && a <= box_br_a && b <= box_br_b);
+		}
+	};
+
+	typedef uint16_t mapunit;
+	typedef coordinate<mapunit> mappos;
+
+	template<typename T> class interception {
+	};
+
+	template<typename T> class minmax {
+		public:
+		T min;
+		T max;
+		void reset() {
+		}
+		void update(const T &c) {
+			min.update_min(c);
+			max.update_max(c);
+		}
+		void update(const minmax<T> &m) {
+			min.update_min(m.min);
+			min.update_min(m.max);
+			max.update_max(m.min);
+			max.update_max(m.max);
+		}
+	};
+
+	class mappath {
+		public:
+		std::vector<mappos> p;
+		minmax<mappos> m;
+		void update_minmax_fast(const mappos &c) {
+			m.update(c);
+		}
+		void update_minmax() {
+			m.reset();
+			for (size_t i = 0; i < p.size(); i++) {
+				update_minmax_fast(p[i]);
+			}
+		}
+		mappath(size_t reserve) : p() {
+			p.reserve(reserve);
+		}
+		mappath &operator= (const mappath &src) {
+			p = src.p;
+			m = src.m;
+			return *this;
+		}
+		size_t count() const {
+			return p.size();
+		}
+		mappos operator[] (size_t i) const {
+			return p[i];
+		}
+		void push(const mappos &e) {
+			p.push_back(e);
+			update_minmax_fast(e);
+		}
+		void push(const mappath &src) {
+			p.insert(p.end(), src.p.begin(), src.p.end());
+			m.update(src.m);
+		}
+		mappos pop_skip() {
+			p.pop_back();
+			mappos e = p.back();
+			update_minmax();
+			return e;
+		}
+		template<typename F> void check_close_to (const mappath &test, F action) const {
+			for (size_t i = 0; i < p.size(); i++) {
+				if (p[i].in_box(test.p.front(), 1) || p[i].in_box(test.p.back(), 1)) {
+					action();
+				}
+			}
+		}
+		mappos start() const {
+			return p.front();
+		}
+	};
+
+	class mappath_friends {
+		public:
+		std::vector<const mappath *> f;
+		void push(const mappath *p) {
+			f.push_back(p);
+		}
+		size_t count() const {
+			return f.size();
+		}
+		const mappath *operator[] (size_t i) const {
+			return f[i];
+		}
+		const mappath *first() const {
+			return f[0];
+		}
+	};
+
+	class mappath_group {
+		std::vector<mappath> p;
+		minmax<mappos> m;
+		void update_minmax_fast(const mappath &p) {
+			m.update(p.m);
+		}
+		public:
+		void push(const mappath &src) {
+			update_minmax_fast(src);
+			p.push_back(src);
+		}
+		size_t count() const {
+			return p.size();
+		}
+		template<typename F> void split(F action) const {
+			for (std::vector<mappath>::const_iterator it_a = p.begin(); it_a != p.end(); ++it_a) {
+				mappath_friends friends;
+				friends.push(&(*it_a));
+				for (std::vector<mappath>::const_iterator it_b = p.begin(); it_b != p.end(); ++it_b) {
+					if (it_a == it_b)
+						continue;
+					const mappath *path_friend = &(*it_b);
+					(*it_a).check_close_to((*it_b), [&](){
+						friends.push(path_friend);
+					});
+				}
+				action((const mappath_friends) friends);
+			}
 		}
 	};
 
@@ -118,9 +265,6 @@ namespace rrr::magick {
 			);
 		}
 	};
-
-	typedef uint16_t mapunit;
-	typedef coordinate<mapunit> mappos;
 
 	template<typename T> class map {
 		public:
