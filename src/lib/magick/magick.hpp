@@ -35,6 +35,9 @@ namespace rrr::magick {
 		using rrr::exp::eof::eof;
 	};
 
+	typedef uint16_t pixel_value;
+	typedef int8_t edge_value;
+
 	template<typename T> class coordinate {
 		public:
 		T a;
@@ -65,20 +68,60 @@ namespace rrr::magick {
 			return *this;
 		}
 	};
-/*
-	template<typename T> class pixel {
+
+	class edgemask {
 		public:
-		T v;
-		pixel(T v) : v(v) {}
-		pixel(const T &p) : v(p.v) {}
-		T operator= (T v) {
-			return this->v = v;
+		static const uint8_t TR = 1<<0;
+		static const uint8_t RR = 1<<1;
+		static const uint8_t BR = 1<<2;
+		static const uint8_t BB = 1<<3;
+		static const uint8_t BL = 1<<4;
+		static const uint8_t LL = 1<<5;
+		static const uint8_t TL = 1<<6;
+		static const uint8_t TT = 1<<7;
+
+		uint8_t m;
+
+		edgemask () : m(0xff) {
 		}
-		pixel<T> operator= (const pixel<T> &p) {
-			return this->v = p.v;
+		edgemask (uint8_t m) : m(m) {
+		}
+		edgemask (const edgemask &em) : m(em.m){
+		}
+		uint8_t operator|= (const edgemask &em) {
+			return m |= em.m;
+		}
+		uint8_t operator= (const edgemask &em) {
+			return m = em.m;
+		}
+		void widen() {
+			m = (m << 1) | (m >> 1) | (m & TR ? TT : 0) | (m & TT ? TR : 0);
+		}
+		bool tr() const {return (m & TR) != 0; };
+		bool rr() const {return (m & RR) != 0; };
+		bool br() const {return (m & BR) != 0; };
+		bool bb() const {return (m & BB) != 0; };
+		bool bl() const {return (m & BL) != 0; };
+		bool ll() const {return (m & LL) != 0; };
+		bool tl() const {return (m & TL) != 0; };
+		bool tt() const {return (m & TT) != 0; };
+		void dump() const {
+			printf("TR: %i RR: %i BR: %i BB: %i BL: %i LL: %i TL: %i TT: %i\n",
+					(m & TR) != 0,
+					(m & RR) != 0,
+					(m & BR) != 0,
+					(m & BB) != 0,
+					(m & BL) != 0,
+					(m & LL) != 0,
+					(m & TL) != 0,
+					(m & TT) != 0
+			);
 		}
 	};
-*/
+
+	typedef uint16_t mapunit;
+	typedef coordinate<mapunit> mappos;
+
 	template<typename T> class map {
 		public:
 		class element {
@@ -97,33 +140,28 @@ namespace rrr::magick {
 		std::vector<element> v;
 
 		public:
-		static const uint8_t TR = 1<<0;
-		static const uint8_t RR = 1<<1;
-		static const uint8_t BR = 1<<2;
-		static const uint8_t BB = 1<<3;
-		static const uint8_t BL = 1<<4;
-		static const uint8_t LL = 1<<5;
-		static const uint8_t TL = 1<<6;
-		static const uint8_t TT = 1<<7;
 
 		map(size_t a, size_t b) : size_a(a), size_b(b), v(a * b) {
+			if (a > UINT16_MAX || b > UINT16_MAX) {
+				throw rrr::exp::soft("Size overflow in " + RRR_FUNC);
+			}
 			v.insert(v.begin(), a * b, element(0));
 		}
-		T get (size_t a, size_t b) const {
+		T get (mapunit a, mapunit b) const {
 			return v[a + b * size_a].v;
 		}
-		T get(const coordinate<size_t> &c) const {
+		T get(const mappos &c) const {
 			return get(c.a, c.b);
 		}
-		T set(size_t a, size_t b, T value) {
+		T set(mapunit a, mapunit b, T value) {
 			v[a + b * size_a].v = value;
 			return value;
 		}
-		T set(size_t a, size_t b) {
+		T set(mapunit a, mapunit b) {
 			return set(a, b, 1);
 		}
-		T set(const coordinate<size_t> &c, T value) {
-			return set(c.a, c.b, value);
+		T set(const mappos &c, T value) {
+		return set(c.a, c.b, value);
 		}
 		size_t count() {
 			size_t count = 0;
@@ -134,79 +172,93 @@ namespace rrr::magick {
 			}
 			return count;
 		}
-		static void mask_dump (uint8_t mask) {
-			printf("TR: %i RR: %i BR: %i BB: %i BL: %i LL: %i TL: %i TT: %i\n",
-					(mask & TR) != 0,
-					(mask & RR) != 0,
-					(mask & BR) != 0,
-					(mask & BB) != 0,
-					(mask & BL) != 0,
-					(mask & LL) != 0,
-					(mask & TL) != 0,
-					(mask & TT) != 0
-			);
-		}
-		static uint8_t mask_widen (uint8_t mask) {
-			return mask | (mask << 1 | mask >> 1) | (mask & TR ? TT : 0) | (mask & TT ? TR : 0);
-		}
-		static uint8_t mask_widen_cw (uint8_t mask) {
-			return mask | (mask >> 1) | (mask & TR ? TT : 0);
-		}
-		template<typename F> coordinate<size_t> get_next_set(const coordinate<size_t> &start, F filter) const {
-			coordinate<size_t> pos = start;
+		template<typename F> mappos get_next_set(const mappos &start, F filter) const {
+			mappos pos = start;
 			do {
 				pos.step(size_a, size_b);
-				if (get(pos.a, pos.b) && filter((const coordinate<size_t>) pos)) {
+				if (get(pos.a, pos.b) && filter((const mappos) pos)) {
 					break;
 				}
 			} while (1);
 			return pos;
 		}
-		template<typename F> coordinate<size_t> get_next_neighbour( const coordinate<size_t> &start, F filter) const {
-			coordinate<size_t> pos;
-
-			uint16_t constraint_mask = 0;
+		template<typename F> mappos get_next_neighbour( const mappos &start, F filter) const {
+			mappos pos;
 
 			// Checks must be performed in circular order, these checks start with the top right and go clockwise
+
+			// Check 3x3 square around position
 			if (!(
-			      (!(constraint_mask & TR) && start.a > 0        && start.b < size_b-1 && filter(pos.set(start.a-1, start.b+1)) && (constraint_mask = TR)) ||
-			      (!(constraint_mask & RR) && start.b < size_b-1                       && filter(pos.set(start.a, start.b+1))   && (constraint_mask = RR)) || 
-			      (!(constraint_mask & BR) && start.a < size_a-1 && start.b < size_b-1 && filter(pos.set(start.a+1, start.b+1)) && (constraint_mask = BR)) ||
-			      (!(constraint_mask & BB) && start.a < size_a-1                       && filter(pos.set(start.a+1, start.b))   && (constraint_mask = BB)) ||
-			      (!(constraint_mask & BL) && start.a < size_a-1 && start.b > 0        && filter(pos.set(start.a+1, start.b-1)) && (constraint_mask = BL)) ||
-			      (!(constraint_mask & LL) && start.b > 0                              && filter(pos.set(start.a, start.b-1))   && (constraint_mask = LL)) ||
-			      (!(constraint_mask & TL) && start.a > 0        && start.b > 0        && filter(pos.set(start.a-1, start.b-1)) && (constraint_mask = TL)) ||
-			      (!(constraint_mask & TT) && start.a > 0                              && filter(pos.set(start.a-1, start.b))   && (constraint_mask = TT)) ||
+			      // Top right
+			      (start.a > 0          && start.b < size_b - 1 && filter(pos.set(start.a - 1, start.b + 1))) ||
+			      (start.b < size_b - 1                         && filter(pos.set(start.a    , start.b + 1))) ||
+			      // Bottom right
+			      (start.a < size_a - 1 && start.b < size_b - 1 && filter(pos.set(start.a + 1, start.b + 1))) ||
+			      (start.a < size_a - 1                         && filter(pos.set(start.a + 1, start.b    ))) ||
+			      // Bottom left
+			      (start.a < size_a - 1 && start.b > 0          && filter(pos.set(start.a + 1, start.b - 1))) ||
+			      (start.b > 0                                  && filter(pos.set(start.a,     start.b - 1))) ||
+			      // Top left
+			      (start.a > 0          && start.b > 0          && filter(pos.set(start.a - 1, start.b - 1))) ||
+			      (start.a > 0                                  && filter(pos.set(start.a - 1, start.b    ))) ||
 			      0
 			)) {
-				throw rrr::exp::eof();
+				// Check 5x5 square around position
+				if (!(
+				      // Right edge
+				      (start.a > 1          && start.b < size_b - 2 && filter(pos.set(start.a - 2, start.b + 2))) ||
+				      (start.a > 0          && start.b < size_b - 2 && filter(pos.set(start.a - 1, start.b + 2))) ||
+				      (                        start.b < size_b - 2 && filter(pos.set(start.a,     start.b + 2))) ||
+				      (start.a < size_a - 1 && start.b < size_b - 2 && filter(pos.set(start.a + 1, start.b + 2))) ||
+				      (start.a < size_a - 2 && start.b < size_b - 2 && filter(pos.set(start.a + 2, start.b + 2))) ||
+				      // Bottom edge
+				      (start.b < size_b - 1 && start.a < size_a - 2 && filter(pos.set(start.a + 2, start.b + 1))) ||
+				      (                        start.a < size_a - 2 && filter(pos.set(start.a + 2, start.b    ))) ||
+				      (start.b > 0          && start.a < size_a - 2 && filter(pos.set(start.a + 2, start.b - 1))) ||
+				      // Left edge
+				      (start.a < size_a - 2 && start.b > 1          && filter(pos.set(start.a + 2, start.b - 2))) ||
+				      (start.a < size_a - 1 && start.b > 1          && filter(pos.set(start.a + 1, start.b - 2))) ||
+				      (                        start.b > 1          && filter(pos.set(start.a,     start.b - 2))) ||
+				      (start.a > 0          && start.b > 1          && filter(pos.set(start.a - 1, start.b - 2))) ||
+				      (start.a > 1          && start.b > 1          && filter(pos.set(start.a - 2, start.b - 2))) ||
+				      // Top edge
+				      (start.b > 0          && start.a > 1          && filter(pos.set(start.a - 2, start.b - 1))) ||
+				      (                        start.a > 1          && filter(pos.set(start.a - 2, start.b    ))) ||
+				      (start.b < size_b - 1 && start.a > 1          && filter(pos.set(start.a - 2, start.b + 1))) ||
+				      0
+				)) {
+					throw rrr::exp::eof();
+				}
 			}
 
 			return pos;
 		}
-		size_t neighbours_count(uint8_t &mask, const coordinate<size_t> pos, size_t max, T value) const {
-			uint8_t mask_out = 0;
+		size_t neighbours_count(edgemask &mask, const mappos &pos, size_t max, T value) const {
+			edgemask mask_out = 0;
 			T count = 0;
-			((mask & TL && pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && (mask_out |= TL) && ++count >= max) ||
-			 (mask & TR && pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && (mask_out |= TR) && ++count >= max) ||
-			 (mask & BL && pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && (mask_out |= BL) && ++count >= max) ||
-			 (mask & BR && pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) == value && (mask_out |= BR) && ++count >= max) ||
-			 (mask & TT && pos.a > 0        && get(pos.a-1, pos.b) == value && (mask_out |= TT) && ++count >= max) ||
-			 (mask & BB && pos.a < size_a-1 && get(pos.a+1, pos.b) == value && (mask_out |= BB) && ++count >= max) ||
-			 (mask & LL && pos.b > 0        && get(pos.a, pos.b-1) == value && (mask_out |= LL) && ++count >= max) ||
-			 (mask & RR && pos.b < size_b-1 && get(pos.a, pos.b+1) == value && (mask_out |= RR) && ++count >= max) ||
+			((mask.tl() && pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && (mask_out |= edgemask::TL) && ++count >= max) ||
+			 (mask.tr() && pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && (mask_out |= edgemask::TR) && ++count >= max) ||
+			 (mask.bl() && pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && (mask_out |= edgemask::BL) && ++count >= max) ||
+			 (mask.br() && pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) == value && (mask_out |= edgemask::BR) && ++count >= max) ||
+			 (mask.tt() && pos.a > 0        && get(pos.a-1, pos.b) == value && (mask_out |= edgemask:: TT) && ++count >= max) ||
+			 (mask.bb() && pos.a < size_a-1 && get(pos.a+1, pos.b) == value && (mask_out |= edgemask:: BB) && ++count >= max) ||
+			 (mask.ll() && pos.b > 0        && get(pos.a, pos.b-1) == value && (mask_out |= edgemask:: LL) && ++count >= max) ||
+			 (mask.rr() && pos.b < size_b-1 && get(pos.a, pos.b+1) == value && (mask_out |= edgemask:: RR) && ++count >= max) ||
 			 0
 			);
 			mask = mask_out;
 			return count;
 		}
-		size_t neighbours_count(const coordinate<size_t> pos, size_t max, T value) const {
-			uint8_t mask = 0xff;
-			return neighbours_count(mask, pos, max, value);
+		size_t neighbours_count(const edgemask &mask, const mappos &pos, size_t max, T value) const {
+			edgemask mask_tmp = mask;
+			return neighbours_count(mask_tmp, pos, max, value);
+		}
+		size_t neighbours_count(const mappos &pos, size_t max, T value) const {
+			return neighbours_count(0xff, pos, max, value);
 		}
 	};
 
-	typedef map<uint8_t> edges;
+	typedef map<edge_value> edges;
 
 	void load();
 	void unload();
@@ -217,7 +269,7 @@ namespace rrr::magick {
 		short do_debug;
 
 		static const uint16_t pixel_max = UINT16_MAX;
-		map<uint16_t> pixels;
+		map<pixel_value> pixels;
 
 		const size_t rows;
 		const size_t cols;

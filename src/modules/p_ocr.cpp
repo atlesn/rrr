@@ -101,7 +101,9 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	try {
 		const rrr::array::array array(msg);
 		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
-		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.4, 5));
+//		rrr::magick::edges edges = image.edges_get(0.4, 5);//image.outlines_get(image.edges_get(0.4, 5));
+//		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.2, 5));
+		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.1, 5));
 		printf("Dumping %i...\n", filename_count);
 		image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges);
 		printf("DONE\n");
