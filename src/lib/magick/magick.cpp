@@ -208,9 +208,11 @@ namespace rrr::magick {
 		tmp.write(target_file_no_extension + ".png");
 	}
 
-	edges pixbuf::outlines_get (const edges &m) {
+	mappath_group pixbuf::paths_get (const edges &m, std::function<void(const edges &outlines)> debug) {
 		uint64_t time_start = rrr_time_get_64();
+
 		edges outlines = m;
+
 		mappos pos_prev;
 		mappath_group paths;
 		try {
@@ -293,7 +295,7 @@ namespace rrr::magick {
 						}
 					}
 					catch (rrr::exp::eof &e) {
-						if (path_new.count() < 10) {
+						if (path_new.count() < 5) {
 							//pritnf("Ban short path %lu\n", path_new.count());
 							for (int i = 0; i < path_new.count(); i++) {
 								outlines.set(path_new[i], 3); /* Ban pixel */
@@ -314,12 +316,9 @@ namespace rrr::magick {
 
 		std::cout << "Found " << paths.count() << " outlines time " << (rrr_time_get_64() - time_start) << std::endl;
 
-		paths.split([&](const mappath_friends &friends) {
-			const mappath *path = friends.first();
-			const mappos pos = path->start();
-			printf ("- Friends %lu %lu : %lu\n", pos.a, pos.b, friends.count());
-		});
+		debug(m);
+		debug(outlines);
 
-		return outlines;
+		return paths;
 	}
 }

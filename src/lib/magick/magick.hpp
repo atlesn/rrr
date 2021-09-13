@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <functional>
 #include <vector>
+#include <cmath>
 
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
@@ -94,9 +95,6 @@ namespace rrr::magick {
 	typedef uint16_t mapunit;
 	typedef coordinate<mapunit> mappos;
 
-	template<typename T> class interception {
-	};
-
 	template<typename T> class minmax {
 		public:
 		T min;
@@ -116,8 +114,15 @@ namespace rrr::magick {
 	};
 
 	class mappath {
+		class interception {
+			public:
+			std::pair<const mappath *, const mappos> i;
+			interception(const mappath *p, const mappos &pos) : i(p, pos) {}
+		};
+
 		public:
 		std::vector<mappos> p;
+		std::vector<interception> i;
 		minmax<mappos> m;
 		void update_minmax_fast(const mappos &c) {
 			m.update(c);
@@ -159,29 +164,59 @@ namespace rrr::magick {
 		template<typename F> void check_close_to (const mappath &test, F action) const {
 			for (size_t i = 0; i < p.size(); i++) {
 				if (p[i].in_box(test.p.front(), 1) || p[i].in_box(test.p.back(), 1)) {
-					action();
+					action(p[i]);
 				}
 			}
 		}
 		mappos start() const {
 			return p.front();
 		}
+		void push_interception (const mappath *p, const mappos pos) {
+			i.emplace_back(p, pos);
+		}
+		size_t count_interceptions() const {
+			return i.size();
+		}
 	};
 
-	class mappath_friends {
+	struct vector {
 		public:
-		std::vector<const mappath *> f;
-		void push(const mappath *p) {
-			f.push_back(p);
+		const float m;
+		const float a;
+		vector(float m, float a) : m(m), a(a) {}
+	};
+
+	class vectorpath {
+		static const int calculate_border = 5;
+		mappos p;
+		std::vector<vector> v;
+		std::vector<mappos> buf;
+		public:
+		vectorpath(const mappos &p) : p(p), buf(calculate_border) {}
+		void calculate() {
+			if (buf.size() < 2)
+				return;
+
+			const mappos &a = buf.front();
+			const mappos &b = buf.back();
+
+			const float v1 = (float) a.a - (float) b.a;
+			const float v2 = (float) b.a - (float) b.b;
+
+			const float mag = std::sqrt(std::pow(v1, 2.0f) + std::pow(v2, 2.0f));
+			const float tan = v2 / v1;
+			const float rad = std::atan(tan);
+
+			v.emplace_back(mag, rad);
+
+			buf.clear();
+			
 		}
-		size_t count() const {
-			return f.size();
-		}
-		const mappath *operator[] (size_t i) const {
-			return f[i];
-		}
-		const mappath *first() const {
-			return f[0];
+		void push(const mappos &p) {
+			buf.push_back(p);
+			if (buf.size() == calculate_border) {
+				calculate();
+			}
 		}
 	};
 
@@ -199,19 +234,17 @@ namespace rrr::magick {
 		size_t count() const {
 			return p.size();
 		}
-		template<typename F> void split(F action) const {
-			for (std::vector<mappath>::const_iterator it_a = p.begin(); it_a != p.end(); ++it_a) {
-				mappath_friends friends;
-				friends.push(&(*it_a));
+		template<typename F> void split(F action) {
+			for (std::vector<mappath>::iterator it_a = p.begin(); it_a != p.end(); ++it_a) {
 				for (std::vector<mappath>::const_iterator it_b = p.begin(); it_b != p.end(); ++it_b) {
 					if (it_a == it_b)
 						continue;
 					const mappath *path_friend = &(*it_b);
-					(*it_a).check_close_to((*it_b), [&](){
-						friends.push(path_friend);
+					(*it_a).check_close_to((*it_b), [&](const mappos &p){
+						it_a->push_interception(path_friend, p);
 					});
 				}
-				action((const mappath_friends) friends);
+				action(*it_a);
 			}
 		}
 	};
@@ -279,12 +312,12 @@ namespace rrr::magick {
 		};
 
 		private:
-		const size_t size_a;
-		const size_t size_b;
+		size_t size_a;
+		size_t size_b;
 		std::vector<element> v;
 
 		public:
-
+		map() : size_a(0), size_b(0), v() {}
 		map(size_t a, size_t b) : size_a(a), size_b(b), v(a * b) {
 			if (a > UINT16_MAX || b > UINT16_MAX) {
 				throw rrr::exp::soft("Size overflow in " + RRR_FUNC);
@@ -305,7 +338,13 @@ namespace rrr::magick {
 			return set(a, b, 1);
 		}
 		T set(const mappos &c, T value) {
-		return set(c.a, c.b, value);
+			return set(c.a, c.b, value);
+		}
+		map<T> &operator= (const map<T> &src) {
+			size_a = src.size_a;
+			size_b = src.size_b;
+			v = src.v;
+			return *this;
 		}
 		size_t count() {
 			size_t count = 0;
@@ -440,8 +479,7 @@ namespace rrr::magick {
 
 		edges edges_get(float threshold, rrr_length edge_length_max);
 		void edges_dump (const std::string &target_file_no_extension, const edges &m);
-
-		edges outlines_get (const edges &m);
+		mappath_group paths_get (const edges &m, std::function<void(const edges &outlines)> debug);
 	};
 }
 

@@ -96,17 +96,28 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	RRR_MSG_1("Poll callback\n");
 
 	static int filename_count = 0;
-	filename_count++;
 
 	try {
 		const rrr::array::array array(msg);
 		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
 //		rrr::magick::edges edges = image.edges_get(0.4, 5);//image.outlines_get(image.edges_get(0.4, 5));
 //		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.2, 5));
-		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.1, 5));
-		printf("Dumping %i...\n", filename_count);
-		image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges);
-		printf("DONE\n");
+
+		rrr::magick::mappath_group group = image.paths_get(
+				image.edges_get(0.1, 5),
+				[&](const rrr::magick::edges &outlines) {
+					filename_count++;
+					rrr::magick::pixbuf image_tmp(array.get_value_raw_by_tag(data->input_data_tag));
+					printf("Dumping %i...\n", filename_count);
+					image_tmp.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), outlines);
+					printf("DONE\n");
+				}
+		);
+
+		group.split([&](const rrr::magick::mappath &path) {
+			const rrr::magick::mappos pos = path.start();
+//			printf ("- Interceptions %lu %lu : %lu\n", (unsigned long) pos.a, (unsigned long) pos.b, path.count_interceptions());
+		});
 
 	}
 	catch (rrr::exp::soft e) {
