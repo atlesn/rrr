@@ -48,21 +48,20 @@ namespace rrr::magick {
 	void unload() {
 		pthread_mutex_lock(&init_lock);
 		if (--usercount == 0) {
-			const char *ptr = NULL;
 			Magick::TerminateMagick();
 		}
 		pthread_mutex_unlock(&init_lock);
 	}
 
 	pixbuf::pixbuf(const rrr::types::data_const &d) try :
-		image(Magick::Blob(d.d, d.l)),
 		do_debug(false),
+		image(Magick::Blob(d.d, d.l)),
+		pixels(image.rows(), image.columns()),
 		rows(image.rows()),
 		cols(image.columns()),
 		size(image.rows() * image.columns()),
 		channels(image.channels()),
-		max_range_combined(((double) QuantumRange) * channels),
-		pixels(image.rows(), image.columns())
+		max_range_combined(((double) QuantumRange) * channels)
 	{
 		image.modifyImage();
 
@@ -207,6 +206,7 @@ namespace rrr::magick {
 						break;
 					case 1:
 						tmp.pixelColor(x, y, Magick::ColorRGB(0.7, 0.7, 0.0, 1.0));
+						break;
 					case -1:
 						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0.0, 1.0));
 						break;
@@ -224,10 +224,10 @@ namespace rrr::magick {
 			}
 		}
 
-		printf("%lu %lu\n", tl.a, tl.b);
-		printf("%lu %lu\n", br.a, br.b);
+		printf("%u %u\n", tl.a, tl.b);
+		printf("%u %u\n", br.a, br.b);
 
-		printf("Crop %lu %lu %lu %lu\n", br.b-tl.b, br.a-tl.a, tl.b, tl.a);
+		printf("Crop %u %u %u %u\n", br.b-tl.b, br.a-tl.a, tl.b, tl.a);
 
 		tmp.syncPixels();
 		tmp.crop(Magick::Geometry(br.b-tl.b, br.a-tl.a, tl.b, tl.a));
@@ -311,8 +311,9 @@ namespace rrr::magick {
 										if (outlines.get(c.a, c.b) != 1)
 											return false;
 										edgemask mask_blank_tmp = mask_blank;
+										// XXX : We only follow positive edges, don't know if thats a good or bad thing
 										const size_t count = outlines.neighbours_count(c, 7, pos_value);
-										const size_t count_neg = outlines.neighbours_count(c, 7, -pos_value);
+										//const size_t count_neg = outlines.neighbours_count(c, 7, -pos_value);
 										const size_t count_blank = outlines.neighbours_count(mask_blank_tmp, c, 8, 0);
 										const size_t count_used = outlines.neighbours_count(c, 3, 2);
 										//pritnf("- Count %lu %lu: %lu used %lu blank %lu\n", c.a, c.b, count, count_used, count_blank);
@@ -342,7 +343,7 @@ namespace rrr::magick {
 					catch (rrr::exp::eof &e) {
 						if (path_new.count() < path_length_min) {
 							//pritnf("Ban short path %lu\n", path_new.count());
-							for (int i = 0; i < path_new.count(); i++) {
+							for (size_t i = 0; i < path_new.count(); i++) {
 								outlines.set(path_new[i], 3); /* Ban pixel */
 							}
 						}

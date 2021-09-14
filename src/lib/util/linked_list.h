@@ -35,9 +35,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     type *ptr_last;                                            \
     int node_count                                             \
 
+#define RRR_LL_HEAD_CXX_INIT                                   \
+    ptr_first(NULL), ptr_last(NULL), node_count(0)
+
 #define RRR_LL_NODE(type)                                      \
     type *ptr_prev;                                            \
     type *ptr_next                                             \
+
+#define RRR_LL_NODE_CXX_INIT                                   \
+    ptr_prev(NULL), ptr_next(NULL)
 
 #define RRR_LL_NODE_INIT(node)                                 \
     node->ptr_prev = NULL;                                     \

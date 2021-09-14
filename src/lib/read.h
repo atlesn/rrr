@@ -39,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_read_session_collection {
 	RRR_LL_HEAD(struct rrr_read_session);
+#ifdef __cplusplus
+	rrr_read_session_collection() : RRR_LL_HEAD_CXX_INIT {}
+#endif
 };
 
 struct rrr_read_session {

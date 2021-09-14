@@ -1,16 +1,14 @@
-AM_CFLAGS = @AM_CFLAGS@ -Wextra
-
 if RRR_WITH_MYSQL
 mysql = mysql.la
 mysql_la_SOURCES = p_mysql.c
-mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
+mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${RRR_CFLAGS}
 mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS} -lrrrmysql
 endif
 
 if RRR_WITH_PYTHON3
 python3 = python3.la
 python3_la_SOURCES = p_python3.c
-python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
+python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${RRR_CFLAGS}
 # Python3 libraries are linked in librrr
 python3_la_LDFLAGS = ${module_ldflags} -lrrrpython3
 endif
@@ -26,14 +24,14 @@ voltmonitor_la_LDFLAGS = ${module_ldflags} ${libusb}
 if RRR_WITH_PERL5
 perl5 = perl5.la
 perl5_la_SOURCES = p_perl5.c
-perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
+perl5_la_CFLAGS = ${PERL5_CFLAGS} ${RRR_CFLAGS}
 # Perl5 libraries are linked in librrr
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
 if RRR_WITH_MAGICK
 ocr_la_SOURCES = p_ocr.cpp
-ocr_la_CXXFLAGS = ${MAGICK_CFLAGS} ${AM_CXXFLAGS}
+ocr_la_CXXFLAGS = ${MAGICK_CFLAGS} ${RRR_CXXFLAGS} ${CXXFLAGS}
 # Magick++ libraries are linked in librrr
 ocr_la_LDFLAGS = ${module_ldflags}
 endif
@@ -49,63 +47,83 @@ lib_LTLIBRARIES = dummy.la raw.la \
 module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
+mqttbroker_la_CFLAGS = ${RRR_CFLAGS}
 mqttbroker_la_SOURCES = d_mqttbroker.c
 
 msgdb_la_LDFLAGS = ${module_ldflags}
+msgdb_la_CFLAGS = ${RRR_CFLAGS}
 msgdb_la_SOURCES = d_msgdb.c
 
 incrementer_la_LDFLAGS = ${module_ldflags}
+incrementer_la_CFLAGS = ${RRR_CFLAGS}
 incrementer_la_SOURCES = p_incrementer.c
 
 cacher_la_LDFLAGS = ${module_ldflags}
+cacher_la_CFLAGS = ${RRR_CFLAGS}
 cacher_la_SOURCES = p_cacher.c
 
 mqttclient_la_LDFLAGS = ${module_ldflags}
+mqttclient_la_CFLAGS = ${RRR_CFLAGS}
 mqttclient_la_SOURCES = p_mqttclient.c
 
 dummy_la_LDFLAGS = ${module_ldflags}
+dummy_la_CFLAGS = ${RRR_CFLAGS}
 dummy_la_SOURCES = src_dummy.c
 
 raw_la_LDFLAGS = ${module_ldflags}
+raw_la_CFLAGS = ${RRR_CFLAGS}
 raw_la_SOURCES = d_raw.c
 
 averager_la_LDFLAGS = ${module_ldflags}
+averager_la_CFLAGS = ${RRR_CFLAGS}
 averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags} 
+ipclient_la_CFLAGS = ${RRR_CFLAGS}
 ipclient_la_SOURCES = p_ipclient.c
 
 buffer_la_LDFLAGS = ${module_ldflags}
+buffer_la_CFLAGS = ${RRR_CFLAGS}
 buffer_la_SOURCES = p_buffer.c
 
 exploder_la_LDFLAGS = ${module_ldflags}
+exploder_la_CFLAGS = ${RRR_CFLAGS}
 exploder_la_SOURCES = p_exploder.c
 
 mangler_la_LDFLAGS = ${module_ldflags}
+mangler_la_CFLAGS = ${RRR_CFLAGS}
 mangler_la_SOURCES = p_mangler.c
 
 ip_la_LDFLAGS = ${module_ldflags}
+ip_la_CFLAGS = ${RRR_CFLAGS}
 ip_la_SOURCES = p_ip.c
 
 socket_la_LDFLAGS = ${module_ldflags}
+socket_la_CFLAGS = ${RRR_CFLAGS}
 socket_la_SOURCES = src_socket.c
 
 influxdb_la_LDFLAGS = ${module_ldflags}
+influxdb_la_CFLAGS = ${RRR_CFLAGS}
 influxdb_la_SOURCES = p_influxdb.c
 
 journal_la_LDFLAGS = ${module_ldflags}
+journal_la_CFLAGS = ${RRR_CFLAGS}
 journal_la_SOURCES = src_journal.c
 
 cmodule_la_LDFLAGS = ${module_ldflags}
+cmodule_la_CFLAGS = ${RRR_CFLAGS}
 cmodule_la_SOURCES = p_cmodule.c
 
 httpclient_la_LDFLAGS = ${module_ldflags}
+httpclient_la_CFLAGS = ${RRR_CFLAGS}
 httpclient_la_SOURCES = p_httpclient.c
 
 httpserver_la_LDFLAGS = ${module_ldflags}
+httpserver_la_CFLAGS = ${RRR_CFLAGS}
 httpserver_la_SOURCES = p_httpserver.c
 
 file_la_LDFLAGS = ${module_ldflags}
+file_la_CFLAGS = ${RRR_CFLAGS}
 file_la_SOURCES = src_file.c
 
 libdir=${exec_prefix}/lib/rrr

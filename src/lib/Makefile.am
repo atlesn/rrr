@@ -29,7 +29,7 @@ if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_message.c \
                            python3/python3_socket.c python3/python3_array.c python3/python3_config.c
-librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\" ${AM_CFLAGS}
+librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\" ${RRR_CFLAGS}
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS} ${AM_LDFLAGS}
 python3_extra_ld = ${PYTHON3_LDFLAGS}
 endif
@@ -37,6 +37,7 @@ endif
 if RRR_WITH_PERL5
 libadd_perl5 = librrrperl5.la
 librrrperl5_la_SOURCES = perl5/perl5.c perl5/perl5_xsi.c perl5/perl5_types.c perl5/perl5_xsub.c
+# Don't add RRR_CFLAGS or CFLAGS, confuses perl
 librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
@@ -45,7 +46,7 @@ endif
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
-librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${AM_CFLAGS}
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${RRR_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
@@ -53,7 +54,7 @@ endif
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
-librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
+librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${RRR_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
@@ -62,7 +63,7 @@ endif
 if RRR_WITH_MAGICK
 libadd_magick = librrrmagick.la
 librrrmagick_la_SOURCES = magick/magick.cpp
-librrrmagick_la_CXXFLAGS = ${MAGICK_CFLAGS} ${AM_CXXFLAGS}
+librrrmagick_la_CXXFLAGS = ${MAGICK_CFLAGS} ${RRR_CXXFLAGS} ${CXXFLAGS}
 librrrmagick_la_LIBS = ${MAGICK_LIBS}
 magick_extra_ld = ${MAGICK_LIBS}
 endif
@@ -120,7 +121,7 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
-librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_CFLAGS = ${TLS_CFLAGS} ${RRR_CFLAGS}
 librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${magick_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
@@ -141,50 +142,50 @@ lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
 libadd_rrr_cxx = librrr_cxx.la
 librrr_cxx_la_SOURCES = exception.cpp arrayxx.cpp
-librrr_cxx_la_CXXFLAGS = ${AM_CXXFLAGS} -O5
+librrr_cxx_la_CXXFLAGS = ${RRR_CXXFLAGS} ${CXXFLAGS}
 
 libadd_rrr_allocator = librrr_allocator.la
 librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
-librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
+librrr_allocator_la_CFLAGS = ${RRR_CFLAGS}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
-librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${AM_CFLAGS}
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${RRR_CFLAGS}
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_gnu = librrr_gnu.la
 librrr_gnu_la_SOURCES = util/gnu.c
-librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${AM_CFLAGS}
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${RRR_CFLAGS}
 librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
 librrr_conversion_warning_la_SOURCES = type.c type_conversion.c
-librrr_conversion_warning_la_CFLAGS = -Wconversion ${AM_CFLAGS}
+librrr_conversion_warning_la_CFLAGS = -Wconversion ${RRR_CFLAGS}
 librrr_conversion_warning_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = util/rrr_readdir.c
-librrr_readdir_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_READDIR ${AM_CFLAGS}
+librrr_readdir_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_READDIR ${RRR_CFLAGS}
 librrr_readdir_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_strerror = librrr_strerror.la
 librrr_strerror_la_SOURCES = rrr_strerror.c
-librrr_strerror_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_STRERROR ${AM_CFLAGS}
+librrr_strerror_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_STRERROR ${RRR_CFLAGS}
 librrr_strerror_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_fork = librrr_fork.la
 librrr_fork_la_SOURCES = fork.c
-librrr_fork_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_FORK ${AM_CFLAGS}
+librrr_fork_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_FORK ${RRR_CFLAGS}
 librrr_fork_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_log = librrr_log.la
 librrr_log_la_SOURCES = log.c
-librrr_log_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PRINTF ${AM_CFLAGS}
+librrr_log_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PRINTF ${RRR_CFLAGS}
 librrr_log_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_umask = librrr_umask.la
 librrr_umask_la_SOURCES = rrr_umask.c
-librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
+librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${RRR_CFLAGS}
 librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_sha1 = sha1/libsha1.la

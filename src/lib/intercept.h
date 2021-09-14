@@ -24,6 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INTERCEPT_H
 #define RRR_INTERCEPT_H
 
+// Fix to prevent compilation error of ghtread wrapper definitions
+#if defined(__cplusplus) && defined(__GXX_WEAK__)
+#    include <bits/gthr.h>
+#endif
+
 // Blocks a lot of stuff
 #define _POSIX_C_SOURCE 200809L
 

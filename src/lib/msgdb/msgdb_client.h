@@ -30,6 +30,13 @@ struct rrr_msgdb_client_conn {
 	int fd;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_event_collection events;
+#ifdef __cplusplus
+	rrr_msgdb_client_conn() :
+		fd(0),
+		read_sessions(),
+		events() {
+	}
+#endif
 };
 
 struct rrr_msg_msg;

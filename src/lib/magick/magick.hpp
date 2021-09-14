@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Magick++.h>
 
+#include <string>
 #include <functional>
 #include <algorithm>
 #include <iostream>
@@ -47,7 +48,16 @@ namespace rrr::magick {
 		T a;
 		T b;
 		coordinate() : a(0), b(0) {}
+		coordinate(T x) : a(x), b(x) {}
 		coordinate(T a, T b) : a(a), b(b) {}
+		bool operator== (const coordinate<T> &test) const {
+			return (test.a == a && test.b == b);
+		}
+		coordinate<T> &set(T a, T b) {
+			this->a = a;
+			this->b = b;
+			return *this;
+		}
 		void reset() {
 			a = 0;
 			b = 0;
@@ -61,19 +71,6 @@ namespace rrr::magick {
 					throw rrr::exp::eof();
 				}
 			}
-		}
-		coordinate<T> &set(T a, T b) {
-			this->a = a;
-			this->b = b;
-			return *this;
-		}
-		bool operator== (const coordinate<T> &test) const {
-			return (test.a == a && test.b == b);
-		}
-		coordinate<T> operator= (const coordinate<T> &src) {
-			this->a = src.a;
-			this->b = src.b;
-			return *this;
 		}
 		void update_min(const coordinate<T> &src) {
 			if (a == 0 || src.a < a)
@@ -110,14 +107,6 @@ namespace rrr::magick {
 		}
 	};
 
-	template<typename T> class equals {
-		public:
-		constexpr bool operator() (const T &a, const T &b) const {
-			printf("%u %u - %u %u\n", a.a, a.b, b.a, b.b);
-			return a == b;
-		}
-	};
-
 	typedef uint16_t mapunit;
 	typedef coordinate<mapunit> mappos;
 	
@@ -130,6 +119,7 @@ namespace rrr::magick {
 		public:
 		T min;
 		T max;
+		minmax() : min(0), max(0) {};
 		void reset() {
 		}
 		void update(const T &c) {
@@ -163,8 +153,11 @@ namespace rrr::magick {
 
 		public:
 		std::vector<mappos> p;
-		std::map<mappos,const mappath *,equals<mappos>> interceptions;
+		std::map<mappos,const mappath *,std::equal_to<mappos>> interceptions;
 		minmax<mappos> m;
+		mappos operator[] (size_t i) const {
+			return p[i];
+		}
 		void update_minmax_fast(const mappos &c) {
 			m.update(c);
 		}
@@ -180,17 +173,8 @@ namespace rrr::magick {
 		mappath(size_t reserve) : p() {
 			p.reserve(reserve);
 		}
-		mappath &operator= (const mappath &src) {
-			p = src.p;
-			m = src.m;
-			interceptions = src.interceptions;
-			return *this;
-		}
 		size_t count() const {
 			return p.size();
-		}
-		mappos operator[] (size_t i) const {
-			return p[i];
 		}
 		void push(const mappos &e) {
 			p.push_back(e);
@@ -240,7 +224,7 @@ namespace rrr::magick {
 				if (interceptions.contains(p[i])) {
 					std::cout << std::to_string(ic_count) << std::string(": ") << p[i] << std::endl;
 					ic_count++;
-					(*it).second->iterate(f_pos, f_path, tree);
+					interceptions.at(p[i])->iterate(f_pos, f_path, tree);
 				}
 			}
 
@@ -268,7 +252,6 @@ namespace rrr::magick {
 		std::vector<vector> v;
 		std::vector<mappos> buf;
 		public:
-		vectorpath(const mappos &p) : p(p), buf(calculate_border) {}
 		void calculate() {
 			if (buf.size() < 2)
 				return;
@@ -416,12 +399,6 @@ namespace rrr::magick {
 		T set(const mappos &c, T value) {
 			return set(c.a, c.b, value);
 		}
-		map<T> &operator= (const map<T> &src) {
-			size_a = src.size_a;
-			size_b = src.size_b;
-			v = src.v;
-			return *this;
-		}
 		size_t count() {
 			size_t count = 0;
 			for (size_t i = 0; i < v.size(); i++) {
@@ -494,7 +471,7 @@ namespace rrr::magick {
 		}
 		size_t neighbours_count(edgemask &mask, const mappos &pos, size_t max, T value) const {
 			edgemask mask_out = 0;
-			T count = 0;
+			size_t count = 0;
 			((mask.tl() && pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && (mask_out |= edgemask::TL) && ++count >= max) ||
 			 (mask.tr() && pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && (mask_out |= edgemask::TR) && ++count >= max) ||
 			 (mask.bl() && pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && (mask_out |= edgemask::BL) && ++count >= max) ||
@@ -523,9 +500,9 @@ namespace rrr::magick {
 	void unload();
 
 	class pixbuf {
-		Magick::Image image;
-
 		short do_debug;
+
+		Magick::Image image;
 
 		static const uint16_t pixel_max = UINT16_MAX;
 		map<pixel_value> pixels;
@@ -534,7 +511,6 @@ namespace rrr::magick {
 		const size_t cols;
 		const size_t size;
 		const size_t channels;
-		
 		const double max_range_combined;
 
 		template <typename A, typename B> void edges_get (
@@ -548,16 +524,6 @@ namespace rrr::magick {
 
 		public:
 		pixbuf(const rrr::types::data_const &d);
-		pixbuf(const pixbuf &src) :
-			image(src.image),
-			do_debug(src.do_debug),
-			pixels(src.pixels),
-			rows(src.rows),
-			cols(src.cols),
-			size(src.size),
-			channels(src.channels),
-			max_range_combined(src.max_range_combined) {
-		}
 		edges edges_clean_get() {
 			return edges(rows, cols);
 		}

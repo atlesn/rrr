@@ -14,9 +14,15 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
-AC_CONFIG_SUBDIRS([src/blockdevlogger])
+AM_SILENT_RULES([yes])
 
-INET_CHECKS()
+# Set default flags
+AS_IF([test "x$CFLAGS" == "x"], [
+	CFLAGS="-g -O3"
+])
+AS_IF([test "x$CXXFLAGS" == "x"], [
+	CXXFLAGS="-g -O3"
+])
 
 dnl OpenBSD check for egcc
 AC_CHECK_PROG([EGCC], egcc, egcc)
@@ -34,15 +40,18 @@ AS_IF([test "x${EGCC}" != "x"], [
 
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
+
 AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
 #AC_PROG_YACC
 #AM_PROG_LEX
-AM_SILENT_RULES([yes])
 
 echo "#define RRR_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
+
+# Some places we don't use relative paths
+RRR_SRCDIR=`pwd`
 
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
@@ -68,6 +77,8 @@ AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with P
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
+
+INET_CHECKS()
 
 AC_MSG_CHECKING([for RRR GNU Debug])
 AS_IF([test "x$enable_gnu_debug" = xno], [
@@ -95,18 +106,6 @@ AS_IF([ test -f ".development" ], [
 	RRR_EXTRA_WARNINGS=""
 	AC_MSG_RESULT([none])
 ])
-
-
-
-AM_CFLAGS="$CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wall -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -pthread"
-
-AM_CXXFLAGS="$AM_CFLAGS -x c++ -std=c++17"
-AM_CFLAGS="$AM_CFLAGS -x c -std=c11 -Wstrict-prototypes -Werror=implicit-function-declaration"
-AM_LDFLAGS=""
-
-AC_SUBST(AM_CXXFLAGS)
-AC_SUBST(AM_CFLAGS)
-AC_SUBST(AM_LDFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
 
@@ -406,7 +405,7 @@ AS_IF([test "x$enable_perl5" = xno], [
 	fi
 
 	AC_MSG_CHECKING([Generating Perl5 XSI source])
-	perl5_xsi_source="$srcdir/src/lib/perl5_xsi.c"
+	perl5_xsi_source="$RRR_SRCDIR/src/lib/perl5_xsi.c"
 	${PERL5_INTERPRETER} -MExtUtils::Embed -e xsinit -- -o ${perl5_xsi_source}
 	perl5_result=$?
 
@@ -813,6 +812,42 @@ AC_MSG_RESULT([${CMODULE_DIR}])
 
 AC_SUBST([MODULE_DIR])
 AC_SUBST([CMODULE_DIR])
+
+AC_MSG_CHECKING([GCC-specific CFLAGS])
+AS_IF([test "$CC" == "gcc"], [
+	# Override -Wclobbered from -Wextra
+	WARNINGS_GCC="-Wno-clobbered"
+	AC_MSG_RESULT([${CFLAGS_GCC}])
+], [
+	AC_MSG_RESULT([compiler is not gcc])
+])
+
+CFLAGS_WARNINGS="-Wstrict-prototypes -Werror=implicit-function-declaration -Wunreachable-code -Wall -Wextra $WARNINGS_GCC $RRR_EXTRA_WARNINGS"
+CXXFLAGS_WARNINGS="-Wunreachable-code -Wall -Wextra $WARNINGS_GCC $RRR_EXTRA_WARNINGS"
+
+# Override any already set compiler flags
+AM_CFLAGS=""
+AM_CXXFLAGS=""
+AM_LDFLAGS=""
+
+RRR_CFLAGS_BASE="$CFLAGS_CODECOV -include $RRR_SRCDIR/config.h -include $RRR_SRCDIR/build_timestamp.h -include $RRR_SRCDIR/src/lib/intercept.h -D_XOPEN_SOURCE=700 -pthread"
+RRR_CXXFLAGS="$RRR_CFLAGS_BASE -std=c++20 $CXXFLAGS_WARNINGS"
+RRR_CFLAGS="$RRR_CFLAGS_BASE $CFLAGS_GCC -std=c11 $CFLAGS_WARNINGS"
+
+# Autoconf thinks AM_CLFAGS etc is a macro
+am="AM"
+AC_MSG_NOTICE([Using  CC: ${CC}])
+AC_MSG_NOTICE([Using CXX: ${CXX}])
+AC_MSG_NOTICE([Using   RRR_CFLAGS: ${RRR_CFLAGS}])
+AC_MSG_NOTICE([Using RRR_CXXFLAGS: ${RRR_CXXFLAGS}])
+AC_MSG_NOTICE([Using   CFLAGS: ${CFLAGS}])
+AC_MSG_NOTICE([Using CXXFLAGS: ${CXXFLAGS}])
+
+AC_SUBST([AM_CXXFLAGS])
+AC_SUBST([AM_CFLAGS])
+AC_SUBST([RRR_CXXFLAGS])
+AC_SUBST([RRR_CFLAGS])
+AC_SUBST([AM_LDFLAGS])
 
 # Clear all automatically added libs. Library users must specify
 # libraries locally in Makefile.am

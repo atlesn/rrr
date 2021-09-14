@@ -35,10 +35,6 @@ namespace rrr::msgdb {
 		std::string socket_path;
 
 		public:
-		client() {
-			memset (&this->conn, '\0', sizeof(this->conn));
-		}
-
 		~client() {
 			rrr_msgdb_client_close(&this->conn);
 		}
