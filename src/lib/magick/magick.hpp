@@ -25,8 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Magick++.h>
 
 #include <functional>
+#include <algorithm>
+#include <iostream>
 #include <vector>
 #include <cmath>
+#include <map>
 
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
@@ -44,6 +47,7 @@ namespace rrr::magick {
 		T a;
 		T b;
 		coordinate() : a(0), b(0) {}
+		coordinate(T a, T b) : a(a), b(b) {}
 		void reset() {
 			a = 0;
 			b = 0;
@@ -72,15 +76,15 @@ namespace rrr::magick {
 			return *this;
 		}
 		void update_min(const coordinate<T> &src) {
-			if (a == 0 || a < src.a)
+			if (a == 0 || src.a < a)
 				a = src.a;
-			if (b == 0 || b < src.b)
+			if (b == 0 || src.b < b)
 				b = src.b;
 		}
 		void update_max(const coordinate<T> &src) {
-			if (a > src.a)
+			if (src.a > a)
 				a = src.a;
-			if (b > src.b)
+			if (src.b > b)
 				b = src.b;
 		}
 		bool in_box(const coordinate<T> &test, const T size) const {
@@ -90,10 +94,37 @@ namespace rrr::magick {
 			const size_t box_br_b = test.b + size;
 			return (a >= box_tl_a && b >= box_tl_b && a <= box_br_a && b <= box_br_b);
 		}
+		void sub(size_t s) {
+			a = s > a ? 0 : a - s;
+			b = s > b ? 0 : b - s;
+		}
+		void add(size_t s, size_t a_max, size_t b_max) {
+			size_t a_new = a + s;
+			size_t b_new = b + s;
+			if (a_new > a_max || a_new < a)
+				a_new = a_max;
+			if (b_new > b_max || b_new < b)
+				b_new = b_max;
+			a = a_new;
+			b = b_new;
+		}
+	};
+
+	template<typename T> class equals {
+		public:
+		constexpr bool operator() (const T &a, const T &b) const {
+			printf("%u %u - %u %u\n", a.a, a.b, b.a, b.b);
+			return a == b;
+		}
 	};
 
 	typedef uint16_t mapunit;
 	typedef coordinate<mapunit> mappos;
+	
+	std::ostream &operator<< (std::ostream &o, const rrr::magick::mappos &p) {
+		o << std::to_string(p.a) << "x" << std::to_string(p.b);
+		return o;
+	}
 
 	template<typename T> class minmax {
 		public:
@@ -111,6 +142,10 @@ namespace rrr::magick {
 			max.update_max(m.min);
 			max.update_max(m.max);
 		}
+		void expand(size_t s, size_t a_max, size_t b_max) {
+			min.sub(s);
+			max.add(s, a_max, b_max);
+		}
 	};
 
 	class mappath {
@@ -118,11 +153,17 @@ namespace rrr::magick {
 			public:
 			std::pair<const mappath *, const mappos> i;
 			interception(const mappath *p, const mappos &pos) : i(p, pos) {}
+			const mappath *path() const {
+				return i.first;
+			}
+			const mappos pos() const {
+				return i.second;
+			}
 		};
 
 		public:
 		std::vector<mappos> p;
-		std::vector<interception> i;
+		std::map<mappos,const mappath *,equals<mappos>> interceptions;
 		minmax<mappos> m;
 		void update_minmax_fast(const mappos &c) {
 			m.update(c);
@@ -133,12 +174,16 @@ namespace rrr::magick {
 				update_minmax_fast(p[i]);
 			}
 		}
+		void update_ext_minmax(minmax<mappos> &m) const {
+			m.update(this->m);
+		}
 		mappath(size_t reserve) : p() {
 			p.reserve(reserve);
 		}
 		mappath &operator= (const mappath &src) {
 			p = src.p;
 			m = src.m;
+			interceptions = src.interceptions;
 			return *this;
 		}
 		size_t count() const {
@@ -165,17 +210,48 @@ namespace rrr::magick {
 			for (size_t i = 0; i < p.size(); i++) {
 				if (p[i].in_box(test.p.front(), 1) || p[i].in_box(test.p.back(), 1)) {
 					action(p[i]);
+					return;
 				}
 			}
 		}
 		mappos start() const {
 			return p.front();
 		}
-		void push_interception (const mappath *p, const mappos pos) {
-			i.emplace_back(p, pos);
+		void push_unique_interception (const mappath *p, const mappos pos) {
+			interceptions[pos] = p;
 		}
 		size_t count_interceptions() const {
-			return i.size();
+			return interceptions.size();
+		}
+		template<typename F, typename G> void iterate(F f_pos, G f_path, std::vector<const mappath *> &tree) const {
+			if (std::find_if(tree.begin(), tree.end(), [&](const mappath *p){
+					return this == p;
+			}) != tree.end()) {
+				return;
+			}
+
+			f_path(*this);
+
+			tree.push_back(this);
+
+			int ic_count = 0;
+			for (size_t i = 0; i < p.size(); i++) {
+				f_pos(p[i]);
+				if (interceptions.contains(p[i])) {
+					std::cout << std::to_string(ic_count) << std::string(": ") << p[i] << std::endl;
+					ic_count++;
+					(*it).second->iterate(f_pos, f_path, tree);
+				}
+			}
+
+			printf("============\n");
+//			printf("%lu<>%i\n", interceptions.size(), ic_count);
+
+			tree.pop_back();
+		}
+		template<typename F, typename G> void iterate(F f_pos, G f_path) const {
+			std::vector<const mappath *> tree;
+			iterate(f_pos, f_path, tree);
 		}
 	};
 
@@ -241,7 +317,7 @@ namespace rrr::magick {
 						continue;
 					const mappath *path_friend = &(*it_b);
 					(*it_a).check_close_to((*it_b), [&](const mappos &p){
-						it_a->push_interception(path_friend, p);
+						it_a->push_unique_interception(path_friend, p);
 					});
 				}
 				action(*it_a);
@@ -472,14 +548,56 @@ namespace rrr::magick {
 
 		public:
 		pixbuf(const rrr::types::data_const &d);
-
+		pixbuf(const pixbuf &src) :
+			image(src.image),
+			do_debug(src.do_debug),
+			pixels(src.pixels),
+			rows(src.rows),
+			cols(src.cols),
+			size(src.size),
+			channels(src.channels),
+			max_range_combined(src.max_range_combined) {
+		}
+		edges edges_clean_get() {
+			return edges(rows, cols);
+		}
+		size_t height() const {
+			return rows;
+		}
+		size_t width() const {
+			return cols;
+		}
 		void set_debug() {
 			do_debug = true;
 		}
-
-		edges edges_get(float threshold, rrr_length edge_length_max);
-		void edges_dump (const std::string &target_file_no_extension, const edges &m);
-		mappath_group paths_get (const edges &m, std::function<void(const edges &outlines)> debug);
+		void set(size_t a, size_t b, pixel_value v) {
+			pixels.set(a, b, v);
+		}
+		edges edges_get (
+				float threshold,
+				rrr_length edge_length_max,
+				size_t result_max
+		);
+		void edges_dump (
+				const std::string &target_file_no_extension,
+				const edges &m,
+				mappos tl,
+				mappos br
+		);
+		void edges_dump (
+				const std::string &target_file_no_extension,
+				const edges &m,
+				minmax<mappos> crop
+		);
+		void edges_dump (
+				const std::string &target_file_no_extension,
+				const edges &m
+		);
+		mappath_group paths_get (
+				const edges &m,
+				rrr_length path_length_min,
+				std::function<void(const edges &outlines)> debug
+		);
 	};
 }
 

@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+
 #include "../lib/instance_config.hpp"
 #include "../lib/poll_helper.hpp"
 #include "../lib/arrayxx.hpp"
@@ -26,8 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event_collection.hpp"
 #include "../lib/msgdb/msgdb_client.hpp"
 #include "../lib/magick/magick.hpp"
-
-#include <string>
 
 extern "C" {
 
@@ -59,6 +58,8 @@ void init(struct rrr_instance_module_data *data);
 void unload(void);
 
 } /* extern "C" */
+
+#include <string>
 
 struct ocr_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -103,21 +104,86 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 //		rrr::magick::edges edges = image.edges_get(0.4, 5);//image.outlines_get(image.edges_get(0.4, 5));
 //		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.2, 5));
 
-		rrr::magick::mappath_group group = image.paths_get(
-				image.edges_get(0.1, 5),
-				[&](const rrr::magick::edges &outlines) {
-					filename_count++;
-					rrr::magick::pixbuf image_tmp(array.get_value_raw_by_tag(data->input_data_tag));
-					printf("Dumping %i...\n", filename_count);
-					image_tmp.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), outlines);
+		for (float threshold = 0.1; threshold <= 1.0; threshold += 0.1) {
+			printf("- Threshold %f\n", threshold);
+			try {
+				std::vector<rrr::magick::mappath> paths_merged;
+				rrr::magick::edges edges_debug = image.edges_clean_get();
+				image.paths_get (
+						image.edges_get(
+								threshold,
+								5,
+								200000
+						),
+						10,
+						[&](const rrr::magick::edges &outlines) {
+								(void)(outlines);
+						}
+				).split([&](const rrr::magick::mappath &path) {
+						rrr::magick::mappath path_new(path.count());
+						path.iterate (
+								[&](const rrr::magick::mappos &p) {
+									path_new.push(p);
+								},
+								[&](const rrr::magick::mappath &p) {
+									(void)(p);
+								}
+						);
+						paths_merged.push_back(path_new);
+				});
+				std::sort (
+						paths_merged.begin(),
+						paths_merged.end(),
+						[&](
+							const rrr::magick::mappath &a,
+							const rrr::magick::mappath &b
+						) {
+								return a.count() > b.count(); // Reverse
+						}
+				);
+				filename_count++;
+				for (size_t i = 0; i < paths_merged.size() && i < 1000; i++) {
+					const rrr::magick::mappath &path = paths_merged[i];
+
+					rrr::magick::pixbuf image_path_debug(image);
+					rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
+					rrr::magick::minmax<rrr::magick::mappos> minmax;
+
+					int count = 0;
+					path.iterate(
+							[&](const rrr::magick::mappos &p) {
+								int colour = ++count % 10 == 0 ? 1 : 2;
+								edges_path_debug.set(p, colour);
+								edges_debug.set(p, colour);
+							},
+							[&](const rrr::magick::mappath &p){
+								p.update_ext_minmax(minmax);
+							}
+					);
+
+					edges_path_debug.set(path.start(), 3);
+
+					printf("Dumping %i-%lu...\n", filename_count, i);
+					minmax.expand(10, image_path_debug.height(), image_path_debug.width());
+					image_path_debug.edges_dump (
+							std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count) + "_" + std::to_string(i),
+							edges_path_debug,
+							minmax
+					);
 					printf("DONE\n");
 				}
-		);
+				filename_count++;
+				printf("Dumping %i...\n", filename_count);
+				image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges_debug);
+				printf("DONE\n");
+				rrr::magick::edges edges;
+				break;
+			}
+			catch (rrr::exp::incomplete &e) {
+				printf("- Max edges, increase threshold\n");
+			}
+		}
 
-		group.split([&](const rrr::magick::mappath &path) {
-			const rrr::magick::mappos pos = path.start();
-//			printf ("- Interceptions %lu %lu : %lu\n", (unsigned long) pos.a, (unsigned long) pos.b, path.count_interceptions());
-		});
 
 	}
 	catch (rrr::exp::soft e) {

@@ -19,8 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <cstddef>
 #include <iostream>
-#include <unistd.h>
+
+#include <pthread.h>
 
 #include "magick.hpp"
 #include "../exception.hpp"
@@ -137,7 +139,11 @@ namespace rrr::magick {
 		}
 	}
 
-	edges pixbuf::edges_get(float threshold, rrr_length edge_length_max) {
+	edges pixbuf::edges_get (
+			float threshold,
+			rrr_length edge_length_max,
+			size_t result_max
+	) {
 		uint64_t time_start = rrr_time_get_64();
 
 		edges result(rows, cols);
@@ -156,6 +162,10 @@ namespace rrr::magick {
 			cols
 		);
 
+		if (result.count() >= result_max) {
+			throw rrr::exp::incomplete();
+		}
+
 		// Get vertical
 		edges_get (
 			threshold,
@@ -170,14 +180,24 @@ namespace rrr::magick {
 			rows
 		);
 
+		if (result.count() >= result_max) {
+			throw rrr::exp::incomplete();
+		}
+
 		std::cout << "Found " << result.count() << " edges time " << (rrr_time_get_64() - time_start) << std::endl;
 
 		return result;
 	}
 
-	void pixbuf::edges_dump (const std::string &target_file_no_extension, const edges &m) {
+	void pixbuf::edges_dump (
+			const std::string &target_file_no_extension,
+			const edges &m,
+			mappos tl,
+			mappos br
+	) {
+		static const std::string extension = "png";
 		Magick::Image tmp(image);
-		tmp.magick("png");
+		tmp.magick(extension);
 		tmp.type(Magick::TrueColorAlphaType);
 
 		for (size_t x = 0; x < cols; x++) {
@@ -204,11 +224,36 @@ namespace rrr::magick {
 			}
 		}
 
+		printf("%lu %lu\n", tl.a, tl.b);
+		printf("%lu %lu\n", br.a, br.b);
+
+		printf("Crop %lu %lu %lu %lu\n", br.b-tl.b, br.a-tl.a, tl.b, tl.a);
+
 		tmp.syncPixels();
-		tmp.write(target_file_no_extension + ".png");
+		tmp.crop(Magick::Geometry(br.b-tl.b, br.a-tl.a, tl.b, tl.a));
+		tmp.write(target_file_no_extension + "." + extension);
 	}
 
-	mappath_group pixbuf::paths_get (const edges &m, std::function<void(const edges &outlines)> debug) {
+	void pixbuf::edges_dump (
+			const std::string &target_file_no_extension,
+			const edges &m,
+			minmax<mappos> crop
+	) {
+		edges_dump(target_file_no_extension, m, crop.min, crop.max);
+	}
+
+	void pixbuf::edges_dump (
+			const std::string &target_file_no_extension,
+			const edges &m
+	) {
+		edges_dump(target_file_no_extension, m, mappos(0, 0), mappos(rows, cols));
+	}
+
+	mappath_group pixbuf::paths_get (
+			const edges &m,
+			rrr_length path_length_min,
+			std::function<void(const edges &outlines)> debug
+	) {
 		uint64_t time_start = rrr_time_get_64();
 
 		edges outlines = m;
@@ -244,7 +289,7 @@ namespace rrr::magick {
 
 				path_new.push(pos);
 
-				int retry_max = 8;
+				int retry_max = 0;
 				do {
 					const mappos pos_start = pos;
 					//pritnf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
@@ -278,7 +323,7 @@ namespace rrr::magick {
 						catch (rrr::exp::eof &e) {
 							//pritnf("Ban %lu %lu\n", pos.a, pos.b);
 							outlines.set(pos, 3); /* Ban pixel */
-							if (retry_max-- && path_new.count() >= 2) {
+							if (retry_max-- > 0 && path_new.count() >= 2) {
 								pos = path_new.pop_skip();
 								//pritnf("-> Retry %lu %lu\n", pos.a, pos.b);
 								continue;
@@ -295,7 +340,7 @@ namespace rrr::magick {
 						}
 					}
 					catch (rrr::exp::eof &e) {
-						if (path_new.count() < 5) {
+						if (path_new.count() < path_length_min) {
 							//pritnf("Ban short path %lu\n", path_new.count());
 							for (int i = 0; i < path_new.count(); i++) {
 								outlines.set(path_new[i], 3); /* Ban pixel */
@@ -316,8 +361,8 @@ namespace rrr::magick {
 
 		std::cout << "Found " << paths.count() << " outlines time " << (rrr_time_get_64() - time_start) << std::endl;
 
-		debug(m);
-		debug(outlines);
+//		debug(m);
+//		debug(outlines);
 
 		return paths;
 	}

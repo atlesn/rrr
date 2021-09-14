@@ -98,13 +98,13 @@ AS_IF([ test -f ".development" ], [
 
 
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_WARNINGS -D_XOPEN_SOURCE=700"
+AM_CFLAGS="$CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wall -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -pthread"
 
-AM_CXXFLAGS="$AM_CFLAGS -std=c++17"
-AM_CFLAGS="$AM_CFLAGS -std=c11"
-
+AM_CXXFLAGS="$AM_CFLAGS -x c++ -std=c++17"
+AM_CFLAGS="$AM_CFLAGS -x c -std=c11 -Wstrict-prototypes -Werror=implicit-function-declaration"
 AM_LDFLAGS=""
 
+AC_SUBST(AM_CXXFLAGS)
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
 

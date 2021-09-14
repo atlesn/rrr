@@ -38,6 +38,9 @@ namespace rrr::exp {
 	int eof::num() noexcept {
 		return RRR_READ_EOF;
 	}
+	int incomplete::num() noexcept {
+		return RRR_READ_INCOMPLETE;
+	}
 
 	void check_and_throw (int ret, const std::string &msg) {
 		if (ret == RRR_READ_OK) {

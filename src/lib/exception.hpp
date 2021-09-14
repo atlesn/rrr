@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_EXCEPTION_HPP
 #define RRR_EXCEPTION_HPP
 
+#include <cstddef>
 #include <string>
 
 namespace rrr::exp {
@@ -55,8 +56,13 @@ namespace rrr::exp {
 		virtual int num() noexcept override;
 	};
 	struct eof : normal {
-		eof(const std::string &msg) : normal(msg + " - eof error") {}
+		eof(const std::string &msg) : normal(msg + " - eof") {}
 		eof() : normal("EOF") {}
+		virtual int num() noexcept override;
+	};
+	struct incomplete : normal {
+		incomplete(const std::string &msg) : normal(msg + " - incomplete") {}
+		incomplete() : normal("INCOMPLETE") {}
 		virtual int num() noexcept override;
 	};
 
