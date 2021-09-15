@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <iostream>
 #include <functional>
 #include <algorithm>
-#include <iostream>
 #include <vector>
 #include <cmath>
 #include <map>
@@ -129,7 +128,7 @@ namespace rrr::magick {
 			return m.contains(combine(x));
 		}
 		template<typename F> void has_then(const mappos &k, F f) const {
-			auto it = m.find(k);
+			auto it = m.find(combine(k));
 			if (it != m.end()) {
 				f(it->second);
 			}
@@ -255,7 +254,6 @@ namespace rrr::magick {
 		}
 		template<typename F, typename G> void iterate(F f_pos, G f_path, std::vector<const mappath *> &tree) const {
 			if (std::find_if(tree.begin(), tree.end(), [&](const mappath *p){
-					printf("-> Already iterate %p <=> %p: %i\n", this, p, this == p);
 					return this == p;
 			}) != tree.end()) {
 				return;
@@ -265,21 +263,14 @@ namespace rrr::magick {
 
 			tree.push_back(this);
 
-			printf("= SIZE %lu ===========\n", p.size());
-
 			int ic_count = 0;
 			for (size_t i = 0; i < p.size(); i++) {
 				f_pos(p[i]);
 				this->i.has_then(p[i], [&](const mappath *p){
-					//std::cout << std::to_string(ic_count) << std::string(": ") << p[i] << std::endl;
 					ic_count++;
 					p->iterate(f_pos, f_path, tree);
 				});
 			}
-
-			printf("============\n");
-
-			printf("%lu<>%i\n", i.count(), ic_count);
 
 			tree.pop_back();
 		}
@@ -468,7 +459,7 @@ namespace rrr::magick {
 			} while (1);
 			return pos;
 		}
-		template<typename F> mappos get_next_neighbour( const mappos &start, F filter) const {
+		template<typename F> mappos get_next_neighbour(const mappos &start, F filter) const {
 			mappos pos;
 
 			// Checks must be performed in circular order, these checks start with the top right and go clockwise
@@ -571,6 +562,76 @@ namespace rrr::magick {
 				rrr_length a_max,
 				rrr_length b_max
 		);
+
+		void edge_start_iterate (
+				const edges &outlines,
+				auto f
+		) {
+			try {
+				mappos pos_prev;
+				do {
+					// Get a starting point
+					//pritnf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+					f(outlines.get_next_set (
+							pos_prev,
+							[&](const mappos &c) {
+								pos_prev = c;
+
+								const edge_value v = outlines.get(c.a, c.b);
+
+								if (v < 1 || v > 1)
+									return false;
+
+								const size_t count = outlines.neighbours_count(c, 7, v) +
+										     outlines.neighbours_count(c, 7, -v);
+
+								return (bool) (count <= 6 && count >= 2);
+							}
+					));
+				} while(1);
+			}
+			catch (rrr::exp::eof &e) {
+			}
+		}
+
+		void edge_walk (
+				const mappos &pos_start,
+				const edges &m,
+				auto update_mask,
+				auto check_neighbour,
+				auto check_circle,
+				auto notify_pos,
+				auto notify_end
+		) {
+			mappos pos = pos_start;
+
+			notify_pos(pos);
+
+			do {
+				//pritnf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
+				edgemask mask;
+				try {
+					update_mask(mask, pos);
+
+					pos =  m.get_next_neighbour(
+							pos,
+							[&](const mappos &c) {
+								if (c == pos_start && check_circle()) {
+									// Complete circle made
+									throw rrr::exp::eof();
+								}
+								return check_neighbour(c, mask);
+							}
+					);
+
+					notify_pos(pos);
+				}
+				catch (rrr::exp::eof &e) {
+					notify_end(pos);
+					break;
+				}
+			} while(1);
+		}
 
 		public:
 		pixbuf(const rrr::types::data_const &d);

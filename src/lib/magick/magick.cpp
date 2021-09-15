@@ -255,115 +255,69 @@ namespace rrr::magick {
 			std::function<void(const edges &outlines)> debug
 	) {
 		uint64_t time_start = rrr_time_get_64();
-
 		edges outlines = m;
-
-		mappos pos_prev;
 		mappath_group paths;
+
 		try {
 			mappos pos;
-			edge_value pos_value = 0;
-			do {
-				// Get a starting point
-				//pritnf("Start %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
-				pos = pos_prev = outlines.get_next_set (
-						pos_prev,
-						[&](const mappos &c) {
-							const edge_value v = outlines.get(c.a, c.b);
-
-							if (v < 1 || v > 1)
-								return false;
-
-							const size_t count = outlines.neighbours_count(c, 7, v) +
-							                     outlines.neighbours_count(c, 7, -v);
-
-							return (count <= 6 && count >= 2);
-						}
-				);
-
+			edge_start_iterate(outlines, [&](const mappos &pos) {
 				// Walk around edge
 				mappath path_new(100);
 
-				pos_value = outlines.get(pos);
-				outlines.set(pos, 2);
+				const edge_value pos_value = outlines.get(pos);
 
 				path_new.push(pos);
 
-				int retry_max = 0;
-				do {
-					const mappos pos_start = pos;
-					//pritnf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
-					edgemask mask_blank;
-					try {
-						outlines.neighbours_count(mask_blank, pos, 8, 0);
-						mask_blank.widen();
-//						mask_blank.dump();
+				edge_walk (
+						pos,
+						m,
+						[&](edgemask &m, const mappos &pos) {
+							// Create mask based on blank pixels
+							outlines.neighbours_count(m, pos, 8, 0);
+							m.widen();
+						},
+						[&](const mappos &check_pos, const edgemask &mask) {
+							if (outlines.get(check_pos) != 1)
+								return false;
 
-						try {
-							pos = m.get_next_neighbour (
-									pos,
-									[&](const mappos &c) {
-										if (path_new.count() > 10 && c == path_new[0]) {
-											// Origin reached
-											return true;
-										}
+							// XXX : We only follow positive edges, don't know if thats a good or bad thing
 
-										if (outlines.get(c.a, c.b) != 1)
-											return false;
-										edgemask mask_blank_tmp = mask_blank;
-										// XXX : We only follow positive edges, don't know if thats a good or bad thing
-										const size_t count = outlines.neighbours_count(c, 7, pos_value);
-										//const size_t count_neg = outlines.neighbours_count(c, 7, -pos_value);
-										const size_t count_blank = outlines.neighbours_count(mask_blank_tmp, c, 8, 0);
-										const size_t count_used = outlines.neighbours_count(c, 3, 2);
-										//pritnf("- Count %lu %lu: %lu used %lu blank %lu\n", c.a, c.b, count, count_used, count_blank);
-										return (count <= 6 && count_blank >= 2 && count_blank <= 6 && count_used <= 2);
-									}
-							);
-						}
-						catch (rrr::exp::eof &e) {
-							//pritnf("Ban %lu %lu\n", pos.a, pos.b);
-							outlines.set(pos, 3); /* Ban pixel */
-							if (retry_max-- > 0 && path_new.count() >= 2) {
-								pos = path_new.pop_skip();
-								//pritnf("-> Retry %lu %lu\n", pos.a, pos.b);
-								continue;
+							const size_t count       = outlines.neighbours_count(check_pos, 7, pos_value);
+							const size_t count_blank = outlines.neighbours_count(mask, check_pos, 8, 0);
+							const size_t count_used  = outlines.neighbours_count(check_pos, 3, 2);
+
+							return (count <= 6 && count_blank >= 2 && count_blank <= 6 && count_used <= 2);
+						},
+						[&]() {
+							// Accept circle path?
+							return path_new.count() >= path_length_min;
+						},
+						[&](const mappos &pos) {
+							// Push found point
+							outlines.set(pos, 2);
+							path_new.push(pos);
+						},
+						[&](const mappos &pos_end) {
+							if (path_new.count() >= path_length_min) {
+								// Ban end pixel
+								outlines.set(pos_end, 3);
+								paths.push(path_new);
 							}
-							throw e;
-						}
-
-						outlines.set(pos, 2);
-						path_new.push(pos);
-
-						if (path_new.count() > 10 && pos == path_new[0]) {
-							//pritnf("- Stop, circle made %lu %lu\n", pos.a, pos.b);
-							throw rrr::exp::eof();
-						}
-					}
-					catch (rrr::exp::eof &e) {
-						if (path_new.count() < path_length_min) {
-							//pritnf("Ban short path %lu\n", path_new.count());
-							for (size_t i = 0; i < path_new.count(); i++) {
-								outlines.set(path_new[i], 3); /* Ban pixel */
+							else {
+								// Ban all found pixels
+								for (size_t i = 0; i < path_new.count(); i++) {
+									outlines.set(path_new[i], 3);
+								}
 							}
+							path_new = mappath(100);
 						}
-						else {
-							//pritnf("- Stop %lu %lu\n", pos.a, pos.b);
-							outlines.set(pos, 3); /* Ban pixel */
-							paths.push(path_new);
-						}
-						break;
-					}
-				} while(1);
-			} while(1);
+				);
+			});
 		}
 		catch (rrr::exp::eof &e) {
 		}
 
 		std::cout << "Found " << paths.count() << " outlines time " << (rrr_time_get_64() - time_start) << std::endl;
-
-//		debug(m);
-//		debug(outlines);
 
 		return paths;
 	}

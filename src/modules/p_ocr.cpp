@@ -149,25 +149,17 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 					rrr::magick::pixbuf image_path_debug(image);
 					rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
 					rrr::magick::minmax<rrr::magick::mappos> minmax;
-			try{
+
 					path.iterate(
 							[&](const rrr::magick::mappos &p) {
 								int colour = ++count % 10 == 0 ? 1 : 2;
 								edges_path_debug.set(p, colour);
 								edges_debug.set(p, colour);
-								if (count > 50) {
-									throw rrr::exp::eof();
-								}
 							},
 							[&](const rrr::magick::mappath &p){
 								p.update_ext_minmax(minmax);
 							}
 					);
-			}
-
-			catch (rrr::exp::eof &e) {
-				printf("EOF\n");
-			}
 
 					edges_path_debug.set(path.start(), 3);
 
