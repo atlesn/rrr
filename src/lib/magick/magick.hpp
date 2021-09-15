@@ -25,12 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Magick++.h>
 
 #include <string>
+#include <iostream>
 #include <functional>
 #include <algorithm>
 #include <iostream>
 #include <vector>
 #include <cmath>
 #include <map>
+#include <set>
 
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
@@ -57,6 +59,9 @@ namespace rrr::magick {
 			this->a = a;
 			this->b = b;
 			return *this;
+		}
+		bool equals(const coordinate<T> &test) const {
+			return (test.a == a && test.b == b);
 		}
 		void reset() {
 			a = 0;
@@ -108,8 +113,37 @@ namespace rrr::magick {
 	};
 
 	typedef uint16_t mapunit;
+	typedef uint32_t mapunit_combined;
 	typedef coordinate<mapunit> mappos;
-	
+
+	template<typename T> class mapposhash {
+		std::map<mapunit_combined,T> m;
+		constexpr mapunit_combined combine(mapunit a, mapunit b) const {
+			return (mapunit_combined) a << (sizeof(a) * 8) & b;
+		}
+		constexpr mapunit_combined combine(const mappos &x) const {
+			return combine(x.a, x.b);
+		}
+		public:
+		bool has(const mappos &x) const {
+			return m.contains(combine(x));
+		}
+		template<typename F> void has_then(const mappos &k, F f) const {
+			auto it = m.find(k);
+			if (it != m.end()) {
+				f(it->second);
+			}
+		}
+		template<typename F> void iterate(F f) const {
+			for (auto it = m.begin(); it != m.end(); it++) {
+				f(it->second);
+			}
+		}
+		T &get (const mappos &k) {
+			return m[combine(k)];
+		}
+	};
+
 	std::ostream &operator<< (std::ostream &o, const rrr::magick::mappos &p) {
 		o << std::to_string(p.a) << "x" << std::to_string(p.b);
 		return o;
@@ -139,21 +173,33 @@ namespace rrr::magick {
 	};
 
 	class mappath {
-		class interception {
+		class interceptions : private mapposhash<std::vector<const mappath *>> {
+			std::set<const mappath *> s;
 			public:
-			std::pair<const mappath *, const mappos> i;
-			interception(const mappath *p, const mappos &pos) : i(p, pos) {}
-			const mappath *path() const {
-				return i.first;
+			void put (const mappos &k, const mappath *p) {
+				if (s.emplace(p).second == true) {
+					mapposhash::get(k).push_back(p);
+				}
 			}
-			const mappos pos() const {
-				return i.second;
+			template<typename F> void has_then (const mappos &k, F f) const {
+				mapposhash::has_then(k, [&f](const std::vector<const mappath *> &p) {
+					for (auto it = p.begin(); it != p.end(); it++) {
+						f(*it);
+					}
+				});
+			}
+			size_t count() const {
+				size_t count = 0;
+				mapposhash::iterate([&count](const std::vector<const mappath *> &p) {
+					count += p.size();
+				});
+				return count;
 			}
 		};
 
 		public:
 		std::vector<mappos> p;
-		std::map<mappos,const mappath *,std::equal_to<mappos>> interceptions;
+		interceptions i;
 		minmax<mappos> m;
 		mappos operator[] (size_t i) const {
 			return p[i];
@@ -201,14 +247,15 @@ namespace rrr::magick {
 		mappos start() const {
 			return p.front();
 		}
-		void push_unique_interception (const mappath *p, const mappos pos) {
-			interceptions[pos] = p;
+		void push_unique_interception (const mappos &k, const mappath *p) {
+			i.put(k, p);
 		}
 		size_t count_interceptions() const {
-			return interceptions.size();
+			return i.count();
 		}
 		template<typename F, typename G> void iterate(F f_pos, G f_path, std::vector<const mappath *> &tree) const {
 			if (std::find_if(tree.begin(), tree.end(), [&](const mappath *p){
+					printf("-> Already iterate %p <=> %p: %i\n", this, p, this == p);
 					return this == p;
 			}) != tree.end()) {
 				return;
@@ -218,18 +265,21 @@ namespace rrr::magick {
 
 			tree.push_back(this);
 
+			printf("= SIZE %lu ===========\n", p.size());
+
 			int ic_count = 0;
 			for (size_t i = 0; i < p.size(); i++) {
 				f_pos(p[i]);
-				if (interceptions.contains(p[i])) {
-					std::cout << std::to_string(ic_count) << std::string(": ") << p[i] << std::endl;
+				this->i.has_then(p[i], [&](const mappath *p){
+					//std::cout << std::to_string(ic_count) << std::string(": ") << p[i] << std::endl;
 					ic_count++;
-					interceptions.at(p[i])->iterate(f_pos, f_path, tree);
-				}
+					p->iterate(f_pos, f_path, tree);
+				});
 			}
 
 			printf("============\n");
-//			printf("%lu<>%i\n", interceptions.size(), ic_count);
+
+			printf("%lu<>%i\n", i.count(), ic_count);
 
 			tree.pop_back();
 		}
@@ -300,7 +350,7 @@ namespace rrr::magick {
 						continue;
 					const mappath *path_friend = &(*it_b);
 					(*it_a).check_close_to((*it_b), [&](const mappos &p){
-						it_a->push_unique_interception(path_friend, p);
+						it_a->push_unique_interception(p, path_friend);
 					});
 				}
 				action(*it_a);

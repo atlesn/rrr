@@ -86,7 +86,7 @@ namespace rrr::poll_helper {
 	) {
 		class poll_delete_custom_arg_wrapper_callback_data<T> callback_data(callback, callback_arg);
 
-		rrr:exp::check_and_throw (
+		rrr::exp::check_and_throw (
 			rrr_poll_do_poll_delete_custom_arg(&a.a, thread_data, __poll_delete_wrapper<T>, &callback_data),
 			"Error in " + RRR_FUNC
 		);
