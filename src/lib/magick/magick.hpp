@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <cmath>
 #include <map>
 #include <set>
+#include <bit>
 
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
@@ -171,6 +172,106 @@ namespace rrr::magick {
 		}
 	};
 
+	struct vector {
+		int8_t a;
+		int8_t b;
+		constexpr vector (const mappos &a, const mappos &b) :
+			a((ssize_t) b.a - a.a),
+			b((ssize_t) b.b - a.b) {
+		}
+		constexpr vector (const vector &augend, const vector &addend) :
+			a(augend.a + addend.a),
+			b(augend.b + addend.b) {	
+		}
+		constexpr vector &operator+= (const vector &addend) {
+			a += addend.a;
+			b += addend.b;
+			return *this;
+		}
+	};
+
+	class vectorpath {
+		mappos origin;
+		mappos prev;
+		protected:
+		std::vector<vector> v;
+		public:
+		vectorpath(const mappos &origin, size_t size) :
+			origin(origin),
+			prev(origin),
+			v()
+		{
+			printf("Reserve %lu\n", size);
+			v.reserve(size);
+		} 
+		void push(const mappos &p) {
+			v.emplace_back(prev, p);
+			prev = p;
+		}
+	};
+
+	class vectorpath_16 : private vectorpath {
+		uint8_t b;
+		uint8_t popcount() {
+			const uint64_t *pos = reinterpret_cast<uint64_t*>(v.data());
+			uint8_t sum = 0;
+			for (size_t i = 0; i < 4; i++) {
+				sum += (uint8_t) std::popcount<uint64_t>(*pos);
+				pos++;
+			}
+			return sum;
+		}
+		void fit() {
+			std::vector<vector> v_new;
+			v_new.reserve(16);
+
+			if (v.size() >= 16) {
+				auto it = v.begin();
+
+				size_t step = v.size() / 16;
+				size_t remainder = v.size() % 16;
+
+				if (step == 1) {
+					v_new.assign(it, v.end());
+				}
+				else {
+					size_t i = 0;
+					while (it != v.end()) {
+						printf ("%lu/%u\n", i++, v.size());
+						vector &v = v_new.emplace_back(*it);
+						for (size_t i = 0; i < step; i++) {
+							v += *(++it);
+						}
+					}
+				}
+
+				while (remainder--) {
+					v_new.emplace_back(vector(*it, *(++it)));
+				}
+			}
+			else {
+				v_new.assign(v.begin(), v.end());
+				while (v_new.size() < 16) {
+					v_new.push_back(v.back());
+				}
+			}
+			v = v_new;
+		}
+		public:
+		vectorpath_16 (const vectorpath &src) : vectorpath(src) {
+			if (v.size() == 0) {
+				throw rrr::exp::bug(std::string("Vectorpath to ") + RRR_FUNC + " had no elements");
+			}
+			if (v.size() != 16) {
+				fit();
+			}
+			b = popcount();
+		}
+		uint8_t bits() const {
+			return b;
+		}
+	};
+
 	class mappath {
 		class interceptions : private mapposhash<std::vector<const mappath *>> {
 			std::set<const mappath *> s;
@@ -278,45 +379,17 @@ namespace rrr::magick {
 			std::vector<const mappath *> tree;
 			iterate(f_pos, f_path, tree);
 		}
-	};
-
-	struct vector {
-		public:
-		const float m;
-		const float a;
-		vector(float m, float a) : m(m), a(a) {}
-	};
-
-	class vectorpath {
-		static const int calculate_border = 5;
-		mappos p;
-		std::vector<vector> v;
-		std::vector<mappos> buf;
-		public:
-		void calculate() {
-			if (buf.size() < 2)
-				return;
-
-			const mappos &a = buf.front();
-			const mappos &b = buf.back();
-
-			const float v1 = (float) a.a - (float) b.a;
-			const float v2 = (float) b.a - (float) b.b;
-
-			const float mag = std::sqrt(std::pow(v1, 2.0f) + std::pow(v2, 2.0f));
-			const float tan = v2 / v1;
-			const float rad = std::atan(tan);
-
-			v.emplace_back(mag, rad);
-
-			buf.clear();
-			
-		}
-		void push(const mappos &p) {
-			buf.push_back(p);
-			if (buf.size() == calculate_border) {
-				calculate();
+		vectorpath_16 to_vectorpath_16 () const {
+			printf("To 16 %lu\n", p.size());
+			auto it = p.begin();
+			vectorpath v(*it, p.size());
+			while(++it != p.end()) {
+				v.push(*it);
 			}
+			return vectorpath_16(v);
+		}
+		template<typename F> void to_vectorpath_16 (F f) const {
+			f(to_vectorpath_16());
 		}
 	};
 

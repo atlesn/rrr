@@ -257,12 +257,13 @@ namespace rrr::magick {
 		uint64_t time_start = rrr_time_get_64();
 		edges outlines = m;
 		mappath_group paths;
+		const size_t reserve_size = 100;
 
 		try {
 			mappos pos;
 			edge_start_iterate(outlines, [&](const mappos &pos) {
 				// Walk around edge
-				mappath path_new(100);
+				mappath path_new(reserve_size);
 
 				const edge_value pos_value = outlines.get(pos);
 
@@ -309,7 +310,7 @@ namespace rrr::magick {
 									outlines.set(path_new[i], 3);
 								}
 							}
-							path_new = mappath(100);
+							path_new = mappath(reserve_size);
 						}
 				);
 			});

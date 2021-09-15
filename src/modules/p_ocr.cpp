@@ -163,7 +163,7 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 
 					edges_path_debug.set(path.start(), 3);
 
-					printf("Dumping %i-%lu...\n", filename_count, i);
+					printf("Dumping %i-%lu path path length %lu...\n", filename_count, i, path.count());
 					minmax.expand(10, image_path_debug.height(), image_path_debug.width());
 					image_path_debug.edges_dump (
 							std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count) + "_" + std::to_string(i),
@@ -171,6 +171,10 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 							minmax
 					);
 					printf("DONE\n");
+
+/*					path.to_vectorpath_16([](const rrr::magick::vectorpath_16 &v) {
+						printf("%u\n", v.bits());
+					});*/
 				}
 				filename_count++;
 				printf("Dumping %i...\n", filename_count);
