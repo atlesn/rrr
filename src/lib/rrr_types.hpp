@@ -36,6 +36,23 @@ namespace rrr::types {
 		rrr_length l;
 		data_const() = default;
 		data_const(const void *d, rrr_length l) : d(d), l(l) {}
+		data_const(std::pair<const void *, rrr_length> d) : d(d.first), l(d.second) {}
+	};
+
+	class data {
+		public:
+		void *d;
+		rrr_length l;
+		data() : d(NULL), l(0) {}
+		data(void **d, rrr_length l) : d(*d), l(l) {
+			*d = NULL;
+		}
+		data_const to_const() {
+			if (d == NULL) {
+				throw rrr::exp::bug(std::string("Data was NULL in ") + RRR_FUNC);
+			}
+			return data_const(d, l);
+		}
 	};
 
 	static inline rrr_length length_from_size_t_exp_const (size_t x) {

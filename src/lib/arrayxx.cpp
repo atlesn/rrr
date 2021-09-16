@@ -50,4 +50,28 @@ namespace rrr::array {
 		}
 		return rrr::type::data_const(d, l);
 	}
+
+	void array::push_value_with_tag (const std::string &t, const std::string &v) {
+		if (rrr_array_push_value_str_with_tag(&a, t.c_str(), v.c_str()) != 0) {
+			throw rrr::exp::hard("Failed to push string with tag to array");
+		}
+	}
+
+	void array::push_value_with_tag (const std::string &t, int64_t v) {
+		if (rrr_array_push_value_i64_with_tag(&a, t.c_str(), v) != 0) {
+			throw rrr::exp::hard("Failed to push i64 with tag to array");
+		}
+	}
+
+	void array::push_value_with_tag (const std::string &t, const rrr::type::data_const &d) {
+		if (rrr_array_push_value_blob_with_tag_with_size(&a, t.c_str(), (const char *) d.d, d.l)) {
+			throw rrr::exp::hard("Failed to push blob value with tag to array");
+		}
+	}
+
+	void array::to_message (struct rrr_msg_msg **msg, uint64_t time, const std::string &topic) {
+		if (rrr_array_new_message_from_array(msg, &a, time, topic.c_str(), topic.length())) {
+			throw rrr::exp::hard("Failed to make RRR message from array");
+		}
+	}
 }

@@ -188,13 +188,13 @@ namespace rrr::magick {
 		return result;
 	}
 
-	void pixbuf::edges_dump (
-			const std::string &target_file_no_extension,
+	Magick::Image pixbuf::edges_dump_image (
 			const edges &m,
 			mappos tl,
 			mappos br
 	) {
 		static const std::string extension = "png";
+
 		Magick::Image tmp(image);
 		tmp.magick(extension);
 		tmp.type(Magick::TrueColorAlphaType);
@@ -224,14 +224,41 @@ namespace rrr::magick {
 			}
 		}
 
-		printf("%u %u\n", tl.a, tl.b);
+/*		printf("%u %u\n", tl.a, tl.b);
 		printf("%u %u\n", br.a, br.b);
 
-		printf("Crop %u %u %u %u\n", br.b-tl.b, br.a-tl.a, tl.b, tl.a);
+		printf("Crop %u %u %u %u\n", br.b-tl.b, br.a-tl.a, tl.b, tl.a);*/
 
 		tmp.syncPixels();
 		tmp.crop(Magick::Geometry(br.b-tl.b, br.a-tl.a, tl.b, tl.a));
-		tmp.write(target_file_no_extension + "." + extension);
+
+		return tmp;
+	}
+
+	Magick::Blob pixbuf::edges_dump_blob (
+			const edges &m,
+			mappos tl,
+			mappos br
+	) {
+		Magick::Blob blob;
+		edges_dump_image(m, tl, br).write(&blob);
+		return blob;
+	}
+
+	Magick::Blob pixbuf::edges_dump_blob (
+			const edges &m,
+			minmax<mappos> crop
+	) {
+		return edges_dump_blob(m, crop.min, crop.max);
+	}
+
+	void pixbuf::edges_dump (
+			const std::string &target_file_no_extension,
+			const edges &m,
+			mappos tl,
+			mappos br
+	) {
+		edges_dump_image(m, tl, br).write(target_file_no_extension + ".png");
 	}
 
 	void pixbuf::edges_dump (
@@ -251,8 +278,7 @@ namespace rrr::magick {
 
 	mappath_group pixbuf::paths_get (
 			const edges &m,
-			rrr_length path_length_min,
-			std::function<void(const edges &outlines)> debug
+			rrr_length path_length_min
 	) {
 		uint64_t time_start = rrr_time_get_64();
 		edges outlines = m;

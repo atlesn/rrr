@@ -39,6 +39,10 @@ namespace rrr::array {
 		~array();
 
 		rrr::type::data_const get_value_raw_by_tag (const std::string &tag) const;
+		void push_value_with_tag (const std::string &t, const std::string &v);
+		void push_value_with_tag (const std::string &t, int64_t v);
+		void push_value_with_tag (const std::string &t, const rrr::type::data_const &d);
+		void to_message (struct rrr_msg_msg **msg, uint64_t time, const std::string &topic);
 	};
 }
 

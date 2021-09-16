@@ -222,9 +222,32 @@ namespace rrr::magick {
 		double mag;
 		constexpr vector_normal(const vector &v) :
 			theta(std::atan((double) v.b / (double) v.a)),
-			mag(std::sqrt(std::pow((double) v.a, 2.0) + std::pow((double) v.b, 2.0)))
-			{
-			printf("Tan: %i / %i\n", v.b, v.a);
+			mag(std::sqrt(std::pow((double) v.a, 2.0) + std::pow((double) v.b, 2.0))) {
+		}
+	};
+
+	class vectorpath_signature {
+		std::array<uint16_t,16> s;
+		public:
+		vectorpath_signature() : s() {
+			s.fill(0);
+		}
+		vectorpath_signature(int x) : s() {
+			s.fill(x);
+		}
+		uint16_t &operator[] (size_t pos) {
+			return s[pos];
+		}
+		size_t cmpto(const vectorpath_signature &test) const {
+			size_t acc = 0;
+			for (size_t i = 0; i < 16; i++) {
+				ssize_t tmp = (ssize_t) test.s[i] - (ssize_t) s[i];
+				acc += (tmp < 0 ? -tmp : tmp);
+			}
+			return acc;
+		}
+		std::pair<const void*,rrr_length> data() const {
+			return std::pair<const void *,rrr_length>(s.data(),(rrr_length) sizeof(s));
 		}
 	};
 
@@ -237,9 +260,8 @@ namespace rrr::magick {
 		void push(vector v) {
 			this->v.emplace_back(v);
 		}
-		std::vector<uint16_t> signature() const {
-			std::vector<uint16_t> s;
-			s.reserve(v.size());
+		vectorpath_signature signature() const {
+			vectorpath_signature s;
 
 			double mag_max = 0.0;
 			for (auto it = v.begin(); it != v.end(); it++) {
@@ -248,11 +270,18 @@ namespace rrr::magick {
 			}
 			double theta_diff = v.front().theta;
 
-			for (auto it = v.begin(); it != v.end(); it++) {
-				const int8_t sig_theta = (int8_t) (127.0/compression * ((it->theta - theta_diff) / std::numbers::pi_v<double>));
-				const uint8_t sig_mag = (uint8_t) (255.0/compression * (it->mag / mag_max));
-				printf("%i %u (%lf %lf)\n", sig_theta, sig_mag, it->theta - theta_diff, it->mag);
-				s.push_back(((uint16_t) sig_theta << 8) & sig_mag);
+			size_t i = 0;
+			for (auto it = v.begin(); it != v.end() && i < 16; it++) {
+				const int sig_theta = (int) (255.0 * ((it->theta - theta_diff) / std::numbers::pi_v<double>));
+				const int sig_mag = (int) (255.0 * (it->mag / mag_max));
+				//printf("%i %i (%lf %lf)\n", sig_theta, sig_mag, it->theta - theta_diff, it->mag);
+
+				uint16_t res;
+				
+				*(((uint8_t*) &res) + 0) = (uint8_t) sig_mag;
+				*(((uint8_t*) &res) + 1) = (int8_t) sig_theta;
+
+				s[i++] = (uint16_t) res;
 			}
 
 			return s;
@@ -332,7 +361,6 @@ namespace rrr::magick {
 		template<typename F> void walk(F f) const {
 			mappos pos(origin);
 			f(pos);
-			printf("Walk %lu\n", v.size());
 			for (auto it = v.begin(); it != v.end(); ++it) {
 				pos.move_vector(it->a, it->b);
 				f(pos);
@@ -770,6 +798,20 @@ namespace rrr::magick {
 				rrr_length edge_length_max,
 				size_t result_max
 		);
+		Magick::Image edges_dump_image (
+				const edges &m,
+				mappos tl,
+				mappos br
+		);
+		Magick::Blob edges_dump_blob (
+				const edges &m,
+				mappos tl,
+				mappos br
+		);
+		Magick::Blob edges_dump_blob (
+				const edges &m,
+				minmax<mappos> crop
+		);
 		void edges_dump (
 				const std::string &target_file_no_extension,
 				const edges &m,
@@ -787,8 +829,7 @@ namespace rrr::magick {
 		);
 		mappath_group paths_get (
 				const edges &m,
-				rrr_length path_length_min,
-				std::function<void(const edges &outlines)> debug
+				rrr_length path_length_min
 		);
 	};
 }
