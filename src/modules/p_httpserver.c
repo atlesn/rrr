@@ -922,7 +922,7 @@ static int httpserver_async_response_process (
 			content_type_to_use = content_type_to_free;
 		}
 
-		if (content_type_to_use != NULL) {
+		if (content_type_to_use != NULL && strlen(content_type_to_use) > 0) {
 			if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_use)) != 0) {
 				goto out;
 			}
