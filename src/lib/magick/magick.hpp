@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Magick++.h>
 
+#include <iterator>
 #include <string>
 #include <iostream>
 #include <functional>
@@ -33,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <map>
 #include <set>
 #include <bit>
+#include <numbers>
 
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
@@ -110,6 +112,30 @@ namespace rrr::magick {
 			a = a_new;
 			b = b_new;
 		}
+		void move_vector(ssize_t a, ssize_t b) {
+			ssize_t a_new = this->a + a;
+			ssize_t b_new = this->b + b;
+			if (a_new < 0)
+				a_new = 0;
+			if (b_new < 0)
+				b_new = 0;
+			this->a = (T) a_new;
+			this->b = (T) b_new;
+		}
+		void move_towards(const coordinate<T> &target) {
+			if (target.a < a) {
+				a--;
+			}
+			else if (target.a > a) {
+				a++;
+			}
+			if (target.b < b) {
+				b--;
+			}
+			else if (target.b > b) {
+				b++;
+			}
+		}
 	};
 
 	typedef uint16_t mapunit;
@@ -175,6 +201,7 @@ namespace rrr::magick {
 	struct vector {
 		int8_t a;
 		int8_t b;
+		constexpr vector () : a(0), b(0) {}
 		constexpr vector (const mappos &a, const mappos &b) :
 			a((ssize_t) b.a - a.a),
 			b((ssize_t) b.b - a.b) {
@@ -190,18 +217,59 @@ namespace rrr::magick {
 		}
 	};
 
+	struct vector_normal {
+		double theta;
+		double mag;
+		constexpr vector_normal(const vector &v) :
+			theta(std::atan((double) v.b / (double) v.a)),
+			mag(std::sqrt(std::pow((double) v.a, 2.0) + std::pow((double) v.b, 2.0)))
+			{
+			printf("Tan: %i / %i\n", v.b, v.a);
+		}
+	};
+
+	class vectorpath_normal {
+		std::vector<vector_normal> v;
+		public:
+		vectorpath_normal(size_t reserve) : v() {
+			v.reserve(reserve);
+		}
+		void push(vector v) {
+			this->v.emplace_back(v);
+		}
+		std::vector<uint16_t> signature() const {
+			std::vector<uint16_t> s;
+			s.reserve(v.size());
+
+			double mag_max = 0.0;
+			for (auto it = v.begin(); it != v.end(); it++) {
+				if (it->mag > mag_max)
+					mag_max = it->mag;
+			}
+			double theta_diff = v.front().theta;
+
+			for (auto it = v.begin(); it != v.end(); it++) {
+				const int8_t sig_theta = (int8_t) (127.0/compression * ((it->theta - theta_diff) / std::numbers::pi_v<double>));
+				const uint8_t sig_mag = (uint8_t) (255.0/compression * (it->mag / mag_max));
+				printf("%i %u (%lf %lf)\n", sig_theta, sig_mag, it->theta - theta_diff, it->mag);
+				s.push_back(((uint16_t) sig_theta << 8) & sig_mag);
+			}
+
+			return s;
+		}
+	};
+
 	class vectorpath {
-		mappos origin;
 		mappos prev;
 		protected:
+		const mappos origin;
 		std::vector<vector> v;
 		public:
 		vectorpath(const mappos &origin, size_t size) :
-			origin(origin),
 			prev(origin),
+			origin(origin),
 			v()
 		{
-			printf("Reserve %lu\n", size);
 			v.reserve(size);
 		} 
 		void push(const mappos &p) {
@@ -221,41 +289,32 @@ namespace rrr::magick {
 			}
 			return sum;
 		}
-		void fit() {
+		vectorpath_16 &fit() {
 			std::vector<vector> v_new;
 			v_new.reserve(16);
 
-			if (v.size() >= 16) {
-				auto it = v.begin();
-
-				size_t step = v.size() / 16;
-				size_t remainder = v.size() % 16;
-
-				if (step == 1) {
-					v_new.assign(it, v.end());
-				}
-				else {
-					size_t i = 0;
-					while (it != v.end()) {
-						printf ("%lu/%u\n", i++, v.size());
-						vector &v = v_new.emplace_back(*it);
-						for (size_t i = 0; i < step; i++) {
-							v += *(++it);
-						}
+			if (v.size() > 16) {
+				const size_t step = v.size() / 16;
+				for (size_t i = 0; i < v.size(); i++) {
+					if (i % step == 0 && v_new.size() < 16) {
+						v_new.emplace_back(this->v[i]);
 					}
-				}
-
-				while (remainder--) {
-					v_new.emplace_back(vector(*it, *(++it)));
+					else {
+						v_new.back() += this->v[i];
+					}
 				}
 			}
 			else {
 				v_new.assign(v.begin(), v.end());
-				while (v_new.size() < 16) {
-					v_new.push_back(v.back());
-				}
 			}
+	
+			while (v_new.size() < 16) {
+				v_new.emplace_back();
+			}
+
 			v = v_new;
+
+			return *this;
 		}
 		public:
 		vectorpath_16 (const vectorpath &src) : vectorpath(src) {
@@ -270,37 +329,35 @@ namespace rrr::magick {
 		uint8_t bits() const {
 			return b;
 		}
+		template<typename F> void walk(F f) const {
+			mappos pos(origin);
+			f(pos);
+			printf("Walk %lu\n", v.size());
+			for (auto it = v.begin(); it != v.end(); ++it) {
+				pos.move_vector(it->a, it->b);
+				f(pos);
+			}
+		}
+		vectorpath_normal normalize() const {
+			vectorpath_normal normal(16);
+			for (auto it = v.begin(); it != v.end(); ++it) {
+				normal.push(*it);
+			}
+			return normal;
+		}
+		template<typename F> void normalize(F f) const {
+			f(normalize());
+		}
 	};
 
 	class mappath {
-		class interceptions : private mapposhash<std::vector<const mappath *>> {
-			std::set<const mappath *> s;
-			public:
-			void put (const mappos &k, const mappath *p) {
-				if (s.emplace(p).second == true) {
-					mapposhash::get(k).push_back(p);
-				}
-			}
-			template<typename F> void has_then (const mappos &k, F f) const {
-				mapposhash::has_then(k, [&f](const std::vector<const mappath *> &p) {
-					for (auto it = p.begin(); it != p.end(); it++) {
-						f(*it);
-					}
-				});
-			}
-			size_t count() const {
-				size_t count = 0;
-				mapposhash::iterate([&count](const std::vector<const mappath *> &p) {
-					count += p.size();
-				});
-				return count;
-			}
-		};
-
 		public:
 		std::vector<mappos> p;
-		interceptions i;
 		minmax<mappos> m;
+		const mappath *next;
+		mappath(size_t reserve) : p(), m(), next(NULL) {
+			p.reserve(reserve);
+		}
 		mappos operator[] (size_t i) const {
 			return p[i];
 		}
@@ -313,12 +370,6 @@ namespace rrr::magick {
 				update_minmax_fast(p[i]);
 			}
 		}
-		void update_ext_minmax(minmax<mappos> &m) const {
-			m.update(this->m);
-		}
-		mappath(size_t reserve) : p() {
-			p.reserve(reserve);
-		}
 		size_t count() const {
 			return p.size();
 		}
@@ -330,57 +381,34 @@ namespace rrr::magick {
 			p.insert(p.end(), src.p.begin(), src.p.end());
 			m.update(src.m);
 		}
-		mappos pop_skip() {
-			p.pop_back();
-			mappos e = p.back();
-			update_minmax();
-			return e;
-		}
-		template<typename F> void check_close_to (const mappath &test, F action) const {
-			for (size_t i = 0; i < p.size(); i++) {
-				if (p[i].in_box(test.p.front(), 1) || p[i].in_box(test.p.back(), 1)) {
-					action(p[i]);
-					return;
-				}
-			}
+		bool check_and_set_continues_with (const mappath &test) {
+			return p.back().in_box(test.p.front(), 3) && (next = &test);
 		}
 		mappos start() const {
 			return p.front();
 		}
-		void push_unique_interception (const mappos &k, const mappath *p) {
-			i.put(k, p);
+		void complete_circle() {
+			while (p.front() != p.back()) {
+				p.emplace_back((p.back())).move_towards(p.front());;
+			}
 		}
-		size_t count_interceptions() const {
-			return i.count();
-		}
-		template<typename F, typename G> void iterate(F f_pos, G f_path, std::vector<const mappath *> &tree) const {
-			if (std::find_if(tree.begin(), tree.end(), [&](const mappath *p){
-					return this == p;
-			}) != tree.end()) {
+		template<typename F> void iterate(std::set<const mappath *> &tree, F f) const {
+			if (tree.emplace(this).second != true) {
 				return;
 			}
-
-			f_path(*this);
-
-			tree.push_back(this);
-
-			int ic_count = 0;
 			for (size_t i = 0; i < p.size(); i++) {
-				f_pos(p[i]);
-				this->i.has_then(p[i], [&](const mappath *p){
-					ic_count++;
-					p->iterate(f_pos, f_path, tree);
-				});
+				f(p[i]);
 			}
-
-			tree.pop_back();
+			if (next) {
+				next->iterate(f);
+			}
+			tree.erase(this);
 		}
-		template<typename F, typename G> void iterate(F f_pos, G f_path) const {
-			std::vector<const mappath *> tree;
-			iterate(f_pos, f_path, tree);
+		template<typename F> void iterate(F f) const {
+			std::set<const mappath *> tree;
+			iterate(tree, f);
 		}
 		vectorpath_16 to_vectorpath_16 () const {
-			printf("To 16 %lu\n", p.size());
 			auto it = p.begin();
 			vectorpath v(*it, p.size());
 			while(++it != p.end()) {
@@ -407,17 +435,21 @@ namespace rrr::magick {
 		size_t count() const {
 			return p.size();
 		}
-		template<typename F> void split(F action) {
-			for (std::vector<mappath>::iterator it_a = p.begin(); it_a != p.end(); ++it_a) {
-				for (std::vector<mappath>::const_iterator it_b = p.begin(); it_b != p.end(); ++it_b) {
+		template<typename F> void split(F f) {
+			for (auto it_a = p.begin(); it_a != p.end(); ++it_a) {
+				for (auto it_b = p.begin(); it_b != p.end(); ++it_b) {
 					if (it_a == it_b)
 						continue;
-					const mappath *path_friend = &(*it_b);
-					(*it_a).check_close_to((*it_b), [&](const mappos &p){
-						it_a->push_unique_interception(p, path_friend);
-					});
+					it_a->check_and_set_continues_with(*it_b);
 				}
-				action(*it_a);
+			}
+			for (auto it_a = p.begin(); it_a != p.end(); ++it_a) {
+				mappath p_new(50);
+				it_a->iterate([&](const mappos &p){
+					p_new.push(p);
+				});
+				p_new.complete_circle();
+				f(p_new);
 			}
 		}
 	};
@@ -512,6 +544,16 @@ namespace rrr::magick {
 		}
 		T set(const mappos &c, T value) {
 			return set(c.a, c.b, value);
+		}
+		T set_if_higher(mapunit a, mapunit b, T value) {
+			auto &e = v[a + b * size_a];
+			return (e.v = e.v < value
+				? value
+				: e.v
+			);
+		}
+		T set_if_higher(const mappos &c, T value) {
+			return set_if_higher(c.a, c.b, value);
 		}
 		size_t count() {
 			size_t count = 0;

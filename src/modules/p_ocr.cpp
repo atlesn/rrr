@@ -88,7 +88,7 @@ struct ocr_data {
 static void ocr_data_cleanup(void *arg) {
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(arg);
 	delete data;
-}
+
 
 static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance_runtime_data *thread_data) {
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
@@ -124,13 +124,11 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 						path.iterate (
 								[&](const rrr::magick::mappos &p) {
 									path_new.push(p);
-								},
-								[&](const rrr::magick::mappath &p) {
-									(void)(p);
 								}
 						);
 						paths_merged.push_back(path_new);
 				});
+				printf("Merged %lu\n", paths_merged.size());
 				std::sort (
 						paths_merged.begin(),
 						paths_merged.end(),
@@ -148,22 +146,28 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 
 					rrr::magick::pixbuf image_path_debug(image);
 					rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
-					rrr::magick::minmax<rrr::magick::mappos> minmax;
+					rrr::magick::minmax<rrr::magick::mappos> minmax(path.m);
 
 					path.iterate(
 							[&](const rrr::magick::mappos &p) {
 								int colour = ++count % 10 == 0 ? 1 : 2;
 								edges_path_debug.set(p, colour);
-								edges_debug.set(p, colour);
-							},
-							[&](const rrr::magick::mappath &p){
-								p.update_ext_minmax(minmax);
+								edges_debug.set_if_higher(p, colour);
 							}
 					);
 
 					edges_path_debug.set(path.start(), 3);
 
-					printf("Dumping %i-%lu path path length %lu...\n", filename_count, i, path.count());
+					path.to_vectorpath_16([&](const rrr::magick::vectorpath_16 &v) {
+						printf("%u\n", v.bits());
+						v.walk([&](const rrr::magick::mappos &p){
+							printf("-> %u %u\n", p.a, p.b);
+							edges_path_debug.set(p, 3);
+						});
+						v.normalize().signature();
+					});
+
+					printf("Dumping %i-%lu path length %lu...\n", filename_count, i, path.count());
 					minmax.expand(10, image_path_debug.height(), image_path_debug.width());
 					image_path_debug.edges_dump (
 							std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count) + "_" + std::to_string(i),
@@ -171,10 +175,6 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 							minmax
 					);
 					printf("DONE\n");
-
-/*					path.to_vectorpath_16([](const rrr::magick::vectorpath_16 &v) {
-						printf("%u\n", v.bits());
-					});*/
 				}
 				filename_count++;
 				printf("Dumping %i...\n", filename_count);
@@ -190,7 +190,7 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 
 
 	}
-	catch (rrr::exp::soft e) {
+	catch (rrr::exp::soft &e) {
 		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());
 	}
 
@@ -221,7 +221,7 @@ static int ocr_parse_config (struct ocr_data *data, struct rrr_instance_config_d
 		utf8_optional(data->input_data_tag, config, "ocr_input_data_tag", "");
 		utf8_optional(data->msgdb_socket, config, "ocr_msgdb_socket", "");
 	}
-	catch (parse_error e) {
+	catch (parse_error &e) {
 		RRR_MSG_0("Configuration parsing failed for ocr instance %s: %s\n", config->name, e.what());
 		return 1;
 	}

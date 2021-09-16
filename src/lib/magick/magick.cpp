@@ -278,6 +278,7 @@ namespace rrr::magick {
 							m.widen();
 						},
 						[&](const mappos &check_pos, const edgemask &mask) {
+							// Accept only unused edge pixels
 							if (outlines.get(check_pos) != 1)
 								return false;
 
@@ -287,7 +288,12 @@ namespace rrr::magick {
 							const size_t count_blank = outlines.neighbours_count(mask, check_pos, 8, 0);
 							const size_t count_used  = outlines.neighbours_count(check_pos, 3, 2);
 
-							return (count <= 6 && count_blank >= 2 && count_blank <= 6 && count_used <= 2);
+							return (
+								count <= 6 &&       // Don't move into areas, stay on the edge
+								count_blank >= 2 && // 
+								count_blank <= 6 &&
+								count_used <= 2
+							);
 						},
 						[&]() {
 							// Accept circle path?
