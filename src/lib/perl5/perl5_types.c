@@ -124,7 +124,13 @@ static int __rrr_perl5_type_to_sv_str (RRR_PERL5_TYPE_TO_SV_ARGS) {
 	ELEMENT_SIZE_SET;
 
 	ELEMENT_LOOP_BEGIN;
-		SV *sv = newSVpvn_utf8(pos, element_size, 1);
+		SV *sv;
+		if (element_size == 0) {
+			sv = newSVpvf("");
+		}
+		else {
+			sv = newSVpvn_utf8(pos, element_size, 1);
+		}
 		ELEMENT_CALL_CALLBACK;
 	ELEMENT_LOOP_END;
 
