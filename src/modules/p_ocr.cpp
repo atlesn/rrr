@@ -116,6 +116,19 @@ struct ocr_data {
 		});
 	}
 
+	void path_erase(const rrr::magick::vectorpath_signature &s) {
+		auto it_values = values.begin();
+		auto it_ages = ages.begin();
+		for (auto it = paths.begin(); it != paths.end(); it++) {
+			if (*it == s) {
+				paths.erase(it);
+				break;
+			}
+			it_values++;
+			it_ages++;
+		}
+	}
+
 	void path_push(const rrr::magick::vectorpath_signature &s, const std::string &v) {
 		paths.push_back(s);
 		values.push_back(v);
@@ -128,13 +141,11 @@ struct ocr_data {
 			size_t diff = s.cmpto(paths[i]);
 			//printf("<> %s : %lu\n", values[i].c_str(), diff);
 			if (diff < good_match_threshold) {
-				good_total_counter++;
 				good((const rrr::magick::vectorpath_signature &) paths[i], (const std::string &) values[i], diff);
-				if (((++good_total_counter) % (size_t) (1.0/RRR_OCR_GOOD_VERIFY_PROPABILITY)) != 0) {
-					continue;
-				}
 			}
-			partials.emplace(diff, i);
+			else {
+				partials.emplace(diff, i);
+			}
 		}
 		for (auto it = partials.rbegin(); it != partials.rend(); ++it) {
 			partial((const rrr::magick::vectorpath_signature &) paths[it->second], (const std::string &) values[it->second], it->first);
@@ -239,6 +250,15 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 					(void)(s);
 					std::cout << "Good " << id << " score " << score << ": " << v << std::endl;
 					good_count++;
+					if (((++data->good_total_counter) % (size_t) (1.0/RRR_OCR_GOOD_VERIFY_PROPABILITY)) == 0) {
+						std::cout << "Verify good '" << v << "'" << std::endl;
+						ocr_send_verification (
+								data,
+								s,
+								v,
+								rrr::type::data_const(blob.data(), blob.length())
+						);
+					}
 				},
 				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
 					(void)(s);
@@ -259,12 +279,8 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 		catch (rrr::exp::eof &e) {
 		}
 
-		if (good_count == 0 || (rrr_rand() % 100) ) {
+		if (good_count == 0) {
 			minmax.expand(10, image_path_debug.height(), image_path_debug.width());
-			Magick::Blob blob = image_path_debug.edges_dump_blob (
-					edges_path_debug,
-					minmax
-			);
 
 			int count = 0;
 			path.iterate ([&](const rrr::magick::mappos &p) {
@@ -276,6 +292,10 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 				edges_path_debug.set(p, 3);
 			});
 			edges_path_debug.set(path.start(), 3);
+			Magick::Blob blob = image_path_debug.edges_dump_blob (
+					edges_path_debug,
+					minmax
+			);
 			ocr_send_verification (
 					data,
 					s,
@@ -351,6 +371,7 @@ static void ocr_process_response (struct ocr_data *data, const rrr::array::array
 
 	std::cout << "OCR response for " << value_str << std::endl;
 
+	data->path_erase(signature);
 	data->path_push(signature, value_str);
 }
 

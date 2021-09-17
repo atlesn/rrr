@@ -247,6 +247,13 @@ namespace rrr::magick {
 			}
 			memcpy(s.data(), d.d, d.l);
 		}
+		bool operator== (const vectorpath_signature &test) const {
+			for (size_t i = 0; i < 16; i++) {
+				if (s[i] != test.s[i])
+					return false;
+			}
+			return true;
+		}
 		uint16_t &operator[] (size_t pos) {
 			return s[pos];
 		}
