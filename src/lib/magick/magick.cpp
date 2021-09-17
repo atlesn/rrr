@@ -94,7 +94,7 @@ namespace rrr::magick {
 			B setter,
 			rrr_length a_max,
 			rrr_length b_max
-	) {
+	) const {
 		const rrr_slength diff_threshold_pos = (rrr_slength) (threshold * max_range_combined);
 
 		for (rrr_length a = 0; a < a_max; a++) {
@@ -142,7 +142,7 @@ namespace rrr::magick {
 			float threshold,
 			rrr_length edge_length_max,
 			size_t result_max
-	) {
+	) const {
 		uint64_t time_start = rrr_time_get_64();
 
 		edges result(rows, cols);
@@ -279,7 +279,7 @@ namespace rrr::magick {
 	mappath_group pixbuf::paths_get (
 			const edges &m,
 			rrr_length path_length_min
-	) {
+	) const {
 		uint64_t time_start = rrr_time_get_64();
 		edges outlines = m;
 		mappath_group paths;

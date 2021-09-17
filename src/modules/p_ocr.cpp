@@ -55,7 +55,7 @@ extern "C" {
 #define RRR_OCR_DEFAULT_INPUT_TAG "ocr_input_data"
 #define RRR_OCR_DEFAULT_DEBUG_FILE "/tmp/debug"
 
-#define RRR_OCR_VERIFY_TOPIC "rrr/ocr/verify"
+#define RRR_OCR_VERIFY_TOPIC "ocr/verify"
 #define RRR_OCR_IMAGE_TAG "ocr_image"
 #define RRR_OCR_VALUE_TAG "ocr_value"
 #define RRR_OCR_SIGNATURE_TAG "ocr_signature"
@@ -82,6 +82,7 @@ struct ocr_data {
 	std::vector<std::string> values;
 	std::vector<uint64_t> ages;
 
+	size_t path_size_min;
 	size_t good_match_threshold;
 
 	size_t good_total_counter;
@@ -95,7 +96,9 @@ struct ocr_data {
 		paths(),
 		values(),
 		ages(),
-		good_match_threshold(5000)
+		path_size_min(40),
+		good_match_threshold(5000),
+		good_total_counter(0)
 	{
 		rrr::magick::load();
 		path_init();
@@ -163,7 +166,7 @@ static int ocr_send_verification_callback(struct rrr_msg_holder *entry, void *ar
 	try {
 		array.push_value_with_tag(RRR_OCR_IMAGE_TAG, callback_data->d);
 		array.push_value_with_tag(RRR_OCR_VALUE_TAG, callback_data->v);
-		array.push_value_with_tag(RRR_OCR_VALUE_TAG, callback_data->s.data());
+		array.push_value_with_tag(RRR_OCR_SIGNATURE_TAG, callback_data->s.data());
 
 		struct rrr_msg_msg *msg = NULL;
 		array.to_message(&msg, rrr_time_get_64(), RRR_OCR_VERIFY_TOPIC);
@@ -203,6 +206,154 @@ static void ocr_send_verification(struct ocr_data *data, const rrr::magick::vect
 	), std::string("while sending OCR verification message in instance %s") + INSTANCE_D_NAME(data->thread_data));
 }
 
+static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath &path, const rrr::magick::pixbuf &image, const size_t i) {
+	static int filename_count = 0;
+	filename_count++;
+
+	if (path.count() < data->path_size_min) {
+		return;
+	}
+
+	rrr::magick::pixbuf image_path_debug(image);
+	rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
+	rrr::magick::minmax<rrr::magick::mappos> minmax(path.m);
+
+	// Verification image without path points
+	Magick::Blob blob = image_path_debug.edges_dump_blob (
+			edges_path_debug,
+			minmax
+	);
+
+	std::string id = std::to_string(filename_count) + "-" + std::to_string(i);
+
+	path.to_vectorpath_16([&](const rrr::magick::vectorpath_16 &v) {
+		rrr::magick::vectorpath_signature s = v.normalize().signature();
+
+		int good_count = 0;
+		int partial_max = 2;
+
+		try {
+			data->path_search (
+				s,
+				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
+					(void)(s);
+					std::cout << "Good " << id << " score " << score << ": " << v << std::endl;
+					good_count++;
+				},
+				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
+					(void)(s);
+					(void)(score);
+//					std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
+					if (--partial_max == 0) {
+						throw rrr::exp::eof();
+					}
+					ocr_send_verification (
+							data,
+							s,
+							v,
+							rrr::type::data_const(blob.data(), blob.length())
+					);
+				}
+			);
+		}
+		catch (rrr::exp::eof &e) {
+		}
+
+		if (good_count == 0 || (rrr_rand() % 100) ) {
+			minmax.expand(10, image_path_debug.height(), image_path_debug.width());
+			Magick::Blob blob = image_path_debug.edges_dump_blob (
+					edges_path_debug,
+					minmax
+			);
+
+			int count = 0;
+			path.iterate ([&](const rrr::magick::mappos &p) {
+				int colour = ++count % 10 == 0 ? 1 : 2;
+				edges_path_debug.set(p, colour);
+				//edges_debug.set_if_higher(p, colour);
+			});
+			v.walk([&](const rrr::magick::mappos &p){
+				edges_path_debug.set(p, 3);
+			});
+			edges_path_debug.set(path.start(), 3);
+			ocr_send_verification (
+					data,
+					s,
+					"",
+					rrr::type::data_const(blob.data(), blob.length())
+			);
+		}
+	});
+}
+
+static void ocr_process_image (struct ocr_data *data, const rrr::magick::pixbuf &image, const float threshold) {
+	std::vector<rrr::magick::mappath> paths_merged;
+	rrr::magick::edges edges_debug = image.edges_clean_get();
+	image.paths_get (
+			image.edges_get(
+					threshold,
+					5,
+					200000
+			),
+			10
+	).split([&](const rrr::magick::mappath &path) {
+			rrr::magick::mappath path_new(path.count());
+			path.iterate (
+					[&](const rrr::magick::mappos &p) {
+						path_new.push(p);
+					}
+			);
+			paths_merged.push_back(path_new);
+	});
+	printf("Merged %lu\n", paths_merged.size());
+	std::sort (
+			paths_merged.begin(),
+			paths_merged.end(),
+			[&](
+				const rrr::magick::mappath &a,
+				const rrr::magick::mappath &b
+			) {
+					return a.count() > b.count(); // Reverse
+			}
+	);
+
+	for (size_t i = 0; i < paths_merged.size() && i < 1000; i++) {
+		const rrr::magick::mappath &path = paths_merged[i];
+		ocr_process_path(data, path, image, i);
+	}
+}
+
+static void ocr_process_image (struct ocr_data *data, const rrr::array::array &array) {
+	rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
+
+	for (float threshold = 0.1; threshold <= 1.0; threshold += 0.1) {
+		try {
+			ocr_process_image(data, image, threshold);
+			break;
+		}
+		catch (rrr::exp::incomplete &e) {
+			printf("- Max edges, increase threshold\n");
+		}
+
+	}
+
+/*				filename_count++;
+	printf("Dumping %i...\n", filename_count);
+	image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges_debug);
+	printf("DONE\n");
+	rrr::magick::edges edges;*/
+}
+
+static void ocr_process_response (struct ocr_data *data, const rrr::array::array &array) {
+	const rrr::type::data_const signature = array.get_value_raw_by_tag(RRR_OCR_SIGNATURE_TAG);
+	const rrr::type::data_const value = array.get_value_raw_by_tag(RRR_OCR_VALUE_TAG);
+	std::string value_str((const char *) value.d, value.l);
+
+	std::cout << "OCR response for " << value_str << std::endl;
+
+	data->path_push(signature, value_str);
+}
+
 static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance_runtime_data *thread_data) {
 	struct ocr_data *data = reinterpret_cast<struct ocr_data *>(thread_data->private_data);
 	const struct rrr_msg_msg *msg = reinterpret_cast<struct rrr_msg_msg *>(entry->message);
@@ -210,134 +361,22 @@ static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance
 	RRR_MSG_1("Poll callback\n");
 
 	rrr::msg_holder::unlocker unlocker(entry);
-	static int filename_count = 0;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
+		throw rrr::exp::eof();
+	}
 
 	try {
 		const rrr::array::array array(msg);
-		rrr::magick::pixbuf image(array.get_value_raw_by_tag(data->input_data_tag));
-//		rrr::magick::edges edges = image.edges_get(0.4, 5);//image.outlines_get(image.edges_get(0.4, 5));
-//		rrr::magick::edges edges = image.outlines_get(image.edges_get(0.2, 5));
 
-		for (float threshold = 0.1; threshold <= 1.0; threshold += 0.1) {
-			printf("- Threshold %f\n", threshold);
-			try {
-				std::vector<rrr::magick::mappath> paths_merged;
-				rrr::magick::edges edges_debug = image.edges_clean_get();
-				image.paths_get (
-						image.edges_get(
-								threshold,
-								5,
-								200000
-						),
-						10
-				).split([&](const rrr::magick::mappath &path) {
-						rrr::magick::mappath path_new(path.count());
-						path.iterate (
-								[&](const rrr::magick::mappos &p) {
-									path_new.push(p);
-								}
-						);
-						paths_merged.push_back(path_new);
-				});
-				printf("Merged %lu\n", paths_merged.size());
-				std::sort (
-						paths_merged.begin(),
-						paths_merged.end(),
-						[&](
-							const rrr::magick::mappath &a,
-							const rrr::magick::mappath &b
-						) {
-								return a.count() > b.count(); // Reverse
-						}
-				);
+		printf("Topic: %s\n", MSG_TOPIC_PTR(msg));
 
-				filename_count++;
-
-				for (size_t i = 0; i < paths_merged.size() && i < 1000; i++) {
-					const rrr::magick::mappath &path = paths_merged[i];
-
-					if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
-						throw rrr::exp::eof();
-					}
-
-					rrr::magick::pixbuf image_path_debug(image);
-					rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
-					rrr::magick::minmax<rrr::magick::mappos> minmax(path.m);
-
-					minmax.expand(10, image_path_debug.height(), image_path_debug.width());
-					Magick::Blob blob = image_path_debug.edges_dump_blob (
-							edges_path_debug,
-							minmax
-					);
-
-					std::string id = std::to_string(filename_count) + "-" + std::to_string(i);
-
-					path.to_vectorpath_16([&](const rrr::magick::vectorpath_16 &v) {
-						rrr::magick::vectorpath_signature s = v.normalize().signature();
-
-						int good_count = 0;
-						int partial_max = 2;
-
-						try {
-							data->path_search (
-								s,
-								[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
-									(void)(s);
-									std::cout << "Good " << id << " score " << score << ": " << v << std::endl;
-									good_count++;
-								},
-								[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
-									(void)(s);
-									std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
-									if (--partial_max == 0) {
-										throw rrr::exp::eof();
-									}
-									ocr_send_verification (
-											data,
-											s,
-											v,
-											rrr::type::data_const(blob.data(), blob.length())
-									);
-								}
-							);
-						}
-						catch (rrr::exp::eof &e) {
-						}
-
-						if (good_count == 0 || (rrr_rand() % 100) ) {
-							int count = 0;
-							path.iterate ([&](const rrr::magick::mappos &p) {
-								int colour = ++count % 10 == 0 ? 1 : 2;
-								edges_path_debug.set(p, colour);
-								edges_debug.set_if_higher(p, colour);
-							});
-							v.walk([&](const rrr::magick::mappos &p){
-								edges_path_debug.set(p, 3);
-							});
-							edges_path_debug.set(path.start(), 3);
-							ocr_send_verification (
-									data,
-									s,
-									"",
-									rrr::type::data_const(blob.data(), blob.length())
-							);
-						}
-					});
-				}
-
-/*				filename_count++;
-				printf("Dumping %i...\n", filename_count);
-				image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges_debug);
-				printf("DONE\n");
-				rrr::magick::edges edges;*/
-				break;
-			}
-			catch (rrr::exp::incomplete &e) {
-				printf("- Max edges, increase threshold\n");
-			}
+		if (rrr_msg_msg_topic_equals(msg, RRR_OCR_VERIFY_TOPIC)) {
+			ocr_process_response(data, array);
 		}
-
-
+		else {
+			ocr_process_image(data, array);
+		}
 	}
 	catch (rrr::exp::soft &e) {
 		RRR_MSG_0("Dropping message after soft error in ocr instance %s: %s\n", INSTANCE_D_NAME(thread_data), e.what());

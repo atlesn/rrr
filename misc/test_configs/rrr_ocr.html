@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>OCR verifier</title>
+</head>
+<body>
+<script>
+function getNewSample() {
+	fetch("/image").then(response => response.json()).then (function(data) {
+		document.getElementById("work_image").src = "data:image/png;base64," + data['image'];
+		document.getElementById("work_value").value = atob(data['value']);
+		document.getElementById("work_signature").value = data['signature'];
+		document.getElementById("work_value").focus();
+	});
+}
+getNewSample();
+</script>
+<style>
+body, input {
+	font-size: 20pt;
+	font-weight: bold;
+}
+</style>
+<form method="POST">
+<input id="work_signature" name="signature" type="text" value="" size="100" /><br />
+<input id="work_value" name="value" type="text" value="" /><br />
+<input type="submit" /><br />
+</form>
+<img id="work_image" width="500" />
+</body>
+</html>

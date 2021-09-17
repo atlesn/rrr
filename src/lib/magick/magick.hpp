@@ -39,6 +39,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.hpp"
 #include "../exception.hpp"
 
+extern "C" {
+#include "string.h"
+}
+
 namespace rrr::magick {
 	class wrap : rrr::exp::eof {
 		using rrr::exp::eof::eof;
@@ -234,6 +238,14 @@ namespace rrr::magick {
 		}
 		vectorpath_signature(int x) : s() {
 			s.fill(x);
+		}
+		vectorpath_signature(const rrr::types::data_const &d) {
+			s.fill(0);
+			printf("%u vs %lu\n", d.l, sizeof(s));
+			if (d.l != sizeof(s)) {
+				throw rrr::exp::soft(std::string("Byte count mismatch when initializing vectorpath signature from raw data"));
+			}
+			memcpy(s.data(), d.d, d.l);
 		}
 		uint16_t &operator[] (size_t pos) {
 			return s[pos];
@@ -704,12 +716,12 @@ namespace rrr::magick {
 				B setter,
 				rrr_length a_max,
 				rrr_length b_max
-		);
+		) const;
 
 		void edge_start_iterate (
 				const edges &outlines,
 				auto f
-		) {
+		) const {
 			try {
 				mappos pos_prev;
 				do {
@@ -745,7 +757,7 @@ namespace rrr::magick {
 				auto check_circle,
 				auto notify_pos,
 				auto notify_end
-		) {
+		) const {
 			mappos pos = pos_start;
 
 			notify_pos(pos);
@@ -778,7 +790,7 @@ namespace rrr::magick {
 
 		public:
 		pixbuf(const rrr::types::data_const &d);
-		edges edges_clean_get() {
+		edges edges_clean_get() const {
 			return edges(rows, cols);
 		}
 		size_t height() const {
@@ -797,7 +809,7 @@ namespace rrr::magick {
 				float threshold,
 				rrr_length edge_length_max,
 				size_t result_max
-		);
+		) const;
 		Magick::Image edges_dump_image (
 				const edges &m,
 				mappos tl,
@@ -830,7 +842,7 @@ namespace rrr::magick {
 		mappath_group paths_get (
 				const edges &m,
 				rrr_length path_length_min
-		);
+		) const;
 	};
 }
 
