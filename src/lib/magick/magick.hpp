@@ -435,9 +435,11 @@ namespace rrr::magick {
 			return p.front();
 		}
 		void complete_circle() {
+			/*
 			while (p.front() != p.back()) {
 				p.emplace_back((p.back())).move_towards(p.front());;
 			}
+			*/
 		}
 		template<typename F> void iterate(std::set<const mappath *> &tree, F f) const {
 			if (tree.emplace(this).second != true) {

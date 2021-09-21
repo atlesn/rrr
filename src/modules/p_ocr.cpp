@@ -60,6 +60,11 @@ extern "C" {
 #define RRR_OCR_VALUE_TAG "ocr_value"
 #define RRR_OCR_SIGNATURE_TAG "ocr_signature"
 #define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.01
+#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 5000
+#define RRR_OCR_GOOD_THRESHOLD_MAX 5000
+#define RRR_OCR_GOOD_THRESHOLD_MIN 1000
+#define RRR_OCR_GOOD_THRESHOLD_STEP 100
+#define RRR_OCR_PARTIAL_THRESHOLD 20000
 
 __attribute__((constructor)) void load(void);
 void init(struct rrr_instance_module_data *data);
@@ -81,9 +86,9 @@ struct ocr_data {
 	std::vector<rrr::magick::vectorpath_signature> paths;
 	std::vector<std::string> values;
 	std::vector<uint64_t> ages;
+	std::vector<size_t> good_thresholds;
 
 	size_t path_size_min;
-	size_t good_match_threshold;
 
 	size_t good_total_counter;
 
@@ -96,8 +101,8 @@ struct ocr_data {
 		paths(),
 		values(),
 		ages(),
+		good_thresholds(),
 		path_size_min(40),
-		good_match_threshold(5000),
 		good_total_counter(0)
 	{
 		rrr::magick::load();
@@ -109,23 +114,45 @@ struct ocr_data {
 	}
 
 	void path_init() {
-		// Initial random match data
-		static const std::string characters = "abcdefghijklmnopqrstuvwxyzæøåABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ0123456789";
+		// Initial some match data
+/*		static const std::string characters = "abcdefghijklmnopqrstuvwxyzæøåABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ0123456789";
 		std::for_each(characters.begin(), characters.end(), [&](const char &c){
 			path_push(rrr_rand(), std::string(&c, 1));
-		});
+		});*/
 	}
 
-	void path_erase(const rrr::magick::vectorpath_signature &s) {
+	template<typename F, typename G> void path_update(const rrr::magick::vectorpath_signature &s, F incorrect_check, G not_found) {
 		auto it_values = values.begin();
 		auto it_ages = ages.begin();
+		auto it_threshold = good_thresholds.begin();
+		bool found = false;
 		for (auto it = paths.begin(); it != paths.end(); it++) {
 			if (*it == s) {
-				paths.erase(it);
-				break;
+				if (incorrect_check(*it_values)) {
+					if (((*it_threshold) -= RRR_OCR_GOOD_THRESHOLD_STEP) < RRR_OCR_GOOD_THRESHOLD_MIN) {
+						it = paths.erase(it);
+						it_values = values.erase(it_values);
+						it_ages = ages.erase(it_ages);
+						it_threshold = good_thresholds.erase(it_threshold);
+						if (it == paths.end()) {
+							break;
+						}
+					}
+				}
+				else {
+					found = true;
+					if (((*it_threshold) += RRR_OCR_GOOD_THRESHOLD_STEP) > RRR_OCR_GOOD_THRESHOLD_MAX) {
+						*it_threshold = RRR_OCR_GOOD_THRESHOLD_MAX;
+					}
+					*it_ages = rrr_time_get_64();
+				}
 			}
 			it_values++;
 			it_ages++;
+			it_threshold++;
+		}
+		if (!found) {
+			not_found();
 		}
 	}
 
@@ -133,6 +160,7 @@ struct ocr_data {
 		paths.push_back(s);
 		values.push_back(v);
 		ages.push_back(rrr_time_get_64());
+		good_thresholds.push_back(RRR_OCR_GOOD_THRESHOLD_DEFAULT);
 	}
 
 	template<typename F,typename G> void path_search(const rrr::magick::vectorpath_signature &s, F good, G partial) {
@@ -140,7 +168,7 @@ struct ocr_data {
 		for (size_t i = 0; i < paths.size(); i++) {
 			size_t diff = s.cmpto(paths[i]);
 			//printf("<> %s : %lu\n", values[i].c_str(), diff);
-			if (diff < good_match_threshold) {
+			if (diff < good_thresholds[i]) {
 				good((const rrr::magick::vectorpath_signature &) paths[i], (const std::string &) values[i], diff);
 			}
 			else {
@@ -263,7 +291,10 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
 					(void)(s);
 					(void)(score);
-//					std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
+					if (score > RRR_OCR_PARTIAL_THRESHOLD) {
+						return;
+					}
+					std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
 					if (--partial_max == 0) {
 						throw rrr::exp::eof();
 					}
@@ -371,8 +402,18 @@ static void ocr_process_response (struct ocr_data *data, const rrr::array::array
 
 	std::cout << "OCR response for " << value_str << std::endl;
 
-	data->path_erase(signature);
-	data->path_push(signature, value_str);
+	data->path_update (
+		signature,
+		[&](const std::string &current_value) {
+			if (current_value == value_str) {
+				return false;
+			}
+			return true;
+		},
+		[&]() {
+			data->path_push(signature, value_str);
+		}
+	);
 }
 
 static void ocr_poll_callback (struct rrr_msg_holder *entry, struct rrr_instance_runtime_data *thread_data) {
