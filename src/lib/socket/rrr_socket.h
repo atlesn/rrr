@@ -113,10 +113,6 @@ int rrr_socket_open_and_read_file (
 		int options,
 		int mode
 );
-int rrr_socket_is_file (
-		int *is_file,
-		const char *path
-);
 #ifdef RRR_HAVE_EVENTFD
 int rrr_socket_eventfd (
 		const char *creator
