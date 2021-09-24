@@ -59,12 +59,14 @@ all-local:
 install-data-local:
 	echo "Generating Perl Makefile" && cd ${top_srcdir}/src/perl5/xsub && rm -f Makefile && ${PERL5_INTERPRETER} ./Makefile.PL && echo "Making perl xsub" && make install
 clean-local:
-	cat paths.c.tmpl > paths.c && rm -f make-paths.sh \
+	cat paths.c.tmpl > paths.c; \
 	echo "Generating Perl Makefile" && cd ${top_srcdir}/src/perl5/xsub && rm -f Makefile && ${PERL5_INTERPRETER} ./Makefile.PL && echo "Cleaning perl xsub" && make clean
 else
 clean-local:
-	cat paths.c.tmpl > paths.c && rm -f make-paths.sh
+	cat paths.c.tmpl > paths.c
 endif
+distclean-local:
+	rm -f make-paths.sh
 
 # Re-compile binaries using paths.c to give them udpated paths with install prefix
 # Currently this is not safe for installed binaries, as autotools does not guarantee that 

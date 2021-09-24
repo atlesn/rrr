@@ -708,9 +708,8 @@ AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
 AC_SUBST(RRR_CONF_DIR)
 
 AC_MSG_CHECKING([for confdir usage])
+AC_CONFIG_FILES([misc/confdir/Makefile])
 AS_IF([test "x$enable_confdir" = xyes], [
-	AC_CONFIG_FILES([misc/confdir/Makefile])
-
 	AC_MSG_RESULT([yes, ${RRR_CONF_DIR}])
 ],[
 	AC_MSG_RESULT([no])
@@ -720,6 +719,7 @@ AM_CONDITIONAL([RRR_SYSTEMD_NO_UNIT_INSTALL], [test "x$RRR_SYSTEMD_NO_UNIT_INSTA
 AM_CONDITIONAL([RRR_SYSTEMD_NO_TMPFILES_INSTALL], [test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x1"])
 
 AC_MSG_CHECKING([for systemd usage])
+AC_CONFIG_FILES([misc/systemd/Makefile])
 AS_IF([test "x$enable_systemd" = xyes], [
 	REQUIRE_CONFDIR
 	SYSTEMD_INIT
@@ -736,7 +736,6 @@ AS_IF([test "x$enable_systemd" = xyes], [
 
 	AC_CONFIG_FILES([misc/systemd/make-service.sh])
 	AC_CONFIG_FILES([misc/systemd/make-tmpfiles.sh])
-	AC_CONFIG_FILES([misc/systemd/Makefile])
 
 	AC_MSG_CHECKING([for systemd service file no installation command])
 	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
@@ -781,11 +780,10 @@ AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
 AC_SUBST(RRR_DAEMON_USERNAME)
 
 AC_MSG_CHECKING([for runit usage])
+AC_CONFIG_FILES([misc/runit/Makefile])
 AS_IF([test "x$enable_runit" = xyes], [
 	REQUIRE_CONFDIR
 	AC_SUBST([RUNIT_SV_DIR], [/etc/sv/rrr/])
-	AC_CONFIG_FILES([misc/runit/Makefile])
-	
 	AC_CONFIG_FILES([misc/runit/make-runit.sh])
 	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
 ],[
@@ -793,9 +791,9 @@ AS_IF([test "x$enable_runit" = xyes], [
 ])
 
 AC_MSG_CHECKING([for openrc usage])
+AC_CONFIG_FILES([misc/openrc/Makefile])
 AS_IF([test "x$enable_openrc" = xyes], [
 	REQUIRE_CONFDIR
-	AC_CONFIG_FILES([misc/openrc/Makefile])
 	AC_CONFIG_FILES([misc/openrc/make-service.sh])
 	AC_MSG_RESULT([yes])
 ],[

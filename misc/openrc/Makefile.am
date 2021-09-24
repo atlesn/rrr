@@ -1,3 +1,5 @@
+if RRR_WITH_OPENRC
+
 openrcdir = /etc/init.d
 openrc_SCRIPTS = rrr
 
@@ -13,3 +15,4 @@ clean-local:
 distclean-local:
 	rm -rf make-service.sh || true
 
+endif
