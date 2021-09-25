@@ -513,56 +513,6 @@ namespace rrr::magick {
 		}
 	};
 
-	class edgemask {
-		public:
-		static const uint8_t TR = 1<<0;
-		static const uint8_t RR = 1<<1;
-		static const uint8_t BR = 1<<2;
-		static const uint8_t BB = 1<<3;
-		static const uint8_t BL = 1<<4;
-		static const uint8_t LL = 1<<5;
-		static const uint8_t TL = 1<<6;
-		static const uint8_t TT = 1<<7;
-
-		uint8_t m;
-
-		edgemask () : m(0xff) {
-		}
-		edgemask (uint8_t m) : m(m) {
-		}
-		edgemask (const edgemask &em) : m(em.m){
-		}
-		uint8_t operator|= (const edgemask &em) {
-			return m |= em.m;
-		}
-		uint8_t operator= (const edgemask &em) {
-			return m = em.m;
-		}
-		void widen() {
-			m = (m << 1) | (m >> 1) | (m & TR ? TT : 0) | (m & TT ? TR : 0);
-		}
-		bool tr() const {return (m & TR) != 0; };
-		bool rr() const {return (m & RR) != 0; };
-		bool br() const {return (m & BR) != 0; };
-		bool bb() const {return (m & BB) != 0; };
-		bool bl() const {return (m & BL) != 0; };
-		bool ll() const {return (m & LL) != 0; };
-		bool tl() const {return (m & TL) != 0; };
-		bool tt() const {return (m & TT) != 0; };
-		void dump() const {
-			printf("TR: %i RR: %i BR: %i BB: %i BL: %i LL: %i TL: %i TT: %i\n",
-					(m & TR) != 0,
-					(m & RR) != 0,
-					(m & BR) != 0,
-					(m & BB) != 0,
-					(m & BL) != 0,
-					(m & LL) != 0,
-					(m & TL) != 0,
-					(m & TT) != 0
-			);
-		}
-	};
-
 	template<typename T> class map {
 		public:
 		class element {
@@ -684,28 +634,19 @@ namespace rrr::magick {
 
 			return pos;
 		}
-		size_t neighbours_count(edgemask &mask, const mappos &pos, size_t max, T value) const {
-			edgemask mask_out = 0;
+		size_t neighbours_count(const mappos &pos, size_t max, T value) const {
 			size_t count = 0;
-			((mask.tl() && pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && (mask_out |= edgemask::TL) && ++count >= max) ||
-			 (mask.tr() && pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && (mask_out |= edgemask::TR) && ++count >= max) ||
-			 (mask.bl() && pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && (mask_out |= edgemask::BL) && ++count >= max) ||
-			 (mask.br() && pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) == value && (mask_out |= edgemask::BR) && ++count >= max) ||
-			 (mask.tt() && pos.a > 0        && get(pos.a-1, pos.b) == value && (mask_out |= edgemask:: TT) && ++count >= max) ||
-			 (mask.bb() && pos.a < size_a-1 && get(pos.a+1, pos.b) == value && (mask_out |= edgemask:: BB) && ++count >= max) ||
-			 (mask.ll() && pos.b > 0        && get(pos.a, pos.b-1) == value && (mask_out |= edgemask:: LL) && ++count >= max) ||
-			 (mask.rr() && pos.b < size_b-1 && get(pos.a, pos.b+1) == value && (mask_out |= edgemask:: RR) && ++count >= max) ||
+			((pos.a > 0        && pos.b > 0        && get(pos.a-1, pos.b-1) == value && ++count >= max) ||
+			 (pos.a > 0        && pos.b < size_b-1 && get(pos.a-1, pos.b+1) == value && ++count >= max) ||
+			 (pos.a < size_a-1 && pos.b > 0        && get(pos.a+1, pos.b-1) == value && ++count >= max) ||
+			 (pos.a < size_a-1 && pos.b < size_b-1 && get(pos.a+1, pos.b+1) == value && ++count >= max) ||
+			 (pos.a > 0        && get(pos.a-1, pos.b) == value && ++count >= max) ||
+			 (pos.a < size_a-1 && get(pos.a+1, pos.b) == value && ++count >= max) ||
+			 (pos.b > 0        && get(pos.a, pos.b-1) == value && ++count >= max) ||
+			 (pos.b < size_b-1 && get(pos.a, pos.b+1) == value && ++count >= max) ||
 			 0
 			);
-			mask = mask_out;
 			return count;
-		}
-		size_t neighbours_count(const edgemask &mask, const mappos &pos, size_t max, T value) const {
-			edgemask mask_tmp = mask;
-			return neighbours_count(mask_tmp, pos, max, value);
-		}
-		size_t neighbours_count(const mappos &pos, size_t max, T value) const {
-			return neighbours_count(0xff, pos, max, value);
 		}
 	};
 
@@ -778,7 +719,6 @@ namespace rrr::magick {
 		void edge_walk (
 				const mappos &pos_start,
 				const edges &m,
-		//		auto update_mask,
 				auto check_neighbour,
 				auto check_circle,
 				auto notify_pos,
@@ -790,10 +730,7 @@ namespace rrr::magick {
 
 			do {
 				//pritnf("Pos %lu %lu: %lu\n", pos.a, pos.b, outlines.get(pos));
-				edgemask mask;
 				try {
-					update_mask(mask, pos);
-
 					pos =  m.get_next_neighbour(
 							pos,
 							[&](const mappos &c) {
@@ -801,7 +738,7 @@ namespace rrr::magick {
 									// Complete circle made
 									throw rrr::exp::eof();
 								}
-								return check_neighbour(c, mask);
+								return check_neighbour(c);
 							}
 					);
 

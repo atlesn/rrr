@@ -321,18 +321,13 @@ namespace rrr::magick {
 				edge_walk (
 						pos,
 						m,
-						[&](edgemask &m, const mappos &pos) {
-							// Create mask based on blank pixels
-							outlines.neighbours_count(m, pos, 8, RRR_MAGICK_PIXEL_OUTSIDE);
-							m.widen();
-						},
-						[&](const mappos &check_pos, const edgemask &mask) {
+						[&](const mappos &check_pos) {
 							if (outlines.get(check_pos) != RRR_MAGICK_PIXEL_EDGE)
 								return false;
 
 							const size_t count       = outlines.neighbours_count(check_pos, 1, RRR_MAGICK_PIXEL_EDGE);
-							const size_t count_inside = outlines.neighbours_count(mask, check_pos, 1, RRR_MAGICK_PIXEL_INSIDE);
-							const size_t count_outside = outlines.neighbours_count(mask, check_pos, 1, RRR_MAGICK_PIXEL_OUTSIDE);
+							const size_t count_inside = outlines.neighbours_count(check_pos, 1, RRR_MAGICK_PIXEL_INSIDE);
+							const size_t count_outside = outlines.neighbours_count(check_pos, 1, RRR_MAGICK_PIXEL_OUTSIDE);
 							const size_t count_used  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_USED);
 							const size_t count_banned  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_BANNED);
 
