@@ -120,17 +120,39 @@ namespace rrr::magick {
 					}
 					if (diff_accumulated * direction > diff_threshold_pos) {
 //						//pritnf("- Edge at %" PRIrrrl "->%" PRIrrrl " x %" PRIrrrl " diff %li\n", b, b_search, a, diff_accumulated);
+
+						rrr_length b_mid = (b_search + b) / 2;
+
 						if (diff_accumulated > 0) {
-//							setter(a, b-1, -1);
-							setter(a, b_search, 1);
-//							setter(a, b_search, 1);
+							if (b_mid > 1)
+								setter(a, b_mid - 2, RRR_MAGICK_PIXEL_OUTSIDE);
+							if (b_mid > 0)
+								setter(a, b_mid - 1, RRR_MAGICK_PIXEL_OUTSIDE);
+							setter(a, b_mid, RRR_MAGICK_PIXEL_EDGE);
+							if (b_mid + 2 < b_max)
+								setter(a, b_mid + 1, RRR_MAGICK_PIXEL_INSIDE);
+							if (b_mid + 3 < b_max)
+								setter(a, b_mid + 2, RRR_MAGICK_PIXEL_INSIDE);
 						}
 						else {
-//							setter(a, b-1, 1);
-//							setter(a, b, 1);
-							setter(a, b, 1);
+							if (b_mid > 1)
+								setter(a, b_mid - 2, RRR_MAGICK_PIXEL_INSIDE);
+							if (b_mid > 0)
+								setter(a, b_mid - 1, RRR_MAGICK_PIXEL_INSIDE);
+							setter(a, b_mid, RRR_MAGICK_PIXEL_EDGE);
+							if (b_mid + 2 < b_max)
+								setter(a, b_mid + 1, RRR_MAGICK_PIXEL_OUTSIDE);
+							if (b_mid + 3 < b_max)
+								setter(a, b_mid + 2, RRR_MAGICK_PIXEL_OUTSIDE);
 						}
-//						b = b_search;
+//						setter(a, (b + b_search) / 2, RRR_MAGICK_PIXEL_EDGE);
+/*						if (diff_accumulated > 0) {
+							setter(a, b_search, 1);
+						}
+						else {
+							setter(a, b, 1);
+						}*/
+						b = b_search;
 						break;
 					}
 				}
@@ -155,7 +177,8 @@ namespace rrr::magick {
 				return pixels.get(a, b);
 			},
 			[&](rrr_length a, rrr_length b, int8_t v) {
-				return result.set(a, b, v);
+				if (v == RRR_MAGICK_PIXEL_EDGE || result.get(a, b) != RRR_MAGICK_PIXEL_EDGE)
+					result.set(a, b, v);
 			},
 			rows,
 			cols
@@ -173,7 +196,8 @@ namespace rrr::magick {
 				return pixels.get(b, a);
 			},
 			[&](rrr_length a, rrr_length b, int8_t v) {
-				return result.set(b, a, v);
+				if (v == RRR_MAGICK_PIXEL_EDGE || result.get(b, a) == RRR_MAGICK_PIXEL_CLEAN)
+					result.set(b, a, v);
 			},
 			cols,
 			rows
@@ -192,7 +216,7 @@ namespace rrr::magick {
 			const edges &m,
 			mappos tl,
 			mappos br
-	) {
+	) const {
 		static const std::string extension = "png";
 
 		Magick::Image tmp(image);
@@ -202,20 +226,19 @@ namespace rrr::magick {
 		for (size_t x = 0; x < cols; x++) {
 			for (size_t y = 0; y < rows; y++) {
 				switch (m.get(y, x)) {
-					case 0:
+					case RRR_MAGICK_PIXEL_OUTSIDE:
+						tmp.pixelColor(x, y, Magick::ColorRGB(0.6, 0.6, 0.6, 1.0));
 						break;
-					case 1:
-						tmp.pixelColor(x, y, Magick::ColorRGB(0.7, 0.7, 0.0, 1.0));
-						break;
-					case -1:
+					case RRR_MAGICK_PIXEL_EDGE:
 						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 1.0, 0.0, 1.0));
 						break;
-					case 2:
-					case -2:
+					case RRR_MAGICK_PIXEL_INSIDE:
+						tmp.pixelColor(x, y, Magick::ColorRGB(0.3, 0.3, 0.3, 1.0));
+						break;
+					case RRR_MAGICK_PIXEL_USED:
 						tmp.pixelColor(x, y, Magick::ColorRGB(1.0, 0.0, 0.0, 1.0));
 						break;
-					case 3:
-					case -3:
+					case RRR_MAGICK_PIXEL_BANNED:
 						tmp.pixelColor(x, y, Magick::ColorRGB(0.0, 0.0, 1.0, 1.0));
 						break;
 					default:
@@ -239,7 +262,7 @@ namespace rrr::magick {
 			const edges &m,
 			mappos tl,
 			mappos br
-	) {
+	) const {
 		Magick::Blob blob;
 		edges_dump_image(m, tl, br).write(&blob);
 		return blob;
@@ -248,7 +271,7 @@ namespace rrr::magick {
 	Magick::Blob pixbuf::edges_dump_blob (
 			const edges &m,
 			minmax<mappos> crop
-	) {
+	) const {
 		return edges_dump_blob(m, crop.min, crop.max);
 	}
 
@@ -257,7 +280,7 @@ namespace rrr::magick {
 			const edges &m,
 			mappos tl,
 			mappos br
-	) {
+	) const {
 		edges_dump_image(m, tl, br).write(target_file_no_extension + ".png");
 	}
 
@@ -265,14 +288,14 @@ namespace rrr::magick {
 			const std::string &target_file_no_extension,
 			const edges &m,
 			minmax<mappos> crop
-	) {
+	) const {
 		edges_dump(target_file_no_extension, m, crop.min, crop.max);
 	}
 
 	void pixbuf::edges_dump (
 			const std::string &target_file_no_extension,
 			const edges &m
-	) {
+	) const {
 		edges_dump(target_file_no_extension, m, mappos(0, 0), mappos(rows, cols));
 	}
 
@@ -291,7 +314,7 @@ namespace rrr::magick {
 				// Walk around edge
 				mappath path_new(reserve_size);
 
-				const edge_value pos_value = outlines.get(pos);
+//				const edge_value pos_value = outlines.get(pos);
 
 				path_new.push(pos);
 
@@ -300,26 +323,22 @@ namespace rrr::magick {
 						m,
 						[&](edgemask &m, const mappos &pos) {
 							// Create mask based on blank pixels
-							outlines.neighbours_count(m, pos, 8, 0);
+							outlines.neighbours_count(m, pos, 8, RRR_MAGICK_PIXEL_OUTSIDE);
 							m.widen();
 						},
 						[&](const mappos &check_pos, const edgemask &mask) {
-							// Accept only unused edge pixels
-							if (outlines.get(check_pos) != 1)
+							if (outlines.get(check_pos) != RRR_MAGICK_PIXEL_EDGE)
 								return false;
 
-							// XXX : We only follow positive edges, don't know if thats a good or bad thing
+							const size_t count       = outlines.neighbours_count(check_pos, 1, RRR_MAGICK_PIXEL_EDGE);
+							const size_t count_inside = outlines.neighbours_count(mask, check_pos, 1, RRR_MAGICK_PIXEL_INSIDE);
+							const size_t count_outside = outlines.neighbours_count(mask, check_pos, 1, RRR_MAGICK_PIXEL_OUTSIDE);
+							const size_t count_used  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_USED);
+							const size_t count_banned  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_BANNED);
 
-							const size_t count       = outlines.neighbours_count(check_pos, 7, pos_value);
-							const size_t count_blank = outlines.neighbours_count(mask, check_pos, 8, 0);
-							const size_t count_used  = outlines.neighbours_count(check_pos, 3, 2);
+							printf("%i:%i c %lu i %lu o %lu u %lu b %lu\n", check_pos.a, check_pos.b, count, count_inside, count_outside, count_used, count_banned);
 
-							return (
-								count <= 6 &&       // Don't move into areas, stay on the edge
-								count_blank >= 2 && // 
-								count_blank <= 6 &&
-								count_used <= 2
-							);
+							return (count && (count_inside || count_outside));
 						},
 						[&]() {
 							// Accept circle path?
@@ -327,19 +346,20 @@ namespace rrr::magick {
 						},
 						[&](const mappos &pos) {
 							// Push found point
-							outlines.set(pos, 2);
+							outlines.set(pos, RRR_MAGICK_PIXEL_USED);
 							path_new.push(pos);
 						},
 						[&](const mappos &pos_end) {
+							printf("End %lu %lu\n", pos_end.a, pos_end.b);
 							if (path_new.count() >= path_length_min) {
 								// Ban end pixel
-								outlines.set(pos_end, 3);
+								outlines.set(pos_end, RRR_MAGICK_PIXEL_BANNED);
 								paths.push(path_new);
 							}
 							else {
 								// Ban all found pixels
 								for (size_t i = 0; i < path_new.count(); i++) {
-									outlines.set(path_new[i], 3);
+									outlines.set(path_new[i], RRR_MAGICK_PIXEL_BANNED);
 								}
 							}
 							path_new = mappath(reserve_size);

@@ -339,6 +339,17 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 
 static void ocr_process_image (struct ocr_data *data, const rrr::magick::pixbuf &image, const float threshold) {
 	std::vector<rrr::magick::mappath> paths_merged;
+
+	static int filename_count = 1000;
+
+	filename_count++;
+	printf("Dumping %i...\n", filename_count);
+	image.edges_dump (
+		std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count),
+		image.edges_get(threshold, 5, 200000)
+	);
+	printf("DONE\n");
+
 	rrr::magick::edges edges_debug = image.edges_clean_get();
 	image.paths_get (
 			image.edges_get(
@@ -387,12 +398,6 @@ static void ocr_process_image (struct ocr_data *data, const rrr::array::array &a
 		}
 
 	}
-
-/*				filename_count++;
-	printf("Dumping %i...\n", filename_count);
-	image.edges_dump(std::string(RRR_OCR_DEFAULT_DEBUG_FILE) + "_" + std::to_string(filename_count), edges_debug);
-	printf("DONE\n");
-	rrr::magick::edges edges;*/
 }
 
 static void ocr_process_response (struct ocr_data *data, const rrr::array::array &array) {

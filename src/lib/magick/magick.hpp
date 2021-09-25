@@ -43,6 +43,13 @@ extern "C" {
 #include "string.h"
 }
 
+#define RRR_MAGICK_PIXEL_CLEAN 0
+#define RRR_MAGICK_PIXEL_OUTSIDE 1
+#define RRR_MAGICK_PIXEL_EDGE 2
+#define RRR_MAGICK_PIXEL_INSIDE 3
+#define RRR_MAGICK_PIXEL_USED 4
+#define RRR_MAGICK_PIXEL_BANNED 5
+
 namespace rrr::magick {
 	class wrap : rrr::exp::eof {
 		using rrr::exp::eof::eof;
@@ -497,9 +504,12 @@ namespace rrr::magick {
 				it_a->iterate([&](const mappos &p){
 					p_new.push(p);
 				});
-				p_new.complete_circle();
+//				p_new.complete_circle();
 				f(p_new);
 			}
+		}
+		std::vector<mappath> get() const {
+			return p;
 		}
 	};
 
@@ -743,13 +753,20 @@ namespace rrr::magick {
 
 								const edge_value v = outlines.get(c.a, c.b);
 
-								if (v < 1 || v > 1)
+								if (v != RRR_MAGICK_PIXEL_EDGE)
+									return false;
+
+								const size_t count = outlines.neighbours_count(c, 2, RRR_MAGICK_PIXEL_EDGE);
+
+								return count >= 2;
+
+/*								if (v < 1 || v > 1)
 									return false;
 
 								const size_t count = outlines.neighbours_count(c, 7, v) +
 										     outlines.neighbours_count(c, 7, -v);
 
-								return (bool) (count <= 6 && count >= 2);
+								return (bool) (count <= 6 && count >= 2);*/
 							}
 					));
 				} while(1);
@@ -761,7 +778,7 @@ namespace rrr::magick {
 		void edge_walk (
 				const mappos &pos_start,
 				const edges &m,
-				auto update_mask,
+		//		auto update_mask,
 				auto check_neighbour,
 				auto check_circle,
 				auto notify_pos,
@@ -823,31 +840,31 @@ namespace rrr::magick {
 				const edges &m,
 				mappos tl,
 				mappos br
-		);
+		) const;
 		Magick::Blob edges_dump_blob (
 				const edges &m,
 				mappos tl,
 				mappos br
-		);
+		) const;
 		Magick::Blob edges_dump_blob (
 				const edges &m,
 				minmax<mappos> crop
-		);
+		) const;
 		void edges_dump (
 				const std::string &target_file_no_extension,
 				const edges &m,
 				mappos tl,
 				mappos br
-		);
+		) const;
 		void edges_dump (
 				const std::string &target_file_no_extension,
 				const edges &m,
 				minmax<mappos> crop
-		);
+		) const;
 		void edges_dump (
 				const std::string &target_file_no_extension,
 				const edges &m
-		);
+		) const;
 		mappath_group paths_get (
 				const edges &m,
 				rrr_length path_length_min
