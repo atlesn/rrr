@@ -61,11 +61,11 @@ extern "C" {
 #define RRR_OCR_SIGNATURE_TAG "ocr_signature"
 //#define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.01
 #define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.5
-#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 3500
+#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 5000
 #define RRR_OCR_GOOD_THRESHOLD_MAX 10000
 #define RRR_OCR_GOOD_THRESHOLD_MIN 2500
-#define RRR_OCR_GOOD_THRESHOLD_STEP_PENALTY 1000
-#define RRR_OCR_GOOD_THRESHOLD_STEP_REWARD 500
+#define RRR_OCR_GOOD_THRESHOLD_STEP_PENALTY 100
+#define RRR_OCR_GOOD_THRESHOLD_STEP_REWARD  50
 #define RRR_OCR_PARTIAL_THRESHOLD 10000
 
 __attribute__((constructor)) void load(void);
@@ -131,7 +131,9 @@ struct ocr_data {
 		for (auto it = paths.begin(); it != paths.end(); it++) {
 			if (*it == s) {
 				if (incorrect_check(*it_values)) {
+					std::cout << *it_values << " penalty " << std::endl;
 					if (((*it_threshold) -= RRR_OCR_GOOD_THRESHOLD_STEP_PENALTY) < RRR_OCR_GOOD_THRESHOLD_MIN) {
+						std::cout << *it_values << " erase " << std::endl;
 						it = paths.erase(it);
 						it_values = values.erase(it_values);
 						it_ages = ages.erase(it_ages);
@@ -142,6 +144,7 @@ struct ocr_data {
 					}
 				}
 				else {
+					std::cout << *it_values << " reward " << std::endl;
 					found = true;
 					if (((*it_threshold) += RRR_OCR_GOOD_THRESHOLD_STEP_REWARD) > RRR_OCR_GOOD_THRESHOLD_MAX) {
 						*it_threshold = RRR_OCR_GOOD_THRESHOLD_MIN;
@@ -169,7 +172,7 @@ struct ocr_data {
 		std::map<size_t,size_t> partials;
 		for (size_t i = 0; i < paths.size(); i++) {
 			size_t bits = s.cmpto(paths[i]);
-			printf("<> %s : %lu\n", values[i].c_str(), bits);
+//			printf("<> %s : %lu\n", values[i].c_str(), bits);
 			if (bits <= good_thresholds[i]) {
 				good((const rrr::magick::vectorpath_signature &) paths[i], (const std::string &) values[i], bits);
 			}
@@ -259,12 +262,6 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 	rrr::magick::edges edges_path_debug = image_path_debug.edges_clean_get();
 	rrr::magick::minmax<rrr::magick::mappos> minmax(path.m);
 
-	// Verification image without path points
-	Magick::Blob blob = image_path_debug.edges_dump_blob (
-			edges_path_debug,
-			minmax
-	);
-
 	std::string id = std::to_string(filename_count) + "-" + std::to_string(i);
 
 	rrr::magick::vectorpath vectorpath = path.to_vectorpath();
@@ -275,6 +272,7 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 				minmax.update(rrr::magick::mappos(p.a, p.b));
 				edges_path_debug.set(p, RRR_MAGICK_PIXEL_EDGE);
 			});
+			minmax.expand(10, image_path_debug.height(), image_path_debug.width());
 		},
 		[&](const rrr::magick::anglepath &v) {
 			rrr::magick::vectorpath_signature s = v.signature();
@@ -295,13 +293,17 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 						good_count++;
 						if (((++data->good_total_counter) % (size_t) (1.0/RRR_OCR_GOOD_VERIFY_PROPABILITY)) == 0) {
 							std::cout << "Verify good '" << v << "'" << std::endl;
-							ocr_send_verification (
-									data,
-									s,
-									v,
-									rrr::type::data_const(blob.data(), blob.length())
-							);
 						}
+						Magick::Blob blob = image_path_debug.edges_dump_blob (
+								edges_path_debug,
+								minmax
+						);
+						ocr_send_verification (
+								data,
+								s,
+								v,
+								rrr::type::data_const(blob.data(), blob.length())
+						);
 					},
 					[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
 						(void)(s);
@@ -313,6 +315,10 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 						if (--partial_max == 0) {
 							throw rrr::exp::eof();
 						}
+						Magick::Blob blob = image_path_debug.edges_dump_blob (
+								edges_path_debug,
+								minmax
+						);
 						ocr_send_verification (
 								data,
 								s,
@@ -326,8 +332,6 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 			}
 
 			if (good_count == 0) {
-				minmax.expand(10, image_path_debug.height(), image_path_debug.width());
-
 /*				int count = 0;
 				path.iterate ([&](const rrr::magick::mappos &p) {
 					int colour = ++count % 10 == 0 ? 1 : 2;
