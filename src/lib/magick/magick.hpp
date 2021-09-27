@@ -553,7 +553,7 @@ namespace rrr::magick {
 				f(p[i]);
 			}
 			if (next) {
-				next->iterate(f);
+				next->iterate(tree, f);
 			}
 			tree.erase(this);
 		}
