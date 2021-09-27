@@ -60,12 +60,13 @@ extern "C" {
 #define RRR_OCR_VALUE_TAG "ocr_value"
 #define RRR_OCR_SIGNATURE_TAG "ocr_signature"
 //#define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.01
-#define RRR_OCR_GOOD_VERIFY_PROPABILITY 1.0
-#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 150000
-#define RRR_OCR_GOOD_THRESHOLD_MAX 200000
-#define RRR_OCR_GOOD_THRESHOLD_MIN 100000
-#define RRR_OCR_GOOD_THRESHOLD_STEP 5000
-#define RRR_OCR_PARTIAL_THRESHOLD 200000
+#define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.5
+#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 3500
+#define RRR_OCR_GOOD_THRESHOLD_MAX 10000
+#define RRR_OCR_GOOD_THRESHOLD_MIN 2500
+#define RRR_OCR_GOOD_THRESHOLD_STEP_PENALTY 1000
+#define RRR_OCR_GOOD_THRESHOLD_STEP_REWARD 500
+#define RRR_OCR_PARTIAL_THRESHOLD 10000
 
 __attribute__((constructor)) void load(void);
 void init(struct rrr_instance_module_data *data);
@@ -130,7 +131,7 @@ struct ocr_data {
 		for (auto it = paths.begin(); it != paths.end(); it++) {
 			if (*it == s) {
 				if (incorrect_check(*it_values)) {
-					if (((*it_threshold) -= RRR_OCR_GOOD_THRESHOLD_STEP) < RRR_OCR_GOOD_THRESHOLD_MIN) {
+					if (((*it_threshold) -= RRR_OCR_GOOD_THRESHOLD_STEP_PENALTY) < RRR_OCR_GOOD_THRESHOLD_MIN) {
 						it = paths.erase(it);
 						it_values = values.erase(it_values);
 						it_ages = ages.erase(it_ages);
@@ -142,7 +143,7 @@ struct ocr_data {
 				}
 				else {
 					found = true;
-					if (((*it_threshold) += (RRR_OCR_GOOD_THRESHOLD_STEP / 2)) > RRR_OCR_GOOD_THRESHOLD_MAX) {
+					if (((*it_threshold) += RRR_OCR_GOOD_THRESHOLD_STEP_REWARD) > RRR_OCR_GOOD_THRESHOLD_MAX) {
 						*it_threshold = RRR_OCR_GOOD_THRESHOLD_MIN;
 					}
 					*it_ages = rrr_time_get_64();
@@ -277,6 +278,10 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 		},
 		[&](const rrr::magick::anglepath &v) {
 			rrr::magick::vectorpath_signature s = v.signature();
+
+			if (s.zero()) {
+				return;
+			}
 
 			int good_count = 0;
 			int partial_max = 2;

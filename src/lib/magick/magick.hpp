@@ -305,17 +305,22 @@ namespace rrr::magick {
 			}
 			return true;
 		}
+		bool zero() const {
+			return s[0] == 0;
+		}
 		uint16_t &operator[] (size_t pos) {
 			return s[pos];
 		}
 		size_t cmpto(const vectorpath_signature &test) const {
+			size_t divisor = 1;
 			size_t sum = 0;
 			for (size_t i = 0; i < size; i++) {
 				uint16_t tmp = s[i] - test.s[i];
 				if (tmp > max / 2) {
 					tmp = max - tmp;
 				}
-				sum += tmp;
+				sum += (tmp / divisor);
+				divisor *= 2;
 			}
 			return sum;
 		}
@@ -470,7 +475,14 @@ namespace rrr::magick {
 			std::vector<coordinate<double>> result;
 			result.reserve(p.size() / 4);
 
-			simplify(result, 0, p.size() - 1, etha);
+			for (double etha = 2.0; etha <= 8.0; etha += 2.0) {
+				printf("Etha %lf\n", etha);
+				result.clear();
+				simplify(result, 0, p.size() - 1, etha);
+				if (result.size() <= 10) {
+					break;
+				}
+			}
 
 			return vectorpath(origin, result);
 		}	
