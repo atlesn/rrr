@@ -59,12 +59,13 @@ extern "C" {
 #define RRR_OCR_IMAGE_TAG "ocr_image"
 #define RRR_OCR_VALUE_TAG "ocr_value"
 #define RRR_OCR_SIGNATURE_TAG "ocr_signature"
-#define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.01
-#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 5000
-#define RRR_OCR_GOOD_THRESHOLD_MAX 5000
-#define RRR_OCR_GOOD_THRESHOLD_MIN 1000
-#define RRR_OCR_GOOD_THRESHOLD_STEP 100
-#define RRR_OCR_PARTIAL_THRESHOLD 20000
+//#define RRR_OCR_GOOD_VERIFY_PROPABILITY 0.01
+#define RRR_OCR_GOOD_VERIFY_PROPABILITY 1.0
+#define RRR_OCR_GOOD_THRESHOLD_DEFAULT 150000
+#define RRR_OCR_GOOD_THRESHOLD_MAX 200000
+#define RRR_OCR_GOOD_THRESHOLD_MIN 100000
+#define RRR_OCR_GOOD_THRESHOLD_STEP 5000
+#define RRR_OCR_PARTIAL_THRESHOLD 200000
 
 __attribute__((constructor)) void load(void);
 void init(struct rrr_instance_module_data *data);
@@ -141,8 +142,8 @@ struct ocr_data {
 				}
 				else {
 					found = true;
-					if (((*it_threshold) += RRR_OCR_GOOD_THRESHOLD_STEP) > RRR_OCR_GOOD_THRESHOLD_MAX) {
-						*it_threshold = RRR_OCR_GOOD_THRESHOLD_MAX;
+					if (((*it_threshold) += (RRR_OCR_GOOD_THRESHOLD_STEP / 2)) > RRR_OCR_GOOD_THRESHOLD_MAX) {
+						*it_threshold = RRR_OCR_GOOD_THRESHOLD_MIN;
 					}
 					*it_ages = rrr_time_get_64();
 				}
@@ -166,13 +167,13 @@ struct ocr_data {
 	template<typename F,typename G> void path_search(const rrr::magick::vectorpath_signature &s, F good, G partial) {
 		std::map<size_t,size_t> partials;
 		for (size_t i = 0; i < paths.size(); i++) {
-			size_t diff = s.cmpto(paths[i]);
-			//printf("<> %s : %lu\n", values[i].c_str(), diff);
-			if (diff < good_thresholds[i]) {
-				good((const rrr::magick::vectorpath_signature &) paths[i], (const std::string &) values[i], diff);
+			size_t bits = s.cmpto(paths[i]);
+			printf("<> %s : %lu\n", values[i].c_str(), bits);
+			if (bits <= good_thresholds[i]) {
+				good((const rrr::magick::vectorpath_signature &) paths[i], (const std::string &) values[i], bits);
 			}
 			else {
-				partials.emplace(diff, i);
+				partials.emplace(bits, i);
 			}
 		}
 		for (auto it = partials.rbegin(); it != partials.rend(); ++it) {
@@ -265,21 +266,48 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 
 	std::string id = std::to_string(filename_count) + "-" + std::to_string(i);
 
-	path.to_vectorpath_16([&](const rrr::magick::vectorpath_16 &v) {
-		rrr::magick::vectorpath_signature s = v.normalize().signature();
+	rrr::magick::vectorpath vectorpath = path.to_vectorpath();
 
-		int good_count = 0;
-		int partial_max = 2;
+	vectorpath.compress (
+		[&](const rrr::magick::vectorpath &v) {
+			v.walk([&](const rrr::magick::mappos &p){
+				minmax.update(rrr::magick::mappos(p.a, p.b));
+				edges_path_debug.set(p, RRR_MAGICK_PIXEL_EDGE);
+			});
+		},
+		[&](const rrr::magick::anglepath &v) {
+			rrr::magick::vectorpath_signature s = v.signature();
 
-		try {
-			data->path_search (
-				s,
-				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
-					(void)(s);
-					std::cout << "Good " << id << " score " << score << ": " << v << std::endl;
-					good_count++;
-					if (((++data->good_total_counter) % (size_t) (1.0/RRR_OCR_GOOD_VERIFY_PROPABILITY)) == 0) {
-						std::cout << "Verify good '" << v << "'" << std::endl;
+			int good_count = 0;
+			int partial_max = 2;
+
+			try {
+				data->path_search (
+					s,
+					[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
+						(void)(s);
+						std::cout << "Good " << id << " score " << score << ": " << v << std::endl;
+						good_count++;
+						if (((++data->good_total_counter) % (size_t) (1.0/RRR_OCR_GOOD_VERIFY_PROPABILITY)) == 0) {
+							std::cout << "Verify good '" << v << "'" << std::endl;
+							ocr_send_verification (
+									data,
+									s,
+									v,
+									rrr::type::data_const(blob.data(), blob.length())
+							);
+						}
+					},
+					[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
+						(void)(s);
+						(void)(score);
+						if (score > RRR_OCR_PARTIAL_THRESHOLD) {
+							return;
+						}
+						std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
+						if (--partial_max == 0) {
+							throw rrr::exp::eof();
+						}
 						ocr_send_verification (
 								data,
 								s,
@@ -287,54 +315,37 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 								rrr::type::data_const(blob.data(), blob.length())
 						);
 					}
-				},
-				[&](const rrr::magick::vectorpath_signature &s, const std::string &v, size_t score) {
-					(void)(s);
-					(void)(score);
-					if (score > RRR_OCR_PARTIAL_THRESHOLD) {
-						return;
-					}
-					std::cout << "Partial " << id << " score " << score << ": " << v << std::endl;
-					if (--partial_max == 0) {
-						throw rrr::exp::eof();
-					}
-					ocr_send_verification (
-							data,
-							s,
-							v,
-							rrr::type::data_const(blob.data(), blob.length())
-					);
-				}
-			);
-		}
-		catch (rrr::exp::eof &e) {
-		}
+				);
+			}
+			catch (rrr::exp::eof &e) {
+			}
 
-		if (good_count == 0) {
-			minmax.expand(10, image_path_debug.height(), image_path_debug.width());
+			if (good_count == 0) {
+				minmax.expand(10, image_path_debug.height(), image_path_debug.width());
 
-			int count = 0;
-			path.iterate ([&](const rrr::magick::mappos &p) {
-				int colour = ++count % 10 == 0 ? 1 : 2;
-				edges_path_debug.set(p, colour);
-				//edges_debug.set_if_higher(p, colour);
-			});
-			v.walk([&](const rrr::magick::mappos &p){
-				edges_path_debug.set(p, 3);
-			});
-			edges_path_debug.set(path.start(), 3);
-			Magick::Blob blob = image_path_debug.edges_dump_blob (
-					edges_path_debug,
-					minmax
-			);
-			ocr_send_verification (
-					data,
-					s,
-					"",
-					rrr::type::data_const(blob.data(), blob.length())
-			);
+/*				int count = 0;
+				path.iterate ([&](const rrr::magick::mappos &p) {
+					int colour = ++count % 10 == 0 ? 1 : 2;
+					edges_path_debug.set(p, colour);
+					//edges_debug.set_if_higher(p, colour);
+				});
+				vectorpath.walk([&](const rrr::magick::mappos &p){
+					edges_path_debug.set(p, RRR_MAGICK_PIXEL_EDGE);
+				});
+				edges_path_debug.set(path.start(), 3);*/
+				Magick::Blob blob = image_path_debug.edges_dump_blob (
+						edges_path_debug,
+						minmax
+				);
+				ocr_send_verification (
+						data,
+						s,
+						"",
+						rrr::type::data_const(blob.data(), blob.length())
+				);
+			}
 		}
-	});
+	);
 }
 
 static void ocr_process_image (struct ocr_data *data, const rrr::magick::pixbuf &image, const float threshold) {

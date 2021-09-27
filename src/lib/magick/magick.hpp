@@ -65,13 +65,45 @@ namespace rrr::magick {
 		coordinate() : a(0), b(0) {}
 		coordinate(T x) : a(x), b(x) {}
 		coordinate(T a, T b) : a(a), b(b) {}
+		coordinate(const coordinate<double> &src) :
+			a((T) src.a),
+			b((T) src.b)
+		{}
 		bool operator== (const coordinate<T> &test) const {
 			return (test.a == a && test.b == b);
+		}
+		coordinate<T> &operator+= (const coordinate<T> &addend) {
+			a += addend.a;
+			b += addend.b;
+			return *this;
+		}
+		coordinate<T> operator+ (const coordinate<T> &addend) const {
+			coordinate<T> tmp = *this;
+			return tmp += addend;
+		}
+		coordinate<T> &operator-= (const coordinate<T> &subtrahend) {
+			a -= subtrahend.a;
+			b -= subtrahend.b;
+			return *this;
+		}
+		coordinate<T> operator- (const coordinate<T> &subtrahend) const {
+			coordinate<T> tmp = *this;
+			tmp -= subtrahend;
+			return tmp;
 		}
 		coordinate<T> &set(T a, T b) {
 			this->a = a;
 			this->b = b;
 			return *this;
+		}
+		T normal() const {
+			return std::sqrt(a * a + b * b);
+		}
+		T distance_to_line (const coordinate<T> start, const coordinate<T> d, const T normal) const {
+			return std::abs (
+				(d.a * (start.b - b)) -
+				(d.b * (start.a - a))
+			) / normal;
 		}
 		bool equals(const coordinate<T> &test) const {
 			return (test.a == a && test.b == b);
@@ -149,42 +181,14 @@ namespace rrr::magick {
 		}
 	};
 
-	typedef uint16_t mapunit;
-	typedef uint32_t mapunit_combined;
-	typedef coordinate<mapunit> mappos;
-
-	template<typename T> class mapposhash {
-		std::map<mapunit_combined,T> m;
-		constexpr mapunit_combined combine(mapunit a, mapunit b) const {
-			return (mapunit_combined) a << (sizeof(a) * 8) & b;
-		}
-		constexpr mapunit_combined combine(const mappos &x) const {
-			return combine(x.a, x.b);
-		}
-		public:
-		bool has(const mappos &x) const {
-			return m.contains(combine(x));
-		}
-		template<typename F> void has_then(const mappos &k, F f) const {
-			auto it = m.find(combine(k));
-			if (it != m.end()) {
-				f(it->second);
-			}
-		}
-		template<typename F> void iterate(F f) const {
-			for (auto it = m.begin(); it != m.end(); it++) {
-				f(it->second);
-			}
-		}
-		T &get (const mappos &k) {
-			return m[combine(k)];
-		}
-	};
-
-	std::ostream &operator<< (std::ostream &o, const rrr::magick::mappos &p) {
+	template<typename T> std::ostream &operator<< (std::ostream &o, const coordinate<T> &p) {
 		o << std::to_string(p.a) << "x" << std::to_string(p.b);
 		return o;
 	}
+
+	typedef uint16_t mapunit;
+	typedef uint32_t mapunit_combined;
+	typedef coordinate<mapunit> mappos;
 
 	template<typename T> class minmax {
 		public:
@@ -212,33 +216,73 @@ namespace rrr::magick {
 	struct vector {
 		int8_t a;
 		int8_t b;
-		constexpr vector () : a(0), b(0) {}
-		constexpr vector (const mappos &a, const mappos &b) :
+		vector () : a(0), b(0) {}
+		vector (const mappos &a, const mappos &b) :
 			a((ssize_t) b.a - a.a),
 			b((ssize_t) b.b - a.b) {
 		}
-		constexpr vector (const vector &augend, const vector &addend) :
+		vector (const vector &augend, const vector &addend) :
 			a(augend.a + addend.a),
 			b(augend.b + addend.b) {	
 		}
-		constexpr vector &operator+= (const vector &addend) {
+		vector &operator+= (const vector &addend) {
 			a += addend.a;
 			b += addend.b;
 			return *this;
 		}
+		vector operator+ (const vector &addend) const {
+			vector tmp = *this;
+			return tmp += addend;
+		}
+		vector &operator-= (const vector &subtrahend) {
+			a -= subtrahend.a;
+			b -= subtrahend.b;
+			return *this;
+		}
+		vector operator- (const vector &subtrahend) const {
+			vector tmp = *this;
+			tmp -= subtrahend;
+			return tmp;
+		}
 	};
 
-	struct vector_normal {
+	std::ostream &operator<< (std::ostream &o, const vector &v) {
+		o << std::to_string(v.a) << "x" << std::to_string(v.b);
+		return o;
+	}
+
+	struct angle {
 		double theta;
+		angle() : theta(0.0) {}
+		angle(const vector &v) : theta(std::atan2(v.a, v.b)) {
+//			theta(std::atan((double) v.a / (double) v.b)) {
+		//	mag(std::sqrt(std::pow((double) v.a, 2.0) + std::pow((double) v.b, 2.0))) {
+		}
+		angle &operator+= (const angle &addend) {
+			theta += addend.theta;
+			return *this;
+		}
+	};
+
+	std::ostream &operator<< (std::ostream &o, const angle &a) {
+		o << std::to_string(a.theta);
+		return o;
+	}
+
+	struct magnitude {
 		double mag;
-		constexpr vector_normal(const vector &v) :
-			theta(std::atan((double) v.b / (double) v.a)),
+		magnitude() : mag(0.0) {}
+		magnitude(const vector &v) :
 			mag(std::sqrt(std::pow((double) v.a, 2.0) + std::pow((double) v.b, 2.0))) {
 		}
 	};
 
 	class vectorpath_signature {
-		std::array<uint16_t,16> s;
+		public:
+		static const int size = 16;
+		static const int max = UINT16_MAX;
+		private:
+		std::array<uint16_t,size> s;
 		public:
 		vectorpath_signature() : s() {
 			s.fill(0);
@@ -248,14 +292,14 @@ namespace rrr::magick {
 		}
 		vectorpath_signature(const rrr::types::data_const &d) {
 			s.fill(0);
-			printf("%u vs %lu\n", d.l, sizeof(s));
+			//printf("%u vs %lu\n", d.l, sizeof(s));
 			if (d.l != sizeof(s)) {
 				throw rrr::exp::soft(std::string("Byte count mismatch when initializing vectorpath signature from raw data"));
 			}
 			memcpy(s.data(), d.d, d.l);
 		}
 		bool operator== (const vectorpath_signature &test) const {
-			for (size_t i = 0; i < 16; i++) {
+			for (size_t i = 0; i < size; i++) {
 				if (s[i] != test.s[i])
 					return false;
 			}
@@ -265,49 +309,66 @@ namespace rrr::magick {
 			return s[pos];
 		}
 		size_t cmpto(const vectorpath_signature &test) const {
-			size_t acc = 0;
-			for (size_t i = 0; i < 16; i++) {
-				ssize_t tmp = (ssize_t) test.s[i] - (ssize_t) s[i];
-				acc += (tmp < 0 ? -tmp : tmp);
+			size_t sum = 0;
+			for (size_t i = 0; i < size; i++) {
+				uint16_t tmp = s[i] - test.s[i];
+				if (tmp > max / 2) {
+					tmp = max - tmp;
+				}
+				sum += tmp;
 			}
-			return acc;
+			return sum;
 		}
 		std::pair<const void*,rrr_length> data() const {
 			return std::pair<const void *,rrr_length>(s.data(),(rrr_length) sizeof(s));
 		}
 	};
 
-	class vectorpath_normal {
-		std::vector<vector_normal> v;
+	class anglepath {
+		std::vector<angle> v;
 		public:
-		vectorpath_normal(size_t reserve) : v() {
+		anglepath(size_t reserve) : v() {
 			v.reserve(reserve);
 		}
+		size_t size() {
+			return v.size();
+		}
 		void push(vector v) {
-			this->v.emplace_back(v);
+			std::cout << std::string("Push ") << v << std::string("->") << angle(v) << std::endl;
+			this->v.push_back(angle(v));
 		}
 		vectorpath_signature signature() const {
 			vectorpath_signature s;
 
-			double mag_max = 0.0;
+/*			double mag_max = 0.0;
 			for (auto it = v.begin(); it != v.end(); it++) {
 				if (it->mag > mag_max)
 					mag_max = it->mag;
-			}
-			double theta_diff = v.front().theta;
+			}*/
 
+//			const double diff_theta = v.front().theta;
 			size_t i = 0;
-			for (auto it = v.begin(); it != v.end() && i < 16; it++) {
-				const int sig_theta = (int) (255.0 * ((it->theta - theta_diff) / std::numbers::pi_v<double>));
-				const int sig_mag = (int) (255.0 * (it->mag / mag_max));
-				//printf("%i %i (%lf %lf)\n", sig_theta, sig_mag, it->theta - theta_diff, it->mag);
+			int rotation = 0;
+			for (auto it = v.begin(); it != v.end() && i < s.size; ++it) {
+				const double pos_theta = it->theta;// - diff_theta;
+				int sig_theta = (int) (s.max * (pos_theta / (std::numbers::pi_v<double> * 2)));
+				if (it == v.begin()) {
+					rotation = sig_theta;
+				}
+				sig_theta -= rotation;
+				if (sig_theta < 0) {
+					sig_theta += s.max;
+				}
 
-				uint16_t res;
-				
-				*(((uint8_t*) &res) + 0) = (uint8_t) sig_mag;
-				*(((uint8_t*) &res) + 1) = (int8_t) sig_theta;
+				std::cout << std::string("Signature ") << std::to_string(i) << " " << std::to_string(it->theta) << "->" << std::to_string(pos_theta) << ": " << std::to_string(sig_theta) << std::endl;
 
-				s[i++] = (uint16_t) res;
+				if (sig_theta > 0) {
+					s[i++] = sig_theta;
+				}
+			}
+
+			while (i < s.size) {
+				s[i++] = 0;
 			}
 
 			return s;
@@ -315,26 +376,47 @@ namespace rrr::magick {
 	};
 
 	class vectorpath {
-		mappos prev;
 		protected:
 		const mappos origin;
 		std::vector<vector> v;
-		public:
-		vectorpath(const mappos &origin, size_t size) :
-			prev(origin),
-			origin(origin),
-			v()
-		{
-			v.reserve(size);
-		} 
-		void push(const mappos &p) {
+		std::vector<coordinate<double>> p;
+		private:
+		mappos prev;
+		vector accumulator;
+		void push_vector(const mappos &p) {
 			v.emplace_back(prev, p);
 			prev = p;
 		}
-	};
+		public:
+		vectorpath(const mappos &origin, size_t size) :
+			origin(origin),
+			v(),
+			p(),
+			prev(origin),
+			accumulator()
+		{
+			v.reserve(size);
+		}
 
-	class vectorpath_16 : private vectorpath {
-		uint8_t b;
+		vectorpath(const mappos &origin, const std::vector<coordinate<double>> &p) :
+			origin(origin),
+			v(),
+			p(p),
+			prev(origin),
+			accumulator()
+		{
+			v.reserve(p.size());
+			for (auto it = p.begin(); it != p.end(); ++it) {
+				push_vector(origin + *it);
+			}
+		}
+
+		void push(const mappos &p) {
+			push_vector(p);
+			accumulator += v.back();
+			this->p.emplace_back(accumulator.a, accumulator.b);
+		}
+
 		uint8_t popcount() {
 			const uint64_t *pos = reinterpret_cast<uint64_t*>(v.data());
 			uint8_t sum = 0;
@@ -344,46 +426,66 @@ namespace rrr::magick {
 			}
 			return sum;
 		}
-		vectorpath_16 &fit() {
-			std::vector<vector> v_new;
-			v_new.reserve(16);
 
-			if (v.size() > 16) {
-				const size_t step = v.size() / 16;
-				for (size_t i = 0; i < v.size(); i++) {
-					if (i % step == 0 && v_new.size() < 16) {
-						v_new.emplace_back(this->v[i]);
+		void simplify(std::vector<coordinate<double>> &result, const size_t start_i, const size_t end_i, const double etha) const {
+			// Ramer-Douglas-Peucker algorithm
+
+			if (end_i - start_i > 1) {
+				const coordinate<double> &start = p[start_i];
+				const coordinate<double> &end = p[end_i];
+
+				const coordinate<double> d = end - start;
+				const double normal = d.normal();
+
+				size_t max_i = 0;
+				double max_d = 0.0;
+
+				for (size_t i = start_i + 1; i < end_i; i++) {
+					const double distance = p[i].distance_to_line(start, d, normal);
+					if (distance > max_d) {
+						max_i = i;
+						max_d = distance;
 					}
-					else {
-						v_new.back() += this->v[i];
-					}
+				}
+
+				if (max_d > etha) {
+					simplify(result, start_i, max_i, etha);
+					simplify(result, max_i, end_i, etha);
+				}
+				else {
+		//			result.push_back(p[start_i]);
+					result.push_back(p[end_i]);
 				}
 			}
 			else {
-				v_new.assign(v.begin(), v.end());
+				result.push_back(p[start_i]);
+				if (start_i != end_i)
+					result.push_back(p[end_i]);
 			}
-	
-			while (v_new.size() < 16) {
-				v_new.emplace_back();
-			}
-
-			v = v_new;
-
-			return *this;
 		}
+
+		vectorpath simplify() const {
+			const double etha = 2.0;
+
+			std::vector<coordinate<double>> result;
+			result.reserve(p.size() / 4);
+
+			simplify(result, 0, p.size() - 1, etha);
+
+			return vectorpath(origin, result);
+		}	
+
+		anglepath angles(const size_t max) const {
+			anglepath result(max);
+
+			for (size_t i = 0; i < v.size() && result.size() < max; i++) {
+				result.push(v[i]);
+			}
+
+			return result;
+		}
+
 		public:
-		vectorpath_16 (const vectorpath &src) : vectorpath(src) {
-			if (v.size() == 0) {
-				throw rrr::exp::bug(std::string("Vectorpath to ") + RRR_FUNC + " had no elements");
-			}
-			if (v.size() != 16) {
-				fit();
-			}
-			b = popcount();
-		}
-		uint8_t bits() const {
-			return b;
-		}
 		template<typename F> void walk(F f) const {
 			mappos pos(origin);
 			f(pos);
@@ -392,15 +494,10 @@ namespace rrr::magick {
 				f(pos);
 			}
 		}
-		vectorpath_normal normalize() const {
-			vectorpath_normal normal(16);
-			for (auto it = v.begin(); it != v.end(); ++it) {
-				normal.push(*it);
-			}
-			return normal;
-		}
-		template<typename F> void normalize(F f) const {
-			f(normalize());
+		template<typename F, typename G> void compress(F f, G g) const {
+			vectorpath path_new = simplify();
+			f(path_new);
+			g(path_new.angles(16));
 		}
 	};
 
@@ -464,16 +561,13 @@ namespace rrr::magick {
 			std::set<const mappath *> tree;
 			iterate(tree, f);
 		}
-		vectorpath_16 to_vectorpath_16 () const {
+		vectorpath to_vectorpath () const {
 			auto it = p.begin();
 			vectorpath v(*it, p.size());
 			while(++it != p.end()) {
 				v.push(*it);
 			}
-			return vectorpath_16(v);
-		}
-		template<typename F> void to_vectorpath_16 (F f) const {
-			f(to_vectorpath_16());
+			return v;
 		}
 	};
 

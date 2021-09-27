@@ -331,7 +331,7 @@ namespace rrr::magick {
 							const size_t count_used  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_USED);
 							const size_t count_banned  = outlines.neighbours_count(check_pos, 3, RRR_MAGICK_PIXEL_BANNED);
 
-							printf("%i:%i c %lu i %lu o %lu u %lu b %lu\n", check_pos.a, check_pos.b, count, count_inside, count_outside, count_used, count_banned);
+//							printf("%i:%i c %lu i %lu o %lu u %lu b %lu\n", check_pos.a, check_pos.b, count, count_inside, count_outside, count_used, count_banned);
 
 							return (count && (count_inside || count_outside));
 						},
@@ -345,7 +345,7 @@ namespace rrr::magick {
 							path_new.push(pos);
 						},
 						[&](const mappos &pos_end) {
-							printf("End %lu %lu\n", pos_end.a, pos_end.b);
+//							printf("End %lu %lu\n", pos_end.a, pos_end.b);
 							if (path_new.count() >= path_length_min) {
 								// Ban end pixel
 								outlines.set(pos_end, RRR_MAGICK_PIXEL_BANNED);
