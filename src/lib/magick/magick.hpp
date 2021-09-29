@@ -278,56 +278,73 @@ namespace rrr::magick {
 	};
 
 	class vectorpath_signature {
-		public:
-		static const int size = 16;
-		static const int max = UINT16_MAX;
 		private:
-		std::array<uint16_t,size> s;
+		uint32_t s;
+		uint32_t pos;
 		public:
-		vectorpath_signature() : s() {
-			s.fill(0);
-		}
-		vectorpath_signature(int x) : s() {
-			s.fill(x);
-		}
+		constexpr static const char *directions[] = {
+			"LL",
+			"-L",
+			"-R",
+			"RR"
+		};
+		static const uint32_t direction_bits = 2;
+		enum direction {
+			LL, // Hard left    00
+			L,  // Left         01
+			R,  // Right        10
+			RR  // Hard right   11
+		};
+		vectorpath_signature() : s(0) {}
 		vectorpath_signature(const rrr::types::data_const &d) {
-			s.fill(0);
 			//printf("%u vs %lu\n", d.l, sizeof(s));
 			if (d.l != sizeof(s)) {
 				throw rrr::exp::soft(std::string("Byte count mismatch when initializing vectorpath signature from raw data"));
 			}
-			memcpy(s.data(), d.d, d.l);
+			memcpy(&s, d.d, d.l);
+		}
+		constexpr const char *direction_text(enum direction d) const {
+			return directions[d];
+		}
+		constexpr size_t max () {
+			return sizeof(s) / direction_bits;
 		}
 		bool operator== (const vectorpath_signature &test) const {
-			for (size_t i = 0; i < size; i++) {
-				if (s[i] != test.s[i])
-					return false;
-			}
-			return true;
+			return s == test.s;
 		}
 		bool zero() const {
-			return s[0] == 0;
+			return s == 0;
 		}
-		uint16_t &operator[] (size_t pos) {
-			return s[pos];
+		uint32_t cmpto(const vectorpath_signature &test) const {
+			return (s > test.s ? s - test.s : test.s - s);
 		}
-		size_t cmpto(const vectorpath_signature &test) const {
-			size_t divisor = 1;
-			size_t sum = 0;
-			for (size_t i = 0; i < size; i++) {
-				uint16_t tmp = s[i] - test.s[i];
-				if (tmp > max / 2) {
-					tmp = max - tmp;
-				}
-				sum += (tmp / divisor);
-				divisor *= 2;
+		void push(enum direction d) {
+			if (pos == sizeof(s) * 8) {
+				return;
 			}
-			return sum;
+			// Write to MSB first
+			printf("Push pos %u shift %lu\n", pos, sizeof(s) * 8 - direction_bits - pos);
+			s |= d << (sizeof(s) * 8 - direction_bits - pos);
+			pos += direction_bits;
 		}
 		std::pair<const void*,rrr_length> data() const {
-			return std::pair<const void *,rrr_length>(s.data(),(rrr_length) sizeof(s));
+			return std::pair<const void *,rrr_length>((const void *) &s, (rrr_length) sizeof(s));
+		}
+		std::string to_string() const {
+			std::string result;
+
+			for (uint8_t i = 0; i < pos; i += direction_bits) {
+				result += direction_text(static_cast<enum direction>(0x3 & (s >> (sizeof(s) * 8 - direction_bits - i))));
+			}
+
+			return result;
 		}
 	};
+
+	std::ostream &operator<< (std::ostream &o, const vectorpath_signature &s) {
+		o << s.to_string();
+		return o;
+	}
 
 	class anglepath {
 		std::vector<angle> v;
@@ -353,28 +370,41 @@ namespace rrr::magick {
 
 //			const double diff_theta = v.front().theta;
 			size_t i = 0;
-			int rotation = 0;
-			for (auto it = v.begin(); it != v.end() && i < s.size; ++it) {
-				const double pos_theta = it->theta;// - diff_theta;
-				int sig_theta = (int) (s.max * (pos_theta / (std::numbers::pi_v<double> * 2)));
+			int prev_theta = 0;
+			for (auto it = v.begin(); it != v.end() && i < s.max(); ++it) {
+				const double pos_theta = it->theta;
+				int theta = (int) (360.0 * (pos_theta / (std::numbers::pi_v<double> * 2)));
 				if (it == v.begin()) {
-					rotation = sig_theta;
+					prev_theta = theta;
+					continue;
 				}
-				sig_theta -= rotation;
-				if (sig_theta < 0) {
-					sig_theta += s.max;
+				if (theta < 0) {
+					theta += 360;
 				}
 
-				std::cout << std::string("Signature ") << std::to_string(i) << " " << std::to_string(it->theta) << "->" << std::to_string(pos_theta) << ": " << std::to_string(sig_theta) << std::endl;
+				std::cout << std::string("Signature ") << std::to_string(i) << " " << std::to_string(it->theta) << "->" << std::to_string(pos_theta) << ": " << std::to_string(theta) << std::endl;
 
-				if (sig_theta > 0) {
-					s[i++] = sig_theta;
+				if (std::abs(theta - prev_theta) > 10) {
+					const int rotation = 0 - theta;
+					const int prev_theta_rotated = prev_theta + rotation;
+
+					std::cout << std::string("Rotated: ") << prev_theta_rotated << std::endl;
+
+					s.push (
+						prev_theta_rotated < 0
+							? prev_theta_rotated <= 90
+								? vectorpath_signature::RR
+								: vectorpath_signature::R
+							: prev_theta_rotated >= 90
+								? vectorpath_signature::LL
+								: vectorpath_signature::L
+					);
+
+					prev_theta = theta;
 				}
 			}
 
-			while (i < s.size) {
-				s[i++] = 0;
-			}
+			std::cout << std::string("Turns: ") << s << std::endl;
 
 			return s;
 		}
