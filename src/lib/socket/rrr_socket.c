@@ -628,6 +628,43 @@ int rrr_socket_open_and_read_file (
 	);
 }
 
+static int __rrr_socket_stat (
+		struct stat *buf,
+		const char *path
+) {
+	int ret = 0;
+
+	memset(buf, '\0', sizeof(*buf));
+
+	// Stat follows symlinks
+	if (stat(path, buf) != 0) {
+		RRR_MSG_0("Stat of '%s' failed: %s\n", path, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_socket_is_file (
+		int *is_file,
+		const char *path
+) {
+	int ret = 0;
+
+	struct stat buf;
+
+	if ((ret = __rrr_socket_stat(&buf, path)) != 0) {
+		goto out;
+	}
+
+	*is_file = S_ISREG(buf.st_mode) ? 1 : 0;
+
+	out:
+	return ret;
+}
+
 #ifdef RRR_HAVE_EVENTFD
 int rrr_socket_eventfd (
 		const char *creator
