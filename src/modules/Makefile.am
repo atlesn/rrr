@@ -1,6 +1,5 @@
-AM_CFLAGS = @AM_CFLAGS@ -Wextra
-
-module_ldflags=-module -avoid-version -shared -L../lib
+AM_CFLAGS = @AM_CFLAGS@ -fpie
+module_ldflags=-module -avoid-version -shared -L../lib -pie
 
 if RRR_WITH_MYSQL
 mysql = mysql.la
