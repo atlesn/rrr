@@ -294,10 +294,20 @@ static int __rrr_msg_read (
 ) {
 	int ret = 0;
 
+	int is_file = 0;
 	char *file_data = NULL;
 	rrr_biglength file_size = 0;
 
+	if ((ret = rrr_socket_is_file(&is_file, file)) != 0) {
+		goto out;
+	}
+
 	RRR_MSG_1("== Filename: %s\n", file);
+
+	if (!is_file) {
+		RRR_MSG_1("Non-regular file, ignored.\n");
+		goto out;
+	}
 
 	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, file, 0, 0)) != 0) {
 		RRR_MSG_0("Failed to read file '%s'\n", file);
