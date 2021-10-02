@@ -1,4 +1,5 @@
-module_ldflags=-module -avoid-version -shared -L../lib
+RRR_CFLAGS = @RRR_CFLAGS@ -fpie
+module_ldflags=-module -avoid-version -shared -L../lib -pie
 
 if RRR_WITH_MYSQL
 mysql = mysql.la
