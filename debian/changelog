@@ -9,6 +9,7 @@ rrr (1.20-1) bullseye; urgency=medium
     * Option in cacher to revive messages older than a specified age
     * Control maximum response size in httpclient
     * Control maximum request size in httpserver
+    * Control content-type for raw requests in httpclient
 
   * Improvements:
     * Performance for larger messages in misc. modules

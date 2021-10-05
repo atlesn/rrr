@@ -1,4 +1,4 @@
-.Dd 2021-09-07
+.Dd 2021-10-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1656,6 +1656,7 @@ Control which body format to use for PUT and POST requests. If the
 mode is set, messages which does not contain a body (specified in the tag named in
 .B http_body_tag
 ) will trigger an error as they are processed.
+An appropriate Content-Type header will be sent according to standards.
 Messages with a body are otherwise not affected by this parameter.
 Defaults to 'urlencoded'.
 
@@ -1682,6 +1683,7 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_port_tag=ARRAY TAG
 .It http_body_tag=ARRAY TAG
 .It http_format_tag=ARRAY TAG
+.It http_content_type_tag=ARRAY TAG
 
 .It http_endpoint_tag_force={yes|no}
 .It http_method_tag_force={yes|no}
@@ -1689,6 +1691,7 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_port_tag_force={yes|no}
 .It http_body_tag_force={yes|no}
 .It http_format_tag_force={yes|no}
+.It http_content_type_tag_force={yes|no}
 These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
 identified by the tag of the value.
 If the
@@ -1713,7 +1716,18 @@ If
 .B http_body_tag
 is used and an HTTP body is found in the message, any array tags specified will be ignored.
 If the HTTP method being used does not have a body, like GET, the body data parameter is ignored silently.
-The content-type of the resulting request will be 'application/octet-stream'.
+The content-type of the resulting request will be 'application/octet-stream' unless overridden using
+.B http_content_type_tag .
+
+The parameter
+.B http_content_type_tag
+affects the Content-Type headers sent for queries with a body specified using
+.B http_body_tag
+and
+.B raw
+format.
+The excact string specified in the array value with the matching tag will be used as Content-Type.
+Other requests are not affected. 
 
 The parameters
 .B http_method_tag
