@@ -734,10 +734,9 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		goto out;
 	}
 
-	if (callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
-		if (write_again) {
-			ret |= RRR_FIFO_PROTECTED_WRITE_AGAIN;
-		}
+	// Return value from check cancel must not propagate to FIFO buffer
+	if (write_again && callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
+		ret |= RRR_FIFO_PROTECTED_WRITE_AGAIN;
 	}
 
 	if (write_drop) {
