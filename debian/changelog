@@ -4,6 +4,7 @@ rrr (1.20-1) bullseye; urgency=medium
 
   * Changes:
     * Automatic restart of RRR deamon upon failure
+    * Use JEmalloc instead of internal allocator
 
   * Features:
     * Option in cacher to revive messages older than a specified age
