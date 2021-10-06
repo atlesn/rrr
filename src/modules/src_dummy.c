@@ -283,6 +283,8 @@ static int dummy_write_entry (
 		struct dummy_data *data,
 		int count
 ) {
+	int ret = 0;
+
 	if (data->max_generated != 0 && count > (int) (data->max_generated - data->generated_count_total)) {
 		count = (int) (data->max_generated - data->generated_count_total);
 	}
@@ -297,7 +299,11 @@ static int dummy_write_entry (
 		0
 	};
 
-	return rrr_message_broker_write_entry (
+	if ((ret = rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data))) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
@@ -307,7 +313,12 @@ static int dummy_write_entry (
 			&callback_data,
 			dummy_check_cancel,
 			&cancel_callback_data
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static void dummy_event_write_entry (
