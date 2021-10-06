@@ -119,7 +119,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_ratelimit", no_ratelimit, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_max_generated", max_generated, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, 0); // Set to 0 to indicate sleep controlled by event framework
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, DUMMY_DEFAULT_SLEEP_INTERVAL_US);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_array_tag", array_tag);
 
 	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
@@ -140,16 +140,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"dummy_topic"
-	)) != 0) {
-		goto out;
-	}
-
-	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
+	if (data->sleep_interval_us == 0) {
 		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0\n",
 				config->name);
 		ret = 1;
@@ -170,6 +161,15 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
+
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_len,
+			config,
+			"dummy_topic"
+	)) != 0) {
+		goto out;
+	}
 	/* On error, memory is freed by data_cleanup */
 
 	out:
