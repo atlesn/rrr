@@ -15,7 +15,7 @@ Build-Depends: debhelper (>= 13),
                libnghttp2-dev,
                libjson-c-dev,
                libevent-dev,
-               jemalloc-dev
+               libjemalloc-dev
 X-Python3-Version: 3.6,3.7,3.8
 Standards-Version: 4.1.4
 Homepage: https://github.com/atlesn/rrr
