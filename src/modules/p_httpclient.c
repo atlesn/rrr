@@ -1882,6 +1882,7 @@ static void httpclient_queue_process (
 		return;
 	}
 
+	uint64_t loop_max_time = rrr_time_get_64() + 2 * 1000 * 1000; // + 2 seconds
 	int loop_max = 256;
 
 	// Check timeouts based on the time the loop starts to be fair
@@ -1892,6 +1893,12 @@ static void httpclient_queue_process (
 	int send_busy_count = 0;
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
+
+		if ( rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0 || 
+		     rrr_time_get_64() >= loop_max_time
+		) {
+			RRR_LL_ITERATE_BREAK();
+		}
 
 		if (loop_max-- == 0) {
 			RRR_LL_ITERATE_LAST();
@@ -2088,6 +2095,10 @@ static void httpclient_event_queue_process (
 	}
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
 }
 
 static void httpclient_data_cleanup(void *arg) {

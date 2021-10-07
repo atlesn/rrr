@@ -21,6 +21,8 @@ rrr (1.20-1) bullseye; urgency=medium
     * Large messages sometimes failing to be sent due to incorrect
       return values in some send functions
     * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+    * Prevent HTTP client from getting killed of if there are a lot of
+      connection errors
 
   * Under the hood:
     * Common Message DB functions for httpclient and cacher
