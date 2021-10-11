@@ -1,20 +1,16 @@
-rrr (1.20-1posten4) bullseye; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Fri, 10 Sep 2021 17:41:44 +0200
-i
 rrr (1.20-1) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
   * Changes:
     * Automatic restart of RRR deamon upon failure
+    * Use JEmalloc instead of internal allocator
 
   * Features:
     * Option in cacher to revive messages older than a specified age
     * Control maximum response size in httpclient
     * Control maximum request size in httpserver
+    * Control content-type for raw requests in httpclient
 
   * Improvements:
     * Performance for larger messages in misc. modules

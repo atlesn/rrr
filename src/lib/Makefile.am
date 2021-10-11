@@ -122,7 +122,7 @@ net_transport_libressl = net_transport/net_transport_libressl.c net_transport/ne
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${RRR_CFLAGS}
-librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${magick_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${magick_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
@@ -132,6 +132,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
+		    rrr_mmap.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
@@ -143,10 +144,6 @@ lib_LTLIBRARIES = librrr.la ${lib_mysql}
 libadd_rrr_cxx = librrr_cxx.la
 librrr_cxx_la_SOURCES = exception.cpp arrayxx.cpp
 librrr_cxx_la_CXXFLAGS = ${RRR_CXXFLAGS} ${CXXFLAGS}
-
-libadd_rrr_allocator = librrr_allocator.la
-librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
-librrr_allocator_la_CFLAGS = ${RRR_CFLAGS}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -206,8 +203,7 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}               \
-    ${libadd_rrr_allocator}
+    ${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads

@@ -349,7 +349,7 @@ int rrr_event_pass (
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
 		if (ret == RRR_SOCKET_NOT_READY) {
-			if (retry_callback != NULL && (ret = retry_callback(retry_callback_arg) != 0)) {
+			if (retry_callback != NULL && ((ret = retry_callback(retry_callback_arg)) != 0)) {
 				goto out;
 			}
 			goto retry;

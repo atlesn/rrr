@@ -111,6 +111,9 @@ struct httpclient_data {
 	char *method_tag;
 	int do_method_tag_force;
 
+	char *content_type_tag;
+	int do_content_type_tag_force;
+
 	char *format_tag;
 	int do_format_tag_force;
 
@@ -1275,10 +1278,12 @@ static int httpclient_session_query_prepare_callback (
 	rrr_length endpoint_length = 0;
 	rrr_length body_length = 0;
 	rrr_length format_length = 0;
+	rrr_length content_type_length = 0;
 
 	char *endpoint_to_free = NULL;
 	char *body_to_free = NULL;
 	char *format_to_free = NULL;
+	char *content_type_to_free = NULL;
 
 	struct rrr_array array_to_send_tmp = {0};
 
@@ -1314,7 +1319,16 @@ static int httpclient_session_query_prepare_callback (
 		if ( (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) &&
 		     (body_to_free != NULL && body_length > 0)
 		) {
+			HTTPCLIENT_OVERRIDE_PREPARE(content_type);
+			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(content_type);
+
 			if ((ret = rrr_http_transaction_send_body_set_allocated(transaction, (void **) &body_to_free, body_length)) != 0) {
+				goto out;
+			}
+
+			if ((content_type_to_free != NULL && content_type_length > 0) &&
+			    (ret = rrr_http_transaction_request_content_type_set (transaction, content_type_to_free)) != 0
+			) {
 				goto out;
 			}
 		}
@@ -1434,6 +1448,7 @@ static int httpclient_session_query_prepare_callback (
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(body_to_free);
 		RRR_FREE_IF_NOT_NULL(format_to_free);
+		RRR_FREE_IF_NOT_NULL(content_type_to_free);
 		return ret;
 }
 
@@ -1776,6 +1791,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
+	HTTPCLIENT_OVERRIDE_TAG_GET(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
@@ -1837,6 +1853,7 @@ static int httpclient_parse_config (
 	}
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(server);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
@@ -2089,6 +2106,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
+	RRR_FREE_IF_NOT_NULL(data->content_type_tag);
 	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);

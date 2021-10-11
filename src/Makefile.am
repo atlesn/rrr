@@ -5,9 +5,13 @@ TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
 
-# We must include Perl5 rpath when linking the binaries
+librrr_ldflags=${JEMALLOC_LIBS} -L./lib/.libs -lrrr
+
 if RRR_WITH_PERL5
-perl5_ldflags=$(PERL5_LDFLAGS)
+# We must include Perl5 rpath when linking the binaries
+ldflags=${librrr_ldflags} $(PERL5_LDFLAGS)
+else
+ldflags=${librrr_ldflags}
 endif
 
 # Binaries must be built with -fPIE to match the library, as some
@@ -17,41 +21,41 @@ endif
 
 rrr_SOURCES = rrr.c main.c
 rrr_CFLAGS = ${RRR_CFLAGS} -DRRR_MODULE_PATH="\"@MODULE_DIR@\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fpie
-rrr_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_LDFLAGS = ${ldflags} -pie
 
 rrr_post_SOURCES = rrr_post.c main.c
 rrr_post_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_post_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_post_LDFLAGS = ${ldflags} -pie
 
 rrr_passwd_SOURCES = rrr_passwd.c main.c
 rrr_passwd_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_passwd_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_passwd_LDFLAGS = ${ldflags} -pie
 
 rrr_auth_SOURCES = rrr_auth.c main.c
 rrr_auth_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_auth_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_auth_LDFLAGS = ${ldflags} -pie
 
 rrr_http_client_SOURCES = rrr_http_client.c main.c
 rrr_http_client_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_http_client_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_http_client_LDFLAGS = ${ldflags} -pie
 rrr_http_client_LDADD = -levent
 
 rrr_http_server_SOURCES = rrr_http_server.c main.c
 rrr_http_server_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_http_server_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_http_server_LDFLAGS = ${ldflags} -pie
 
 rrr_stats_SOURCES = rrr_stats.c main.c
 rrr_stats_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_stats_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_stats_LDFLAGS = ${ldflags} -pie
 rrr_stats_LDADD = -levent
 
 rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_msgdb_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_msgdb_LDFLAGS = ${ldflags} -pie
 
 rrr_msg_SOURCES = rrr_msg.c main.c
 rrr_msg_CFLAGS = ${RRR_CFLAGS} -fpie
-rrr_msg_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags} -pie
+rrr_msg_LDFLAGS = ${ldflags} -pie
 
 if RRR_WITH_PERL5
 all-local:

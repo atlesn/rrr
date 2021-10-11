@@ -72,6 +72,7 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
+AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -121,6 +122,7 @@ SHELL_VARS_OUTPUT
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
+AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -330,6 +332,22 @@ AS_IF([test "x$enable_magick" = xno], [
 	AC_SUBST([MAGICK_CFLAGS])
 	AC_SUBST([MAGICK_LIBS])
 ])
+
+# Make sure jemalloc-test does not include any libraries
+LIBS=""
+
+AC_MSG_CHECKING([for jemalloc usage])
+AS_IF([test "x$enable_jemalloc" != xno], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_JEMALLOC], [1], [Enable jemalloc allocation])
+	AC_CHECK_HEADERS([jemalloc/jemalloc.h], [], AC_MSG_ERROR([jemalloc/jemalloc.h not found]))
+	AC_CHECK_LIB(jemalloc, mallocx, [], AC_MSG_ERROR([mallocx from libjemalloc not found]))
+	JEMALLOC_LIBS=-ljemalloc
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_SUBST([JEMALLOC_LIBS])
 
 # Make sure Perl-test does not include any libraries
 LIBS=""
