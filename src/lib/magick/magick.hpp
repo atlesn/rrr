@@ -155,6 +155,10 @@ namespace rrr::magick {
 			a = a_new;
 			b = b_new;
 		}
+		void add(size_t a, size_t b) {
+			this->a += (T) a;
+			this->b += (T) b;
+		}
 		void move_vector(ssize_t a, ssize_t b) {
 			ssize_t a_new = this->a + a;
 			ssize_t b_new = this->b + b;
@@ -177,6 +181,21 @@ namespace rrr::magick {
 			}
 			else if (target.b > b) {
 				b++;
+			}
+		}
+		template <typename F> void walk_to(const coordinate<T> &target, F f) const {
+			const T da = target.a - a;
+			const T db = target.b - b;
+			const T steps = std::abs(da) > std::abs(db) ? std::abs(da) : std::abs(db);
+			const T increment_a = da / steps;
+			const T increment_b = db / steps;
+
+			T a = this->a;
+			T b = this->b;
+			for (T i = 0; i < steps; i += 1) {
+				a += increment_a;
+				b += increment_b;
+				f(coordinate<T>(a,b));
 			}
 		}
 	};
@@ -534,6 +553,15 @@ namespace rrr::magick {
 			for (auto it = v.begin(); it != v.end(); ++it) {
 				pos.move_vector(it->a, it->b);
 				f(pos);
+			}
+		}
+		template<typename F> void walk_lines(F f) const {
+			size_t from = 0;
+			for (size_t to = from + 1; to < p.size(); from = to++) {
+				p[from].walk_to(p[to], [&](coordinate<double> c){
+					c.add(origin.a, origin.b);
+					f(c);
+				});
 			}
 		}
 		template<typename F, typename G> void compress(F f, G g) const {

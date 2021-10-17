@@ -268,6 +268,28 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 
 	vectorpath.compress (
 		[&](const rrr::magick::vectorpath &v) {
+			v.walk_lines([&](const rrr::magick::coordinate<double> c) {
+				printf("%lf, %lf\n", c.a, c.b);
+				minmax.update(rrr::magick::mappos(c.a, c.b));
+				edges_path_debug.set(c, RRR_MAGICK_PIXEL_EDGE);
+			});
+			Magick::Blob blob = image_path_debug.edges_dump_blob (
+					edges_path_debug,
+					minmax
+			);
+			ocr_send_verification (
+					data,
+					rrr::magick::vectorpath_signature(),
+					"",
+					rrr::type::data_const(blob.data(), blob.length())
+			);
+		},
+		[&](const rrr::magick::anglepath &v) {
+		}
+	);
+/*
+	vectorpath.compress (
+		[&](const rrr::magick::vectorpath &v) {
 			v.walk([&](const rrr::magick::mappos &p){
 				minmax.update(rrr::magick::mappos(p.a, p.b));
 				edges_path_debug.set(p, RRR_MAGICK_PIXEL_EDGE);
@@ -341,7 +363,8 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 				vectorpath.walk([&](const rrr::magick::mappos &p){
 					edges_path_debug.set(p, RRR_MAGICK_PIXEL_EDGE);
 				});
-				edges_path_debug.set(path.start(), 3);*/
+				edges_path_debug.set(path.start(), 3);
+				// 
 				Magick::Blob blob = image_path_debug.edges_dump_blob (
 						edges_path_debug,
 						minmax
@@ -355,6 +378,8 @@ static void ocr_process_path (struct ocr_data *data, const rrr::magick::mappath 
 			}
 		}
 	);
+
+	*/
 }
 
 static void ocr_process_image (struct ocr_data *data, const rrr::magick::pixbuf &image, const float threshold) {
