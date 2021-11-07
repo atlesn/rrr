@@ -64,7 +64,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
 // Enable lock debugging
-#define RRR_MMAP_LOCK_DEBUG 1
+// #define RRR_MMAP_LOCK_DEBUG 1
 
 // Dump mmaps upon allocation failure (should be enabled)
 #define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
