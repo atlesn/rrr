@@ -470,7 +470,7 @@ int rrr_socket_read_message_split_callbacks (
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_msg),
-			4096,
+			1 * 1024 * 1024, // 1 MB
 			0, // No max size
 			read_flags_socket,
 			ratelimit_interval_us,

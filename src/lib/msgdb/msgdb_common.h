@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_CTRL_F_PING    RRR_MSG_CTRL_F_PING
 #define RRR_MSGDB_CTRL_F_PONG    RRR_MSG_CTRL_F_PONG
 #define RRR_MSGDB_CTRL_F_TIDY    RRR_MSG_CTRL_F_USR_A
+#define RRR_MSGDB_CTRL_F_IDX     RRR_MSG_CTRL_F_USR_B
 
 struct rrr_msg_msg;
 
@@ -62,6 +63,12 @@ int rrr_msgdb_common_ctrl_msg_send_pong (
 int rrr_msgdb_common_ctrl_msg_send_tidy (
 		int fd,
 		uint32_t max_age_s,
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
+		void *callback_arg
+);
+int rrr_msgdb_common_ctrl_msg_send_idx (
+		int fd,
+		uint32_t min_age_s,
 		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
 		void *callback_arg
 );

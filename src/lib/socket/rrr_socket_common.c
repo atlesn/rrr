@@ -122,7 +122,9 @@ int rrr_socket_common_receive_array_tree (
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
-		struct rrr_socket_common_in_flight_counter *in_flight
+		struct rrr_socket_common_in_flight_counter *in_flight,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
@@ -137,7 +139,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				message,
-				msg_size
+				msg_size,
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;
@@ -152,7 +156,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				message,
-				sizeof(struct rrr_msg_addr)
+				sizeof(struct rrr_msg_addr),
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;
@@ -164,7 +170,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				msg,
-				sizeof(*msg)
+				sizeof(*msg),
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;

@@ -1328,7 +1328,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 			&http1->ws_state,
 			100,
 			4096,
-			65535,
+			1 * 1024 * 1024, // 1 MB
 			read_max_size,
 			0, // No ratelimit interval
 			0, // No ratelimit max bytes
@@ -1631,7 +1631,7 @@ static int __rrr_http_application_http1_tick (
 						handle,
 						1,
 						4096,
-						65535,
+						1 * 1024 * 1024, // 1 MB
 						read_max_size,
 						0, // No ratelimit interval
 						0, // No ratelimit max bytes

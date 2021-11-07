@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/slow_noop.h"
 #include "util/gnu.h"
+#include "util/posix.h"
 #include "allocator.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
@@ -575,7 +576,8 @@ static int __rrr_thread_wait_for_state_forked (
 		if (j > max - 3) {
 			sleep(1);
 		}
-		rrr_slow_noop();
+
+		rrr_posix_msleep_signal_safe (10); // 10 ms
 	}
 
 	if (was_ok != 1) {

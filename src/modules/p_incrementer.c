@@ -206,7 +206,7 @@ static int incrementer_update_id_msgdb_callback (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in incrementer_udpate_id_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;

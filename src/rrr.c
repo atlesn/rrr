@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <jemalloc/jemalloc.h>
 
 #include "main.h"
 #include "lib/rrr_config.h"

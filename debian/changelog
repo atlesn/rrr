@@ -1,3 +1,32 @@
+rrr (1.20-1) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Changes:
+    * Automatic restart of RRR deamon upon failure
+    * Use JEmalloc instead of internal allocator
+
+  * Features:
+    * Option in cacher to revive messages older than a specified age
+    * Control maximum response size in httpclient
+    * Control maximum request size in httpserver
+    * Control content-type for raw requests in httpclient
+
+  * Improvements:
+    * Performance for larger messages in misc. modules
+
+  * Fixes:
+    * Busy-waiting on thread state change causing long startup times
+    * Cacher getting killed off on large writes to message DB
+    * Large messages sometimes failing to be sent due to incorrect
+      return values in some send functions
+    * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+
+  * Under the hood:
+    * Common Message DB functions for httpclient and cacher
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Sep 2021 17:38:07 +0200
+
 rrr (1.19-1) bullseye; urgency=medium
 
   * Features:
