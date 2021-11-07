@@ -72,6 +72,11 @@ enable_systemd=no
 AC_MSG_CHECKING([for SystemD disabled on BSD])
 AC_MSG_RESULT([yes])
 
+dnl Disable jemalloc for BSD
+enable_jemalloc=no
+AC_MSG_CHECKING([for jemalloc diabled on BSD])
+AC_MSG_RESULT([yes])
+
 AC_MSG_CHECKING([for RRR GNU Debug])
 AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([RRR GNU Debug disabled])
