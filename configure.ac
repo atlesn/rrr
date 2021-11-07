@@ -351,12 +351,12 @@ AS_IF([test "x$enable_perl5" = xno], [
 	# Remove -specs=/... causing -pie to get inserted on RH-systems
 
 	AC_MSG_CHECKING([Perl5 CFLAGS])
-	PERL5_CFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | sed 's/[[:space:]]*-specs[^[:space:]]*//g'`
+	PERL5_CFLAGS=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
 
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | sed 's/[[:space:]]*-specs[^[:space:]]*//g'`
+	perl5_ldflags_auto=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
 	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
