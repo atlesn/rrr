@@ -115,8 +115,9 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 	int is_recursive = (flags & RRR_POSIX_MUTEX_IS_RECURSIVE);
 	int is_pshared = (flags & RRR_POSIX_MUTEX_IS_PSHARED);
 	int is_errorcheck = (flags & RRR_POSIX_MUTEX_IS_ERRORCHECK);
+	int is_robust = (flags & RRR_POSIX_MUTEX_IS_ROBUST);
 
-	flags &= ~(RRR_POSIX_MUTEX_IS_RECURSIVE|RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ERRORCHECK);
+	flags &= ~(RRR_POSIX_MUTEX_IS_RECURSIVE|RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ERRORCHECK|RRR_POSIX_MUTEX_IS_ROBUST);
 
 	if (flags != 0) {
 		RRR_BUG("BUG: Unsupported flags %i to rrr_posix_mutex_init\n", flags);
@@ -142,6 +143,15 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 	if (is_pshared) {
 		if (pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
 			RRR_MSG_0("setpshared() failed in rrr_posix_mutex_init, not supported on this platform: %s\n",
+					rrr_strerror(errno));
+			ret = 1;
+			goto out_destroy_mutexattr;
+		}
+	}
+
+	if (is_robust) {
+		if (pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST) != 0) {
+			RRR_MSG_0("setrobust() failed in rrr_posix_mutex_init, not supported on this platform: %s\n",
 					rrr_strerror(errno));
 			ret = 1;
 			goto out_destroy_mutexattr;
@@ -251,4 +261,60 @@ int rrr_posix_cond_init (pthread_cond_t *mutex, int flags) {
 		pthread_condattr_destroy(&attr);
 	out:
 		return ret;
+}
+
+static void __rrr_posix_mutex_robust_consistent (pthread_mutex_t *mutex) {
+	int ret_tmp = 0;
+
+	RRR_MSG_0("Mutex was inconsitent in %s while locking, the holder has died.\n",
+			__func__);
+	if ((ret_tmp = pthread_mutex_consistent(mutex)) != 0) {
+		RRR_BUG("Failed to make mutex consistent in %s, cannot recover from this: %s\n",
+				__func__, rrr_strerror(ret_tmp));
+	}
+}
+
+int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex) {
+	int ret = RRR_POSIX_MUTEX_ROBUST_OK;
+
+	if ((ret = pthread_mutex_lock (mutex)) != 0) {
+		if (ret == EOWNERDEAD) {
+			__rrr_posix_mutex_robust_consistent(mutex);
+			pthread_mutex_unlock(mutex);
+			ret = RRR_POSIX_MUTEX_ROBUST_ERROR;
+		}
+		else {
+			RRR_BUG("Error returned from pthread_mutex_lock in %s, cannot recover from this: %s\n",
+				__func__, rrr_strerror(ret));
+		}
+	}
+
+	return ret;
+}
+
+int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex) {
+	int ret = RRR_POSIX_MUTEX_ROBUST_OK;
+
+	if ((ret = pthread_mutex_lock (mutex)) != 0) {
+		if (ret == EOWNERDEAD) {
+			__rrr_posix_mutex_robust_consistent(mutex);
+			ret = RRR_POSIX_MUTEX_ROBUST_ERROR;
+		}
+		else if (ret == EBUSY) {
+			ret = RRR_POSIX_MUTEX_ROBUST_BUSY;
+		}
+		else {
+			RRR_BUG("Error returned from pthread_mutex_lock in %s, cannot recover from this: %s\n",
+				__func__, rrr_strerror(ret));
+		}
+	}
+
+	return ret;
+}
+
+void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex) {
+	// Ensure lock is consisten before destroy
+	rrr_posix_mutex_robust_lock(mutex);
+	pthread_mutex_unlock(mutex);
+	pthread_mutex_destroy(mutex);
 }

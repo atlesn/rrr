@@ -33,6 +33,7 @@ struct rrr_mmap_channel;
 struct rrr_event_queue;
 
 int rrr_cmodule_channel_count (
+		int *count,
 		struct rrr_mmap_channel *channel
 );
 int rrr_cmodule_channel_send_message_simple (
