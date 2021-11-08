@@ -45,6 +45,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 8192
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
 
+// Prevent multiple threads destroying mutexes simultaneously which
+// casue slowness on some systems (e.g. FreeBSD) due to mutexes in libc.
+static pthread_mutex_t rrr_mmap_channel_destroy_lock = PTHREAD_MUTEX_INITIALIZER;
+
 struct rrr_mmap_channel_block {
 	pthread_mutex_t block_lock;
 
@@ -459,18 +463,22 @@ void rrr_mmap_channel_destroy (
 		struct rrr_mmap_channel *target
 ) {
 	int msg_count = 0;
+
+	pthread_mutex_lock(&rrr_mmap_channel_destroy_lock);
+
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap_writer != NULL) {
 			if (++msg_count == 1) {
 				RRR_MSG_1("Note: Pointer was still present in block in rrr_mmap_channel_destroy, fork might not have exited yet or has been killed before cleanup.\n");
 			}
 		}
-
 		rrr_posix_mutex_robust_destroy(&target->blocks[i].block_lock);
 	}
 	if (msg_count > 1) {
 		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
 	}
+
+	pthread_mutex_unlock(&rrr_mmap_channel_destroy_lock);
 
 	rrr_mmap_collection_destroy(target->mmaps);
 	munmap(target, sizeof(*target));
