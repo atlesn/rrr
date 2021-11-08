@@ -66,9 +66,12 @@ The `.md` files contain the examples, and the source scripts and configuration f
 ## HELP WANTED
 
  - InfluxDB module maintainer
- - Fedora packaging
+ - RPM/Fedora packaging
 
 ## NEWS
+
+### v1.21
+- JEmalloc enabled by default to mitigate memory fragmentation in long lived RRR sessions
 
 ### v1.19
 - New module **cacher** to store messages for later use
