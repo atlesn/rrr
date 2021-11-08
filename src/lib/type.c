@@ -226,12 +226,13 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 
 	CHECK_END_AND_RETURN(total_size);
 
-	node->total_stored_length = total_size;
-	node->data = rrr_allocate(total_size);
-	if (node->data == NULL) {
+	// Prevent 0 bytes allocation which occurs upon empty str
+	// type. Allocate 1 byte in this case.
+	if ((node->data = rrr_allocate(total_size > 0 ? total_size : 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_blob\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
 	}
+
 	memcpy(node->data, start, total_size);
 	node->total_stored_length = total_size;
 
