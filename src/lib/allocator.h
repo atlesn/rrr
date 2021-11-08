@@ -85,7 +85,6 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 	}
 
 	if (bytes_new > 0) {
-		VERIFY_SIZE(bytes_new);
 		return rallocx (ptr_old, bytes_new, 0);
 	}
 
@@ -94,12 +93,16 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 
 /* Caller must ensure that old allocation is done by OS allocator */
 static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
-	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, 0);
+	VERIFY_SIZE(bytes_new);
+	VERIFY_SIZE(bytes_old);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, 0);
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
 static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
-	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, group);
+	VERIFY_SIZE(bytes_new);
+	VERIFY_SIZE(bytes_old);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
 }
 
 /* Duplicate string using OS allocator */
