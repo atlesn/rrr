@@ -63,6 +63,11 @@ Before starting up and configuring RRR to use networking, read the **SECURITY** 
 The directory `/examples/` in the source tree or on github.com/atlesn/rrr contains larger application examples.
 The `.md` files contain the examples, and the source scripts and configuration files used in the examples are found alongside these.  
 
+## HELP WANTED
+
+ - InfluxDB module maintainer
+ - Fedora packaging
+
 ## NEWS
 
 ### v1.19
