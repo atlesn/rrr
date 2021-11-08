@@ -833,6 +833,7 @@ static int __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
 			(unsigned long long) tmp,
 			(unsigned long long) RRR_LENGTH_MAX
 		);
+		return 1;
 	}
 
 	*bytes = (rrr_length) tmp;
@@ -874,7 +875,7 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 	*new_type_id = RRR_TYPE_MSG;
 
 	out:
-	return 0;
+	return ret;
 }
 
 static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
