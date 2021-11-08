@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.19-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.19-1", [Full version])
+AC_INIT([Read Route Record],[1.21-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.21-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 19, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 21, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])

@@ -1,6 +1,4 @@
-rrr (1.20-1) bullseye; urgency=medium
-
-  * RUNNING DEVELOPMENT RELEASE
+rrr (1.21-1) bullseye; urgency=medium
 
   * Changes:
     * Automatic restart of RRR deamon upon failure
@@ -11,6 +9,7 @@ rrr (1.20-1) bullseye; urgency=medium
     * Control maximum response size in httpclient
     * Control maximum request size in httpserver
     * Control content-type for raw requests in httpclient
+    * Control which readers that will receive the different kinds of messages from cacher
 
   * Improvements:
     * Performance for larger messages in misc. modules
@@ -21,11 +20,18 @@ rrr (1.20-1) bullseye; urgency=medium
     * Large messages sometimes failing to be sent due to incorrect
       return values in some send functions
     * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+    * Validate message header checksum in rrr_msg tool
+    * Manual page for rrr_msg tool
+    * Crash in rrr_msg as it tried to read from directories
+    * Problems with compiler -pie flags on some platforms
+    * Sed-replacement causing configure script not to work on non-GNU systems
+    * Slowness when multiple mmap_channel instances were destroying block locks simultaneously
 
   * Under the hood:
     * Common Message DB functions for httpclient and cacher
+    * Use robust locking in process shared locks (mmap channel and shm frameworks)
 
- -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Sep 2021 17:38:07 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Nov 2021 08:25:29 +0100
 
 rrr (1.19-1) bullseye; urgency=medium
 
