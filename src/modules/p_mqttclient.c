@@ -1163,6 +1163,7 @@ static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_ms
 			NULL,
 			0,
 			0,
+			NULL,
 			mqttclient_receive_publish_create_entry_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

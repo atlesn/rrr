@@ -105,6 +105,9 @@ do {rrr_setting_double tmp_double = (default_double);                           
 struct rrr_array;
 struct rrr_array_tree;
 struct rrr_map;
+struct rrr_instance_friend_collection;
+struct rrr_instance_collection;
+struct rrr_instance;
 
 struct rrr_instance_config_data {
 	RRR_LL_NODE(struct rrr_instance_config_data);
@@ -244,6 +247,19 @@ int rrr_instance_config_dump (
 int rrr_instance_config_parse_file (
 		struct rrr_instance_config_collection **result,
 		const char *filename
+);
+int rrr_instance_config_friend_collection_populate_from_config (
+		struct rrr_instance_friend_collection *target,
+		struct rrr_instance_collection *instances,
+		const struct rrr_instance_config_data *config,
+		const char *setting
+);
+int rrr_instance_config_friend_collection_populate_receivers_from_config (
+		struct rrr_instance_friend_collection *target,
+		struct rrr_instance_collection *instances_all,
+		const struct rrr_instance *instance,
+		const struct rrr_instance_config_data *config,
+		const char *setting
 );
 
 #endif /* RRR_INSTANCE_CONFIG_H */

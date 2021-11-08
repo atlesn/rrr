@@ -58,7 +58,7 @@ int rrr_log_init(void) {
 	}
 
 	int ret = 0;
-	if ((rrr_posix_mutex_init(&rrr_log_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+	if ((rrr_posix_mutex_init(&rrr_log_lock, 0)) != 0) {
 		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
 		ret = 1;
 		goto out;

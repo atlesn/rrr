@@ -52,6 +52,7 @@ struct rrr_mmap_channel;
 struct rrr_event_queue;
 
 int rrr_mmap_channel_count (
+		int *count,
 		struct rrr_mmap_channel *target
 );
 int rrr_mmap_channel_write_using_callback (

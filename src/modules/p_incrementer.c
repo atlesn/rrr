@@ -206,7 +206,7 @@ static int incrementer_update_id_msgdb_callback (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in incrementer_udpate_id_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
@@ -397,9 +397,10 @@ static int incrementer_process_subject (
 			(rrr_time_get_64() - time_start) / 1000
 	);
 
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data), 
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Failed to write entry in incrementer_process_subject of instance %s\n",
@@ -500,9 +501,10 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg *) entry->message)->timestamp);
 
 		// Unknown message, forward to output
-		if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 				INSTANCE_D_BROKER_ARGS(data->thread_data),
 				entry,
+				NULL,
 				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 		)) != 0) {
 			goto out;

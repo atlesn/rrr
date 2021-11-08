@@ -218,9 +218,10 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry->data_length = MSG_TOTAL_SIZE((const struct rrr_msg_msg *) entry->message);
 		}
 	out_write:
-		ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		ret = rrr_message_broker_incref_and_write_entry_unsafe (
 				INSTANCE_D_BROKER_ARGS(thread_data),
 				entry,
+				NULL,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		);
 	out_drop:

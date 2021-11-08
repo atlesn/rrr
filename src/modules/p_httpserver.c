@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
 #define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
+#define RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB                   10
 
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
@@ -76,6 +77,9 @@ struct httpserver_data {
 #endif
 
 	struct rrr_map http_fields_accept;
+
+	rrr_setting_uint request_max_mb;
+	rrr_biglength request_max_size;
 
 	int do_http_no_body_parse;
 	int do_http_fields_accept_any;
@@ -185,6 +189,14 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
+	data->request_max_size = data->request_max_mb;
+	if (((ret = rrr_biglength_mul_err(&data->request_max_size, 1024 * 1024))) != 0) {
+		RRR_MSG_0("Overflow in parameter 'http_request_max_mb' of httpserver instance %s, value too large\n",
+				config->name);
+		goto out;
+	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_fields_accept for instance %s\n",
@@ -749,6 +761,7 @@ static int httpserver_receive_callback_send_array_message (
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_write_message_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -1028,6 +1041,27 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	{
+		// Used with CORS: Allow all headers which the client wishes to send
+		const struct rrr_http_header_field *access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
+		if (access_control_request_headers != NULL) {
+			if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-allow-headers", access_control_request_headers->value)) != 0) {
+				RRR_MSG_0("Failed to push request-headers header in httpserver_receive_callback\n");
+				ret = 1;
+				goto out;
+			}
+		}
+
+	}
+
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
@@ -1107,14 +1141,6 @@ static int httpserver_receive_callback (
 	//////////////////////
 	// PREPARE RESPONSE //
 	////////////////////// 
-
-	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
-		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
-			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
-			ret = 1;
-			goto out;
-		}
-	}
 
 	if (data->cache_control_header != NULL && *(data->cache_control_header) != '\0') {
 		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Cache-Control", data->cache_control_header)) != 0) {
@@ -1511,6 +1537,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			addr,
 			addr_len,
 			RRR_IP_TCP,
+			NULL,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -1678,6 +1705,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	}
 
 	rrr_http_server_set_no_body_parse(data->http_server, data->do_http_no_body_parse);
+	rrr_http_server_set_server_request_max_size(data->http_server, data->request_max_mb * 1024 * 1024);
 
 	if (httpserver_start_listening(data) != 0) {
 		goto out_message;
