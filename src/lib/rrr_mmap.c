@@ -109,22 +109,22 @@ struct rrr_mmap_heap_block_index {
 
 #ifdef RRR_MMAP_LOCK_DEBUG
 #define LOCK(collection) \
-	do {int ret_tmp = pthread_mutex_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); printf("wrlocked %p pid %i\n", collection, getpid())
+	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: LOCK failed: %s\n", rrr_strerror(ret_tmp)); printf("lock %p pid %i\n", collection, getpid());
 #define UNLOCK(collection) \
 	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); } printf("unlocked %p pid %i\n", collection, getpid()); } while(0)
 #define INIT(collection, is_pshared) \
-	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0) | RRR_POSIX_MUTEX_IS_ERRORCHECK)
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ROBUST : 0) | RRR_POSIX_MUTEX_IS_ERRORCHECK)
 #define DESTROY(collection) \
-	pthread_mutex_destroy(&collection->index_lock)
+	rrr_posix_mutex_robust_destroy(&collection->index_lock)
 #else
 #define LOCK(collection) \
-	pthread_mutex_lock(&collection->index_lock);
+	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled lock error in %s, cannot continue.\n", __func__);
 #define UNLOCK(collection) \
-	pthread_mutex_unlock(&collection->index_lock);
+	pthread_mutex_unlock(&collection->index_lock); } while(0)
 #define INIT(collection, is_pshared) \
-	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ROBUST : 0))
 #define DESTROY(collection) \
-	pthread_mutex_destroy(&collection->index_lock)
+	rrr_posix_mutex_robust_destroy(&collection->index_lock)
 #endif
 
 void *__rrr_mmap_resolve (
@@ -541,12 +541,14 @@ void *rrr_mmap_collection_resolve (
 		rrr_shm_handle shm_handle,
 		rrr_mmap_handle mmap_handle
 ) {
+	void *ret;
+
 	if (collection->shm_master == NULL) {
 		RRR_BUG("BUG: rrr_mmap_collection_resolve called on non-pshared mmap collection\n");
 	}
 
 	LOCK(collection);
-	void *ret = rrr_shm_resolve (
+	ret = rrr_shm_resolve (
 			collection->shm_slave,
 			shm_handle
 	);

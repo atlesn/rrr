@@ -622,6 +622,7 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_array_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->file_data->thread_data)
@@ -860,6 +861,7 @@ static int file_read_all_to_message_complete_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_all_to_message_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

@@ -58,16 +58,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	(sizeof(struct rrr_fork_handler) + (size_t) sysconf(_SC_PAGESIZE))
 
 
-static void __rrr_fork_handler_lock (
+static int __rrr_fork_handler_lock (
 		struct rrr_fork_handler *handler
 ) {
-	// Make sure that we actually wake up and take the lock while 
-	// other users sleep between unlock/lock
-// XXX : This seems not to be needed anymore
-//	while (pthread_mutex_trylock (&handler->lock) != 0) {
-//		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
-//	}
-	pthread_mutex_lock (&handler->lock);
+	return rrr_posix_mutex_robust_lock (&handler->lock);
 }
 
 static void __rrr_fork_handler_unlock (
@@ -96,7 +90,7 @@ int rrr_fork_handler_new (
 	handler->self_t = pthread_self();
 	handler->self_p = getpid();
 
-	if (rrr_posix_mutex_init(&handler->lock, RRR_POSIX_MUTEX_IS_PSHARED) != 0) {
+	if (rrr_posix_mutex_init(&handler->lock, RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ROBUST) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
@@ -138,7 +132,9 @@ void rrr_fork_handler_destroy (
 ) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
 
-	__rrr_fork_handler_lock(handler);
+	if (__rrr_fork_handler_lock(handler) != 0) {
+		RRR_MSG_0("Warning: Lock was inconsistent while destroying fork handler, another fork might have died while holding it.\n");
+	}
 
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (node->pid > 0) {
@@ -153,7 +149,8 @@ void rrr_fork_handler_destroy (
 
 	__rrr_fork_handler_unlock(handler);
 
-	pthread_mutex_destroy(&handler->lock);
+	rrr_posix_mutex_robust_destroy(&handler->lock);
+
 	__rrr_fork_handler_free(handler);
 }
 
@@ -249,7 +246,9 @@ static void __rrr_fork_wait_loop (
 
 		__rrr_fork_handler_unlock (handler);
 		rrr_posix_usleep(RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS * 1000);
-		__rrr_fork_handler_lock (handler);
+		if (__rrr_fork_handler_lock (handler) != 0) {
+			RRR_MSG_0("Warning: Lock was inconsistent while waiting for forks in parent %i, a fork might have died while holding it.\n", getpid());
+		}
 	} while (*active_forks_found != 0);
 }
 
@@ -268,7 +267,9 @@ void rrr_fork_send_sigusr1_and_wait (
 
 	pid_t self = getpid();
 
-	__rrr_fork_handler_lock(handler);
+	if (__rrr_fork_handler_lock(handler) != 0) {
+		RRR_MSG_0("Warning: Lock was inconsistent when sending SIGUSR1 to all forks in parent %i, a fork might have died while holding it.\n", getpid());
+	}
 
 	// Signal handlers must be disabled before we do this
 
@@ -318,7 +319,9 @@ void rrr_fork_handle_sigchld_and_notify_if_needed (
 
 	// We cannot lock this because it's written to within signal context
 	if (rrr_fork_handler_signal_pending != 0 || force_wait_all) {
-		__rrr_fork_handler_lock(handler);
+		if (__rrr_fork_handler_lock(handler) != 0) {
+			RRR_MSG_0("Warning: Lock was inconsistent while handling SIGCHLD in parent %i, a fork might have died while holding it.\n", getpid());
+		}
 		rrr_fork_handler_signal_pending = 0;
 
 		if (force_wait_all) {
@@ -401,15 +404,13 @@ pid_t rrr_fork (
 ) {
 	pid_t ret = 0;
 
-	// XXX : This seems not to be needed anymore
-	/*
-	 * XXX : For some reason the perl5 module might sometimes hang during
-	 *       initialization when it forks out the worker. It will then hang
-	 *       waiting on this lock, despite the lock reporting "not acquired"
-	 *       when we attach a debugger. This seems however not to be a problem
-	 *       if when spin on trylock like this (also for some reason).
-	 */
-	__rrr_fork_handler_lock(handler);
+	if (__rrr_fork_handler_lock(handler) != 0) {
+		__rrr_fork_handler_unlock(handler);
+		RRR_MSG_0("Lock was inconsistent before forking in parent %i, a fork might have died while holding it.\n", getpid());
+		ret = -1;
+		goto out;
+	}
+
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	__rrr_fork_handler_unlock (handler);
 
@@ -438,7 +439,9 @@ pid_t rrr_fork (
 
 	RRR_DBG_1("=== FORK PID %i ========================================================================================\n", ret);
 
-	__rrr_fork_handler_lock(handler);
+	if (__rrr_fork_handler_lock(handler) != 0) {
+		RRR_BUG("Lock was inconsistent after forking in parent %i, a fork might have died while holding it. Cannot handle this situation.\n", getpid());
+	}
 
 	result->parent_pid = getpid();
 	result->pid = ret;
@@ -459,13 +462,18 @@ void rrr_fork_unregister_exit_handler (
 		return;
 	}
 
-	__rrr_fork_handler_lock (handler);
+	if (__rrr_fork_handler_lock(handler) != 0) {
+		__rrr_fork_handler_unlock(handler);
+		RRR_MSG_0("Warning: Lock was inconsistent while unregistering exit handler in parent %i, a fork might have died while holding it.\n", getpid());
+	}
+
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (pid == node->pid) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
+
 	__rrr_fork_handler_unlock (handler);
 }
 

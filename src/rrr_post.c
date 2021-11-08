@@ -376,7 +376,13 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_msg *message) {
 	int ret = 0;
 
-	if ((ret = rrr_socket_common_prepare_and_send_msg_blocking((struct rrr_msg *) message, data->output_fd, NULL)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_msg_blocking (
+			(struct rrr_msg *) message,
+			data->output_fd,
+			NULL,
+			NULL,
+			NULL
+	)) != 0) {
 		RRR_MSG_0("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}

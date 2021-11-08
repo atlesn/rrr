@@ -1,8 +1,43 @@
-rrr (1.19-1hirsute1) hirsute; urgency=medium
+rrr (1.21-1hirsute1) hirsute; urgency=medium
 
-  * Ubuntu release
+  * Hirsute release
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 25 Aug 2021 22:10:12 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Nov 2021 09:04:53 +0100
+
+rrr (1.21-1) bullseye; urgency=medium
+
+  * Changes:
+    * Automatic restart of RRR deamon upon failure
+    * Use JEmalloc instead of internal allocator
+
+  * Features:
+    * Option in cacher to revive messages older than a specified age
+    * Control maximum response size in httpclient
+    * Control maximum request size in httpserver
+    * Control content-type for raw requests in httpclient
+    * Control which readers that will receive the different kinds of messages from cacher
+
+  * Improvements:
+    * Performance for larger messages in misc. modules
+
+  * Fixes:
+    * Busy-waiting on thread state change causing long startup times
+    * Cacher getting killed off on large writes to message DB
+    * Large messages sometimes failing to be sent due to incorrect
+      return values in some send functions
+    * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+    * Validate message header checksum in rrr_msg tool
+    * Manual page for rrr_msg tool
+    * Crash in rrr_msg as it tried to read from directories
+    * Problems with compiler -pie flags on some platforms
+    * Sed-replacement causing configure script not to work on non-GNU systems
+    * Slowness when multiple mmap_channel instances were destroying block locks simultaneously
+
+  * Under the hood:
+    * Common Message DB functions for httpclient and cacher
+    * Use robust locking in process shared locks (mmap channel and shm frameworks)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Nov 2021 08:25:29 +0100
 
 rrr (1.19-1) bullseye; urgency=medium
 

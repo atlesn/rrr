@@ -54,6 +54,8 @@ struct rrr_http_client {
 	uint64_t idle_timeout_ms;
 	rrr_length send_chunk_count_limit;
 
+	struct rrr_http_rules rules;
+
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
 
@@ -106,6 +108,13 @@ void rrr_http_client_destroy (
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
 	rrr_free(client);
+}
+
+void rrr_http_client_set_response_max_size (
+		struct rrr_http_client *client,
+		rrr_biglength set
+) {
+	client->rules.client_response_max_size = set;
 }
 
 static int __rrr_http_client_active_transaction_count_get_callback (
@@ -570,7 +579,7 @@ static int __rrr_http_client_read_callback (
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
 			handle,
-			10 * 1024 * 1024, // 10 MB
+			http_client->rules.client_response_max_size,
 			__rrr_http_client_websocket_handshake_callback,
 			NULL,
 			__rrr_http_client_receive_http_part_callback,

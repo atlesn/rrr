@@ -140,9 +140,10 @@ static int exploder_process_value (
 		entry_new->data_length = MSG_TOTAL_SIZE(msg_new);
 	}
 
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry_new,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -227,9 +228,10 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out_write:
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 

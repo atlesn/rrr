@@ -47,25 +47,20 @@ int rrr_msgdb_client_await_ack_with_wait_callback (
 );
 int rrr_msgdb_client_await_msg (
 		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn
-);
-int rrr_msgdb_client_await_msg_with_wait_callback (
-		struct rrr_msg_msg **result_msg,
 		struct rrr_msgdb_client_conn *conn,
 		int (*wait_callback)(void *arg),
 		void *wait_callback_arg
 );
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
-		const struct rrr_msg_msg *msg
+		const struct rrr_msg_msg *msg,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 );
 int rrr_msgdb_client_cmd_idx (
 		struct rrr_array *target_paths,
-		struct rrr_msgdb_client_conn *conn
-);
-int rrr_msgdb_client_cmd_idx_with_wait_callback (
-		struct rrr_array *target_paths,
 		struct rrr_msgdb_client_conn *conn,
+		uint32_t min_age_s,
 		int (*wait_callback)(void *arg),
 		void *wait_callback_arg
 );

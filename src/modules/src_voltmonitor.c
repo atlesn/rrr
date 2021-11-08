@@ -416,6 +416,7 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, int value) 
 			NULL,
 			0,
 			0,
+			NULL,
 			voltmonitor_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

@@ -236,6 +236,13 @@ void rrr_http_transaction_request_body_format_set (
 	transaction->request_body_format = body_format;
 }
 
+int rrr_http_transaction_request_content_type_set (
+		struct rrr_http_transaction *transaction,
+		const char *content_type
+) {
+	return rrr_http_part_header_field_push_and_replace (transaction->request_part, "content-type", content_type);
+}
+
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
 		struct rrr_http_transaction *transaction

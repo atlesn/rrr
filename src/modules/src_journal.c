@@ -446,6 +446,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				NULL,
 				0,
 				0,
+				NULL,
 				journal_write_message_callback,
 				&callback_data,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)

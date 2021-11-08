@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "settings.h"
 #include "instance_config.h"
+#include "instances.h"
 #include "map.h"
 #include "array.h"
 #include "array_tree.h"
@@ -582,6 +583,98 @@ int rrr_instance_config_parse_file (
 	goto out;
 	out_destroy_collection:
 		rrr_instance_config_collection_destroy(collection);
+	out:
+	return ret;
+}
+
+struct rrr_instance_config_friend_collection_populate_from_config_callback_data {
+	struct rrr_instance_collection *instances;
+	struct rrr_instance_friend_collection *collection;
+};
+
+static int __rrr_instance_config_friend_collection_populate_from_config_callback (
+		const char *value,
+		void *arg
+) {
+	struct rrr_instance_config_friend_collection_populate_from_config_callback_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_instance *instance = rrr_instance_find(data->instances, value);
+
+	if (instance == NULL) {
+		RRR_MSG_0("Could not find instance '%s'\n", value);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_1("Added %s\n", INSTANCE_M_NAME(instance));
+
+	if ((ret = rrr_instance_friend_collection_append(data->collection, instance)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_instance_config_friend_collection_populate_from_config (
+		struct rrr_instance_friend_collection *target,
+		struct rrr_instance_collection *instances,
+		const struct rrr_instance_config_data *config,
+		const char *setting
+) {
+	int ret = 0;
+
+	struct rrr_instance_config_friend_collection_populate_from_config_callback_data add_data = {
+		instances,
+		target
+	};
+
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
+			config->settings,
+			setting,
+			&__rrr_instance_config_friend_collection_populate_from_config_callback,
+			&add_data
+	))!= 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_instance_config_friend_collection_populate_receivers_from_config (
+		struct rrr_instance_friend_collection *target,
+		struct rrr_instance_collection *instances_all,
+		const struct rrr_instance *instance,
+		const struct rrr_instance_config_data *config,
+		const char *setting
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+			target,
+			instances_all,
+			config,
+			setting
+	)) != 0) {
+		RRR_MSG_0("Failed to add receivers from %s in %s\n", setting, __func__);
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(target, struct rrr_instance_friend);
+		if (!rrr_instance_has_sender (node->instance, instance)) {
+			RRR_MSG_0("Specified receiver %s in %s of instance %s does not have this instance specified as sender\n",
+				INSTANCE_M_NAME(node->instance),
+				setting,
+				INSTANCE_M_NAME(instance)
+			);
+			ret = 1;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+	
 	out:
 	return ret;
 }
