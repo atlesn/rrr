@@ -322,15 +322,16 @@ static int __rrr_msgdb_server_send_msg_pong (
 
 struct rrr_msgdb_server_idx_make_index_readdir_callback_data {
 	struct rrr_array *response_target;
-	int do_single_level;
 };
 
 static int __rrr_msgdb_server_idx_make_index_readdir_callback (
+		struct dirent *entry,
 		const char *orig_path,
 		const char *resolved_path,
 		unsigned char type,
 		void *private_data
 ) {
+	(void)(entry);
 	(void)(resolved_path);
 
 	struct rrr_msgdb_server_idx_make_index_readdir_callback_data *callback_data = private_data;
@@ -342,9 +343,7 @@ static int __rrr_msgdb_server_idx_make_index_readdir_callback (
 	}
 
 	if (type == DT_DIR) {
-		if (!callback_data->do_single_level && (ret = rrr_array_push_value_str_with_tag(callback_data->response_target, "dir", orig_path)) != 0) {
-			goto out;
-		}
+		// Ignore
 	}
 	else {
 		if ((ret = rrr_array_push_value_str_with_tag(callback_data->response_target, "file", orig_path)) != 0) {
@@ -358,8 +357,7 @@ static int __rrr_msgdb_server_idx_make_index_readdir_callback (
 
 static int __rrr_msgdb_server_idx_make_index (
 		struct rrr_array *response_target,
-		struct rrr_msgdb_server *server,
-		int do_single_level
+		struct rrr_msgdb_server *server
 ) {
 	int ret = 0;
 
@@ -368,11 +366,10 @@ static int __rrr_msgdb_server_idx_make_index (
 	}
 
 	struct rrr_msgdb_server_idx_make_index_readdir_callback_data callback_data = {
-		response_target,
-		do_single_level
+		response_target
 	};
 
-	if ((ret = rrr_readdir_foreach_recursive (".", __rrr_msgdb_server_idx_make_index_readdir_callback, &callback_data)) != 0) {
+	if ((ret = rrr_readdir_foreach (".", __rrr_msgdb_server_idx_make_index_readdir_callback, &callback_data)) != 0) {
 		goto out;
 	}
 
@@ -521,69 +518,6 @@ static int __rrr_msgdb_server_quick_topic_get (
 	return ret;
 }
 
-static int __rrr_msgdb_server_idx (
-		struct rrr_msgdb_server *server,
-		int response_fd
-) {
-	int ret = 0;
-
-	char *filename_tmp = NULL;
-	struct rrr_string_builder topic_tmp = {0};
-	struct rrr_array results_tmp = {0};
-	struct rrr_array results_tmp_topics = {0};
-	struct rrr_map paths_tmp = {0};
-	struct rrr_msg_msg *msg_tmp = NULL;
-
-	if ((ret = __rrr_msgdb_server_idx_make_index (&results_tmp, server, 1 /* Single level only */)) != 0) {
-		goto out;
-	}
-
-	RRR_LL_ITERATE_BEGIN(&results_tmp, struct rrr_type_value);
-		RRR_FREE_IF_NOT_NULL(filename_tmp);
-		rrr_string_builder_truncate(&topic_tmp);
-
-		if ((ret = node->definition->to_str(&filename_tmp, node)) != 0) {
-			goto out;
-		}
-		if (__rrr_msgdb_server_quick_topic_get (&topic_tmp, filename_tmp) != 0) {
-			RRR_MSG_0("Warning: Failed to read message during idx in message db server\n");
-			goto out;
-		}
-		if ((ret = rrr_array_push_value_str_with_tag(&results_tmp_topics, "file", rrr_string_builder_buf(&topic_tmp))) != 0) {
-			goto out;
-		}
-	RRR_LL_ITERATE_END();
-
-	if ((ret = rrr_array_new_message_from_array (
-			&msg_tmp,
-			&results_tmp_topics,
-			rrr_time_get_64(),
-			NULL,
-			0
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_msgdb_common_msg_send (
-			response_fd,
-			(struct rrr_msg_msg *) msg_tmp,
-			__rrr_msgdb_server_send_callback,
-			server
-	)) != 0) {
-		ret = RRR_MSGDB_EOF;
-		goto out;
-	}
-
-	out:
-	rrr_string_builder_clear(&topic_tmp);
-	rrr_map_clear(&paths_tmp);
-	rrr_array_clear(&results_tmp);
-	rrr_array_clear(&results_tmp_topics);
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	RRR_FREE_IF_NOT_NULL(filename_tmp);
-	return ret;
-}
-
 static int __rrr_msgdb_server_get (
 		struct rrr_msgdb_server *server,
 		const char *str,
@@ -631,20 +565,21 @@ static int __rrr_msgdb_server_get (
 	return ret;
 }
 
-static int __rrr_msgdb_server_tidy (
+static int __rrr_msgdb_server_iterate_by_age (
 		struct rrr_msgdb_server *server,
-		uint32_t max_age,
-		int response_fd
+		uint32_t min_age_s,
+		int (*callback)(int *do_delete, const char *path, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
 	struct rrr_array dirs_and_files = {0};
-	uint64_t max_age_us = (uint64_t) max_age * 1000 * 1000;
+	const uint64_t min_age_us = (uint64_t) min_age_s * 1000 * 1000;
 
 	char *path_tmp = NULL;
 	char *msg_tmp = NULL;
 
-	if ((ret = __rrr_msgdb_server_idx_make_index (&dirs_and_files, server, 0 /* Multi-level */)) != 0) {
+	if ((ret = __rrr_msgdb_server_idx_make_index (&dirs_and_files, server)) != 0) {
 		goto out;
 	}
 
@@ -654,17 +589,17 @@ static int __rrr_msgdb_server_tidy (
 		}
 
 		if (!RRR_TYPE_IS_BLOB(node->definition->type)) {
-			RRR_BUG("BUG: File path element was not of blob type in __rrr_msgdb_server_tidy\n");
+			RRR_BUG("BUG: File path element was not of blob type in %s\n", __func__);
 		}
 		if (node->total_stored_length > PATH_MAX) {
-			RRR_BUG("BUG: File path length too long in __rrr_msgdb_server_tidy\n");
+			RRR_BUG("BUG: File path length too long in %s\n", __func__);
 		}
 
 		RRR_FREE_IF_NOT_NULL(path_tmp);
 		RRR_FREE_IF_NOT_NULL(msg_tmp);
 
 		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
-			RRR_MSG_0("Failed to extract string in __rrr_msgdb_server_tidy\n");
+			RRR_MSG_0("Failed to extract string in %s\n", __func__);
 			goto out;
 		}
 
@@ -680,17 +615,20 @@ static int __rrr_msgdb_server_tidy (
 				1, /* Head only */
 				NULL /* No topic to verify */
 		) != 0) {
-			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy. Deleting file.\n",
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s'. Deleting file.\n",
 					path_tmp
 			);
 			goto delete;
 		}
 
-		if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, max_age_us)) {
-			RRR_DBG_3("msgdb del '%s' (tidy)\n",
-					path_tmp
-			);
-			goto delete;
+		if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, min_age_us)) {
+			int do_delete = 0;
+			if ((ret = callback(&do_delete, path_tmp, callback_arg)) != 0) {
+				goto out;
+			}
+			if (do_delete) {
+				goto delete;
+			}
 		}
 
 		// OK
@@ -698,16 +636,125 @@ static int __rrr_msgdb_server_tidy (
 
 		// Error / delete file
 		delete:
+		RRR_DBG_3("msgdb del '%s'\n",
+				path_tmp
+		);
 		if (__rrr_msgdb_server_del_raw(server, path_tmp) != 0) {
-			RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
+			RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", path_tmp);
 		}
 	RRR_LL_ITERATE_END();
-
-	ret = __rrr_msgdb_server_send_msg_ack(server, response_fd);
 
 	out:
 	rrr_array_clear(&dirs_and_files);
 	RRR_FREE_IF_NOT_NULL(path_tmp);
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
+static int __rrr_msgdb_server_tidy_callback (
+		int *do_delete,
+		const char *path,
+		void *arg
+) {
+	(void)(path);
+	(void)(arg);
+
+	*do_delete = 1;
+
+	return 0;
+}
+
+static int __rrr_msgdb_server_tidy (
+		struct rrr_msgdb_server *server,
+		uint32_t max_age_s,
+		int response_fd
+) {
+	int ret = 0;
+
+	// max age: maximum age of messages, older messages are deleted
+	// min age: minimum age of messagesto delete, younger are preserved
+	if ((ret = __rrr_msgdb_server_iterate_by_age (
+			server,
+			max_age_s,
+			__rrr_msgdb_server_tidy_callback,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	ret = __rrr_msgdb_server_send_msg_ack(server, response_fd);
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_idx_callback (
+		int *do_delete,
+		const char *path,
+		void *arg
+) {
+	struct rrr_array *target = arg;
+
+	*do_delete = 0;
+
+	int ret = 0;
+
+	struct rrr_string_builder topic = {0};
+
+	if ((ret = __rrr_msgdb_server_quick_topic_get (&topic, path)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_str_with_tag(target, "file", rrr_string_builder_buf(&topic))) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_string_builder_clear(&topic);
+	return ret;
+}
+
+static int __rrr_msgdb_server_idx (
+		struct rrr_msgdb_server *server,
+		uint32_t min_age_s,
+		int response_fd
+) {
+	int ret = 0;
+
+	struct rrr_array results_tmp_topics = {0};
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	if ((ret = __rrr_msgdb_server_iterate_by_age (
+			server,
+			min_age_s,
+			__rrr_msgdb_server_idx_callback,
+			&results_tmp_topics
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_array_new_message_from_array (
+			&msg_tmp,
+			&results_tmp_topics,
+			rrr_time_get_64(),
+			NULL,
+			0
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_common_msg_send (
+			response_fd,
+			(struct rrr_msg_msg *) msg_tmp,
+			__rrr_msgdb_server_send_callback,
+			server
+	)) != 0) {
+		ret = RRR_MSGDB_EOF;
+		goto out;
+	}
+
+	out:
+	rrr_array_clear(&results_tmp_topics);
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
@@ -734,7 +781,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	server->recv_count++;
 
-	if (MSG_TOPIC_LENGTH(*msg) == 0 && MSG_TYPE(*msg) != MSG_TYPE_IDX) {
+	if (MSG_TOPIC_LENGTH(*msg) == 0) {
 		RRR_MSG_0("Zero-length topic in message db server, this is an error\n");
 		goto out_negative_ack;
 	}
@@ -758,13 +805,6 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		case MSG_TYPE_GET:
 			if ((ret = __rrr_msgdb_server_get(server, sha256_hex, rrr_string_builder_buf(&topic), client->fd)) == 0) {
 				// GET responds with a message upon success, no need for ACK
-				// unless we failed
-				no_ack = 1;
-			}
-			break;
-		case MSG_TYPE_IDX:
-			if ((ret = __rrr_msgdb_server_idx(server, client->fd)) == 0) {
-				// IDX responds with a message upon success, no need for ACK
 				// unless we failed
 				no_ack = 1;
 			}
@@ -829,6 +869,11 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 		return __rrr_msgdb_server_tidy(server, msg->msg_value, client->fd);
 	}
 
+	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_IDX) {
+		RRR_DBG_3("msgdb fd %i recv IDX min age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
+		return __rrr_msgdb_server_idx(server, msg->msg_value, client->fd);
+	}
+
 	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
 	return RRR_MSGDB_SOFT_ERROR;
 
@@ -889,7 +934,7 @@ int rrr_msgdb_server_new (
 			__rrr_msgdb_server_client_new_void,
 			__rrr_msgdb_server_client_destroy_void,
 			NULL,
-			4096,
+			1 * 1024 * 1024, // 1 MB
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			__rrr_msgdb_server_read_msg_msg_callback,
 			NULL,

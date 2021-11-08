@@ -57,6 +57,10 @@ void rrr_http_server_set_no_body_parse (
 		struct rrr_http_server *server,
 		int set
 );
+void rrr_http_server_set_server_request_max_size (
+		struct rrr_http_server *server,
+		rrr_biglength set
+);
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,
 		struct rrr_event_queue *queue,

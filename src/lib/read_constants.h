@@ -64,6 +64,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Not done yet, possibly call me again later
 #define RRR_READ_INCOMPLETE		4
+#define RRR_READ_BUSY		        4
 
 // End of file, nothing more to read, etc.
 #define RRR_READ_EOF			8

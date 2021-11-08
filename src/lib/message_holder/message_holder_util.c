@@ -54,9 +54,9 @@ int rrr_msg_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	message = rrr_allocate(message_size);
-	if (message == NULL) {
+	if ((message = rrr_allocate(message_size)) == NULL) {
 		RRR_MSG_0("Could not allocate message in message_holder_new_with_message\n");
+		ret = 1;
 		goto out;
 	}
 
