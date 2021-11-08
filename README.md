@@ -67,6 +67,7 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
  - InfluxDB module maintainer
  - RPM/Fedora packaging
+ - RRR configuration examples
 
 ## NEWS
 
