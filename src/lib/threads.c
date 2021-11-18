@@ -558,13 +558,9 @@ static int __rrr_thread_wait_for_state_forked (
 	//   existing thread structures. Don't do validation on the value, only check with ==
 	//   if it gets the value we want.
 
-	// We can only use the sleep() function which only has second resolution. We therefore
-	// busy-wait for many rounds before finally sleeping if the thread is slow to change
-	// state.
-
 	int was_ok = 0;
 
-	const unsigned long long max = 100000000; // 100 mill
+	const unsigned long long max = 100; // ~ 5 seconds
 	unsigned long long int j;
 	for (j = 0; j <= max; j++)  {
 		if ( thread->state == RRR_THREAD_STATE_RUNNING_FORKED ||
@@ -573,11 +569,11 @@ static int __rrr_thread_wait_for_state_forked (
 			was_ok = 1;
 			break;
 		}
-		if (j > max - 3) {
-			sleep(1);
+		if (j > max / 2) {
+			rrr_posix_msleep_signal_safe (100); // 100 ms
 		}
 
-		rrr_posix_msleep_signal_safe (10); // 10 ms
+		rrr_posix_msleep_signal_safe (25); // 25 ms
 	}
 
 	if (was_ok != 1) {

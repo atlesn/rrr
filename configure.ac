@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.19-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.19-1", [Full version])
+AC_INIT([Read Route Record],[1.21-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.21-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 19, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 21, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -351,11 +351,12 @@ AS_IF([test "x$enable_perl5" = xno], [
 	# Remove -specs=/... causing -pie to get inserted on RH-systems
 
 	AC_MSG_CHECKING([Perl5 CFLAGS])
-	PERL5_CFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | sed 's/\s*-specs\S*//g'`
+	PERL5_CFLAGS=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
+
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | sed 's/\s*-specs\S*//g'`
+	perl5_ldflags_auto=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
 	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
@@ -427,7 +428,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.9 3.8 3.7; do
+		for version_tmp in 3.10 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then

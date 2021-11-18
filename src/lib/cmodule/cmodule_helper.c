@@ -227,14 +227,23 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_msg_holder *entry_locked
 ) {
+	int ret = 0;
+
 	// Balanced algorithm
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 	struct rrr_cmodule_worker *preferred = &cmodule->workers[0];
-	int preferred_count = rrr_cmodule_channel_count(preferred->channel_to_fork);
+	int preferred_count = 0;
+
+	if ((ret = rrr_cmodule_channel_count(&preferred_count, preferred->channel_to_fork)) != 0) {
+		goto out;
+	}
 
  	WORKER_LOOP_BEGIN();
-		int count = rrr_cmodule_channel_count(worker->channel_to_fork);
+		int count = 0;
+		if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+			goto out;
+		}
 		if (count < preferred_count) {
 			preferred = worker;
 			preferred_count = count;
@@ -243,7 +252,12 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 
  	// TODO : Upon retry, send to other worker
 
-	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
+	if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 #include "../mmap_channel.h"
