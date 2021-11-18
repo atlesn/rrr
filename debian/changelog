@@ -1,3 +1,13 @@
+rrr (1.22-1) bullseye; urgency=medium
+
+  * RUNNING RELEASE
+
+  * Fixes:
+    * Prevent HTTP client from getting killed of if there are a lot of
+      connection errors
+
+ -- LBSdrift <lbsdrift@posten.local>  Thu, 18 Nov 2021 23:45:42 +0100
+
 rrr (1.21-1) bullseye; urgency=medium
 
   * Changes:
@@ -20,8 +30,6 @@ rrr (1.21-1) bullseye; urgency=medium
     * Large messages sometimes failing to be sent due to incorrect
       return values in some send functions
     * Send allow-origin header in OPTIONS responses to satisfy preflight checks
-    * Prevent HTTP client from getting killed of if there are a lot of
-      connection errors
     * Validate message header checksum in rrr_msg tool
     * Manual page for rrr_msg tool
     * Crash in rrr_msg as it tried to read from directories
