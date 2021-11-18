@@ -860,7 +860,7 @@ static int httpclient_final_callback (
 			rrr_msg_holder_lock(transaction_data->entry);
 
 			if ( httpclient_data->silent_put_error_limit_us != 0 &&
-			     rrr_time_get_64() + httpclient_data->silent_put_error_limit_us > ((struct rrr_msg_msg *) transaction_data->entry->message)->timestamp
+			     rrr_time_get_64() < ((struct rrr_msg_msg *) transaction_data->entry->message)->timestamp + httpclient_data->silent_put_error_limit_us
 			) {
 				RRR_DBG_4("Error response %i for PUT query temporarily ignored per configuration\n", transaction->response_part->response_code);
 				do_print_error = 0;
