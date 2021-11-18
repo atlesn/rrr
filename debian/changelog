@@ -2,6 +2,10 @@ rrr (1.22-1) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
+  * Features:
+    * Option in httpclient to silence error messages for PUT queries for a
+      specified amount of time
+
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of
       connection errors

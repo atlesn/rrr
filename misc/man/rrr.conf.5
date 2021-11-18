@@ -1909,6 +1909,10 @@ and does not affect any other parameters.
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
+	
+.It http_silent_put_error_limit_s=SECONDS
+If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
+This is useful if failed PUT are stored in a message DB and an error messages need not be printed immediately as the store is attempted again later.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.

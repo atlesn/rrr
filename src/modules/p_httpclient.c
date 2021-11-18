@@ -147,6 +147,8 @@ struct httpclient_data {
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
 
+	rrr_setting_uint silent_put_error_limit_us;
+
 	struct rrr_net_transport_config net_transport_config;
 
 	struct rrr_http_client *http_client;
@@ -851,13 +853,31 @@ static int httpclient_final_callback (
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
-		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
-				transaction->response_part->response_code,
-				rrr_http_util_iana_response_phrase_from_status_code ((unsigned int) transaction->response_part->response_code),
-				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-				transaction->endpoint_str,
-				httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
-		);
+
+		int do_print_error = 1;
+
+		if (transaction->method == RRR_HTTP_METHOD_PUT) {
+			rrr_msg_holder_lock(transaction_data->entry);
+
+			if ( httpclient_data->silent_put_error_limit_us != 0 &&
+			     rrr_time_get_64() + httpclient_data->silent_put_error_limit_us > ((struct rrr_msg_msg *) transaction_data->entry->message)->timestamp
+			) {
+				RRR_DBG_4("Error response %i for PUT query temporarily ignored per configuration\n", transaction->response_part->response_code);
+				do_print_error = 0;
+			}
+
+			rrr_msg_holder_unlock(transaction_data->entry);
+		}
+
+		if (do_print_error) {
+			RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
+					transaction->response_part->response_code,
+					rrr_http_util_iana_response_phrase_from_status_code ((unsigned int) transaction->response_part->response_code),
+					RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+					transaction->endpoint_str,
+					httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
+			);
+		}
 
 		if (httpclient_data->do_receive_ignore_error_part_data) {
 			goto out;
@@ -1773,6 +1793,8 @@ static int httpclient_parse_config (
 	data->message_ttl_us *= 1000 * 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	data->message_timeout_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_silent_put_error_limit_s", silent_put_error_limit_us, 0);
+	data->silent_put_error_limit_us *= 1000 * 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 
