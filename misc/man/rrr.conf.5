@@ -1913,6 +1913,7 @@ If set to no or left unset, PUT messages will be treated as other messages.
 .It http_silent_put_error_limit_s=SECONDS
 If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
 This is useful if failed PUT are stored in a message DB and an error messages need not be printed immediately as the store is attempted again later.
+Defaults to 0 which means that all errors are printed regardless of the age of the messages.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
