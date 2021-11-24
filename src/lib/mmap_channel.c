@@ -582,6 +582,7 @@ int rrr_mmap_channel_new (
 }
 
 void rrr_mmap_channel_get_counters_and_reset (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
@@ -589,6 +590,8 @@ void rrr_mmap_channel_get_counters_and_reset (
 	int ret = 0;
 
 	INDEX_LOCK(source);
+
+	*count = (unsigned long long int) source->entry_count;
 
 	*read_starvation_counter = source->read_starvation_counter;
 	*write_full_counter = source->write_full_counter;

@@ -43,11 +43,13 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 		const struct rrr_msg_addr *message_addr
 );
 void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_cmodule_worker *worker
 );
 void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_cmodule_worker *worker

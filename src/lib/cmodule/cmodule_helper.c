@@ -689,11 +689,13 @@ static int __rrr_cmodule_helper_event_periodic (
 	}
 
 	{
+		unsigned long long int count = 0;
 		unsigned long long int read_starvation_counter = 0;
 		unsigned long long int write_full_counter = 0;
 		unsigned long long int write_retry_counter = 0;
 
 		rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+				&count,
 				&read_starvation_counter,
 				&write_full_counter,
 				&write_retry_counter,
@@ -703,13 +705,16 @@ static int __rrr_cmodule_helper_event_periodic (
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "mmap_to_child_full_events", write_full_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "mmap_to_child_starvation_events", read_starvation_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "mmap_to_child_write_retry_events", write_retry_counter);
+		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_child_count", 0, count);
 	}
 	{
+		unsigned long long int count = 0;
 		unsigned long long int read_starvation_counter = 0;
 		unsigned long long int write_full_counter = 0;
 		unsigned long long int write_retry_counter = 0;
 
 		rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+				&count,
 				&read_starvation_counter,
 				&write_full_counter,
 				&write_retry_counter,
@@ -719,6 +724,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 5, "mmap_to_parent_full_events", write_full_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 6, "mmap_to_parent_starvation_events", read_starvation_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 7, "mmap_to_parent_write_retry_events", write_retry_counter);
+		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_parent_count", 0, count);
 	}
 
 	// TODO : Fix rate counter
@@ -956,6 +962,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 }
 
 static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
@@ -967,12 +974,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 	*write_retry_counter = 0;
 
 	for (int i = 0; i < cmodule->worker_count; i++) {
+		unsigned long long int tmp_count = 0;
 		unsigned long long int tmp_read_starvation_counter = 0;
 		unsigned long long int tmp_write_full_counter = 0;
 		unsigned long long int tmp_write_retry_counter = 0;
 
 		if (is_to_parent) {
 			rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+					&tmp_count,
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
 					&cmodule->workers[i]
@@ -980,12 +989,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		}
 		else {
 			rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+					&tmp_count,
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
 					&cmodule->workers[i]
 			);
 		}
 
+		*count += tmp_count;
 		*read_starvation_counter += tmp_read_starvation_counter;
 		*write_full_counter += tmp_write_full_counter;
 		*write_retry_counter += tmp_write_retry_counter;
@@ -995,12 +1006,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 }
 
 void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
@@ -1010,12 +1023,14 @@ void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 }
 
 void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
