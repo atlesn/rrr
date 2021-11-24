@@ -345,10 +345,10 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 		return RRR_EVENT_EXIT;
 	}
 
-	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
-
 	EVENT_ADD(cmodule->input_queue_event);
 	EVENT_ACTIVATE(cmodule->input_queue_event);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
 
 	uint16_t amount_new = (uint16_t) (*amount > 32 ? 32 : *amount);
 	*amount = (uint16_t) (*amount - amount_new);
@@ -361,24 +361,15 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 
 	*amount = (uint16_t) (*amount + amount_new);
 
-	if (RRR_LL_COUNT(&cmodule->input_queue) > 0) {
-		EVENT_ACTIVATE(cmodule->input_queue_event);
-		EVENT_ADD(cmodule->input_queue_event);
-	}
-
 	return ret;
 }
 
-static void __rrr_cmodule_helper_event_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void __rrr_cmodule_helper_event_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	if (is_paused) {
-		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) < (RRR_CMODULE_INPUT_QUEUE_MAX * 0.75));
+		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) > (RRR_CMODULE_INPUT_QUEUE_MAX * 0.75));
 	}
 	else {
 		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) > RRR_CMODULE_INPUT_QUEUE_MAX);
@@ -666,6 +657,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		}
 	}
 */
+
 	int ret_tmp;
 	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
 		return ret_tmp;
@@ -775,6 +767,7 @@ void rrr_cmodule_helper_loop (
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			__rrr_cmodule_helper_event_pause_check,
 			thread_data
 	);

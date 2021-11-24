@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/array_tree.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
@@ -136,8 +137,8 @@ struct mqtt_client_data {
 	struct rrr_mqtt_session *session;
 	struct rrr_mqtt_property_collection connect_properties;
 
-	int send_disabled;
-	int poll_discard_enabled;
+	unsigned short send_disabled;
+	unsigned short poll_discard_enabled;
 	uint64_t poll_discard_count;
 
 	struct rrr_msg_holder_collection input_queue;
@@ -1739,7 +1740,7 @@ static int __mqttclient_input_queue_process (
 			RRR_LL_ITERATE_LAST();
 		}
 		else {
-			data->send_disabled = send_discouraged;
+			data->send_disabled = send_discouraged != 0;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		rrr_msg_holder_unlock(node);
@@ -1788,12 +1789,8 @@ static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return rrr_poll_do_poll_delete (amount, thread_data, mqttclient_poll_callback);
 }
 
-static void mqttclient_event_callback_pause (
-		int *do_pause,
-		int is_paused,
-		void *arg
-) {
-	struct rrr_thread *thread = arg;
+static void mqttclient_event_callback_pause (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
+	struct rrr_thread *thread = callback_arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data;
 
@@ -1971,6 +1968,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			mqttclient_event_callback_pause,
 			thread
 	);

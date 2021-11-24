@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/allocator.h"
 #include "../lib/array.h"
@@ -528,11 +529,7 @@ static int influxdb_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
 }
 		
-static void influxdb_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void influxdb_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct influxdb_data *data = thread_data->private_data;
 
@@ -642,6 +639,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			influxdb_pause_check,
 			thread_data
 	);

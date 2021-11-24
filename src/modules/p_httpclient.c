@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/helpers/string_builder.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
@@ -2021,11 +2022,7 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return ret_tmp;
 }
 
-static void httpclient_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void httpclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct httpclient_data *data = thread_data->private_data;
 
@@ -2284,6 +2281,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			httpclient_pause_check,
 			thread_data
 	);

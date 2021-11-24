@@ -11,6 +11,7 @@ rrr (1.22-5) bullseye; urgency=medium
     * Prevent HTTP client from getting killed of if there are a lot of
       connection errors
     * Deadlock in mmap channel due to incorrect use of lock() instead of trylock()
+    * Lockup in cmodules in high traffic situations
 
  -- LBSdrift <lbsdrift@posten.local>  Thu, 18 Nov 2021 23:45:42 +0100
 
