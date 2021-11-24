@@ -1,10 +1,11 @@
-rrr (1.22-3) bullseye; urgency=medium
+rrr (1.22-5) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
       specified amount of time
+    * New topic_filter_invert option
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of

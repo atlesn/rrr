@@ -268,6 +268,7 @@ static int __rrr_instance_parse_misc (
 		int do_enable_buffer;
 		int do_enable_backstop;
 		int do_duplicate;
+		int do_topic_filter_invert;
 	} data_tmp;
 
 	struct data *data = &data_tmp;
@@ -288,6 +289,10 @@ static int __rrr_instance_parse_misc (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("duplicate", do_duplicate, 0);
 	if (data->do_duplicate) {
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DUPLICATE;
+	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("topic_filter_invert", do_topic_filter_invert, 0);
+	if (data->do_topic_filter_invert) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT;
 	}
 
 	out:

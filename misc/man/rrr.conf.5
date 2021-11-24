@@ -73,6 +73,10 @@ backstop=yes
 # Drop all messages from senders which do not match the set topic (optional)
 topic_filter=MQTT TOPIC FILTER
 
+# Invert topic filter (optional). If set to yes, messages in which a topic
+# matches any set topic_filter will be dropped (inverted filter).
+topic_filter_invert=yes
+
 # Module-specific arguments (module-dependant)
 argument1 = value1
 
