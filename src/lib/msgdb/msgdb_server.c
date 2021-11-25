@@ -1064,10 +1064,6 @@ static void __rrr_msgdb_client_event_iteration (
 		goto out_check_error;
 	}
 
-	if ((ret_tmp = __rrr_msgdb_server_send_msg_pong (client)) != 0) {
-		goto out_check_error;
-	}
-
 	out_check_error:
 	if (ret_tmp != 0) {
 		rrr_socket_client_collection_close_when_send_complete_by_fd (

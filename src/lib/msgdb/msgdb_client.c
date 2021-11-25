@@ -366,11 +366,44 @@ static int __rrr_msgdb_client_send_empty (
 	return ret;
 }
 
+struct rrr_msgdb_client_wait_callback_data {
+	struct rrr_msgdb_client_conn *conn;
+	uint64_t prev_ping_time;
+	int (*wait_callback_final)(void *arg);
+	void *wait_callback_final_arg;
+};
+
 static int __rrr_msgdb_client_wait_callback (
 		void *arg
 ) {
-	(void)(arg);
-	rrr_posix_usleep(1 * 1000); // 1 ms
+	struct rrr_msgdb_client_wait_callback_data *callback_data = arg;
+
+	const uint64_t time_now = rrr_time_get_64();
+	if (time_now > callback_data->prev_ping_time + 1 * 1000 * 1000) {
+		callback_data->prev_ping_time = time_now;
+
+		struct rrr_msgdb_client_send_callback_data send_callback_data = {
+			NULL,
+			NULL
+		};
+
+		if (rrr_msgdb_common_ctrl_msg_send_ping (
+				callback_data->conn->fd,
+				__rrr_msgdb_client_send_callback,
+				&send_callback_data
+		) != 0) {
+			RRR_DBG_3("msgdb fd %i ping failed while waiting for ACK\n", callback_data->conn->fd);
+			return 1;
+		}
+	}
+
+	if (callback_data->wait_callback_final != NULL) {
+		return callback_data->wait_callback_final(callback_data->wait_callback_final_arg);
+	}
+	else {
+		rrr_posix_usleep(10 * 1000); // 10 ms
+	}
+
 	return 0;
 }
 
@@ -460,11 +493,18 @@ int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
 		uint32_t max_age_s
 ) {
+	struct rrr_msgdb_client_wait_callback_data callback_data = {
+		conn,
+		rrr_time_get_64(),
+		NULL,
+		NULL
+	};
+
 	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
 			conn,
 			max_age_s,
-			__rrr_msgdb_client_wait_callback, /* Use default callback which sleeps to prevent spinning */
-			NULL
+			__rrr_msgdb_client_wait_callback,
+			&callback_data
 	);
 }
 
@@ -474,11 +514,18 @@ int rrr_msgdb_client_cmd_tidy_with_wait_callback (
 		int (*wait_callback)(void *arg),
 		void *wait_callback_arg
 ) {
+	struct rrr_msgdb_client_wait_callback_data callback_data = {
+		conn,
+		rrr_time_get_64(),
+		wait_callback,
+		wait_callback_arg
+	};
+
 	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
 			conn,
 			max_age_s,
-			wait_callback,
-			wait_callback_arg
+			__rrr_msgdb_client_wait_callback,
+			&callback_data
 	);
 }
 
