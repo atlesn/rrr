@@ -462,7 +462,7 @@ static void cacher_event_tidy (
 	struct cacher_data *data = thread_data->private_data;
 
 	if (data->message_ttl_seconds == 0) {
-		RRR_DBG_1("Peridoc tidy in cacher instance %s: No TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+		RRR_DBG_1("Periodic tidy in cacher instance %s: No TTL set, not performing msgdb tidy\n", INSTANCE_D_NAME(thread_data));
 	}
 	else { 
 		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
@@ -479,7 +479,7 @@ static void cacher_event_tidy (
 	}
 
 	if (data->message_memory_ttl_seconds == 0) {
-		RRR_DBG_1("Peridoc tidy in cacher instance %s: No memory TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+		RRR_DBG_1("Periodic tidy in cacher instance %s: No memory TTL set, not performing memory tidy\n", INSTANCE_D_NAME(thread_data));
 	}
 	else {
 		RRR_DBG_1("cacher instance %s tidy memory cache, entry count is %i...\n",
@@ -678,7 +678,7 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 			&data->events,
 			cacher_event_tidy,
 			thread,
-			300 * 1000 * 1000 /* 5 minutes */
+			60 * 1000 * 1000 // 300 * 1000 * 1000 /* 5 minutes */
 	) != 0) {
 		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;

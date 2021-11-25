@@ -44,14 +44,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../array.h"
 #include "../map.h"
+#include "../event/event.h"
+#include "../event/event_collection.h"
 
 #define RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT 10000
 #define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 2
+
+struct rrr_msgdb_server_client;
+
+#define RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS \
+	int *do_delete, const char *path, struct rrr_array *results, void *arg
+
+#define RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS \
+	struct rrr_msgdb_server_client *client, struct rrr_array *results, void *arg
+
+struct rrr_msgdb_server_iteration_session {
+	struct rrr_array dirs_and_files;
+	uint32_t min_age_s;
+
+	struct rrr_array results; // Use by callback only
+	int (*callback)(RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS);
+	int (*complete_callback)(RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS);
+	void *callback_arg;
+};
+
+static void __rrr_msgdb_server_iteration_session_destroy (
+		struct rrr_msgdb_server_iteration_session *session
+) {
+	rrr_array_clear(&session->results);
+	rrr_array_clear(&session->dirs_and_files);
+	rrr_free(session);
+}
 
 struct rrr_msgdb_server {
 	char *directory;
 	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
+	struct rrr_event_queue *queue;
 };
 
 void rrr_msgdb_server_destroy_void (
@@ -61,47 +90,23 @@ void rrr_msgdb_server_destroy_void (
 }
 
 struct rrr_msgdb_server_client {
+	struct rrr_msgdb_server *server;
 	int fd;
 	char *send_data;
 	rrr_length send_data_size;
 	rrr_length send_data_pos;
+	struct rrr_event_collection events;
+	struct rrr_msgdb_server_iteration_session *iteration_session;
+	rrr_event_handle iteration_event;
 };
-
-static int __rrr_msgdb_server_client_new (
-		struct rrr_msgdb_server_client **target,
-		int fd,
-		void *arg
-) {
-	(void)(arg);
-
-	*target = NULL;
-
-	struct rrr_msgdb_server_client *client = rrr_allocate(sizeof(*client));
-	if (client == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_server_client_new\n");
-		return 1;
-	}
-
-	memset (client, '\0', sizeof(*client));
-
-	client->fd = fd;
-
-	*target = client;
-
-	return 0;
-}
-
-static int __rrr_msgdb_server_client_new_void (
-		void **target,
-		int fd,
-		void *arg
-) {
-	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, fd, arg);
-}
 
 static void __rrr_msgdb_server_client_destroy (
 		struct rrr_msgdb_server_client *client
 ) {
+	if (client->iteration_session != NULL) {
+		__rrr_msgdb_server_iteration_session_destroy(client->iteration_session);
+	}
+	rrr_event_collection_clear(&client->events);
 	RRR_FREE_IF_NOT_NULL(client->send_data);
 	rrr_free(client);
 }
@@ -337,27 +342,24 @@ static int __rrr_msgdb_server_send_callback (
 }
 
 static int __rrr_msgdb_server_send_msg_ack (
-		struct rrr_msgdb_server *server,
-		int fd
+		struct rrr_msgdb_server_client *client
 ) {
-	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send_ack(fd, __rrr_msgdb_server_send_callback, server);
+	RRR_DBG_3("msgdb fd %i send ACK\n", client->fd);
+	return rrr_msgdb_common_ctrl_msg_send_ack(client->fd, __rrr_msgdb_server_send_callback, client->server);
 }
 
 static int __rrr_msgdb_server_send_msg_nack (
-		struct rrr_msgdb_server *server,
-		int fd
+		struct rrr_msgdb_server_client *client
 ) {
-	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send_nack(fd, __rrr_msgdb_server_send_callback, server);
+	RRR_DBG_3("msgdb fd %i send NACK\n", client->fd);
+	return rrr_msgdb_common_ctrl_msg_send_nack(client->fd, __rrr_msgdb_server_send_callback, client->server);
 }
 
 static int __rrr_msgdb_server_send_msg_pong (
-		struct rrr_msgdb_server *server,
-		int fd
+		struct rrr_msgdb_server_client *client
 ) {
-	RRR_DBG_3("msgdb fd %i send PONG\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send_pong(fd, __rrr_msgdb_server_send_callback, server);
+	RRR_DBG_3("msgdb fd %i send PONG\n", client->fd);
+	return rrr_msgdb_common_ctrl_msg_send_pong(client->fd, __rrr_msgdb_server_send_callback, client->server);
 }
 
 struct rrr_msgdb_server_idx_make_index_readdir_callback_data {
@@ -627,25 +629,29 @@ static int __rrr_msgdb_server_verify_path (
 	return RRR_MSGDB_OK;
 }
 
-static int __rrr_msgdb_server_iterate_by_age (
-		struct rrr_msgdb_server *server,
-		uint32_t min_age_s,
-		int (*callback)(int *do_delete, const char *path, void *arg),
-		void *callback_arg
+static int __rrr_msgdb_server_client_iteration_session_process (
+		struct rrr_msgdb_server_client *client
 ) {
 	int ret = 0;
 
-	struct rrr_array dirs_and_files = {0};
-	const uint64_t min_age_us = (uint64_t) min_age_s * 1000 * 1000;
+	struct rrr_msgdb_server *server = client->server;
+	struct rrr_msgdb_server_iteration_session *session = client->iteration_session;
+
+	const uint64_t min_age_us = (uint64_t) session->min_age_s * 1000 * 1000;
 
 	char *path_tmp = NULL;
 	char *msg_tmp = NULL;
 
-	if ((ret = __rrr_msgdb_server_idx_make_index (&dirs_and_files, server)) != 0) {
-		goto out;
-	}
+	uint64_t time_end = rrr_time_get_64() + 1 * 1000 * 1000; // 1 s
 
-	RRR_LL_ITERATE_BEGIN(&dirs_and_files, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(&session->dirs_and_files, struct rrr_type_value);
+		if (rrr_time_get_64() > time_end) {
+			ret = RRR_MSGDB_INCOMPLETE;
+			goto out;
+		}
+
+		RRR_LL_ITERATE_SET_DESTROY();
+
 		if (!rrr_type_value_is_tag(node, "file")) {
 			RRR_LL_ITERATE_NEXT();
 		}
@@ -689,7 +695,7 @@ static int __rrr_msgdb_server_iterate_by_age (
 
 		if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, min_age_us)) {
 			int do_delete = 0;
-			if ((ret = callback(&do_delete, path_tmp, callback_arg)) != 0) {
+			if ((ret = session->callback(&do_delete, path_tmp, &session->results, session->callback_arg)) != 0) {
 				goto out;
 			}
 			if (do_delete) {
@@ -708,58 +714,95 @@ static int __rrr_msgdb_server_iterate_by_age (
 		if (__rrr_msgdb_server_del_raw(server, path_tmp) != 0) {
 			RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", path_tmp);
 		}
-	RRR_LL_ITERATE_END();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->dirs_and_files, 0; rrr_type_value_destroy(node));
+
+	ret = session->complete_callback (client, &session->results, session->callback_arg);
 
 	out:
-	rrr_array_clear(&dirs_and_files);
 	RRR_FREE_IF_NOT_NULL(path_tmp);
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
 
-static int __rrr_msgdb_server_tidy_callback (
-		int *do_delete,
-		const char *path,
-		void *arg
+static int __rrr_msgdb_server_iteration_begin (
+		struct rrr_msgdb_server_client *client,
+		uint32_t min_age_s,
+		int (*callback)(int *do_delete, const char *path, struct rrr_array *results, void *arg),
+		int (*complete_callback)(struct rrr_msgdb_server_client *client, struct rrr_array *results, void *arg),
+		void *callback_arg
 ) {
+	int ret = 0;
+
+	if (client->iteration_session != NULL) {
+		RRR_MSG_0("Attempted to start iteration session while one was already in progress\n");
+		ret = RRR_MSGDB_HARD_ERROR;
+		goto out;
+	}
+
+	if ((client->iteration_session = rrr_allocate_zero(sizeof(*client->iteration_session))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	client->iteration_session->min_age_s = min_age_s;
+	client->iteration_session->callback = callback;
+	client->iteration_session->complete_callback = complete_callback;
+	client->iteration_session->callback_arg = callback_arg;
+
+	RRR_DBG_3("msgdb generating index...\n");
+
+	if ((ret = __rrr_msgdb_server_idx_make_index (&client->iteration_session->dirs_and_files, client->server)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("msgdb generated index with %i entries\n", RRR_LL_COUNT(&client->iteration_session->dirs_and_files));
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_tidy_callback (RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS) {
 	(void)(path);
 	(void)(arg);
+	(void)(results);
 
 	*do_delete = 1;
 
 	return 0;
 }
 
+static int __rrr_msgdb_server_tidy_complete_callback (RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS) {
+	(void)(results);
+	(void)(arg);
+
+	return __rrr_msgdb_server_send_msg_ack(client);
+}
+
 static int __rrr_msgdb_server_tidy (
-		struct rrr_msgdb_server *server,
-		uint32_t max_age_s,
-		int response_fd
+		struct rrr_msgdb_server_client *client,
+		uint32_t max_age_s
 ) {
 	int ret = 0;
 
 	// max age: maximum age of messages, older messages are deleted
 	// min age: minimum age of messagesto delete, younger are preserved
-	if ((ret = __rrr_msgdb_server_iterate_by_age (
-			server,
+	if ((ret = __rrr_msgdb_server_iteration_begin (
+			client,
 			max_age_s,
 			__rrr_msgdb_server_tidy_callback,
+			__rrr_msgdb_server_tidy_complete_callback,
 			NULL
 	)) != 0) {
 		goto out;
 	}
 
-	ret = __rrr_msgdb_server_send_msg_ack(server, response_fd);
-
 	out:
 	return ret;
 }
 
-static int __rrr_msgdb_server_idx_callback (
-		int *do_delete,
-		const char *path,
-		void *arg
-) {
-	struct rrr_array *target = arg;
+static int __rrr_msgdb_server_idx_callback (RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS) {
+	(void)(arg);
 
 	*do_delete = 0;
 
@@ -771,7 +814,7 @@ static int __rrr_msgdb_server_idx_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_array_push_value_str_with_tag(target, "file", rrr_string_builder_buf(&topic))) != 0) {
+	if ((ret = rrr_array_push_value_str_with_tag(results, "file", rrr_string_builder_buf(&topic))) != 0) {
 		goto out;
 	}
 
@@ -780,28 +823,16 @@ static int __rrr_msgdb_server_idx_callback (
 	return ret;
 }
 
-static int __rrr_msgdb_server_idx (
-		struct rrr_msgdb_server *server,
-		uint32_t min_age_s,
-		int response_fd
-) {
+static int __rrr_msgdb_server_idx_complete_callback (RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS) {
+	(void)(arg);
+
 	int ret = 0;
 
-	struct rrr_array results_tmp_topics = {0};
 	struct rrr_msg_msg *msg_tmp = NULL;
-
-	if ((ret = __rrr_msgdb_server_iterate_by_age (
-			server,
-			min_age_s,
-			__rrr_msgdb_server_idx_callback,
-			&results_tmp_topics
-	)) != 0) {
-		goto out;
-	}
 
 	if ((ret = rrr_array_new_message_from_array (
 			&msg_tmp,
-			&results_tmp_topics,
+			results,
 			rrr_time_get_64(),
 			NULL,
 			0
@@ -810,19 +841,31 @@ static int __rrr_msgdb_server_idx (
 	}
 
 	if ((ret = rrr_msgdb_common_msg_send (
-			response_fd,
+			client->fd,
 			(struct rrr_msg_msg *) msg_tmp,
 			__rrr_msgdb_server_send_callback,
-			server
+			client->server
 	)) != 0) {
 		ret = RRR_MSGDB_EOF;
 		goto out;
 	}
 
 	out:
-	rrr_array_clear(&results_tmp_topics);
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
+}
+
+static int __rrr_msgdb_server_idx (
+		struct rrr_msgdb_server_client *client,
+		uint32_t min_age_s
+) {
+	return __rrr_msgdb_server_iteration_begin (
+			client,
+			min_age_s,
+			__rrr_msgdb_server_idx_callback,
+			__rrr_msgdb_server_idx_complete_callback,
+			NULL
+	);
 }
 
 static int __rrr_msgdb_server_read_msg_msg_callback (
@@ -900,13 +943,13 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	out_negative_ack:
 		if (!no_ack) {
-			ret = __rrr_msgdb_server_send_msg_nack(server, client->fd) ? RRR_MSGDB_EOF : 0;
+			ret = __rrr_msgdb_server_send_msg_nack(client) ? RRR_MSGDB_EOF : 0;
 		}
 		goto out;
 
 	out_positive_ack:
 		if (!no_ack) {
-			ret = __rrr_msgdb_server_send_msg_ack(server, client->fd) ? RRR_MSGDB_EOF : 0;
+			ret = __rrr_msgdb_server_send_msg_ack(client) ? RRR_MSGDB_EOF : 0;
 		}
 		goto out;
 
@@ -923,21 +966,21 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 	struct rrr_msgdb_server_client *client = private_data;
 	struct rrr_msgdb_server *server = arg;
 
-	(void)(client);
+	(void)(server);
 
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_PING) {
 		RRR_DBG_3("msgdb fd %i recv PING\n", client->fd);
-		return __rrr_msgdb_server_send_msg_pong(server, client->fd) ? RRR_MSGDB_EOF : 0;
+		return __rrr_msgdb_server_send_msg_pong(client) ? RRR_MSGDB_EOF : 0;
 	}
 
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_TIDY) {
 		RRR_DBG_3("msgdb fd %i recv TIDY max age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
-		return __rrr_msgdb_server_tidy(server, msg->msg_value, client->fd);
+		return __rrr_msgdb_server_tidy(client, msg->msg_value);
 	}
 
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_IDX) {
 		RRR_DBG_3("msgdb fd %i recv IDX min age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
-		return __rrr_msgdb_server_idx(server, msg->msg_value, client->fd);
+		return __rrr_msgdb_server_idx(client, msg->msg_value);
 	}
 
 	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
@@ -951,6 +994,105 @@ uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
 ) {
 	return server->recv_count;
+}
+
+static void __rrr_msgdb_client_event_iteration (
+		int fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_msgdb_server_client *client = arg;
+
+	if (client->iteration_session == NULL) {
+		return;
+	}
+
+	int ret_tmp = 0;
+
+	if ((ret_tmp = __rrr_msgdb_server_client_iteration_session_process (
+			client
+	)) != 0) {
+		if (ret_tmp == RRR_MSGDB_INCOMPLETE) {
+			ret_tmp = 0;
+		}
+		else {
+			goto out_check_error;
+		}
+	}
+	else {
+		__rrr_msgdb_server_iteration_session_destroy(client->iteration_session);
+		client->iteration_session = NULL;
+		goto out_check_error;
+	}
+
+	if ((ret_tmp = __rrr_msgdb_server_send_msg_pong (client)) != 0) {
+		goto out_check_error;
+	}
+
+	out_check_error:
+	if (ret_tmp != 0) {
+		rrr_socket_client_collection_close_when_send_complete_by_fd (
+				client->server->clients,
+				client->fd
+		);
+		EVENT_REMOVE(client->iteration_event);
+	}
+}
+
+static int __rrr_msgdb_server_client_new (
+		struct rrr_msgdb_server_client **target,
+		struct rrr_msgdb_server *server,
+		int fd
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_msgdb_server_client *client = rrr_allocate_zero(sizeof(*client));
+	if (client == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	rrr_event_collection_init (&client->events, server->queue);
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&client->iteration_event,
+			&client->events,
+			__rrr_msgdb_client_event_iteration,
+			client,
+			50 * 1000 // 50 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to create iteration event in %s\n", __func__);
+		goto out_clear_events;
+	}
+
+	EVENT_ADD(client->iteration_event);
+
+	client->server = server;
+	client->fd = fd;
+
+	*target = client;
+
+	goto out;
+	out_clear_events:
+		rrr_event_collection_clear(&client->events);
+//	out_free:
+		rrr_free(client);
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_client_new_void (
+		void **target,
+		int fd,
+		void *arg
+) {
+	struct rrr_msgdb_server *server = arg;
+	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, server, fd);
 }
 
 int rrr_msgdb_server_new (
@@ -999,7 +1141,7 @@ int rrr_msgdb_server_new (
 			server->clients,
 			__rrr_msgdb_server_client_new_void,
 			__rrr_msgdb_server_client_destroy_void,
-			NULL,
+			server,
 			1 * 1024 * 1024, // 1 MB
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			__rrr_msgdb_server_read_msg_msg_callback,
@@ -1015,9 +1157,13 @@ int rrr_msgdb_server_new (
 		goto out_destroy_client_collection;
 	}
 
+	server->queue = queue;
+
 	*result = server;
 
 	goto out;
+//	out_clear_events:
+//		rrr_event_collection_clear(&server->events);
 	out_destroy_client_collection:
 		rrr_socket_client_collection_destroy(server->clients);
 	out_free_directory:

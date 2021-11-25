@@ -13,15 +13,11 @@ use bytes;
 my $debug = { };
 bless $debug, rrr::rrr_helper::rrr_debug;
 
-my $topic_counter = 0;
-
 sub process {
 	my $message = shift;
 
-	$message->{'topic'} = "topic/$topic_counter";
+	$message->{'topic'} = "topic/" . rand(10000000);
 	$message->send();
-
-	$topic_counter++;
 
 	return 1;
 }
