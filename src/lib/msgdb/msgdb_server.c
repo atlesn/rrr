@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../map.h"
 
 #define RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT 10000
+#define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 2
 
 struct rrr_msgdb_server {
 	char *directory;
@@ -163,6 +164,30 @@ static int __rrr_msgdb_server_mkdir_chdir (
 	return ret;
 }
 
+static int __rrr_msgdb_server_mkdir_chdir_levels (
+		const char *str
+) {
+	int ret = 0;
+
+	const char *pos = str;
+	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS && *pos != '\0'; i++) {
+		const char tmp[2] = { *pos, '\0' };
+		if ((ret = __rrr_msgdb_server_mkdir_chdir (tmp)) != 0) {
+			goto out;
+		}
+		pos++;
+	}
+
+	if (*pos == '\0') {
+		RRR_MSG_0("Filename '%s' too short in %s\n", str, __func__);
+		ret = RRR_MSGDB_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_msgdb_server_chdir_base (
 		struct rrr_msgdb_server *server
 ) {
@@ -180,6 +205,10 @@ static int __rrr_msgdb_server_put (
 	struct rrr_msg *msg_tmp = NULL;
 
 	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (sha256_str)) != 0) {
 		goto out;
 	}
 
@@ -261,7 +290,18 @@ static int __rrr_msgdb_server_del (
 		struct rrr_msgdb_server *server,
 		const char *str
 ) {
-	return __rrr_msgdb_server_del_raw(server, str);
+	int ret = 0;
+
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (str)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_msgdb_server_del_raw(server, str)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_msgdb_server_send_callback (
@@ -325,13 +365,11 @@ struct rrr_msgdb_server_idx_make_index_readdir_callback_data {
 };
 
 static int __rrr_msgdb_server_idx_make_index_readdir_callback (
-		struct dirent *entry,
 		const char *orig_path,
 		const char *resolved_path,
 		unsigned char type,
 		void *private_data
 ) {
-	(void)(entry);
 	(void)(resolved_path);
 
 	struct rrr_msgdb_server_idx_make_index_readdir_callback_data *callback_data = private_data;
@@ -369,7 +407,7 @@ static int __rrr_msgdb_server_idx_make_index (
 		response_target
 	};
 
-	if ((ret = rrr_readdir_foreach (".", __rrr_msgdb_server_idx_make_index_readdir_callback, &callback_data)) != 0) {
+	if ((ret = rrr_readdir_foreach_recursive (".", __rrr_msgdb_server_idx_make_index_readdir_callback, &callback_data)) != 0) {
 		goto out;
 	}
 
@@ -539,6 +577,10 @@ static int __rrr_msgdb_server_get (
 		goto out;
 	}
 
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (str)) != 0) {
+		goto out;
+	}
+
 	if ((ret = __rrr_msgdb_server_open_and_read_file (
 			&msg_tmp,
 			str,
@@ -563,6 +605,26 @@ static int __rrr_msgdb_server_get (
 	out:
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
+}
+
+static int __rrr_msgdb_server_verify_path (
+		const char *filename
+) {
+	const size_t filename_length = strlen(filename);
+
+	// Name must begin with for instance "a/b/"
+
+	if (filename_length <= RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2) {
+		return RRR_MSGDB_SOFT_ERROR;
+	}
+
+	for (size_t i = 1; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2; i += 2) {
+		if (filename[i] != '/') {
+			return RRR_MSGDB_SOFT_ERROR;
+		}
+	}
+
+	return RRR_MSGDB_OK;
 }
 
 static int __rrr_msgdb_server_iterate_by_age (
@@ -601,6 +663,10 @@ static int __rrr_msgdb_server_iterate_by_age (
 		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
 			RRR_MSG_0("Failed to extract string in %s\n", __func__);
 			goto out;
+		}
+
+		if (__rrr_msgdb_server_verify_path (path_tmp) != 0) {
+			goto delete;
 		}
 
 		// The delete function might have chdir-ed the last round,
