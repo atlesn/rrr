@@ -52,18 +52,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msgdb_server_client;
 
-#define RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS \
+#define RRR_MSGDB_SERVER_ITERATION_FILE_CALLBACK_ARGS \
 	int *do_delete, const char *path, struct rrr_array *results, void *arg
 
 #define RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS \
 	struct rrr_msgdb_server_client *client, struct rrr_array *results, void *arg
 
 struct rrr_msgdb_server_iteration_session {
-	struct rrr_array dirs_and_files;
+	struct rrr_array dirs;
 	uint32_t min_age_s;
 
 	struct rrr_array results; // Use by callback only
-	int (*callback)(RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS);
+	int (*file_callback)(RRR_MSGDB_SERVER_ITERATION_FILE_CALLBACK_ARGS);
 	int (*complete_callback)(RRR_MSGDB_SERVER_ITERATION_COMPLETE_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -72,7 +72,7 @@ static void __rrr_msgdb_server_iteration_session_destroy (
 		struct rrr_msgdb_server_iteration_session *session
 ) {
 	rrr_array_clear(&session->results);
-	rrr_array_clear(&session->dirs_and_files);
+	rrr_array_clear(&session->dirs);
 	rrr_free(session);
 }
 
@@ -256,14 +256,9 @@ static int __rrr_msgdb_server_put (
 }
 
 static int __rrr_msgdb_server_del_raw (
-		struct rrr_msgdb_server *server,
 		const char *str
 ) {
 	int ret = 0;
-
-	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
-		goto out;
-	}
 
 	if (unlink(str) != 0) {
 		if (errno == EISDIR) {
@@ -297,11 +292,15 @@ static int __rrr_msgdb_server_del (
 ) {
 	int ret = 0;
 
+	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
 	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (str)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_del_raw(server, str)) != 0) {
+	if ((ret = __rrr_msgdb_server_del_raw(str)) != 0) {
 		goto out;
 	}
 
@@ -362,32 +361,40 @@ static int __rrr_msgdb_server_send_msg_pong (
 	return rrr_msgdb_common_ctrl_msg_send_pong(client->fd, __rrr_msgdb_server_send_callback, client->server);
 }
 
-struct rrr_msgdb_server_idx_make_index_readdir_callback_data {
-	struct rrr_array *response_target;
-};
-
-static int __rrr_msgdb_server_idx_make_index_readdir_callback (
-		const char *orig_path,
-		const char *resolved_path,
-		unsigned char type,
-		void *private_data
+static int __rrr_msgdb_server_idx_make_directory_index_recurse (
+		struct rrr_array *response_target,
+		const char *path_tmp,
+		char *path_tmp_wpos,
+		int level
 ) {
-	(void)(resolved_path);
-
-	struct rrr_msgdb_server_idx_make_index_readdir_callback_data *callback_data = private_data;
-
 	int ret = 0;
 
-	if (strlen(orig_path) >= 2 && strncmp(orig_path, "./", 2) == 0) {
-		orig_path += 2;
-	}
+	char c = '0';
 
-	if (type == DT_DIR) {
-		// Ignore
-	}
-	else {
-		if ((ret = rrr_array_push_value_str_with_tag(callback_data->response_target, "file", orig_path)) != 0) {
-			goto out;
+	while (c <= 'f') {
+		sprintf(path_tmp_wpos, "%c/", c);
+
+		if (level == 1) {
+			if ((ret = rrr_array_push_value_str_with_tag(response_target, "dir", path_tmp)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			if ((ret = __rrr_msgdb_server_idx_make_directory_index_recurse (
+					response_target,
+					path_tmp,
+					path_tmp_wpos + 2,
+					level - 1
+			)) != 0) {
+				goto out;
+			}
+		}
+
+		if (c == '9') {
+			c = 'a';
+		}
+		else {
+			c++;
 		}
 	}
 
@@ -395,26 +402,17 @@ static int __rrr_msgdb_server_idx_make_index_readdir_callback (
 	return ret;
 }
 
-static int __rrr_msgdb_server_idx_make_index (
-		struct rrr_array *response_target,
-		struct rrr_msgdb_server *server
+static int __rrr_msgdb_server_idx_make_directory_index (
+		struct rrr_array *response_target
 ) {
-	int ret = 0;
+	char path_tmp[1 + RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2];
 
-	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
-		goto out;
-	}
-
-	struct rrr_msgdb_server_idx_make_index_readdir_callback_data callback_data = {
-		response_target
-	};
-
-	if ((ret = rrr_readdir_foreach_recursive (".", __rrr_msgdb_server_idx_make_index_readdir_callback, &callback_data)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	return __rrr_msgdb_server_idx_make_directory_index_recurse (
+		response_target,
+		path_tmp,
+		path_tmp,
+		RRR_MSGDB_SERVER_DIRECTORY_LEVELS
+	);
 }
 
 static int __rrr_msgdb_server_open_and_read_file (
@@ -609,6 +607,7 @@ static int __rrr_msgdb_server_get (
 	return ret;
 }
 
+/*
 static int __rrr_msgdb_server_verify_path (
 		const char *filename
 ) {
@@ -628,33 +627,103 @@ static int __rrr_msgdb_server_verify_path (
 
 	return RRR_MSGDB_OK;
 }
+*/
+
+struct rrr_msgdb_server_client_iteration_session_process_file_callback_data {
+	struct rrr_msgdb_server_client *client;
+	uint64_t time_end;
+};
+
+static int __rrr_msgdb_server_client_iteration_session_process_file_callback (
+		struct dirent *entry,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
+	struct rrr_msgdb_server_client_iteration_session_process_file_callback_data *callback_data = private_data;
+	struct rrr_msgdb_server_client *client = callback_data->client;;
+	struct rrr_msgdb_server_iteration_session *session = client->iteration_session;
+
+	(void)(entry);
+	(void)(resolved_path);
+
+	int ret = 0;
+
+	const uint64_t min_age_us = (uint64_t) session->min_age_s * 1000 * 1000;
+
+	char *msg_tmp = NULL;
+
+	if (type == DT_DIR) {
+		goto out;
+	}
+
+	if (strncmp (orig_path, "./", 2) == 0) {
+		orig_path += 2;
+	}
+
+	if (__rrr_msgdb_server_open_and_read_file (
+				(struct rrr_msg_msg **) &msg_tmp,
+				orig_path,
+				1, /* Head only */
+				NULL /* No topic to verify */
+	) != 0) {
+		RRR_MSG_0("Warning: msgdb failed to read header of '%s'. Deleting file.\n",
+				orig_path
+		);
+		goto delete;
+	}
+
+	if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, min_age_us)) {
+		int do_delete = 0;
+		if ((ret = session->file_callback(&do_delete, orig_path, &session->results, session->callback_arg)) != 0) {
+			goto out;
+		}
+		if (do_delete) {
+			goto delete;
+		}
+	}
+
+	goto out;
+	delete:
+		RRR_DBG_3("msgdb del '%s'\n",
+				orig_path
+		);
+		if (__rrr_msgdb_server_del_raw(orig_path) != 0) {
+			RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", orig_path);
+		}
+	out:
+		if (ret == 0 && rrr_time_get_64() > callback_data->time_end) {
+			ret = RRR_MSGDB_INCOMPLETE;
+		}
+		RRR_FREE_IF_NOT_NULL(msg_tmp);
+		return ret;
+}
 
 static int __rrr_msgdb_server_client_iteration_session_process (
 		struct rrr_msgdb_server_client *client
 ) {
-	int ret = 0;
-
 	struct rrr_msgdb_server *server = client->server;
 	struct rrr_msgdb_server_iteration_session *session = client->iteration_session;
 
-	const uint64_t min_age_us = (uint64_t) session->min_age_s * 1000 * 1000;
+	int ret = 0;
 
 	char *path_tmp = NULL;
-	char *msg_tmp = NULL;
 
 	uint64_t time_end = rrr_time_get_64() + 1 * 1000 * 1000; // 1 s
 
-	RRR_LL_ITERATE_BEGIN(&session->dirs_and_files, struct rrr_type_value);
+	struct rrr_msgdb_server_client_iteration_session_process_file_callback_data file_callback_data = {
+		client,
+		time_end
+	};
+
+	RRR_LL_ITERATE_BEGIN(&session->dirs, struct rrr_type_value);
 		if (rrr_time_get_64() > time_end) {
 			ret = RRR_MSGDB_INCOMPLETE;
 			goto out;
 		}
 
 		RRR_LL_ITERATE_SET_DESTROY();
-
-		if (!rrr_type_value_is_tag(node, "file")) {
-			RRR_LL_ITERATE_NEXT();
-		}
 
 		if (!RRR_TYPE_IS_BLOB(node->definition->type)) {
 			RRR_BUG("BUG: File path element was not of blob type in %s\n", __func__);
@@ -664,70 +733,41 @@ static int __rrr_msgdb_server_client_iteration_session_process (
 		}
 
 		RRR_FREE_IF_NOT_NULL(path_tmp);
-		RRR_FREE_IF_NOT_NULL(msg_tmp);
 
 		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
 			RRR_MSG_0("Failed to extract string in %s\n", __func__);
 			goto out;
 		}
 
-		if (__rrr_msgdb_server_verify_path (path_tmp) != 0) {
-			goto delete;
-		}
-
-		// The delete function might have chdir-ed the last round,
-		// ensure we are still in base directory.
 		if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
 			goto out;
 		}
 
-		if (__rrr_msgdb_server_open_and_read_file (
-				(struct rrr_msg_msg **) &msg_tmp,
-				path_tmp,
-				1, /* Head only */
-				NULL /* No topic to verify */
-		) != 0) {
-			RRR_MSG_0("Warning: msgdb failed to read header of '%s'. Deleting file.\n",
-					path_tmp
-			);
-			goto delete;
-		}
-
-		if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, min_age_us)) {
-			int do_delete = 0;
-			if ((ret = session->callback(&do_delete, path_tmp, &session->results, session->callback_arg)) != 0) {
+		if (rrr_type_value_is_tag(node, "dir")) {
+			if (__rrr_msgdb_server_chdir (path_tmp, 1) != 0) {
+				// Ignore
+				RRR_LL_ITERATE_NEXT();
+			}
+			if ((ret = rrr_readdir_foreach(".", __rrr_msgdb_server_client_iteration_session_process_file_callback, &file_callback_data)) != 0) {
 				goto out;
 			}
-			if (do_delete) {
-				goto delete;
-			}
 		}
-
-		// OK
-		RRR_LL_ITERATE_NEXT();
-
-		// Error / delete file
-		delete:
-		RRR_DBG_3("msgdb del '%s'\n",
-				path_tmp
-		);
-		if (__rrr_msgdb_server_del_raw(server, path_tmp) != 0) {
-			RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", path_tmp);
+		else {
+			RRR_BUG("BUG: directory tag not found in node in %s, make sure directory index only is provided\n", __func__);
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->dirs_and_files, 0; rrr_type_value_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->dirs, 0; rrr_type_value_destroy(node));
 
 	ret = session->complete_callback (client, &session->results, session->callback_arg);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(path_tmp);
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
 
 static int __rrr_msgdb_server_iteration_begin (
 		struct rrr_msgdb_server_client *client,
 		uint32_t min_age_s,
-		int (*callback)(int *do_delete, const char *path, struct rrr_array *results, void *arg),
+		int (*file_callback)(RRR_MSGDB_SERVER_ITERATION_FILE_CALLBACK_ARGS),
 		int (*complete_callback)(struct rrr_msgdb_server_client *client, struct rrr_array *results, void *arg),
 		void *callback_arg
 ) {
@@ -746,23 +786,19 @@ static int __rrr_msgdb_server_iteration_begin (
 	}
 
 	client->iteration_session->min_age_s = min_age_s;
-	client->iteration_session->callback = callback;
+	client->iteration_session->file_callback = file_callback;
 	client->iteration_session->complete_callback = complete_callback;
 	client->iteration_session->callback_arg = callback_arg;
 
-	RRR_DBG_3("msgdb generating index...\n");
-
-	if ((ret = __rrr_msgdb_server_idx_make_index (&client->iteration_session->dirs_and_files, client->server)) != 0) {
+	if ((ret = __rrr_msgdb_server_idx_make_directory_index (&client->iteration_session->dirs)) != 0) {
 		goto out;
 	}
-
-	RRR_DBG_3("msgdb generated index with %i entries\n", RRR_LL_COUNT(&client->iteration_session->dirs_and_files));
 
 	out:
 	return ret;
 }
 
-static int __rrr_msgdb_server_tidy_callback (RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS) {
+static int __rrr_msgdb_server_tidy_file_callback (RRR_MSGDB_SERVER_ITERATION_FILE_CALLBACK_ARGS) {
 	(void)(path);
 	(void)(arg);
 	(void)(results);
@@ -790,7 +826,7 @@ static int __rrr_msgdb_server_tidy (
 	if ((ret = __rrr_msgdb_server_iteration_begin (
 			client,
 			max_age_s,
-			__rrr_msgdb_server_tidy_callback,
+			__rrr_msgdb_server_tidy_file_callback,
 			__rrr_msgdb_server_tidy_complete_callback,
 			NULL
 	)) != 0) {
@@ -801,7 +837,7 @@ static int __rrr_msgdb_server_tidy (
 	return ret;
 }
 
-static int __rrr_msgdb_server_idx_callback (RRR_MSGDB_SERVER_ITERATION_CALLBACK_ARGS) {
+static int __rrr_msgdb_server_idx_callback (RRR_MSGDB_SERVER_ITERATION_FILE_CALLBACK_ARGS) {
 	(void)(arg);
 
 	*do_delete = 0;
