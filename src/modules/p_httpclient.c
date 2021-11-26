@@ -85,7 +85,8 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
 
-	struct rrr_msgdb_client_conn msgdb_conn;
+	struct rrr_msgdb_client_conn msgdb_conn_store;
+	struct rrr_msgdb_client_conn msgdb_conn_iterate;
 
 	rrr_setting_uint response_max_mb;
 	rrr_biglength response_max_size;
@@ -657,19 +658,21 @@ static int httpclient_final_callback_receive_json (
 
 #endif /* RRR_WITH_JSONC */
 
-struct httpclient_msgdb_poll_callback_data {
-	struct httpclient_data *data;
-	const uint64_t time_start;
-};
-
-static int httpclient_msgdb_poll_callback (struct rrr_msg_msg **msg, void *arg) {
-	struct httpclient_msgdb_poll_callback_data *callback_data = arg;
-	struct httpclient_data *data = callback_data->data;
+static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
 
 	int ret = 0;
 
 	struct rrr_msg_holder *entry = NULL;
 	char *topic_tmp = NULL;
+
+	if (positive_ack) {
+		goto out;
+	}
+	if (negative_ack) {
+		RRR_MSG_0("Warning: Failed to poll from msgdb in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_msg_msg_topic_get(&topic_tmp, *msg);
@@ -704,47 +707,70 @@ static int httpclient_msgdb_poll_callback (struct rrr_msg_msg **msg, void *arg) 
 		RRR_LL_APPEND(&data->from_msgdb_queue, entry);
 	}
 
+	httpclient_check_queues_and_activate_event_as_needed(data);
+
 	out:
 	if (entry != NULL) {
 		rrr_msg_holder_decref(entry);
 	}
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 
-	// Loop limit 1 second
-	return ret == 0
-		? rrr_time_get_64() - callback_data->time_start > 1 * 1000 * 1000
-			? RRR_MSGDB_HELPER_ITERATE_STOP
-			: 0
-		: ret
-	;
+	return ret;
 }
 
 static void httpclient_msgdb_poll (struct httpclient_data *data) {
-	struct httpclient_msgdb_poll_callback_data callback_data = {
-		data,
-		rrr_time_get_64()
-	};
-
 	if (rrr_msgdb_helper_iterate (
-			&data->msgdb_conn,
+			&data->msgdb_conn_iterate,
 			data->msgdb_socket,
 			data->thread_data,
 			httpclient_msgdb_poll_callback,
-			&callback_data
+			data
 	) != 0) {
 		RRR_MSG_0("Warning: Failed to poll message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
 }
 
+static int httpclient_msgdb_delete_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
+
+	(void)(msg);
+
+	if (negative_ack) {
+		RRR_MSG_0("Warning: Delete from msgdb failed in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
+	if (positive_ack) {
+		// OK
+	}
+
+	return 0;
+}
+
 static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
 	if (rrr_msgdb_helper_delete (
-			&data->msgdb_conn,
+			&data->msgdb_conn_store,
 			data->msgdb_socket,
 			data->thread_data,
-			msg
+			msg,
+			httpclient_msgdb_delete_delivery_callback,
+			data
 	) != 0) {
 		RRR_MSG_0("Warning: Failed to delete from message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
+}
+
+static int httpclient_msgdb_store_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
+
+	(void)(msg);
+	(void)(positive_ack);
+
+	if (negative_ack) {
+		RRR_MSG_0("Store to msgdb failed in httpclient instance %s, not safe to continue.\n", INSTANCE_D_NAME(data->thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		return 1;
+	}
+
+	return 0;
 }
 
 #define HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() \
@@ -759,10 +785,12 @@ static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr
 	}
 
 	return rrr_msgdb_helper_send_to_msgdb (
-			&data->msgdb_conn,
+			&data->msgdb_conn_store,
 			data->msgdb_socket,
 			data->thread_data,
-			(const struct rrr_msg_msg *) entry_locked->message
+			(const struct rrr_msg_msg *) entry_locked->message,
+			httpclient_msgdb_store_delivery_callback,
+			data
 	);
 }
 
@@ -2036,6 +2064,15 @@ static void httpclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 
 static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
+
+	RRR_DBG_1("httpclient instance %s from msgdb queue %i from senders queue %i low pri queue %i\n",
+		INSTANCE_D_NAME(thread_data),
+		RRR_LL_COUNT(&data->from_msgdb_queue),
+		RRR_LL_COUNT(&data->from_senders_queue),
+		RRR_LL_COUNT(&data->low_pri_queue)
+	);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
@@ -2082,7 +2119,6 @@ static void httpclient_event_msgdb_poll (
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
-		httpclient_check_queues_and_activate_event_as_needed(data);
 	}
 	else {
 		do_short_timeout = 1;
@@ -2125,7 +2161,8 @@ static void httpclient_data_cleanup(void *arg) {
 	if (data->http_client) {
 		rrr_http_client_destroy(data->http_client);
 	}
-	rrr_msgdb_client_close(&data->msgdb_conn);
+	rrr_msgdb_client_close(&data->msgdb_conn_store);
+	rrr_msgdb_client_close(&data->msgdb_conn_iterate);
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);

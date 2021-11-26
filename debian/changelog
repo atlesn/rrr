@@ -10,6 +10,7 @@ rrr (1.22-7) bullseye; urgency=medium
   * Improvements:
     * Files in message database stored in a tree structure based on their hash
       filename for performance.
+    * Asynchrounous operation in message DB for better performance with very large DBs
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of

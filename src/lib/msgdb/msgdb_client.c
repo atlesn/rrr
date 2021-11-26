@@ -72,122 +72,6 @@ static int __rrr_msgdb_client_await_ack_callback (
 	return RRR_MSGDB_OK;
 }
 
-static int __rrr_msgdb_client_await_ack (
-		int *positive_ack,
-		struct rrr_msgdb_client_conn *conn,
-		short expect_pong,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-) {
-	int ret = 0;
-
-	*positive_ack = 0;
-
-	uint64_t bytes_read = 0;
-	uint64_t bytes_read_prev = 0;
-
-	struct rrr_msgdb_client_await_callback_data callback_data = {0};
-
-	retry:
-
-	callback_data.flags = 0;
-
-	if ((ret = rrr_socket_read_message_split_callbacks (
-			&bytes_read,
-			&conn->read_sessions,
-			conn->fd,
-			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
-			0, // No ratelimit interval
-			0, // No ratelimit max bytes
-			NULL,
-			NULL,
-			NULL,
-			__rrr_msgdb_client_await_ack_callback,
-			NULL,
-			conn,
-			&callback_data
-	)) != 0) {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			if (wait_callback) {
-				if ((ret = wait_callback(wait_callback_arg)) != 0) {
-					goto out;
-				}
-			}
-			else if (bytes_read == bytes_read_prev) {
-				rrr_posix_usleep(50); // 50 us (schedule)
-			}
-			bytes_read_prev = bytes_read;
-			goto retry;
-		}
-		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
-		goto out;
-	}
-
-	if (callback_data.flags & RRR_MSGDB_CTRL_F_ACK && !expect_pong) {
-		*positive_ack = 1;
-	}
-	else if (callback_data.flags & RRR_MSGDB_CTRL_F_PONG) {
-		if (expect_pong) {
-			*positive_ack = 1;
-		}
-		else {
-			goto retry;
-		}
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_msgdb_client_await_ack (
-		int *positive_ack,
-		struct rrr_msgdb_client_conn *conn
-) {
-	return __rrr_msgdb_client_await_ack(positive_ack, conn, 0, NULL, NULL);
-}
-
-static int __rrr_msgdb_client_await_ack_pong (
-		struct rrr_msgdb_client_conn *conn
-) {
-	int ret = 0;
-
-	int positive_ack = 0;
-
-	if ((ret = __rrr_msgdb_client_await_ack (
-			&positive_ack,
-			conn,
-			1 /* Expect pong */,
-			NULL,
-			NULL
-	)) != 0) {
-		goto out;
-	}
-
-	if (!positive_ack) {
-		RRR_MSG_0("msgdb fd %i pong not received from server\n", conn->fd);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_msgdb_client_await_ack_with_wait_callback (
-		int *positive_ack,
-		struct rrr_msgdb_client_conn *conn,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-) {
-	return __rrr_msgdb_client_await_ack (
-			positive_ack,
-			conn,
-			0,
-			wait_callback,
-			wait_callback_arg
-	);
-}
-
 static int __rrr_msgdb_client_await_msg_callback (
 		struct rrr_msg_msg **message,
 		void *arg1,
@@ -204,27 +88,22 @@ static int __rrr_msgdb_client_await_msg_callback (
 	return 0;
 }
 
-int rrr_msgdb_client_await_msg (
+static int __rrr_msgdb_client_read (
+		short *positive_ack,
+		short *negative_ack,
 		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		uint64_t *bytes_read,
+		struct rrr_msgdb_client_conn *conn
 ) {
 	int ret = 0;
 
-	*result_msg = NULL;
-
-	uint64_t bytes_read = 0;
-	uint64_t bytes_read_prev = 0;
+	*positive_ack = 0;
+	*negative_ack = 0;
 
 	struct rrr_msgdb_client_await_callback_data callback_data = {0};
 
-	retry:
-
-	callback_data.flags = 0;
-
 	if ((ret = rrr_socket_read_message_split_callbacks (
-			&bytes_read,
+			bytes_read,
 			&conn->read_sessions,
 			conn->fd,
 			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
@@ -236,15 +115,62 @@ int rrr_msgdb_client_await_msg (
 			__rrr_msgdb_client_await_ack_callback,
 			NULL,
 			conn,
-			result_msg
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if (callback_data.flags & RRR_MSGDB_CTRL_F_ACK) {
+		*positive_ack = 1;
+	}
+	else if (callback_data.flags & RRR_MSGDB_CTRL_F_NACK) {
+		*negative_ack = 1;
+	}
+	else if (callback_data.flags & RRR_MSGDB_CTRL_F_PONG) {
+		// Ignore pong
+		ret = RRR_MSGDB_INCOMPLETE;
+	}
+	else if (callback_data.flags != 0) {
+		RRR_MSG_0("Unknown control flags %u from msgdb server in %s\n", callback_data.flags, __func__);
+		ret = 1;
+		goto out;
+	}
+	else {
+		*result_msg = callback_data.message;
+		callback_data.message = NULL;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(callback_data.message);
+	return ret;
+}
+
+int rrr_msgdb_client_await (
+		struct rrr_msgdb_client_conn *conn,
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	uint64_t bytes_read = 0;
+	uint64_t bytes_read_prev = 0;
+
+	short positive_ack = 0;
+	short negative_ack = 0;
+
+	retry:
+
+	if ((ret = __rrr_msgdb_client_read (
+			&positive_ack,
+			&negative_ack,
+			&msg_tmp,
+			&bytes_read,
+			conn
 	)) != 0) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			if (wait_callback) {
-				if ((ret = wait_callback(wait_callback_arg)) != 0) {
-					goto out;
-				}
-			}
-			else if (bytes_read == bytes_read_prev) {
+			if (bytes_read == bytes_read_prev) {
 				rrr_posix_usleep(50); // 50 us (schedule)
 			}
 			bytes_read_prev = bytes_read;
@@ -254,21 +180,16 @@ int rrr_msgdb_client_await_msg (
 		goto out;
 	}
 
-	if (callback_data.flags & RRR_MSGDB_CTRL_F_PONG) {
-		goto retry;
-	}
-	else if (*result_msg == NULL) {
+	if (!positive_ack && msg_tmp == NULL) {
 		RRR_DBG_3("msgdb fd %i no result\n", conn->fd);
 	}
 
+	ret = delivery_callback(&msg_tmp, positive_ack, negative_ack, delivery_callback_arg);
+
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
-
-struct rrr_msgdb_client_send_callback_data {
-	int (*wait_callback)(void *arg);
-	void *wait_callback_arg;
-};
 
 static int __rrr_msgdb_client_send_callback (
 		int fd,
@@ -276,15 +197,13 @@ static int __rrr_msgdb_client_send_callback (
 		rrr_length data_size,
 		void *arg
 ) {
-	struct rrr_msgdb_client_send_callback_data *callback_data = arg;
-	return rrr_socket_send_blocking (fd, *data, data_size, callback_data->wait_callback, callback_data->wait_callback_arg);
+	(void)(arg);
+	return rrr_socket_send_blocking (fd, *data, data_size, NULL, NULL);
 }
 
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
-		const struct rrr_msg_msg *msg,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
@@ -304,12 +223,12 @@ int rrr_msgdb_client_send (
 		send_start = rrr_time_get_64();
 	}
 
-	struct rrr_msgdb_client_send_callback_data callback_data = {
-		wait_callback,
-		wait_callback_arg
-	};
-
-	if ((ret = rrr_msgdb_common_msg_send (conn->fd, msg, __rrr_msgdb_client_send_callback, &callback_data)) != 0) {
+	if ((ret = rrr_msgdb_common_msg_send (
+			conn->fd,
+			msg,
+			__rrr_msgdb_client_send_callback,
+			NULL
+	)) != 0) {
 		goto out;
 	}
 
@@ -332,12 +251,12 @@ static int __rrr_msgdb_client_send_empty (
 	struct rrr_msg_msg *msg = NULL;
 
 	if ((ret = rrr_msg_msg_new_empty (
-		&msg,
-		MSG_TYPE_MSG,
-		MSG_CLASS_DATA,
-		rrr_time_get_64(),
-		0,
-		0
+			&msg,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			0,
+			0
 	)) != 0) {
 		goto out;
 	}
@@ -357,7 +276,7 @@ static int __rrr_msgdb_client_send_empty (
 
 	MSG_SET_TYPE(msg, type);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
@@ -366,215 +285,42 @@ static int __rrr_msgdb_client_send_empty (
 	return ret;
 }
 
-struct rrr_msgdb_client_wait_callback_data {
-	struct rrr_msgdb_client_conn *conn;
-	uint64_t prev_ping_time;
-	int (*wait_callback_final)(void *arg);
-	void *wait_callback_final_arg;
-};
-
-static int __rrr_msgdb_client_wait_callback (
-		void *arg
-) {
-	struct rrr_msgdb_client_wait_callback_data *callback_data = arg;
-
-	const uint64_t time_now = rrr_time_get_64();
-	if (time_now > callback_data->prev_ping_time + 1 * 1000 * 1000) {
-		callback_data->prev_ping_time = time_now;
-
-		struct rrr_msgdb_client_send_callback_data send_callback_data = {
-			NULL,
-			NULL
-		};
-
-		if (rrr_msgdb_common_ctrl_msg_send_ping (
-				callback_data->conn->fd,
-				__rrr_msgdb_client_send_callback,
-				&send_callback_data
-		) != 0) {
-			RRR_DBG_3("msgdb fd %i ping failed while waiting for ACK\n", callback_data->conn->fd);
-			return 1;
-		}
-	}
-
-	if (callback_data->wait_callback_final != NULL) {
-		return callback_data->wait_callback_final(callback_data->wait_callback_final_arg);
-	}
-	else {
-		rrr_posix_usleep(10 * 1000); // 10 ms
-	}
-
-	return 0;
-}
-
 int rrr_msgdb_client_cmd_idx (
-		struct rrr_array *target_paths,
 		struct rrr_msgdb_client_conn *conn,
-		uint32_t min_age_s,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		uint32_t min_age_s
 ) {
-	int ret = 0;
-
-	struct rrr_msg_msg *msg_tmp = NULL;
-
-	struct rrr_msgdb_client_send_callback_data callback_data = {
-		wait_callback,
-		wait_callback_arg
-	};
-
-	if ((ret = rrr_msgdb_common_ctrl_msg_send_idx (
+	return rrr_msgdb_common_ctrl_msg_send_idx (
 			conn->fd,
 			min_age_s,
 			__rrr_msgdb_client_send_callback,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_msgdb_client_await_msg (
-			&msg_tmp,
-			conn,
-			wait_callback,
-			wait_callback_arg
-	)) != 0 || msg_tmp == NULL) {
-		goto out;
-	}
-
-	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_array(&array_version_dummy, target_paths, msg_tmp)) != 0) {
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	return ret;
-}
-
-static int __rrr_msgdb_client_cmd_tidy_with_wait_callback (
-		struct rrr_msgdb_client_conn *conn,
-		uint32_t max_age_s,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-) {
-	int ret = 0;
-
-	struct rrr_msgdb_client_send_callback_data callback_data = {
-		wait_callback,
-		wait_callback_arg
-	};
-
-	if ((ret = rrr_msgdb_common_ctrl_msg_send_tidy (
-			conn->fd,
-			max_age_s,
-			__rrr_msgdb_client_send_callback,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	int positive_ack;
-	if ((ret = rrr_msgdb_client_await_ack_with_wait_callback (
-			&positive_ack,
-			conn,
-			wait_callback,
-			wait_callback_arg
-	)) != 0) {
-		goto out;
-	}
-
-	ret = positive_ack ? 0 : 1;
-
-	out:
-	return ret;
+			NULL
+	);
 }
 
 int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
 		uint32_t max_age_s
 ) {
-	struct rrr_msgdb_client_wait_callback_data callback_data = {
-		conn,
-		rrr_time_get_64(),
-		NULL,
-		NULL
-	};
-
-	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
-			conn,
+	return rrr_msgdb_common_ctrl_msg_send_tidy (
+			conn->fd,
 			max_age_s,
-			__rrr_msgdb_client_wait_callback,
-			&callback_data
-	);
-}
-
-int rrr_msgdb_client_cmd_tidy_with_wait_callback (
-		struct rrr_msgdb_client_conn *conn,
-		uint32_t max_age_s,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-) {
-	struct rrr_msgdb_client_wait_callback_data callback_data = {
-		conn,
-		rrr_time_get_64(),
-		wait_callback,
-		wait_callback_arg
-	};
-
-	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
-			conn,
-			max_age_s,
-			__rrr_msgdb_client_wait_callback,
-			&callback_data
+			__rrr_msgdb_client_send_callback,
+			NULL
 	);
 }
 
 int rrr_msgdb_client_cmd_get (
-		struct rrr_msg_msg **target,
 		struct rrr_msgdb_client_conn *conn,
 		const char *topic
 ) {
-	int ret = 0;
-
-	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_msgdb_client_await_msg (
-			target,
-			conn,
-			NULL,
-			NULL
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	return __rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic);
 }
 
 int rrr_msgdb_client_cmd_del (
 		struct rrr_msgdb_client_conn *conn,
 		const char *topic
 ) {
-	int ret = 0;
-
-	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
-		goto out;
-	}
-
-	int positive_ack;
-	if ((ret = rrr_msgdb_client_await_ack (
-		&positive_ack,
-		conn
-	)) != 0) {
-		goto out;
-	}
-
-	ret = positive_ack ? 0 : 1;
-
-	out:
-	return ret;
+	return __rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic);
 }
 
 static void __rrr_msgdb_client_event_periodic (
@@ -589,21 +335,12 @@ static void __rrr_msgdb_client_event_periodic (
 
 	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
 
-	struct rrr_msgdb_client_send_callback_data callback_data = {
-		NULL,
-		NULL
-	};
-
 	if (rrr_msgdb_common_ctrl_msg_send_ping (
 			conn->fd,
 			__rrr_msgdb_client_send_callback,
-			&callback_data
+			NULL
 	) != 0) {
 		RRR_DBG_3("msgdb fd %i ping failed\n", conn->fd);
-		goto out_error;
-	}
-
-	if (__rrr_msgdb_client_await_ack_pong (conn) != 0) {
 		goto out_error;
 	}
 
@@ -614,10 +351,61 @@ static void __rrr_msgdb_client_event_periodic (
 	rrr_msgdb_client_close(conn);
 }
 
+static void __rrr_msgdb_client_event_read (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_msgdb_client_conn *conn = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	short positive_ack = 0;
+	short negative_ack = 0;
+	struct rrr_msg_msg *result_msg = NULL;
+
+	int ret_tmp = 0;
+	uint64_t bytes_read_dummy = 0;
+
+	if ((ret_tmp = __rrr_msgdb_client_read (
+			&positive_ack,
+			&negative_ack,
+			&result_msg,
+			&bytes_read_dummy,
+			conn
+	)) != 0) {
+		ret_tmp &= ~(RRR_MSGDB_INCOMPLETE);
+		goto out;
+	}
+
+	if (result_msg != NULL) {
+		if (RRR_MSG_CTRL_FLAGS(result_msg) & RRR_MSGDB_CTRL_F_PONG) {
+			// Ignore PONG
+		}
+		else if ((ret_tmp = conn->delivery_callback (
+				&result_msg,
+				positive_ack,
+				negative_ack,
+				conn->delivery_callback_arg
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	if (ret_tmp != 0) {
+		rrr_msgdb_client_close(conn);
+	}
+	RRR_FREE_IF_NOT_NULL(result_msg);
+}
+
 int rrr_msgdb_client_open (
 		struct rrr_msgdb_client_conn *conn,
 		const char *path,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
 ) {
 	int ret = 0;
 
@@ -648,7 +436,23 @@ int rrr_msgdb_client_open (
 		}
 
 		EVENT_ADD(event);
+
+		if ((ret = rrr_event_collection_push_read (
+				&event,
+				&conn->events,
+				conn->fd,
+				__rrr_msgdb_client_event_read,
+				conn,
+				1 * 1000 * 1000 // 1 second
+		)) != 0) {
+			goto out_close;
+		}
+
+		EVENT_ADD(event);
 	}
+
+	conn->delivery_callback = delivery_callback;
+	conn->delivery_callback_arg = delivery_callback_arg;
 
 	RRR_DBG_3("msgdb open '%s' fd is %i\n", path, conn->fd);
 
@@ -664,7 +468,7 @@ int rrr_msgdb_client_open_simple (
 		struct rrr_msgdb_client_conn *conn,
 		const char *path
 ) {
-	return rrr_msgdb_client_open (conn, path, NULL);
+	return rrr_msgdb_client_open (conn, path, NULL, NULL, NULL);
 }
 
 void rrr_msgdb_client_close (
@@ -689,13 +493,21 @@ int rrr_msgdb_client_conn_ensure_with_callback (
 		const char *socket,
 		struct rrr_event_queue *queue,
 		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
 ) {
 	int ret = 0;
 
 	int retries = 1;
 	do {
-		if ((ret = rrr_msgdb_client_open (conn, socket, queue)) != 0) {
+		if ((ret = rrr_msgdb_client_open (
+				conn,
+				socket,
+				queue,
+				delivery_callback,
+				delivery_callback_arg
+		)) != 0) {
 			RRR_MSG_0("Connection to msgdb on socket '%s' failed\n",
 				socket);
 		}
