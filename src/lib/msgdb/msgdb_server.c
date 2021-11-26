@@ -525,34 +525,6 @@ static int __rrr_msgdb_server_open_and_read_file (
 	return ret;
 }
 
-static int __rrr_msgdb_server_quick_topic_get (
-		struct rrr_string_builder *topic,
-		const char *str
-) {
-	int ret = 0;
-	struct rrr_msg_msg *msg_tmp  = NULL;
-
-	if ((ret = __rrr_msgdb_server_open_and_read_file (
-			&msg_tmp,
-			str,
-			1 /* Head only */,
-			NULL /* No topic to verify */
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_string_builder_append_raw (
-			topic,
-			MSG_TOPIC_PTR(msg_tmp),
-			MSG_TOPIC_LENGTH(msg_tmp
-	))) != 0) {
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	return ret;
-}
 static int __rrr_msgdb_server_get_raw (
 		struct rrr_msgdb_server *server,
 		const char *str,
