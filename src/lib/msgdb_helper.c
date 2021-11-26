@@ -31,14 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msgdb/msgdb_client.h"
 #include "messages/msg_msg.h"
 
-static int __rrr_msgdb_helper_short_wait_callback (
-		void *arg
-) {
-	struct rrr_instance_runtime_data *thread_data = arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(thread_data));
-}
-
 static int __rrr_msgdb_helper_long_wait_callback (
 		void *arg
 ) {
@@ -69,7 +61,12 @@ static int __rrr_msgdb_helper_send_to_msgdb_callback_final (
 
 	MSG_SET_TYPE(msg_new,  MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg_new, __rrr_msgdb_helper_short_wait_callback, callback_data->thread_data)) != 0) {	
+	if ((ret = rrr_msgdb_client_send (
+			conn,
+			msg_new,
+			__rrr_msgdb_helper_long_wait_callback,
+			callback_data->thread_data
+	)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in %s, return from send was %i\n",
 			__func__, ret);
 		goto out;
