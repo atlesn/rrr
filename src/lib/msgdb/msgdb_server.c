@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event_collection.h"
 
 #define RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT 10000
-#define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 2
+#define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 3
 
 struct rrr_msgdb_server_client;
 
@@ -1024,6 +1024,7 @@ static void __rrr_msgdb_client_event_iteration (
 
 	int ret_tmp = 0;
 
+	uint64_t time_start = rrr_time_get_64();
 	if ((ret_tmp = __rrr_msgdb_server_client_iteration_session_process (client)) == 0) {
 		// Iteration complete
 		__rrr_msgdb_server_client_iteration_session_stop(client);
@@ -1039,6 +1040,9 @@ static void __rrr_msgdb_client_event_iteration (
 		);
 		EVENT_REMOVE(client->iteration_event);
 	}
+
+	RRR_DBG_1("msgdb fd %i iteration time %lu remaining directories %i\n",
+		client->fd, rrr_time_get_64() - time_start, client->iteration_session != NULL ? RRR_LL_COUNT(&client->iteration_session->dirs) : 0);
 }
 
 static int __rrr_msgdb_server_client_new (
