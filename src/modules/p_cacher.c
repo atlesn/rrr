@@ -48,6 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/msgdb/msgdb_common.h"
 
+#define RRR_CACHER_TIDY_INTERVAL_S 300
+
 struct cacher_data {
 	struct rrr_instance_runtime_data *thread_data;
 
@@ -826,7 +828,7 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 			&data->events,
 			cacher_event_tidy,
 			thread,
-			60 * 1000 * 1000 // 300 * 1000 * 1000 /* 5 minutes */
+			RRR_CACHER_TIDY_INTERVAL_S * 1000 * 1000
 	) != 0) {
 		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
