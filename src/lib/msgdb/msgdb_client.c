@@ -367,7 +367,9 @@ static void __rrr_msgdb_client_event_read (
 
 	int ret_tmp = 0;
 	uint64_t bytes_read_dummy = 0;
+	int max = 100;
 
+	again:
 	if ((ret_tmp = __rrr_msgdb_client_read (
 			&positive_ack,
 			&negative_ack,
@@ -379,18 +381,20 @@ static void __rrr_msgdb_client_event_read (
 		goto out;
 	}
 
-	if (result_msg != NULL) {
-		if (RRR_MSG_CTRL_FLAGS(result_msg) & RRR_MSGDB_CTRL_F_PONG) {
-			// Ignore PONG
-		}
-		else if ((ret_tmp = conn->delivery_callback (
-				&result_msg,
-				positive_ack,
-				negative_ack,
-				conn->delivery_callback_arg
-		)) != 0) {
-			goto out;
-		}
+	if (result_msg != NULL && RRR_MSG_CTRL_FLAGS(result_msg) & RRR_MSGDB_CTRL_F_PONG) {
+		// Ignore PONG
+	}
+	else if ((ret_tmp = conn->delivery_callback (
+			&result_msg,
+			positive_ack,
+			negative_ack,
+			conn->delivery_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	if (--max) {
+		goto again;
 	}
 
 	out:
