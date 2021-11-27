@@ -47,8 +47,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event.h"
 #include "../event/event_collection.h"
 
-#define RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT 10000
 #define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 3
+
+// The difference between these gives room for other operations
+// to take place during iteration, like communication with clients
+#define RRR_MSGDB_SERVER_ITERATION_INTERVAL_MS 200
+#define RRR_MSGDB_SERVER_ITERATION_MAX_MS 150
 
 struct rrr_msgdb_server_client;
 
@@ -324,13 +328,6 @@ static int __rrr_msgdb_server_send_callback (
 			data,
 			data_size
 	)) != 0) {
-		goto out;
-	}
-
-	if (send_chunk_count > RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT) {
-		RRR_MSG_0("msgdb fd %i send chunk limit of %i reached, soft error.\n",
-				fd, RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT);
-		ret = RRR_MSGDB_SOFT_ERROR;
 		goto out;
 	}
 
@@ -706,7 +703,7 @@ static int __rrr_msgdb_server_client_iteration_session_process (
 
 	char *path_tmp = NULL;
 
-	uint64_t time_end = rrr_time_get_64() + 1 * 1000 * 1000; // 1 s
+	uint64_t time_end = rrr_time_get_64() + RRR_MSGDB_SERVER_ITERATION_MAX_MS * 1000;
 
 	struct rrr_msgdb_server_client_iteration_session_process_file_callback_data file_callback_data = {
 		client,
@@ -1067,7 +1064,7 @@ static int __rrr_msgdb_server_client_new (
 			&client->events,
 			__rrr_msgdb_client_event_iteration,
 			client,
-			50 * 1000 // 50 ms
+			RRR_MSGDB_SERVER_ITERATION_INTERVAL_MS * 1000
 	)) != 0) {
 		RRR_MSG_0("Failed to create iteration event in %s\n", __func__);
 		goto out_clear_events;
