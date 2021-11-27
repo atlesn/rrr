@@ -1965,6 +1965,12 @@ Multiple instances of the Message DB should not use the same directory and the d
 The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
 .El
 
+.It msgdb_directory_levels=LEVELS
+The number of directory levels to use when storing files. Each file will be placed into a directory corresponding to the first letters of its name.
+A file beginning with 'af432...' will be placed in the directory 'a/f/' if LEVELS is set to be 2.
+Must be in the range 0 to 32 inclusive, defaults to 2.
+.El
+
 .SS incrementer (PA)
 Incrementer will append unique ID numbers to messages matching a specified topic filter.
 If wildcards are present in the filter, an separate ID counter will be used for each unique topic matching the filter.

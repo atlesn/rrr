@@ -56,6 +56,7 @@ struct msgdb_data {
 	struct rrr_instance_runtime_data *thread_data;
 	char *directory;
 	char *socket;
+	rrr_setting_uint directory_levels;
 };
 
 static void msgdb_data_cleanup(void *arg) {
@@ -84,10 +85,19 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 
 	if (data->directory == NULL) {
 		if ((ret = rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET)) <= 0) {
-			RRR_MSG_0("rrr_asprintf() failed in msgdb_parse_config\n");
+			RRR_MSG_0("rrr_asprintf() failed in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("msgdb_directory_levels", directory_levels, 2);
+
+	if (data->directory_levels > 32) {
+		RRR_MSG_0("Setting 'msgdb_directory_levels' out of range in msgdb instance %s, must be between 0 and 32 inclusive\n",
+			config->name);
+		ret = 1;
+		goto out;
 	}
 
 	out:
@@ -129,7 +139,13 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 
 	struct rrr_msgdb_server *msgdb = NULL;
 
-	if (rrr_msgdb_server_new(&msgdb, rrr_cmodule_worker_get_event_queue(worker), data->directory, data->socket) != 0) {
+	if (rrr_msgdb_server_new (
+			&msgdb,
+			rrr_cmodule_worker_get_event_queue(worker),
+			data->directory,
+			data->socket,
+			(unsigned int) data->directory_levels
+	) != 0) {
 		RRR_MSG_0("Could not start message db server in msgdb instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
 		goto out;

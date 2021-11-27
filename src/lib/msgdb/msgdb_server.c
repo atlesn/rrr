@@ -47,8 +47,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event.h"
 #include "../event/event_collection.h"
 
-#define RRR_MSGDB_SERVER_DIRECTORY_LEVELS 3
-
 // The difference between these gives room for other operations
 // to take place during iteration, like communication with clients
 #define RRR_MSGDB_SERVER_ITERATION_INTERVAL_MS 200
@@ -80,6 +78,7 @@ static void __rrr_msgdb_server_iteration_session_destroy (
 
 struct rrr_msgdb_server {
 	char *directory;
+	unsigned int directory_levels;
 	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
 	struct rrr_event_queue *queue;
@@ -177,12 +176,13 @@ static int __rrr_msgdb_server_mkdir_chdir (
 }
 
 static int __rrr_msgdb_server_mkdir_chdir_levels (
+		struct rrr_msgdb_server *server,
 		const char *str
 ) {
 	int ret = 0;
 
 	const char *pos = str;
-	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS && *pos != '\0'; i++) {
+	for (size_t i = 0; i < server->directory_levels && *pos != '\0'; i++) {
 		const char tmp[2] = { *pos, '\0' };
 		if ((ret = __rrr_msgdb_server_mkdir_chdir (tmp)) != 0) {
 			goto out;
@@ -220,7 +220,7 @@ static int __rrr_msgdb_server_put (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (sha256_str)) != 0) {
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (server, sha256_str)) != 0) {
 		goto out;
 	}
 
@@ -273,7 +273,10 @@ static int __rrr_msgdb_server_del_raw (
 				RRR_MSG_0("Could not remove directory '%s' in message db server: %s\n",
 					str, rrr_strerror(errno));
 				ret = RRR_MSGDB_SOFT_ERROR;
+				goto out;
 			}
+
+			RRR_DBG_3("msgdb rmdir %s\n", str);
 		}
 		else {
 			if (errno == ENOENT) {
@@ -284,6 +287,7 @@ static int __rrr_msgdb_server_del_raw (
 				RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
 					str, rrr_strerror(errno));
 				ret = RRR_MSGDB_SOFT_ERROR;
+				goto out;
 			}
 		}
 		goto out;
@@ -291,6 +295,16 @@ static int __rrr_msgdb_server_del_raw (
 
 	out:
 	return ret;
+}
+
+static int __rrr_msgdb_server_rmdir_raw (
+		const char *str
+) {
+	if (rmdir(str) == 0) {
+		RRR_DBG_3("msgdb rmdir %s\n", str);
+		return 0;
+	}
+	return 1;
 }
 
 static int __rrr_msgdb_server_del (
@@ -303,7 +317,7 @@ static int __rrr_msgdb_server_del (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (str)) != 0) {
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (server, str)) != 0) {
 		goto out;
 	}
 
@@ -369,6 +383,7 @@ static int __rrr_msgdb_server_idx_make_directory_index_recurse (
 ) {
 	int ret = 0;
 
+
 	char c = '0';
 
 	while (c <= 'f') {
@@ -403,16 +418,40 @@ static int __rrr_msgdb_server_idx_make_directory_index_recurse (
 }
 
 static int __rrr_msgdb_server_idx_make_directory_index (
+		struct rrr_msgdb_server *server,
 		struct rrr_array *response_target
 ) {
-	char path_tmp[1 + RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2];
+	int ret = 0;
 
-	return __rrr_msgdb_server_idx_make_directory_index_recurse (
-		response_target,
-		path_tmp,
-		path_tmp,
-		RRR_MSGDB_SERVER_DIRECTORY_LEVELS
-	);
+	char *path_tmp = NULL;
+
+	if (server->directory_levels == 0) {
+		if ((ret = rrr_array_push_value_str_with_tag(response_target, "dir", ".")) != 0) {
+			goto out;
+		}
+		goto out;
+	}
+
+	if ((path_tmp = rrr_allocate(1 + server->directory_levels * 2)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	*path_tmp = '\0';
+
+	if ((ret = __rrr_msgdb_server_idx_make_directory_index_recurse (
+			response_target,
+			path_tmp,
+			path_tmp,
+			(int) server->directory_levels
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(path_tmp);
+	return ret;
 }
 
 static int __rrr_msgdb_server_open_and_read_file (
@@ -581,7 +620,7 @@ static int __rrr_msgdb_server_get (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (str)) != 0) {
+	if ((ret = __rrr_msgdb_server_mkdir_chdir_levels (server, str)) != 0) {
 		goto out;
 	}
 
@@ -766,7 +805,7 @@ static int __rrr_msgdb_server_iteration_begin (
 	client->iteration_session->complete_callback = complete_callback;
 	client->iteration_session->callback_arg = callback_arg;
 
-	if ((ret = __rrr_msgdb_server_idx_make_directory_index (&client->iteration_session->dirs)) != 0) {
+	if ((ret = __rrr_msgdb_server_idx_make_directory_index (client->server, &client->iteration_session->dirs)) != 0) {
 		goto out;
 	}
 
@@ -1080,6 +1119,7 @@ static int __rrr_msgdb_server_client_new_void (
 
 static int __rrr_msgdb_server_make_path (
 		char **result,
+		struct rrr_msgdb_server *server,
 		const char *filename
 ) {
 	int ret = 0;
@@ -1089,14 +1129,14 @@ static int __rrr_msgdb_server_make_path (
 	char *path;
 	const size_t filename_length = strlen(filename);
 
-	if ((path = rrr_allocate(filename_length + RRR_MSGDB_SERVER_DIRECTORY_LEVELS + 1)) == NULL) {
+	if ((path = rrr_allocate(filename_length + server->directory_levels * 2 + 1)) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	size_t i = 0;
-	for (; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+	for (; i < server->directory_levels; i++) {
 		path[i * 2] = filename[i];
 		path[i * 2 + 1] = '/';
 	}
@@ -1110,18 +1150,19 @@ static int __rrr_msgdb_server_make_path (
 }
 
 static int __rrr_msgdb_server_make_directories (
+		struct rrr_msgdb_server *server,
 		const char *filename
 ) {
 	int ret = 0;
 
-	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+	for (size_t i = 0; i < server->directory_levels; i++) {
 		char dirname[2] = { filename[i], '\0' };
 		if ((ret = __rrr_msgdb_server_mkdir_chdir (dirname)) != 0) {
 			goto out;
 		}
 	}
 
-	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+	for (size_t i = 0; i < server->directory_levels; i++) {
 		if ((ret = __rrr_msgdb_server_chdir ("..", 0)) != 0) {
 			goto out;
 		}
@@ -1132,6 +1173,8 @@ static int __rrr_msgdb_server_make_directories (
 }
 
 struct rrr_msgdb_server_restructure_callback_data {
+	struct rrr_array *directories;
+	struct rrr_msgdb_server *server;
 	unsigned long long int restructure_count;
 };
 
@@ -1142,8 +1185,6 @@ static int __rrr_msgdb_server_restructure_callback (
 		void *private_data
 ) {
 	struct rrr_msgdb_server_restructure_callback_data *callback_data = private_data;
-
-	(void)(callback_data);
 
 	(void)(resolved_path);
 
@@ -1162,6 +1203,9 @@ static int __rrr_msgdb_server_restructure_callback (
 	const char *path = orig_path;
 
 	if (type == DT_DIR) {
+		if ((ret = rrr_array_push_value_str_with_tag (callback_data->directories, "dir", orig_path)) != 0) {
+			goto out;
+		}
 		goto out;
 	}
 
@@ -1175,13 +1219,13 @@ static int __rrr_msgdb_server_restructure_callback (
 	}
 
 	const size_t length = strlen(file_component);
-	if (length < RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2) {
+	if (length < callback_data->server->directory_levels * 2) {
 		RRR_MSG_0("Filename of '%s' was too short in msgdb during restructure, deleting file.\n", orig_path);
 		__rrr_msgdb_server_del_raw(orig_path);
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_make_path (&path_tmp, file_component)) != 0) {
+	if ((ret = __rrr_msgdb_server_make_path (&path_tmp, callback_data->server, file_component)) != 0) {
 		goto out;
 	}
 
@@ -1191,7 +1235,7 @@ static int __rrr_msgdb_server_restructure_callback (
 
 	RRR_DBG_3("msgdb restructure %s -> %s\n", orig_path, path_tmp);
 
-	if ((ret = __rrr_msgdb_server_make_directories (file_component)) != 0) {
+	if ((ret = __rrr_msgdb_server_make_directories (callback_data->server, file_component)) != 0) {
 		goto out;
 	}
 
@@ -1212,7 +1256,12 @@ static int __rrr_msgdb_server_restructure (
 ) {
 	int ret = 0;
 
+	struct rrr_array directories = {0};
+	char *path_tmp = NULL;
+
 	struct rrr_msgdb_server_restructure_callback_data callback_data = {
+		&directories,
+		server,
 		0
 	};
 
@@ -1226,9 +1275,26 @@ static int __rrr_msgdb_server_restructure (
 		goto out;
 	}
 
-	RRR_DBG_1("msgdb base directory '%s' restructuring complete, %llu files moved.\n", server->directory, callback_data.restructure_count);
+	unsigned long long int rmdir_count = 0;
+
+	// Delete any empty directories, iterate in reverse order
+	// to delete the innermost directories first
+	RRR_LL_ITERATE_BEGIN_REVERSE(&directories, struct rrr_type_value);
+		RRR_FREE_IF_NOT_NULL(path_tmp);
+		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
+			goto out;
+		}
+		if (__rrr_msgdb_server_rmdir_raw(path_tmp) == 0) {
+			rmdir_count++;
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_DBG_1("msgdb base directory '%s' restructuring complete, %llu files moved and %llu directories deleted.\n",
+		server->directory, callback_data.restructure_count, rmdir_count);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(path_tmp);
+	rrr_array_clear(&directories);
 	return ret;
 }
 
@@ -1236,7 +1302,8 @@ int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
 		struct rrr_event_queue *queue,
 		const char *directory,
-		const char *socket
+		const char *socket,
+		unsigned int directory_levels
 ) {
 	int ret = 0;
 
@@ -1294,18 +1361,23 @@ int rrr_msgdb_server_new (
 		goto out_destroy_client_collection;
 	}
 
+	if (directory_levels > 32) {
+		RRR_MSG_0("Directory levels out of range, must be between 0 and 32 inclusive.\n");
+		ret = 1;
+		goto out_destroy_client_collection;
+	}
+
+	server->queue = queue;
+	server->directory_levels = directory_levels;
+
 	if (__rrr_msgdb_server_restructure (server)) {
 		RRR_MSG_0("Warning: Restructure of directory tree %s failed, data may not be reachable.\n",
 			server->directory);
 	}
 
-	server->queue = queue;
-
 	*result = server;
 
 	goto out;
-//	out_clear_events:
-//		rrr_event_collection_clear(&server->events);
 	out_destroy_client_collection:
 		rrr_socket_client_collection_destroy(server->clients);
 	out_free_directory:
