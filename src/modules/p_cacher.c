@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
@@ -56,6 +57,8 @@ struct cacher_data {
 	struct rrr_msgdb_client_conn msgdb_conn_put;
 	struct rrr_msgdb_client_conn msgdb_conn_revive;
 	struct rrr_msgdb_client_conn msgdb_conn_tidy;
+
+	unsigned short tidy_in_progress;
 
 	char *msgdb_socket;
 	char *request_tag;
@@ -142,6 +145,11 @@ static int cacher_get_from_msgdb_delivery_callback (
 	if (negative_ack) {
 		// OK, message probably does not exist
 		return 0;
+	}
+
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
+		return 1;
 	}
 
 	return rrr_message_broker_write_entry (
@@ -495,7 +503,7 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
-	// Do not produce errors for message process failures, just drop them
+	// Do not produce errors for message process failures, just print warning and drop them
 
 	const struct rrr_instance_friend_collection *forward_to = NULL;
 
@@ -538,6 +546,8 @@ static int cacher_tidy_delivery_callback (
 				INSTANCE_D_NAME(data->thread_data));
 	}
 
+	data->tidy_in_progress = 0;
+
 	return 0;
 }
 
@@ -553,6 +563,8 @@ static void cacher_event_tidy (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data;
 
+	data->tidy_in_progress = 0;
+
 	if (data->message_ttl_seconds == 0) {
 		RRR_DBG_1("Periodic tidy in cacher instance %s: No TTL set, not performing msgdb tidy\n", INSTANCE_D_NAME(thread_data));
 	}
@@ -560,7 +572,7 @@ static void cacher_event_tidy (
 		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
 
 		rrr_msgdb_client_close(&data->msgdb_conn_tidy);
-
+	
 		int ret_tmp = 0;
 		if ((ret_tmp = rrr_msgdb_helper_tidy (
 				&data->msgdb_conn_tidy,
@@ -574,6 +586,8 @@ static void cacher_event_tidy (
 			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 			return;
 		}
+
+		data->tidy_in_progress = 1;
 	}
 
 	if (data->message_memory_ttl_seconds == 0) {
@@ -589,6 +603,16 @@ static void cacher_event_tidy (
 		RRR_DBG_1("cacher instance %s tidy memory cache completed, %i %s removed\n",
 				INSTANCE_D_NAME(data->thread_data), deleted_entries, (deleted_entries == 1 ? "message" : "messages"));
 	}
+}
+
+void cacher_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
+	struct rrr_thread *thread = callback_arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct cacher_data *data = thread_data->private_data;
+
+	(void)(is_paused);
+
+	*do_pause = data->tidy_in_progress;
 }
 
 static int cacher_revive_delivery_callback (
@@ -607,6 +631,11 @@ static int cacher_revive_delivery_callback (
 		RRR_MSG_0("Warning: cacher instance %s revive completed with error\n",
 				INSTANCE_D_NAME(data->thread_data));
 		return 0;
+	}
+
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
+		return 1;
 	}
 
 	struct cacher_broker_write_callback_data callback_data = { msg };
@@ -802,7 +831,11 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
 	EVENT_ADD(tidy_event);
+
+	// Run tidy once upon startup
+	EVENT_ACTIVATE(tidy_event);
 
 	if (data->revive_age_seconds > 0) {
 		rrr_event_handle revive_event;
@@ -819,8 +852,12 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 		EVENT_ADD(revive_event);
 	}
 
-	// Run tidy once upon startup
-	EVENT_ACTIVATE(tidy_event);
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			cacher_pause_check,
+			thread
+	);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
