@@ -64,8 +64,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
 #define RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT            100000
-#define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
-#define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            50000
+#define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_INTERVAL_S     30
+#define RRR_HTTPCLIENT_MSGDB_POLL_MAX                    50000
 #define RRR_HTTPCLIENT_INPUT_QUEUE_MAX                   500
 
 struct httpclient_transaction_data {
@@ -716,12 +716,13 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
 
-	if ( RRR_LL_COUNT(&data->low_pri_queue) > RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX ||
-	     RRR_LL_COUNT(&data->from_msgdb_queue) > RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX
+	if ( RRR_LL_COUNT(&data->low_pri_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX ||
+	     RRR_LL_COUNT(&data->from_msgdb_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX
 	) {
 		RRR_DBG_1("msgdb poll limit of %i reached in httpclient instance %s, aborting polling for now.\n",
-			RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX, INSTANCE_D_NAME(data->thread_data));
-		rrr_msgdb_client_close(&data->msgdb_conn_iterate);
+			RRR_HTTPCLIENT_MSGDB_POLL_MAX, INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_READ_EOF;
+		goto out;
 	}
 
 	out:
@@ -734,6 +735,7 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 }
 
 static void httpclient_msgdb_poll (struct httpclient_data *data) {
+	rrr_msgdb_client_close(&data->msgdb_conn_iterate);
 	if (rrr_msgdb_helper_iterate (
 			&data->msgdb_conn_iterate,
 			data->msgdb_socket,
@@ -1843,7 +1845,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_accept", http_header_accept);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_INTERVAL_S);
 
 	data->msgdb_poll_interval_us *= 1000 * 1000;
 
