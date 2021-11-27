@@ -2116,7 +2116,8 @@ static void httpclient_event_msgdb_poll (
 	// take some time before the msgdb is polled.
 	if ( rrr_http_client_active_transaction_count_get(data->http_client) == 0 &&
 	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
-	     RRR_LL_COUNT(&data->from_senders_queue) == 0
+	     RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
+	     RRR_LL_COUNT(&data->low_pri_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
 	}
