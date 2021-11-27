@@ -674,6 +674,13 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 		goto out;
 	}
 
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in httpclient instance %s\n",
+			__func__, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_msg_msg_topic_get(&topic_tmp, *msg);
 		RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
