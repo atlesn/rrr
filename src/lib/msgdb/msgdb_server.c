@@ -1361,8 +1361,8 @@ int rrr_msgdb_server_new (
 		goto out_destroy_client_collection;
 	}
 
-	if (directory_levels > 32) {
-		RRR_MSG_0("Directory levels out of range, must be between 0 and 32 inclusive.\n");
+	if (directory_levels > 4) {
+		RRR_MSG_0("Directory levels out of range, must be between 0 and 4 inclusive.\n");
 		ret = 1;
 		goto out_destroy_client_collection;
 	}

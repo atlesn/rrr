@@ -93,8 +93,8 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("msgdb_directory_levels", directory_levels, 2);
 
-	if (data->directory_levels > 32) {
-		RRR_MSG_0("Setting 'msgdb_directory_levels' out of range in msgdb instance %s, must be between 0 and 32 inclusive\n",
+	if (data->directory_levels > 4) {
+		RRR_MSG_0("Setting 'msgdb_directory_levels' out of range in msgdb instance %s, must be between 0 and 4 inclusive\n",
 			config->name);
 		ret = 1;
 		goto out;

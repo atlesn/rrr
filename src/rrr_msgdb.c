@@ -119,8 +119,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	if (levels_str != NULL) {
-		if ((ret = cmd_convert_integer_10 (levels_str, &levels) || levels < 0 || levels > 32) != 0) {
-			RRR_MSG_0("Syntax error in levels argument '%s', must be in the range 0-32 inclusive\n", levels_str);
+		if ((ret = cmd_convert_integer_10 (levels_str, &levels) || levels < 0 || levels > 4) != 0) {
+			RRR_MSG_0("Syntax error in levels argument '%s', must be in the range 0 to 4 inclusive\n", levels_str);
 			goto out_cleanup_signal;
 		}
 	}
