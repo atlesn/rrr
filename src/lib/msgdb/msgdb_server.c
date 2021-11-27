@@ -151,7 +151,10 @@ static int __rrr_msgdb_server_mkdir_chdir (
 ) {
 	int ret = 0;
 
-	if (mkdir(directory, 0777) != 0) {
+	if (mkdir(directory, 0777) == 0) {
+		RRR_DBG_3("msgdb mkdir '%s'\n", directory);
+	}
+	else {
 		if (errno != EEXIST) {
 			RRR_MSG_0("Could not create directory '%s' in message db server: %s\n",
 				directory, rrr_strerror(errno));
@@ -166,6 +169,8 @@ static int __rrr_msgdb_server_mkdir_chdir (
 		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_3("msgdb chdir '%s'\n", directory);
 
 	out:
 	return ret;
@@ -594,28 +599,6 @@ static int __rrr_msgdb_server_get (
 	out:
 	return ret;
 }
-
-/*
-static int __rrr_msgdb_server_verify_path (
-		const char *filename
-) {
-	const size_t filename_length = strlen(filename);
-
-	// Name must begin with for instance "a/b/"
-
-	if (filename_length <= RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2) {
-		return RRR_MSGDB_SOFT_ERROR;
-	}
-
-	for (size_t i = 1; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2; i += 2) {
-		if (filename[i] != '/') {
-			return RRR_MSGDB_SOFT_ERROR;
-		}
-	}
-
-	return RRR_MSGDB_OK;
-}
-*/
 
 struct rrr_msgdb_server_client_iteration_session_process_file_callback_data {
 	struct rrr_msgdb_server_client *client;
@@ -1095,6 +1078,160 @@ static int __rrr_msgdb_server_client_new_void (
 	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, server, fd);
 }
 
+static int __rrr_msgdb_server_make_path (
+		char **result,
+		const char *filename
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	char *path;
+	const size_t filename_length = strlen(filename);
+
+	if ((path = rrr_allocate(filename_length + RRR_MSGDB_SERVER_DIRECTORY_LEVELS + 1)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	size_t i = 0;
+	for (; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+		path[i * 2] = filename[i];
+		path[i * 2 + 1] = '/';
+	}
+
+	strcpy(path + i * 2, filename);
+
+	*result = path;
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_make_directories (
+		const char *filename
+) {
+	int ret = 0;
+
+	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+		char dirname[2] = { filename[i], '\0' };
+		if ((ret = __rrr_msgdb_server_mkdir_chdir (dirname)) != 0) {
+			goto out;
+		}
+	}
+
+	for (size_t i = 0; i < RRR_MSGDB_SERVER_DIRECTORY_LEVELS; i++) {
+		if ((ret = __rrr_msgdb_server_chdir ("..", 0)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_msgdb_server_restructure_callback_data {
+	unsigned long long int restructure_count;
+};
+
+static int __rrr_msgdb_server_restructure_callback (
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
+	struct rrr_msgdb_server_restructure_callback_data *callback_data = private_data;
+
+	(void)(callback_data);
+
+	(void)(resolved_path);
+
+	int ret = 0;
+
+	char *path_tmp = NULL;
+
+	if (strncmp (orig_path, "./", 2) == 0) {
+		orig_path += 2;
+	}
+
+	if (*orig_path == '.') {
+		goto out;
+	}
+
+	const char *path = orig_path;
+
+	if (type == DT_DIR) {
+		goto out;
+	}
+
+	const size_t path_length = strlen(path);
+	const char *file_component = path + path_length - 1;
+	while (*file_component != '/' && file_component >= path) {
+		file_component--;
+	}
+	if (*file_component == '/') {
+		file_component++;
+	}
+
+	const size_t length = strlen(file_component);
+	if (length < RRR_MSGDB_SERVER_DIRECTORY_LEVELS * 2) {
+		RRR_MSG_0("Filename of '%s' was too short in msgdb during restructure, deleting file.\n", orig_path);
+		__rrr_msgdb_server_del_raw(orig_path);
+		goto out;
+	}
+
+	if ((ret = __rrr_msgdb_server_make_path (&path_tmp, file_component)) != 0) {
+		goto out;
+	}
+
+	if (strcmp (orig_path, path_tmp) == 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("msgdb restructure %s -> %s\n", orig_path, path_tmp);
+
+	if ((ret = __rrr_msgdb_server_make_directories (file_component)) != 0) {
+		goto out;
+	}
+
+	if (rename (orig_path, path_tmp) != 0) {
+		RRR_MSG_0("Warning: Failed to restructure file %s in msgdb: %s\n", orig_path, path_tmp);
+		goto out;
+	}
+
+	callback_data->restructure_count++;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(path_tmp);
+	return ret;
+}
+
+static int __rrr_msgdb_server_restructure (
+		struct rrr_msgdb_server *server
+) {
+	int ret = 0;
+
+	struct rrr_msgdb_server_restructure_callback_data callback_data = {
+		0
+	};
+
+	RRR_DBG_1("msgdb base directory '%s' restructuring...\n", server->directory);
+
+	if ((ret = __rrr_msgdb_server_chdir_base (server)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_readdir_foreach_recursive(".", __rrr_msgdb_server_restructure_callback, &callback_data)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_1("msgdb base directory '%s' restructuring complete, %llu files moved.\n", server->directory, callback_data.restructure_count);
+
+	out:
+	return ret;
+}
+
 int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
 		struct rrr_event_queue *queue,
@@ -1155,6 +1292,11 @@ int rrr_msgdb_server_new (
 	if ((ret = rrr_socket_client_collection_listen_fd_push (server->clients, fd)) != 0) {
 		RRR_MSG_0("Could not push listen handle to client collection in rrr_msgdb_server_new\n");
 		goto out_destroy_client_collection;
+	}
+
+	if (__rrr_msgdb_server_restructure (server)) {
+		RRR_MSG_0("Warning: Restructure of directory tree %s failed, data may not be reachable.\n",
+			server->directory);
 	}
 
 	server->queue = queue;
