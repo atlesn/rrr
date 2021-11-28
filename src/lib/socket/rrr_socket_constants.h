@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_READ_INPUT_DEVICE        (1<<7)
 #define RRR_SOCKET_READ_USE_POLL            (1<<8)
 #define RRR_SOCKET_READ_FIRST_EOF_OK        (1<<9)
+#define RRR_SOCKET_READ_FLUSH_OVERSHOOT     (1<<10)
 
 #define RRR_SOCKET_CLIENT_HARD_TIMEOUT_S 30
 

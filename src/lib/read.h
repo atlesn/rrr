@@ -167,6 +167,27 @@ int rrr_read_message_using_callbacks (
 		),
 		void *functions_callback_arg
 );
+int rrr_read_message_using_callbacks_flush (
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
+		int (*function_get_target_size) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_complete_callback) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
+				void *private_arg
+		),
+		void (*function_read_session_remove) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		void *functions_callback_arg
+);
 
 struct rrr_array;
 struct rrr_array_tree;

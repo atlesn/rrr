@@ -110,7 +110,14 @@ static int __rrr_socket_read_poll (
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session_with_overshoot(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	return rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
+
+	struct rrr_read_session *read_session = rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
+
+	if (read_session != NULL) {
+		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes\n", read_session->fd, read_session->rx_overshoot_size);
+	}
+
+	return read_session;
 }
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
@@ -373,6 +380,8 @@ int rrr_socket_read_message_default (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
+	int ret = 0;
+
 	struct rrr_socket_read_message_default_callback_data callback_data = {0};
 
 	callback_data.fd = fd;
@@ -384,7 +393,7 @@ int rrr_socket_read_message_default (
 	callback_data.socket_read_flags = socket_read_flags;
 
 	// NOTE : Double check order of integer arguments, don't mix them up
-	return rrr_read_message_using_callbacks (
+	if ((ret = rrr_read_message_using_callbacks (
 			bytes_read,
 			read_step_initial,
 			read_step_max_size,
@@ -406,7 +415,31 @@ int rrr_socket_read_message_default (
 				: NULL
 			),
 			&callback_data
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if (socket_read_flags & RRR_SOCKET_READ_FLUSH_OVERSHOOT) {
+		do {
+			ret = rrr_read_message_using_callbacks_flush (
+				read_step_initial,
+				read_step_max_size,
+				read_max,
+				__rrr_socket_read_message_default_get_target_size,
+				__rrr_socket_read_message_default_complete_callback,
+				__rrr_socket_read_message_default_get_read_session_with_overshoot,
+				__rrr_socket_read_message_default_remove_read_session,
+				&callback_data
+			);
+		} while (ret == 0);
+
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
 }
 
 struct rrr_socket_read_message_split_callbacks_complete_callback_data {
