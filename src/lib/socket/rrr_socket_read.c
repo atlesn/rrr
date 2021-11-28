@@ -114,7 +114,7 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 	struct rrr_read_session *read_session = rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
 
 	if (read_session != NULL) {
-		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes\n", read_session->fd, read_session->rx_overshoot_size);
+		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes remaining\n", callback_data->fd, read_session->rx_overshoot_size);
 	}
 
 	return read_session;
