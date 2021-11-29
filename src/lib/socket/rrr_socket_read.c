@@ -392,6 +392,8 @@ int rrr_socket_read_message_default (
 	callback_data.complete_callback_arg = complete_callback_arg;
 	callback_data.socket_read_flags = socket_read_flags;
 
+	int read_count = 0;
+
 	// NOTE : Double check order of integer arguments, don't mix them up
 	if ((ret = rrr_read_message_using_callbacks (
 			bytes_read,
@@ -415,28 +417,34 @@ int rrr_socket_read_message_default (
 				: NULL
 			),
 			&callback_data
-	)) != 0) {
+	)) == 0) {
+		read_count++;
+	}
+	else {
 		goto out;
 	}
 
 	if (socket_read_flags & RRR_SOCKET_READ_FLUSH_OVERSHOOT) {
-		do {
-			ret = rrr_read_message_using_callbacks_flush (
-				read_step_initial,
-				read_step_max_size,
-				read_max,
-				__rrr_socket_read_message_default_get_target_size,
-				__rrr_socket_read_message_default_complete_callback,
-				__rrr_socket_read_message_default_get_read_session_with_overshoot,
-				__rrr_socket_read_message_default_remove_read_session,
-				&callback_data
-			);
-		} while (ret == 0);
-
-		if (ret != 0) {
-			goto out;
+		again:
+		if ((ret = rrr_read_message_using_callbacks_flush (
+			read_step_initial,
+			read_step_max_size,
+			read_max,
+			__rrr_socket_read_message_default_get_target_size,
+			__rrr_socket_read_message_default_complete_callback,
+			__rrr_socket_read_message_default_get_read_session_with_overshoot,
+			__rrr_socket_read_message_default_remove_read_session,
+			&callback_data
+		)) == 0) {
+			read_count++;
+			goto again;
 		}
 	}
+
+	RRR_DBG_7("fd %i read %i messages\n", fd, read_count);
+
+	// Always return OK if one or more messages was read. Only mask INCOMPLETE return value.
+	ret &= ~(RRR_READ_INCOMPLETE);
 
 	out:
 	return ret;
