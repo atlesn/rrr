@@ -39,7 +39,9 @@ void rrr_net_transport_ctx_touch (
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 ) {
-	EVENT_ACTIVATE(handle->event_read);
+	if (!EVENT_PENDING(handle->event_read_notify)) {
+		EVENT_ADD(handle->event_read_notify);
+	}
 }
 
 int rrr_net_transport_ctx_get_fd (

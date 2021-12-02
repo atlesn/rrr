@@ -431,6 +431,7 @@ static void __rrr_net_transport_event_read (
 	}
 
 	EVENT_REMOVE(handle->event_first_read_timeout);
+	EVENT_REMOVE(handle->event_read_notify);
 
 	ret_tmp = handle->transport->read_callback (
 		handle,
@@ -527,6 +528,18 @@ static int __rrr_net_transport_handle_events_setup_connected (
 			__rrr_net_transport_event_read,
 			handle,
 			handle->transport->soft_read_timeout_ms * 1000
+	)) != 0) {
+		goto out;
+	}
+
+	// READ NOTIFY
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&handle->event_read_notify,
+			&handle->events,
+			__rrr_net_transport_event_read,
+			handle,
+			1 * 1000 // 1 ms
 	)) != 0) {
 		goto out;
 	}

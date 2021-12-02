@@ -1,4 +1,4 @@
-rrr (1.22-11) bullseye; urgency=medium
+rrr (1.22-13) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -17,6 +17,8 @@ rrr (1.22-11) bullseye; urgency=medium
       connection errors
     * Deadlock in mmap channel due to incorrect use of lock() instead of trylock()
     * Lockup in cmodules in high traffic situations
+    * Sometimes temporary lockup in HTTP-server if there is not immediate downstream
+      response to an h2c upgrade.
 
  -- LBSdrift <lbsdrift@posten.local>  Thu, 18 Nov 2021 23:45:42 +0100
 
