@@ -1,4 +1,4 @@
-rrr (1.22-13) bullseye; urgency=medium
+rrr (1.22-14) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -6,6 +6,7 @@ rrr (1.22-13) bullseye; urgency=medium
     * Option in httpclient to silence error messages for PUT queries for a
       specified amount of time
     * New topic_filter_invert option
+    * Support message expiry interval in v5 in MQTT broker
 
   * Improvements:
     * Files in message database stored in a tree structure based on their hash
