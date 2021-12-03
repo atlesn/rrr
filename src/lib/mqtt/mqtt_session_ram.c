@@ -68,6 +68,12 @@ struct rrr_mqtt_session_ram {
 			struct rrr_mqtt_p_publish *publish
 	);
 
+	// Checks and modifications to perform before transmitting publish (broker handles expiry)
+	int (*pretransmit_method)(
+		int *drop,
+		struct rrr_mqtt_p_publish *publish
+	);
+
 	char *client_id_;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
@@ -240,8 +246,8 @@ static int __rrr_mqtt_session_ram_retain_buffer_write_callback (
 			ret = RRR_FIFO_WRITE_DROP;
 			goto out;
 		}
-		RRR_DBG_3("MQTT broker new RETAIN PUBLISH with topic '%s'\n",
-				callback_data->publish->topic);
+		RRR_DBG_3("MQTT broker new RETAIN PUBLISH with topic '%s' expiry interval is %" PRIu32 "\n",
+				callback_data->publish->topic, callback_data->publish->message_expiry_interval);
 		// No topic has matched, add entry to buffer. We are in fifo write context
 		goto out_do_write;
 	}
@@ -407,6 +413,54 @@ static int __rrr_mqtt_session_collection_ram_remove_postponed_will (
 	);
 }
 
+static int __rrr_mqtt_session_ram_check_publish_expired (
+		struct rrr_mqtt_p_publish *publish
+) {
+	if ( publish->message_expiry_interval != 0 &&
+	     publish->create_time + (uint64_t) publish->message_expiry_interval * 1000 * 1000 < rrr_time_get_64()
+	) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static int __rrr_mqtt_session_ram_update_publish_expiry_interval_properties ( 
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = 0;
+
+	if (publish->message_expiry_interval == 0) {
+		goto out;
+	}
+
+	const uint32_t old_interval = publish->message_expiry_interval;
+	const uint32_t diff_s = (uint32_t) ((rrr_time_get_64() - publish->create_time) / 1000 / 1000);
+	const uint32_t new_interval = diff_s >= old_interval ? 1 : old_interval - diff_s;
+
+	rrr_mqtt_property_collection_clear_by_id (&publish->properties, RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL);
+	if (rrr_mqtt_property_collection_add_uint32 (
+			&publish->properties,
+			RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
+			new_interval
+	) != 0) {
+		RRR_MSG_0("Could not set session expiry for PUBLISH packet in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_3("%s %p id %u expiry interval updated from %" PRIu32 " to %" PRIu32 "\n",
+			RRR_MQTT_P_GET_TYPE_NAME(publish),
+			publish,
+			RRR_MQTT_P_GET_IDENTIFIER(publish),
+			old_interval,
+			new_interval
+	);
+
+	out:
+	return ret;
+}
+
 // Used by broker
 static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_session_ram *ram_session,
@@ -416,6 +470,39 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 			(struct rrr_mqtt_session_collection *) ram_session->ram_data,
 			publish
 	);
+}
+
+// Used by broker
+static int __rrr_mqtt_session_ram_pretransmit_forward (
+		int *drop,
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = 0;
+
+	*drop = 0;
+
+	if (publish->message_expiry_interval == 0) {
+		goto out;
+	}
+
+	if (__rrr_mqtt_session_ram_check_publish_expired (publish)) {
+		RRR_DBG_3("Expired PUBLISH with topic '%s' during pretransmit, deleting.\n", publish->topic);
+		*drop = 1;
+		goto out;
+	}
+
+	// Only update the properties which is sent to the client. Preserve
+	// the original value in case it needs to be checked for expiration.
+	if (!publish->message_expiry_interval_properties_updated && (ret = __rrr_mqtt_session_ram_update_publish_expiry_interval_properties (
+			publish
+	)) != 0) {
+		goto out;
+	}
+
+	publish->message_expiry_interval_properties_updated = 1;
+
+	out:
+	return ret;
 }
 
 // Used by client
@@ -449,6 +536,20 @@ static int __rrr_mqtt_session_ram_delivery_local (
 
 	out:
 	return ret;
+}
+
+// Used by client
+static int __rrr_mqtt_session_ram_pretransmit_local (
+		int *drop,
+		struct rrr_mqtt_p_publish *publish
+) {
+	(void)(publish);
+
+	*drop = 0;
+
+	// Nothing to do
+
+	return 0;
 }
 
 static int __rrr_mqtt_session_collection_ram_create_and_add_session (
@@ -1017,6 +1118,23 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 	return ret;
 }
 
+static int __rrr_mqtt_session_collection_ram_maintain_retain_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
+	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
+
+	(void)(size);
+	(void)(ram_data);
+
+	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	if (__rrr_mqtt_session_ram_check_publish_expired(publish)) {
+		RRR_DBG_3("Expired RETAIN PUBLISH with topic '%s', deleting.\n", publish->topic);
+		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+	}
+
+	return ret;
+}
+
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
 ) {
@@ -1035,6 +1153,18 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	);
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from postponed will queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	// CHECK FOR EXPIRED RETAIN PUBLISH MESSAGES
+	ret = rrr_fifo_search(
+			&data->retain_buffer.buffer,
+			__rrr_mqtt_session_collection_ram_maintain_retain_callback,
+			data
+	);
+	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
+		RRR_MSG_0("Critical error from retain queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
 	}
@@ -1259,6 +1389,11 @@ static int __rrr_mqtt_session_ram_init (
 	ram_session->delivery_method = (local_delivery != 0
 			? __rrr_mqtt_session_ram_delivery_local
 			: __rrr_mqtt_session_ram_delivery_forward
+	);
+
+	ram_session->pretransmit_method = (local_delivery != 0
+			? __rrr_mqtt_session_ram_pretransmit_local
+			: __rrr_mqtt_session_ram_pretransmit_forward
 	);
 
 	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 " have will publish %p\n",
@@ -2207,17 +2342,6 @@ int __rrr_mqtt_session_ram_packet_ack_complete (
 	return ret;
 }
 
-int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain_ack_complete (
-		struct iterate_send_queue_callback_data *iterate_callback_data,
-		struct rrr_mqtt_p *packet
-) {
-	return __rrr_mqtt_session_ram_packet_ack_complete (
-			iterate_callback_data->ram_session,
-			packet,
-			iterate_callback_data->complete_publish_grace_time_usec
-	);
-}
-
 static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 		struct iterate_send_queue_callback_data *iterate_callback_data,
 		struct rrr_mqtt_p *packet
@@ -2274,9 +2398,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 		goto out;
 	out_ack_complete:
 		counters->maintain_ack_complete_counter++;
-		if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain_ack_complete (
-				iterate_callback_data,
-				packet
+		if ((ret = __rrr_mqtt_session_ram_packet_ack_complete (
+				iterate_callback_data->ram_session,
+				packet,
+				iterate_callback_data->complete_publish_grace_time_usec
 		)) != 0) {
 			goto out;
 		}
@@ -2348,6 +2473,17 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 	int ret = 0;
 
 	*packet_to_transmit = NULL;
+
+	{
+		int do_drop = 0;
+		if ((ret = iterate_callback_data->ram_session->pretransmit_method (&do_drop, publish)) != 0) {
+			goto out;
+		}
+		if (do_drop) {
+
+			goto out;
+		}
+	}
 
 	if (publish->qos_packets.puback != NULL ||
 		publish->qos_packets.pubcomp != NULL) {
@@ -2573,7 +2709,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	}
 
 	if (packet_to_transmit == NULL || !do_transmit) {
-		goto out;
+		goto out_check_delete_now;
 	}
 
 	++counters->sent_counter;
@@ -2589,12 +2725,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	// of return value.
 	packet->last_attempt = rrr_time_get_64();
 
-	if (do_delete_now) {
-		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
-	}
-
+	out_check_delete_now:
+		if (do_delete_now) {
+			ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+		}
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_mqtt_session_ram_iterate_send_queue (
@@ -2906,8 +3042,10 @@ static int __rrr_mqtt_p_queue_publish_from_retain_callback (
 		goto out;
 	}
 
+	new_publish->message_expiry_interval_properties_updated = 0;
 	new_publish->is_outbound = 1;
 	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(new_publish, 1);
+
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
 //		printf("Downgraded QOS from %u to %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish), subscription->qos_or_reason_v5);
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);

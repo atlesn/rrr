@@ -185,6 +185,10 @@ int rrr_mqtt_property_collection_calculate_size (
 		rrr_length *count,
 		const struct rrr_mqtt_property_collection *collection
 );
+void rrr_mqtt_property_collection_clear_by_id (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t identifier
+);
 void rrr_mqtt_property_collection_clear (
 		struct rrr_mqtt_property_collection *collection
 );

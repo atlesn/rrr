@@ -203,7 +203,6 @@ struct rrr_mqtt_p_payload {
     int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \
     void *release_packet_id_arg1;                              \
     void *release_packet_id_arg2;                              \
-    uint64_t create_time;                                      \
     char *_assembled_data;                                     \
     rrr_length assembled_data_size;                            \
     rrr_length received_size;                                  \
@@ -395,8 +394,11 @@ struct rrr_mqtt_p_publish {
 
 	struct rrr_mqtt_property_collection properties;
 
-	uint8_t payload_format_indicator;
+	uint64_t create_time;
 	uint32_t message_expiry_interval;
+	uint8_t message_expiry_interval_properties_updated;
+
+	uint8_t payload_format_indicator;
 	uint16_t topic_alias;
 	struct rrr_mqtt_property_collection subscription_ids;
 

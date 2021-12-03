@@ -607,6 +607,17 @@ int rrr_mqtt_property_collection_calculate_size (
 	return ret;
 }
 
+void rrr_mqtt_property_collection_clear_by_id (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t identifier
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
+		if (node->definition->identifier == identifier) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_mqtt_property_destroy(node));
+}
+
 void rrr_mqtt_property_collection_clear (
 		struct rrr_mqtt_property_collection *collection
 ) {
