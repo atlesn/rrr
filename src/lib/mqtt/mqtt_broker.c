@@ -540,7 +540,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
 			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME_S,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
-			0, // No local delivery (forward publish to other sessions)
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {

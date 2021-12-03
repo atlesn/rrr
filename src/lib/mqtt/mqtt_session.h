@@ -78,14 +78,14 @@ struct rrr_mqtt_session_properties {
 // the argument to get_stats() or maintain the numbers in some other fashion
 // and fill the provided struct field by field
 struct rrr_mqtt_session_collection_stats {
-		uint64_t active;
-		uint64_t total_created;
-		uint64_t total_deleted;
-		uint64_t total_publish_received;
-		uint64_t total_publish_delivered;
-		uint64_t total_publish_forwarded;
-		uint64_t total_publish_not_forwarded;
-		uint64_t in_memory_sessions;
+	uint64_t active;
+	uint64_t total_created;
+	uint64_t total_deleted;
+	uint64_t total_publish_received;
+	uint64_t total_publish_delivered;
+	uint64_t total_publish_forwarded;
+	uint64_t total_publish_not_forwarded;
+	uint64_t in_memory_sessions;
 };
 
 // Note that numbers might be lower than actual numbers. When sent_counter
@@ -93,12 +93,12 @@ struct rrr_mqtt_session_collection_stats {
 // will not get incremented. The buffer_size is however always the true
 // value, and is safer to use when throttling.
 struct rrr_mqtt_session_iterate_send_queue_counters {
-		unsigned int maintain_deleted_counter;
-		unsigned int maintain_ack_complete_counter;
-		unsigned int maintain_ack_missing_counter;
-		unsigned int incomplete_qos_publish_counter;
-		unsigned int sent_counter;
-		unsigned int buffer_size;
+	unsigned int maintain_deleted_counter;
+	unsigned int maintain_ack_complete_counter;
+	unsigned int maintain_ack_missing_counter;
+	unsigned int incomplete_qos_publish_counter;
+	unsigned int sent_counter;
+	unsigned int buffer_size;
 };
 
 // Session engines must implement these methods
@@ -171,7 +171,6 @@ struct rrr_mqtt_session_collection_methods {
 			uint32_t max_in_flight,
 			uint32_t complete_publish_grace_time,
 			int clean_session,
-			int local_delivery,
 			int *session_was_present
 	);
 

@@ -345,7 +345,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			&data->acl,
 			data->do_require_authentication,
 			data->do_disconnect_on_v31_publish_deny,
-			rrr_mqtt_session_collection_ram_new,
+			rrr_mqtt_session_collection_ram_new_broker,
 			NULL
 	) != 0) {
 		RRR_MSG_0("Could not create new mqtt broker\n");

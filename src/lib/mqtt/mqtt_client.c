@@ -531,7 +531,6 @@ int rrr_mqtt_client_connect (
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
 			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
-			1, // Local delivery (check received PUBLISH against subscriptions and deliver locally)
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {

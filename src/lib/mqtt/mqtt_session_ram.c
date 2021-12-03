@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -62,18 +62,6 @@ struct rrr_mqtt_session_ram {
 	// Iteration of garce queue only done as often as publish grace time
 	uint64_t prev_publish_grace_queue_iteration;
 
-	// Deliver PUBLISH locally (and check against subscriptions) or forward to other sessions
-	int (*delivery_method)(
-			struct rrr_mqtt_session_ram *ram_session,
-			struct rrr_mqtt_p_publish *publish
-	);
-
-	// Checks and modifications to perform before transmitting publish (broker handles expiry)
-	int (*pretransmit_method)(
-		int *drop,
-		struct rrr_mqtt_p_publish *publish
-	);
-
 	char *client_id_;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
@@ -85,9 +73,23 @@ struct rrr_mqtt_session_ram {
 	struct rrr_mqtt_p_publish *will_publish;
 };
 
+#define RRR_MQTT_SESSION_RAM_DELIVERY_METHOD_ARGS \
+    struct rrr_mqtt_session_ram *ram_session,     \
+    struct rrr_mqtt_p_publish *publish
+
+#define RRR_MQTT_SESSION_RAM_PRETRANSMIT_METHOD_ARGS \
+    int *drop,                                       \
+    struct rrr_mqtt_p_publish *publish
+
 struct rrr_mqtt_session_collection_ram_data {
 	RRR_MQTT_SESSION_COLLECTION_HEAD;
 	RRR_LL_HEAD(struct rrr_mqtt_session_ram);
+
+	// Deliver PUBLISH locally (and check against subscriptions) or forward to other sessions
+	int (*delivery_method)(RRR_MQTT_SESSION_RAM_DELIVERY_METHOD_ARGS);
+
+	// Checks and modifications to perform before transmitting publish (broker handles expiry)
+	int (*pretransmit_method)(RRR_MQTT_SESSION_RAM_PRETRANSMIT_METHOD_ARGS);
 
 	// Packets in this queue are retained and will be published upon new subscriptions matching
 	// topics.
@@ -1343,7 +1345,6 @@ static int __rrr_mqtt_session_ram_init (
 		uint32_t max_in_flight,
 		uint32_t complete_publish_grace_time,
 		int clean_session,
-		int local_delivery,
 		int *session_was_present
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
@@ -1366,16 +1367,6 @@ static int __rrr_mqtt_session_ram_init (
 		*session_was_present = 0;
 		__rrr_mqtt_session_ram_clean_final(ram_session);
 	}
-
-	ram_session->delivery_method = (local_delivery != 0
-			? __rrr_mqtt_session_ram_delivery_local
-			: __rrr_mqtt_session_ram_delivery_forward
-	);
-
-	ram_session->pretransmit_method = (local_delivery != 0
-			? __rrr_mqtt_session_ram_pretransmit_local
-			: __rrr_mqtt_session_ram_pretransmit_forward
-	);
 
 	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 " have will publish %p\n",
 			ram_session->session_properties.numbers.session_expiry,
@@ -1661,7 +1652,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 				publish->qos_packets.puback = NULL;
 			}
 			else if (publish->is_outbound == 0) {
-				if ((ret = ram_session->delivery_method(ram_session, publish)) != RRR_MQTT_SESSION_OK) {
+				if ((ret = ram_session->ram_data->delivery_method(ram_session, publish)) != RRR_MQTT_SESSION_OK) {
 					RRR_MSG_0("Error while delivering PUBLISH in __rrr_mqtt_session_ram_process_ack_callback A return was %i\n", ret);
 					ret = RRR_FIFO_GLOBAL_ERR;
 					goto out;
@@ -1715,7 +1706,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 				// NOTE !!!! DO NOT RELEASE QOS2 PACKET AGAIN !!!!
 			}
 			else if (publish->is_outbound == 0) {
-				if (ram_session->delivery_method(ram_session, publish) != RRR_MQTT_SESSION_OK) {
+				if (ram_session->ram_data->delivery_method(ram_session, publish) != RRR_MQTT_SESSION_OK) {
 					RRR_MSG_0("Error while delivering PUBLISH in __rrr_mqtt_session_ram_process_ack_callback B\n");
 					ret = RRR_FIFO_GLOBAL_ERR;
 					goto out;
@@ -2188,7 +2179,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 				publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
 		RRR_MQTT_P_INCREF(publish);
-		ram_session->delivery_method(ram_session, publish);
+		ram_session->ram_data->delivery_method(ram_session, publish);
 		RRR_MQTT_P_DECREF(publish);
 	}
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) {
@@ -2457,7 +2448,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 
 	{
 		int do_drop = 0;
-		if ((ret = iterate_callback_data->ram_session->pretransmit_method (&do_drop, publish)) != 0) {
+		if ((ret = iterate_callback_data->ram_session->ram_data->pretransmit_method (&do_drop, publish)) != 0) {
 			goto out;
 		}
 		if (do_drop) {
@@ -3216,7 +3207,12 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_unregister_will_publish
 };
 
-int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **sessions, void *arg) {
+static int __rrr_mqtt_session_collection_ram_new (
+		struct rrr_mqtt_session_collection **sessions,
+		int (*delivery_method)(RRR_MQTT_SESSION_RAM_DELIVERY_METHOD_ARGS),
+		int (*pretransmit_method)(RRR_MQTT_SESSION_RAM_PRETRANSMIT_METHOD_ARGS),
+		void *arg
+) {
 	int ret = 0;
 
 	if (arg != NULL) {
@@ -3246,6 +3242,9 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 	rrr_fifo_init_custom_refcount(&ram_data->publish_local_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 	rrr_fifo_init_custom_refcount(&ram_data->will_wait_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 
+	ram_data->delivery_method = delivery_method;
+	ram_data->pretransmit_method = pretransmit_method;
+
 	*sessions = (struct rrr_mqtt_session_collection *) ram_data;
 
 	goto out;
@@ -3257,3 +3256,23 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 	out:
 		return ret;
 }
+
+
+int rrr_mqtt_session_collection_ram_new_broker (struct rrr_mqtt_session_collection **sessions, void *arg) {
+	return __rrr_mqtt_session_collection_ram_new (
+			sessions,
+			__rrr_mqtt_session_ram_delivery_forward,
+			__rrr_mqtt_session_ram_pretransmit_forward,
+			arg
+	);
+}
+
+int rrr_mqtt_session_collection_ram_new_client (struct rrr_mqtt_session_collection **sessions, void *arg) {
+	return __rrr_mqtt_session_collection_ram_new (
+			sessions,
+			__rrr_mqtt_session_ram_delivery_local,
+			__rrr_mqtt_session_ram_pretransmit_local,
+			arg
+	);
+}
+
