@@ -642,6 +642,16 @@ static int __rrr_mqtt_session_collection_ram_iterate_retain_callback (
 		RRR_BUG("BUG: Publish with NULL payload in __rrr_mqtt_session_collection_ram_iterate_retain_callback\n");
 	}
 
+	if (__rrr_mqtt_session_ram_check_publish_expired(publish)) {
+		RRR_DBG_3("Found expired RETAIN PUBLISH with topic '%s', deleting. Expiry interval is %" PRIu32 " current age is %" PRIu64 ".\n",
+			publish->topic,
+			publish->message_expiry_interval,
+			(rrr_time_get_64() - publish->create_time) / 1000 / 1000
+		);
+		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+		goto out;
+	}
+
 	rrr_length match_count_dummy = 0;
 
 	ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
@@ -679,7 +689,7 @@ static int __rrr_mqtt_session_collection_ram_iterate_retain (
 			match_callback_arg
 	};
 
-	return rrr_fifo_read (
+	return rrr_fifo_search (
 			&data->retain_buffer.buffer,
 			__rrr_mqtt_session_collection_ram_iterate_retain_callback,
 			&callback_data
@@ -1118,23 +1128,6 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 	return ret;
 }
 
-static int __rrr_mqtt_session_collection_ram_maintain_retain_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
-	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
-
-	(void)(size);
-	(void)(ram_data);
-
-	int ret = RRR_FIFO_SEARCH_KEEP;
-
-	if (__rrr_mqtt_session_ram_check_publish_expired(publish)) {
-		RRR_DBG_3("Expired RETAIN PUBLISH with topic '%s', deleting.\n", publish->topic);
-		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
-	}
-
-	return ret;
-}
-
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
 ) {
@@ -1153,18 +1146,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	);
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from postponed will queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out;
-	}
-
-	// CHECK FOR EXPIRED RETAIN PUBLISH MESSAGES
-	ret = rrr_fifo_search(
-			&data->retain_buffer.buffer,
-			__rrr_mqtt_session_collection_ram_maintain_retain_callback,
-			data
-	);
-	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
-		RRR_MSG_0("Critical error from retain queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
 	}
