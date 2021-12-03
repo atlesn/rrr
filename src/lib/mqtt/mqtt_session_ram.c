@@ -656,15 +656,13 @@ static int __rrr_mqtt_session_collection_ram_iterate_retain_callback (
 
 	rrr_length match_count_dummy = 0;
 
-	ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
+	if ((ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
 			callback_data->subscriptions,
 			publish,
 			callback_data->match_callback,
 			callback_data->match_callback_arg,
 			&match_count_dummy
-	);
-
-	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+	)) != RRR_MQTT_SUBSCRIPTION_OK) {
 		RRR_MSG_0("Error %i while checking subscriptions against publish in __rrr_mqtt_session_collection_ram_iterate_retain_callback\n", ret);
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
@@ -806,12 +804,11 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		*session_present = 1;
 	}
 	else if (no_creation == 0) {
-		ret = __rrr_mqtt_session_collection_ram_create_and_add_session (
+		if ((ret = __rrr_mqtt_session_collection_ram_create_and_add_session (
 				&result,
 				data,
 				client_id
-		);
-		if (ret != RRR_MQTT_SESSION_OK) {
+		)) != RRR_MQTT_SESSION_OK) {
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out;
 		}
@@ -863,21 +860,19 @@ static int __rrr_mqtt_session_ram_release_packet_id (
 		void *arg2,
 		uint16_t packet_id
 ) {
-//	printf("Release packet ID A %u collection %p session %p\n", packet_id, arg1, arg2);
 	struct rrr_mqtt_session_collection *collection = arg1;
 	struct rrr_mqtt_session *session = arg2;
 	struct rrr_mqtt_session **session_to_find = &session;
+
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-//	printf("Release packet ID B\n");
-
 	rrr_mqtt_id_pool_release_id(&ram_session->id_pool, packet_id);
 
 	SESSION_RAM_DECREF();
-	return ret;
 
+	return ret;
 }
 
 struct receive_forwarded_publish_data {
@@ -915,7 +910,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	new_publish->packet_identifier = 0;
 
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
-//		printf("Downgraded QOS from %u to %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish), subscription->qos_or_reason_v5);
+		// Downgrade QOS
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
@@ -951,15 +946,13 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 	//        the standards (both V3.1.1 and V5), but the method here is the
 	//        least complex to implement.
 
-	ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
+	if ((ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
 			ram_session->subscriptions,
 			publish,
 			__rrr_mqtt_session_ram_receive_forwarded_publish_match_callback,
 			&callback_data,
 			match_count
-	);
-
-	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+	)) != RRR_MQTT_SUBSCRIPTION_OK) {
 		RRR_MSG_0("Error while matching publish packet against subscriptions in __rrr_mqtt_session_ram_receive_forwarded_publish, return was %i\n",
 				ret);
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -1026,8 +1019,10 @@ static int __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callba
 		RRR_BUG("Packet was not publish in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback\n");
 	}
 
-	ret = iterate_callback_data->callback(publish, iterate_callback_data->callback_arg);
-	if (ret != 0) {
+	if ((ret = iterate_callback_data->callback (
+			publish,
+			iterate_callback_data->callback_arg
+	)) != 0) {
 		RRR_MSG_0("Error from callback in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback\n");
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
 	}
@@ -1104,9 +1099,6 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 
 	uint64_t time_now = rrr_time_get_64();
 
-//	printf("Maintain publish %p planned expiry time %" PRIu64 " delay interval %u\n",
-//			publish, publish->planned_expiry_time, publish->will_delay_interval);
-
 	if (publish->planned_expiry_time == 0) {
 		// Delay interval is stored in seconds
 		publish->planned_expiry_time = time_now + (publish->will_delay_interval * 1000 * 1000);
@@ -1141,24 +1133,22 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	uint64_t time_now = rrr_time_get_64();
 
 	// CHECK POSTPONED WILL PUBLISH MESSAGES
-	ret = rrr_fifo_search(
+	if (((ret = rrr_fifo_search(
 			&data->will_wait_buffer.buffer,
 			__rrr_mqtt_session_collection_ram_maintain_postponed_will_callback,
 			data
-	);
-	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
+	)) & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from postponed will queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
 	}
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	ret = rrr_fifo_read_clear_forward_all (
+	if (((ret = rrr_fifo_read_clear_forward_all (
 			&data->publish_forward_buffer.buffer,
 			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
 			data
-	);
-	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
+	)) & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
@@ -1352,8 +1342,10 @@ static int __rrr_mqtt_session_ram_init (
 	SESSION_RAM_INCREF_OR_RETURN();
 
 	// The clone function clears the target first
-	ret = rrr_mqtt_session_properties_clone(&ram_session->session_properties, session_properties);
-	if (ret != 0) {
+	if ((ret = rrr_mqtt_session_properties_clone (
+			&ram_session->session_properties,
+			session_properties
+	)) != 0) {
 		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_ram_init\n");
 		goto out;
 	}
@@ -1459,17 +1451,24 @@ static int __rrr_mqtt_session_ram_update_properties (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-	ret = rrr_mqtt_session_properties_update(&ram_session->session_properties, session_properties, numbers_to_update);
-	if (ret != 0) {
+	if ((ret = rrr_mqtt_session_properties_update (
+			&ram_session->session_properties,
+			session_properties,
+			numbers_to_update
+	)) != 0) {
 		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_reset_properties\n");
 		goto out;
 	}
 
-	ret = __rrr_mqtt_session_ram_update_client_identifier(ram_session, is_v5);
+	if ((ret = __rrr_mqtt_session_ram_update_client_identifier (
+			ram_session,
+			is_v5
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	SESSION_RAM_DECREF();
-
 	return ret;
 }
 
@@ -1484,15 +1483,16 @@ static int __rrr_mqtt_session_ram_get_properties (
 	SESSION_RAM_INCREF_OR_RETURN();
 
 	// The clone function clears the target first
-	ret = rrr_mqtt_session_properties_clone(target, &ram_session->session_properties);
-	if (ret != 0) {
+	if ((ret = rrr_mqtt_session_properties_clone (
+			target,
+			&ram_session->session_properties
+	)) != 0) {
 		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_reset_properties\n");
 		goto out;
 	}
 
 	out:
 	SESSION_RAM_DECREF();
-
 	return ret;
 }
 
@@ -1513,7 +1513,7 @@ static int __rrr_mqtt_session_ram_heartbeat (
 
 struct ram_process_ack_callback_data {
 	struct rrr_mqtt_p *ack_packet;
-	unsigned int found;
+	unsigned int *found;
 	int is_outbound;
 	struct rrr_mqtt_session_ram *ram_session;
 };
@@ -1536,8 +1536,6 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 	// held by the PUBLISH packet with user count 1, and we DECREF this pointer
 	// if a QoS packet field is already filled
 	RRR_MQTT_P_INCREF(ack_packet);
-
-	// printf("Outbound %i vs %i ACK %s BUF %s\n", ack_callback_data->is_outbound, packet->is_outbound, RRR_MQTT_P_GET_TYPE_NAME(ack_packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC ||
@@ -1767,7 +1765,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 	}
 
 	out_increment_found:
-	ack_callback_data->found++;
+	(*ack_callback_data->found)++;
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(ack_packet);
@@ -1782,23 +1780,22 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
+	// The match count is always updated for the
+	// caller to assess, also upon errors.
+	*match_count = 0;
+
 	struct ram_process_ack_callback_data callback_data = {
 			packet,
-			0, // Initialize found counter
+			match_count,
 			is_outbound, // For bugchecks
 			ram_session
 	};
 
-	ret = rrr_fifo_read (
+	if ((ret = rrr_fifo_read (
 			(is_outbound ? &ram_session->to_remote_buffer.buffer : &ram_session->from_remote_buffer.buffer),
 			__rrr_mqtt_session_ram_process_ack_callback,
 			&callback_data
-	);
-
-	// We must always return match count also on errors
-	*match_count = callback_data.found;
-
-	if (ret != RRR_FIFO_OK) {
+	)) != 0) {
 		if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 			RRR_MSG_0("Internal error while searching send buffer in __rrr_mqtt_session_ram_process_iterate_ack\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -1821,14 +1818,13 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
-	ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+	if ((ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 			ram_session->subscriptions,
 			subscribe->subscriptions,
 			0, // <-- Don't include subscriptions with errors (QoS > 2)
 			new_subscription_callback,
 			new_subscription_callback_data
-	);
-	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+	)) != RRR_MQTT_SUBSCRIPTION_OK) {
 		RRR_MSG_0("Could not add subscriptions to session in __rrr_mqtt_session_ram_add_subscriptions\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
@@ -3019,7 +3015,7 @@ static int __rrr_mqtt_p_queue_publish_from_retain_callback (
 	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(new_publish, 1);
 
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
-//		printf("Downgraded QOS from %u to %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish), subscription->qos_or_reason_v5);
+		// Downgrade QOS
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
