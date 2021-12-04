@@ -2854,8 +2854,96 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_send_or_queue_packet (
+static int __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p *packet,
+		int allow_missing_originating_packet
+) {
+	int ret = 0;
+
+	int packet_was_outbound = 0;
+	switch (RRR_MQTT_P_GET_TYPE(packet)) {
+		case RRR_MQTT_P_TYPE_PUBACK:
+		case RRR_MQTT_P_TYPE_PUBREC:
+		case RRR_MQTT_P_TYPE_PUBCOMP:
+			break;
+		case RRR_MQTT_P_TYPE_PUBREL:
+			packet_was_outbound = 1;
+			break;
+		default:
+			RRR_BUG("Unknown packet %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
+	};
+
+	// Incref, make sure nothing bad happens
+	RRR_MQTT_P_INCREF(packet);
+	unsigned int match_count = 0;
+	ret = __rrr_mqtt_session_ram_process_ack (
+			&match_count,
+			ram_session,
+			packet,
+			packet_was_outbound,
+			allow_missing_originating_packet
+	);
+	RRR_MQTT_P_DECREF(packet);
+
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_queue_packet (
 		rrr_length *total_send_queue_count,
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find,
+		struct rrr_mqtt_p *packet
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+
+	switch (RRR_MQTT_P_GET_TYPE(packet)) {
+		case RRR_MQTT_P_TYPE_PUBLISH:
+			{
+				struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+				publish->packet_identifier = 0;
+				publish->is_outbound = 1;
+				RRR_DBG_3("Send new PUBLISH packet with topic '%s'\n", publish->topic);
+			}
+			break;
+		case RRR_MQTT_P_TYPE_SUBSCRIBE:
+			if ((ret = __rrr_mqtt_session_ram_add_subscriptions (
+					ram_session,
+					(struct rrr_mqtt_p_subscribe *) packet,
+					NULL,
+					NULL
+			)) != RRR_MQTT_SESSION_OK) {
+				goto out;
+			}
+			break;
+		case RRR_MQTT_P_TYPE_UNSUBSCRIBE:
+		case RRR_MQTT_P_TYPE_SUBACK:
+		case RRR_MQTT_P_TYPE_UNSUBACK:
+			break;
+		default:
+			RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
+	};
+
+	RRR_DBG_3("Send packet %p with identifier %u of type %s (queued for sending)\n",
+			packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
+
+	if (__rrr_mqtt_session_ram_fifo_write_simple (
+			&ram_session->to_remote_buffer.buffer,
+			packet
+	) != 0) {
+		RRR_MSG_0("Could not write to to_remote_buffer in %s\n", __func__);
+		ret = 1;
+	}
+
+	out:
+	*total_send_queue_count = rrr_fifo_get_entry_count(&ram_session->to_remote_buffer.buffer);
+	SESSION_RAM_DECREF();
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_send_packet_now (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p *packet,
@@ -2867,133 +2955,29 @@ static int __rrr_mqtt_session_ram_send_or_queue_packet (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
-		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
-		publish->packet_identifier = 0;
-		publish->is_outbound = 1;
-		RRR_DBG_3("Send new PUBLISH packet with topic '%s'\n", publish->topic);
-		goto out_write_to_buffer;
-	}
-	else if (RRR_MQTT_P_IS_ACK(packet)) {
-		RRR_DBG_3("Send ACK packet %p with identifier %u of type %s\n",
-				packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
-
-		int packet_was_outbound = 0;
-		switch (RRR_MQTT_P_GET_TYPE(packet)) {
-			case RRR_MQTT_P_TYPE_PUBACK:
-			case RRR_MQTT_P_TYPE_PUBREC:
-			case RRR_MQTT_P_TYPE_PUBCOMP:
-				break;
-			case RRR_MQTT_P_TYPE_SUBACK:
-			case RRR_MQTT_P_TYPE_UNSUBACK:
-				goto out_write_to_buffer;
-				break;
-			case RRR_MQTT_P_TYPE_PUBREL:
-				packet_was_outbound = 1;
-				break;
-			default:
-				RRR_BUG("Unknown ACK packet %u in %s\n", RRR_MQTT_P_GET_TYPE(packet), __func__);
-		};
-
-		// Incref, make sure nothing bad happens
-		RRR_MQTT_P_INCREF(packet);
-		unsigned int match_count = 0;
-		ret = __rrr_mqtt_session_ram_process_ack (
-				&match_count,
-				ram_session,
-				packet,
-				packet_was_outbound,
-				allow_missing_originating_packet
-		);
-		RRR_MQTT_P_DECREF(packet);
-
-		goto out_send_now;
-	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-		goto out_send_now;
-	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
-		if ((ret = __rrr_mqtt_session_ram_add_subscriptions (
-				ram_session,
-				(struct rrr_mqtt_p_subscribe *) packet,
-				NULL,
-				NULL
-		)) != RRR_MQTT_SESSION_OK) {
+	if (RRR_MQTT_P_IS_ACK(packet)) {
+		if ((ret = __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (ram_session, packet, allow_missing_originating_packet)) != 0) {
 			goto out;
 		}
-		goto out_write_to_buffer;
 	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE) {
-		// Changes take effect when we receive UNSUBACK
-		goto out_write_to_buffer;
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
+		// OK
+	}
+	else {
+		RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
 	}
 
-	RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
+	RRR_DBG_3("Send packet %p with identifier %u of type %s (send now)\n",
+			packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 
-	out_send_now:
-		if (send_now_callback == NULL) {
-			RRR_BUG("Send now callback was not set for packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
-		}
-		packet->last_attempt = rrr_time_get_64();
-		if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
-			RRR_MSG_0("Send now callback failed in %s\n", __func__);
-		}
-		goto out;
-
-	out_write_to_buffer:
-		if (__rrr_mqtt_session_ram_fifo_write_simple (
-				&ram_session->to_remote_buffer.buffer,
-				packet
-		) != 0) {
-			RRR_MSG_0("Could not write to to_remote_buffer in %s\n", __func__);
-			ret = 1;
-		}
-		goto out;
+	packet->last_attempt = rrr_time_get_64();
+	if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
+		RRR_MSG_0("Send now callback failed in %s\n", __func__);
+	}
 
 	out:
-		*total_send_queue_count = rrr_fifo_get_entry_count(&ram_session->to_remote_buffer.buffer);
-
-		SESSION_RAM_DECREF();
-
-		return ret;
-}
-
-static int __rrr_mqtt_session_ram_queue_packet (
-		rrr_length *total_send_queue_count,
-		struct rrr_mqtt_session_collection *collection,
-		struct rrr_mqtt_session **session_to_find,
-		struct rrr_mqtt_p *packet,
-		int allow_missing_originating_packet
-) {
-	return __rrr_mqtt_session_ram_send_or_queue_packet (
-			total_send_queue_count,
-			collection,
-			session_to_find,
-			packet,
-			allow_missing_originating_packet,
-			NULL,
-			NULL
-	);
-}
-
-static int __rrr_mqtt_session_ram_send_packet_now (
-		rrr_length *total_send_queue_count,
-		struct rrr_mqtt_session_collection *collection,
-		struct rrr_mqtt_session **session_to_find,
-		struct rrr_mqtt_p *packet,
-		int allow_missing_originating_packet,
-		int (*send_now_callback)(struct rrr_mqtt_p *packet, void *arg),
-		void *send_now_callback_arg
-) {
-	return __rrr_mqtt_session_ram_send_or_queue_packet (
-			total_send_queue_count,
-			collection,
-			session_to_find,
-			packet,
-			allow_missing_originating_packet,
-			send_now_callback,
-			send_now_callback_arg
-	);
+	SESSION_RAM_DECREF();
+	return ret;
 }
 
 struct session_ram_receive_new_subscription_callback_data {

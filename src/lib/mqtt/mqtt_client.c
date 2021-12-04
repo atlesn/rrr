@@ -104,11 +104,8 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transp
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
-	rrr_length send_queue_count_dummy = 0;
-
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet_now (
-					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) pingreq,
@@ -214,8 +211,7 @@ int rrr_mqtt_client_publish (
 					&send_queue_count,
 					data->mqtt_data.sessions,
 					session,
-					(struct rrr_mqtt_p *) publish,
-					0
+					(struct rrr_mqtt_p *) publish
 			),
 			goto out,
 			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
@@ -274,8 +270,7 @@ int rrr_mqtt_client_subscribe (
 					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
-					(struct rrr_mqtt_p *) subscribe,
-					0
+					(struct rrr_mqtt_p *) subscribe
 			),
 			goto out_decref,
 			" while sending SUBSCRIBE packet in rrr_mqtt_client_send_subscriptions\n"
@@ -334,8 +329,7 @@ int rrr_mqtt_client_unsubscribe (
 					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
-					(struct rrr_mqtt_p *) unsubscribe,
-					0
+					(struct rrr_mqtt_p *) unsubscribe
 			),
 			goto out_decref,
 			" while sending UNSUBSCRIBE packet in rrr_mqtt_client_unsubscribe\n"

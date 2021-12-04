@@ -224,12 +224,10 @@ struct rrr_mqtt_session_collection_methods {
 			rrr_length *total_send_queue_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet,
-			int allow_missing_originating_packet
+			struct rrr_mqtt_p *packet
 	);
 
 	int (*send_packet_now) (
-			rrr_length *total_send_queue_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet,
