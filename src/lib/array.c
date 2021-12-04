@@ -1251,35 +1251,25 @@ static int __rrr_array_message_append_to_array_callback (
 		void *arg
 ) {
 	struct rrr_array_message_append_to_array_callback_data *callback_data = arg;
+
 	int ret = 0;
 
 	struct rrr_type_value *template = NULL;
-	if ((ret = rrr_type_value_new (
+
+	if ((ret = rrr_type_value_new_and_unpack (
 			&template,
 			type,
+			data_start,
 			flags,
 			tag_length,
-			data_start,
 			total_length,
-			NULL,
-			element_count,
-			NULL,
-			total_length
+			element_count
 	)) != 0) {
-		RRR_MSG_0("Could not allocate value in __rrr_array_message_append_to_array_callbackn\n");
+		RRR_MSG_0("Failed to unpack value of type '%s' index %i of array message\n", type->identifier, RRR_LL_COUNT(callback_data->target_tmp));
 		goto out;
 	}
 
-	// Append immediately to array to manage memory
 	RRR_LL_APPEND(callback_data->target_tmp, template);
-
-	memcpy (template->data, data_start + tag_length, total_length);
-
-	if (template->definition->unpack(template) != 0) {
-		RRR_MSG_0("Error while converting endianess for type '%s' index %i of array message\n", type->identifier, RRR_LL_COUNT(callback_data->target_tmp));
-		ret = 1;
-		goto out;
-	}
 
 	out:
 	return ret;

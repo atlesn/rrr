@@ -317,6 +317,15 @@ int rrr_type_value_new (
 		const char *element_count_ref,
 		rrr_length stored_length
 );
+int rrr_type_value_new_and_unpack (
+		struct rrr_type_value **result,
+		const struct rrr_type_definition *type,
+		const char *data_start,
+		rrr_type_flags flags,
+		rrr_length tag_length,
+		rrr_length total_length,
+		rrr_length element_count
+);
 int rrr_type_value_new_simple (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,

@@ -1472,6 +1472,57 @@ int rrr_type_value_new (
 	return ret;
 }
 
+int rrr_type_value_new_and_unpack (
+		struct rrr_type_value **result,
+		const struct rrr_type_definition *type,
+		const char *data_start,
+		rrr_type_flags flags,
+		rrr_length tag_length,
+		rrr_length total_length,
+		rrr_length element_count
+) {
+	int ret = 0;
+
+	struct rrr_type_value *value = NULL;
+
+	if ((ret = rrr_type_value_new (
+			&value,
+			type,
+			flags,
+			tag_length,
+			data_start,
+			total_length,
+			NULL,
+			element_count,
+			NULL,
+			total_length
+	)) != 0) {
+		goto out;
+	}
+
+	memcpy (value->data, data_start + tag_length, total_length);
+
+	if (value->definition->unpack == NULL) {
+		RRR_MSG_0("Illegal type %s in %s, cannot be unpacked.\n", type->identifier, __func__);
+		ret = 1;
+		goto out_free;
+
+	}
+
+	if ((ret = value->definition->unpack(value)) != 0) {
+		RRR_MSG_0("Error while unpacking type %s in %s\n", type->identifier, __func__);
+		goto out_free;
+	}
+
+	*result = value;
+
+	goto out;
+	out_free:
+		rrr_type_value_destroy(value);
+	out:
+		return ret;
+}
+
 int rrr_type_value_new_simple (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
@@ -1757,35 +1808,18 @@ int rrr_type_value_with_tmp_do (
 
 	struct rrr_type_value *value_tmp = NULL;
 
-	if ((ret = rrr_type_value_new (
+	if ((ret = rrr_type_value_new_and_unpack (
 			&value_tmp,
 			type,
+			data_start,
 			flags,
 			tag_length,
-			data_start,
 			total_length,
-			NULL,
-			element_count,
-			NULL,
-			total_length
+			element_count
 	)) != 0) {
 		goto out;
 	}
 
-	memcpy (value_tmp->data, data_start + tag_length, total_length);
-
-	if (value_tmp->definition->unpack == NULL) {
-		RRR_MSG_0("Illegal type %s in %s, cannot be unpacked.\n", type->identifier, __func__);
-		ret = 1;
-		goto out;
-
-	}
-
-	if ((ret = value_tmp->definition->unpack(value_tmp)) != 0) {
-		RRR_MSG_0("Error while unpacking type %s in %s\n", type->identifier, __func__);
-		goto out;
-	}
-	
 	if ((ret = callback(value_tmp, callback_arg)) != 0) {
 		goto out;
 	}
