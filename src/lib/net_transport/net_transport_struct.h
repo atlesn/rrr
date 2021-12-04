@@ -96,7 +96,6 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS                                     \
     uint64_t *bytes_read,                                                       \
     struct rrr_net_transport_handle *handle,                                    \
-    const rrr_length read_attempts,                                             \
     const rrr_biglength read_step_initial,                                      \
     const rrr_biglength read_step_max_size,                                     \
     const rrr_biglength read_max_size,                                          \

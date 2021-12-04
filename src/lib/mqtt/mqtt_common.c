@@ -34,8 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 
-#define RRR_MQTT_COMMON_READ_PER_ROUND_MAX 1000
-
 struct rrr_event_queue *queue;
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
@@ -1172,7 +1170,6 @@ static int __rrr_mqtt_common_read_parse_handle (
 	if ((ret = rrr_mqtt_conn_iterator_ctx_read (
 			handle,
 			RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE,
-			RRR_MQTT_COMMON_READ_PER_ROUND_MAX,
 			__rrr_mqtt_common_handle_packet_callback,
 			data
 	)) != 0) {

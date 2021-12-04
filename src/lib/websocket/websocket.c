@@ -565,7 +565,6 @@ int __rrr_websocket_receive_callback_interpret_step (
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
-		rrr_length read_attempts,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
@@ -582,7 +581,6 @@ int rrr_websocket_transport_ctx_read_frames (
 
 	return rrr_net_transport_ctx_read_message (
 			handle,
-			read_attempts,
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,

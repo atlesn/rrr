@@ -205,7 +205,6 @@ int rrr_mqtt_conn_iterator_ctx_check_alive (
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_step_max_size,
-		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
 				struct rrr_mqtt_p *packet,

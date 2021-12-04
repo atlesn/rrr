@@ -507,6 +507,7 @@ int rrr_read_message_using_callbacks (
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
+		int flags,
 		struct rrr_read_session *read_session_ratelimit,
 		uint64_t ratelimit_interval_us,
 		rrr_biglength ratelimit_max_bytes,
@@ -540,7 +541,11 @@ int rrr_read_message_using_callbacks (
 		),
 		void *functions_callback_arg
 ) {
-	return __rrr_read_message_using_callbacks (
+	int ret = 0;
+
+	int read_count = 0;
+
+	if ((ret = __rrr_read_message_using_callbacks (
 			bytes_read,
 			read_step_initial,
 			read_step_max_size,
@@ -556,7 +561,36 @@ int rrr_read_message_using_callbacks (
 			function_read_session_remove,
 			function_get_socket_options,
 			functions_callback_arg
-	);
+	)) == 0) {
+		read_count++;
+	}
+	else {
+		goto out;
+	}
+
+	if (flags & RRR_READ_MESSAGE_FLUSH_OVERSHOOT) {
+		again:
+		if ((ret = rrr_read_message_using_callbacks_flush (
+				read_step_initial,
+				read_step_max_size,
+				read_max_size,
+				function_get_target_size,
+				function_complete_callback,
+				function_get_read_session_with_overshoot,
+				function_read_session_remove,
+				functions_callback_arg
+		)) == 0) {
+			read_count++;
+			goto again;
+		}
+	}
+
+	RRR_DBG_7("%i messages read in read framework\n", read_count);
+
+	ret &= ~(RRR_READ_INCOMPLETE);
+
+	out:
+	return ret;
 }
 
 int rrr_read_message_using_callbacks_flush (

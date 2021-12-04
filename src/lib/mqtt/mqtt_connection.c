@@ -836,7 +836,6 @@ static int __rrr_mqtt_conn_read_complete_callback (
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_step_max_size,
-		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
 				struct rrr_mqtt_p *packet,
@@ -854,29 +853,26 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			handler_callback_arg
 	};
 
-	do {
-		if ((ret = rrr_net_transport_ctx_read_message (
-				handle,
-				2, // Read two times this round
-				2, // Read only two bytes the first time
-				read_step_max_size,
-				0, // No max read size
-				100 * 1000, // 100 ms ratelimit interval
-				(1 * 1024 * 1024) / 20, // 1/20 MB
-				__rrr_mqtt_conn_read_get_target_size,
-				&callback_data,
-				__rrr_mqtt_conn_read_complete_callback,
-				&callback_data
-		)) != 0) {
-			if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
-				ret = RRR_SOCKET_READ_INCOMPLETE;
-			}
-			else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR);
-			}
-			goto out;
+	if ((ret = rrr_net_transport_ctx_read_message (
+			handle,
+			2, // Read only two bytes the first time
+			read_step_max_size,
+			0, // No max read size
+			100 * 1000, // 100 ms ratelimit interval
+			(1 * 1024 * 1024) / 20, // 1/20 MB
+			__rrr_mqtt_conn_read_get_target_size,
+			&callback_data,
+			__rrr_mqtt_conn_read_complete_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
+			ret = RRR_SOCKET_READ_INCOMPLETE;
 		}
-	} while (--read_per_round_max && ret == 0);
+		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
+			RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR);
+		}
+		goto out;
+	}
 
 	out:
 	return ret;

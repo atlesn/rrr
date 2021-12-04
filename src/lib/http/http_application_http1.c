@@ -1326,7 +1326,6 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	if ((ret = (rrr_websocket_transport_ctx_read_frames (
 			handle,
 			&http1->ws_state,
-			100,
 			4096,
 			1 * 1024 * 1024, // 1 MB
 			read_max_size,
@@ -1629,7 +1628,6 @@ static int __rrr_http_application_http1_tick (
 
 			ret = rrr_net_transport_ctx_read_message (
 						handle,
-						1,
 						4096,
 						1 * 1024 * 1024, // 1 MB
 						read_max_size,
