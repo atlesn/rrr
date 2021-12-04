@@ -709,10 +709,6 @@ The buffer collects all messages from all senders and wait for them to be collec
 .It buffer_ttl_seconds=SECONDS
 Any message received with timestamp older than the specified amount of seconds will be dropped. Useful in situations
 where messages circulate between modules.
-
-.It buffer_do_duplicate={yes|no}
-If set to yes, incoming messages will be duplicated so that one copy is received by every reader. If set to no,
-the readers will compete over the messages. Defaults to no. 
 .El
 .SS ipclient (PI)
 The ipclient module collects any messages from senders and sends them over the network to another 
