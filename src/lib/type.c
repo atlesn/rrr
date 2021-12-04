@@ -1748,30 +1748,51 @@ int rrr_type_value_allocate_and_import_raw (
 	return ret;
 }
 
-int rrr_type_value_raw_with_tmp_do (
+int rrr_type_value_with_tmp_do (
 		RRR_TYPE_RAW_FIELDS,
 		int (*callback)(const struct rrr_type_value *value, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	char *tag_tmp = NULL;
+	struct rrr_type_value *value_tmp = NULL;
 
-	if (tag_length > 0) {
-		if ((tag_tmp = rrr_allocate(tag_length + 1)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for temporary tag in rrr_type_value_raw_with_tmp_do\n");
-			ret = 1;
-			goto out;
-		}
-		memcpy(tag_tmp, data_start, tag_length);
-		tag_tmp[tag_length] = '\0';
+	if ((ret = rrr_type_value_new (
+			&value_tmp,
+			type,
+			flags,
+			tag_length,
+			data_start,
+			total_length,
+			NULL,
+			element_count,
+			NULL,
+			total_length
+	)) != 0) {
+		goto out;
 	}
 
-	RRR_TYPE_VALUE_TMP_CREATE(value_tmp, data_start + tag_length, tag_tmp, type, flags, tag_length, total_length, element_count);
+	memcpy (value_tmp->data, data_start + tag_length, total_length);
 
-	ret = callback(&value_tmp, callback_arg);
+	if (value_tmp->definition->unpack == NULL) {
+		RRR_MSG_0("Illegal type %s in %s, cannot be unpacked.\n", type->identifier, __func__);
+		ret = 1;
+		goto out;
+
+	}
+
+	if ((ret = value_tmp->definition->unpack(value_tmp)) != 0) {
+		RRR_MSG_0("Error while unpacking type %s in %s\n", type->identifier, __func__);
+		goto out;
+	}
+	
+	if ((ret = callback(value_tmp, callback_arg)) != 0) {
+		goto out;
+	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(tag_tmp);
+	if (value_tmp != NULL) {
+		rrr_type_value_destroy(value_tmp);
+	}
 	return ret;
 }

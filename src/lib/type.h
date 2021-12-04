@@ -224,11 +224,6 @@ struct rrr_type_value {
 
 #define RRR_TYPE_TAG_MAX RRR_LENGTH_MAX
 
-#define RRR_TYPE_VALUE_TMP_CREATE(name, data, tag, type, flags, tag_length, total_length, element_count)             \
-    struct rrr_type_value name = {                                                                             \
-        NULL, NULL, type, flags, tag_length, 0, NULL, total_length, element_count, NULL, (char *) tag, (char *) data \
-    }
-
 #define RRR_TYPE_DECLARE_EXTERN(name) \
 	extern const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name)
 
@@ -364,7 +359,7 @@ int rrr_type_value_allocate_and_import_raw (
 		rrr_length import_length,
 		rrr_length element_count
 );
-int rrr_type_value_raw_with_tmp_do (
+int rrr_type_value_with_tmp_do (
 		RRR_TYPE_RAW_FIELDS,
 		int (*callback)(const struct rrr_type_value *value, void *arg),
 		void *callback_arg

@@ -1126,15 +1126,15 @@ static int __rrr_array_message_iterate_values_callback (
 		void *arg
 ) {
 	struct rrr_array_message_iterate_values_callback_data *callback_data = arg;
-	return rrr_type_value_raw_with_tmp_do (
-		data_start,
-		type,
-		flags,
-		tag_length,
-		total_length,
-		element_count,
-		callback_data->callback,
-		callback_data->callback_arg
+	return rrr_type_value_with_tmp_do (
+			data_start,
+			type,
+			flags,
+			tag_length,
+			total_length,
+			element_count,
+			callback_data->callback,
+			callback_data->callback_arg
 	);
 }
 
