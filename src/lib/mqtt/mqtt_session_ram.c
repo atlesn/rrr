@@ -274,8 +274,8 @@ static int __rrr_mqtt_session_ram_retain_buffer_write_callback (
 				goto out;
 			}
 			else {
-				RRR_DBG_3("MQTT broker replacing RETAIN PUBLISH with topic '%s'\n",
-						callback_data->publish->topic);
+				RRR_DBG_3("MQTT broker replacing RETAIN PUBLISH with topic '%s' expiry interval is %" PRIu32 "\n",
+						callback_data->publish->topic, callback_data->publish->message_expiry_interval);
 				ret = RRR_FIFO_SEARCH_REPLACE|RRR_FIFO_SEARCH_FREE|RRR_FIFO_SEARCH_STOP;
 				goto out_do_write;
 			}
