@@ -7,6 +7,7 @@ rrr (1.22-14) bullseye; urgency=medium
       specified amount of time
     * New topic_filter_invert option
     * Support message expiry interval in v5 in MQTT broker
+    * Support for setting retain flag and expiry interval in MQTT client
 
   * Improvements:
     * Files in message database stored in a tree structure based on their hash

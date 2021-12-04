@@ -108,6 +108,7 @@ struct mqtt_client_data {
 	char *version_str;
 	char *client_identifier;
 	char *publish_values_from_array;
+	char *retain_tag;
 
 	char *username;
 	char *password;
@@ -159,6 +160,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
+	RRR_FREE_IF_NOT_NULL(data->retain_tag);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	RRR_FREE_IF_NOT_NULL(data->username);
@@ -196,48 +198,17 @@ static int mqttclient_message_data_to_payload (
 	return 0;
 }
 
-static int mqttclient_publish (
-		int *send_discouraged,
+static int mqttclient_publish_set_topic (
+		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data,
-		const struct rrr_msg_holder *entry
+		const struct rrr_msg_msg *reading
 ) {
-	const struct rrr_msg_msg *reading = (const struct rrr_msg_msg *) entry->message;
-
 	int ret = 0;
-
-	struct rrr_mqtt_p_publish *publish = NULL;
-
-	char *payload = NULL;
-	rrr_u32 payload_size = 0;
-
-	struct rrr_array array_tmp = {0};
-	struct rrr_msg_msg *msg_copy = NULL;
-
-	RRR_DBG_3 ("MQTT client %s: Result from input queue: timestamp %" PRIu64 ", creating PUBLISH\n",
-			INSTANCE_D_NAME(data->thread_data), reading->timestamp);
-
-	if (data->mqtt_client_data->protocol_version == NULL) {
-		RRR_MSG_0("Protocol version not yet set in MQTT client instance %s mqttclient_publish while sending PUBLISH\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, data->mqtt_client_data->protocol_version);
-	if (publish == NULL) {
-		RRR_MSG_0("Could not allocate PUBLISH in mqttclient_publish of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
-	publish->payload = NULL;
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 
 	if (MSG_TOPIC_LENGTH(reading) > 0 && *((const char *) MSG_TOPIC_PTR(reading)) == '\0') {
-		RRR_BUG("BUG: Topic first character value was '0' in mqttclient_publish\n");
+		RRR_BUG("BUG: Topic first character value was '0' in %s\n", __func__);
 	}
 
 	if (data->do_prepend_publish_topic) {
@@ -245,7 +216,7 @@ static int mqttclient_publish (
 			RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and only a prepend topic is set in configuration. Dropping message.\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
-			goto out_free;
+			goto out;
 		}
 
 		// NOTE : Locally freed variable. Memory error is printed further down if we fail.
@@ -270,30 +241,47 @@ static int mqttclient_publish (
 		}
 		else {
 			if (data->do_force_publish_topic != 0) {
-				RRR_BUG("do_force_publish_topic was 1 but topic was not set in mqttclient_publish of mqttclient\n");
+				RRR_BUG("do_force_publish_topic was 1 but topic was not set in %s\n", __func__);
 			}
 			RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
-			goto out_free;
+			goto out;
 		}
 	}
 
 	if (publish->topic == NULL) {
-		RRR_MSG_0("Could not allocate topic in mqttclient_publish of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Could not allocate topic in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
-		goto out_free;
+		goto out;
 	}
 
-	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, data->qos);
+	out:
+	return ret;
+}
+
+static int mqttclient_publish_add_payload (
+		struct rrr_mqtt_p_publish *publish,
+		struct mqtt_client_data *data,
+		const struct rrr_msg_msg *reading
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_copy = NULL;
+	char *payload = NULL;
+	rrr_u32 payload_size = 0;
+	struct rrr_array array_tmp = {0};
+
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
+	publish->payload = NULL;
 
 	if (data->do_publish_rrr_message != 0) {
 		if ((msg_copy = rrr_msg_msg_duplicate(reading)) == NULL) {
-			RRR_MSG_0("Could not copy message in mqttclient_publish instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_0("Could not copy message in %s of mqttclient_publish instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
-			goto out_free;
+			goto out;
 		}
 
 		rrr_u32 msg_size = MSG_TOTAL_SIZE(msg_copy);
@@ -310,10 +298,10 @@ static int mqttclient_publish (
 				RRR_MESSAGE_MIME_TYPE,
 				strlen(RRR_MESSAGE_MIME_TYPE)
 		) != 0) {
-			RRR_MSG_0("Could not set content-type of publish in mqttclient_publish of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_0("Could not set content-type of publish in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
-			goto out_free;
+			goto out;
 		}
 		payload = (char *) msg_copy;
 		payload_size = msg_size;
@@ -321,10 +309,10 @@ static int mqttclient_publish (
 	}
 	else if (data->publish_values_from_array != NULL) {
 		if (!MSG_IS_ARRAY(reading)) {
-			RRR_MSG_0("Received message was not an array while mqtt_publish_values_from_array was set in mqttclient_publish of MQTT client instance %s\n",
+			RRR_MSG_0("Received message was not an array while mqtt_publish_values_from_array was set in MQTT client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
-			goto out_free;
+			goto out;
 		}
 
 		const struct rrr_map *tags_to_use = (*(data->publish_values_from_array) == '*'
@@ -334,10 +322,10 @@ static int mqttclient_publish (
 
 		uint16_t array_version_dummy;
 		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, reading) != 0) {
-			RRR_MSG_0("Could not create temporary array collection in mqttclient_publish of MQTT client instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_0("Could not create temporary array collection in %s of MQTT client instance %s\n",
+					__func__, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
-			goto out_free;
+			goto out;
 		}
 
 		int found_tags = 0;
@@ -354,7 +342,7 @@ static int mqttclient_publish (
 				RRR_MSG_0("Could not create payload data from selected array tags in MQTT client instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				ret = 1;
-				goto out_free;
+				goto out;
 			}
 
 			if (payload_size_tmp > UINT32_MAX) {
@@ -364,7 +352,7 @@ static int mqttclient_publish (
 					(unsigned long long) UINT32_MAX
 				);
 				ret = 1;
-				goto out_free;
+				goto out;
 			}
 			payload_size = (rrr_u32) payload_size_tmp;
 		}
@@ -376,16 +364,16 @@ static int mqttclient_publish (
 	}
 	else if (MSG_DATA_LENGTH(reading) > 0) {
 		if ((ret = mqttclient_message_data_to_payload(&payload, &payload_size, reading)) != 0) {
-			RRR_MSG_0("Error while creating payload from message data in mqttclient_publish of MQTT client instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out_free;
+			RRR_MSG_0("Error while creating payload from message data in %s of MQTT client instance %s\n",
+					__func__, INSTANCE_D_NAME(data->thread_data));
+			goto out;
 		}
 	}
 	else {
 		if ((ret = rrr_msg_msg_to_string(&payload, reading)) != 0) {
-			RRR_MSG_0("could not convert message to string for PUBLISH payload in mqttclient_publish of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-			goto out_free;
+			RRR_MSG_0("Could not convert message to string for PUBLISH payload in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+			goto out;
 		}
 		payload_size = (rrr_u32) strlen(payload) + 1;
 	}
@@ -400,34 +388,177 @@ static int mqttclient_publish (
 			RRR_MSG_0("Could not set payload of PUBLISH in mqttclient_publish of MQTT client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
-			goto out_free;
+			goto out;
 		}
 
 		// Note: False positive here from static code analysis about memory leak of payload
 
 		if (payload != NULL) {
-			RRR_BUG("BUG: payload was not NULL after payload allocation in mqttclient_publish\n");
+			RRR_BUG("BUG: payload was not NULL after payload allocation in %s\n", __func__);
 		}
 	}
 
-	RRR_DBG_2 ("MQTT client %s: PUBLISH with topic %s payload size is %ld bytes\n",
-			INSTANCE_D_NAME(data->thread_data), publish->topic, (long int) payload_size);
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_copy);
+	rrr_array_clear (&array_tmp);
+	RRR_FREE_IF_NOT_NULL(payload);
+	return ret;
+}
+
+static int mqttclient_publish_handle_retain (
+		int *do_no_payload,
+		struct rrr_mqtt_p_publish *publish,
+		struct mqtt_client_data *data,
+		const struct rrr_msg_msg *reading
+) {
+	int ret = 0;
+
+	struct rrr_type_value *retain_value = NULL;
+	char *str_tmp = NULL;
+
+	*do_no_payload = 0;
+
+	if (data->retain_tag == NULL || !MSG_IS_ARRAY(reading)) {
+	       goto out;
+	}
+
+	if (rrr_array_message_clone_value_by_tag (
+			&retain_value,
+			reading,
+			data->retain_tag
+	) != 0) {
+		RRR_MSG_0("Could not get retain tag value from message in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (retain_value == NULL) {
+		goto out;
+	}
+
+	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, 1);
+
+	if (retain_value->definition->to_str != NULL && retain_value->definition->to_str(&str_tmp, retain_value) != 0) {
+		RRR_MSG_0("Could not get string value from retain array value in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (str_tmp != NULL && strcmp(str_tmp, "clear") == 0) {
+		*do_no_payload = 1;
+		goto out;
+	}
+
+	const unsigned long long expiry_interval_s = retain_value->definition->to_ull != NULL
+		? retain_value->definition->to_ull(retain_value)
+		: 0
+	;
+
+#if ULLONG_MAX > UINT32_MAX
+	if (expiry_interval_s > UINT32_MAX) {
+		RRR_MSG_0("Expiry interval in retain tag %s of message in MQTT client instance %s exceeds maximum (value is %llu)\n",
+				data->retain_tag, INSTANCE_D_NAME(data->thread_data), expiry_interval_s);
+		ret = 1;
+		goto out;
+	}
+#endif
+
+	publish->message_expiry_interval = (uint32_t) expiry_interval_s;
+
+	if (rrr_mqtt_property_collection_add_uint32 (
+			&publish->properties,
+			RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
+			(uint32_t) expiry_interval_s
+	) != 0) {
+		RRR_MSG_0("Could not add expiry interval to property collection in %s of MQTT client instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+out:
+	RRR_FREE_IF_NOT_NULL(str_tmp);
+	if (retain_value != NULL) {
+		rrr_type_value_destroy(retain_value);
+	}
+	return ret;
+}
+
+static int mqttclient_publish (
+		int *send_discouraged,
+		struct mqtt_client_data *data,
+		const struct rrr_msg_holder *entry
+) {
+	const struct rrr_msg_msg *reading = (const struct rrr_msg_msg *) entry->message;
+
+	int ret = 0;
+
+	struct rrr_mqtt_p_publish *publish = NULL;
+
+	RRR_DBG_3 ("MQTT client %s: Result from input queue: timestamp %" PRIu64 ", creating PUBLISH\n",
+			INSTANCE_D_NAME(data->thread_data), reading->timestamp);
+
+	if (data->mqtt_client_data->protocol_version == NULL) {
+		RRR_MSG_0("Protocol version not yet set in MQTT client instance %s mqttclient_publish while sending PUBLISH\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if ((publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate (
+			RRR_MQTT_P_TYPE_PUBLISH,
+			data->mqtt_client_data->protocol_version
+	)) == NULL) {
+		RRR_MSG_0("Could not allocate PUBLISH in mqttclient_publish of MQTT client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (mqttclient_publish_set_topic (publish, data, reading) != 0) {
+		// Don't set error return value
+		goto out;
+	}
+
+	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, data->qos);
+
+	int do_no_payload = 0;
+	if (mqttclient_publish_handle_retain (
+			&do_no_payload,
+			publish,
+			data,
+			reading
+	) != 0) {
+		// Don't set error return value
+		goto out;
+	}
+
+	if (!do_no_payload && mqttclient_publish_add_payload (publish, data, reading) != 0) {
+		// Don't set error return value
+		goto out;
+	}
+
+	RRR_DBG_2 ("MQTT client %s: PUBLISH with topic %s payload size %" PRIrrrl " retain %u expiry interval %" PRIu32 "\n",
+			INSTANCE_D_NAME(data->thread_data),
+			publish->topic,
+			publish->payload != NULL ? publish->payload->length : 0,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish),
+			publish->message_expiry_interval
+	);
 
 	if (rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish) != 0) {
 		RRR_MSG_0("Could not publish message in MQTT client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
-		goto out_free;
+		goto out;
 	}
 
 	data->total_sent_count++;
 
-	out_free:
-	rrr_array_clear (&array_tmp);
-	RRR_FREE_IF_NOT_NULL(payload);
-	RRR_FREE_IF_NOT_NULL(msg_copy);
+	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
-
 	return ret;
 }
 
@@ -534,6 +665,8 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		ret = 1;
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_retain_tag", retain_tag);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_client_identifier", client_identifier);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
@@ -1193,8 +1326,12 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
-	RRR_DBG_2 ("MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s\n",
-			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0), (publish->topic));
+	RRR_DBG_2 ("MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s retain %u\n",
+			INSTANCE_D_NAME(data->thread_data),
+			(publish->payload != NULL ? publish->payload->length : 0),
+			(publish->topic),
+			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish)
+	);
 
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
 		rrr_length length = 0;

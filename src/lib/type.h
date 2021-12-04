@@ -225,7 +225,7 @@ struct rrr_type_value {
 #define RRR_TYPE_TAG_MAX RRR_LENGTH_MAX
 
 #define RRR_TYPE_VALUE_TMP_CREATE(name, data, tag, type, flags, tag_length, total_length, element_count)             \
-    const struct rrr_type_value name = {                                                                             \
+    struct rrr_type_value name = {                                                                             \
         NULL, NULL, type, flags, tag_length, 0, NULL, total_length, element_count, NULL, (char *) tag, (char *) data \
     }
 

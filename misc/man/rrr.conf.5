@@ -2338,6 +2338,18 @@ If set to yes, the client will send full RRR messages.
 If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
 type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
 
+.It mqtt_retain_tag={tag}
+If set and an incoming array message has the tag present, the resulting PUBLISH message will have the retain flag set.
+
+If the contents of the array value is the word "clear" without the quotes, an empty PUBLISH message will be sent to the broker instructing it to delete any pending retained message.
+Any data will not be processed for this message.
+
+If the contents of the array value is an unsigned number, this is used to set the expiry interval in seconds of the message.
+The broker will delete the retained message after the specified amount of seconds has passed.
+If the number is set to 0 or if the active protocol version is not 5, the retain message will never expire.
+
+If the contents of the array value is anything else or not present, the contents is ignored. 
+
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
 messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
