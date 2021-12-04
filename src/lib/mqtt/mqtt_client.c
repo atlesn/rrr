@@ -736,28 +736,13 @@ static int __rrr_mqtt_client_handle_suback_unsuback (RRR_MQTT_TYPE_HANDLER_DEFIN
 }
 
 int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+	(void)(mqtt_data);
+	(void)(handle);
+	(void)(packet);
 
-	int ret = RRR_MQTT_OK;
+	// Nothing to do
 
-	unsigned int match_count = 0;
-	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-		mqtt_data->sessions->methods->receive_packet (
-					mqtt_data->sessions,
-					&connection->session,
-					packet,
-					&match_count
-			),
-			goto out,
-			" while handling PINGRESP packet"
-	);
-
-	if (match_count == 0) {
-		RRR_DBG_2("Received PINGRESP with no matching PINGREQ\n");
-	}
-
-	out:
-	return ret;
+	return RRR_MQTT_OK;
 }
 
 static int __rrr_mqtt_client_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {

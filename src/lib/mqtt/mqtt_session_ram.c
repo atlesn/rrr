@@ -1549,15 +1549,8 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		goto out;
 	}
 
-	if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PINGRESP) {
-		// Don't try to match IDs. Also, make a single PINGRESP match all
-		// PINGREQs in the queue, don't stop iteration once found.
-		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-			struct rrr_mqtt_p_pingreq *pingreq = (struct rrr_mqtt_p_pingreq *) packet;
-			pingreq->pingresp_received = 1;
-			goto out_increment_found;
-		}
-		goto out;
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ || RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGRESP) {
+		RRR_BUG("PING packet present in to remote buffer\n");
 	}
 
 	if (RRR_MQTT_P_GET_IDENTIFIER(packet) != RRR_MQTT_P_GET_IDENTIFIER(ack_packet)) {
@@ -1764,7 +1757,6 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		RRR_BUG("Unknown packet type in __rrr_mqtt_session_ram_process_ack_callback\n");
 	}
 
-	out_increment_found:
 	(*ack_callback_data->found)++;
 
 	out:
@@ -3131,7 +3123,6 @@ static int __rrr_mqtt_session_ram_receive_packet (
 			case RRR_MQTT_P_TYPE_PUBCOMP:
 			case RRR_MQTT_P_TYPE_SUBACK:
 			case RRR_MQTT_P_TYPE_UNSUBACK:
-			case RRR_MQTT_P_TYPE_PINGRESP:
 				packet_was_outbound = 1;
 				break;
 			case RRR_MQTT_P_TYPE_PUBREL:
