@@ -80,14 +80,6 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 	return ret;
 }
 
-static int __rrr_mqtt_client_send_now_callback (
-				struct rrr_mqtt_p *packet,
-				void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-	return rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet);
-}
-
 static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transport_handle *handle, void *arg) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -104,18 +96,11 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transp
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
-	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			data->mqtt_data.sessions->methods->send_packet_now (
-					data->mqtt_data.sessions,
-					&connection->session,
-					(struct rrr_mqtt_p *) pingreq,
-					0,
-					__rrr_mqtt_client_send_now_callback,
-					handle
-			),
-			goto out,
-			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
-	);
+	if (rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, (struct rrr_mqtt_p *) pingreq) != 0) {
+		RRR_MSG_0("Could not send PINGREQ packet in %s\n");
+		ret = 1;
+		goto out;
+	}
 
 	data->last_pingreq_time = rrr_time_get_64();
 

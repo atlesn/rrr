@@ -1549,10 +1549,6 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		goto out;
 	}
 
-	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ || RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGRESP) {
-		RRR_BUG("PING packet present in to remote buffer\n");
-	}
-
 	if (RRR_MQTT_P_GET_IDENTIFIER(packet) != RRR_MQTT_P_GET_IDENTIFIER(ack_packet)) {
 		goto out;
 	}
@@ -2951,9 +2947,6 @@ static int __rrr_mqtt_session_ram_send_packet_now (
 		if ((ret = __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (ram_session, packet, allow_missing_originating_packet)) != 0) {
 			goto out;
 		}
-	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-		// OK
 	}
 	else {
 		RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
