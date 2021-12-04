@@ -380,8 +380,6 @@ int rrr_socket_read_message_default (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
-	int ret = 0;
-
 	struct rrr_socket_read_message_default_callback_data callback_data = {0};
 
 	callback_data.fd = fd;
@@ -392,14 +390,13 @@ int rrr_socket_read_message_default (
 	callback_data.complete_callback_arg = complete_callback_arg;
 	callback_data.socket_read_flags = socket_read_flags;
 
-	int read_count = 0;
-
 	// NOTE : Double check order of integer arguments, don't mix them up
-	if ((ret = rrr_read_message_using_callbacks (
+	return rrr_read_message_using_callbacks (
 			bytes_read,
 			read_step_initial,
 			read_step_max_size,
 			read_max,
+			socket_read_flags,
 			RRR_LL_FIRST(read_session_collection),
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
@@ -417,37 +414,7 @@ int rrr_socket_read_message_default (
 				: NULL
 			),
 			&callback_data
-	)) == 0) {
-		read_count++;
-	}
-	else {
-		goto out;
-	}
-
-	if (socket_read_flags & RRR_SOCKET_READ_FLUSH_OVERSHOOT) {
-		again:
-		if ((ret = rrr_read_message_using_callbacks_flush (
-			read_step_initial,
-			read_step_max_size,
-			read_max,
-			__rrr_socket_read_message_default_get_target_size,
-			__rrr_socket_read_message_default_complete_callback,
-			__rrr_socket_read_message_default_get_read_session_with_overshoot,
-			__rrr_socket_read_message_default_remove_read_session,
-			&callback_data
-		)) == 0) {
-			read_count++;
-			goto again;
-		}
-	}
-
-	RRR_DBG_7("fd %i read %i messages\n", fd, read_count);
-
-	// Always return OK if one or more messages was read. Only mask INCOMPLETE return value.
-	ret &= ~(RRR_READ_INCOMPLETE);
-
-	out:
-	return ret;
+	);
 }
 
 struct rrr_socket_read_message_split_callbacks_complete_callback_data {

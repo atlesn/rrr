@@ -117,7 +117,7 @@ static int __rrr_msgdb_client_read (
 			&bytes_read_dummy,
 			&conn->read_sessions,
 			conn->fd,
-			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | (allow_multiple ? RRR_SOCKET_READ_FLUSH_OVERSHOOT : 0),
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | (allow_multiple ? RRR_READ_MESSAGE_FLUSH_OVERSHOOT : 0),
 			0, // No ratelimit interval
 			0, // No ratelimit max bytes
 			__rrr_msgdb_client_read_msg_callback,

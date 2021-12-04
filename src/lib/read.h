@@ -134,6 +134,7 @@ int rrr_read_message_using_callbacks (
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
+		int flags,
 		struct rrr_read_session *read_session_ratelimit,
 		uint64_t ratelimit_interval_us,
 		rrr_biglength ratelimit_max_bytes,
