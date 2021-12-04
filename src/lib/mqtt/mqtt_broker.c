@@ -718,14 +718,12 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->send_packet(
+			mqtt_data->sessions->methods->queue_packet (
 					&send_queue_count_dummy,
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) suback,
-					0,
-					NULL,
-					NULL
+					0
 			),
 			goto out,
 			" while sending SUBACK to session in __rrr_mqtt_broker_handle_subscribe"
@@ -771,14 +769,12 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->send_packet(
+			mqtt_data->sessions->methods->queue_packet(
 					&send_queue_count_dummy,
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) unsuback,
-					0,
-					NULL,
-					NULL
+					0
 			),
 			goto out,
 			" while sending UNSUBACK to session in __rrr_mqtt_broker_handle_unsubscribe"

@@ -220,7 +220,15 @@ struct rrr_mqtt_session_collection_methods {
 			uint8_t reason_v5
 	);
 
-	int (*send_packet) (
+	int (*queue_packet) (
+			rrr_length *total_send_queue_count,
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p *packet,
+			int allow_missing_originating_packet
+	);
+
+	int (*send_packet_now) (
 			rrr_length *total_send_queue_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
