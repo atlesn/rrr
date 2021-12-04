@@ -914,6 +914,12 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
+	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u client %s\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
+			session->client_id_
+	);
+
 	new_publish->dup = 0;
 	new_publish->is_outbound = 1;
 
@@ -1296,6 +1302,12 @@ static int __rrr_mqtt_session_ram_clean_final (struct rrr_mqtt_session_ram *ram_
 	// Add PUBLISH-packets to preserve back to buffer. The list is finally cleared further down.
 	RRR_LL_ITERATE_BEGIN(&preserve_data, struct rrr_mqtt_p);
 		__rrr_mqtt_session_ram_packet_reset_id(node);
+
+		RRR_DBG_3("Preserved PUBLISH topic '%s' qos %u client %s\n",
+				((struct rrr_mqtt_p_publish *) node)->topic,
+				RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(node),
+				ram_session->client_id_
+		);
 
 		if (__rrr_mqtt_session_ram_fifo_write_simple (
 				&ram_session->to_remote_buffer.buffer,
@@ -3031,6 +3043,12 @@ static int __rrr_mqtt_p_queue_publish_from_retain_callback (
 		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_3("Forward RETAIN PUBLISH topic '%s' qos %u client %s\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
+			callback_data->ram_session->client_id_
+	);
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(new_publish);
