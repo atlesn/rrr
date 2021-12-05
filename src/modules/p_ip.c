@@ -325,15 +325,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 	}
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->default_topic,
-			&data->default_topic_length,
-			config,
-			"ip_default_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_default_topic", default_topic, default_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_graylist_timeout_ms", graylist_timeout_ms, IP_DEFAULT_GRAYLIST_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);

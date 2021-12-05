@@ -483,15 +483,7 @@ static int averager_data_init(struct averager_data *data, struct rrr_instance_ru
 static int averager_parse_config (struct averager_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->msg_topic,
-			&data->msg_topic_length,
-			config,
-			"avg_message_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("avg_message_topic", msg_topic, msg_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_timespan", timespan_s, RRR_DEFAULT_AVERAGER_TIMESPAN_S);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_interval", interval_s, RRR_DEFAULT_AVERAGER_INTERVAL_S);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("avg_preserve_points", preserve_point_measurements, 0);

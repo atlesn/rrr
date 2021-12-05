@@ -231,15 +231,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_prefix", prefix);
-
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"file_topic"
-	)) != 0) {
-		goto out;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("file_topic", topic, topic_len);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_directory", directory);
 	if (data->directory == NULL) {

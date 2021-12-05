@@ -22,6 +22,9 @@ rrr (1.22-14) bullseye; urgency=medium
     * Sometimes temporary lockup in HTTP-server if there is not immediate downstream
       response to an h2c upgrade.
 
+  * Under the hood:
+    * Cleanups in MQTT framework
+
  -- LBSdrift <lbsdrift@posten.local>  Thu, 18 Nov 2021 23:45:42 +0100
 
 rrr (1.21-1) bullseye; urgency=medium

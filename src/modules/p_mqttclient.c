@@ -110,6 +110,8 @@ struct mqtt_client_data {
 	char *publish_values_from_array;
 	char *retain_tag;
 
+	struct rrr_mqtt_topic_token *topic_filter_command;
+
 	char *username;
 	char *password;
 
@@ -165,6 +167,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	RRR_FREE_IF_NOT_NULL(data->username);
 	RRR_FREE_IF_NOT_NULL(data->password);
+	rrr_mqtt_topic_token_destroy(data->topic_filter_command);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_clear(&data->connect_properties);
@@ -667,8 +670,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_retain_tag", retain_tag);
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_client_identifier", client_identifier);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC_FILTER("mqtt_topic_filter_command", topic_filter_command);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {

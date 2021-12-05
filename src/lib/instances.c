@@ -234,27 +234,12 @@ int rrr_instance_load_and_save (
 static int __rrr_instance_parse_topic_filter (
 		struct rrr_instance *data
 ) {
-	int ret = 0;
-
-	struct rrr_instance_config_data *config = data->config;
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("topic_filter", topic_filter);
-
-	if (data->topic_filter != NULL) {
-		if (rrr_mqtt_topic_filter_validate_name(data->topic_filter) != 0) {
-			RRR_MSG_0("Invalid topic_filter setting found for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (rrr_mqtt_topic_tokenize(&data->topic_first_token, data->topic_filter) != 0) {
-			RRR_MSG_0("Error while tokenizing topic filter in __rrr_instance_parse_topic_filter\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
+	return rrr_instance_config_parse_optional_topic_filter (
+			&data->topic_first_token,
+			&data->topic_filter,
+			data->config,
+			"topic_filter"
+	);
 }
 
 static int __rrr_instance_parse_misc (
