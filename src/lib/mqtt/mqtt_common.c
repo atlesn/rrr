@@ -60,6 +60,10 @@ const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_propert
         .auth_data                                   = NULL
 };
 
+void rrr_mqtt_common_will_properties_clear (struct rrr_mqtt_common_will_properties *will_properties) {
+	rrr_mqtt_property_collection_clear(&will_properties->user_properties);
+}
+
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	if (data == NULL) {
 		return;
@@ -661,7 +665,7 @@ int rrr_mqtt_common_parse_will_properties_callback (
 		void *arg
 ) {
 	struct rrr_mqtt_common_parse_will_properties_callback_data *callback_data = arg;
-	struct rrr_mqtt_conn_will_properties *will_properties = callback_data->will_properties;
+	struct rrr_mqtt_common_will_properties *will_properties = callback_data->will_properties;
 
 	HANDLE_PROPERTY_SWITCH_INIT();
 	HANDLE_PROPERTY_SWITCH_BEGIN();

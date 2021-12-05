@@ -225,10 +225,6 @@ static void __rrr_mqtt_connection_close (
 	RRR_MQTT_CONN_STATE_SET(connection, RRR_MQTT_CONN_STATE_CLOSED);
 }
 
-static void __rrr_mqtt_connection_will_properties_destroy (struct rrr_mqtt_conn_will_properties *will_properties) {
-	rrr_mqtt_property_collection_clear(&will_properties->user_properties);
-}
-
 static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 	if (connection == NULL) {
 		RRR_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
@@ -248,9 +244,6 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	RRR_FREE_IF_NOT_NULL(connection->client_id);
 	RRR_FREE_IF_NOT_NULL(connection->username);
-
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(connection->will_publish);
-	__rrr_mqtt_connection_will_properties_destroy(&connection->will_properties);
 
 	rrr_free(connection);
 }
@@ -488,87 +481,6 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		}
 	}
 
-	return ret;
-}
-
-int rrr_mqtt_conn_set_will_data_from_connect (
-		uint8_t *reason_v5,
-		struct rrr_mqtt_conn *connection,
-		const struct rrr_mqtt_p_connect *connect
-) {
-	int ret = 0;
-
-	struct rrr_mqtt_p_publish *publish = NULL;
-
-	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' in MQTT broker\n",
-			connection->client_id,
-			connect->will_topic,
-			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
-			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect)
-	);
-
-	struct rrr_mqtt_common_parse_will_properties_callback_data callback_data = {
-			&connect->will_properties,
-			0,
-			&connection->will_properties
-	};
-
-	if ((ret = rrr_mqtt_property_collection_iterate (
-			&connect->will_properties,
-			rrr_mqtt_common_parse_will_properties_callback,
-			&callback_data
-	)) != 0) {
-		*reason_v5 = callback_data.reason_v5;
-		if (ret != RRR_MQTT_SOFT_ERROR) {
-			RRR_MSG_0("Hard error while iterating will properties in rrr_mqtt_conn_set_will_data_from_connect\n");
-		}
-		goto out;
-	}
-
-	if (rrr_mqtt_p_new_publish (
-			&publish,
-			connect->will_topic,
-			connect->will_message,
-			connect->will_message_size,
-			connect->protocol_version
-	) != 0) {
-		RRR_MSG_0("Could not allocate publish in rrr_mqtt_conn_set_will_data_from_connect\n");
-		ret = 1;
-		goto out;
-	}
-
-	// These fields are present in both CONNECT will properties and PUBLISH properties. They
-	// are copied directly to the new will PUBLISH.
-	uint8_t will_property_list[] = {
-			RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
-			RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
-			RRR_MQTT_PROPERTY_CONTENT_TYPE,
-			RRR_MQTT_PROPERTY_RESPONSE_TOPIC,
-			RRR_MQTT_PROPERTY_CORRELATION_DATA,
-			RRR_MQTT_PROPERTY_USER_PROPERTY
-	};
-
-	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect));
-	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect));
-
-	publish->will_delay_interval = connection->will_properties.will_delay_interval;
-
-	if (rrr_mqtt_property_collection_add_selected_from_collection (
-			&publish->properties,
-			&connect->will_properties,
-			will_property_list,
-			sizeof(will_property_list)/sizeof(*will_property_list)
-	) != 0) {
-		RRR_MSG_0("Error while copying will properties to publish in rrr_mqtt_conn_set_will_data_from_connect\n");
-		ret = 1;
-		goto out;
-	}
-
-	connection->will_publish = publish;
-	publish = NULL;
-
-	out:
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 	return ret;
 }
 

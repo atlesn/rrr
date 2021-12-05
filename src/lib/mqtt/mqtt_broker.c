@@ -294,36 +294,132 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 	return ret;
 }
 
+static int __rrr_mqtt_broker_new_will_publish (
+		uint8_t *reason_v5,
+		struct rrr_mqtt_p_publish **result,
+		struct rrr_mqtt_common_will_properties *will_properties,
+		const struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_p_publish *publish = NULL;
+
+	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' in MQTT broker\n",
+			connection->client_id,
+			connect->will_topic,
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect)
+	);
+
+	struct rrr_mqtt_common_parse_will_properties_callback_data callback_data = {
+			&connect->will_properties,
+			0,
+			will_properties
+	};
+
+	if ((ret = rrr_mqtt_property_collection_iterate (
+			&connect->will_properties,
+			rrr_mqtt_common_parse_will_properties_callback,
+			&callback_data
+	)) != 0) {
+		*reason_v5 = callback_data.reason_v5;
+		if (ret != RRR_MQTT_SOFT_ERROR) {
+			RRR_MSG_0("Hard error while iterating will properties in rrr_mqtt_conn_set_will_data_from_connect\n");
+		}
+		goto out;
+	}
+
+	if (rrr_mqtt_p_new_publish (
+			&publish,
+			connect->will_topic,
+			connect->will_message,
+			connect->will_message_size,
+			connect->protocol_version
+	) != 0) {
+		RRR_MSG_0("Could not allocate publish in rrr_mqtt_conn_set_will_data_from_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	// These fields are present in both CONNECT will properties and PUBLISH properties. They
+	// are copied directly to the new will PUBLISH.
+	uint8_t will_property_list[] = {
+			RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
+			RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
+			RRR_MQTT_PROPERTY_CONTENT_TYPE,
+			RRR_MQTT_PROPERTY_RESPONSE_TOPIC,
+			RRR_MQTT_PROPERTY_CORRELATION_DATA,
+			RRR_MQTT_PROPERTY_USER_PROPERTY
+	};
+
+	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect));
+	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect));
+
+	publish->will_delay_interval = will_properties->will_delay_interval;
+
+	if (rrr_mqtt_property_collection_add_selected_from_collection (
+			&publish->properties,
+			&connect->will_properties,
+			will_property_list,
+			sizeof(will_property_list)/sizeof(*will_property_list)
+	) != 0) {
+		RRR_MSG_0("Error while copying will properties to publish in rrr_mqtt_conn_set_will_data_from_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	*result = publish;
+	publish = NULL;
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
+	return ret;
+}
+
 static int __rrr_mqtt_broker_handle_connect_will (
+		uint8_t *reason_v5,
 		struct rrr_mqtt_data *mqtt_data,
-		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect,
 		struct rrr_mqtt_session **session_handle
 ) {
 	int ret = RRR_MQTT_OK;
 
-	if ((ret = mqtt_data->sessions->methods->unregister_will_publish (
-			mqtt_data->sessions,
-			session_handle
-	)) != RRR_MQTT_SESSION_OK) {
-		goto out_error;
-	}
+	struct rrr_mqtt_p_publish *publish = NULL;
+	struct rrr_mqtt_common_will_properties will_properties = {0};
 
-	if (connection->will_publish != NULL) {
-		if ((ret = mqtt_data->sessions->methods->register_will_publish (
-				mqtt_data->sessions,
-				session_handle,
-				connection->will_publish
-		)) != RRR_MQTT_SESSION_OK) {
-			goto out_error;
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
+		if ((ret = __rrr_mqtt_broker_new_will_publish (
+				reason_v5,
+				&publish,
+				&will_properties,
+				connection,
+				connect
+		)) != 0) {
+			RRR_MSG_0("Could not create publish will message data in %s, ret %i, reason %u\n",
+					__func__, ret, reason_v5);
+			if (ret == RRR_MQTT_SOFT_ERROR && reason_v5 == 0) {
+				*reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+				goto out;
+			}
 		}
 	}
 
-	goto out;
-	out_error:
-		RRR_MSG_0("Hard error while registering/unregistering will publish for session in __rrr_mqtt_broker_handle_connect_will, return was %i\n", ret);
-		ret = RRR_MQTT_INTERNAL_ERROR;
+	// Passing NULL publish will clear any existing message
+	if ((ret = mqtt_data->sessions->methods->register_will_publish (
+			mqtt_data->sessions,
+			session_handle,
+			publish
+	)) != RRR_MQTT_SESSION_OK) {
+		RRR_MSG_0("Error while registering will publish for session in %s, return was %i\n", __func__, ret);
+		goto out;
+	}
+
 	out:
-		return ret;
+	rrr_mqtt_common_will_properties_clear(&will_properties);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
+	return ret;
 }
 
 // TODO : Try to split this up into multiple functions
@@ -572,25 +668,11 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
-		if ((ret = rrr_mqtt_conn_set_will_data_from_connect (
-				&reason_v5,
-				connection,
-				connect
-		)) != 0) {
-			RRR_MSG_0("Could not set connection will message data in  __rrr_mqtt_broker_handle_connect, ret %i, reason %u\n",
-					ret, reason_v5);
-			if (ret == RRR_MQTT_SOFT_ERROR) {
-				if (reason_v5 == 0) {
-					reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
-				}
-				goto out_send_connack;
-			}
+	if ((ret = __rrr_mqtt_broker_handle_connect_will(&reason_v5, mqtt_data, connection, connect, &session)) != 0) {
+		if (ret == RRR_MQTT_SOFT_ERROR) {
+			goto out_send_connack;
 		}
-	}
-
-	if ((ret = __rrr_mqtt_broker_handle_connect_will(mqtt_data, connection, &session)) != 0) {
-		RRR_MSG_0("Error while handling will operations in __rrr_mqtt_broker_handle_connect, return was %i\n", ret);
+		RRR_MSG_0("Error while handling will operations in %s, return was %i\n", __func__, ret);
 		goto out;
 	}
 
@@ -814,20 +896,6 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 
 	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
 
-	// Clear any WILL message unless explicitly told by client to publish it.
-	if (connection->will_publish != NULL) {
-		// In version 3.1, the will PUBLISH is always cleared (reason_v5 will
-		// always be 0 as there is no reason field in V3.1 DISCONNECT)
-		if (packet->reason_v5 == RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL) {
-			RRR_DBG_3("Normal disconnect from client '%s' with reason DISCONNECT_WITH_WILL, not clearing will message\n", connection->client_id);
-		}
-		else {
-			RRR_DBG_3("Clearing will message for client '%s' upon receival of normal disconnect in MQTT broker\n", connection->client_id);
-			RRR_MQTT_P_DECREF(connection->will_publish);
-			connection->will_publish = NULL;
-		}
-	}
-
 	RRR_DBG_2("DISCONNECT from client '%s' in MQTT broker reason %u\n",
 			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason_v5);
 
@@ -871,28 +939,6 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_auth}
 };
 
-static int __rrr_mqtt_broker_will_publish (
-		struct rrr_mqtt_broker_data *data,
-		struct rrr_mqtt_conn *connection
-) {
-	if (connection->will_publish == NULL) {
-		return 0;
-	}
-
-	int ret = 0;
-
-	RRR_DBG_3("Will PUBLISH for client '%s' with topic '%s' retain '%u' in MQTT broker will delay is '%u'\n",
-			connection->client_id,
-			connection->will_publish->topic,
-			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(connection->will_publish),
-			connection->will_properties.will_delay_interval
-	);
-
-	ret = MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(&data->mqtt_data, connection->will_publish);
-
-	return ret;
-}
-
 static int __rrr_mqtt_broker_event_handler (
 		struct rrr_mqtt_conn *connection,
 		int event,
@@ -908,9 +954,6 @@ static int __rrr_mqtt_broker_event_handler (
 
 	switch (event) {
 		case RRR_MQTT_CONN_EVENT_DISCONNECT:
-			if (__rrr_mqtt_broker_will_publish(data, connection)) {
-				RRR_MSG_0("Warning: Failed to publish will message in __rrr_mqtt_broker_event_handler\n");
-			}
 			data->stats.total_connections_closed++;
 			break;
 		default:

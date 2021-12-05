@@ -230,13 +230,24 @@ struct rrr_mqtt_common_parse_properties_data_publish {
 	struct rrr_mqtt_p_publish *publish;
 };
 
+struct rrr_mqtt_common_will_properties {
+	uint32_t will_delay_interval;
+	uint8_t payload_format_indicator;
+	uint32_t message_expiry_interval;
+	const struct rrr_mqtt_property *content_type;
+	const struct rrr_mqtt_property *response_topic;
+	const struct rrr_mqtt_property *correlation_data;
+	struct rrr_mqtt_property_collection user_properties;
+};
+
 struct rrr_mqtt_common_parse_will_properties_callback_data {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
-	struct rrr_mqtt_conn_will_properties *will_properties;
+	struct rrr_mqtt_common_will_properties *will_properties;
 };
 
 extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties;
 
+void rrr_mqtt_common_will_properties_clear (struct rrr_mqtt_common_will_properties *will_properties);
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_clear_session_from_connections (

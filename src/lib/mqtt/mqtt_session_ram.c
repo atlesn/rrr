@@ -95,12 +95,6 @@ struct rrr_mqtt_session_collection_ram_data {
 	// topics.
 	struct rrr_mqtt_p_queue retain_buffer;
 
-	// Will messages waiting to be sent. If their timeout if set to 0, they will be picked
-	// up and sent to publish_forward_queue right away. If a client reconnects while
-	// session still exists, any will message for that session will be cleared from
-	// this queue, thus preventing the will message from being sent.
-	struct rrr_mqtt_p_queue will_wait_buffer;
-
 	// Packets in this queue are forwarded to sessions with matching subscriptions. If no
 	// subscriptions match for a packet, it is deleted. Used by broker program.
 	struct rrr_mqtt_p_queue publish_forward_buffer;
@@ -346,73 +340,11 @@ static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 	return ret;
 }
 
-static int __rrr_mqtt_session_collection_ram_delivery_forward_postpone_will (
-		struct rrr_mqtt_session_collection_ram_data *ram_data,
-		struct rrr_mqtt_p_publish *publish
-) {
-	// We don't need to copy the publish here, the connection framework will simply
-	// just DECREF the publish without any further modifications. The will PUBLISH
-	// in a connection is only modified when the broker processes the CONNECT
-	// packet.
-
-	// Make sure this is reset, to be initialized again by maintain procedure
-	publish->planned_expiry_time = 0;
-
-	if (__rrr_mqtt_session_ram_fifo_write_simple (
-			&ram_data->will_wait_buffer.buffer,
-			(struct rrr_mqtt_p *) publish
-	) != 0) {
-		RRR_MSG_0("Could not write to publish will wait queue in __rrr_mqtt_session_collection_ram_delivery_forward_postpone_will\n");
-		return RRR_MQTT_SESSION_INTERNAL_ERROR;
-	}
-	return RRR_MQTT_SESSION_OK;
-}
-
 static int __rrr_mqtt_session_collection_ram_delivery_forward (
 		struct rrr_mqtt_session_collection *sessions,
 		struct rrr_mqtt_p_publish *publish
 ) {
-	if (publish->will_delay_interval > 0) {
-		return __rrr_mqtt_session_collection_ram_delivery_forward_postpone_will((struct rrr_mqtt_session_collection_ram_data *) sessions, publish);
-	}
-
 	return __rrr_mqtt_session_collection_ram_delivery_forward_final((struct rrr_mqtt_session_collection_ram_data *) sessions, publish);
-}
-
-struct session_collection_ram_remove_postponed_will_callback_data {
-	const struct rrr_mqtt_p_publish *publish;
-};
-
-static int __rrr_mqtt_session_collection_ram_remove_postponed_will_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct session_collection_ram_remove_postponed_will_callback_data *callback_data = arg;
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
-
-	(void)(size);
-
-	int ret = RRR_FIFO_SEARCH_KEEP;
-
-	if (publish == callback_data->publish) {
-		RRR_DBG_3("Removing postponed will PUBLISH with topic '%s' upon client re-connect in MQTT broker\n",
-				publish->topic);
-		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
-	}
-
-	return ret;
-}
-
-static int __rrr_mqtt_session_collection_ram_remove_postponed_will (
-		struct rrr_mqtt_session_collection_ram_data *ram_data,
-		const struct rrr_mqtt_p_publish *publish
-) {
-	struct session_collection_ram_remove_postponed_will_callback_data callback_data = {
-			publish
-	};
-
-	return rrr_fifo_search (
-			&ram_data->will_wait_buffer.buffer,
-			__rrr_mqtt_session_collection_ram_remove_postponed_will_callback,
-			&callback_data
-	);
 }
 
 static int __rrr_mqtt_session_ram_check_publish_expired (
@@ -967,6 +899,86 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 	return ret;
 }
 
+static void __rrr_mqtt_session_ram_will_publish_unregister (
+		struct rrr_mqtt_session_ram *ram_session
+) {
+	if (ram_session->will_publish != NULL) {
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(ram_session->will_publish);
+		ram_session->will_publish = NULL;
+	}
+}
+
+static int __rrr_mqtt_session_ram_will_publish_maintain (
+		struct rrr_mqtt_session_collection_ram_data *ram_data,
+		struct rrr_mqtt_session_ram *ram_session,
+		short force_publish
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	if (ram_session->will_publish == NULL || ram_session->will_publish->planned_expiry_time == 0) {
+		goto out;
+	}
+
+	struct rrr_mqtt_p_publish *publish = ram_session->will_publish;
+	const uint64_t time_now = rrr_time_get_64();
+
+	if (force_publish || publish->planned_expiry_time <= time_now) {
+		RRR_DBG_3("Expired will PUBLISH for client %s with topic '%s' retain %u, publishing now in MQTT broker.\n",
+				ram_session->client_id_, publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish));
+
+		if ((ret = __rrr_mqtt_session_collection_ram_delivery_forward_final (
+				ram_data,
+				publish
+		)) != 0) {
+			RRR_MSG_0("Error while delivering will PUBLISH after expired delay interval in %s return was %i\n", __func__, ret);
+			ret = RRR_FIFO_GLOBAL_ERR;
+			goto out;
+		}
+
+		__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_will_publish_notify_disconnect (
+		struct rrr_mqtt_session_collection_ram_data *ram_data,
+		struct rrr_mqtt_session_ram *ram_session,
+		uint8_t reason_v5,
+		short force_publish
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct rrr_mqtt_p_publish *publish = ram_session->will_publish;
+	const uint64_t time_now = rrr_time_get_64();
+
+	if (publish == NULL) {
+		goto out;
+	}
+
+	// Initialize. Delay interval is stored in seconds.
+	publish->planned_expiry_time = time_now + (publish->will_delay_interval * 1000 * 1000);
+
+	// Clear any WILL message unless explicitly told by client to publish it.
+	// In version 3.1, the will PUBLISH is always cleared (reason_v5 will
+	// always be 0 as there is no reason field in V3.1 DISCONNECT)
+	if (reason_v5 == RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL) {
+		RRR_DBG_3("Normal disconnect from client '%s' with reason DISCONNECT_WITH_WILL, not clearing will message\n", ram_session->client_id_);
+	}
+	else if (reason_v5 == 0) {
+		RRR_DBG_3("Clearing will message for client '%s' upon receival of normal disconnect in MQTT broker\n", ram_session->client_id_);
+		__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
+	}
+
+	if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (ram_data, ram_session, force_publish)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
@@ -1095,39 +1107,6 @@ static int __rrr_mqtt_session_ram_iterate_publish_grace_callback (RRR_FIFO_READ_
 	return ret;
 }
 
-static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
-	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
-
-	(void)(size);
-
-	int ret = RRR_FIFO_SEARCH_KEEP;
-
-	uint64_t time_now = rrr_time_get_64();
-
-	if (publish->planned_expiry_time == 0) {
-		// Delay interval is stored in seconds
-		publish->planned_expiry_time = time_now + (publish->will_delay_interval * 1000 * 1000);
-	}
-
-	if (publish->planned_expiry_time <= time_now) {
-		RRR_DBG_3("Expired will PUBLISH with topic '%s' retain %u, publishing now in MQTT broker.\n",
-				publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish));
-		if ((ret = __rrr_mqtt_session_collection_ram_delivery_forward_final (
-				ram_data,
-				publish
-		)) != 0) {
-			RRR_MSG_0("Error while delivering will PUBLISH after expired delay interval in __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback return was %i\n", ret);
-			ret = RRR_FIFO_GLOBAL_ERR;
-			goto out;
-		}
-		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
 ) {
@@ -1137,17 +1116,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	uint64_t expire_time = 0;
 	uint64_t time_now = rrr_time_get_64();
-
-	// CHECK POSTPONED WILL PUBLISH MESSAGES
-	if (((ret = rrr_fifo_search(
-			&data->will_wait_buffer.buffer,
-			__rrr_mqtt_session_collection_ram_maintain_postponed_will_callback,
-			data
-	)) & RRR_FIFO_GLOBAL_ERR) != 0) {
-		RRR_MSG_0("Critical error from postponed will queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out;
-	}
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	if (((ret = rrr_fifo_read_clear_forward_all (
@@ -1174,10 +1142,12 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		// Expiration time set upon disconnect notification, and set to 0 again
 		// in session init function
 		expire_time = node->expire_time;
+		short do_force_will_publish = 0;
 
 		if (expire_time != 0 && time_now >= expire_time) {
 			RRR_DBG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
+			do_force_will_publish = 1;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else {
@@ -1195,6 +1165,14 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 				}
 			}
 		}
+
+		if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (
+				data,
+				node,
+				do_force_will_publish
+		)) != 0) {
+			goto out;
+		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY (
 			data,
 			__rrr_mqtt_session_ram_decref(node)
@@ -1208,7 +1186,6 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	rrr_fifo_destroy(&data->retain_buffer.buffer);
-	rrr_fifo_destroy(&data->will_wait_buffer.buffer);
 	rrr_fifo_destroy(&data->publish_forward_buffer.buffer);
 	rrr_fifo_destroy(&data->publish_local_buffer.buffer);
 
@@ -2809,6 +2786,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		uint8_t reason_v5
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
+	int ret_delete = 0;
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
@@ -2820,7 +2798,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	if (reason_v5 == RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER) {
 		RRR_DBG_1("Session notify disconnect no deletion due to session take-over\n");
 		ram_session->expire_time = 0; // Never
-		goto no_delete;
+		goto out;
 	}
 	else {
 		if (ram_session->session_properties.numbers.session_expiry == 0xffffffff) { // 8 f's
@@ -2836,10 +2814,6 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 
 	if (ram_session->session_properties.numbers.session_expiry == 0) {
 		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
-		ret = RRR_MQTT_SESSION_DELETED;
-	}
-
-	if (ret == RRR_MQTT_SESSION_DELETED) {
 		__rrr_mqtt_session_collection_remove (
 				ram_data,
 				ram_session
@@ -2847,11 +2821,22 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		*session_to_find = NULL;
 
 		__rrr_mqtt_session_collection_ram_stats_notify_delete(ram_data);
+
+		ret_delete = RRR_MQTT_SESSION_DELETED;
 	}
 
-	no_delete:
+	if ((ret = __rrr_mqtt_session_ram_will_publish_notify_disconnect (
+			ram_data,
+			ram_session,
+			reason_v5,
+			ret_delete != 0 ? 1 : 0 /* Force publish of will now if session is deleted */
+	)) != 0) {
+		goto out;
+	}
+
+	out:
 	SESSION_RAM_DECREF();
-	return ret;
+	return ret | ret_delete;
 }
 
 static int __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (
@@ -3161,7 +3146,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_register_will_publish (
+static int __rrr_mqtt_session_ram_will_publish_register (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p_publish *publish
@@ -3170,32 +3155,13 @@ static int __rrr_mqtt_session_ram_register_will_publish (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(ram_session->will_publish);
-	RRR_MQTT_P_INCREF(publish);
-	ram_session->will_publish = publish;
+	__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
 
-	SESSION_RAM_DECREF();
-
-	return ret;
-}
-
-static int __rrr_mqtt_session_ram_unregister_will_publish (
-		struct rrr_mqtt_session_collection *collection,
-		struct rrr_mqtt_session **session_to_find
-) {
-	int ret = RRR_MQTT_SESSION_OK;
-
-	SESSION_RAM_INCREF_OR_RETURN();
-
-	if (ram_session->will_publish != NULL) {
-		if ((ret = __rrr_mqtt_session_collection_ram_remove_postponed_will(ram_data, ram_session->will_publish)) != 0) {
-			goto out_decref;
-		}
-		RRR_MQTT_P_DECREF_IF_NOT_NULL(ram_session->will_publish);
-		ram_session->will_publish = NULL;
+	if (publish != NULL) {
+		RRR_MQTT_P_INCREF(publish);
+		ram_session->will_publish = publish;
 	}
 
-	out_decref:
 	SESSION_RAM_DECREF();
 
 	return ret;
@@ -3218,8 +3184,7 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_queue_packet,
 		__rrr_mqtt_session_ram_send_packet_now,
 		__rrr_mqtt_session_ram_receive_packet,
-		__rrr_mqtt_session_ram_register_will_publish,
-		__rrr_mqtt_session_ram_unregister_will_publish
+		__rrr_mqtt_session_ram_will_publish_register
 };
 
 static int __rrr_mqtt_session_collection_ram_new (
@@ -3255,7 +3220,6 @@ static int __rrr_mqtt_session_collection_ram_new (
 	rrr_fifo_init_custom_refcount(&ram_data->retain_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 	rrr_fifo_init_custom_refcount(&ram_data->publish_forward_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 	rrr_fifo_init_custom_refcount(&ram_data->publish_local_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&ram_data->will_wait_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 
 	ram_data->delivery_method = delivery_method;
 	ram_data->pretransmit_method = pretransmit_method;
