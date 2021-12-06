@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
+#include "../helpers/nullsafe_str.h"
 
 static const struct rrr_mqtt_p_protocol_version protocol_versions[] = {
 		{RRR_MQTT_VERSION_3_1, "MQISDP"},
@@ -261,7 +262,7 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	RRR_FREE_IF_NOT_NULL(connect->username);
 	RRR_FREE_IF_NOT_NULL(connect->password);
 	RRR_FREE_IF_NOT_NULL(connect->will_topic);
-	RRR_FREE_IF_NOT_NULL(connect->will_message);
+	rrr_nullsafe_str_destroy_if_not_null(&connect->will_message);
 
 	rrr_free(connect);
 }

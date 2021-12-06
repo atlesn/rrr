@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_payload_buf.h"
 #include "../util/macro_utils.h"
+#include "../helpers/nullsafe_str.h"
 
 int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));
@@ -107,6 +108,40 @@ char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *
 	char *ret = session->buf;
 	session->buf = NULL;
 	return ret;
+}
+
+static int __rrr_mqtt_payload_buf_put_nullsafe_callback (
+		const void *data,
+		rrr_nullsafe_len size,
+		void *arg
+) {
+	struct rrr_mqtt_payload_buf_session *session = arg;
+
+	rrr_length length = 0;
+
+	if (rrr_length_from_biglength_err(&length, size) != 0) {
+		return RRR_MQTT_PAYLOAD_BUF_ERR;
+	}
+
+	if (rrr_mqtt_payload_buf_ensure (session, length) != RRR_MQTT_PAYLOAD_BUF_OK) {
+		return RRR_MQTT_PAYLOAD_BUF_ERR;
+	}
+
+	memcpy(session->wpos, data, size);
+	session->wpos += size;
+
+	if (session->wpos > session->wpos_max) {
+		session->wpos_max = session->wpos;
+	}
+
+	return 0;
+}
+
+int rrr_mqtt_payload_buf_put_nullsafe (
+		struct rrr_mqtt_payload_buf_session *session,
+		const struct rrr_nullsafe_str *str
+) {
+	return rrr_nullsafe_str_with_raw_do_const (str, __rrr_mqtt_payload_buf_put_nullsafe_callback, session);
 }
 
 int rrr_mqtt_payload_buf_put_raw (

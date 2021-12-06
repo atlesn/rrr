@@ -103,6 +103,7 @@ struct rrr_mqtt_parse_session;
 struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_subscription_collection;
 struct rrr_mqtt_topic_token;
+struct rrr_nullsafe_str;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION                                 \
 		const struct rrr_mqtt_p_type_properties *type_properties,   \
@@ -323,8 +324,7 @@ struct rrr_mqtt_p_connect {
 	struct rrr_mqtt_property_collection will_properties;
 
 	char *will_topic;
-	char *will_message;
-	uint16_t will_message_size;
+	struct rrr_nullsafe_str *will_message;
 
 	char *username;
 	char *password;

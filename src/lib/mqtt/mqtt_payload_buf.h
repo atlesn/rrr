@@ -29,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PAYLOAD_BUF_OK 0
 #define RRR_MQTT_PAYLOAD_BUF_ERR 1
 
+struct rrr_nullsafe_str;
+
 struct rrr_mqtt_payload_buf_session {
 	char *buf;
 	char *wpos;
@@ -42,6 +44,10 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session);
 int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, rrr_length size);
 rrr_length rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_session *session);
 char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *session);
+int rrr_mqtt_payload_buf_put_nullsafe (
+		struct rrr_mqtt_payload_buf_session *session,
+		const struct rrr_nullsafe_str *str
+);
 int rrr_mqtt_payload_buf_put_raw (
 		struct rrr_mqtt_payload_buf_session *session,
 		const void *data,

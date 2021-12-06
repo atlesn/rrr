@@ -333,8 +333,8 @@ static int __rrr_mqtt_broker_new_will_publish (
 	if (rrr_mqtt_p_new_publish (
 			&publish,
 			connect->will_topic,
-			connect->will_message,
-			connect->will_message_size,
+			rrr_nullsafe_str_ptr_const(connect->will_message),
+			rrr_u16_from_biglength_bug_const(rrr_nullsafe_str_len(connect->will_message)),
 			connect->protocol_version
 	) != 0) {
 		RRR_MSG_0("Could not allocate publish in rrr_mqtt_conn_set_will_data_from_connect\n");

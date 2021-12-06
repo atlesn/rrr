@@ -63,6 +63,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         PUT_RAW(&data, sizeof(uint32_t));                      \
         } while (0)                                            \
 
+#define PUT_AND_VERIFY_NULLSAFE_WITH_LENGTH(data,size) do {    \
+        PUT_U16(rrr_u16_from_biglength_bug_const(rrr_nullsafe_str_len(data)));                    \
+        if (rrr_mqtt_payload_buf_put_nullsafe (session, data) != RRR_MQTT_PAYLOAD_BUF_OK) {       \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
 #define PUT_RAW_WITH_LENGTH(data,size) do {                    \
         PUT_U16(size);                                         \
@@ -220,14 +226,14 @@ static int __rrr_mqtt_assemble_put_properties (
 	return ret;
 }
 
-#define PUT_PROPERTIES(properties) do {					\
-		if (__rrr_mqtt_assemble_put_properties(			\
-				session,								\
-				(properties)							\
-		) != RRR_MQTT_ASSEMBLE_OK) {					\
-			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
-			goto out;									\
-		}} while (0)
+#define PUT_PROPERTIES(properties) do {                        \
+        if (__rrr_mqtt_assemble_put_properties(                \
+                session,                                       \
+                (properties)                                   \
+        ) != RRR_MQTT_ASSEMBLE_OK) {                           \
+            ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;              \
+            goto out;                                          \
+        }} while (0)                                           \
 
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
@@ -269,9 +275,8 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			strlen(connect->will_topic),
 			" for will topic in rrr_mqtt_assemble_connect"
 		);
-		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+		PUT_AND_VERIFY_NULLSAFE_WITH_LENGTH(
 			connect->will_message,
-			strlen(connect->will_message),
 			" for will message in rrr_mqtt_assemble_connect"
 		);
 	}

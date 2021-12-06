@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
+#include "../helpers/nullsafe_str.h"
+#include "../rrr_types.h"
 
 struct parse_state {
 	int ret;
@@ -216,9 +218,32 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
         parse_state->end = parse_state->start + parse_state->bytes_parsed;\
     }} while (0)                                               \
 
+#define PARSE_BLOB_FINAL(type,target,func)                     \
+    parse_state->start = parse_state->end;                     \
+    if ((parse_state->ret = func (                             \
+            &type->target,                                     \
+            parse_state->start,                                \
+            session->buf + session->buf_wpos,                  \
+            &(parse_state->bytes_parsed),                      \
+            &(parse_state->blob_length)                        \
+    )) != 0) {                                                 \
+        if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
+            RRR_MSG_0(    "Error while parsing BLOB of MQTT message of type %s "  \
+                        "in field '" RRR_QUOTE(field_name) "'\n",                 \
+                    RRR_MQTT_P_GET_TYPE_NAME(type));           \
+        }                                                      \
+        return parse_state->ret;                               \
+    }                                                          \
+    parse_state->end = parse_state->start + parse_state->bytes_parsed\
+
+#define PARSE_BLOB(type,target)                                \
+    PARSE_BLOB_FINAL(type,target,__rrr_mqtt_parse_blob)
+
+#define PARSE_BLOB_NULLSAFE(type,target)                       \
+    PARSE_BLOB_FINAL(type,target,__rrr_mqtt_parse_blob_nullsafe)
+
 #define PARSE_UTF8(type,target,min_length,field_name)          \
     parse_state->start = parse_state->end;                     \
-    RRR_FREE_IF_NOT_NULL(type->target);                        \
     if ((parse_state->ret = __rrr_mqtt_parse_utf8 (            \
             &type->target,                                     \
             parse_state->start,                                \
@@ -228,30 +253,12 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
     )) != 0) {                                                 \
         if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
             RRR_MSG_0(    "Error while parsing UTF8 of MQTT message of type %s "  \
-                        "in field '" RRR_QUOTE(field_name) "'\n",\
+                        "in field '" RRR_QUOTE(field_name) "'\n",                 \
                     RRR_MQTT_P_GET_TYPE_NAME(type));           \
         }                                                      \
         return parse_state->ret;                               \
     }                                                          \
     parse_state->end = parse_state->start + parse_state->bytes_parsed\
-
-#define PARSE_BLOB(type,target)                                \
-    parse_state->start = parse_state->end;                     \
-    RRR_FREE_IF_NOT_NULL(type->target);                        \
-    if ((parse_state->ret = __rrr_mqtt_parse_blob (            \
-            &type->target,                                     \
-            parse_state->start,                                \
-            session->buf + session->buf_wpos,                  \
-            &(parse_state->bytes_parsed),                      \
-            &(parse_state->blob_length)                        \
-    )) != 0) {                                                 \
-        if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
-            RRR_MSG_0("Error while parsing blob of MQTT message of type %s\n", \
-                    RRR_MQTT_P_GET_TYPE_NAME(type));           \
-        }                                                      \
-        return parse_state->ret;                               \
-    }                                                          \
-    parse_state->end = parse_state->start + parse_state->bytes_parsed          \
 
 #define PARSE_VARIABLE_INT_RAW(target)                         \
     start = end;                                               \
@@ -392,9 +399,7 @@ static int __rrr_mqtt_parse_blob (
 		rrr_biglength *bytes_parsed,
 		uint16_t *blob_length
 ) {
-	if (*target != NULL) {
-		RRR_BUG ("target was not NULL in __rrr_mqtt_parse_blob\n");
-	}
+	RRR_FREE_IF_NOT_NULL(*target);
 
 	const char *end = start + 2;
 	*bytes_parsed = 2;
@@ -404,27 +409,50 @@ static int __rrr_mqtt_parse_blob (
 
 	*target = rrr_allocate(((rrr_biglength) *blob_length) + 1);
 	if (*target == NULL){
-		RRR_MSG_0("Could not allocate memory for UTF8 in __rrr_mqtt_parse_utf8\n");
+		RRR_MSG_0("Could not allocate memory for blob in %s\n", __func__);
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
 	**target = '\0';
 
 	start = end;
 	end = start + *blob_length;
-/*	{
-		char buf_debug[(*blob_length) + 1];
-		int length_available = final_end - start;
-		if (length_available > 0) {
-			int length_print = *blob_length > length_available ? length_available : *blob_length;
-			memcpy(buf_debug, start, length_print);
-			buf_debug[length_print] = '\0';
-			printf ("blob string: %s\n", buf_debug);
-		}
-	}*/
+
 	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
 
 	memcpy(*target, start, *blob_length);
 	(*target)[*blob_length] = '\0';
+
+	*bytes_parsed += *blob_length;
+
+	return RRR_MQTT_OK;
+}
+
+static int __rrr_mqtt_parse_blob_nullsafe (
+		struct rrr_nullsafe_str **target,
+		const char *start,
+		const char *final_end,
+		rrr_biglength *bytes_parsed,
+		uint16_t *blob_length
+) {
+	if (*target != NULL) {
+		RRR_BUG ("target was not NULL in %s\n", __func__);
+	}
+
+	const char *end = start + 2;
+	*bytes_parsed = 2;
+
+	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+	*blob_length = rrr_be16toh(*((uint16_t *) start));
+
+	start = end;
+	end = start + *blob_length;
+
+	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+
+	if (rrr_nullsafe_str_new_or_replace_raw (target, start, *blob_length) != 0) {
+		RRR_MSG_0("Could not allocate memory for blob in %s\n", __func__);
+		return RRR_MQTT_INTERNAL_ERROR;
+	}
 
 	*bytes_parsed += *blob_length;
 
@@ -446,6 +474,28 @@ static int __rrr_mqtt_parse_utf8_validate_callback (uint32_t character, void *ar
 	return 0;
 }
 
+static int __rrr_mqtt_parse_utf8_validate (
+		const char *data,
+		uint16_t utf8_length,
+		uint16_t minimum_length
+) {
+	if (utf8_length < minimum_length) {
+		RRR_MSG_0("Too short UTF-8 string encountered (%u<%u)\n", utf8_length, minimum_length);
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
+	struct parse_utf8_validate_callback_data callback_data = {0, 0};
+	if (rrr_utf8_validate_and_iterate(data, utf8_length, __rrr_mqtt_parse_utf8_validate_callback, &callback_data) != 0) {
+		RRR_MSG_0 ("Malformed UTF-8 detected in UTF8-data\n");
+		if (callback_data.has_illegal_character == 1){
+			RRR_MSG_0("Illegal character 0x%04x\n", callback_data.character);
+		}
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
+	return RRR_MQTT_OK;
+}
+
 static int __rrr_mqtt_parse_utf8 (
 		char **target,
 		const char *start,
@@ -458,22 +508,11 @@ static int __rrr_mqtt_parse_utf8 (
 	if (ret != RRR_MQTT_OK) {
 		return ret;
 	}
-
-	if (utf8_length < minimum_length) {
-		RRR_MSG_0("Too short UTF-8 string encountered (%u<%u)\n", utf8_length, minimum_length);
-		return RRR_MQTT_SOFT_ERROR;
-	}
-
-	struct parse_utf8_validate_callback_data callback_data = {0, 0};
-	if (rrr_utf8_validate_and_iterate(*target, utf8_length, __rrr_mqtt_parse_utf8_validate_callback, &callback_data) != 0) {
-		RRR_MSG_0 ("Malformed UTF-8 detected in UTF8-data\n");
-		if (callback_data.has_illegal_character == 1){
-			RRR_MSG_0("Illegal character 0x%04x\n", callback_data.character);
-		}
-		return RRR_MQTT_SOFT_ERROR;
-	}
-
-	return RRR_MQTT_OK;
+	return __rrr_mqtt_parse_utf8_validate (
+			*target,
+			utf8_length,
+			minimum_length
+	);
 }
 
 #define RRR_PROPERTY_PARSER_DEFINITION \
@@ -816,7 +855,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(connect);
 
 	// May be zero bytes
-	PARSE_UTF8(connect,client_identifier,0,client identifier);
+	PARSE_UTF8(connect,client_identifier,0,client_identifier);
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		PARSE_PROPERTIES_IF_V5(connect,will_properties);
@@ -826,8 +865,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 					connect->will_topic);
 			return RRR_MQTT_SOFT_ERROR;
 		}
-		PARSE_BLOB(connect,will_message);
-		connect->will_message_size = parse_state->blob_length;
+		PARSE_BLOB_NULLSAFE(connect,will_message);
 	}
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect) != 0) {
