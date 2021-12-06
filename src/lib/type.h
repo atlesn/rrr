@@ -292,7 +292,7 @@ void rrr_type_value_destroy (
 		struct rrr_type_value *template
 );
 int rrr_type_value_is_tag (
-		struct rrr_type_value *value,
+		const struct rrr_type_value *value,
 		const char *tag
 );
 int rrr_type_value_set_tag (

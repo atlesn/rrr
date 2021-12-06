@@ -438,9 +438,9 @@ static int __rrr_array_get_value_64_by_tag (
 ) {
 	int ret = 0;
 
-	struct rrr_type_value *value = NULL;
+	const struct rrr_type_value *value = NULL;
 
-	if ((value = rrr_array_value_get_by_tag(array, tag)) == NULL) {
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
 		ret = 1;
 		goto out;
@@ -491,6 +491,40 @@ int rrr_array_get_value_signed_64_by_tag (
 		unsigned int index
 ) {
 	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
+}
+
+int rrr_array_get_value_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+) {
+	int ret = 0;
+
+	const struct rrr_type_value *value = NULL;
+	char *str = NULL;
+
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
+		RRR_MSG_0("Could not find value '%s' in array while getting str-value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (value->definition->to_str == NULL) {
+		RRR_MSG_0("Value '%s' of type '%s' can't be converted to string\n", value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = value->definition->to_str(&str, value)) != 0) {
+		goto out;
+	}
+
+	*result = str;
+	str = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(str);
+	return ret;
 }
 
 void rrr_array_strip_type (

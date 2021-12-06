@@ -469,8 +469,12 @@ int rrr_instance_config_parse_optional_topic_filter (
 ) {
 	int ret = 0;
 
-	*target = NULL;
-	*target_str = NULL;
+	if (target != NULL) {
+		*target = NULL;
+	}
+	if (target_str != NULL) {
+		*target_str = NULL;
+	}
 
 	char *filter = NULL;
 

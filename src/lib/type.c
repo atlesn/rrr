@@ -1362,7 +1362,7 @@ void rrr_type_value_destroy (
 }
 
 int rrr_type_value_is_tag (
-		struct rrr_type_value *value,
+		const struct rrr_type_value *value,
 		const char *tag
 ) {
 	return ((value->tag == NULL && value == NULL) || (value->tag != NULL && strcmp(tag, value->tag) == 0));
