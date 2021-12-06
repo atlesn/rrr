@@ -2399,6 +2399,11 @@ The field may be set multiple times, do not separate topics with comma. The give
 Topic filters are set as with the
 .B subscribe
 command. The client will unsubscribe from the given topics. Error messages may be printed if subscriptions do not already exist.
+.It disconnect
+The client will disconnect from the broker after which an automatic reconnect occurs.
+If the field
+.B mqtt_disconnect_with_will
+is present, any will message is activated (an abrubt disconnect is done for version 3.1.1 and disconnect with will is sent for version 5).
 .El
 .El
 

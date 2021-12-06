@@ -11,7 +11,7 @@ my $dbg = { };
 bless $dbg, rrr::rrr_helper::rrr_debug;
 
 my $active_command = undef;
-my @commands = qw/subscribe_1 subscribe_2 subscribe_3/;
+my @commands = qw/will_1 subscribe_1 subscribe_2 subscribe_3/;
 
 my @outgoing_data;
 my @expected_data;
@@ -57,7 +57,10 @@ sub source {
 		# Client2 is V3.1.1
 		# Client3 is V5
 
-		if ($command eq "subscribe_1") {
+		if ($command eq "will_1") {
+			disconnect($message, "client3", 1);
+		}
+		elsif ($command eq "subscribe_1") {
 			unsubscribe($message, "client1", "xxx");
 			subscribe($message, "client1", "client2/data/1/+");
 
@@ -91,7 +94,9 @@ sub source {
 			return 0
 		}
 
-		$active_command = $command;
+		if (@outgoing_data > 0) {
+			$active_command = $command;
+		}
 	}
 	elsif (@expected_data == 0 && @commands == 0 && !defined $active_command && !$fail) {
 		# All tests complete
@@ -99,6 +104,20 @@ sub source {
 		$message->{'topic'} = "mqtt-ok";
 		$message->send();
 	}
+
+	return 1;
+}
+
+sub disconnect {
+	my $message = shift;
+	my $client = shift;
+	my $with_will = shift;
+
+	start_command($message, $client, "disconnect");
+	if ($with_will) {
+		$message->push_tag_str ("mqtt_disconnect_with_will", "");
+	}
+	$message->send();
 
 	return 1;
 }

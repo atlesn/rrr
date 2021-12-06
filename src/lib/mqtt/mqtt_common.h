@@ -32,10 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_INTERNAL_ERROR            RRR_READ_HARD_ERROR
 #define RRR_MQTT_SOFT_ERROR                RRR_READ_SOFT_ERROR
 #define RRR_MQTT_INCOMPLETE                RRR_READ_INCOMPLETE
+#define RRR_MQTT_EOF                       RRR_READ_EOF
 
 #define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE    4096
-#define RRR_MQTT_COMMON_CLOSE_WAIT_TIME                3
-#define RRR_MQTT_COMMON_RETRY_INTERVAL                 5
+#define RRR_MQTT_COMMON_CLOSE_WAIT_TIME_S              1
+#define RRR_MQTT_COMMON_RETRY_INTERVAL_S               5
 #define RRR_MQTT_COMMON_MAX_CONNECTIONS              260
 
 #define RRR_MQTT_COMMON_SESSION_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_deleted,ret_hard)\

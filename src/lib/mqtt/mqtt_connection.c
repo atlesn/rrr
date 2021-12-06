@@ -76,11 +76,6 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
         short keepalive_exceeded = 0;                          \
         __rrr_mqtt_conn_timeouts_check (&keepalive_reached, &keepalive_exceeded, connection)
 
-#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason)   \
-        if ((connection)->disconnect_reason_v5_ == 0) {        \
-            (connection)->disconnect_reason_v5_ = reason;      \
-        }                                                      \
-
 int rrr_mqtt_conn_set_client_id (
 		struct rrr_mqtt_conn *connection,
 		const char *id
@@ -158,6 +153,15 @@ int rrr_mqtt_conn_update_state (
 		RRR_BUG("Unknown control packet %u in rrr_mqtt_connection_update_state_iterator_ctx\n", packet_type);
 	}
 
+	return RRR_MQTT_OK;
+}
+
+int rrr_mqtt_conn_iterator_ctx_set_disconnect_reason (
+		struct rrr_net_transport_handle *handle,
+		uint8_t reason_v5
+) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+	RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason_v5);
 	return RRR_MQTT_OK;
 }
 
@@ -408,8 +412,10 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 			);
 		}
 
-		if ((connection->protocol_version != NULL && connection->protocol_version->id == RRR_MQTT_VERSION_5)
-				|| connection->disconnect_reason_v5_ < 0x80
+		// To trigger any will message when version is not 5, close the connection without sending disconnect packet
+
+		if ( (connection->protocol_version != NULL && connection->protocol_version->id == RRR_MQTT_VERSION_5) ||
+		     (connection->disconnect_reason_v5_ < 0x80 && connection->disconnect_reason_v5_ != RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL)
 		) {
 			ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
 			// Ignore soft errors when sending DISCONNECT packet here.
@@ -430,30 +436,34 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		goto out;
 	}
 
-	uint64_t time_now = rrr_time_get_64();
+	const uint64_t time_now = rrr_time_get_64();
+
 	if (connection->close_wait_start == 0) {
 		connection->close_wait_start = time_now;
-		RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
+
+		RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer %" PRIu64 " usecs (and closing connection if needed).\n",
 				connection,
 				(connection->client_id != NULL ? connection->client_id : "(empty)"),
-				connection->disconnect_reason_v5_
+				connection->disconnect_reason_v5_,
+				connection->close_wait_time_usec
 		);
 
-		if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
-			__rrr_mqtt_connection_close (connection);
-		}
 	}
-	if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
-/*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
-				(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
-		// We can basically return anything apart from 1 to stop net transport from destroying connection.
-		// When we return 0, connection is destroyed.
-		ret = RRR_LL_DIDNT_DESTROY;
+
+	if (connection->close_wait_start + connection->close_wait_time_usec > time_now) {
+//			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
+//				connection->close_wait_time_usec - (time_now - connection->close_wait_start)).
+
+		// When we return EOF, connection is not destroyed.
+		ret = RRR_NET_TRANSPORT_READ_READ_EOF;
 		goto out;
 	}
 
 	out:
-		if (ret == RRR_MQTT_OK) {
+		if (ret != RRR_NET_TRANSPORT_READ_READ_EOF) {
+			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
+				__rrr_mqtt_connection_close (connection);
+			}
 			RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
 					connection, connection->disconnect_reason_v5_);
 		}
@@ -550,6 +560,7 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 int rrr_mqtt_conn_iterator_ctx_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_net_transport_handle *handle
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
@@ -557,6 +568,8 @@ int rrr_mqtt_conn_iterator_ctx_check_alive (
 	int ret = RRR_MQTT_OK;
 
 	*alive = 1;
+	*send_allowed = 0;
+	*close_wait = 0;
 
 	if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection) ||
 		RRR_MQTT_CONN_STATE_IS_CLOSED(connection) ||
@@ -567,6 +580,11 @@ int rrr_mqtt_conn_iterator_ctx_check_alive (
 
 	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
 		*send_allowed = 1;
+	}
+
+
+	if (RRR_MQTT_CONN_STATE_IS_CLOSE_WAIT(connection)) {
+		*close_wait = 1;
 	}
 
 	return ret;

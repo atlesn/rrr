@@ -185,6 +185,10 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 		const struct rrr_array *definition,
 		const char *tag
 );
+int rrr_array_has_tag (
+		const struct rrr_array *definition,
+		const char *tag
+);
 int rrr_array_selected_tags_split (
 		int *found_tags,
 		const struct rrr_array *definition,

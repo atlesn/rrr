@@ -655,6 +655,21 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 	return NULL;
 }
 
+int rrr_array_has_tag (
+		const struct rrr_array *definition,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (node->tag != NULL) {
+			if (strcmp(node->tag, tag) == 0) {
+				return 1;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	return 0;
+}
+
 static int __rrr_array_get_packed_length (
 		rrr_biglength *result,
 		const struct rrr_array *definition

@@ -54,6 +54,7 @@ struct rrr_mqtt_client_data {
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 );
@@ -75,6 +76,11 @@ int rrr_mqtt_client_unsubscribe (
 );
 void rrr_mqtt_client_close_all_connections (
 		struct rrr_mqtt_client_data *data
+);
+int rrr_mqtt_client_disconnect (
+		struct rrr_mqtt_client_data *data,
+		int transport_handle,
+		uint8_t reason_v5
 );
 int rrr_mqtt_client_connect (
 		int *transport_handle,

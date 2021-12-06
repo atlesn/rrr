@@ -68,7 +68,7 @@ struct rrr_mqtt_session_ram {
 	uint64_t prev_maintain_time;
 	uint64_t expire_time;
 	uint32_t max_in_flight;
-	uint32_t complete_publish_grace_time;
+	uint32_t complete_publish_grace_time_s;
 	struct rrr_mqtt_subscription_collection *subscriptions;
 	struct rrr_mqtt_p_publish *will_publish;
 };
@@ -1322,7 +1322,7 @@ static int __rrr_mqtt_session_ram_init (
 		const struct rrr_mqtt_session_properties *session_properties,
 		uint64_t retry_interval_usec,
 		uint32_t max_in_flight,
-		uint32_t complete_publish_grace_time,
+		uint32_t complete_publish_grace_time_s,
 		int clean_session,
 		int *session_was_present
 ) {
@@ -1342,7 +1342,7 @@ static int __rrr_mqtt_session_ram_init (
 	ram_session->retry_interval_usec = retry_interval_usec;
 	ram_session->max_in_flight = max_in_flight;
 	ram_session->expire_time = 0;
-	ram_session->complete_publish_grace_time = complete_publish_grace_time;
+	ram_session->complete_publish_grace_time_s = complete_publish_grace_time_s;
 
 	if (clean_session == 1) {
 		*session_was_present = 0;
@@ -2699,7 +2699,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	struct iterate_send_queue_callback_data callback_data = {
 			callback,
 			callback_arg,
-			ram_session->complete_publish_grace_time * 1000 * 1000,
+			ram_session->complete_publish_grace_time_s * 1000 * 1000,
 			ram_session->retry_interval_usec * 1000 * 1000,
 			ram_data,
 			ram_session,

@@ -62,6 +62,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             return RRR_MQTT_SOFT_ERROR;                                                                                   \
         }} while (0)
 
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason)   \
+        if ((connection)->disconnect_reason_v5_ == 0) {                   \
+            (connection)->disconnect_reason_v5_ = reason;                 \
+        }
+
 struct rrr_mqtt_session;
 struct rrr_net_transport_handle;
 
@@ -104,9 +109,6 @@ struct rrr_mqtt_conn {
 	};
 };
 
-#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(c, reason_v5) \
-	(c)->disconnect_reason_v5_ = reason_v5
-
 #define RRR_MQTT_CONN_STATE_CONNECT_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
 
@@ -137,6 +139,9 @@ struct rrr_mqtt_conn {
 
 #define RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
+
+#define RRR_MQTT_CONN_STATE_IS_CLOSE_WAIT(c) \
+	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
 
 #define RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(c) \
 	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSED|RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
@@ -178,6 +183,7 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 int rrr_mqtt_conn_iterator_ctx_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_mqtt_conn_iterator_ctx_read (
@@ -200,6 +206,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
+);
+int rrr_mqtt_conn_iterator_ctx_set_disconnect_reason (
+		struct rrr_net_transport_handle *handle,
+		uint8_t reason_v5
 );
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_net_transport_handle *handle

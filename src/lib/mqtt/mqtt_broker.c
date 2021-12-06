@@ -141,7 +141,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_net_tra
 
 		RRR_DBG_2("Disconnecting existing client with client ID %s\n", connection->client_id);
 
-		RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+		RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
 		int ret_tmp = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
 
 		// On soft error, we cannot be sure that the existing client was actually
@@ -722,7 +722,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 	RRR_DBG_2("Setting connection disconnect reason to %u in CONNACK\n", reason_v5);
 	connack->reason_v5 = reason_v5;
-	RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, reason_v5);
+	RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason_v5);
 
 	if (connack->protocol_version->id < 5) {
 		uint8_t v31_reason = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
@@ -914,11 +914,9 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 	RRR_DBG_2("DISCONNECT from client '%s' in MQTT broker reason %u\n",
 			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason_v5);
 
-//	printf("state before: %u\n", connection->state_flags);
+	RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, disconnect->reason_v5);
 
 	ret = rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
-
-//	printf("state after: %u\n", connection->state_flags);
 
 	return ret;
 }

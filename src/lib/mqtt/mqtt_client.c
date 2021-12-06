@@ -38,12 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/macro_utils.h"
 
-#define RRR_MQTT_CLIENT_RETRY_INTERVAL                 5
-#define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME                3
-#define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
-#define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
-#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
-#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT       5000
+#define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                   125
+#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME_S     2
+#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT          5000
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -113,6 +110,7 @@ struct rrr_mqtt_client_check_alive_callback_data {
 	struct rrr_mqtt_client_data *data;
 	int alive;
 	int send_allowed;
+	int close_wait;
 };
 
 static int __rrr_mqtt_client_connection_check_alive_callback (
@@ -126,6 +124,7 @@ static int __rrr_mqtt_client_connection_check_alive_callback (
 	if ((ret = rrr_mqtt_conn_iterator_ctx_check_alive (
 			&callback_data->alive,
 			&callback_data->send_allowed,
+			&callback_data->close_wait,
 			handle
 	)) != 0) {
 		goto out;
@@ -138,6 +137,7 @@ static int __rrr_mqtt_client_connection_check_alive_callback (
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 ) {
@@ -149,6 +149,7 @@ int rrr_mqtt_client_connection_check_alive (
 	struct rrr_mqtt_client_check_alive_callback_data callback_data = {
 		data,
 		0,
+		0,
 		0
 	};
 
@@ -159,7 +160,7 @@ int rrr_mqtt_client_connection_check_alive (
 			&callback_data
 	);
 
-	// Clear all errors (BUSY, SOFT ERROR) except INTERNAL ERROR
+	// Clear all errors (BUSY, SOFT ERROR, EOF) except INTERNAL ERROR
 	ret = ret & RRR_MQTT_INTERNAL_ERROR;
 
 	if (ret != RRR_MQTT_OK) {
@@ -169,6 +170,7 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = callback_data.alive;
 	*send_allowed = callback_data.send_allowed;
+	*close_wait = callback_data.close_wait;
 
 	out:
 	return ret;
@@ -338,6 +340,49 @@ struct rrr_mqtt_client_property_override {
 	struct rrr_mqtt_property *property;
 };
 
+struct rrr_mqtt_client_disconnect_callback_data {
+	uint8_t reason_v5;
+};
+		
+int __rrr_mqtt_client_disconnect_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_mqtt_client_disconnect_callback_data *callback_data = arg;
+
+	rrr_mqtt_conn_iterator_ctx_set_disconnect_reason (handle, callback_data->reason_v5);
+
+	return RRR_NET_TRANSPORT_READ_READ_EOF;
+}
+
+int rrr_mqtt_client_disconnect (
+		struct rrr_mqtt_client_data *data,
+		int transport_handle,
+		uint8_t reason_v5
+) {
+	struct rrr_mqtt_client_disconnect_callback_data callback_data = {
+		reason_v5
+	};
+
+	int ret = rrr_mqtt_transport_with_iterator_ctx_do_custom (
+			data->mqtt_data.transport,
+			transport_handle,
+			__rrr_mqtt_client_disconnect_callback,
+			&callback_data
+	);
+
+	if (ret == RRR_MQTT_OK) {
+		// Connection is not closed yet
+		return RRR_MQTT_INCOMPLETE;
+	}
+	else if (ret == RRR_MQTT_EOF) {
+		// Connection is now closed
+		return RRR_MQTT_OK;
+	}
+
+	return ret;
+}
+
 int rrr_mqtt_client_connect (
 		int *transport_handle,
 		struct rrr_mqtt_session **session,
@@ -502,7 +547,7 @@ int rrr_mqtt_client_connect (
 			&session_properties_tmp,
 			mqtt_data->retry_interval_usec,
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
-			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
+			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME_S,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
