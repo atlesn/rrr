@@ -2386,6 +2386,7 @@ String-compatible values with special tag names are set in the array message.
 The command to perform is set in the value
 .B mqtt_command.
 Other values to set is different depending on the command.
+Debuglevel 1 may be activated to print information about command processing.
 
 Possible commands are:
 .sp
@@ -2394,6 +2395,10 @@ Possible commands are:
 Topics to subscribe to are set in the field
 .B mqtt_topic_filter.
 The field may be set multiple times, do not separate topics with comma. The given topics are added to any existing topics currently subscribed to and a SUBSCRIBE packet is sent to the broker for all current subscriptions.
+.It unsubscribe
+Topic filters are set as with the
+.B subscribe
+command. The client will unsubscribe from the given topics. Error messages may be printed if subscriptions do not already exist.
 .El
 .El
 

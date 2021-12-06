@@ -11,7 +11,7 @@ my $dbg = { };
 bless $dbg, rrr::rrr_helper::rrr_debug;
 
 my $active_command = undef;
-my @commands = qw/subscribe_1/;
+my @commands = qw/subscribe_1 subscribe_2 subscribe_3/;
 
 my @outgoing_data;
 my @expected_data;
@@ -53,17 +53,38 @@ sub source {
 	if (!defined $active_command and @commands > 0) {
 		my $command = shift @commands;
 
-		if ($command eq "subscribe_1") {
-			# 1. Tell client1 to subscribe to topics client2/#
-			start_command($message, "client1", "subscribe");
-			$message->push_tag_str ("mqtt_topic_filter", "client2/#");
-			$message->send();
+		# Client1 is V3.1.1
+		# Client2 is V3.1.1
+		# Client3 is V5
 
-			# 2. Send a message to client 2 with a topic matching
-			#    the subscription.
-			start_data("client2", "data1", 1);
-			start_data("client2", "data2", 1);
-			start_data("client2", "data3", 1);
+		if ($command eq "subscribe_1") {
+			unsubscribe($message, "client1", "xxx");
+			subscribe($message, "client1", "client2/data/1/+");
+
+			# All three should arrive
+			start_data("client2", "1/1", 1);
+			start_data("client2", "1/2", 1);
+			start_data("client2", "1/3", 1);
+		}
+		elsif ($command eq "subscribe_2") {
+			unsubscribe($message, "client1", "client2/data/1/+");
+			subscribe($message, "client1", "client2/data/2/+");
+
+			# Only second message should arrive
+			start_data("client2", "1/4", 0);
+			start_data("client2", "2/1", 1);
+		}
+		elsif ($command eq "subscribe_3") {
+			unsubscribe($message, "client1", "client2/data/2/+");
+
+			unsubscribe($message, "client3", "xxx");
+			subscribe($message, "client3", "client2/data/4/+");
+			subscribe($message, "client3", "client2/data/3/+");
+			unsubscribe($message, "client3", "client2/data/4/+");
+
+			# Only second message should arrive
+			start_data("client2", "4/1", 0);
+			start_data("client2", "3/l", 1);
 		}
 		else {
 			$dbg->msg(0, "Bug in test script: Unknown command $command\n");
@@ -82,6 +103,30 @@ sub source {
 	return 1;
 }
 
+sub subscribe {
+	my $message = shift;
+	my $client = shift;
+	my $topic = shift;
+
+	start_command($message, $client, "subscribe");
+	$message->push_tag_str ("mqtt_topic_filter", $topic);
+	$message->send();
+
+	return 1;
+}
+
+sub unsubscribe {
+	my $message = shift;
+	my $client = shift;
+	my $topic = shift;
+
+	start_command($message, $client, "unsubscribe");
+	$message->push_tag_str ("mqtt_topic_filter", $topic);
+	$message->send();
+
+	return 1;
+}
+
 sub send_data {
 	my $message = shift;
 
@@ -95,6 +140,9 @@ sub send_data {
 	if ($data->{'expect_return'}) {
 		push @expected_data, $message->{'topic'};
 		$dbg->msg(1, ">> Expecting result...\n");
+	}
+	else {
+		$dbg->msg(1, "== Not expecting result\n");
 	}
 
 	$message->send();

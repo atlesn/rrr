@@ -125,14 +125,13 @@ struct mqtt_client_data {
 	rrr_setting_uint qos;
 	rrr_setting_uint version;
 
-	struct rrr_mqtt_subscription_collection *requested_subscriptions;
+	struct rrr_mqtt_subscription_collection *subscriptions;
 
 	int do_prepend_publish_topic;
 	int do_force_publish_topic;
 	int do_publish_rrr_message;
 	int do_receive_rrr_message;
 	int do_receive_publish_topic;
-	int do_debug_unsubscribe_cycle;
 	int do_recycle_assigned_client_identifier;
 	int do_discard_on_connect_retry;
 
@@ -150,8 +149,6 @@ struct mqtt_client_data {
 	struct rrr_net_transport_config net_transport_config;
 	int transport_handle;
 
-	unsigned int received_suback_packet_id;
-	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
 	uint64_t total_discarded_count;
 };
@@ -169,7 +166,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password);
 	rrr_mqtt_topic_token_destroy(data->topic_filter_command);
 	rrr_map_clear(&data->publish_values_from_array_list);
-	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
+	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_clear(&data->connect_properties);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
@@ -178,7 +175,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->input_queue);
 }
 
-static int mqttclient_subscription_push (struct rrr_mqtt_subscription_collection *target, struct mqtt_client_data *data, const char *topic_str) {
+static int mqttclient_subscription_push (struct rrr_mqtt_subscription_collection *target, struct mqtt_client_data *data, uint8_t qos, const char *topic_str) {
 	int ret = 0;
 
 	if (rrr_mqtt_topic_filter_validate_name(topic_str) != 0) {
@@ -192,7 +189,7 @@ static int mqttclient_subscription_push (struct rrr_mqtt_subscription_collection
 			0,
 			0,
 			0,
-			(uint8_t) data->qos
+			qos
 	)) != 0) {
 		if (ret == RRR_MQTT_SUBSCRIPTION_REFUSED) {
 			rrr_length subscription_count = rrr_mqtt_subscription_collection_count(target);
@@ -235,38 +232,20 @@ static int mqttclient_message_data_to_payload (
 static int mqttclient_do_subscribe (struct mqtt_client_data *data) {
 	int ret = RRR_MQTT_OK;
 
-	data->received_suback_packet_id = 0;
-
 	if ((ret = rrr_mqtt_client_subscribe (
 			data->mqtt_client_data,
 			&data->session,
-			data->requested_subscriptions
+			data->subscriptions
 	)) != 0) {
 		RRR_MSG_0("Could not subscribe to topics in MQTT client instance %s return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);
-		return ret;
+		goto out;
 	}
 
+	out:
 	return ret;
 }
-
-static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
-	int ret = RRR_MQTT_OK;
-
-	data->received_unsuback_packet_id = 0;
-
-	if ((ret = rrr_mqtt_client_unsubscribe (
-			data->mqtt_client_data,
-			&data->session,
-			data->requested_subscriptions
-	)) != 0) {
-		RRR_MSG_0("Could not unsubscribe to topics in MQTT client instance %s return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
-		return ret;
-	}
-	return ret;
-}
-
+	
 static int mqttclient_publish_set_topic (
 		int *do_drop,
 		struct rrr_mqtt_p_publish *publish,
@@ -641,7 +620,8 @@ static int mqttclient_process_command_subscribe_new_subscrition_callback (
 	return 0;
 }
 
-static int mqttclient_process_command_subscribe (
+static int mqttclient_process_command_get_topic_filters (
+		struct rrr_mqtt_subscription_collection **target,
 		struct mqtt_client_data *data,
 		const struct rrr_array *array
 ) {
@@ -665,18 +645,41 @@ static int mqttclient_process_command_subscribe (
 			if ((ret = node->definition->to_str (&topic_filter_tmp, node)) != 0) {
 				goto out;
 			}
-			if ((ret = mqttclient_subscription_push (subscriptions_tmp, data, topic_filter_tmp)) != 0) {
+			if ((ret = mqttclient_subscription_push (subscriptions_tmp, data, 0, topic_filter_tmp)) != 0) {
 				goto out;
 			}
 		}
 		else {
-			RRR_MSG_0("Warning: Unknown value '%s' in subscribe command to mqtt client\n", node->tag != NULL ? node->tag : "(not tag)");
+			RRR_MSG_0("Warning: Unknown value '%s' in command to mqtt client\n", node->tag != NULL ? node->tag : "(not tag)");
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
 
+	*target = subscriptions_tmp;
+	subscriptions_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic_filter_tmp);
+	if (subscriptions_tmp != NULL) {
+		rrr_mqtt_subscription_collection_destroy(subscriptions_tmp);
+	}
+	return ret;
+}
+
+static int mqttclient_process_command_subscribe (
+		struct mqtt_client_data *data,
+		const struct rrr_array *array
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_subscription_collection *subscriptions_tmp = NULL;
+
+	if ((ret = mqttclient_process_command_get_topic_filters (&subscriptions_tmp, data, array)) != 0) {
+		goto out;
+	}
+
 	if ((ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
-			data->requested_subscriptions,
+			data->subscriptions,
 			subscriptions_tmp,
 			0,
 			mqttclient_process_command_subscribe_new_subscrition_callback,
@@ -692,8 +695,69 @@ static int mqttclient_process_command_subscribe (
 	}
 
 	out:
-	rrr_mqtt_subscription_collection_destroy(subscriptions_tmp);
-	RRR_FREE_IF_NOT_NULL(topic_filter_tmp);
+	if (subscriptions_tmp != NULL) {
+		rrr_mqtt_subscription_collection_destroy(subscriptions_tmp);
+	}
+	return ret;
+}
+
+static int mqttclient_process_command_unsubscribe (
+		struct mqtt_client_data *data,
+		const struct rrr_array *array
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_subscription_collection *subscriptions_tmp = NULL;
+
+	if ((ret = mqttclient_process_command_get_topic_filters (&subscriptions_tmp, data, array)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_mqtt_client_unsubscribe (
+			data->mqtt_client_data,
+			&data->session,
+			subscriptions_tmp
+	)) != 0) {
+		RRR_MSG_0("Could not unsubscribe to topics in MQTT client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+		goto out;
+	}
+
+	if (data->version == 5) {
+		// Topics are removed from requested topics when UNSUBACK arrrives
+		RRR_LL_ITERATE_BEGIN(subscriptions_tmp, struct rrr_mqtt_subscription);
+			RRR_DBG_1("mqtt client instance %s unsubscription '%s' requested from command (awaiting feedback)\n",
+				INSTANCE_D_NAME(data->thread_data), node->topic_filter);
+		RRR_LL_ITERATE_END_CHECK_DESTROY(subscriptions_tmp, 0; rrr_mqtt_subscription_destroy(node));
+	}
+	else {
+		rrr_length removed_count = 0;
+		if ((ret = rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
+				data->subscriptions,
+				subscriptions_tmp,
+				&removed_count
+		)) != 0) {
+			goto out;
+		}
+
+		RRR_LL_ITERATE_BEGIN(subscriptions_tmp, struct rrr_mqtt_subscription);
+			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(node->qos_or_reason_v5);
+			if (node->qos_or_reason_v5 != 0) {
+				RRR_DBG_1("mqtt client instance %s unsubscription '%s' request from command failed locally with reason %s (version is 3.1.1)\n",
+					INSTANCE_D_NAME(data->thread_data), node->topic_filter, reason != NULL ? reason->description : "UNKNOWN");
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+			else {
+				RRR_DBG_1("mqtt client instance %s unsubscription '%s' requested from command (version is 3.1.1, no feedback will be received)\n",
+					INSTANCE_D_NAME(data->thread_data), node->topic_filter);
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY(subscriptions_tmp, 0; rrr_mqtt_subscription_destroy(node));
+	}
+
+	out:
+	if (subscriptions_tmp != NULL) {
+		rrr_mqtt_subscription_collection_destroy(subscriptions_tmp);
+	}
 	return ret;
 }
 
@@ -721,15 +785,18 @@ static int mqttclient_process_command (
 		goto out;
 	}
 
-	rrr_array_clear_by_tag (&array, "mqtt_command");
-
 	if (command == NULL) {
 		RRR_MSG_0("Warning: Received a command message with missing command tag 'mqtt_command' in mqtt client instance %s.\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
+	rrr_array_clear_by_tag (&array, "mqtt_command");
+
 	if (strcmp(command, "subscribe") == 0) {
 		ret = mqttclient_process_command_subscribe(data, &array);
+	}
+	else if (strcmp(command, "unsubscribe") == 0) {
+		ret = mqttclient_process_command_unsubscribe(data, &array);
 	}
 	else {
 		RRR_MSG_0("Warning: Unknown command '%s' in mqtt client instance %s\n", command, INSTANCE_D_NAME(data->thread_data));
@@ -791,7 +858,7 @@ static int mqttclient_data_init (
 
 	memset(data, '\0', sizeof(*data));
 
-	if (rrr_mqtt_subscription_collection_new(&data->requested_subscriptions) != 0) {
+	if (rrr_mqtt_subscription_collection_new(&data->subscriptions) != 0) {
 		RRR_MSG_0("Could not create subscription collection in MQTT client mqttclient_data_init\n");
 		ret = 1;
 		goto out;
@@ -811,7 +878,7 @@ static int mqttclient_parse_sub_topic (const char *topic_str, void *arg) {
 
 	RRR_DBG_1("mqtt client instance %s new subscription '%s' from configuration\n", INSTANCE_D_NAME(data->thread_data), topic_str);
 
-	return mqttclient_subscription_push(data->requested_subscriptions, data, topic_str);
+	return mqttclient_subscription_push(data->subscriptions, data, (uint8_t) data->qos, topic_str);
 }
 
 static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {
@@ -1067,82 +1134,11 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
 	}
 
-	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
-	// subscribe to all topics once more.
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_client_debug_unsubscribe_cycle", do_debug_unsubscribe_cycle, 0);
-	if (data->do_debug_unsubscribe_cycle != 0 && rrr_mqtt_subscription_collection_count(data->requested_subscriptions) == 0) {
-		RRR_MSG_0("debug_unsubscribe_cycle set without any subscriptions in MQTT client instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
 	ret = 0;
 
 	/* On error, memory is freed by mqttclient_data_cleanup */
 
 	out:
-	return ret;
-}
-
-static int mqttclient_process_unsuback (
-		struct mqtt_client_data *data,
-		const struct rrr_mqtt_subscription *subscription,
-		const uint8_t reason_v5
-) {
-	const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(reason_v5);
-
-	if (reason == NULL) {
-		RRR_MSG_0("Unknown reason %u received in UNSUBACK in MQTT client instance %s\n",
-				reason_v5,
-				INSTANCE_D_NAME(data->thread_data)
-		);
-		return 1;
-	}
-
-	if (reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		RRR_MSG_0("Warning: UNSUBSCRIBE rejected for topic '%s' with reason %u '%s' in MQTT client instance %s",
-				subscription->topic_filter,
-				reason_v5,
-				reason->description,
-				INSTANCE_D_NAME(data->thread_data)
-		);
-	}
-
-	return 0;
-}
-
-static int mqttclient_process_suback (
-		struct mqtt_client_data *data,
-		const struct rrr_mqtt_subscription *subscription,
-		const rrr_length i,
-		const uint8_t qos_or_reason_v5
-) {
-	int ret = 0;
-
-	if (qos_or_reason_v5 > 2) {
-		const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
-		if (reason == NULL) {
-			RRR_MSG_0("Unknown reason 0x%02x from mqtt broker in SUBACK topic index %" PRIrrrl " in MQTT client instance %s",
-					qos_or_reason_v5, i, INSTANCE_D_NAME(data->thread_data));
-			return 1;
-		}
-		RRR_MSG_0("Warning: Subscription '%s' index '%" PRIrrrl "' rejected from broker in MQTT client instance %s with reason '%s'\n",
-				subscription->topic_filter,
-				i,
-				INSTANCE_D_NAME(data->thread_data),
-				reason->description
-		);
-	}
-	else if (qos_or_reason_v5 < subscription->qos_or_reason_v5) {
-		RRR_MSG_0("Warning: Subscription '%s' index '%" PRIrrrl "' assigned QoS %u from server while %u was requested in MQTT client instance %s \n",
-				subscription->topic_filter,
-				i,
-				qos_or_reason_v5,
-				subscription->qos_or_reason_v5,
-				INSTANCE_D_NAME(data->thread_data)
-		);
-	}
-
 	return ret;
 }
 
@@ -1175,18 +1171,42 @@ static int mqttclient_process_suback_unsuback (
 					orig_collection,
 					i
 			);
-			if (mqttclient_process_suback(data, subscription, i, ack->acknowledgements[i]) != 0) {
-				return 1;
+
+			const uint8_t qos_or_reason_v5 = ack->acknowledgements[i];
+			if (qos_or_reason_v5 > 2) {
+				const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
+				if (reason == NULL) {
+					RRR_MSG_0("Unknown reason 0x%02x from mqtt broker in SUBACK topic index %" PRIrrrl " in MQTT client instance %s",
+							qos_or_reason_v5, i, INSTANCE_D_NAME(data->thread_data));
+					return 1;
+				}
+				RRR_MSG_0("Warning: Subscription '%s' index '%" PRIrrrl "' rejected from broker in MQTT client instance %s with reason '%s'\n",
+						subscription->topic_filter,
+						i,
+						INSTANCE_D_NAME(data->thread_data),
+						reason->description
+				);
+			}
+			else {
+				if (qos_or_reason_v5 < subscription->qos_or_reason_v5) {
+					RRR_MSG_0("Warning: Subscription '%s' index '%" PRIrrrl "' assigned QoS %u from server while %u was requested in MQTT client instance %s \n",
+							subscription->topic_filter,
+							i,
+							qos_or_reason_v5,
+							subscription->qos_or_reason_v5,
+							INSTANCE_D_NAME(data->thread_data)
+					);
+				}	
+				RRR_DBG_1("mqtt client instance %s subscription '%s' index '%" PRIrrrl "' qos %u confirmed\n",
+					INSTANCE_D_NAME(data->thread_data), subscription->topic_filter, i, subscription->qos_or_reason_v5);
 			}
 		}
-
-		data->received_suback_packet_id = RRR_MQTT_P_GET_IDENTIFIER(ack);
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBACK) {
 		if (RRR_MQTT_P_IS_V5(packet)) {
 			if (orig_count != new_count) {
 				// Session framework should catch this
-				RRR_BUG("Count mismatch in SUBSCRIBE and SUBACK messages in MQTT client instance %s (%i vs %i)\n",
+				RRR_BUG("Count mismatch in UNSUBSCRIBE and UNSUBACK messages in MQTT client instance %s (%i vs %i)\n",
 						INSTANCE_D_NAME(data->thread_data), orig_count, new_count);
 			}
 			for (rrr_length i = 0; i < new_count; i++) {
@@ -1194,15 +1214,37 @@ static int mqttclient_process_suback_unsuback (
 						orig_collection,
 						i
 				);
-				if (mqttclient_process_unsuback(data, subscription, ack->acknowledgements[i]) != 0) {
-					return 1;
+
+				const uint8_t qos_or_reason_v5 = ack->acknowledgements[i];
+				const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
+				if (qos_or_reason_v5 != 0) {
+					RRR_DBG_1("mqtt client instance %s unsubscription '%s' failed remotely with reason 0x%02x %s (version is 5)\n",
+						INSTANCE_D_NAME(data->thread_data), subscription->topic_filter, qos_or_reason_v5, reason != NULL ? reason->description : "UNKNOWN");
+				}
+				else {
+					RRR_DBG_1("mqtt client instance %s unsubscription '%s' confirmed (version is 5)\n",
+						INSTANCE_D_NAME(data->thread_data), subscription->topic_filter);
+
+					int did_remove = 0;
+					if (rrr_mqtt_subscription_collection_remove_topic (
+							&did_remove,
+							data->subscriptions,
+							subscription->topic_filter
+					) != 0) {
+						RRR_MSG_0("Failed to remove topic '%s' from local subscription collection upon UNSUBACK in mqtt client instance %s\n",
+								subscription->topic_filter, INSTANCE_D_NAME(data->thread_data));
+						return 1;
+					}
+
+					if (!did_remove) {
+						// OK, possible double unsubscription
+					}
 				}
 			}
 		}
 		else {
 			// Can't really do anything, UNSUBACK V3.1 has no information
 		}
-		data->received_unsuback_packet_id = RRR_MQTT_P_GET_IDENTIFIER(ack);
 	}
 	else {
 		RRR_BUG("Unknown packet of type %u received in MQTT client %s mqttclient_process_suback\n",
@@ -1789,87 +1831,6 @@ static int mqttclient_late_client_identifier_update (struct mqtt_client_data *da
 	return ret;
 }
 
-static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
-	int ret = RRR_MQTT_OK;
-
-	uint64_t subscription_sent_time = 0;
-	int subscription_send_attempts = 0;
-	int subscription_done = 0;
-
-	uint64_t unsubscription_sent_time = 0;
-	int unsubscription_send_attempts = 0;
-	int unsubscription_done = 0;
-
-	if (rrr_mqtt_subscription_collection_count(data->requested_subscriptions) == 0) {
-		goto out;
-	}
-
-	// Subscription loop
-	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) == 0) {
-		// This will also do sending/receiving
-		if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
-			goto out;
-		}
-
-		if (subscription_done == 0) {
-			if (subscription_sent_time == 0) {
-				data->received_suback_packet_id = 0;
-				if ((ret = mqttclient_do_subscribe(data)) != 0) {
-					goto out;
-				}
-				subscription_send_attempts++;
-				subscription_sent_time = rrr_time_get_64();
-			}
-			else if (data->received_suback_packet_id != 0) {
-				subscription_done = 1;
-			}
-			else if (rrr_time_get_64() > subscription_sent_time + (RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS * 1000)) {
-				if (subscription_send_attempts > RRR_MQTT_SUBACK_RESEND_MAX) {
-					RRR_MSG_0("MQTT client %s giving up waiting for SUBACK\n", INSTANCE_D_NAME(data->thread_data));
-					ret = RRR_MQTT_SOFT_ERROR;
-					goto out;
-				}
-
-				subscription_sent_time = 0;
-				RRR_MSG_0("MQTT client %s timeout while waiting for SUBACK, retry\n", INSTANCE_D_NAME(data->thread_data));
-			}
-		}
-		else if (data->do_debug_unsubscribe_cycle != 0 && unsubscription_done == 0) {
-			if (unsubscription_sent_time == 0) {
-				data->received_unsuback_packet_id = 0;
-				if ((ret = mqttclient_do_unsubscribe(data)) != 0) {
-					goto out;
-				}
-				unsubscription_send_attempts++;
-				unsubscription_sent_time = rrr_time_get_64();
-			}
-			else if (data->received_unsuback_packet_id != 0) {
-				unsubscription_done = 1;
-
-				// Subscribe once again
-				subscription_done = 0;
-				subscription_sent_time = 0;
-			}
-			else if (rrr_time_get_64() > unsubscription_sent_time + (RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS * 1000)) {
-				if (unsubscription_send_attempts > RRR_MQTT_SUBACK_RESEND_MAX) {
-					RRR_MSG_0("MQTT client %s giving up waiting for SUBACK\n", INSTANCE_D_NAME(data->thread_data));
-					ret = RRR_MQTT_SOFT_ERROR;
-					goto out;
-				}
-
-				unsubscription_sent_time = 0;
-				RRR_MSG_0("MQTT client %s timeout while waiting for SUBACK, retry\n", INSTANCE_D_NAME(data->thread_data));
-			}
-		}
-		else {
-			break;
-		}
-	}
-
-	out:
-	return ret;
-}
-
 static int mqttclient_event_discard_complete (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	(void)(arg);
 	return RRR_EVENT_EXIT;
@@ -2234,7 +2195,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
 	clean_start = 0;
 
-	if ((ret_tmp = mqttclient_subscription_loop(data)) != RRR_MQTT_OK) {
+	if ((ret_tmp = mqttclient_do_subscribe(data)) != 0) {
 		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
 			goto out_destroy_client;
 		}
