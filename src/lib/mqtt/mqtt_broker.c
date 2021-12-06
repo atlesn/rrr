@@ -755,6 +755,21 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+static int __rrr_mqtt_broker_send_now_callback (
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle *handle = arg;
+
+	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet)) != 0) {
+		RRR_MSG_0("Could not send outbound packet in %s\n", __func__);
+	}
+
+	return ret;
+}
+
 static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -797,14 +812,14 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	suback->subscriptions_ = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
 
-	rrr_length send_queue_count_dummy = 0;
-
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->queue_packet (
-					&send_queue_count_dummy,
+			mqtt_data->sessions->methods->send_packet_now (
 					mqtt_data->sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) suback
+					(struct rrr_mqtt_p *) suback,
+					0,
+					__rrr_mqtt_broker_send_now_callback,
+					handle
 			),
 			goto out,
 			" while sending SUBACK to session in __rrr_mqtt_broker_handle_subscribe"
@@ -847,14 +862,14 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 	unsuback->subscriptions_ = unsubscribe->subscriptions;
 	unsubscribe->subscriptions = NULL;
 
-	rrr_length send_queue_count_dummy = 0;
-
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->queue_packet(
-					&send_queue_count_dummy,
+			mqtt_data->sessions->methods->send_packet_now(
 					mqtt_data->sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) unsuback
+					(struct rrr_mqtt_p *) unsuback,
+					0,
+					__rrr_mqtt_broker_send_now_callback,
+					handle
 			),
 			goto out,
 			" while sending UNSUBACK to session in __rrr_mqtt_broker_handle_unsubscribe"
