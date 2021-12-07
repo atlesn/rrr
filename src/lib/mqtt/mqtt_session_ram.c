@@ -1118,11 +1118,11 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	uint64_t time_now = rrr_time_get_64();
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	if (((ret = rrr_fifo_read_clear_forward_all (
+	if ((rrr_fifo_read_clear_forward_all (
 			&data->publish_forward_buffer.buffer,
 			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
 			data
-	)) & RRR_FIFO_GLOBAL_ERR) != 0) {
+	) & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
@@ -1161,7 +1161,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 				) != 0) {
 					RRR_MSG_0("Error while iterating publish grace queue in __rrr_mqtt_session_collection_ram_maintain\n");
 					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-					RRR_LL_ITERATE_LAST();
+					goto out;
 				}
 			}
 		}

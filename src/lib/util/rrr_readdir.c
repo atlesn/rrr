@@ -306,7 +306,7 @@ static int __rrr_readdir_foreach_recursive_descend_callback (
 	out_free:
 		RRR_FREE_IF_NOT_NULL(new_entry->orig_path);
 		RRR_FREE_IF_NOT_NULL(new_entry->resolved_path);
-		rrr_free(entry);
+		rrr_free(new_entry);
 	out:
 		return ret;
 }

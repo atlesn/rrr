@@ -1500,7 +1500,9 @@ int rrr_type_value_new_and_unpack (
 		goto out;
 	}
 
-	memcpy (value->data, data_start + tag_length, total_length);
+	if (total_length > 0) {
+		memcpy (value->data, data_start + tag_length, total_length);
+	}
 
 	if (value->definition->unpack == NULL) {
 		RRR_MSG_0("Illegal type %s in %s, cannot be unpacked.\n", type->identifier, __func__);
@@ -1588,7 +1590,9 @@ int rrr_type_new_h (
 		goto out;
 	}
 
-	memset((*target)->data, '\0', (long unsigned int) stored_length);
+	if (stored_length > 0) {
+		memset((*target)->data, '\0', (long unsigned int) stored_length);
+	}
 
 	out:
 	return ret;

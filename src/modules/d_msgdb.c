@@ -84,7 +84,7 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("msgdb_socket", socket);
 
 	if (data->directory == NULL) {
-		if ((ret = rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET)) <= 0) {
+		if (rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET) <= 0) {
 			RRR_MSG_0("rrr_asprintf() failed in %s\n", __func__);
 			ret = 1;
 			goto out;
