@@ -510,7 +510,7 @@ int rrr_array_get_value_str_by_tag (
 	}
 
 	if (value->definition->to_str == NULL) {
-		RRR_MSG_0("Value '%s' of type '%s' can't be converted to string\n", value->definition->identifier);
+		RRR_MSG_0("Value '%s' of type '%s' can't be converted to string\n", tag, value->definition->identifier);
 		ret = 1;
 		goto out;
 	}

@@ -331,9 +331,7 @@ static int __rrr_msg_read (
 	)) != 0) {
 		if (ret == RRR_MSG_READ_INCOMPLETE) {
 			RRR_MSG_0("Header of file '%s' was incomplete, file is too small\n",
-				file,
-				file_size_final,
-				target_size
+				file
 			);
 			ret = 1;
 			goto out;

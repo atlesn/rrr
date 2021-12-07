@@ -398,7 +398,7 @@ static int __rrr_mqtt_broker_handle_connect_will (
 				connect
 		)) != 0) {
 			RRR_MSG_0("Could not create publish will message data in %s, ret %i, reason %u\n",
-					__func__, ret, reason_v5);
+					__func__, ret, *reason_v5);
 			if (ret == RRR_MQTT_SOFT_ERROR && reason_v5 == 0) {
 				*reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 				goto out;
