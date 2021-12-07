@@ -383,6 +383,52 @@ int rrr_mqtt_client_disconnect (
 	return ret;
 }
 
+static int __rrr_mqtt_client_connect_set_will (
+		struct rrr_mqtt_p_connect *connect,
+		const char *will_topic,
+		const struct rrr_nullsafe_str *will_message,
+		uint8_t will_qos,
+		uint8_t will_retain
+) {
+	int ret = 0;
+
+	if (will_topic == NULL) {
+		if (rrr_nullsafe_str_len(will_message) != 0) {
+			RRR_BUG("BUG: Will topic was empty but will message was not in %s\n", __func__);
+		}
+		goto out;
+	}
+
+	if (*will_topic == '\0') {
+		RRR_BUG("BUG: Will topic was empty in %s\n", __func__);
+	}
+
+	RRR_FREE_IF_NOT_NULL(connect->will_topic);
+	if ((connect->will_topic = strdup(will_topic)) == NULL) {
+		RRR_MSG_0("Failed to allocate will topic in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace (
+			&connect->will_message,
+			will_message
+	)) != 0) {
+		RRR_MSG_0("Failed to set will message in %s\n", __func__);
+		goto out;
+	}
+
+	RRR_MQTT_P_CONNECT_SET_FLAG_WILL(connect);
+	RRR_MQTT_P_CONNECT_SET_FLAG_WILL_QOS(connect,will_qos);
+
+	if (will_retain) {
+		RRR_MQTT_P_CONNECT_SET_FLAG_WILL_RETAIN(connect);
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_mqtt_client_connect (
 		int *transport_handle,
 		struct rrr_mqtt_session **session,
@@ -394,7 +440,11 @@ int rrr_mqtt_client_connect (
 		uint8_t clean_start,
 		const char *username,
 		const char *password,
-		const struct rrr_mqtt_property_collection *connect_properties
+		const struct rrr_mqtt_property_collection *connect_properties,
+		const char *will_topic,
+		const struct rrr_nullsafe_str *will_message,
+		uint8_t will_qos,
+		uint8_t will_retain
 ) {
 	int ret = 0;
 
@@ -444,11 +494,15 @@ int rrr_mqtt_client_connect (
 		connect->connect_flags |= 1<<1;
 	}
 
-	int clean_start_flag = (clean_start != 0) << 1;
-	connect->connect_flags |= (uint8_t) clean_start_flag;
+	if (clean_start) {
+		RRR_MQTT_P_CONNECT_SET_FLAG_CLEAN_START(connect);
+	}
+
 	connect->keep_alive = keep_alive;
-	// Will QoS
-	// connect->connect_flags |= 2 << 3;
+
+	if ((ret = __rrr_mqtt_client_connect_set_will (connect, will_topic, will_message, will_qos, will_retain)) != 0) {
+		goto out;
+	}
 
 	if (username != NULL) {
 		RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(connect);

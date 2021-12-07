@@ -11,7 +11,7 @@ my $dbg = { };
 bless $dbg, rrr::rrr_helper::rrr_debug;
 
 my $active_command = undef;
-my @commands = qw/will_1 subscribe_1 subscribe_2 subscribe_3/;
+my @commands = qw/will_1 subscribe_1 will_2 subscribe_2 will_3 subscribe_3/;
 
 my @outgoing_data;
 my @expected_data;
@@ -30,7 +30,7 @@ sub process {
 
 	$dbg->msg(1, "<< Result $message->{'topic'}\n");
 	if ($expected_topic ne $message->{'topic'}) {
-		$dbg->msg(0, "Unexpected topic '$message->{'topic'}' received from one of the clients\n");
+		$dbg->msg(0, "Unexpected topic '$message->{'topic'}' received from one of the clients. Expected '$expected_topic'.\n");
 		$fail = 1;
 		return 1;
 	}
@@ -57,30 +57,47 @@ sub source {
 		# Client2 is V3.1.1
 		# Client3 is V5
 
+		$dbg->msg(1, "-- Test $command\n");
+
 		if ($command eq "will_1") {
+			# client2 should produce a retained will publish but not client3
+			disconnect($message, "client2", 1);
 			disconnect($message, "client3", 1);
 		}
 		elsif ($command eq "subscribe_1") {
-			unsubscribe($message, "client1", "xxx");
 			subscribe($message, "client1", "client2/data/1/+");
 
-			# All three should arrive
+			# All messages should arrive
 			start_data("client2", "1/1", 1);
 			start_data("client2", "1/2", 1);
 			start_data("client2", "1/3", 1);
 		}
+		elsif ($command eq "will_2") {
+			# Retained will from client2 should arrive
+			subscribe($message, "client1", "client2/will");
+			subscribe($message, "client1", "client3/will");
+
+			expect_data("client2/will");
+		}
 		elsif ($command eq "subscribe_2") {
 			unsubscribe($message, "client1", "client2/data/1/+");
+			unsubscribe($message, "client1", "client2/will");
+
 			subscribe($message, "client1", "client2/data/2/+");
 
 			# Only second message should arrive
 			start_data("client2", "1/4", 0);
 			start_data("client2", "2/1", 1);
 		}
+		elsif ($command eq "will_3") {
+			# Non-retained will from client3 should arrive
+			disconnect($message, "client3", 1);
+			expect_data("client3/will");
+		}
 		elsif ($command eq "subscribe_3") {
 			unsubscribe($message, "client1", "client2/data/2/+");
+			unsubscribe($message, "client1", "client3/will");
 
-			unsubscribe($message, "client3", "xxx");
 			subscribe($message, "client3", "client2/data/4/+");
 			subscribe($message, "client3", "client2/data/3/+");
 			unsubscribe($message, "client3", "client2/data/4/+");
@@ -131,6 +148,8 @@ sub subscribe {
 	$message->push_tag_str ("mqtt_topic_filter", $topic);
 	$message->send();
 
+	$dbg->msg(1, "++ Topic $topic\n");
+
 	return 1;
 }
 
@@ -142,6 +161,8 @@ sub unsubscribe {
 	start_command($message, $client, "unsubscribe");
 	$message->push_tag_str ("mqtt_topic_filter", $topic);
 	$message->send();
+
+	$dbg->msg(1, "++ Topic $topic\n");
 
 	return 1;
 }
@@ -165,6 +186,15 @@ sub send_data {
 	}
 
 	$message->send();
+
+	return 1;
+}
+
+sub expect_data {
+	my $topic = shift;
+
+	push @expected_data, $topic;
+	$dbg->msg(1, ">> Expecting result $topic...\n");
 
 	return 1;
 }

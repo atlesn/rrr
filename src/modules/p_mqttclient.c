@@ -65,6 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/gnu.h"
 #include "../lib/util/utf8.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/helpers/nullsafe_str.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
@@ -130,6 +131,13 @@ struct mqtt_client_data {
 
 	struct rrr_mqtt_subscription_collection *subscriptions;
 
+	char *will_topic;
+	uint16_t will_topic_length;
+	char *will_message_str;
+	struct rrr_nullsafe_str *will_message;
+	rrr_setting_uint will_qos;
+	int do_will_retain;
+
 	int do_prepend_publish_topic;
 	int do_force_publish_topic;
 	int do_publish_rrr_message;
@@ -169,6 +177,9 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	RRR_FREE_IF_NOT_NULL(data->username);
 	RRR_FREE_IF_NOT_NULL(data->password);
+	RRR_FREE_IF_NOT_NULL(data->will_topic);
+	RRR_FREE_IF_NOT_NULL(data->will_message_str);
+	rrr_nullsafe_str_destroy_if_not_null(&data->will_message);
 	rrr_mqtt_topic_token_destroy(data->topic_filter_command);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
@@ -962,6 +973,39 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_retain_tag", retain_tag);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC_FILTER("mqtt_command_topic_filter", topic_filter_command);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("mqtt_will_topic", will_topic, will_topic_length);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_will_message", will_message_str);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_will_qos", will_qos, RRR_MQTT_DEFAULT_QOS);
+	if (data->will_qos > 2) {
+		RRR_MSG_0("Setting mqtt_will_qos was >2 in config of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_will_retain", do_will_retain, 0);
+
+	if (data->will_message_str != NULL) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data->will_message, data->will_message_str, strlen(data->will_message_str))) != 0) {
+			RRR_MSG_0("Failed to store will message in %s of %s\n", __func__, config->name);
+			goto out;
+		}
+	}
+
+	if (data->will_topic == NULL) {
+		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
+			"mqtt_will_message",
+			RRR_MSG_0("mqtt_will_message was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+		);
+		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
+			"mqtt_will_qos",
+			RRR_MSG_0("mqtt_will_qos was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+		);
+		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
+			"mqtt_will_retain",
+			RRR_MSG_0("mqtt_will_retain was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+		);
+	}
+
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -1981,7 +2025,11 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, uint8_t clean
 				clean_start,
 				data->username,
 				data->password,
-				&data->connect_properties
+				&data->connect_properties,
+				data->will_topic,
+				data->will_message,
+				(uint8_t) data->will_qos,
+				data->do_will_retain != 0
 		)) != 0) {
 			goto check_ret;
 		}
