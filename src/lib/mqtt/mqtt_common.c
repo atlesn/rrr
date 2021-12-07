@@ -1241,6 +1241,9 @@ int rrr_mqtt_common_read_parse_single_handle (
 		goto housekeeping;
 	}
 
+	// Preserve any INCOMPLETE
+	ret_preserve |= ret;
+
 	if ((ret = __rrr_mqtt_common_send (
 			counters,
 			handle,
@@ -1257,7 +1260,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 
 	housekeeping:
 
-	ret_preserve = ret;
+	ret_preserve |= ret;
 
 	if ((ret = rrr_mqtt_conn_iterator_ctx_housekeeping(handle, exceeded_keep_alive_callback, callback_arg)) != 0) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {

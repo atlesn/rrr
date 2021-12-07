@@ -120,7 +120,7 @@ static void __rrr_mqtt_transport_accept_callback (
             0,                                                        \
             2 * 2000,   /* First read timeout 2s */                   \
             1 * 1000,   /* Soft timeout 1 s, maintenance interval */  \
-            0xffff * 2, /* Hard timeout */                            \
+            0xffff * 2 * 1000, /* Hard timeout */                     \
             RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT,           \
             __rrr_mqtt_transport_accept_callback,                     \
             transport,                                                \

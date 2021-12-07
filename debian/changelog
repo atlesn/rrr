@@ -1,4 +1,4 @@
-rrr (1.22-14) bullseye; urgency=medium
+rrr (1.22-18) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -22,6 +22,7 @@ rrr (1.22-14) bullseye; urgency=medium
     * Lockup in cmodules in high traffic situations
     * Sometimes temporary lockup in HTTP-server if there is not immediate downstream
       response to an h2c upgrade.
+    * Poor hard timeout management in MQTT broker causing low-traffic clients to be kicked
 
   * Under the hood:
     * Cleanups in MQTT framework

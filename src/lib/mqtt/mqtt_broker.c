@@ -1075,6 +1075,7 @@ static int __rrr_mqtt_broker_read_callback (
 			// PUBLISH forwarding below.
 		}
 		else {
+			// Ensure INCOMPLETE propagates
 			goto out;
 		}
 	}
@@ -1098,6 +1099,7 @@ static int __rrr_mqtt_broker_read_callback (
 	}
 
 	out:
+	// TODO : what is this
 	// Always update. Connection framework might successfully close connections before producing errors,
 	// in which the counter will have been incremented.
 	data->stats.total_connections_closed += 0;

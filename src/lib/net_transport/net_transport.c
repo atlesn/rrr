@@ -426,17 +426,18 @@ static void __rrr_net_transport_event_read (
 		return;
 	}
 
-	if (flags & EV_READ) {
-		rrr_net_transport_ctx_touch (handle);
-	}
-
 	EVENT_REMOVE(handle->event_first_read_timeout);
 	EVENT_REMOVE(handle->event_read_notify);
 
-	ret_tmp = handle->transport->read_callback (
-		handle,
-		handle->transport->read_callback_arg
-	);
+	if ((ret_tmp = handle->transport->read_callback (
+			handle,
+			handle->transport->read_callback_arg
+	)) == 0 || flags & EV_READ) {
+		// Touch (prevent hard timeout) if:
+		// - We are in timeout event and something by chance was read (callback returns 0)
+		// - We are in read event (data was present on the socket)
+		rrr_net_transport_ctx_touch (handle);
+	}
 
 	CHECK_READ_WRITE_RETURN();
 }
