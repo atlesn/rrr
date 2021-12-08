@@ -131,7 +131,8 @@ static void __rrr_mqtt_transport_accept_callback (
 
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
-		const struct rrr_net_transport_config *net_transport_config
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *application_name
 ) {
 	int ret = 0;
 
@@ -147,6 +148,7 @@ int rrr_mqtt_transport_start (
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				net_transport_config,
+				application_name,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
@@ -160,6 +162,7 @@ int rrr_mqtt_transport_start (
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				&net_transport_config_plain,
+				application_name,
 				0,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {

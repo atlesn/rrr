@@ -74,7 +74,8 @@ static inline struct rrr_net_transport *rrr_mqtt_transport_get_latest (
 }
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
-		const struct rrr_net_transport_config *net_transport_config
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *application_name
 );
 rrr_length rrr_mqtt_transport_client_count_get (
 		struct rrr_mqtt_transport *transport

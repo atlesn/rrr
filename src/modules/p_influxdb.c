@@ -622,6 +622,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	if (rrr_net_transport_new_simple (
 			&transport,
 			&influxdb_data->net_transport_config,
+			"influxDB",
 			0,
 			INSTANCE_D_EVENTS(thread_data)
 	) != 0) {

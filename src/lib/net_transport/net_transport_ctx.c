@@ -149,8 +149,9 @@ static int __rrr_net_transport_ctx_send_push_postcheck (
 		rrr_length send_chunk_count
 ) {
 	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
-		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
+		RRR_MSG_0("net transport fd %i [%s] send chunk count exceeded specified limit (%i/%i), soft error.\n",
 				handle->submodule_fd,
+				handle->transport->application_name,
 				send_chunk_count,
 				handle->transport->send_chunk_count_limit
 		);
@@ -192,8 +193,8 @@ void rrr_net_transport_ctx_close_when_send_complete_set (
 ) {
 	if (!handle->close_when_send_complete) {
 		handle->close_when_send_complete = 1;
-		RRR_DBG_7("net transport fd %i close when send complete activated\n",
-				handle->submodule_fd);
+		RRR_DBG_7("net transport fd %i [%s] close when send complete activated\n",
+				handle->submodule_fd, handle->transport->application_name);
 
 		EVENT_ADD(handle->event_write);
 	}

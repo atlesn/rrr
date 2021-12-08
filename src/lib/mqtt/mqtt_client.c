@@ -675,7 +675,8 @@ int rrr_mqtt_client_start (
 ) {
 	return rrr_mqtt_transport_start (
 			data->mqtt_data.transport,
-			net_transport_config
+			net_transport_config,
+			"MQTT client"
 	);
 }
 

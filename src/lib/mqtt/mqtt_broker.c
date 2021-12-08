@@ -90,7 +90,8 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 
 	if ((ret = rrr_mqtt_transport_start (
 			broker->mqtt_data.transport,
-			net_transport_config
+			net_transport_config,
+			"MQTT broker"
 	)) != 0) {
 		RRR_MSG_0("Could not start plain transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls return was %i\n", ret);
 		ret = 1;
