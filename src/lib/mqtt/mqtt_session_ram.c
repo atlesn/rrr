@@ -1147,6 +1147,8 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		short do_iterate_publish_grace_queue = 0;
 		short do_force_will_publish = 0;
 
+		printf("Maintain %s\n", node->client_id_);
+
 		if (node->prev_publish_grace_queue_iteration + RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS * 1000 < time_now) {
 			node->prev_publish_grace_queue_iteration = time_now;
 			do_iterate_publish_grace_queue = 1;

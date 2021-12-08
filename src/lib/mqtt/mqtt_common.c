@@ -97,9 +97,9 @@ static int __rrr_mqtt_common_clear_session_from_connections_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
 	struct clear_sesion_from_connections_callback_data *callback_data = arg;
+
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
 
@@ -779,11 +779,12 @@ static int __rrr_mqtt_common_send_now_callback (
 }
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
 	int ret = RRR_MQTT_OK;
 
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
 	struct rrr_mqtt_p *ack = NULL;
 	uint8_t reason_v5 = 0;
 
@@ -929,9 +930,9 @@ static int __rrr_mqtt_common_handle_general_ack (
 		uint8_t *reason_v5,
 		RRR_MQTT_TYPE_HANDLER_DEFINITION
 ) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
 	int ret = RRR_MQTT_OK;
+
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
 
@@ -961,9 +962,9 @@ static int __rrr_mqtt_common_handle_general_ack (
 }
 
 int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
 	int ret = RRR_MQTT_OK;
+
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	unsigned int match_count = 0;
 	uint8_t reason_v5 = 0;
@@ -1094,16 +1095,22 @@ int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 }
 
+struct rrr_mqtt_common_handle_packet_callback_data {
+	struct rrr_mqtt_data *mqtt_data;
+	uint64_t handled_publish_count;
+};
+
 static int __rrr_mqtt_common_handle_packet_callback (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet,
 		void *arg
 ) {
+	struct rrr_mqtt_common_handle_packet_callback_data *callback_data = arg;
+	struct rrr_mqtt_data *mqtt_data = callback_data->mqtt_data;
+
+	int ret = RRR_MQTT_OK;
+
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
-	int ret = 0;
-
-	struct rrr_mqtt_data *mqtt_data = arg;
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
@@ -1142,6 +1149,10 @@ static int __rrr_mqtt_common_handle_packet_callback (
 		goto out;
 	}
 
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		callback_data->handled_publish_count++;
+	}
+
 	out:
 	return ret;
 }
@@ -1166,22 +1177,32 @@ int rrr_mqtt_common_update_conn_state_upon_disconnect (
 }
 
 static int __rrr_mqtt_common_read_parse_handle (
+		uint64_t *handled_publish_count,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_data *data
 ) {
 	int ret = RRR_MQTT_OK;
 
+	*handled_publish_count = 0;
+
+	struct rrr_mqtt_common_handle_packet_callback_data callback_data = {
+		data,
+		0
+	};
+
 	if ((ret = rrr_mqtt_conn_iterator_ctx_read (
 			handle,
 			RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE,
 			__rrr_mqtt_common_handle_packet_callback,
-			data
+			&callback_data
 	)) != 0) {
 		if (ret == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Error while reading data from remote in __rrr_mqtt_common_read_parse_handle\n");
 		}
 		goto out;
 	}
+
+	*handled_publish_count = callback_data.handled_publish_count;
 
 	out:
 	return ret;
@@ -1220,6 +1241,7 @@ static int __rrr_mqtt_common_send (
 }
 
 int rrr_mqtt_common_read_parse_single_handle (
+		uint64_t *handled_publish_count,
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
@@ -1227,11 +1249,11 @@ int rrr_mqtt_common_read_parse_single_handle (
 		void *callback_arg
 ) {
 	int ret = RRR_MQTT_OK;
-	int ret_preserve = 0;
+	int ret_preserve = RRR_MQTT_OK;
 
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
-	if ((ret = __rrr_mqtt_common_read_parse_handle(handle, data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
+	if ((ret = __rrr_mqtt_common_read_parse_handle(handled_publish_count, handle, data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while reading and parsing\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;

@@ -925,9 +925,11 @@ static int __rrr_mqtt_client_read_callback (
 
 	int ret = 0;
 
+	uint64_t handled_publish_count = 0;
 	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
 
 	if ((ret = rrr_mqtt_common_read_parse_single_handle (
+			&handled_publish_count,
 			&session_counters,
 			&data->mqtt_data,
 			handle,
@@ -937,10 +939,12 @@ static int __rrr_mqtt_client_read_callback (
 		goto out;
 	}
 
-	if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
-			data
-	)) != 0) {
-		goto out;
+	if (handled_publish_count > 0) {
+		if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
+				data
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = data->mqtt_data.sessions->methods->maintain_expiration (

@@ -1063,8 +1063,11 @@ static int __rrr_mqtt_broker_read_callback (
 	int ret = 0;
 	int ret_from_read = 0;
 
+	uint64_t handled_publish_count = 0;
 	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
+
 	if ((ret = ret_from_read = rrr_mqtt_common_read_parse_single_handle (
+			&handled_publish_count,
 			&session_iterate_counters,
 			&data->mqtt_data,
 			handle,
@@ -1087,17 +1090,19 @@ static int __rrr_mqtt_broker_read_callback (
 		goto out;
 	}
 
-	uint64_t forwarded_publish_count = 0;
-	if ((ret = data->mqtt_data.sessions->methods->maintain_forward_publish (
-			&forwarded_publish_count,
-			data->mqtt_data.sessions
-	)) != 0) {
-		goto out;
-	}
+	if (handled_publish_count > 0) {
+		uint64_t forwarded_publish_count = 0;
+		if ((ret = data->mqtt_data.sessions->methods->maintain_forward_publish (
+				&forwarded_publish_count,
+				data->mqtt_data.sessions
+		)) != 0) {
+			goto out;
+		}
 
-	// In case a PUBLISH got forwarded, tick other connections to send them
-	if (forwarded_publish_count != 0) {
-		rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
+		// In case a PUBLISH got forwarded, tick other connections to send them
+		if (forwarded_publish_count > 0) {
+			rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
+		}
 	}
 
 	out:
