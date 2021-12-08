@@ -1096,15 +1096,10 @@ static int __rrr_mqtt_broker_read_callback (
 
 	// In case a PUBLISH got forwarded, tick other connections to send them
 	if (stats_before.total_publish_forwarded != stats_after.total_publish_forwarded) {
-		rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);	
+		rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
 	}
 
 	out:
-	// TODO : what is this
-	// Always update. Connection framework might successfully close connections before producing errors,
-	// in which the counter will have been incremented.
-	data->stats.total_connections_closed += 0;
-
 	return ret | ret_from_read;
 }
 
