@@ -83,7 +83,8 @@ struct rrr_mqtt_session_collection_stats {
 	uint64_t total_deleted;
 	uint64_t total_publish_received;
 	uint64_t total_publish_delivered;
-	uint64_t total_publish_forwarded;
+	uint64_t total_publish_forwarded_in;
+	uint64_t total_publish_forwarded_out;
 	uint64_t total_publish_not_forwarded;
 	uint64_t in_memory_sessions;
 };

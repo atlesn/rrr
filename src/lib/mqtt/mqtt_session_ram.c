@@ -197,7 +197,7 @@ static inline void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct
 }
 
 static inline void __rrr_mqtt_session_collection_ram_stats_notify_forwarded (struct rrr_mqtt_session_collection_ram_data *data, unsigned int num) {
-	data->stats.total_publish_forwarded += num;
+	data->stats.total_publish_forwarded_out += num;
 }
 
 static inline void __rrr_mqtt_session_collection_ram_stats_notify_not_forwarded (struct rrr_mqtt_session_collection_ram_data *data) {
@@ -330,7 +330,7 @@ static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 	if (__rrr_mqtt_session_ram_fifo_write_with_stats (
 			&ram_data->publish_forward_buffer.buffer,
 			(struct rrr_mqtt_p *) publish,
-			&ram_data->stats.total_publish_forwarded
+			&ram_data->stats.total_publish_forwarded_in
 	) != 0) {
 		RRR_MSG_0("Could not write to publish forward queue in __rrr_mqtt_session_collection_ram_delivery_forward_final\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -1116,7 +1116,7 @@ static int __rrr_mqtt_session_collection_ram_maintain_forward_publish (
 
 	*forwarded_count = 0;
 
-	const uint64_t forwarded_before = data->stats.total_publish_forwarded;
+	const uint64_t forwarded_before = data->stats.total_publish_forwarded_out;
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	if ((rrr_fifo_read_clear_forward_all (
@@ -1128,7 +1128,7 @@ static int __rrr_mqtt_session_collection_ram_maintain_forward_publish (
 		return  RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
-	*forwarded_count = data->stats.total_publish_forwarded - forwarded_before;
+	*forwarded_count = data->stats.total_publish_forwarded_out - forwarded_before;
 
 	return RRR_MQTT_SESSION_OK;
 }

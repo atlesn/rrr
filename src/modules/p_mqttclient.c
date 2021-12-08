@@ -2101,7 +2101,8 @@ static void mqttclient_update_stats (
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
 
 	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
-	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded_in", 0, client_stats.session_stats.total_publish_forwarded_in);
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded_out", 0, client_stats.session_stats.total_publish_forwarded_out);
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 }
