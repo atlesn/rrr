@@ -194,7 +194,7 @@ int rrr_mqtt_client_publish (
 
 	rrr_length send_queue_count = 0;
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
-			data->mqtt_data.sessions->methods->queue_packet (
+			data->mqtt_data.sessions->methods->send_packet_queue (
 					&send_queue_count,
 					data->mqtt_data.sessions,
 					session,
@@ -253,7 +253,7 @@ int rrr_mqtt_client_subscribe (
 	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
-			data->mqtt_data.sessions->methods->queue_packet (
+			data->mqtt_data.sessions->methods->send_packet_queue (
 					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
@@ -312,7 +312,7 @@ int rrr_mqtt_client_unsubscribe (
 	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
-			data->mqtt_data.sessions->methods->queue_packet (
+			data->mqtt_data.sessions->methods->send_packet_queue (
 					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
@@ -938,7 +938,7 @@ static int __rrr_mqtt_client_read_callback (
 	}
 
 	if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
-		data
+			data
 	)) != 0) {
 		goto out;
 	}

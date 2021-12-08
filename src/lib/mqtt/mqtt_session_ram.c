@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fifo.h"
 
 #define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
+#define RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS 250
 
 struct rrr_mqtt_session_collection_ram_data;
 
@@ -763,11 +764,11 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 		struct rrr_mqtt_session_collection_ram_data *data,
 		struct rrr_mqtt_session *session
 ) {
-	struct rrr_mqtt_session_ram *found = NULL;
-
 	if (session == NULL) {
 		return NULL;
 	}
+
+	struct rrr_mqtt_session_ram *found = NULL;
 
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		if ((void*) node == (void*) session) {
@@ -819,22 +820,26 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	struct receive_forwarded_publish_data *callback_data = arg;
 	struct rrr_mqtt_session_ram *session = callback_data->session;
 
-	if (session->session_properties.numbers.maximum_packet_size != 0 &&
-		publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct rrr_mqtt_p_publish *new_publish = NULL;
+
+	if ( session->session_properties.numbers.maximum_packet_size != 0 &&
+	     publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size
+	) {
 		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%" PRIrrrl ">%u\n",
 				publish->received_size, session->session_properties.numbers.maximum_packet_size);
-		return RRR_MQTT_SESSION_OK;
+		ret = RRR_MQTT_SESSION_OK;
+		goto out;
 	}
 
-	struct rrr_mqtt_p_publish *new_publish = rrr_mqtt_p_clone_publish(
+	if ((new_publish = rrr_mqtt_p_clone_publish (
 			publish, 1, 0, 0 // Preserve only type flags, but DUP and Retain flags are always overwritten elsewhere
-	);
-	if (new_publish == NULL) {
-		RRR_MSG_0("Could not clone PUBLISH packet in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
-		return RRR_MQTT_SESSION_INTERNAL_ERROR;
+	)) == NULL) {
+		RRR_MSG_0("Could not clone PUBLISH packet in %s\n", __func__);
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
 	}
-
-	int ret = RRR_MQTT_SESSION_OK;
 
 	// We don't set the new packet ID yet in case the client is not currently connected
 	// and many packets would exhaust the 16-bit ID field. It is set when iterating the
@@ -859,7 +864,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 			&session->to_remote_buffer.buffer,
 			(struct rrr_mqtt_p *) new_publish
 	) != 0) {
-		RRR_MSG_0("Could not write to to_remote_queue in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
+		RRR_MSG_0("Could not write to to_remote_queue in %s\n", __func__);
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
 	}
@@ -1003,11 +1008,7 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 			ret |= RRR_FIFO_GLOBAL_ERR;
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(
-			ram_data,
-			__rrr_mqtt_session_ram_decref(node)
-	);
-	// TODO : Probably don't need CHECK_DESTROY here, don't seem to destroy anything anyway
+	RRR_LL_ITERATE_END();
 
 	if (total_match_count == 0) {
 		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
@@ -1114,7 +1115,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	int ret = RRR_MQTT_SESSION_OK;
 
-	uint64_t expire_time = 0;
 	uint64_t time_now = rrr_time_get_64();
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
@@ -1131,20 +1131,17 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		int do_iterate_publish_grace_queue = 0;
+		short do_iterate_publish_grace_queue = 0;
+		short do_force_will_publish = 0;
 
-		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
-		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {
+		if (node->prev_publish_grace_queue_iteration + RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS * 1000 < time_now) {
 			node->prev_publish_grace_queue_iteration = time_now;
 			do_iterate_publish_grace_queue = 1;
 		}
 
 		// Expiration time set upon disconnect notification, and set to 0 again
 		// in session init function
-		expire_time = node->expire_time;
-		short do_force_will_publish = 0;
-
-		if (expire_time != 0 && time_now >= expire_time) {
+		if (node->expire_time != 0 && time_now >= node->expire_time) {
 			RRR_DBG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
 			do_force_will_publish = 1;
@@ -2715,9 +2712,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 
 	counters->buffer_size = rrr_fifo_get_entry_count(&ram_session->to_remote_buffer.buffer);
 
-	if (	counters->maintain_deleted_counter > 0 ||
-			counters->maintain_ack_complete_counter > 0 ||
-			counters->maintain_ack_missing_counter > 0
+	if ( counters->maintain_deleted_counter > 0 ||
+	     counters->maintain_ack_complete_counter > 0 ||
+	     counters->maintain_ack_missing_counter > 0
 	) {
 		RRR_DBG_3("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->to_remote_buffer.buffer,
@@ -2749,9 +2746,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			&callback_data
 	);
 
-	if (	counters->maintain_deleted_counter > 0 ||
-			counters->maintain_ack_complete_counter > 0 ||
-			counters->maintain_ack_missing_counter > 0
+	if ( counters->maintain_deleted_counter > 0 ||
+	     counters->maintain_ack_complete_counter > 0 ||
+	     counters->maintain_ack_missing_counter > 0
 	) {
 		RRR_DBG_3("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->from_remote_buffer.buffer,
@@ -2760,7 +2757,6 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 				counters->maintain_ack_missing_counter,
 				rrr_fifo_get_entry_count(&ram_session->from_remote_buffer.buffer));
 	}
-
 
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Internal error in __rrr_mqtt_session_ram_iterate_send_queue while iterating buffer B\n");
@@ -2837,7 +2833,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	return ret | ret_delete;
 }
 
-static int __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (
+static int __rrr_mqtt_session_ram_send_packet_now_process_ack (
 		struct rrr_mqtt_session_ram *ram_session,
 		struct rrr_mqtt_p *packet,
 		int allow_missing_originating_packet
@@ -2845,6 +2841,7 @@ static int __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (
 	int ret = 0;
 
 	int packet_was_outbound = 0;
+
 	switch (RRR_MQTT_P_GET_TYPE(packet)) {
 		case RRR_MQTT_P_TYPE_SUBACK:
 		case RRR_MQTT_P_TYPE_UNSUBACK:
@@ -2876,7 +2873,7 @@ static int __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_queue_packet (
+static int __rrr_mqtt_session_ram_send_packet_queue (
 		rrr_length *total_send_queue_count,
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
@@ -2940,19 +2937,15 @@ static int __rrr_mqtt_session_ram_send_packet_now (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-	if (RRR_MQTT_P_IS_ACK(packet)) {
-		if ((ret = __rrr_mqtt_session_ram_send_or_queue_packet_process_ack (ram_session, packet, allow_missing_originating_packet)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
+	if ((ret = __rrr_mqtt_session_ram_send_packet_now_process_ack (ram_session, packet, allow_missing_originating_packet)) != 0) {
+		goto out;
 	}
 
 	RRR_DBG_3("Send packet %p with identifier %u of type %s (send now)\n",
 			packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 	packet->last_attempt = rrr_time_get_64();
+
 	if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
 		RRR_MSG_0("Send now callback failed in %s\n", __func__);
 	}
@@ -3181,7 +3174,7 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_heartbeat,
 		__rrr_mqtt_session_ram_iterate_send_queue,
 		__rrr_mqtt_session_ram_notify_disconnect,
-		__rrr_mqtt_session_ram_queue_packet,
+		__rrr_mqtt_session_ram_send_packet_queue,
 		__rrr_mqtt_session_ram_send_packet_now,
 		__rrr_mqtt_session_ram_receive_packet,
 		__rrr_mqtt_session_ram_will_publish_register

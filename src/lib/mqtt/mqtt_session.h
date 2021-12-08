@@ -220,13 +220,15 @@ struct rrr_mqtt_session_collection_methods {
 			uint8_t reason_v5
 	);
 
-	int (*queue_packet) (
+	// Used for PUBLISH, SUBSCRIBE and UNSUBSCRIBE. Other types triggers bugtrap.
+	int (*send_packet_queue) (
 			rrr_length *total_send_queue_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
 	);
 
+	// Used for SUBACK, UNSUBACK, PUBACK, PUBREC, PUBCOMP and PUBREL. Other types trigger bugtrap.
 	int (*send_packet_now) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
