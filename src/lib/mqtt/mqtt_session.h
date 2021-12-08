@@ -203,7 +203,7 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Called upon reception of ANY packet from the client
+	// Called regularly as confirmation that session is currently being used
 	int (*heartbeat) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session

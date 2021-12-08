@@ -39,8 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../fifo.h"
 
-#define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
-#define RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS 250
+#define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS             250
+#define RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS  250
+#define RRR_MQTT_SESSION_RAM_HARD_TIMEOUT_MS                  (RRR_MQTT_COMMON_TICK_INTERVAL_S * 1000 * 2)
 
 struct rrr_mqtt_session_collection_ram_data;
 
@@ -66,8 +67,8 @@ struct rrr_mqtt_session_ram {
 	char *client_id_;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
-	uint64_t prev_maintain_time;
 	uint64_t expire_time;
+	uint64_t heartbeat_time;
 	uint32_t max_in_flight;
 	uint32_t complete_publish_grace_time_s;
 	struct rrr_mqtt_subscription_collection *subscriptions;
@@ -532,6 +533,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session (
 
 	result->users = 1;
 	result->ram_data = data;
+	result->heartbeat_time = rrr_time_get_64();
 
 	RRR_LL_UNSHIFT(data,result);
 
@@ -1144,38 +1146,41 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		short do_iterate_publish_grace_queue = 0;
 		short do_force_will_publish = 0;
-
-		printf("Maintain %s\n", node->client_id_);
+		short do_expire = 0;
 
 		if (node->prev_publish_grace_queue_iteration + RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS * 1000 < time_now) {
 			node->prev_publish_grace_queue_iteration = time_now;
-			do_iterate_publish_grace_queue = 1;
+
+			int counter_dummy = 0;
+			if (rrr_fifo_search (
+					&node->publish_grace_buffer.buffer,
+					__rrr_mqtt_session_ram_iterate_publish_grace_callback,
+					&counter_dummy
+			) != 0) {
+				RRR_MSG_0("Error while iterating publish grace queue in __rrr_mqtt_session_collection_ram_maintain\n");
+				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+				goto out;
+			}
+		}
+
+		if (node->expire_time == 0 && node->heartbeat_time + RRR_MQTT_SESSION_RAM_HARD_TIMEOUT_MS * 1000 < time_now) {
+			RRR_DBG_1("Session heartbeat timeout for client '%s' (forced timeout after %u ms as no session expiry is set)\n",
+					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"), RRR_MQTT_SESSION_RAM_HARD_TIMEOUT_MS);
+			do_expire = 1;
 		}
 
 		// Expiration time set upon disconnect notification, and set to 0 again
 		// in session init function
 		if (node->expire_time != 0 && time_now >= node->expire_time) {
-			RRR_DBG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
+			RRR_DBG_1("Session expired for client '%s'\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
+			do_expire = 1;
+		}
+
+		if (do_expire) {
 			do_force_will_publish = 1;
 			RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else {
-			if (do_iterate_publish_grace_queue) {
-				int counter = 0;
-
-				if (rrr_fifo_search (
-						&node->publish_grace_buffer.buffer,
-						__rrr_mqtt_session_ram_iterate_publish_grace_callback,
-						&counter
-				) != 0) {
-					RRR_MSG_0("Error while iterating publish grace queue in __rrr_mqtt_session_collection_ram_maintain\n");
-					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-					goto out;
-				}
-			}
 		}
 
 		if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (
@@ -1505,7 +1510,7 @@ static int __rrr_mqtt_session_ram_heartbeat (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 
-	// Nothing to do
+	ram_session->heartbeat_time = rrr_time_get_64();
 
 	SESSION_RAM_DECREF();
 

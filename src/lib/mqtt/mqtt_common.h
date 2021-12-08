@@ -38,6 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_COMMON_CLOSE_WAIT_TIME_S              1
 #define RRR_MQTT_COMMON_RETRY_INTERVAL_S               5
 #define RRR_MQTT_COMMON_MAX_CONNECTIONS              260
+#define RRR_MQTT_COMMON_FIRST_READ_TIMEOUT_S           2
+#define RRR_MQTT_COMMON_TICK_INTERVAL_S               10
+#define RRR_MQTT_COMMON_HARD_TIMEOUT_S         (0xffff*2)
 
 #define RRR_MQTT_COMMON_SESSION_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_deleted,ret_hard)\
     do {if (ret_tmp != 0) {                                                                                                    \

@@ -190,7 +190,7 @@ static int __rrr_mqtt_common_connection_event_handler (
 			ret_tmp = MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(data, connection->session, connection->disconnect_reason_v5_);
 			break;
 		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
-			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
+			// OK, nothing to do
 			break;
 		default:
 			RRR_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
@@ -932,9 +932,9 @@ static int __rrr_mqtt_common_handle_general_ack (
 ) {
 	int ret = RRR_MQTT_OK;
 
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
 	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
+
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret_from_session = mqtt_data->sessions->methods->receive_packet (
 			mqtt_data->sessions,
@@ -1251,7 +1251,14 @@ int rrr_mqtt_common_read_parse_single_handle (
 	int ret = RRR_MQTT_OK;
 	int ret_preserve = RRR_MQTT_OK;
 
+	*handled_publish_count = 0;
+
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	// Ignore return value, will fail if session is not yet ready. We must call
+	// this on read all events on the socket to confirm it is still up, also when
+	// there is not data to read.
+	MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
 
 	if ((ret = __rrr_mqtt_common_read_parse_handle(handled_publish_count, handle, data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
