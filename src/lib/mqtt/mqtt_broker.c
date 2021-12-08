@@ -1081,21 +1081,22 @@ static int __rrr_mqtt_broker_read_callback (
 		}
 	}
 
-	struct rrr_mqtt_session_collection_stats stats_before;
-	struct rrr_mqtt_session_collection_stats stats_after;
-
-	data->mqtt_data.sessions->methods->get_stats(&stats_before, data->mqtt_data.sessions);
-
-	if ((ret = data->mqtt_data.sessions->methods->maintain (
+	if ((ret = data->mqtt_data.sessions->methods->maintain_expiration (
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;
 	}
 
-	data->mqtt_data.sessions->methods->get_stats(&stats_after, data->mqtt_data.sessions);
+	uint64_t forwarded_publish_count = 0;
+	if ((ret = data->mqtt_data.sessions->methods->maintain_forward_publish (
+			&forwarded_publish_count,
+			data->mqtt_data.sessions
+	)) != 0) {
+		goto out;
+	}
 
 	// In case a PUBLISH got forwarded, tick other connections to send them
-	if (stats_before.total_publish_forwarded != stats_after.total_publish_forwarded) {
+	if (forwarded_publish_count != 0) {
 		rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
 	}
 

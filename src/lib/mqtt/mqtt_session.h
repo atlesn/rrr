@@ -129,8 +129,14 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_p_publish *publish
 	);
 
-	// Destroy old sessions, read from send queue
-	int (*maintain) (
+	// Forward PUBLISH to other clients which subscribe to them (broker only)
+	int (*maintain_forward_publish) (
+		uint64_t *forwarded_count,
+		struct rrr_mqtt_session_collection *sessions
+	);
+
+	// Destroy old sessions
+	int (*maintain_expiration) (
 			struct rrr_mqtt_session_collection *
 	);
 

@@ -943,7 +943,7 @@ static int __rrr_mqtt_client_read_callback (
 		goto out;
 	}
 
-	if ((ret = data->mqtt_data.sessions->methods->maintain (
+	if ((ret = data->mqtt_data.sessions->methods->maintain_expiration (
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;

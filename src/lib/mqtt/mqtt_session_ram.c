@@ -1107,15 +1107,16 @@ static int __rrr_mqtt_session_ram_iterate_publish_grace_callback (RRR_FIFO_READ_
 
 	return ret;
 }
-
-static int __rrr_mqtt_session_collection_ram_maintain (
+			
+static int __rrr_mqtt_session_collection_ram_maintain_forward_publish (
+		uint64_t *forwarded_count,
 		struct rrr_mqtt_session_collection *sessions
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
-	int ret = RRR_MQTT_SESSION_OK;
+	*forwarded_count = 0;
 
-	uint64_t time_now = rrr_time_get_64();
+	const uint64_t forwarded_before = data->stats.total_publish_forwarded;
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	if ((rrr_fifo_read_clear_forward_all (
@@ -1124,10 +1125,22 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 			data
 	) & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out;
+		return  RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
-	ret = RRR_MQTT_SESSION_OK;
+
+	*forwarded_count = data->stats.total_publish_forwarded - forwarded_before;
+
+	return RRR_MQTT_SESSION_OK;
+}
+
+static int __rrr_mqtt_session_collection_ram_maintain_expire (
+		struct rrr_mqtt_session_collection *sessions
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
+
+	int ret = RRR_MQTT_SESSION_OK;
+
+	const uint64_t time_now = rrr_time_get_64();
 
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
@@ -3164,7 +3177,8 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
 		__rrr_mqtt_session_collection_ram_delivery_forward,
-		__rrr_mqtt_session_collection_ram_maintain,
+		__rrr_mqtt_session_collection_ram_maintain_forward_publish,
+		__rrr_mqtt_session_collection_ram_maintain_expire,
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,
 		__rrr_mqtt_session_ram_init,
