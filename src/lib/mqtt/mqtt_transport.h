@@ -102,6 +102,7 @@ int rrr_mqtt_transport_iterate (
 		void *callback_arg
 );
 int rrr_mqtt_transport_with_iterator_ctx_do_custom (
+		short *handle_found,
 		struct rrr_mqtt_transport *transport,
 		int transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),

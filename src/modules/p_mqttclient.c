@@ -605,7 +605,7 @@ static int mqttclient_publish (
 		goto out;
 	}
 
-	RRR_DBG_2 ("MQTT client %s: PUBLISH with topic %s payload size %" PRIrrrl " retain %u expiry interval %" PRIu32 "\n",
+	RRR_DBG_2 ("|==> MQTT client %s: Send PUBLISH with topic %s payload size %" PRIrrrl " retain %u expiry interval %" PRIu32 "\n",
 			INSTANCE_D_NAME(data->thread_data),
 			publish->topic,
 			publish->payload != NULL ? publish->payload->length : 0,
@@ -1637,7 +1637,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
-	RRR_DBG_2 ("MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s retain %u\n",
+	RRR_DBG_2 (">==| MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s retain %u\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(publish->payload != NULL ? publish->payload->length : 0),
 			(publish->topic),
@@ -1661,7 +1661,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	int expecting_rrr_msg_msg = data->do_receive_rrr_message;
 
 	if (content_type != NULL) {
-		RRR_DBG_2 ("MQTT client %s: Received PUBLISH content type is '%s'\n",
+		RRR_DBG_3 ("MQTT client %s: PUBLISH content type is '%s'\n",
 				INSTANCE_D_NAME(data->thread_data), content_type);
 
 		if (strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {

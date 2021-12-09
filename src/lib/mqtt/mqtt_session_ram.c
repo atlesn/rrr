@@ -721,22 +721,22 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		struct rrr_mqtt_session **target,
 		struct rrr_mqtt_session_collection *sessions,
 		const char *client_id,
-		int *session_present,
-		int no_creation
+		short *session_was_present,
+		short no_creation
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	int ret = RRR_MQTT_SESSION_OK;
 
 	*target = NULL;
-	*session_present = 0;
+	*session_was_present = 0;
 
 	struct rrr_mqtt_session_ram *result = NULL;
 
 	result = __rrr_mqtt_session_collection_ram_find_session (data, client_id);
 
 	if (result != NULL) {
-		*session_present = 1;
+		*session_was_present = 1;
 	}
 	else if (no_creation == 0) {
 		if ((ret = __rrr_mqtt_session_collection_ram_create_and_add_session (
@@ -753,7 +753,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 
 	if (result != NULL) {
 		RRR_DBG_2("Got a session, session present was %i and no creation was %i\n",
-				*session_present, no_creation);
+				*session_was_present, no_creation);
 	}
 
 	*target = (struct rrr_mqtt_session *) result;
@@ -853,7 +853,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
-	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u client %s\n",
+	RRR_DBG_2(">==> Forward PUBLISH topic '%s' qos %u to client %s\n",
 			publish->topic,
 			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
 			session->client_id_
@@ -993,6 +993,11 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 	(void)(size);
 
 	int ret = RRR_FIFO_OK;
+
+	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u to any subscribers\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)
+	);
 
 	// Always clear retain flag per specification
 	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, 0);
@@ -1340,8 +1345,7 @@ static int __rrr_mqtt_session_ram_init (
 		uint64_t retry_interval_usec,
 		uint32_t max_in_flight,
 		uint32_t complete_publish_grace_time_s,
-		int clean_session,
-		int *session_was_present
+		short clean_session
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -1361,8 +1365,7 @@ static int __rrr_mqtt_session_ram_init (
 	ram_session->expire_time = 0;
 	ram_session->complete_publish_grace_time_s = complete_publish_grace_time_s;
 
-	if (clean_session == 1) {
-		*session_was_present = 0;
+	if (clean_session) {
 		__rrr_mqtt_session_ram_clean_final(ram_session);
 	}
 
@@ -1393,7 +1396,7 @@ static int __rrr_mqtt_session_ram_clean (
 
 static int __rrr_mqtt_session_ram_update_client_identifier (
 		struct rrr_mqtt_session_ram *session,
-		uint8_t is_v5
+		short is_v5
 ) {
 	int ret = 0;
 
@@ -1451,7 +1454,7 @@ static int __rrr_mqtt_session_ram_update_properties (
 		struct rrr_mqtt_session **session_to_find,
 		const struct rrr_mqtt_session_properties *session_properties,
 		const struct rrr_mqtt_session_properties_numbers *numbers_to_update,
-		uint8_t is_v5
+		short is_v5
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 

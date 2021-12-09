@@ -104,7 +104,7 @@ sub source {
 
 			# Only second message should arrive
 			start_data("client2", "4/1", 0);
-			start_data("client2", "3/l", 1);
+			start_data("client2", "3/1", 1);
 		}
 		else {
 			$dbg->msg(0, "Bug in test script: Unknown command $command\n");

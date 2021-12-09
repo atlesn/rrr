@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -152,8 +152,8 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **target,
 			struct rrr_mqtt_session_collection *collection,
 			const char *client_id,
-			int *session_present,
-			int no_creation
+			short *session_was_present,
+			short no_creation
 	);
 
 	// SESSION METHODS
@@ -177,8 +177,7 @@ struct rrr_mqtt_session_collection_methods {
 			uint64_t retry_interval_usec,
 			uint32_t max_in_flight,
 			uint32_t complete_publish_grace_time,
-			int clean_session,
-			int *session_was_present
+			short clean_session
 	);
 
 	// Clean a session, delete all packets
@@ -193,7 +192,7 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session,
 			const struct rrr_mqtt_session_properties *properties,
 			const struct rrr_mqtt_session_properties_numbers *numbers_to_update,
-			uint8_t is_v5
+			short is_v5
 	);
 
 	// Get session properties. Target is cleaned up before used.

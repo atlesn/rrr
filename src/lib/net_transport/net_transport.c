@@ -1003,6 +1003,8 @@ static int __rrr_net_transport_iterate_with_callback (
 ) {
 	int ret = 0;
 
+	// This function is only allowed to return OK or HARD ERROR (0 or 1)
+
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);

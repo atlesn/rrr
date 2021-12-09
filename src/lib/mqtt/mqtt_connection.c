@@ -390,7 +390,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	RRR_MQTT_CONN_TIMEOUTS_CHECK();
 
 	if (keepalive_exceeded || connection->disconnect_reason_v5_ == RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT) {
-		RRR_DBG_1("Destroying connection %p client ID '%s', keep alive was exceeded. Reason is otherwise set to %u.\n",
+		RRR_DBG_1(">>>X Destroying connection %p client ID '%s', keep alive was exceeded. Reason is otherwise set to %u.\n",
 				connection,
 				(connection->client_id != NULL ? connection->client_id : "(empty)"),
 				connection->disconnect_reason_v5_
@@ -405,7 +405,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	else if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
 		if (connection->disconnect_reason_v5_ >= 0x80) {
 			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(connection->disconnect_reason_v5_);
-			RRR_DBG_1("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
+			RRR_DBG_1(">>>X Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
 					connection->disconnect_reason_v5_,
 					(reason != NULL ? reason->description : "unknown error"),
 					(connection->client_id != NULL ? connection->client_id : "")
@@ -441,7 +441,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	if (connection->close_wait_start == 0) {
 		connection->close_wait_start = time_now;
 
-		RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer %" PRIu64 " usecs (and closing connection if needed).\n",
+		RRR_DBG_1(">>>X Destroying connection %p client ID '%s' reason %u, starting timer %" PRIu64 " usecs (and closing connection if needed).\n",
 				connection,
 				(connection->client_id != NULL ? connection->client_id : "(empty)"),
 				connection->disconnect_reason_v5_,

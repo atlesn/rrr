@@ -290,10 +290,10 @@ int rrr_mqtt_transport_iterate (
 }
 
 struct with_iterator_ctx_do_custom_callback_data {
+		short *handle_found;
 		int transport_handle;
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg);
 		void *callback_arg;
-		int connection_found;
 };
 
 static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
@@ -305,7 +305,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
 	struct with_iterator_ctx_do_custom_callback_data *callback_data = callback_arg;
 
 	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->transport_handle) {
-		callback_data->connection_found = 1;
+		*callback_data->handle_found = 1;
 		ret = callback_data->callback(handle, callback_data->callback_arg);
 	}
 
@@ -313,6 +313,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
 }
 
 int rrr_mqtt_transport_with_iterator_ctx_do_custom (
+		short *handle_found,
 		struct rrr_mqtt_transport *transport,
 		int transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
@@ -320,28 +321,30 @@ int rrr_mqtt_transport_with_iterator_ctx_do_custom (
 ) {
 	int ret = RRR_MQTT_OK;
 
-	struct with_iterator_ctx_do_custom_callback_data callback_data = {
-			transport_handle,
-			callback,
-			callback_arg,
-			0
-	};
+	*handle_found = 0;
 
 	if (transport->transport_count != 1) {
-		RRR_BUG("BUG: Number of transports was not exactly 1 in rrr_mqtt_transport_with_iterator_ctx_do_custom\n");
+		// Cannot ensure unique handle across multiple transports
+		RRR_BUG("BUG: Number of transports was not exactly 1 in %s\n", __func__);
 	}
 
-	ret = rrr_mqtt_transport_iterate (
+	struct with_iterator_ctx_do_custom_callback_data callback_data = {
+			handle_found,
+			transport_handle,
+			callback,
+			callback_arg
+	};
+
+	if ((ret = rrr_mqtt_transport_iterate (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_mqtt_transport_with_iterator_ctx_do_custom_callback,
 			&callback_data
-	);
-
-	if (callback_data.connection_found != 1) {
-		ret = RRR_MQTT_EOF;
+	)) != 0) {
+		goto out;
 	}
 
+	out:
 	return ret;
 }
 
