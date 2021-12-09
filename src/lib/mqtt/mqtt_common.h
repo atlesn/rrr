@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 #include "../read_constants.h"
 #include "../net_transport/net_transport.h"
+#include "../event/event.h"
+#include "../event/event_collection.h"
 
 #define RRR_MQTT_OK                        RRR_READ_OK
 #define RRR_MQTT_INTERNAL_ERROR            RRR_READ_HARD_ERROR
@@ -41,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_COMMON_FIRST_READ_TIMEOUT_S           2
 #define RRR_MQTT_COMMON_TICK_INTERVAL_S               10
 #define RRR_MQTT_COMMON_HARD_TIMEOUT_S         (0xffff*2)
+#define RRR_MQTT_COMMON_MAINTENANCE_INTERVAL_S         5
 
 #define RRR_MQTT_COMMON_SESSION_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_deleted,ret_hard)\
     do {if (ret_tmp != 0) {                                                                                                    \
@@ -190,6 +193,10 @@ struct rrr_mqtt_data {
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
+
+	struct rrr_event_queue *queue;
+	struct rrr_event_collection events;
+	rrr_event_handle event_maintenance;
 };
 
 struct rrr_mqtt_common_init_data {

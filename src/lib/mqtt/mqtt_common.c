@@ -79,6 +79,7 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 		data->sessions = NULL;
 	}
 
+	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->client_name);
 	data->handler_properties = NULL;
 }
@@ -222,6 +223,27 @@ static int __rrr_mqtt_common_connection_event_handler (
 	return ret;
 }
 
+static void __rrr_mqtt_common_maintenance (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_mqtt_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (data->sessions == NULL) {
+		return;
+	}
+
+	if (data->sessions->methods->maintain_expiration (
+			data->sessions
+	) != 0) {
+		RRR_MSG_0("Warning: Error from session maintain function in %s\n", __func__);
+	}
+}
+
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
@@ -255,6 +277,7 @@ int rrr_mqtt_common_data_init (
 	data->handler_properties = handler_properties;
 	data->acl_handler = acl_handler;
 	data->acl_handler_arg = acl_handler_arg;
+	data->queue = queue;
 
 	if (rrr_mqtt_transport_new (
 			&data->transport,
@@ -278,12 +301,29 @@ int rrr_mqtt_common_data_init (
 		goto out_destroy_connections;
 	}
 
-	goto out;
+	rrr_event_collection_init(&data->events, queue);
 
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_maintenance,
+			&data->events,
+			__rrr_mqtt_common_maintenance,
+			data,
+			RRR_MQTT_COMMON_MAINTENANCE_INTERVAL_S * 1000 * 1000
+	)) != 0) {
+		goto out_clear_events;
+	}
+
+	EVENT_ADD(data->event_maintenance);
+
+	goto out;
+	out_clear_events:
+		rrr_event_collection_clear(&data->events);
+//	out_destroy_sessions:
+		data->sessions->methods->destroy(data->sessions);
+		data->sessions = NULL;
 	out_destroy_connections:
 		rrr_mqtt_transport_destroy(data->transport);
 		data->transport = NULL;
-
 	out:
 		return ret;
 }

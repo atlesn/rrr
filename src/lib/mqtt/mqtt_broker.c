@@ -969,12 +969,39 @@ static int __rrr_mqtt_broker_event_handler (
 	switch (event) {
 		case RRR_MQTT_CONN_EVENT_DISCONNECT:
 			data->stats.total_connections_closed++;
+			// This is performed to ensure that any will
+			// publishes gets forwarded immediately
+			EVENT_ACTIVATE(data->event_forward_publish);
 			break;
 		default:
 			break;
 	};
 
 	return ret;
+}
+
+static void __rrr_mqtt_broker_forward_publish (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_mqtt_broker_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	uint64_t forwarded_publish_count = 0;
+	if (data->mqtt_data.sessions->methods->maintain_forward_publish (
+			&forwarded_publish_count,
+			data->mqtt_data.sessions
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to forward publishes in %s\n", __func__);
+	}
+
+	// In case a PUBLISH got forwarded, tick other connections to send them
+	if (forwarded_publish_count > 0) {
+		rrr_mqtt_transport_notify_tick(data->mqtt_data.transport);
+	}
 }
 
 static int __rrr_mqtt_broker_acl_handler_subscribe (
@@ -1084,25 +1111,8 @@ static int __rrr_mqtt_broker_read_callback (
 		}
 	}
 
-	if ((ret = data->mqtt_data.sessions->methods->maintain_expiration (
-			data->mqtt_data.sessions
-	)) != 0) {
-		goto out;
-	}
-
 	if (handled_publish_count > 0) {
-		uint64_t forwarded_publish_count = 0;
-		if ((ret = data->mqtt_data.sessions->methods->maintain_forward_publish (
-				&forwarded_publish_count,
-				data->mqtt_data.sessions
-		)) != 0) {
-			goto out;
-		}
-
-		// In case a PUBLISH got forwarded, tick other connections to send them
-		if (forwarded_publish_count > 0) {
-			rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
-		}
+		EVENT_ACTIVATE(data->event_forward_publish);
 	}
 
 	out:
@@ -1125,7 +1135,7 @@ int rrr_mqtt_broker_new (
 	int ret = 0;
 
 	if (max_keep_alive == 0) {
-		RRR_DBG_1("Setting max keep alive to 1 in rrr_mqtt_broker_new\n");
+		RRR_DBG_1("Setting max keep alive to 1 in %s\n", __func__);
 		max_keep_alive = 1;
 	}
 
@@ -1133,7 +1143,7 @@ int rrr_mqtt_broker_new (
 
 	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_broker_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -1154,8 +1164,18 @@ int rrr_mqtt_broker_new (
 			__rrr_mqtt_broker_read_callback,
 			res
 	)) != 0) {
-		RRR_MSG_0("Could not initialize mqtt data in rrr_mqtt_broker_new\n");
+		RRR_MSG_0("Could not initialize mqtt data in %s\n", __func__);
 		goto out_free;
+	}
+
+	if ((ret = rrr_event_collection_push_oneshot (
+			&res->event_forward_publish,
+			&res->mqtt_data.events,
+			__rrr_mqtt_broker_forward_publish,
+			res
+	)) != 0) {
+		RRR_MSG_0("Could not create disconnect oneshot event in %s\n", __func__);
+		goto out_destroy_data;
 	}
 
 	res->max_clients = rrr_length_sub_bug_const(init_data->max_socket_connections, 10);
@@ -1168,8 +1188,8 @@ int rrr_mqtt_broker_new (
 
 	*broker = res;
 	goto out;
-//	out_destroy_data:
-//		rrr_mqtt_common_data_destroy(&res->mqtt_data);
+	out_destroy_data:
+		rrr_mqtt_common_data_destroy(&res->mqtt_data);
 	out_free:
 		RRR_FREE_IF_NOT_NULL(res);
 	out:

@@ -60,6 +60,8 @@ struct rrr_mqtt_broker_data {
 	const char *password_file;
 	const char *permission_name;
 	const struct rrr_mqtt_acl *acl;
+
+	rrr_event_handle event_forward_publish;
 };
 
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);

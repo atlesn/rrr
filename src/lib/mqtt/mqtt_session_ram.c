@@ -1173,8 +1173,8 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		// Expiration time set upon disconnect notification, and set to 0 again
 		// in session init function
 		if (node->expire_time != 0 && time_now >= node->expire_time) {
-			RRR_DBG_1("Session expired for client '%s'\n",
-					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
+			RRR_DBG_1("Session expired for client '%s' (expiry interval was %" PRIu32 ")\n",
+					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"), node->session_properties.numbers.session_expiry);
 			do_expire = 1;
 		}
 
