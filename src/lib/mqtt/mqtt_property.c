@@ -95,7 +95,7 @@ int rrr_mqtt_property_new (
 
 	struct rrr_mqtt_property *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -119,7 +119,7 @@ int rrr_mqtt_property_clone (
 	struct rrr_mqtt_property *result = NULL;
 
 	if (*target != NULL) {
-		RRR_BUG("Target was not NULL in rr_mqtt_property_clone\n");
+		RRR_BUG("Target was not NULL in %s\n", __func__);
 	}
 
 	if (source == NULL) {
@@ -128,7 +128,7 @@ int rrr_mqtt_property_clone (
 
 	result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone A\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out_final;
 	}
@@ -140,11 +140,11 @@ int rrr_mqtt_property_clone (
 	result->sibling = NULL;
 
 	if (result->length <= 0) {
-		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
+		RRR_BUG("Length was <= 0 in %s\n", __func__);
 	}
 
 	if ((result->data = rrr_allocate(result->length)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone B\n");
+		RRR_MSG_0("Could not allocate memory for data in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -154,7 +154,7 @@ int rrr_mqtt_property_clone (
 
 	if (source->sibling != NULL) {
 		if ((ret = rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
-			RRR_MSG_0("Could not clone sibling in rrr_mqtt_property_clone\n");
+			RRR_MSG_0("Could not clone sibling in %s\n", __func__);
 			ret = 1;
 			goto out_free;
 		}
@@ -183,7 +183,7 @@ int rrr_mqtt_property_save_blob (
 
 	target->data = rrr_allocate(size_padded);
 	if (target->data == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return 1;
 	}
 
@@ -203,7 +203,7 @@ int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t va
 	size_t allocation_size = sizeof(value);
 
 	if ((target->data = (char *) rrr_allocate(allocation_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return 1;
 	}
 
@@ -218,10 +218,10 @@ uint32_t rrr_mqtt_property_get_uint32 (
 		const struct rrr_mqtt_property *property
 ) {
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32) {
-		RRR_BUG("Property was not UINT32 in rrr_mqtt_property_get_uint32\n");
+		RRR_BUG("Property was not UINT32 in %s\n", __func__);
 	}
 	if (property->length < sizeof(uint32_t)) {
-		RRR_BUG("Length of property was <4 in rrr_mqtt_property_get_uint32\n");
+		RRR_BUG("Length of property was <4 in %s\n", __func__);
 	}
 	return *((uint32_t*) property->data);
 }
@@ -231,10 +231,10 @@ const char *rrr_mqtt_property_get_blob (
 		rrr_length *length
 ) {
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB) {
-		RRR_BUG("Property was not BLOB in rrr_mqtt_property_get_blob\n");
+		RRR_BUG("Property was not BLOB in %s\n", __func__);
 	}
 	if (property->length < 1) {
-		RRR_BUG("Length of property was <1 in rrr_mqtt_property_get_blob\n");
+		RRR_BUG("Length of property was <1 in %s\n", __func__);
 	}
 	*length = property->length;
 	return property->data;
@@ -254,7 +254,7 @@ int rrr_mqtt_property_get_blob_as_str (
 	const char *data = rrr_mqtt_property_get_blob(property, &length);
 
 	if ((tmp = rrr_allocate(length + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_propert_get_blob_as_str\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -281,13 +281,13 @@ static int __rrr_mqtt_property_clone (
 	struct rrr_mqtt_property *result = NULL;
 
 	if ((ret = rrr_mqtt_property_new(&result, source->definition)) != 0) {
-		RRR_MSG_0("Could not create new property in __rrr_mqtt_property_clone\n");
+		RRR_MSG_0("Could not create new property in %s\n", __func__);
 		goto out;
 	}
 
 	if (source->sibling != NULL) {
 		if ((ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
-			RRR_MSG_0("Could not clone sibling in __rrr_mqtt_property_clone\n");
+			RRR_MSG_0("Could not clone sibling in %s\n", __func__);
 			goto out_destroy;
 		}
 	}
@@ -298,7 +298,7 @@ static int __rrr_mqtt_property_clone (
 	if (source->length > 0) {
 		result->length = source->length;
 		if ((result->data = rrr_allocate(result->length)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
+			RRR_MSG_0("Could not allocate memory for data in %s\n", __func__);
 			ret = 1;
 			goto out_destroy;
 		}
@@ -325,7 +325,7 @@ int rrr_mqtt_property_collection_add_uint32 (
 	struct rrr_mqtt_property *property = NULL;
 	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
 	if (definition == NULL) {
-		RRR_BUG("Property %u not found in rrr_mqtt_property_collection_add_uint32\n", id);
+		RRR_BUG("Property %u not found in %s\n", id, __func__);
 	}
 
 	uint32_t max = 0;
@@ -342,22 +342,22 @@ int rrr_mqtt_property_collection_add_uint32 (
 		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 		default:
-			RRR_BUG("Property %u was not an unsigned int value in rrr_mqtt_property_collection_add_uint32\n", id);
+			RRR_BUG("Property %u was not an unsigned int value in %s\n", id, __func__);
 	};
 
 	if (value > max) {
-		RRR_MSG_0("Value %u was too long to be held by property 0x%02x in rrr_mqtt_property_collection_add_uint32, max is %" PRIu32"\n",
-				value, id, max);
+		RRR_MSG_0("Value %u was too long to be held by property 0x%02x in %s, max is %" PRIu32"\n",
+				value, id, __func__, max);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_new(&property, definition)) != 0) {
-		RRR_MSG_0("Could not create property in rrr_mqtt_property_collection_add_uint32\n");
+		RRR_MSG_0("Could not create property in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_save_uint32(property, value)) != 0) {
-		RRR_MSG_0("Could not save property value in rrr_mqtt_property_collection_add_uint32\n");
+		RRR_MSG_0("Could not save property value in %s\n", __func__);
 		goto out_free_property;
 	}
 
@@ -381,7 +381,7 @@ int rrr_mqtt_property_collection_add_blob_or_utf8 (
 	struct rrr_mqtt_property *property = NULL;
 	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
 	if (definition == NULL) {
-		RRR_BUG("Property %u not found in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+		RRR_BUG("Property %u not found in %s\n", id, __func__);
 	}
 
 	int add_zero_if_needed = 0;
@@ -398,16 +398,16 @@ int rrr_mqtt_property_collection_add_blob_or_utf8 (
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 		default:
-			RRR_BUG("Property %u was not a utf8/blob value in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+			RRR_BUG("Property %u was not a utf8/blob value in %s\n", id, __func__);
 	};
 
 	if ((ret = rrr_mqtt_property_new(&property, definition)) != 0) {
-		RRR_MSG_0("Could not create property in rrr_mqtt_property_collection_add_blob_or_utf8\n");
+		RRR_MSG_0("Could not create property in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_save_blob(property, value, size, add_zero_if_needed)) != 0) {
-		RRR_MSG_0("Could not save property value in rrr_mqtt_property_collection_add_blob_or_utf8\n");
+		RRR_MSG_0("Could not save property value in %s\n", __func__);
 		goto out_free_property;
 	}
 
@@ -436,14 +436,14 @@ int rrr_mqtt_property_collection_add_cloned (
 	struct rrr_mqtt_property *new_property = NULL;
 
 	if (property == NULL) {
-		RRR_BUG("BUG: Propery was NULL in rrr_mqtt_property_collection_add_cloned\n");
+		RRR_BUG("BUG: Propery was NULL in %s\n", __func__);
 	}
 
 	int ret = 0;
 
 	ret = rrr_mqtt_property_clone(&new_property, property);
 	if (ret != 0) {
-		RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_add_cloned\n");
+		RRR_MSG_0("Could not clone property in %s\n", __func__);
 		goto out;
 	}
 
@@ -574,7 +574,7 @@ int rrr_mqtt_property_collection_calculate_size (
 			case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
 				tmp = *((uint32_t*)(node->data));
 				if ((tmp & (uint32_t) ~0xfffffff) != 0) {
-					RRR_BUG("VINT was too long in rrr_mqtt_property_collection_calculate_size\n");
+					RRR_BUG("VINT was too long in %s\n", __func__);
 				}
 				do {
 					result += 1;
@@ -588,15 +588,15 @@ int rrr_mqtt_property_collection_calculate_size (
 			case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 				result += 2 + node->length;
 				if (node->sibling == NULL) {
-					RRR_BUG("2UTF8 had no sibling in rrr_mqtt_property_collection_calculate_size\n");
+					RRR_BUG("2UTF8 had no sibling in %s\n", __func__);
 				}
 				result += 2 + node->sibling->length;
 				break;
 			default:
-				RRR_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->internal_data_type);
+				RRR_BUG("Invalid type %u in %s\n", node->definition->internal_data_type, __func__);
 		};
 		if (result < 0 || result > RRR_LENGTH_MAX) {
-			RRR_BUG("Bug: Size overflow in rrr_mqtt_property_collection_calculate_size\n");
+			RRR_BUG("Bug: Size overflow in %s\n", __func__);
 		}
 		result_count++;
 	RRR_LL_ITERATE_END();
@@ -649,7 +649,7 @@ int rrr_mqtt_property_collection_add_selected_from_collection (
 			struct rrr_mqtt_property *new_node = NULL;
 			ret = __rrr_mqtt_property_clone(&new_node, node);
 			if (ret != 0) {
-				RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_clone\n");
+				RRR_MSG_0("Could not clone property in %s\n", __func__);
 				goto out_destroy;
 			}
 			rrr_mqtt_property_collection_add(target, new_node);

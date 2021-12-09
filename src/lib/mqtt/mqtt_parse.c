@@ -527,7 +527,7 @@ static int __rrr_mqtt_parse_property_integer (
 	int ret = RRR_MQTT_OK;
 
 	if (length > 4) {
-		RRR_BUG("Too many bytes in __rrr_mqtt_property_parse_integer\n");
+		RRR_BUG("Too many bytes in %s\n", __func__);
 	}
 
 	union {
@@ -765,8 +765,8 @@ static int __rrr_mqtt_parse_protocol_version_validate_name (
 	size_t len = strlen(string);
 
 	if (len > 16) {
-		RRR_BUG("Length overflow in __rrr_mqtt_parse_protocol_version_validate_name (%llu>%d)\n",
-			(unsigned long long) len, 16);
+		RRR_BUG("Length overflow (%llu>%d) in %s\n",
+			(unsigned long long) len, 16, __func__);
 	}
 
 	char uppercase[len + 1];
@@ -953,7 +953,7 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	// If previous parse was incomplete, free the tree
 	rrr_mqtt_topic_token_destroy(publish->token_tree_);
 	if (rrr_mqtt_topic_tokenize(&publish->token_tree_, publish->topic) != 0) {
-		RRR_MSG_0("Could not create topic token tree in rrr_mqtt_parse_publish\n");
+		RRR_MSG_0("Could not create topic token tree in %s\n", __func__);
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
 
@@ -1008,8 +1008,7 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 			PARSE_SAVE_AND_CHECK_REASON_STRUCT(def_puback,pubrel_pubcomp,def_puback->reason_v5);
 		}
 		else {
-			RRR_BUG("Unknown packet type %u in rrr_mqtt_parse_def_puback\n",
-					RRR_MQTT_P_GET_TYPE(def_puback));
+			RRR_BUG("Unknown packet type %u in %s\n", RRR_MQTT_P_GET_TYPE(def_puback), __func__);
 		}
 
 		PARSE_PROPERTIES_IF_V5(def_puback,properties);
@@ -1092,7 +1091,7 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 		struct rrr_mqtt_subscription *subscription = NULL;
 		parse_state->ret = rrr_mqtt_subscription_new (&subscription, sub_usub->data_tmp, retain, rap, nl, qos);
 		if (parse_state->ret != 0) {
-			RRR_MSG_0("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
+			RRR_MSG_0("Could not allocate subscription in %s\n", __func__);
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 
@@ -1105,7 +1104,7 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 			RRR_DBG_3("Duplicate topic filter '%s' in received mqtt SUBSCRIBE\n", sub_usub->data_tmp);
 		}
 		else if (ret_tmp != RRR_MQTT_SUBSCRIPTION_OK) {
-			RRR_MSG_0("Error %i while adding subscription to collection in rrr_mqtt_parse_subscribe\n", ret_tmp);
+			RRR_MSG_0("Error %i while adding subscription to collection in %s\n", ret_tmp, __func__);
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 
@@ -1353,13 +1352,13 @@ void rrr_mqtt_packet_parse (
 	int ret_tmp = 0;
 
 	if (session->buf == NULL) {
-		RRR_BUG("buf was NULL in rrr_mqtt_packet_parse\n");
+		RRR_BUG("buf was NULL in %s\n", __func__);
 	}
 	if (RRR_MQTT_PARSE_IS_ERR(session)) {
-		RRR_BUG("rrr_mqtt_packet_parse called with error flag set, connection should have been closed.\n");
+		RRR_BUG("%s called with error flag set, connection should have been closed.\n", __func__);
 	}
 	if (RRR_MQTT_PARSE_IS_COMPLETE(session)) {
-		RRR_BUG("rrr_mqtt_packet_parse called while parsing was complete\n");
+		RRR_BUG("%s called while parsing was complete\n", __func__);
 	}
 
 	if (session->buf_wpos < 2) {
@@ -1371,7 +1370,7 @@ void rrr_mqtt_packet_parse (
 		const struct rrr_mqtt_p_header *header = (const struct rrr_mqtt_p_header *) session->buf;
 
 		if (RRR_MQTT_PARSE_GET_TYPE(header) == 0) {
-			RRR_MSG_0("Received 0 header type in rrr_mqtt_packet_parse\n");
+			RRR_MSG_0("Received 0 header type in %s\n", __func__);
 			RRR_MQTT_PARSE_STATUS_SET_ERR(session);
 			goto out;
 		}
@@ -1469,7 +1468,7 @@ void rrr_mqtt_packet_parse_session_extract_packet (
 		struct rrr_mqtt_parse_session *session
 ) {
 	if (session->packet == NULL || !RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
-		RRR_BUG("Invalid preconditions for rrr_mqtt_packet_parse_extract_packet\n");
+		RRR_BUG("Invalid preconditions in %s\n", __func__);
 	}
 
 	session->packet->type_flags = session->type_flags;

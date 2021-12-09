@@ -77,7 +77,7 @@ int rrr_mqtt_transport_new (
 	struct rrr_mqtt_transport *transport = rrr_allocate(sizeof(*transport));
 
 	if (transport == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_transport_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -137,7 +137,7 @@ int rrr_mqtt_transport_start (
 	int ret = 0;
 
 	if (transport->transport_count == RRR_MQTT_TRANSPORT_MAX) {
-		RRR_MSG_0("Too many transports in rrr_mqtt_transport_start\n");
+		RRR_MSG_0("Too many transports in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -152,7 +152,7 @@ int rrr_mqtt_transport_start (
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
-			RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
+			RRR_MSG_0("Could not initialize TLS network type in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -166,12 +166,12 @@ int rrr_mqtt_transport_start (
 				0,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
-			RRR_MSG_0("Could not initialize plain network type in rrr_mqtt_transport_start_plain\n");
+			RRR_MSG_0("Could not initialize plain network type in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		RRR_BUG("BUG: Unknown transport type %i to rrr_mqtt_transport_start\n", net_transport_config->transport_type);
+		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type, __func__);
 	}
 
 	transport->transports[transport->transport_count++] = tmp;
@@ -228,13 +228,13 @@ int rrr_mqtt_transport_connect (
 	};
 
 	if (transport->transport_count > 1) {
-		RRR_DBG_1("Note: More than one transport found in rrr_mqtt_transport_connect, using the first one.\n");
+		RRR_DBG_1("Note: More than one transport found in %s, using the first one.\n", __func__);
 	}
 
 	struct rrr_net_transport *net_transport = transport->transports[0];
 
 	if (net_transport == NULL) {
-		RRR_BUG("BUG: No transports started in rrr_mqtt_transport_connect\n");
+		RRR_BUG("BUG: No transports started in %s\n", __func__);
 	}
 
 	if ((ret = rrr_net_transport_connect (
@@ -278,7 +278,7 @@ int rrr_mqtt_transport_iterate (
 				callback_arg
 		);
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-			RRR_MSG_0("Internal error in rrr_mqtt_transport_iterate\n");
+			RRR_MSG_0("Internal error in %s\n", __func__);
 			goto out;
 		}
 	}
