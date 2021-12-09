@@ -1019,23 +1019,20 @@ static int __rrr_net_transport_iterate_with_callback (
 			RRR_LL_ITERATE_LAST();
 		}
 
-		if ((ret = callback (
-				node,
-				arg
-		)) != 0) {
+		if ((ret = callback (node, arg)) != 0) {
 			if (ret == RRR_READ_INCOMPLETE) {
 				ret = 0;
 			}
 			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-				ret = 0;
 				// For nice treatment of remote, for instance send a disconnect packet
 				if (node->application_ptr_iterator_pre_destroy != NULL) {
-					ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
+					if ((ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+						RRR_MSG_0("Internal error from callback function in %s\n", __func__);
+						goto out;
+					}
 				}
-
-				if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-					RRR_MSG_0("Internal error from callback function in %s\n", __func__);
-					RRR_LL_ITERATE_BREAK();
+				else {
+					ret = 0;
 				}
 
 				// When pre_destroy returns 0 or is not set, go ahead with destruction
@@ -1043,15 +1040,19 @@ static int __rrr_net_transport_iterate_with_callback (
 					__rrr_net_transport_handle_destroy(node);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
+				else {
+					ret = 0;
+				}
 			}
 			else {
 				RRR_MSG_0("Error %i from callback function in %s\n", ret, __func__);
-				ret = 1;
-				RRR_LL_ITERATE_LAST();
+				ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+				goto out;
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 
+	out:
 	return ret;
 }
 
