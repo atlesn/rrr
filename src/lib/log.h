@@ -79,7 +79,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Disables all calls to the logging subsystem. This make the compiler check all
 // arguments properly, use when coding.
-//#define RRR_WITH_PRINTF_LOGGING
+#define RRR_WITH_PRINTF_LOGGING
 
 //#define RRR_WITH_SIGNAL_PRINTF
 

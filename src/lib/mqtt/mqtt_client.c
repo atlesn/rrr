@@ -476,7 +476,7 @@ int rrr_mqtt_client_connect (
 
 	const struct rrr_mqtt_p_protocol_version *protocol_version = rrr_mqtt_p_get_protocol_version(version);
 	if (protocol_version == NULL) {
-		RRR_BUG("Invalid protocol version %u in %s\n", __func__, version);
+		RRR_BUG("Invalid protocol version %u in %s\n", version, __func__);
 	}
 
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
@@ -859,7 +859,7 @@ static int __rrr_mqtt_client_event_handler (
 			// Arg is packet
 			if (data->packet_parsed_handler != NULL) {
 				if ((ret = data->packet_parsed_handler(data, arg, data->packet_parsed_handler_arg)) != 0) {
-					RRR_MSG_0("Error %i from downstream handler in %s\n", __func__, ret);
+					RRR_MSG_0("Error %i from downstream handler in %s\n", ret, __func__);
 				}
 			}
 			break;

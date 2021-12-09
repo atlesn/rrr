@@ -125,21 +125,17 @@ int rrr_mqtt_common_clear_session_from_connections (
 		const struct rrr_mqtt_session *session_to_remove,
 		int transport_handle_disregard
 ) {
-	int ret = 0;
-
 	struct clear_sesion_from_connections_callback_data callback_data = {
 			session_to_remove,
 			transport_handle_disregard
 	};
 
-	ret = rrr_mqtt_transport_iterate (
+	return rrr_mqtt_transport_iterate (
 			data->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_mqtt_common_clear_session_from_connections_callback ,
 			&callback_data
 	);
-
-	return ret;
 }
 
 /*
@@ -168,7 +164,7 @@ static int __rrr_mqtt_common_connection_event_handler (
 	}
 
 	// Call downstream event handler (broker/client), must be called first in
-	// case session-stuff fails due to client counters
+	// case session-stuff fails
 	ret_tmp = data->event_handler(connection, event, data->event_handler_static_arg, arg);
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_SOFT_ERROR) != 0) {
@@ -179,8 +175,8 @@ static int __rrr_mqtt_common_connection_event_handler (
 		}
 
 		if (ret_tmp != 0) {
-			RRR_MSG_0("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
-					event, ret_tmp);
+			RRR_MSG_0("Internal error while calling downstream event handler in %s with event %i return was %i\n",
+					__func__, event, ret_tmp);
 			ret |= RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -194,26 +190,26 @@ static int __rrr_mqtt_common_connection_event_handler (
 			// OK, nothing to do
 			break;
 		default:
-			RRR_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
+			RRR_BUG("Unknown event %i in %s\n", event, __func__);
 	}
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
 			// It is normal to return DELETED from disconnect event
 			if (event != RRR_MQTT_CONN_EVENT_DISCONNECT) {
-				RRR_MSG_0("Session was deleted while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
+				RRR_MSG_0("Session was deleted while calling session storage engine in %s with event %i\n", __func__, event);
 			}
 			ret |= RRR_MQTT_SOFT_ERROR;
 		}
 		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
-			RRR_MSG_0("Session error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
+			RRR_MSG_0("Session error while calling session storage engine in %s with event %i\n", __func__, event);
 			ret |= RRR_MQTT_SOFT_ERROR;
 		}
 
 		ret_tmp = ret_tmp & ~(RRR_MQTT_SESSION_ERROR|RRR_MQTT_SESSION_DELETED);
 
 		if (ret_tmp != 0) {
-			RRR_MSG_0("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
-					event, ret_tmp);
+			RRR_MSG_0("Internal error while calling session storage engine in %s with event %i return was %i\n",
+					__func__, event, ret_tmp);
 			ret |= RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -264,7 +260,7 @@ int rrr_mqtt_common_data_init (
 
 	if (init_data->client_name != NULL && *(init_data->client_name) != '\0') {
 		if ((data->client_name = rrr_strdup(init_data->client_name)) == NULL) {
-			RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -290,13 +286,13 @@ int rrr_mqtt_common_data_init (
 			read_callback,
 			read_callback_arg
 	) != 0) {
-		RRR_MSG_0("Could not initialize connection collection in rrr_mqtt_data_new\n");
+		RRR_MSG_0("Could not initialize connection collection in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if (session_initializer (&data->sessions, session_initializer_arg) != 0) {
-		RRR_MSG_0("Could not initialize session data in rrr_mqtt_data_new\n");
+		RRR_MSG_0("Could not initialize session data in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_connections;
 	}
@@ -334,8 +330,8 @@ int rrr_mqtt_common_data_init (
             RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_SUBSCRIPTION_ID &&                          \
             (dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0   \
     ) {                                                                                                         \
-        RRR_MSG_0("Property '%s' was specified more than once (%u times) in packet\n",                          \
-                RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1);                                           \
+        RRR_MSG_0("Property '%s' was specified more than once (%u times) in %s\n",                              \
+                RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1, __func__);                                 \
         goto out_reason_protocol_error;                                                                         \
     }} while (0)
 
@@ -348,7 +344,7 @@ int rrr_mqtt_common_data_init (
 #define HANDLE_PROPERTY_SWITCH_BEGIN()                                      \
     switch (RRR_MQTT_PROPERTY_GET_ID(property)) {                           \
         case 0:                                                             \
-            RRR_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n"); \
+            RRR_BUG("Property id was 0 in %s\n", __func__); \
             break
 /*
 #include "../util/utf8.h"
@@ -404,7 +400,7 @@ int rrr_mqtt_common_data_init (
         case id:                                                            \
             tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
             if (tmp_u32 > 0xff) {                                           \
-                RRR_BUG("U8 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
+                RRR_BUG("U8 property overflow in %s\n", __func__);\
             }                                                               \
             (target) = tmp_u32;                                             \
             break
@@ -413,7 +409,7 @@ int rrr_mqtt_common_data_init (
         case id:                                                            \
             tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
             if (tmp_u32 > 0xffff) {                                         \
-                RRR_BUG("U16 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
+                RRR_BUG("U16 property overflow in %s\n", __func__);\
             }                                                               \
             (target) = (uint16_t) tmp_u32;                                  \
             break
@@ -422,7 +418,7 @@ int rrr_mqtt_common_data_init (
         case id:                                                                                    \
             ret = rrr_mqtt_property_collection_add_cloned((target), property);                      \
             if (ret != 0) {                                                                         \
-                RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");       \
+                RRR_MSG_0("Error while cloning property in %s\n", __func__);       \
                 goto out_internal_error;                                                            \
             }                                                                                       \
             break
@@ -436,7 +432,7 @@ int rrr_mqtt_common_data_init (
             }                                                                                       \
             ret = rrr_mqtt_property_collection_add_cloned((target), property);                      \
             if (ret != 0) {                                                                         \
-                RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");       \
+                RRR_MSG_0("Error while cloning property in %s\n", __func__);       \
                 goto out_internal_error;                                                            \
             }                                                                                       \
             break
@@ -789,7 +785,7 @@ int rrr_mqtt_common_send_from_sessions_callback (
 
 	int do_stop = 0;
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(&do_stop, callback_data->handle, packet) != 0) {
-		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
+		RRR_MSG_0("Could not send outbound packet in %s\n", __func__);
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
 		goto out;
@@ -812,7 +808,7 @@ static int __rrr_mqtt_common_send_now_callback (
 	struct rrr_net_transport_handle *handle = arg;
 
 	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet)) != 0) {
-		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_now_callback\n");
+		RRR_MSG_0("Could not send outbound packet in %s\n", __func__);
 	}
 
 	return ret;
@@ -906,7 +902,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			ret_from_receive_publish,
 			goto out,
-			" in session receive publish function in rrr_mqtt_common_handle_publish"
+			" in session receive publish function while handling PUBLISH"
 	);
 
 	out_generate_ack:
@@ -916,7 +912,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 		ack = (struct rrr_mqtt_p *) puback;
 		if (puback == NULL) {
-			RRR_MSG_0("Could not allocate PUBACK in __rrr_mqtt_broker_handle_publish\n");
+			RRR_MSG_0("Could not allocate PUBACK in %s\n", __func__);
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -930,7 +926,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 		ack = (struct rrr_mqtt_p *) pubrec;
 		if (pubrec == NULL) {
-			RRR_MSG_0("Could not allocate PUBREC in __rrr_mqtt_broker_handle_publish\n");
+			RRR_MSG_0("Could not allocate PUBREC in %s\n", __func__);
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -939,7 +935,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		pubrec->packet_identifier = publish->packet_identifier;
 	}
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) != 0) {
-		RRR_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish));
+		RRR_BUG("Invalid QoS (%u) in %s\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish), __func__);
 	}
 
 	if (ack != NULL) {
@@ -956,7 +952,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					handle
 			),
 			goto out,
-			" in session send packet function in rrr_mqtt_common_handle_publish"
+			" in session send packet function while handling PUBLISH"
 		);
 	}
 
@@ -1021,7 +1017,7 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
-			RRR_DBG_2("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_puback_pubcomp\n");
+			RRR_DBG_2("Setting disconnect reason to 0x80 in %s\n", __func__);
 			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 		RRR_MSG_0("Error while handling received %s packet, reason: %u\n",
@@ -1065,7 +1061,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			goto out;
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
-			RRR_DBG_2("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_pubrec_pubrel\n");
+			RRR_DBG_2("Setting disconnect reason to 0x80 in %s\n", __func__);
 			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 
@@ -1084,7 +1080,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			packet->protocol_version
 	);
 	if (next_ack == NULL) {
-		RRR_MSG_0("Could not allocate %s in __rrr_mqtt_broker_handle_pubrec_pubrel\n",
+		RRR_MSG_0("Could not allocate %s in %s\n", __func__,
 				RRR_MQTT_P_GET_TYPE_NAME_RAW(next_ack_type));
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		goto out;
@@ -1155,20 +1151,20 @@ static int __rrr_mqtt_common_handle_packet_callback (
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
-			RRR_MSG_0("Received a CONNECT packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
+			RRR_MSG_0("Received a CONNECT packet while not allowed in %s\n", __func__);
 			ret |= RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNACK) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)) {
-			RRR_MSG_0("Received a CONNACK packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
+			RRR_MSG_0("Received a CONNACK packet while not allowed in %s\n", __func__);
 			ret |= RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
 	}
 	else if (!RRR_MQTT_CONN_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
-		RRR_MSG_0("Received a %s packet while only CONNECT was allowed in __rrr_mqtt_common_handle_packets_callback\n",
+		RRR_MSG_0("Received a %s packet while only CONNECT was allowed in %s\n", __func__,
 				RRR_MQTT_P_GET_TYPE_NAME(packet));
 		ret |= RRR_MQTT_SOFT_ERROR;
 		goto out;
@@ -1185,7 +1181,7 @@ static int __rrr_mqtt_common_handle_packet_callback (
 
 	if ((ret = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, handle, packet)) != 0) {
 		if (ret == RRR_MQTT_INTERNAL_ERROR) {
-			RRR_MSG_0("Error while handing packet in __rrr_mqtt_common_handle_packets_callback\n");
+			RRR_MSG_0("Error while handing packet in %s\n", __func__);
 		}
 		goto out;
 	}
@@ -1212,7 +1208,7 @@ int rrr_mqtt_common_update_conn_state_upon_disconnect (
 			(struct rrr_mqtt_p *) disconnect,
 			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
 	)) != RRR_MQTT_OK) {
-		RRR_MSG_0("Could not update connection state in rrr_mqtt_common_update_conn_state_upon_disconnect\n");
+		RRR_MSG_0("Could not update connection state in %s\n", __func__);
 		goto out;
 	}
 
@@ -1244,7 +1240,7 @@ static int __rrr_mqtt_common_read_parse_handle (
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_MQTT_INTERNAL_ERROR) {
-			RRR_MSG_0("Error while reading data from remote in __rrr_mqtt_common_read_parse_handle\n");
+			RRR_MSG_0("Error while reading data from remote in %s\n", __func__);
 		}
 		goto out;
 	}

@@ -474,7 +474,7 @@ static int __rrr_mqtt_broker_handle_connect_check_client_identifier (
 					session_was_present,
 					1 // No creation if non-existent client ID
 			)) != RRR_MQTT_SESSION_OK) {
-				RRR_MSG_0("Error getting session in %s return was %i\n", ret);
+				RRR_MSG_0("Error getting session in %s return was %i\n", __func__, ret);
 				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 				goto out;
 			}
@@ -795,7 +795,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out_send_connack:
 
-	RRR_DBG_2("Setting connection disconnect reason to %u in %s\n", __func__, reason_v5);
+	RRR_DBG_2("Setting connection disconnect reason to %u in %s\n", reason_v5, __func__);
 	connack->reason_v5 = reason_v5;
 	RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason_v5);
 
