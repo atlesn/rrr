@@ -121,19 +121,10 @@ struct rrr_mqtt_session_collection_methods {
 			void *callback_arg
 	);
 
-	// Insert a packet into the forward queue. Done currenty only by broker when publishing
-	// will messages. If will delivery
-	// interval is set in publish, it is put into will postpone queue. If not, it is
-	// published immediately.
-	int (*delivery_forward) (
-			struct rrr_mqtt_session_collection *sessions,
-			struct rrr_mqtt_p_publish *publish
-	);
-
 	// Forward PUBLISH to other clients which subscribe to them (broker only)
 	int (*maintain_forward_publish) (
-		uint64_t *forwarded_count,
-		struct rrr_mqtt_session_collection *sessions
+			uint64_t *forwarded_count,
+			struct rrr_mqtt_session_collection *sessions
 	);
 
 	// Destroy old sessions

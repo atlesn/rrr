@@ -289,15 +289,7 @@ static int __rrr_mqtt_broker_new_will_publish (
 
 	struct rrr_mqtt_p_publish *publish = NULL;
 
-	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' in MQTT broker\n",
-			client_id,
-			connect->will_topic,
-			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
-			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect)
-	);
-
 	struct rrr_mqtt_common_parse_will_properties_callback_data callback_data = {
-			&connect->will_properties,
 			0,
 			will_properties
 	};
@@ -352,6 +344,14 @@ static int __rrr_mqtt_broker_new_will_publish (
 		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' delay interval '%" PRIu32 "' in MQTT broker\n",
+			client_id,
+			connect->will_topic,
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect),
+			publish->will_delay_interval
+	);
 
 	*result = publish;
 	publish = NULL;
@@ -582,7 +582,6 @@ static int _rrr_mqtt_broker_handle_connect_session_init (
 	}
 
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
-			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
 			&session_properties,
 			{0}

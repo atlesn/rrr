@@ -342,13 +342,6 @@ static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 	return ret;
 }
 
-static int __rrr_mqtt_session_collection_ram_delivery_forward (
-		struct rrr_mqtt_session_collection *sessions,
-		struct rrr_mqtt_p_publish *publish
-) {
-	return __rrr_mqtt_session_collection_ram_delivery_forward_final((struct rrr_mqtt_session_collection_ram_data *) sessions, publish);
-}
-
 static int __rrr_mqtt_session_ram_check_publish_expired (
 		struct rrr_mqtt_p_publish *publish
 ) {
@@ -402,8 +395,8 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_session_ram *ram_session,
 		struct rrr_mqtt_p_publish *publish
 ) {
-	return __rrr_mqtt_session_collection_ram_delivery_forward (
-			(struct rrr_mqtt_session_collection *) ram_session->ram_data,
+	return __rrr_mqtt_session_collection_ram_delivery_forward_final (
+			ram_session->ram_data,
 			publish
 	);
 }
@@ -953,19 +946,16 @@ static int __rrr_mqtt_session_ram_will_publish_notify_disconnect (
 		struct rrr_mqtt_session_collection_ram_data *ram_data,
 		struct rrr_mqtt_session_ram *ram_session,
 		uint8_t reason_v5,
-		short force_publish
+		short session_deleted
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
-	struct rrr_mqtt_p_publish *publish = ram_session->will_publish;
-	const uint64_t time_now = rrr_time_get_64();
-
-	if (publish == NULL) {
+	if (ram_session->will_publish == NULL) {
 		goto out;
 	}
 
-	// Initialize. Delay interval is stored in seconds.
-	publish->planned_expiry_time = time_now + (publish->will_delay_interval * 1000 * 1000);
+	// Initialize. Delay interval is stored in seconds, multiply by 10^6.
+	ram_session->will_publish->planned_expiry_time = rrr_time_get_64() + (ram_session->will_publish->will_delay_interval * 1000 * 1000);
 
 	// Clear any WILL message unless explicitly told by client to publish it.
 	// In version 3.1, the will PUBLISH is always cleared (reason_v5 will
@@ -978,7 +968,11 @@ static int __rrr_mqtt_session_ram_will_publish_notify_disconnect (
 		__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
 	}
 
-	if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (ram_data, ram_session, force_publish)) != 0) {
+	if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (
+			ram_data,
+			ram_session,
+			session_deleted /* If session is deleted, ignore any delay interval */
+	)) != 0) {
 		goto out;
 	}
 
@@ -1151,7 +1145,6 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		short do_force_will_publish = 0;
 		short do_expire = 0;
 
 		if (node->prev_publish_grace_queue_iteration + RRR_MQTT_SESSION_RAM_PUBLISH_GRACE_QUEUE_INTERVAL_MS * 1000 < time_now) {
@@ -1184,14 +1177,13 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		}
 
 		if (do_expire) {
-			do_force_will_publish = 1;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
 		if ((ret = __rrr_mqtt_session_ram_will_publish_maintain (
 				data,
 				node,
-				do_force_will_publish
+				do_expire /* Ignore delay interval when session has expired */
 		)) != 0) {
 			goto out;
 		}
@@ -2840,7 +2832,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 			ram_data,
 			ram_session,
 			reason_v5,
-			ret_delete != 0 ? 1 : 0 /* Force publish of will now if session is deleted */
+			ret_delete != 0 ? 1 : 0
 	)) != 0) {
 		goto out;
 	}
@@ -3178,7 +3170,6 @@ static int __rrr_mqtt_session_ram_will_publish_register (
 const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
-		__rrr_mqtt_session_collection_ram_delivery_forward,
 		__rrr_mqtt_session_collection_ram_maintain_forward_publish,
 		__rrr_mqtt_session_collection_ram_maintain_expire,
 		__rrr_mqtt_session_collection_ram_destroy,

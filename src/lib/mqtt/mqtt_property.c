@@ -456,14 +456,14 @@ int rrr_mqtt_property_collection_add_cloned (
 }
 
 int rrr_mqtt_property_collection_iterate (
-	const struct rrr_mqtt_property_collection *collection,
-	int (*callback)(const struct rrr_mqtt_property *property, void *arg),
-	void *callback_arg
+		const struct rrr_mqtt_property_collection *collection,
+		int (*callback)(const struct rrr_mqtt_property_collection *source, const struct rrr_mqtt_property *property, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
-		ret = callback(node, callback_arg);
+		ret = callback(collection, node, callback_arg);
 		if (ret != 0) {
 			RRR_LL_ITERATE_LAST();
 		}

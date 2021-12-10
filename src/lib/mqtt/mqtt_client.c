@@ -557,7 +557,6 @@ int rrr_mqtt_client_connect (
 
 	{
 		struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
-				&connect->properties,
 				RRR_MQTT_P_5_REASON_OK,
 				&session_properties_tmp,
 				{0}
@@ -713,7 +712,6 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	uint8_t reason_v5 = 0;
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
-			&connack->properties,
 			RRR_MQTT_P_5_REASON_OK,
 			&session_properties_tmp,
 			{0}

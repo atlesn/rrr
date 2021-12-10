@@ -124,12 +124,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         return (ret | (extra_ret_value))                       \
 
 static int __rrr_mqtt_assemble_put_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
-	int ret = RRR_MQTT_ASSEMBLE_OK;
-
 	struct rrr_mqtt_payload_buf_session *session = arg;
+
+	(void)(collection);
+
+	int ret = RRR_MQTT_ASSEMBLE_OK;
 
 	if (property->data == NULL || property->length == 0) {
 		RRR_BUG("Property data and/or length was 0 in %s\n", __func__);

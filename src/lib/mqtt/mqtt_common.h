@@ -216,14 +216,10 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session,reason_v5) \
 		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session), reason_v5)
 
-#define MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(mqtt,packet) \
-		(mqtt)->sessions->methods->delivery_forward((mqtt)->sessions, packet)
-
 #define MQTT_COMMON_CALL_SESSION_REMOVE_POSTPONED_WILL(mqtt,session_handle) \
 		(mqtt)->sessions->methods->remove_postponed_will((mqtt)->sessions, session_handle)
 
 #define MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD       \
-    const struct rrr_mqtt_property_collection *source;         \
     uint8_t reason_v5
 
 struct rrr_mqtt_common_handle_properties_data {
@@ -281,32 +277,36 @@ int rrr_mqtt_common_data_init (
 		void *read_callback_arg
 );
 int rrr_mqtt_common_parse_connect_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
 int rrr_mqtt_common_parse_connack_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
 int rrr_mqtt_common_parse_publish_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
 int rrr_mqtt_common_parse_will_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
 int rrr_mqtt_common_parse_properties (
 		uint8_t *reason_v5,
 		const struct rrr_mqtt_property_collection *source,
-		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
+		int (*callback)(const struct rrr_mqtt_property_collection *collection, const struct rrr_mqtt_property *property, void *arg),
 		struct rrr_mqtt_common_handle_properties_data *callback_data
 );
 
-#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(target,packet,callback,action_on_error)                                              \
+#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(source,packet,callback,action_on_error)                                              \
     do {if ((ret = rrr_mqtt_common_parse_properties (                                                                          \
             &reason_v5,                                                                                                        \
-            (target),                                                                                                          \
+            (source),                                                                                                          \
             callback,                                                                                                          \
             (struct rrr_mqtt_common_handle_properties_data*) &callback_data                                                    \
     )) != 0) {                                                                                                                 \

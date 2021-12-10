@@ -164,9 +164,9 @@ int rrr_mqtt_property_collection_add_cloned (
 		const struct rrr_mqtt_property *property
 );
 int rrr_mqtt_property_collection_iterate (
-	const struct rrr_mqtt_property_collection *collection,
-	int (*callback)(const struct rrr_mqtt_property *property, void *arg),
-	void *callback_arg
+		const struct rrr_mqtt_property_collection *collection,
+		int (*callback)(const struct rrr_mqtt_property_collection *collection, const struct rrr_mqtt_property *property, void *arg),
+		void *callback_arg
 );
 unsigned int rrr_mqtt_property_collection_count_duplicates (
 		const struct rrr_mqtt_property_collection *collection,

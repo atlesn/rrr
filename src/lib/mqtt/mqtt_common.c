@@ -328,7 +328,7 @@ int rrr_mqtt_common_data_init (
     do {unsigned int dup_count = 0;                                                                             \
     if (    RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_USER_PROPERTY &&                            \
             RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_SUBSCRIPTION_ID &&                          \
-            (dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0   \
+            (dup_count = rrr_mqtt_property_collection_count_duplicates(collection, property)) != 0              \
     ) {                                                                                                         \
         RRR_MSG_0("Property '%s' was specified more than once (%u times) in %s\n",                              \
                 RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1, __func__);                                 \
@@ -470,6 +470,7 @@ int rrr_mqtt_common_data_init (
         return ret
 
 int rrr_mqtt_common_parse_connect_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -526,6 +527,7 @@ int rrr_mqtt_common_parse_connect_properties_callback (
 		case property: (target) = 1; break;
 
 int rrr_mqtt_common_parse_connack_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -650,6 +652,7 @@ int rrr_mqtt_common_parse_connack_properties_callback (
 }
 
 int rrr_mqtt_common_parse_publish_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -697,6 +700,7 @@ int rrr_mqtt_common_parse_publish_properties_callback (
 }
 
 int rrr_mqtt_common_parse_will_properties_callback (
+		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -741,7 +745,7 @@ int rrr_mqtt_common_parse_will_properties_callback (
 int rrr_mqtt_common_parse_properties (
 		uint8_t *reason_v5,
 		const struct rrr_mqtt_property_collection *source,
-		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
+		int (*callback)(const struct rrr_mqtt_property_collection *collection, const struct rrr_mqtt_property *property, void *arg),
 		struct rrr_mqtt_common_handle_properties_data *callback_data
 ) {
 	int ret = RRR_MQTT_OK;
@@ -749,9 +753,9 @@ int rrr_mqtt_common_parse_properties (
 	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
 
 	if ((ret = rrr_mqtt_property_collection_iterate (
-		source,
-		callback,
-		callback_data
+			source,
+			callback,
+			callback_data
 	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
 			ret = ret & ~(RRR_MQTT_SOFT_ERROR);
@@ -877,7 +881,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	struct rrr_mqtt_common_parse_properties_data_publish callback_data = {
-			&publish->properties,
 			0,
 			publish
 	};
