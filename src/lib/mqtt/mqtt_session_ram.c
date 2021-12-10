@@ -597,6 +597,9 @@ static int __rrr_mqtt_session_ram_delivery_local (
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
+	// Notify application. It should after this clear local delivery buffer.
+	ram_session->ram_data->publish_notify_callback(ram_session->ram_data->common_callback_arg);
+
 	out:
 	return ret;
 }
