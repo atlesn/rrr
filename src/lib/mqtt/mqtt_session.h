@@ -74,6 +74,9 @@ struct rrr_mqtt_session_properties {
 #define RRR_MQTT_SESSION_DELETED		(1<<1)
 #define RRR_MQTT_SESSION_ERROR			(1<<2)
 
+#define RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS \
+    void *arg
+
 // Session collections may maintain a copy of this struct and copy it into
 // the argument to get_stats() or maintain the numbers in some other fashion
 // and fill the provided struct field by field
@@ -117,14 +120,8 @@ struct rrr_mqtt_session_collection_methods {
 	// packets are cleared from the buffer immediately.
 	int (*iterate_and_clear_local_delivery) (
 			struct rrr_mqtt_session_collection *sessions,
-			int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+			void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 			void *callback_arg
-	);
-
-	// Forward PUBLISH to other clients which subscribe to them (broker only)
-	int (*maintain_forward_publish) (
-			uint64_t *forwarded_count,
-			struct rrr_mqtt_session_collection *sessions
 	);
 
 	// Destroy old sessions
@@ -145,6 +142,16 @@ struct rrr_mqtt_session_collection_methods {
 			const char *client_id,
 			short *session_was_present,
 			short no_creation
+	);
+
+	void (*register_callbacks) (
+		struct rrr_mqtt_session_collection *sessions,
+
+		// Callback is called when a publish is forwarded between clients or ready for local delivery
+		void (*publish_notify_callback)(RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS),
+
+		// Common callback argument
+		void *arg
 	);
 
 	// SESSION METHODS

@@ -847,7 +847,7 @@ static int mqttclient_process_command (
 	rrr_array_clear(&array);
 	RRR_FREE_IF_NOT_NULL(command);
 	if (ret != 0) {
-		RRR_MSG_0("MQTT client instance %s stopping due to hard error during processing of PUBLISH\n",
+		RRR_MSG_0("MQTT client instance %s stopping due to hard error during processing of command message\n",
 				INSTANCE_D_NAME(data->thread_data));
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
@@ -1628,7 +1628,7 @@ static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_ms
         goto out;                                                                                                              \
     } RRR_FREE_IF_NOT_NULL(message)
 
-static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
+static void mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
 
 	struct mqtt_client_data *data = arg;
@@ -1783,12 +1783,11 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_final);
-	if (ret == 1) {
+	if (ret != 0) {
 		RRR_MSG_0("MQTT client instance %s stopping due to hard error during processing of received PUBLISH\n",
 				INSTANCE_D_NAME(data->thread_data));
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
-	return ret;
 }
 
 static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {

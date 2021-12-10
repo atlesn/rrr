@@ -219,6 +219,9 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_REMOVE_POSTPONED_WILL(mqtt,session_handle) \
 		(mqtt)->sessions->methods->remove_postponed_will((mqtt)->sessions, session_handle)
 
+#define MQTT_COMMON_CALL_SESSION_REGISTER_CALLBACKS(mqtt,publish_notify_callback,arg) \
+		(mqtt)->sessions->methods->register_callbacks((mqtt)->sessions, publish_notify_callback, arg)
+
 #define MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD       \
     uint8_t reason_v5
 
@@ -340,8 +343,6 @@ int rrr_mqtt_common_send_from_sessions_callback (
 		void *arg
 );
 int rrr_mqtt_common_read_parse_single_handle (
-		uint64_t *handled_publish_count,
-		uint64_t *handled_pubrel_count,
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
@@ -350,7 +351,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 );
 int rrr_mqtt_common_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_data *data,
-		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
 );
 

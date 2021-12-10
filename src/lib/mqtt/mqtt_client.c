@@ -906,13 +906,9 @@ static int __rrr_mqtt_client_read_callback (
 
 	int ret = 0;
 
-	uint64_t handled_publish_count = 0;
-	uint64_t handled_pubrel_count = 0;
 	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
 
 	if ((ret = rrr_mqtt_common_read_parse_single_handle (
-			&handled_publish_count,
-			&handled_pubrel_count,
 			&session_counters,
 			&data->mqtt_data,
 			handle,
@@ -922,16 +918,14 @@ static int __rrr_mqtt_client_read_callback (
 		goto out;
 	}
 
-	if (handled_publish_count > 0 || handled_pubrel_count > 0) {
-		if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
-				data
-		)) != 0) {
-			goto out;
-		}
-	}
-
 	out:
 	return ret;
+}
+	
+static void __rrr_mqtt_client_publish_notify_callback (void *arg) {
+	struct rrr_mqtt_client_data *data = arg;
+
+	__rrr_mqtt_client_iterate_and_clear_local_delivery (data);
 }
 
 int rrr_mqtt_client_new (
@@ -944,7 +938,7 @@ int rrr_mqtt_client_new (
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
 		void *packet_parsed_handler_arg,
-		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *receive_publish_callback_arg
 ) {
 	int ret = 0;
@@ -987,6 +981,8 @@ int rrr_mqtt_client_new (
 	result->packet_parsed_handler_arg = packet_parsed_handler_arg;
 	result->receive_publish_callback = receive_publish_callback;
 	result->receive_publish_callback_arg = receive_publish_callback_arg;
+
+	MQTT_COMMON_CALL_SESSION_REGISTER_CALLBACKS(&result->mqtt_data, __rrr_mqtt_client_publish_notify_callback, result);
 
 	*client = result;
 

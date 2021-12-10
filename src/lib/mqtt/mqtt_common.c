@@ -236,7 +236,8 @@ static void __rrr_mqtt_common_maintenance (
 	if (data->sessions->methods->maintain_expiration (
 			data->sessions
 	) != 0) {
-		RRR_MSG_0("Warning: Error from session maintain function in %s\n", __func__);
+		RRR_MSG_0("Error from session maintain function in %s\n", __func__);
+		rrr_event_dispatch_break(data->queue);
 	}
 }
 
@@ -1136,8 +1137,6 @@ int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 struct rrr_mqtt_common_handle_packet_callback_data {
 	struct rrr_mqtt_data *mqtt_data;
-	uint64_t handled_publish_count;
-	uint64_t handled_pubrel_count;
 };
 
 static int __rrr_mqtt_common_handle_packet_callback (
@@ -1189,13 +1188,6 @@ static int __rrr_mqtt_common_handle_packet_callback (
 		goto out;
 	}
 
-	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
-		callback_data->handled_publish_count++;
-	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREL) {
-		callback_data->handled_pubrel_count++;
-	}
-
 	out:
 	return ret;
 }
@@ -1220,20 +1212,13 @@ int rrr_mqtt_common_update_conn_state_upon_disconnect (
 }
 
 static int __rrr_mqtt_common_read_parse_handle (
-		uint64_t *handled_publish_count,
-		uint64_t *handled_pubrel_count,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_data *data
 ) {
 	int ret = RRR_MQTT_OK;
 
-	*handled_publish_count = 0;
-	*handled_pubrel_count = 0;
-
 	struct rrr_mqtt_common_handle_packet_callback_data callback_data = {
-		data,
-		0,
-		0
+		data
 	};
 
 	if ((ret = rrr_mqtt_conn_iterator_ctx_read (
@@ -1247,9 +1232,6 @@ static int __rrr_mqtt_common_read_parse_handle (
 		}
 		goto out;
 	}
-
-	*handled_publish_count = callback_data.handled_publish_count;
-	*handled_pubrel_count = callback_data.handled_pubrel_count;
 
 	out:
 	return ret;
@@ -1288,8 +1270,6 @@ static int __rrr_mqtt_common_send (
 }
 
 int rrr_mqtt_common_read_parse_single_handle (
-		uint64_t *handled_publish_count,
-		uint64_t *handled_pubrel_count,
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
@@ -1299,8 +1279,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 	int ret = RRR_MQTT_OK;
 	int ret_preserve = RRR_MQTT_OK;
 
-	*handled_publish_count = 0;
-
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	// Ignore return value, will fail if session is not yet ready. We must call
@@ -1309,8 +1287,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 	MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
 
 	if ((ret = __rrr_mqtt_common_read_parse_handle (
-			handled_publish_count,
-			handled_pubrel_count,
 			handle,
 			data
 	)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
@@ -1361,7 +1337,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 
 int rrr_mqtt_common_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_data *data,
-		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;

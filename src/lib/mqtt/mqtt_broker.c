@@ -1022,36 +1022,11 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_auth}
 };
 
-static void __rrr_mqtt_broker_forward_publish (
-		struct rrr_mqtt_broker_data *data
-) {
-	uint64_t forwarded_publish_count = 0;
-	if (data->mqtt_data.sessions->methods->maintain_forward_publish (
-			&forwarded_publish_count,
-			data->mqtt_data.sessions
-	) != 0) {
-		RRR_MSG_0("Warning: Failed to forward publishes in %s\n", __func__);
-	}
-
-	// In case a PUBLISH got forwarded, tick other connections to send them
-	if (forwarded_publish_count > 0) {
-		rrr_mqtt_transport_notify_tick(data->mqtt_data.transport);
-	}
-}
-
-static void __rrr_mqtt_broker_event_forward_will_publish (
-		evutil_socket_t fd,
-		short flags,
+static void __rrr_mqtt_broker_publish_notify_callback (
 		void *arg
 ) {
-	(void)(fd);
-	(void)(flags);
-
 	struct rrr_mqtt_broker_data *data = arg;
-
-	__rrr_mqtt_broker_forward_publish(data);
-
-	EVENT_REMOVE(data->event_forward_will_publish);
+	rrr_mqtt_transport_notify_tick(data->mqtt_data.transport);
 }
 
 static int __rrr_mqtt_broker_event_handler (
@@ -1070,11 +1045,6 @@ static int __rrr_mqtt_broker_event_handler (
 	switch (event) {
 		case RRR_MQTT_CONN_EVENT_DISCONNECT:
 			data->stats.total_connections_closed++;
-			// This is performed to ensure that any will
-			// publishes gets forwarded immediately
-			if (!EVENT_PENDING(data->event_forward_will_publish)) {
-				EVENT_ADD(data->event_forward_will_publish);
-			}
 			break;
 		default:
 			break;
@@ -1167,13 +1137,9 @@ static int __rrr_mqtt_broker_read_callback (
 	int ret = 0;
 	int ret_from_read = 0;
 
-	uint64_t handled_publish_count = 0;
-	uint64_t handled_pubrel_count = 0;
 	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
 
 	if ((ret = ret_from_read = rrr_mqtt_common_read_parse_single_handle (
-			&handled_publish_count,
-			&handled_pubrel_count,
 			&session_iterate_counters,
 			&data->mqtt_data,
 			handle,
@@ -1188,10 +1154,6 @@ static int __rrr_mqtt_broker_read_callback (
 			// Ensure INCOMPLETE propagates
 			goto out;
 		}
-	}
-
-	if (handled_publish_count > 0 || handled_pubrel_count > 0) {
-		__rrr_mqtt_broker_forward_publish(data);
 	}
 
 	out:
@@ -1244,17 +1206,6 @@ int rrr_mqtt_broker_new (
 		goto out_free;
 	}
 
-	if ((ret = rrr_event_collection_push_periodic (
-			&res->event_forward_will_publish,
-			&res->mqtt_data.events,
-			__rrr_mqtt_broker_event_forward_will_publish,
-			res,
-			2 * 1000 // 2 ms
-	)) != 0) {
-		RRR_MSG_0("Failed to create forward will publish event in %s\n", __func__);
-		goto out_destroy_data;
-	}
-
 	res->max_clients = rrr_length_sub_bug_const(init_data->max_socket_connections, 10);
 	res->max_keep_alive = max_keep_alive;
 	res->disallow_anonymous_logins = disallow_anonymous_logins;
@@ -1263,10 +1214,12 @@ int rrr_mqtt_broker_new (
 	res->permission_name = permission_name;
 	res->acl = acl;
 
+	MQTT_COMMON_CALL_SESSION_REGISTER_CALLBACKS(&res->mqtt_data, __rrr_mqtt_broker_publish_notify_callback, res);
+
 	*broker = res;
 	goto out;
-	out_destroy_data:
-		rrr_mqtt_common_data_destroy(&res->mqtt_data);
+//	out_destroy_data:
+//		rrr_mqtt_common_data_destroy(&res->mqtt_data);
 	out_free:
 		RRR_FREE_IF_NOT_NULL(res);
 	out:

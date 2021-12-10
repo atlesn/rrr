@@ -47,7 +47,7 @@ struct rrr_mqtt_client_data {
 	void *suback_unsuback_handler_arg;
 	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
 	void *packet_parsed_handler_arg;
-	int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
 	void *receive_publish_callback_arg;
 };
 
@@ -121,7 +121,7 @@ int rrr_mqtt_client_new (
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
 		void *packet_parsed_handler_arg,
-		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *receive_publish_callback_arg
 );
 int rrr_mqtt_client_late_set_client_identifier (

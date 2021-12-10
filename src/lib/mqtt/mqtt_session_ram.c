@@ -87,6 +87,9 @@ struct rrr_mqtt_session_collection_ram_data {
 	RRR_MQTT_SESSION_COLLECTION_HEAD;
 	RRR_LL_HEAD(struct rrr_mqtt_session_ram);
 
+	void (*publish_notify_callback)(RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS);
+	void *common_callback_arg;
+
 	// Deliver PUBLISH locally (and check against subscriptions) or forward to other sessions
 	int (*delivery_method)(RRR_MQTT_SESSION_RAM_DELIVERY_METHOD_ARGS);
 
@@ -96,10 +99,6 @@ struct rrr_mqtt_session_collection_ram_data {
 	// Packets in this queue are retained and will be published upon new subscriptions matching
 	// topics.
 	struct rrr_mqtt_p_queue retain_buffer;
-
-	// Packets in this queue are forwarded to sessions with matching subscriptions. If no
-	// subscriptions match for a packet, it is deleted. Used by broker program.
-	struct rrr_mqtt_p_queue publish_forward_buffer;
 
 	// Packets in this queue are stored until read from. Used by client program.
 	struct rrr_mqtt_p_queue publish_local_buffer;
@@ -290,6 +289,141 @@ static int __rrr_mqtt_session_ram_retain_buffer_write_callback (
 		return ret;
 }
 
+struct receive_forwarded_publish_data {
+	struct rrr_mqtt_session_ram *session;
+};
+
+static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
+		const struct rrr_mqtt_p_publish *publish,
+		const struct rrr_mqtt_subscription *subscription,
+		void *arg
+) {
+	struct receive_forwarded_publish_data *callback_data = arg;
+	struct rrr_mqtt_session_ram *session = callback_data->session;
+
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct rrr_mqtt_p_publish *new_publish = NULL;
+
+	if ( session->session_properties.numbers.maximum_packet_size != 0 &&
+	     publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size
+	) {
+		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%" PRIrrrl ">%u\n",
+				publish->received_size, session->session_properties.numbers.maximum_packet_size);
+		ret = RRR_MQTT_SESSION_OK;
+		goto out;
+	}
+
+	if ((new_publish = rrr_mqtt_p_clone_publish (
+			publish, 1, 0, 0 // Preserve only type flags, but DUP and Retain flags are always overwritten elsewhere
+	)) == NULL) {
+		RRR_MSG_0("Could not clone PUBLISH packet in %s\n", __func__);
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	// Always clear retain flag per specification
+	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(new_publish, 0);
+	new_publish->dup = 0;
+
+	// We don't set the new packet ID yet in case the client is not currently connected
+	// and many packets would exhaust the 16-bit ID field. It is set when iterating the
+	// send queue and the zero ID is found.
+	new_publish->packet_identifier = 0;
+
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
+		// Downgrade QOS
+		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
+	}
+
+	RRR_DBG_2(">==> Forward PUBLISH topic '%s' qos %u to client %s\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
+			session->client_id_
+	);
+
+	new_publish->dup = 0;
+	new_publish->is_outbound = 1;
+
+	if (__rrr_mqtt_session_ram_fifo_write_simple (
+			&session->to_remote_buffer.buffer,
+			(struct rrr_mqtt_p *) new_publish
+	) != 0) {
+		RRR_MSG_0("Could not write to to_remote_queue in %s\n", __func__);
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(new_publish);
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_receive_forwarded_publish (
+		struct rrr_mqtt_session_ram *ram_session,
+		const struct rrr_mqtt_p_publish *publish,
+		rrr_length *match_count
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct receive_forwarded_publish_data callback_data = { ram_session };
+
+	// Note : We always send one PUBLISH per matching subscription and do
+	//        not check for overlaps. Other brokers might treat this different
+	//        and only send one PUBLISH. The different methods comply with
+	//        the standards (both V3.1.1 and V5), but the method here is the
+	//        least complex to implement.
+
+	if ((ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
+			ram_session->subscriptions,
+			publish,
+			__rrr_mqtt_session_ram_receive_forwarded_publish_match_callback,
+			&callback_data,
+			match_count
+	)) != RRR_MQTT_SUBSCRIPTION_OK) {
+		RRR_MSG_0("Error while matching publish packet against subscriptions in %s, return was %i\n",
+				__func__, ret);
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	}
+
+	return ret;
+}
+
+static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (
+		struct rrr_mqtt_session_collection_ram_data *ram_data,
+		const struct rrr_mqtt_p_publish *publish
+) {
+	int ret = RRR_FIFO_OK;
+
+	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u to any subscribers\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)
+	);
+
+	rrr_length total_match_count = 0;
+
+	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
+		rrr_length match_count = 0;
+		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish, &match_count);
+		total_match_count += match_count;
+
+		if (ret_tmp != RRR_MQTT_SESSION_OK) {
+			RRR_MSG_0("Error while receiving forwarded publish message, return was %i\n", ret);
+			ret |= RRR_FIFO_GLOBAL_ERR;
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+
+	if (total_match_count == 0) {
+		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
+	}
+	else {
+		__rrr_mqtt_session_collection_ram_stats_notify_forwarded(ram_data, total_match_count);
+	}
+
+	return ret;
+}
+
 static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 		struct rrr_mqtt_session_collection_ram_data *ram_data,
 		struct rrr_mqtt_p_publish *publish
@@ -328,15 +462,15 @@ static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 		}
 	}
 
-	if (__rrr_mqtt_session_ram_fifo_write_with_stats (
-			&ram_data->publish_forward_buffer.buffer,
-			(struct rrr_mqtt_p *) publish,
-			&ram_data->stats.total_publish_forwarded_in
-	) != 0) {
-		RRR_MSG_0("Could not write to publish forward queue in %s\n", __func__);
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	if ((ret = __rrr_mqtt_session_collection_ram_forward_publish_to_clients (
+			ram_data,
+			publish
+	)) != 0) {
 		goto out;
 	}
+
+	// Notify application. It should after this call forward maintain function.
+	ram_data->publish_notify_callback(ram_data->common_callback_arg);
 
 	out:
 	return ret;
@@ -755,6 +889,17 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 	return ret;
 }
 
+static void __rrr_mqtt_session_collection_ram_register_callbacks (
+		struct rrr_mqtt_session_collection *sessions,
+		void (*publish_notify_callback)(RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS),
+		void *arg
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
+
+	data->publish_notify_callback = publish_notify_callback;
+	data->common_callback_arg = arg;
+}
+
 static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_find_and_incref (
 		struct rrr_mqtt_session_collection_ram_data *data,
 		struct rrr_mqtt_session *session
@@ -803,102 +948,6 @@ static int __rrr_mqtt_session_ram_release_packet_id (
 	return ret;
 }
 
-struct receive_forwarded_publish_data {
-	struct rrr_mqtt_session_ram *session;
-};
-
-static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
-		const struct rrr_mqtt_p_publish *publish,
-		const struct rrr_mqtt_subscription *subscription,
-		void *arg
-) {
-	struct receive_forwarded_publish_data *callback_data = arg;
-	struct rrr_mqtt_session_ram *session = callback_data->session;
-
-	int ret = RRR_MQTT_SESSION_OK;
-
-	struct rrr_mqtt_p_publish *new_publish = NULL;
-
-	if ( session->session_properties.numbers.maximum_packet_size != 0 &&
-	     publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size
-	) {
-		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%" PRIrrrl ">%u\n",
-				publish->received_size, session->session_properties.numbers.maximum_packet_size);
-		ret = RRR_MQTT_SESSION_OK;
-		goto out;
-	}
-
-	if ((new_publish = rrr_mqtt_p_clone_publish (
-			publish, 1, 0, 0 // Preserve only type flags, but DUP and Retain flags are always overwritten elsewhere
-	)) == NULL) {
-		RRR_MSG_0("Could not clone PUBLISH packet in %s\n", __func__);
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out;
-	}
-
-	// We don't set the new packet ID yet in case the client is not currently connected
-	// and many packets would exhaust the 16-bit ID field. It is set when iterating the
-	// send queue and the zero ID is found.
-	new_publish->packet_identifier = 0;
-
-	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
-		// Downgrade QOS
-		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
-	}
-
-	RRR_DBG_2(">==> Forward PUBLISH topic '%s' qos %u to client %s\n",
-			publish->topic,
-			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
-			session->client_id_
-	);
-
-	new_publish->dup = 0;
-	new_publish->is_outbound = 1;
-
-	if (__rrr_mqtt_session_ram_fifo_write_simple (
-			&session->to_remote_buffer.buffer,
-			(struct rrr_mqtt_p *) new_publish
-	) != 0) {
-		RRR_MSG_0("Could not write to to_remote_queue in %s\n", __func__);
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out;
-	}
-
-	out:
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(new_publish);
-	return ret;
-}
-
-static int __rrr_mqtt_session_ram_receive_forwarded_publish (
-		struct rrr_mqtt_session_ram *ram_session,
-		const struct rrr_mqtt_p_publish *publish,
-		rrr_length *match_count
-) {
-	int ret = RRR_MQTT_SESSION_OK;
-
-	struct receive_forwarded_publish_data callback_data = { ram_session };
-
-	// Note : We always send one PUBLISH per matching subscription and do
-	//        not check for overlaps. Other brokers might treat this different
-	//        and only send one PUBLISH. The different methods comply with
-	//        the standards (both V3.1.1 and V5), but the method here is the
-	//        least complex to implement.
-
-	if ((ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
-			ram_session->subscriptions,
-			publish,
-			__rrr_mqtt_session_ram_receive_forwarded_publish_match_callback,
-			&callback_data,
-			match_count
-	)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Error while matching publish packet against subscriptions in %s, return was %i\n",
-				__func__, ret);
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-	}
-
-	return ret;
-}
-
 static void __rrr_mqtt_session_ram_will_publish_unregister (
 		struct rrr_mqtt_session_ram *ram_session
 ) {
@@ -920,22 +969,24 @@ static int __rrr_mqtt_session_ram_will_publish_maintain (
 	}
 
 	struct rrr_mqtt_p_publish *publish = ram_session->will_publish;
-	const uint64_t time_now = rrr_time_get_64();
 
-	if (force_publish || publish->planned_expiry_time <= time_now) {
+	if (force_publish || publish->planned_expiry_time <= rrr_time_get_64()) {
 		RRR_DBG_3("Expired will PUBLISH for client %s with topic '%s' retain %u, publishing now in MQTT broker.\n",
 				ram_session->client_id_, publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish));
 
-		if ((ret = __rrr_mqtt_session_collection_ram_delivery_forward_final (
+		ret = __rrr_mqtt_session_collection_ram_delivery_forward_final (
 				ram_data,
 				publish
-		)) != 0) {
-			RRR_MSG_0("Error while delivering will PUBLISH after expired delay interval in %s return was %i\n", __func__, ret);
-			ret = RRR_FIFO_GLOBAL_ERR;
+		);
+
+		// Always unregister the will
+		__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
+
+		if (ret != 0) {
+			RRR_MSG_0("Warning: Error while delivering will PUBLISH after expired delay interval in %s return was %i\n", __func__, ret);
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out;
 		}
-
-		__rrr_mqtt_session_ram_will_publish_unregister(ram_session);
 	}
 
 	out:
@@ -980,50 +1031,8 @@ static int __rrr_mqtt_session_ram_will_publish_notify_disconnect (
 	return ret;
 }
 
-static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
-
-	(void)(size);
-
-	int ret = RRR_FIFO_OK;
-
-	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u to any subscribers\n",
-			publish->topic,
-			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)
-	);
-
-	// Always clear retain flag per specification
-	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, 0);
-	publish->dup = 0;
-
-	rrr_length total_match_count = 0;
-
-	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
-		rrr_length match_count = 0;
-		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish, &match_count);
-		total_match_count += match_count;
-
-		if (ret_tmp != RRR_MQTT_SESSION_OK) {
-			RRR_MSG_0("Error while receiving forwarded publish message, return was %i\n", ret);
-			ret |= RRR_FIFO_GLOBAL_ERR;
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END();
-
-	if (total_match_count == 0) {
-		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
-	}
-	else {
-		__rrr_mqtt_session_collection_ram_stats_notify_forwarded(ram_data, total_match_count);
-	}
-
-	// Remember to always return FREE
-	return ret | RRR_FIFO_SEARCH_FREE;
-}
-
 struct iterate_local_delivery_callback_data {
-	int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg);
 	void *callback_arg;
 };
 
@@ -1039,13 +1048,10 @@ static int __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callba
 		RRR_BUG("Packet was not publish in %s\n", __func__);
 	}
 
-	if ((ret = iterate_callback_data->callback (
+	iterate_callback_data->callback (
 			publish,
 			iterate_callback_data->callback_arg
-	)) != 0) {
-		RRR_MSG_0("Error from callback in %s\n", __func__);
-		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
-	}
+	);
 
 	return ret | RRR_FIFO_SEARCH_FREE;
 }
@@ -1053,7 +1059,7 @@ static int __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callba
 
 static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_session_collection *sessions,
-		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
@@ -1109,31 +1115,6 @@ static int __rrr_mqtt_session_ram_iterate_publish_grace_callback (RRR_FIFO_READ_
 	return ret;
 }
 			
-static int __rrr_mqtt_session_collection_ram_maintain_forward_publish (
-		uint64_t *forwarded_count,
-		struct rrr_mqtt_session_collection *sessions
-) {
-	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
-
-	*forwarded_count = 0;
-
-	const uint64_t forwarded_before = data->stats.total_publish_forwarded_out;
-
-	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	if ((rrr_fifo_read_clear_forward_all (
-			&data->publish_forward_buffer.buffer,
-			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
-			data
-	) & RRR_FIFO_GLOBAL_ERR) != 0) {
-		RRR_MSG_0("Critical error from publish queue buffer in %s\n", __func__);
-		return  RRR_MQTT_SESSION_INTERNAL_ERROR;
-	}
-
-	*forwarded_count = data->stats.total_publish_forwarded_out - forwarded_before;
-
-	return RRR_MQTT_SESSION_OK;
-}
-
 static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		struct rrr_mqtt_session_collection *sessions
 ) {
@@ -1200,7 +1181,6 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	rrr_fifo_destroy(&data->retain_buffer.buffer);
-	rrr_fifo_destroy(&data->publish_forward_buffer.buffer);
 	rrr_fifo_destroy(&data->publish_local_buffer.buffer);
 
 	RRR_LL_DESTROY (
@@ -3170,10 +3150,10 @@ static int __rrr_mqtt_session_ram_will_publish_register (
 const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
-		__rrr_mqtt_session_collection_ram_maintain_forward_publish,
 		__rrr_mqtt_session_collection_ram_maintain_expire,
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,
+		__rrr_mqtt_session_collection_ram_register_callbacks,
 		__rrr_mqtt_session_ram_init,
 		__rrr_mqtt_session_ram_clean,
 		__rrr_mqtt_session_ram_update_properties,
@@ -3218,7 +3198,6 @@ static int __rrr_mqtt_session_collection_ram_new (
 	}
 
 	rrr_fifo_init_custom_refcount(&ram_data->retain_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&ram_data->publish_forward_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 	rrr_fifo_init_custom_refcount(&ram_data->publish_local_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
 
 	ram_data->delivery_method = delivery_method;
