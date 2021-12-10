@@ -336,7 +336,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
-	RRR_DBG_2(">==> Forward PUBLISH topic '%s' qos %u to client %s\n",
+	RRR_DBG_2("  => Forward PUBLISH topic '%s' qos %u to client %s\n",
 			publish->topic,
 			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
 			session->client_id_
@@ -394,11 +394,6 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (
 		const struct rrr_mqtt_p_publish *publish
 ) {
 	int ret = RRR_FIFO_OK;
-
-	RRR_DBG_3("Forward PUBLISH topic '%s' qos %u to any subscribers\n",
-			publish->topic,
-			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)
-	);
 
 	rrr_length total_match_count = 0;
 
@@ -529,6 +524,13 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_session_ram *ram_session,
 		struct rrr_mqtt_p_publish *publish
 ) {
+	RRR_DBG_2(">=   Forward PUBLISH topic '%s' qos %u retain %u from client %s\n",
+			publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
+			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish),
+			ram_session->client_id_
+	);
+
 	return __rrr_mqtt_session_collection_ram_delivery_forward_final (
 			ram_session->ram_data,
 			publish
@@ -974,7 +976,7 @@ static int __rrr_mqtt_session_ram_will_publish_maintain (
 	struct rrr_mqtt_p_publish *publish = ram_session->will_publish;
 
 	if (force_publish || publish->planned_expiry_time <= rrr_time_get_64()) {
-		RRR_DBG_3("Expired will PUBLISH for client %s with topic '%s' retain %u, publishing now in MQTT broker.\n",
+		RRR_DBG_2("|==> WILL PUBLISH for client %s with topic '%s' retain %u, publishing now in MQTT broker.\n",
 				ram_session->client_id_, publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish));
 
 		ret = __rrr_mqtt_session_collection_ram_delivery_forward_final (
@@ -1147,7 +1149,7 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		}
 
 		if (node->expire_time == 0 && node->heartbeat_time + RRR_MQTT_SESSION_RAM_HARD_TIMEOUT_MS * 1000 < time_now) {
-			RRR_DBG_1("Session heartbeat timeout for client '%s' (forced timeout after %u ms as no session expiry is set)\n",
+			RRR_DBG_1("Session heartbeat timeout for client %s (forced timeout after %u ms as no session expiry is set)\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"), RRR_MQTT_SESSION_RAM_HARD_TIMEOUT_MS);
 			do_expire = 1;
 		}
@@ -1155,7 +1157,7 @@ static int __rrr_mqtt_session_collection_ram_maintain_expire (
 		// Expiration time set upon disconnect notification, and set to 0 again
 		// in session init function
 		if (node->expire_time != 0 && time_now >= node->expire_time) {
-			RRR_DBG_1("Session expired for client '%s' (expiry interval was %" PRIu32 ")\n",
+			RRR_DBG_1("Session expired for client %s (expiry interval was %" PRIu32 ")\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"), node->session_properties.numbers.session_expiry);
 			do_expire = 1;
 		}
@@ -1399,7 +1401,7 @@ static int __rrr_mqtt_session_ram_update_client_identifier (
 			}
 		}
 
-		RRR_DBG_1("MQTT client session %p: Server assigned client identifier '%s' in V5 CONNACK\n",
+		RRR_DBG_1("MQTT client session %p: Server assigned client identifier %s in V5 CONNACK\n",
 				session, assigned_identifier_tmp);
 
 		RRR_FREE_IF_NOT_NULL(session->client_id_);
@@ -3014,7 +3016,7 @@ static int __rrr_mqtt_p_queue_publish_from_retain_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("Forward RETAIN PUBLISH topic '%s' qos %u client %s\n",
+	RRR_DBG_2(">=   Queue RETAIN PUBLISH topic '%s' qos %u for sending to client %s\n",
 			publish->topic,
 			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
 			callback_data->ram_session->client_id_
