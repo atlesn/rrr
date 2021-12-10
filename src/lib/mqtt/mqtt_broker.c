@@ -1062,14 +1062,18 @@ static int __rrr_mqtt_broker_acl_handler_subscribe (
 	// set for each subscription
 
 	RRR_LL_ITERATE_BEGIN(subscribe->subscriptions, struct rrr_mqtt_subscription);
-		int ret_tmp = rrr_mqtt_acl_check_access(
+		int ret_tmp = rrr_mqtt_acl_check_access (
 				broker->acl,
 				node->token_tree,
 				RRR_MQTT_ACL_ACTION_RO,
 				connection->username,
 				rrr_mqtt_topic_match_tokens_recursively_acl
 		);
-		if (ret_tmp != RRR_MQTT_ACL_RESULT_ALLOW) {
+		if (ret_tmp == RRR_MQTT_ACL_RESULT_ALLOW) {
+			RRR_DBG_2("ACL: Subscription '%s' for client '%s' allowed\n", node->topic_filter, connection->client_id);
+		}
+		else {
+			RRR_DBG_2("ACL: Subscription '%s' for client '%s' denied\n", node->topic_filter, connection->client_id);
 			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
 		}
 	RRR_LL_ITERATE_END();
