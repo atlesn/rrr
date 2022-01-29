@@ -48,7 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/msgdb/msgdb_common.h"
 
-#define RRR_CACHER_TIDY_INTERVAL_S 300
+#define RRR_CACHER_DEFAULT_TIDY_INTERVAL_S 300
+#define RRR_CACHER_DEFAULT_REVIVE_INTERVAL_S 60
 
 struct cacher_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -73,6 +74,7 @@ struct cacher_data {
 
 	rrr_setting_uint revive_age_seconds;
 	rrr_setting_uint revive_interval_seconds;
+	rrr_setting_uint tidy_interval_seconds;
 
 	int do_forward_requests;
 	int do_forward_data;
@@ -742,7 +744,8 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_memory_ttl_seconds", message_memory_ttl_seconds, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_age_seconds", revive_age_seconds, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_interval_seconds", revive_interval_seconds, 60 /* Default 1 minute */);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_interval_seconds", revive_interval_seconds, RRR_CACHER_DEFAULT_REVIVE_INTERVAL_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_tidy_interval_seconds", tidy_interval_seconds, RRR_CACHER_DEFAULT_TIDY_INTERVAL_S);
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter message_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
@@ -780,6 +783,17 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 			(unsigned long long int) data->revive_interval_seconds,
 			(unsigned long long int) UINT32_MAX,
 			(unsigned long long int) data->revive_interval_seconds
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if (data->tidy_interval_seconds > UINT32_MAX || data->tidy_interval_seconds < 1) {
+		RRR_MSG_0("Parameter tidy_interval_seconds in cacher instance %s out of range (%llu>%llu or %llu<1)\n",
+			config->name,
+			(unsigned long long int) data->tidy_interval_seconds,
+			(unsigned long long int) UINT32_MAX,
+			(unsigned long long int) data->tidy_interval_seconds
 		);
 		ret = 1;
 		goto out;
@@ -828,7 +842,7 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 			&data->events,
 			cacher_event_tidy,
 			thread,
-			RRR_CACHER_TIDY_INTERVAL_S * 1000 * 1000
+			data->tidy_interval_seconds * 1000 * 1000
 	) != 0) {
 		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;

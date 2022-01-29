@@ -1,4 +1,4 @@
-rrr (1.22-21) bullseye; urgency=medium
+rrr (1.22-22) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -10,6 +10,8 @@ rrr (1.22-21) bullseye; urgency=medium
     * Set retain flag and expiry interval in MQTT client
     * Set will messages in MQTT client
     * Control subscriptions in MQTT client by sending in command messages
+    * Control the tidy interval of the cacher module per configuration
+      parameter
 
   * Improvements:
     * Files in message database stored in a tree structure based on their hash
@@ -24,6 +26,8 @@ rrr (1.22-21) bullseye; urgency=medium
     * Sometimes temporary lockup in HTTP-server if there is not immediate downstream
       response to an h2c upgrade.
     * Poor hard timeout management in MQTT broker causing low-traffic clients to be kicked
+    * Fix buffer overflow in httpclient when wide characters were given to an
+      urlencoder function.
 
   * Under the hood:
     * Cleanups in MQTT framework

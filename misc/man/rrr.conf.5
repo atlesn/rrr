@@ -1,4 +1,4 @@
-.Dd 2021-10-05
+.Dd 2022-01-29
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2114,7 +2114,7 @@ Defaults to no.
 
 .It cacher_ttl_seconds=SECONDS
 Any messages received from other modules with an age older than the set value is silently dropped.
-In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.
+In addition, the age of messages in the message database is checked whenever tidy is performed.
 Defaults to 0 which means that TTL check is not performed.
 
 .It cacher_memory_ttl_seconds=SECONDS
@@ -2130,6 +2130,10 @@ If set to 0 or left unset, message revive will be deactivated.
 .It cacher_revive_interval_seconds=SECONDS
 Specify how often cacher will check for messages to revive.
 Defaults to 60 seconds (1 minute), the minimum value is 1 second.
+
+.It cacher_tidy_interval_seconds=SECONDS
+Specify how often cacher will iterate through the cache for simple integrity checks and to look for expired messages.
+Defaults to 300 seconds (5 minutes), the minimum value is 1 second.
 
 .El
 
