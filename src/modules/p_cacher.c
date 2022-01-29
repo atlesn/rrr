@@ -63,6 +63,9 @@ struct cacher_data {
 
 	unsigned short tidy_in_progress;
 
+	rrr_event_handle tidy_event;
+	rrr_event_handle revive_event;
+
 	char *msgdb_socket;
 	char *request_tag;
 
@@ -567,7 +570,8 @@ static void cacher_event_tidy (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data;
 
-	data->tidy_in_progress = 0;
+	EVENT_REMOVE(data->tidy_event);
+	data->tidy_in_progress = 1;
 
 	if (data->message_ttl_seconds == 0) {
 		RRR_DBG_1("Periodic tidy in cacher instance %s: No TTL set, not performing msgdb tidy\n", INSTANCE_D_NAME(thread_data));
@@ -586,12 +590,10 @@ static void cacher_event_tidy (
 				cacher_tidy_delivery_callback,
 				data
 		)) != 0) {
-			RRR_MSG_0("Revive failed in cacher instance %s, return was %i\n", INSTANCE_D_NAME(data->thread_data), ret_tmp);
+			RRR_MSG_0("Tidy failed in cacher instance %s, return was %i\n", INSTANCE_D_NAME(data->thread_data), ret_tmp);
 			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 			return;
 		}
-
-		data->tidy_in_progress = 1;
 	}
 
 	if (data->message_memory_ttl_seconds == 0) {
@@ -607,6 +609,9 @@ static void cacher_event_tidy (
 		RRR_DBG_1("cacher instance %s tidy memory cache completed, %i %s removed\n",
 				INSTANCE_D_NAME(data->thread_data), deleted_entries, (deleted_entries == 1 ? "message" : "messages"));
 	}
+
+	data->tidy_in_progress = 0;
+	EVENT_ADD(data->tidy_event);
 }
 
 void cacher_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
@@ -672,6 +677,8 @@ static void cacher_event_revive (
 
 	rrr_msgdb_client_close(&data->msgdb_conn_revive);
 
+	EVENT_REMOVE(data->revive_event);
+
 	if ((ret_tmp = rrr_msgdb_helper_iterate_min_age (
 			&data->msgdb_conn_revive,
 			data->msgdb_socket,
@@ -684,6 +691,8 @@ static void cacher_event_revive (
 		RRR_MSG_0("Revive failed in cacher instance %s, return was %i\n", INSTANCE_D_NAME(data->thread_data), ret_tmp);
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
+
+	EVENT_ADD(data->revive_event);
 }
 
 static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -836,9 +845,8 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	RRR_DBG_1 ("cacher instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_handle tidy_event;
 	if (rrr_event_collection_push_periodic (
-			&tidy_event,
+			&data->tidy_event,
 			&data->events,
 			cacher_event_tidy,
 			thread,
@@ -848,15 +856,14 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	EVENT_ADD(tidy_event);
+	EVENT_ADD(data->tidy_event);
 
 	// Run tidy once upon startup
-	EVENT_ACTIVATE(tidy_event);
+	EVENT_ACTIVATE(data->tidy_event);
 
 	if (data->revive_age_seconds > 0) {
-		rrr_event_handle revive_event;
 		if (rrr_event_collection_push_periodic (
-				&revive_event,
+				&data->revive_event,
 				&data->events,
 				cacher_event_revive,
 				thread,
@@ -865,7 +872,7 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 			RRR_MSG_0("Failed to create revive event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
 		}
-		EVENT_ADD(revive_event);
+		EVENT_ADD(data->revive_event);
 	}
 
 	rrr_event_callback_pause_set (
