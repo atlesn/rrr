@@ -1,4 +1,4 @@
-rrr (1.22-23) bullseye; urgency=medium
+rrr (1.22-24) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -30,6 +30,7 @@ rrr (1.22-23) bullseye; urgency=medium
     * Poor hard timeout management in MQTT broker causing low-traffic clients to be kicked
     * Fix buffer overflow in httpclient when wide characters were given to an
       urlencoder function.
+    * Fix random crashes in message DB when zero length files were found.
 
   * Under the hood:
     * Cleanups in MQTT framework
