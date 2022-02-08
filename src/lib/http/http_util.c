@@ -293,7 +293,6 @@ int rrr_http_util_urlencoded_string_decode (
 
 struct rrr_http_util_uri_encode_foreach_byte_callback_data {
 	char *wpos;
-	const char * const wpos_max;
 };
 
 int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
@@ -340,12 +339,8 @@ int rrr_http_util_uri_encode (
 	}
 
 	if (result_max_length > 0) {
-		char *wpos = result;
-		char *wpos_max = result + result_max_length;
-
 		struct rrr_http_util_uri_encode_foreach_byte_callback_data callback_data = {
-			wpos,
-			wpos_max
+			result
 		};
 
 		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &callback_data)) != 0) {
@@ -355,7 +350,7 @@ int rrr_http_util_uri_encode (
 		rrr_nullsafe_str_set_allocated (
 				*target,
 				(void **) &result,
-				rrr_length_from_ptr_sub_bug_const(wpos, result)
+				rrr_length_from_ptr_sub_bug_const(callback_data.wpos, result)
 		);
 	}
 
