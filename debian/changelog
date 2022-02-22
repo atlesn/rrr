@@ -1,6 +1,4 @@
-rrr (1.22-25) bullseye; urgency=medium
-
-  * RUNNING RELEASE
+rrr (1.23-1) bullseye; urgency=medium
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
@@ -35,7 +33,7 @@ rrr (1.22-25) bullseye; urgency=medium
   * Under the hood:
     * Cleanups in MQTT framework
 
- -- LBSdrift <lbsdrift@posten.local>  Thu, 18 Nov 2021 23:45:42 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 23 Feb 2022 00:43:10 +0100
 
 rrr (1.21-1) bullseye; urgency=medium
 
