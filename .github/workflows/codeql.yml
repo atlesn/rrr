@@ -63,6 +63,7 @@ jobs:
     #    uses a compiled language
 
     - run: |
+       apt install libmysqlclient-dev libperl-dev libssl-dev libsystemd-dev libusb-dev pkg-config python3-dev libnghttp2-dev libjson-c-dev libevent-dev libjemalloc-dev
        autoreconf -i
        ./configure
        make -j4
