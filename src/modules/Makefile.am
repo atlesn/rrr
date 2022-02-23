@@ -1,4 +1,5 @@
-AM_CFLAGS = @AM_CFLAGS@ -Wextra
+AM_CFLAGS = @AM_CFLAGS@ -fpie
+module_ldflags=-module -avoid-version -shared -L../lib -pie
 
 if RRR_WITH_MYSQL
 mysql = mysql.la
@@ -37,9 +38,6 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
-
-
-module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c

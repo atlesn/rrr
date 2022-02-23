@@ -206,6 +206,15 @@ static inline void rrr_length_mul_bug (rrr_length *a, rrr_length b) {
 	*a = (rrr_length) r;
 }
 
+static inline int rrr_biglength_mul_err (rrr_biglength *a, rrr_biglength b) {
+	rrr_biglength r = *a * b;
+	if (*a != 0 && r / *a != b) {
+		return 1;
+	}
+	*a = r;
+	return 0;
+}
+
 static inline void rrr_biglength_from_ssize_sub_bug (rrr_biglength *a, ssize_t b) {
 	if (b < 0 || (rrr_biglength) b > *a) {
 		RRR_BUG("Underflow in rrr_biglength_from_ssize_sub_bug\n");

@@ -169,7 +169,7 @@ void rrr_read_session_collection_remove_session (
 	);
 }
 
-int rrr_read_message_using_callbacks (
+static int __rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
@@ -210,16 +210,22 @@ int rrr_read_message_using_callbacks (
 	int ret = RRR_READ_OK;
 	int ret_from_read = RRR_READ_OK;
 
-	*bytes_read = 0;
-
 	rrr_biglength bytes = 0;
 	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
 
-	read_session = function_get_read_session_with_overshoot(functions_callback_arg);
-	if (read_session != NULL) {
+	if ((read_session = function_get_read_session_with_overshoot(functions_callback_arg)) == NULL) {
+		if (function_read == NULL) {
+			// Flush mode
+			ret = RRR_READ_INCOMPLETE;
+			goto out;
+		}
+	}
+	else {
 		goto process_overshoot;
 	}
+
+	*bytes_read = 0;
 
 	/* Check ratelimit. It is not possible to distinguish different read sessions when ratelimiting e.g.
 	 * when there are multiple read sessions for an UDP socket. */
@@ -494,6 +500,137 @@ int rrr_read_message_using_callbacks (
 		function_read_session_remove(read_session, functions_callback_arg);
 	}
 	return ret;
+}
+
+int rrr_read_message_using_callbacks (
+		uint64_t *bytes_read,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
+		int flags,
+		struct rrr_read_session *read_session_ratelimit,
+		uint64_t ratelimit_interval_us,
+		rrr_biglength ratelimit_max_bytes,
+		int (*function_get_target_size) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_complete_callback) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_read) (
+				char *buf,
+				rrr_biglength *read_bytes,
+				rrr_biglength read_step_max_size,
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session) (
+				void *private_arg
+		),
+		void (*function_read_session_remove) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_get_socket_options) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		void *functions_callback_arg
+) {
+	int ret = 0;
+
+	int read_count = 0;
+
+	if ((ret = __rrr_read_message_using_callbacks (
+			bytes_read,
+			read_step_initial,
+			read_step_max_size,
+			read_max_size,
+			read_session_ratelimit,
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
+			function_get_target_size,
+			function_complete_callback,
+			function_read,
+			function_get_read_session_with_overshoot,
+			function_get_read_session,
+			function_read_session_remove,
+			function_get_socket_options,
+			functions_callback_arg
+	)) == 0) {
+		read_count++;
+	}
+	else {
+		goto out;
+	}
+
+	if (flags & RRR_READ_MESSAGE_FLUSH_OVERSHOOT) {
+		again:
+		if ((ret = rrr_read_message_using_callbacks_flush (
+				read_step_initial,
+				read_step_max_size,
+				read_max_size,
+				function_get_target_size,
+				function_complete_callback,
+				function_get_read_session_with_overshoot,
+				function_read_session_remove,
+				functions_callback_arg
+		)) == 0) {
+			read_count++;
+			goto again;
+		}
+	}
+
+	RRR_DBG_7("%i messages read in read framework\n", read_count);
+
+	ret &= ~(RRR_READ_INCOMPLETE);
+
+	out:
+	return ret;
+}
+
+int rrr_read_message_using_callbacks_flush (
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
+		int (*function_get_target_size) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_complete_callback) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
+				void *private_arg
+		),
+		void (*function_read_session_remove) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		void *functions_callback_arg
+) {
+	return __rrr_read_message_using_callbacks (
+			NULL,
+			read_step_initial,
+			read_step_max_size,
+			read_max_size,
+			NULL,
+			0,
+			0,
+			function_get_target_size,
+			function_complete_callback,
+			NULL,
+			function_get_read_session_with_overshoot,
+			NULL,
+			function_read_session_remove,
+			NULL,
+			functions_callback_arg
+	);
 }
 
 int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (

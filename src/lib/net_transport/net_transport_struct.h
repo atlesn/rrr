@@ -96,7 +96,6 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS                                     \
     uint64_t *bytes_read,                                                       \
     struct rrr_net_transport_handle *handle,                                    \
-    const rrr_length read_attempts,                                             \
     const rrr_biglength read_step_initial,                                      \
     const rrr_biglength read_step_max_size,                                     \
     const rrr_biglength read_max_size,                                          \
@@ -163,6 +162,7 @@ struct rrr_net_transport_handle {
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;
 	rrr_event_handle event_read;
+	rrr_event_handle event_read_notify;
 	rrr_event_handle event_write;
 	rrr_event_handle event_first_read_timeout;
 	rrr_event_handle event_hard_read_timeout;
@@ -173,6 +173,14 @@ struct rrr_net_transport_handle {
 	struct rrr_socket_send_chunk_collection send_chunks;
 	int close_when_send_complete;
 	int close_now;
+
+#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
+	unsigned int read_ret_debug_ok;
+	unsigned int read_ret_debug_incomplete;
+	unsigned int read_ret_debug_soft_error;
+	unsigned int read_ret_debug_hard_error;
+	unsigned int read_ret_debug_eof;
+#endif
 
 	struct sockaddr_storage connected_addr;
 	socklen_t connected_addr_len;

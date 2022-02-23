@@ -65,6 +65,13 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## NEWS
 
+### v1.23
+ - Improve MQTT protocol support and control the MQTT client module by passing command messages
+ - Possibility to invert the topic filter for instances
+
+### v1.21
+- JEmalloc enabled by default to mitigate memory fragmentation in long lived RRR sessions
+
 ### v1.19
 - New module **cacher** to store messages for later use
 
@@ -278,7 +285,7 @@ either raw data or an RRR array. Some modules, like the `buffer` module, do not 
 just forward all messages. Capable modules may on the other hand pick data from the array in the message or perform modifications.
 
 An RRR array consist of multiple positions where each position has one or more value of a certain type and length,
-possible tagged with a name.
+possibly tagged with a name.
 
 The array definition specifies data types, sizes and tags. Some types need to have a specified length, and other types
 figure out the length automatically. RRR will always make sure that it is possible to determine the length

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -74,18 +74,22 @@ struct rrr_mqtt_session_properties {
 #define RRR_MQTT_SESSION_DELETED		(1<<1)
 #define RRR_MQTT_SESSION_ERROR			(1<<2)
 
+#define RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS \
+    void *arg
+
 // Session collections may maintain a copy of this struct and copy it into
 // the argument to get_stats() or maintain the numbers in some other fashion
 // and fill the provided struct field by field
 struct rrr_mqtt_session_collection_stats {
-		uint64_t active;
-		uint64_t total_created;
-		uint64_t total_deleted;
-		uint64_t total_publish_received;
-		uint64_t total_publish_delivered;
-		uint64_t total_publish_forwarded;
-		uint64_t total_publish_not_forwarded;
-		uint64_t in_memory_sessions;
+	uint64_t active;
+	uint64_t total_created;
+	uint64_t total_deleted;
+	uint64_t total_publish_received;
+	uint64_t total_publish_delivered;
+	uint64_t total_publish_forwarded_in;
+	uint64_t total_publish_forwarded_out;
+	uint64_t total_publish_not_forwarded;
+	uint64_t in_memory_sessions;
 };
 
 // Note that numbers might be lower than actual numbers. When sent_counter
@@ -93,12 +97,12 @@ struct rrr_mqtt_session_collection_stats {
 // will not get incremented. The buffer_size is however always the true
 // value, and is safer to use when throttling.
 struct rrr_mqtt_session_iterate_send_queue_counters {
-		unsigned int maintain_deleted_counter;
-		unsigned int maintain_ack_complete_counter;
-		unsigned int maintain_ack_missing_counter;
-		unsigned int incomplete_qos_publish_counter;
-		unsigned int sent_counter;
-		unsigned int buffer_size;
+	unsigned int maintain_deleted_counter;
+	unsigned int maintain_ack_complete_counter;
+	unsigned int maintain_ack_missing_counter;
+	unsigned int incomplete_qos_publish_counter;
+	unsigned int sent_counter;
+	unsigned int buffer_size;
 };
 
 // Session engines must implement these methods
@@ -116,21 +120,12 @@ struct rrr_mqtt_session_collection_methods {
 	// packets are cleared from the buffer immediately.
 	int (*iterate_and_clear_local_delivery) (
 			struct rrr_mqtt_session_collection *sessions,
-			int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+			void (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 			void *callback_arg
 	);
 
-	// Insert a packet into the forward queue. Done currenty only by broker when publishing
-	// will messages. If will delivery
-	// interval is set in publish, it is put into will postpone queue. If not, it is
-	// published immediately.
-	int (*delivery_forward) (
-			struct rrr_mqtt_session_collection *sessions,
-			struct rrr_mqtt_p_publish *publish
-	);
-
-	// Destroy old sessions, read from send queue
-	int (*maintain) (
+	// Destroy old sessions
+	int (*maintain_expiration) (
 			struct rrr_mqtt_session_collection *
 	);
 
@@ -145,8 +140,18 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **target,
 			struct rrr_mqtt_session_collection *collection,
 			const char *client_id,
-			int *session_present,
-			int no_creation
+			short *session_was_present,
+			short no_creation
+	);
+
+	void (*register_callbacks) (
+		struct rrr_mqtt_session_collection *sessions,
+
+		// Callback is called when a publish is forwarded between clients or ready for local delivery
+		void (*publish_notify_callback)(RRR_MQTT_SESSION_PUBLISH_NOTIFY_ARGS),
+
+		// Common callback argument
+		void *arg
 	);
 
 	// SESSION METHODS
@@ -170,9 +175,7 @@ struct rrr_mqtt_session_collection_methods {
 			uint64_t retry_interval_usec,
 			uint32_t max_in_flight,
 			uint32_t complete_publish_grace_time,
-			int clean_session,
-			int local_delivery,
-			int *session_was_present
+			short clean_session
 	);
 
 	// Clean a session, delete all packets
@@ -187,7 +190,7 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session,
 			const struct rrr_mqtt_session_properties *properties,
 			const struct rrr_mqtt_session_properties_numbers *numbers_to_update,
-			uint8_t is_v5
+			short is_v5
 	);
 
 	// Get session properties. Target is cleaned up before used.
@@ -197,7 +200,7 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Called upon reception of ANY packet from the client
+	// Called regularly as confirmation that session is currently being used
 	int (*heartbeat) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session
@@ -221,8 +224,16 @@ struct rrr_mqtt_session_collection_methods {
 			uint8_t reason_v5
 	);
 
-	int (*send_packet) (
+	// Used for PUBLISH, SUBSCRIBE and UNSUBSCRIBE. Other types triggers bugtrap.
+	int (*send_packet_queue) (
 			rrr_length *total_send_queue_count,
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p *packet
+	);
+
+	// Used for SUBACK, UNSUBACK, PUBACK, PUBREC, PUBCOMP and PUBREL. Other types trigger bugtrap.
+	int (*send_packet_now) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet,
@@ -238,18 +249,10 @@ struct rrr_mqtt_session_collection_methods {
 			unsigned int *ack_match_count
 	);
 
-	// Preserve memory of will publish message to allow use of pointer-matching
-	// if a disconnected client reconnects and a postoned will publish must be
-	// removed from queue.
 	int (*register_will_publish) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p_publish *publish
-	);
-
-	int (*unregister_will_publish) (
-			struct rrr_mqtt_session_collection *sessions,
-			struct rrr_mqtt_session **session
 	);
 };
 

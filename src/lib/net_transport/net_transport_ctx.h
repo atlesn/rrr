@@ -69,7 +69,6 @@ int rrr_net_transport_ctx_check_alive (
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
-		rrr_length read_attempts,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,

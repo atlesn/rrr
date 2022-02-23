@@ -110,7 +110,14 @@ static int __rrr_socket_read_poll (
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session_with_overshoot(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	return rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
+
+	struct rrr_read_session *read_session = rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
+
+	if (read_session != NULL) {
+		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes remaining\n", callback_data->fd, read_session->rx_overshoot_size);
+	}
+
+	return read_session;
 }
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
@@ -389,6 +396,7 @@ int rrr_socket_read_message_default (
 			read_step_initial,
 			read_step_max_size,
 			read_max,
+			socket_read_flags,
 			RRR_LL_FIRST(read_session_collection),
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
@@ -470,7 +478,7 @@ int rrr_socket_read_message_split_callbacks (
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_msg),
-			4096,
+			1 * 1024 * 1024, // 1 MB
 			0, // No max size
 			read_flags_socket,
 			ratelimit_interval_us,

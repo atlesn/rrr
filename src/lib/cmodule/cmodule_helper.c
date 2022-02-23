@@ -115,6 +115,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			NULL,
 			0,
 			0,
+			NULL,
 			__rrr_cmodule_helper_read_final_callback,
 			callback_data,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
@@ -226,14 +227,23 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_msg_holder *entry_locked
 ) {
+	int ret = 0;
+
 	// Balanced algorithm
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 	struct rrr_cmodule_worker *preferred = &cmodule->workers[0];
-	int preferred_count = rrr_cmodule_channel_count(preferred->channel_to_fork);
+	int preferred_count = 0;
+
+	if ((ret = rrr_cmodule_channel_count(&preferred_count, preferred->channel_to_fork)) != 0) {
+		goto out;
+	}
 
  	WORKER_LOOP_BEGIN();
-		int count = rrr_cmodule_channel_count(worker->channel_to_fork);
+		int count = 0;
+		if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+			goto out;
+		}
 		if (count < preferred_count) {
 			preferred = worker;
 			preferred_count = count;
@@ -242,7 +252,12 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 
  	// TODO : Upon retry, send to other worker
 
-	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
+	if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 #include "../mmap_channel.h"
@@ -330,10 +345,10 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 		return RRR_EVENT_EXIT;
 	}
 
-	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
-
 	EVENT_ADD(cmodule->input_queue_event);
 	EVENT_ACTIVATE(cmodule->input_queue_event);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
 
 	uint16_t amount_new = (uint16_t) (*amount > 32 ? 32 : *amount);
 	*amount = (uint16_t) (*amount - amount_new);
@@ -346,24 +361,15 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 
 	*amount = (uint16_t) (*amount + amount_new);
 
-	if (RRR_LL_COUNT(&cmodule->input_queue) > 0) {
-		EVENT_ACTIVATE(cmodule->input_queue_event);
-		EVENT_ADD(cmodule->input_queue_event);
-	}
-
 	return ret;
 }
 
-static void __rrr_cmodule_helper_event_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void __rrr_cmodule_helper_event_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	if (is_paused) {
-		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) < (RRR_CMODULE_INPUT_QUEUE_MAX * 0.75));
+		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) > (RRR_CMODULE_INPUT_QUEUE_MAX * 0.75));
 	}
 	else {
 		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) > RRR_CMODULE_INPUT_QUEUE_MAX);
@@ -651,6 +657,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		}
 	}
 */
+
 	int ret_tmp;
 	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
 		return ret_tmp;
@@ -674,11 +681,13 @@ static int __rrr_cmodule_helper_event_periodic (
 	}
 
 	{
+		unsigned long long int count = 0;
 		unsigned long long int read_starvation_counter = 0;
 		unsigned long long int write_full_counter = 0;
 		unsigned long long int write_retry_counter = 0;
 
 		rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+				&count,
 				&read_starvation_counter,
 				&write_full_counter,
 				&write_retry_counter,
@@ -688,13 +697,16 @@ static int __rrr_cmodule_helper_event_periodic (
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "mmap_to_child_full_events", write_full_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "mmap_to_child_starvation_events", read_starvation_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "mmap_to_child_write_retry_events", write_retry_counter);
+		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_child_count", 0, count);
 	}
 	{
+		unsigned long long int count = 0;
 		unsigned long long int read_starvation_counter = 0;
 		unsigned long long int write_full_counter = 0;
 		unsigned long long int write_retry_counter = 0;
 
 		rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+				&count,
 				&read_starvation_counter,
 				&write_full_counter,
 				&write_retry_counter,
@@ -704,6 +716,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 5, "mmap_to_parent_full_events", write_full_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 6, "mmap_to_parent_starvation_events", read_starvation_counter);
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 7, "mmap_to_parent_write_retry_events", write_retry_counter);
+		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_parent_count", 0, count);
 	}
 
 	// TODO : Fix rate counter
@@ -754,6 +767,7 @@ void rrr_cmodule_helper_loop (
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			__rrr_cmodule_helper_event_pause_check,
 			thread_data
 	);
@@ -941,6 +955,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 }
 
 static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
@@ -952,12 +967,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 	*write_retry_counter = 0;
 
 	for (int i = 0; i < cmodule->worker_count; i++) {
+		unsigned long long int tmp_count = 0;
 		unsigned long long int tmp_read_starvation_counter = 0;
 		unsigned long long int tmp_write_full_counter = 0;
 		unsigned long long int tmp_write_retry_counter = 0;
 
 		if (is_to_parent) {
 			rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+					&tmp_count,
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
 					&cmodule->workers[i]
@@ -965,12 +982,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		}
 		else {
 			rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+					&tmp_count,
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
 					&cmodule->workers[i]
 			);
 		}
 
+		*count += tmp_count;
 		*read_starvation_counter += tmp_read_starvation_counter;
 		*write_full_counter += tmp_write_full_counter;
 		*write_retry_counter += tmp_write_retry_counter;
@@ -980,12 +999,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 }
 
 void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
@@ -995,12 +1016,14 @@ void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 }
 
 void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,

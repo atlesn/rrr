@@ -36,8 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
-#define RRR_HTTP_SERVER_READ_MAX 1 * 1024 * 1024 // 1 MB
-
 void rrr_http_server_destroy (struct rrr_http_server *server) {
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
@@ -104,11 +102,20 @@ int rrr_http_server_new (
             struct rrr_http_server *server,                    \
             int set                                            \
     ) {                                                        \
-        server->rules.RRR_PASTE(do_,name) = (set != 0);              \
+        server->rules.RRR_PASTE(do_,name) = (set != 0);        \
+    }                                                          \
+
+#define RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(name)    \
+    void RRR_PASTE(rrr_http_server_set_,name) (                \
+            struct rrr_http_server *server,                    \
+            rrr_biglength set                                  \
+    ) {                                                        \
+        server->rules.name = set;                              \
     }                                                          \
 
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(server_request_max_size);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
@@ -365,7 +372,7 @@ static int __rrr_http_server_read_callback (
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes_dummy,
 			handle,
-			RRR_HTTP_SERVER_READ_MAX,
+			http_server->rules.server_request_max_size,
 			&http_server->rules,
 			http_server->callbacks.unique_id_generator_callback,
 			http_server->callbacks.unique_id_generator_callback_arg,
@@ -434,6 +441,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 	return rrr_net_transport_new (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
+			"HTTP server",
 			callback_data->net_transport_flags,
 			callback_data->queue,
 			alpn_protos,
@@ -488,6 +496,7 @@ static int __rrr_http_server_start (
 		ret = rrr_net_transport_new (
 				result_transport,
 				net_transport_config,
+				"HTTP server",
 				net_transport_flags,
 				queue,
 				NULL,

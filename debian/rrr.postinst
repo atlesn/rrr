@@ -11,6 +11,7 @@ if test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x"; then
 	systemd-tmpfiles --create || true
 fi
 
+echo "Ensuring permissions in library directory..."
 chown -R rrr:rrr /var/lib/rrr
 
 #DEBHELPER#

@@ -101,14 +101,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	}
 
 	// Message default topic
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->default_topic,
-			&data->default_topic_length,
-			config,
-			"socket_default_topic"
-	)) != 0) {
-		goto out;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("socket_default_topic", default_topic, default_topic_length);
 
 	// Receive full rrr message
 	int yesno = 0;
@@ -223,6 +216,7 @@ static int socket_read_raw_complete_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			socket_read_raw_data_broker_callback,
 			data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -282,6 +276,7 @@ static int socket_read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void 
 			NULL,
 			0,
 			0,
+			NULL,
 			socket_read_message_broker_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

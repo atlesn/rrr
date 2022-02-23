@@ -324,15 +324,7 @@ static void data_cleanup(void *arg) {
 static int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->msg_topic,
-			&data->msg_topic_len,
-			config,
-			"vm_message_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("vm_message_topic", msg_topic, msg_topic_len);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE("vm_calibration", usb_calibration, 1.124);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("vm_channel", usb_channel, 1);
 
@@ -416,6 +408,7 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, int value) 
 			NULL,
 			0,
 			0,
+			NULL,
 			voltmonitor_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)

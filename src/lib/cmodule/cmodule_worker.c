@@ -102,11 +102,13 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 }
 
 void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_cmodule_worker *worker
 ) {
 	rrr_mmap_channel_get_counters_and_reset (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			worker->channel_to_fork
@@ -114,11 +116,13 @@ void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
 }
 
 void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_cmodule_worker *worker
 ) {
 	rrr_mmap_channel_get_counters_and_reset (
+			count,
 			read_starvation_counter,
 			write_full_counter,
 			worker->channel_to_parent
