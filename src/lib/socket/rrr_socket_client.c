@@ -95,6 +95,10 @@ struct rrr_socket_client_collection {
 	// Callbacks for array tree mode
 	int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS);
 	void *array_callback_arg;
+
+	// Callback for parse errors
+	void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS);
+	void *error_callback_arg;
 };
 
 struct rrr_socket_client_fd {
@@ -815,6 +819,20 @@ static void __rrr_socket_client_event_write (
 	return;
 }
 
+static void __rrr_socket_client_event_message_error_callback (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(client);
+
+	// Any error message goes here
+}
+
 static void __rrr_socket_client_event_read_message (
 		evutil_socket_t fd,
 		short flags,
@@ -846,9 +864,34 @@ static void __rrr_socket_client_event_read_message (
 				0, // No ratelimit max bytes
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
+				__rrr_socket_client_event_message_error_callback,
+				client,
 				__rrr_socket_client_collection_read_message_complete_callback,
 				client
 		)
+	);
+}
+
+static void __rrr_socket_client_event_read_error_callback (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
+
+	DEDUCT_ADDRESS();
+
+	if (collection->error_callback == NULL)
+		return;
+
+	collection->error_callback(
+			read_session,
+			addr,
+			addr_len,
+			is_hard_err,
+			client->private_data,
+			collection->error_callback_arg
 	);
 }
 
@@ -882,6 +925,8 @@ static void __rrr_socket_client_event_read_raw (
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				__rrr_socket_client_collection_read_raw_get_target_size_callback,
+				client,
+				__rrr_socket_client_event_read_error_callback,
 				client,
 				__rrr_socket_client_collection_read_raw_complete_callback,
 				client
@@ -943,6 +988,7 @@ static void __rrr_socket_client_event_read_array_tree (
 			0, // No ratelimit max bytes
 			collection->array_message_max_size,
 			__rrr_socket_client_event_read_array_tree_callback,
+			__rrr_socket_client_event_read_error_callback,
 			client
 		) & ~(RRR_READ_SOFT_ERROR) // Prevent connection closure upon parse errors (read session is still cleared by read framework)
 	);
@@ -1927,11 +1973,17 @@ void rrr_socket_client_collection_event_setup_raw (
 		int read_flags_socket,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
+		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
+		void *error_callback_arg,
 		int (*complete_callback)(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS),
 		void *complete_callback_arg
 ) {
 	collection->get_target_size = get_target_size;
 	collection->get_target_size_arg = get_target_size_arg;
+
+	collection->error_callback = error_callback;
+	collection->error_callback_arg = error_callback_arg;
+
 	collection->complete_callback = complete_callback;
 	collection->complete_callback_arg = complete_callback_arg;
 
@@ -1957,7 +2009,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		rrr_biglength read_step_max_size,
 		unsigned int message_max_size,
 		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
-		void *array_callback_arg
+		void *array_callback_arg,
+		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
+		void *error_callback_arg
 ) {
 	collection->array_do_sync_byte_by_byte = do_sync_byte_by_byte;
 	collection->array_message_max_size = message_max_size;
@@ -1965,6 +2019,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 
 	collection->array_callback = array_callback;
 	collection->array_callback_arg = array_callback_arg;
+
+	collection->error_callback = error_callback;
+	collection->error_callback_arg = error_callback_arg;
 
 	__rrr_socket_client_collection_event_setup (
 			collection,

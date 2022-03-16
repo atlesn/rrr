@@ -681,6 +681,20 @@ static int __rrr_mqtt_conn_read_get_target_size (
 	return ret;
 }
 
+static void __rrr_mqtt_conn_get_target_size_error (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_mqtt_conn_read_callback_data *callback_data = arg;
+
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(callback_data);
+
+	// Any error messsage goes here
+}
+
 static int __rrr_mqtt_conn_read_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -791,6 +805,8 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			100 * 1000, // 100 ms ratelimit interval
 			(1 * 1024 * 1024) / 20, // 1/20 MB
 			__rrr_mqtt_conn_read_get_target_size,
+			&callback_data,
+			__rrr_mqtt_conn_get_target_size_error,
 			&callback_data,
 			__rrr_mqtt_conn_read_complete_callback,
 			&callback_data

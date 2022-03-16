@@ -1,4 +1,4 @@
-rrr (1.23-2) bullseye; urgency=medium
+rrr (1.23-3) bullseye; urgency=medium
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
@@ -17,6 +17,8 @@ rrr (1.23-2) bullseye; urgency=medium
     * Asynchrounous operation in message DB for better performance with very large DBs
     * Tidy and revive intervals in cacher is calculated from the last
       completion of each of these processes.
+    * Show IP address of remote host in error message when array data parsing
+      fails in IP module
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of
@@ -32,6 +34,7 @@ rrr (1.23-2) bullseye; urgency=medium
 
   * Under the hood:
     * Cleanups in MQTT framework
+    * Cleanups in net transport framework
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 23 Feb 2022 00:43:10 +0100
 

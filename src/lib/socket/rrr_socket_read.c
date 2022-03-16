@@ -51,6 +51,8 @@ struct rrr_socket_read_message_default_callback_data {
 	int socket_read_flags;
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);
 	void *get_target_size_arg;
+	void (*get_target_size_error_callback)(struct rrr_read_session *read_session, int is_hard_err, void *private_arg);
+	void *get_target_size_error_callback_arg;
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg);
 	void *complete_callback_arg;
 };
@@ -177,6 +179,11 @@ static void __rrr_socket_read_message_default_remove_read_session(struct rrr_rea
 static int __rrr_socket_read_message_default_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
+}
+
+static void __rrr_socket_read_message_default_get_target_size_error_callback(struct rrr_read_session *read_session, int is_hard_err, void *private_arg) {
+	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+	return callback_data->get_target_size_error_callback(read_session, is_hard_err, callback_data->get_target_size_error_callback_arg);
 }
 
 static int __rrr_socket_read_message_default_complete_callback(struct rrr_read_session *read_session, void *private_arg) {
@@ -377,6 +384,8 @@ int rrr_socket_read_message_default (
 		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
+		void (*get_target_size_error_callback)(struct rrr_read_session *read_session, int, void *arg),
+		void *get_target_size_error_callback_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
@@ -386,6 +395,8 @@ int rrr_socket_read_message_default (
 	callback_data.read_sessions = read_session_collection;
 	callback_data.get_target_size = get_target_size;
 	callback_data.get_target_size_arg = get_target_size_arg;
+	callback_data.get_target_size_error_callback = get_target_size_error_callback;
+	callback_data.get_target_size_error_callback_arg = get_target_size_error_callback_arg;
 	callback_data.complete_callback = complete_callback;
 	callback_data.complete_callback_arg = complete_callback_arg;
 	callback_data.socket_read_flags = socket_read_flags;
@@ -401,6 +412,7 @@ int rrr_socket_read_message_default (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			__rrr_socket_read_message_default_get_target_size,
+			__rrr_socket_read_message_default_get_target_size_error_callback,
 			__rrr_socket_read_message_default_complete_callback,
 			(socket_read_flags & RRR_SOCKET_READ_INPUT_DEVICE
 					? __rrr_socket_read_message_input_device
@@ -484,6 +496,8 @@ int rrr_socket_read_message_split_callbacks (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			NULL,
 			NULL,
 			__rrr_socket_read_message_split_callbacks_complete_callback,
 			&complete_callback_data

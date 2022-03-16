@@ -924,6 +924,7 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				0, // No ratelimit max bytes
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				file_read_array_callback,
+				NULL,
 				&read_callback_data
 		)) != 0) {
 			if (ret == RRR_READ_INCOMPLETE) {
@@ -955,6 +956,8 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				file_read_all_to_message_get_target_size_callback,
+				NULL,
+				NULL,
 				NULL,
 				file_read_all_to_message_complete_callback,
 				&read_callback_data

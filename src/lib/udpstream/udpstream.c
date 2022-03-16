@@ -794,6 +794,19 @@ static int __rrr_udpstream_read_get_target_size (
 	return ret;
 }
 
+static void __rrr_udpstream_read_get_target_size_error (
+		RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS
+) {
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(addr);
+	(void)(addr_len);
+	(void)(arg);
+	(void)(private_data);
+
+	// Any error message goes here
+}
+
 static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handle (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
@@ -2417,6 +2430,8 @@ int rrr_udpstream_init (
 			8192,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			__rrr_udpstream_read_get_target_size,
+			NULL,
+			__rrr_udpstream_read_get_target_size_error,
 			NULL,
 			__rrr_udpstream_read_callback,
 			data

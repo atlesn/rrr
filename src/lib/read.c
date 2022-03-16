@@ -181,6 +181,11 @@ static int __rrr_read_message_using_callbacks (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -409,6 +414,9 @@ static int __rrr_read_message_using_callbacks (
 		// OK is returned.
 		ret = function_get_target_size(read_session, functions_callback_arg);
 		if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE) {
+			if (function_get_target_size_error_callback != NULL) {
+				function_get_target_size_error_callback(read_session, ret == RRR_READ_HARD_ERROR, functions_callback_arg);
+			}
 			goto out;
 		}
 
@@ -515,6 +523,11 @@ int rrr_read_message_using_callbacks (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -554,6 +567,7 @@ int rrr_read_message_using_callbacks (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			function_get_target_size,
+			function_get_target_size_error_callback,
 			function_complete_callback,
 			function_read,
 			function_get_read_session_with_overshoot,
@@ -575,6 +589,7 @@ int rrr_read_message_using_callbacks (
 				read_step_max_size,
 				read_max_size,
 				function_get_target_size,
+				function_get_target_size_error_callback,
 				function_complete_callback,
 				function_get_read_session_with_overshoot,
 				function_read_session_remove,
@@ -601,6 +616,11 @@ int rrr_read_message_using_callbacks_flush (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -623,6 +643,7 @@ int rrr_read_message_using_callbacks_flush (
 			0,
 			0,
 			function_get_target_size,
+			function_get_target_size_error_callback,
 			function_complete_callback,
 			NULL,
 			function_get_read_session_with_overshoot,

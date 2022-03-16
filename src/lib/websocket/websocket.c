@@ -562,6 +562,13 @@ int __rrr_websocket_receive_callback_interpret_step (
 	return ret;
 }
 
+void __rrr_websocket_get_target_size_error (struct rrr_read_session *read_session, int is_hard_err, void *arg) {
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(arg);
+	// Any error message goes here
+}
+
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
@@ -587,6 +594,8 @@ int rrr_websocket_transport_ctx_read_frames (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			__rrr_websocket_get_target_size,
+			&callback_data,
+			__rrr_websocket_get_target_size_error,
 			&callback_data,
 			__rrr_websocket_receive_callback_interpret_step,
 			&callback_data

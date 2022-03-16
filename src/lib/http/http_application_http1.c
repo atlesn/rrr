@@ -1208,6 +1208,20 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	return ret;
 }
 
+static void __rrr_http_application_http1_receive_get_target_size_error (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_http_application_http1_receive_data *receive_data = arg;
+
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(receive_data);
+
+	// Any error message goes here
+}
+
 struct rrr_http_application_http1_frame_callback_data {
 	struct rrr_http_application_http1 *http1;
 	struct rrr_net_transport_handle *handle;
@@ -1634,6 +1648,8 @@ static int __rrr_http_application_http1_tick (
 						0, // No ratelimit interval
 						0, // No ratelimit max bytes
 						__rrr_http_application_http1_receive_get_target_size,
+						&callback_data,
+						__rrr_http_application_http1_receive_get_target_size_error,
 						&callback_data,
 						unique_id_generator_callback == NULL // No generator indicates client
 							? __rrr_http_application_http1_response_receive_callback
