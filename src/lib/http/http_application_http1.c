@@ -131,6 +131,16 @@ static int __rrr_http_application_http1_header_field_make (
 	ret |= rrr_string_builder_append(builder, ": ");
 //	ret |= rrr_string_builder_append(builder, value_tmp);
 	ret |= rrr_string_builder_append(builder, value);
+
+	RRR_LL_ITERATE_BEGIN(&field->fields, const struct rrr_http_field);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		ret |= rrr_string_builder_append(builder, "; ");
+		ret |= rrr_string_builder_append(builder, name);
+		ret |= rrr_string_builder_append(builder, "=");
+		ret |= rrr_string_builder_append(builder, value);
+	RRR_LL_ITERATE_END();
+
 	ret |= rrr_string_builder_append(builder, "\r\n");
 
 	out:

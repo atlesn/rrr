@@ -150,6 +150,18 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 	return rrr_http_header_field_collection_get_with_value_case(&part->headers, name_lowercase, value_anycase);
 }
 
+struct rrr_http_header_field *__rrr_http_part_header_field_get (
+		struct rrr_http_part *part,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name) == 0)
+			return node;
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
 struct rrr_http_chunk *rrr_http_part_chunk_new (
 		rrr_biglength chunk_start,
 		rrr_biglength chunk_length
@@ -236,6 +248,37 @@ int rrr_http_part_header_field_push_and_replace (
 ) {
 	rrr_http_part_header_field_remove (part, name);
 	return rrr_http_part_header_field_push(part, name, value);
+}
+
+int rrr_http_part_header_field_push_subvalue (
+		struct rrr_http_part *part,
+		const char *field,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *content_type = __rrr_http_part_header_field_get (part, "content-type");
+	if (content_type == NULL) {
+		RRR_BUG("BUG: Field %s was not present in %s\n", field, __func__);
+	}
+
+	if ((ret = rrr_http_field_collection_add(
+			&content_type->fields,
+			name,
+			rrr_length_from_size_t_bug_const(strlen(name)),
+			value,
+			rrr_length_from_size_t_bug_const(strlen(value)),
+			NULL,
+			0,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Failed to add value to field collection in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_http_part_fields_iterate_const (

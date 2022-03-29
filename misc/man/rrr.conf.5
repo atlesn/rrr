@@ -1686,6 +1686,7 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_body_tag=ARRAY TAG
 .It http_format_tag=ARRAY TAG
 .It http_content_type_tag=ARRAY TAG
+.It http_content_type_boundary_tag=ARRAY TAG
 
 .It http_endpoint_tag_force={yes|no}
 .It http_method_tag_force={yes|no}
@@ -1694,11 +1695,20 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_body_tag_force={yes|no}
 .It http_format_tag_force={yes|no}
 .It http_content_type_tag_force={yes|no}
+.It http_content_type_boundary_tag_force={yes|no}
 These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
 identified by the tag of the value.
 If the
 .B force
 options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+If
+.B http_content_type_boundary_tag_force
+is set to yes, the tag is only required to be present if the active content type is
+.B multipart/form-data.
+Any value from
+.B http_content_type_boundary_tag
+will only be used if the active content type is multipart/form-data.
 
 Values from the message, although they will be attempted converted, should be of the
 .B str
