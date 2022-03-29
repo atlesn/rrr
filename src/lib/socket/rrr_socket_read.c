@@ -183,6 +183,11 @@ static int __rrr_socket_read_message_default_get_target_size(struct rrr_read_ses
 
 static void __rrr_socket_read_message_default_get_target_size_error_callback(struct rrr_read_session *read_session, int is_hard_err, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
+	if (callback_data->get_target_size_error_callback == NULL) {
+		return;
+	}
+
 	return callback_data->get_target_size_error_callback(read_session, is_hard_err, callback_data->get_target_size_error_callback_arg);
 }
 
