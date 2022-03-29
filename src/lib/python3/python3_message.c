@@ -1738,7 +1738,8 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			}
 
 			if (node_element_value == NULL) {
-				RRR_MSG_0("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
+				RRR_MSG_0("Could not create array node data in %s for type %s element size %" PRIrrrbl "\n",
+					__func__, node->definition->identifier, (rrr_biglength) element_size);
 				goto out_err;
 			}
 
