@@ -132,28 +132,14 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name
 ) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
-			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_BUG("Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
-						name, __func__);
-			}
-			return node;
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
+	return rrr_http_header_field_collection_get(&part->headers, name);
 }
 
 const struct rrr_http_header_field *rrr_http_part_header_field_get_raw (
 		const struct rrr_http_part *part,
 		const char *name
 ) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
-			return node;
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
+	return rrr_http_header_field_collection_get_raw(&part->headers, name);
 }
 
 const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_case (
@@ -161,19 +147,7 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 		const char *name_lowercase,
 		const char *value_anycase
 ) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
-			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
-						name, __func__);
-			}
-			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
-				return node;
-			}
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
+	return rrr_http_header_field_collection_get_with_value_case(&part->headers, name_lowercase, value_anycase);
 }
 
 struct rrr_http_chunk *rrr_http_part_chunk_new (
