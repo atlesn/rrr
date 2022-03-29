@@ -23,6 +23,8 @@ rrr (1.23-3) bullseye; urgency=medium
       multipart/form-data in httpserver
     * New configuration parameter in httpclient to set content-type boundary
       directive in incoming messages.
+    * If conversion from str to PyUnicode fails in python3 for array values,
+      fallback to PyByteArray with a warning
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of

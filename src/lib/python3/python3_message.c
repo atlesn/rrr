@@ -1672,6 +1672,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		goto out_err;
 	}
 
+	int node_index = 0;
 	RRR_LL_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
 		if (node->tag == NULL) {
 			node_tag = PyUnicode_FromString("");
@@ -1722,7 +1723,11 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 				node_element_value = PyLong_FromLongLong(*((long long *) data_pos));
 			}
 			else if (RRR_TYPE_IS_STR(node->definition->type)) {
-				node_element_value = PyUnicode_FromStringAndSize(data_pos, element_size);
+				if ((node_element_value = PyUnicode_FromStringAndSize(data_pos, element_size)) == NULL) {
+					RRR_MSG_0("Warning: Conversion to PyUnicode failed for array str value at position %i element %" PRIrrrbl " size %" PRIrrrbl " in %s. Falling back to PyByteArray.\n",
+						node_index, (rrr_biglength) i, (rrr_biglength) element_size, __func__);
+					node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
+				}
 			}
 			else if (RRR_TYPE_IS_BLOB(node->definition->type)) {
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
@@ -1757,6 +1762,8 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 		node_tag = NULL;
 		node_list = NULL;
+
+		node_index++;
 	RRR_LL_ITERATE_END();
 
 	no_array:
