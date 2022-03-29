@@ -1,4 +1,4 @@
-.Dd 2022-01-29
+.Dd 2022-03-29
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1469,6 +1469,8 @@ Added if a body of non-zero length is present.
 Added if present in the header.
 .It http_content_type
 Added if present in the header.
+.It http_content_type_boundary
+Added if content-type is present in the header and is multipart/form-data.
 .El
 .sp
 Note that if

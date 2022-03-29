@@ -19,6 +19,8 @@ rrr (1.23-3) bullseye; urgency=medium
       completion of each of these processes.
     * Show IP address of remote host in error message when array data parsing
       fails in IP module
+    * Extract boundary directive from content-type fields of type
+      multipart/form-data in httpserver
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of
@@ -36,7 +38,7 @@ rrr (1.23-3) bullseye; urgency=medium
     * Cleanups in MQTT framework
     * Cleanups in net transport framework
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 23 Feb 2022 00:43:10 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 29 Mar 2022 09:26:52 +0200
 
 rrr (1.21-1) bullseye; urgency=medium
 
