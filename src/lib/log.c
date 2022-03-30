@@ -325,14 +325,26 @@ static uint8_t __rrr_log_translate_loglevel_rfc5424_stderr (
 		{ str, strlen(str) }
 
 static void __rrr_log_sd_journal_sendv (
+		const char *file,
+		int line,
 		unsigned short loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
 ) {
+	char *buf_file = NULL;
+	char *buf_line = NULL;
 	char *buf_priority = NULL;
 	char *buf_prefix = NULL;
 	char *buf_message = NULL;
+
+	if (rrr_asprintf(&buf_file, "CODE_FILE=%s", file) < 0) {
+		goto out;
+	}
+
+	if (rrr_asprintf(&buf_line, "CODE_LINE=%i", line) < 0) {
+		goto out;
+	}
 
 	if (rrr_asprintf(&buf_priority, "PRIORITY=%i", loglevel) < 0) {
 		goto out;
@@ -350,18 +362,22 @@ static void __rrr_log_sd_journal_sendv (
 		}
 	}
 
-	struct iovec iovec[3] = {
+	struct iovec iovec[5] = {
+		SET_IOVEC(buf_file),
+		SET_IOVEC(buf_line),
 		SET_IOVEC(buf_priority),
 		SET_IOVEC(buf_prefix),
 		SET_IOVEC(buf_message)
 	};
 
 	int ret_tmp;
-	if ((ret_tmp = sd_journal_sendv(iovec, 3)) < 0) {
+	if ((ret_tmp = sd_journal_sendv(iovec, sizeof(iovec) / sizeof(iovec[0]))) < 0) {
 		fprintf(stderr, "Warning: Syslog call sd_journal_sendv failed with %i\n", ret_tmp);
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(buf_file);
+	RRR_FREE_IF_NOT_NULL(buf_line);
 	RRR_FREE_IF_NOT_NULL(buf_priority);
 	RRR_FREE_IF_NOT_NULL(buf_prefix);
 	RRR_FREE_IF_NOT_NULL(buf_message);
@@ -369,6 +385,8 @@ static void __rrr_log_sd_journal_sendv (
 #endif
 
 void rrr_log_printf_nolock (
+		const char *file,
+		int line,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
@@ -381,7 +399,7 @@ void rrr_log_printf_nolock (
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
-		__rrr_log_sd_journal_sendv(RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
 	}
 	else {
 #endif
@@ -478,7 +496,7 @@ static void __rrr_log_printf_va (
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
-		__rrr_log_sd_journal_sendv(RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
 	}
 	else {
 #endif

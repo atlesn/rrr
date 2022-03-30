@@ -25,6 +25,7 @@ rrr (1.23-3) bullseye; urgency=medium
       directive in incoming messages.
     * If conversion from str to PyUnicode fails in python3 for array values,
       fallback to PyByteArray with a warning
+    * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of

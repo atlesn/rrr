@@ -146,7 +146,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	// Debug without holding the lock, by default disabled as printf is not async-safe
 #	ifdef RRR_WITH_SIGNAL_PRINTF
 #		define RRR_DBG_SIGNAL(...) \
-		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__FILE__, __LINE__, __RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 #	endif
 
 // Zero may be passed to X functions
@@ -279,6 +279,8 @@ void rrr_log_hooks_call_raw (
 		const char *message
 );
 void rrr_log_printf_nolock (
+		const char *file,
+		int line,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
