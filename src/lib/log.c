@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -121,14 +121,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
         pthread_cleanup_pop(1)
 
 struct rrr_log_hook {
-	void (*log)(
-			uint8_t *write_amount,
-			uint8_t loglevel_translated,
-			uint8_t loglevel_orig,
-			const char *prefix,
-			const char *message,
-			void *private_arg
-	);
+	void (*log)(RRR_LOG_HOOK_ARGS);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
 	int (*event_pass_retry_callback)(void *arg);
@@ -142,14 +135,7 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 
 void rrr_log_hook_register (
 		int *handle,
-		void (*log)(
-				uint8_t *write_amount,
-				uint8_t loglevel_translated,
-				uint8_t loglevel_orig,
-				const char *prefix,
-				const char *message,
-				void *private_arg
-		),
+		void (*log)(RRR_LOG_HOOK_ARGS),
 		void *private_arg,
 		struct rrr_event_queue *notify_queue,
 		int (*event_pass_retry_callback)(void *arg),
@@ -218,6 +204,8 @@ void rrr_log_hook_unregister (
 }
 
 void rrr_log_hooks_call_raw (
+		const char *file,
+		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
 		const char *prefix,
@@ -231,6 +219,8 @@ void rrr_log_hooks_call_raw (
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				&write_amount,
+				file,
+				line,
 				loglevel_translated,
 				loglevel_orig,
 				prefix,
@@ -253,6 +243,8 @@ void rrr_log_hooks_call_raw (
 }
 
 static void __rrr_log_hooks_call (
+		const char *file,
+		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
 		const char *prefix,
@@ -284,10 +276,12 @@ static void __rrr_log_hooks_call (
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
 	rrr_log_hooks_call_raw (
-		loglevel_translated,
-		loglevel_orig,
-		prefix,
-		tmp
+			file,
+			line,
+			loglevel_translated,
+			loglevel_orig,
+			prefix,
+			tmp
 	);
 }
 
@@ -466,16 +460,16 @@ void rrr_log_printn_plain (
 #endif
 }
 
-void rrr_log_printf (
+static void __rrr_log_printf_va (
+		const char *file,
+		int line,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
-		...
+		va_list args
 ) {
-	va_list args;
 	va_list args_copy;
 
-	va_start(args, __format);
 	va_copy(args_copy, args);
 
 	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
@@ -502,6 +496,8 @@ void rrr_log_printf (
 #endif
 
 	__rrr_log_hooks_call (
+		file,
+		line,
 		loglevel_translated,
 		loglevel,
 		prefix,
@@ -509,12 +505,30 @@ void rrr_log_printf (
 		args_copy
 );
 
-	va_end(args);
 	va_end(args_copy);
 }
 
+void rrr_log_printf (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
+	va_list args;
+
+	va_start(args, __format);
+
+	__rrr_log_printf_va(file, line, loglevel, prefix, __format, args);
+
+	va_end(args);
+}
+
 void rrr_log_fprintf (
-		FILE *file,
+		FILE *file_target,
+		const char *file,
+		int line,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
@@ -529,7 +543,7 @@ void rrr_log_fprintf (
 	uint8_t loglevel_translated = 0;
 
 	if (rrr_config_global.rfc5424_loglevel_output) {
-		if (file == stderr) {
+		if (file_target == stderr) {
 			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
 		}
 		else {
@@ -539,12 +553,14 @@ void rrr_log_fprintf (
 
 #ifndef RRR_LOG_DISABLE_PRINT
 	LOCK_BEGIN;
-	fprintf(file, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix);
-	vfprintf(file, __format, args);
+	fprintf(file_target, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix);
+	vfprintf(file_target, __format, args);
 	LOCK_END;
 #endif
 
 	__rrr_log_hooks_call (
+		file,
+		line,
 		loglevel_translated,
 		loglevel,
 		prefix,
