@@ -1724,9 +1724,9 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			}
 			else if (RRR_TYPE_IS_STR(node->definition->type)) {
 				if ((node_element_value = PyUnicode_FromStringAndSize(data_pos, element_size)) == NULL) {
-					RRR_MSG_0("Warning: Conversion to PyUnicode failed for array str value at position %i element %" PRIrrrbl " size %" PRIrrrbl " in %s. Falling back to PyByteArray.\n",
+					RRR_MSG_0("Conversion to PyUnicode failed for array value of type str at position %i element %" PRIrrrbl " size %" PRIrrrbl " in %s. Consider using blob type if string contains non-unicode characters.\n",
 						node_index, (rrr_biglength) i, (rrr_biglength) element_size, __func__);
-					node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
+					goto out_err;
 				}
 			}
 			else if (RRR_TYPE_IS_BLOB(node->definition->type)) {
