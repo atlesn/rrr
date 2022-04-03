@@ -1168,14 +1168,12 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 			replacement_subject = PyUnicode_FromString(subject == Py_True ? "TRUE" : "FALSE");
 		}
 		else if (PyByteArray_Check(subject)) {
-			new_size = PyByteArray_Size(subject);
 			const char *str = PyByteArray_AsString(subject);
-			replacement_subject = PyUnicode_FromStringAndSize(str, new_size);
+			replacement_subject = PyUnicode_FromStringAndSize(str, PyByteArray_Size(subject));
 		}
 		else if (PyBytes_Check(subject)) {
-			new_size = PyBytes_Size(subject);
 			const char *str = PyBytes_AsString(subject);
-			replacement_subject = PyUnicode_FromStringAndSize(str, new_size);
+			replacement_subject = PyUnicode_FromStringAndSize(str, PyBytes_Size(subject));
 		}
 		else {
 			RRR_MSG_0("Unsupported type '%s' while converting to string in %s\n",
