@@ -504,7 +504,6 @@ static PyObject *rrr_python3_rrr_message_f_set_ip(PyObject *self, PyObject *args
 		// Borrowed reference
 		PyObject *port = PyTuple_GetItem(args, 1);
 		if (PyLong_Check(port)) {
-			printf("is long\n");
 			port_long = PyLong_AsLong(port);
 		}
 		else if (PyUnicode_Check(port)) {
@@ -919,6 +918,10 @@ static int __convert_str (CONVERT_DEF) {
 }
 
 static int __convert_blob (CONVERT_DEF) {
+	if (!PyByteArray_CheckExact(item)) {
+		RRR_BUG("Item in %s was not a PyByteArray\n", __func__);
+	}
+
 	ssize_t new_size = PyByteArray_Size(item);
 	const char *str = PyByteArray_AsString(item);
 
@@ -1316,6 +1319,8 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 	}
 	*target_type_flags = 0;
 	*size = new_size;
+
+	replacement_subject = NULL;
 
 	out:
 	Py_XDECREF(replacement_subject);
