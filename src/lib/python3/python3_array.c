@@ -719,6 +719,9 @@ static PyObject *rrr_python3_array_f_remove (PyObject *self, PyObject *tag) {
 		PyList_SET_ITEM(data->list, i, NULL);
 	}
 
+	Py_DECREF(data->list);
+	data->list = new_list;
+
 	Py_RETURN_TRUE;
 }
 

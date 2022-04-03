@@ -16,19 +16,13 @@ def process(socket : rrr_socket, message: rrr_message):
 	value.set(1, value.get(0) + "---")
 	value.set(0, value.get(0) + "+++")
 	print("After " + str(value.get(0)) + "\n")
-#	value.set_type(11)
+	value.set_type(11)
 
-	# Produces crash
-	#array.remove("str")
-	#value_new = rrr_array_value()
-	#value_new.set(0, str(value.get(0).decode("iso-8859-1")))
-	#value_new.set_tag("str")
-	#array.append(value_new)
-
-	#Produces size mismatch
-	#value = array.get("str")
-	#value.set_type(11) -- SIZE MISMATCH DUE TO BYTE/CHAR COUNT MISMATCH
-	#value.set(0, str(value.get(0).decode("iso-8859-1")))
+	array.remove("str")
+	value_new = rrr_array_value()
+	value_new.set(0, str(value.get(0)))
+	value_new.set_tag("str")
+	array.append(value_new)
 
 	socket.send(message)
 
