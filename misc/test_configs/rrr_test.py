@@ -14,6 +14,7 @@ def process(socket : rrr_socket, message: rrr_message):
 	print("Before" + str(value.get(0)) + "\n")
 	value.set(0, value.get(0).decode("iso-8859-1"))
 	value.set(1, value.get(0) + "---")
+	value.set(0, value.get(0) + "+++")
 	print("After " + str(value.get(0)) + "\n")
 #	value.set_type(11)
 
