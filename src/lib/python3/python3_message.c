@@ -858,7 +858,7 @@ void __convert_save_data (
 	char *pos = target->data + new_size * index;
 
 	if (new_size != allocated_size) {
-		RRR_BUG("Size mismatch in %s\n", __func__);
+		RRR_BUG("Size mismatch %" PRIrrrl "<>%" PRIrrrl " in %s\n", allocated_size, new_size, __func__);
 	}
 
 	if (pos + new_size > target->data + target->total_stored_length) {
@@ -972,21 +972,16 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 			}
 		}
 		else if (PyUnicode_Check(subject)) {
-			const char *str = PyUnicode_AsUTF8(subject);
+			ssize_t length = 0;
+			const char *str = PyUnicode_AsUTF8AndSize(subject, &length);
 			if (str == NULL) {
 				RRR_MSG_0("Could not convert unicode to string in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
 
-			Py_ssize_t length = PyUnicode_GetLength(subject);
-			if (length < 0) {
-				RRR_MSG_0("Negative result from GetLength in %s\n", __func__);
-				ret = 1;
-				goto out;
-			}
 #if RRR_LENGTH_MAX < SSIZE_MAX
-			else if (length > RRR_LENGTH_MAX) {
+			if (length > RRR_LENGTH_MAX) {
 				length = RRR_LENGTH_MAX;
 			}
 #endif
@@ -1136,7 +1131,11 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 	ssize_t new_size = 0;
 
 	if (PyUnicode_Check(subject)) {
-		new_size = PyUnicode_GetLength(subject);
+		if (PyUnicode_AsUTF8AndSize(subject, &new_size) == NULL) {
+			RRR_MSG_0("Failed to get size of string in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
 	}
 	else {
 		if (PyLong_Check(subject)) {
@@ -1192,8 +1191,10 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 			goto out;
 		}
 
-		if (new_size == 0) {
-			new_size = PyUnicode_GetLength(replacement_subject);
+		if (PyUnicode_AsUTF8AndSize(replacement_subject, &new_size) == NULL) {
+			RRR_MSG_0("Failed to get size of string in %s\n", __func__);
+			ret = 1;
+			goto out;
 		}
 	}
 
