@@ -1206,7 +1206,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 #endif
 
 	if (*size != 0 && (rrr_slength) *size != (rrr_slength) new_size) {
-		RRR_MSG_0("Size of strings in array was not of equal length, which is required.\n");
+		RRR_MSG_0("Size of string elements in array value was not of equal length, which is required.\n");
 		ret = 1;
 		goto out;
 	}
@@ -1308,6 +1308,12 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 			ret = 1;
 			goto out;
 		}
+	}
+
+	if (*size != 0 && (rrr_slength) *size != (rrr_slength) new_size) {
+		RRR_MSG_0("Size of blob elements in array value was not of equal length, which is required.\n");
+		ret = 1;
+		goto out;
 	}
 
 	*new_subject = replacement_subject;
@@ -1501,7 +1507,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 				&replacement_item,
 				item
 		)) != 0) {
-			RRR_MSG_0("Could not convert item of type '%s' in array, preliminary check failed\n", item->ob_type->tp_name);
+			RRR_MSG_0("Could not convert item of type '%s' in array, preliminary check failed at index\n", item->ob_type->tp_name);
 			goto out;
 		}
 
