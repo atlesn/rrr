@@ -38,6 +38,8 @@ rrr (1.23-3) bullseye; urgency=medium
     * Fix buffer overflow in httpclient when wide characters were given to an
       urlencoder function.
     * Fix random crashes in message DB when zero length files were found.
+    * Misc. features in python RRR array handling API not working correctly, in particular
+      handling of multibyte character sets
 
   * Under the hood:
     * Cleanups in MQTT framework
