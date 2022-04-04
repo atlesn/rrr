@@ -1,4 +1,4 @@
-rrr (1.23-3) bullseye; urgency=medium
+rrr (1.23-5) bullseye; urgency=medium
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
@@ -10,6 +10,7 @@ rrr (1.23-3) bullseye; urgency=medium
     * Control subscriptions in MQTT client by sending in command messages
     * Control the tidy interval of the cacher module per configuration
       parameter
+    * Add configurable delay between forks during startup
 
   * Improvements:
     * Files in message database stored in a tree structure based on their hash

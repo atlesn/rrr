@@ -7,6 +7,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .B rrr {CONFIGURATION FILES OR DIRECTORIES}
 .Dl [-W|--no-watchdog-timers]
 .Dl [-T|--no-thread-restart]
+.Dl [-t|--start-interval]
 .Dl [-s|--stats]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
@@ -98,6 +99,10 @@ Do not monitor threads for becoming unresponsive. If not set and a thread is fou
 will then restart all of them. One instance of a module corresponds to one thread.
 .IP -T|--no-thread-restart
 When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
+.IP -t|--start-interval
+When starting multiple configuration files, this interval may be used to delay the starting of each configuration.
+This is useful when RRR with multiple configuration files on slow hardware.
+The timer may be set to a number between 0 and 5000, units are milliseconds.
 .IP -s|--stats
 Enable the statistics engine which
 .Xr rrr_stats(1)
@@ -126,6 +131,7 @@ If a variable is specified both in the environment and at the command line, the 
 .It RRR_DEBUGLEVEL_ON_EXIT
 .It RRR_NO_WATCHDOG_TIMERS
 .It RRR_NO_THREAD_RESTART
+.It RRR_START_INTERVAL
 .It RRR_LOGLEVEL_TRANSLATION
 .It RRR_RUN_DIRECTORY
 .El

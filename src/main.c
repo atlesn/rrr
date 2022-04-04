@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -133,6 +133,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 
 	unsigned long int debuglevel = 0;
 	unsigned long int debuglevel_on_exit = 0;
+	unsigned long int start_interval = 0;
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
@@ -160,6 +161,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 
 	GETENV_U(RRR_ENV_DEBUGLEVEL, debuglevel);
 	GETENV_U(RRR_ENV_DEBUGLEVEL_ON_EXIT, debuglevel_on_exit);
+	GETENV_U(RRR_ENV_START_INTERVAL, start_interval);
 	GETENV_YESNO(RRR_ENV_NO_WATCHDOG_TIMERS, no_watchdog_timers);
 	GETENV_YESNO(RRR_ENV_NO_THREAD_RESTART, no_thread_restart);
 	GETENV_YESNO(RRR_ENV_LOGLEVEL_TRANSLATION, rfc5424_loglevel_output);
@@ -207,6 +209,24 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		debuglevel_on_exit = (unsigned int) debuglevel_on_exit_tmp;
 	}
 
+	const char *start_interval_string = cmd_get_value(cmd, "start-interval", 0);
+	if (start_interval_string != NULL) {
+		long int start_interval_tmp;
+		if (cmd_convert_integer_10(start_interval_string, &start_interval_tmp) != 0) {
+			RRR_MSG_0 ("Could not understand start_interval argument '%s', use a number.\n",
+				start_interval_string);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (start_interval_tmp < 0 || start_interval_tmp > 5000) {
+			RRR_MSG_0 ("Start interval must be 0 <= start_interval <= 5000, %ld was given.\n",
+					start_interval_tmp);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		start_interval = (unsigned int) start_interval_tmp;
+	}
+
 	if (cmd_exists(cmd, "no-watchdog-timers", 0)) {
 		no_watchdog_timers = 1;
 	}
@@ -241,6 +261,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 
 	SETENV(RRR_ENV_DEBUGLEVEL,           "%u",    (unsigned int) debuglevel);
 	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,   "%u",    (unsigned int) debuglevel_on_exit);
+	SETENV(RRR_ENV_START_INTERVAL,       "%u",    (unsigned int) start_interval);
 	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,   "%u",    no_watchdog_timers);
 	SETENV(RRR_ENV_NO_THREAD_RESTART,    "%u",    no_thread_restart);
 	SETENV(RRR_ENV_LOGLEVEL_TRANSLATION, "%u",    rfc5424_loglevel_output);
@@ -256,6 +277,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	rrr_config_init (
 			(unsigned int) debuglevel,
 			(unsigned int) debuglevel_on_exit,
+			(unsigned int) start_interval,
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
@@ -264,9 +286,10 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
 			debuglevel,
 			debuglevel_on_exit,
+			start_interval,
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
