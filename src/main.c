@@ -218,8 +218,8 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			ret = EXIT_FAILURE;
 			goto out;
 		}
-		if (start_interval_tmp < 0 || start_interval_tmp > 5000) {
-			RRR_MSG_0 ("Start interval must be 0 <= start_interval <= 5000, %ld was given.\n",
+		if (start_interval_tmp < 0 || start_interval_tmp > 10000) {
+			RRR_MSG_0 ("Start interval must be 0 <= start_interval <= 10000, %ld was given.\n",
 					start_interval_tmp);
 			ret = EXIT_FAILURE;
 			goto out;

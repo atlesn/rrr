@@ -495,6 +495,8 @@ static int __rrr_cmodule_worker_loop (
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
+	int ret_tmp;
+
 	if (worker->do_spawning == 0 && worker->do_processing == 0 && custom_tick_callback == NULL) {
 		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
 	}
@@ -531,7 +533,7 @@ static int __rrr_cmodule_worker_loop (
 
 	EVENT_ADD(event_spawn);
 
-	int ret_tmp = rrr_event_dispatch (
+	ret_tmp = rrr_event_dispatch (
 			worker->event_queue_worker,
 			100 * 1000, // 100 ms
 			__rrr_cmodule_worker_event_periodic,
@@ -559,6 +561,15 @@ int rrr_cmodule_worker_loop_start (
 		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
+
+	/* Send a PONG when we start in case something is very slow */
+	if ((ret = __rrr_cmodule_worker_send_pong(worker)) != 0) {
+		if (ret == RRR_EVENT_EXIT) {
+			goto out;
+		}
+		RRR_MSG_0("Warning: Failed to send initial PONG message in worker fork named %s pid %ld return was %i\n",
+				worker->name, (long) getpid(), ret);
+	}
 
 	RRR_DBG_5("cmodule worker %s running configure function\n",
 			worker->name);
