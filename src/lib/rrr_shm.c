@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "log.h"
 #include "rrr_shm_struct.h"

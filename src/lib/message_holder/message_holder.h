@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 
 struct rrr_msg_holder;
+struct rrr_instance;
+typedef struct rrr_instance_friend_collection rrr_msg_holder_nexthops;
 
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
@@ -80,6 +82,17 @@ int rrr_msg_holder_new (
 int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
+);
+void rrr_msg_holder_nexthops_reset (
+		struct rrr_msg_holder *entry
+);
+int rrr_msg_holder_nexthops_set (
+		struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *hops
+);
+int rrr_msg_holder_nexthop_ok (
+		const struct rrr_msg_holder *entry,
+		const struct rrr_instance *instance
 );
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,

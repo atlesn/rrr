@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
@@ -204,9 +205,10 @@ static int ipclient_receive_callback(struct rrr_msg_holder *entry, void *arg) {
 
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing to output buffer in ipclient instance %s\n",
@@ -434,7 +436,7 @@ static void ipclient_event_send_queue (int fd, short flags, void *arg) {
 	}
 }
 
-static void ipclient_pause_check (int *do_pause, int is_paused, void *callback_arg) {
+static void ipclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct ipclient_data *data = callback_arg;
 
 	if (is_paused) {
@@ -548,6 +550,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			ipclient_pause_check,
 			data
 	);

@@ -51,6 +51,8 @@ int rrr_socket_read_message_default (
 		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
+		void (*get_target_size_error_callback)(struct rrr_read_session *read_session, int, void *arg),
+		void *get_target_size_error_callback_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 );

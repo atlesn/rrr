@@ -49,6 +49,7 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_msgdb");
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,         '\0',   "directory",             "{DIRECTORY}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "socket",                "[-s|--socket[=]SOCKET]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'l',    "levels",                "[-l|--directory-levels[=]LEVELS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -108,11 +109,20 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
+	long int levels = 2;
+	const char *levels_str = cmd_get_value(&cmd, "levels", 0);
 	const char *directory = cmd_get_value(&cmd, "directory", 0);
 	const char *socket = cmd_get_value(&cmd, "socket", 0);
 
 	if (socket == NULL) {
 		socket = RRR_MSGDB_DEFAULT_SOCKET;
+	}
+
+	if (levels_str != NULL) {
+		if ((ret = cmd_convert_integer_10 (levels_str, &levels) || levels < 0 || levels > 4) != 0) {
+			RRR_MSG_0("Syntax error in levels argument '%s', must be in the range 0 to 4 inclusive\n", levels_str);
+			goto out_cleanup_signal;
+		}
 	}
 
 	rrr_umask_onetime_set_global(RRR_GLOBAL_UMASK);
@@ -126,7 +136,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	if ((ret = rrr_msgdb_server_new(&server, queue, directory, socket)) != 0) {
+	if ((ret = rrr_msgdb_server_new(&server, queue, directory, socket, (unsigned int) levels)) != 0) {
 		goto out_cleanup_signal;
 	}
 

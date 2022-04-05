@@ -39,7 +39,7 @@ The basic thought is relatively simple, but the implementation is complex. Here 
 * For each C-module (or Perl-script etc.) a process is forked to run the script
 * The fork, or `worker`, takes care of when the different three functions are called, and sends messages which has been
   spawned or processed to the parent, which then let's other modules pick them up
-* The `parent`, which is a thread in the main RRR-process reads messages from other modules and sends messages to be
+* The `parent`, which is the thread in the main RRR-process, reads messages from other modules and sends messages to be
   processed to the worker
 * The worker may choose not to send processed messages back, or to duplicate messages
 * The communication between the parent thread and the worker  is performed on an "RRR Memory Map Channel". This method should
@@ -48,7 +48,7 @@ The basic thought is relatively simple, but the implementation is complex. Here 
 * When a C-module depends on external libraries, like Perl and Python, it is not allowed to call *any* of these library
   functions in the parent thread, all of this must be done in the worker after forking. These external libraries create
   all sorts of problems due to them using global variables and state. The only way to clean up properly
-  after them is to stop the whole process, this is the main reason why the worker fork isis needed.
+  after them is to stop the whole process, this is the main reason why the worker fork is needed.
 
 ### Implementation of scripting language module
 
@@ -56,10 +56,10 @@ If you wish to implement another scripting language, consider having this writte
 better structure to the program. Check out the modules `perl5`, `python3` and `cmodule` and copy one of them. `cmodule` is
 the simplest one, it has the least code and has no external dependencies.
 
-The details around how this works is not documented, try to open the RRR source in an IDE like Eclipse and follow the function
-calls to see what's going on. There's however very few function calls requried to be done from the native module itself.
-
 ## Getting started with native modules
+
+The details around how this works is not documented. Try to open the RRR source in an IDE like Eclipse and follow the function
+calls to see what's going on. There's however very few function calls requried to be done from the native module itself.
 
 To write a custom module, start by copying one existing module in the `src/modules/` directory. Update `Makefile.am` in the
 same directory using the same naming convention as the other modules.
@@ -169,7 +169,7 @@ Some fast write methods are available to use for entries which already have been
 but which we now wish to write to the output buffer without allocating a new message holder. These functions are marked with `unsafe`.
 
 	// Write to the output buffer
-	rrr_message_broker_incref_and_write_entry_unsafe_no_unlock(...); 
+	rrr_message_broker_incref_and_write_entry_unsafe(...); 
 	
 	// Removes entries one by one from the given collection and puts it into the output buffer
 	rrr_message_broker_write_entries_from_collection_unsafe(...);
@@ -183,7 +183,7 @@ the output queue:
 ### Module with custom loop
 
 Modules which do not read from other modules may use a simple processing loop as opposed to using the event framework.
-Such modulse should have some sleep or wait mechanism in their loop to prevent spinning.
+Such modules should have some sleep or wait mechanism in their loop to prevent spinning.
 The watchdog timer must be updated regularly, and checks for encourage stop signal must be performed.
 
 	static void *thread_entry_my(struct rrr_thread *thread) {
@@ -283,15 +283,10 @@ corruption. Use the private memory provided instead.
 
 ### Memory allocation
 
-To mitigate memory fragmentation over time, messages and message holder structs are allocated using a custom allocator.
-The constructor functions of these structs use the `rrr_allocate_group()` function.
-Other allocations are performed using `rrr_allocate()` which again maps to the default library allocator `malloc()`.
+All allocations must be performed using provided allocation functions from `allocator.h` which map to either jemalloc functions or default OS functions.
+Functions like `rrr_allocate` and `rrr_free` are available, and it is not safe to use the standard `free()` or `malloc()` functions.
 
-Memory for structures without destuctor function is done using `rrr_free()`.
-This function will automatically identify which allocator was being used to allocate the memory being freed.
-
-The `malloc()` and family functions should not be used directly as this makes it harder to switch to another allocator in the future.
-It is also not safe to call the standard `free()` function.
+Messages and message holder structs are allocated using the `rrr_allocate_group()` function which allows debugging to be added into these functions if needed.
 
 ## Modules, threads and instances
 
@@ -352,9 +347,12 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Others may register handlers to receive log messages (like the journal module)
   - Global process-shared locking
 
-- linked_list.h, map.h
+- util/linked_list.h, util/map.h
   - Widely used set of macros to implement linked list functionallity
   - Iteration, manipulation, destruction etc.
+
+- util/
+  - Misc helper functions
 
 - threads.c (see previous chapter)
   - Stand-alone framework to deal with threads
@@ -388,12 +386,13 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Lower level module for handling settings
   - Has helper functions for finding and interpreting parameters
 
-- buffer.c
+- fifo.c / fifo_protected.c
   - Linked list buffer with some high level functions like memory management
-  - Callback-style interface, locks are held when inside callback to provide memory fence
   - Functions for searching/iterating, delete individual elements
   - Nicknamed FIFO buffer
   - Can store any data
+  - Callback-style interface
+  - The `fifo_protected.c` framework also has locks which are held when inside callback to provide memory fence
 
 - rrr_msg_holder - Internal struct, not network safe
   - Usually holds an rrr_msg_msg entry. The framework does not couple with any particular message type, but
@@ -404,7 +403,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Framework for an one-slot buffer used by message broker
 
 - message_broker.c
-  - Started by main()
+  - Started by main() for each configuration fork
   - Uses FIFO buffer or slots to create output buffers for each module
   - Each thread registers itself and a handle (ID-number) is created which is safe to use even if the
     buffer it points to has been destroyed
@@ -452,13 +451,6 @@ The different frameworks are used both by RRR main() and instances framwork, and
 - instances.c (see previous chapter)
   - Works as a controller, couples with multiple frameworks
 
-- rrr_socket.c
-  - Global per-fork state
-  - Keeps track of all open sockets and shuts down any left open on program exit
-  - The fork framework use this state to shut down sockets from the parent process after forking
-  - Some sister files provide different kind of helper functions to wrap socket-related complexity, these
-    are coupled with frameworks like the message framework.
-
 - ip.c
   - Provide helper functions for IP communication
   - Has graylisting for TCP hosts which does not reply
@@ -471,7 +463,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Any overshoot bytes are stored and re-used in the next call
   - Separates different datagram connections with the read session collection sister framework
 
-- net_transport.c
+- net_transport/net_transport.c
   - Wrapper framework for transparent plaintext TCP/IP and TLS TCP/IP connection management
   - Used for listening servers or connecting clients
   - Multiple servers/client of the same application can use the same net transport instance (which is either TLS or plain)
@@ -479,17 +471,27 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - No stream management, application must handle this
   - Automatic writing
 
-- rrr_socket_client.c
+- socket/rrr_socket_client.c
   - Protocol independent wrapper framework for connection management
   - File descriptors are created outside the framework and then "pushed" into a collection
   - Used for listening servers, connecting clients and datagram reading
   - Automatic reading streams of RRR-messages, array tree data and raw data
   - Automatic writing
 
-- string_builder.c / nullsafe_str.c
+- socket/rrr_socket.c
+  - Global per-fork state
+  - Keeps track of all open sockets and shuts down any left open on program exit
+  - The fork framework use this state to shut down sockets from the parent process after forking
+  - Some sister files provide different kind of helper functions to wrap socket-related complexity, these
+    are coupled with frameworks like the message framework.
+
+- helpers/string_builder.c / helpers/nullsafe_str.c
   - Helpers to reduce the amount of "manual" handling of strings needed in C
   - Have append and prepend and search functions
   - string_builder uses zero-terminated strings while nullsafe_str stores length separately
+
+- msgdb_helper.c
+  - Helper functions for modules which use the message DB framework
 
 Some other high level frameworks used by individual modules:
 

@@ -522,6 +522,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 			0, // No ratelimit max bytes
 			1 * 1024 * 1024 * 1024, // 1 GB
 			__rrr_http_client_send_websocket_frame_final_callback,
+			NULL,
 			&callback_data
 	)) != 0) {
 		goto out;

@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -29,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
+#include "../lib/msgdb_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
@@ -36,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/helpers/string_builder.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
@@ -57,12 +60,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
 #define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX             5
 #define RRR_HTTPCLIENT_DEFAULT_CONCURRENT_CONNECTIONS    10
+#define RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB           10
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX               500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
 #define RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT            100000
-#define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
-#define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
+#define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_INTERVAL_S     30
+#define RRR_HTTPCLIENT_MSGDB_POLL_MAX                    50000
 #define RRR_HTTPCLIENT_INPUT_QUEUE_MAX                   500
 
 struct httpclient_transaction_data {
@@ -82,7 +86,11 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
 
-	struct rrr_msgdb_client_conn msgdb_conn;
+	struct rrr_msgdb_client_conn msgdb_conn_store;
+	struct rrr_msgdb_client_conn msgdb_conn_iterate;
+
+	rrr_setting_uint response_max_mb;
+	rrr_biglength response_max_size;
 
 	int do_no_data;
 	int do_rrr_msg_to_array;
@@ -105,6 +113,12 @@ struct httpclient_data {
 
 	char *method_tag;
 	int do_method_tag_force;
+
+	char *content_type_tag;
+	int do_content_type_tag_force;
+
+	char *content_type_boundary_tag;
+	int do_content_type_boundary_tag_force;
 
 	char *format_tag;
 	int do_format_tag_force;
@@ -138,6 +152,8 @@ struct httpclient_data {
 
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
+
+	rrr_setting_uint silent_put_error_limit_us;
 
 	struct rrr_net_transport_config net_transport_config;
 
@@ -302,6 +318,7 @@ static int httpclient_final_callback_receive_404 (
 			NULL,
 			0,
 			0,
+			NULL,
 			httpclient_create_message_from_404_callback,
 			&callback_data_broker,
 			INSTANCE_D_CANCEL_CHECK_ARGS(httpclient_data->thread_data)
@@ -490,6 +507,7 @@ static int httpclient_final_callback_receive_data (
 			NULL,
 			0,
 			0,
+			NULL,
 			httpclient_create_message_from_response_data_callback,
 			&callback_data_broker,
 			INSTANCE_D_CANCEL_CHECK_ARGS(httpclient_data->thread_data)
@@ -572,6 +590,7 @@ static int httpclient_create_message_from_json_array_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			httpclient_create_message_from_json_callback,
 			&callback_data_broker,
 			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->httpclient_data->thread_data)
@@ -643,40 +662,50 @@ static int httpclient_final_callback_receive_json (
 
 #endif /* RRR_WITH_JSONC */
 
-static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
+static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
+
 	int ret = 0;
 
 	struct rrr_msg_holder *entry = NULL;
 	char *topic_tmp = NULL;
-	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = path->definition->to_str(&topic_tmp, path)) != 0) {
+	if (positive_ack) {
+		goto out;
+	}
+	if (negative_ack) {
+		RRR_MSG_0("Warning: Failed to poll from msgdb in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp) || msg_tmp == NULL) {
-		// Don't return failure on this error
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in httpclient instance %s\n",
+			__func__, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
 		goto out;
 	}
 
-	RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
-			INSTANCE_D_NAME(data->thread_data),
-			msg_tmp->timestamp,
-			topic_tmp
-	);
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_msg_msg_topic_get(&topic_tmp, *msg);
+		RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(*msg)->timestamp,
+				topic_tmp != NULL ? topic_tmp : ""
+		);
+	}
 
 	if ((ret = rrr_msg_holder_new (
 			&entry,
-			MSG_TOTAL_SIZE(msg_tmp),
+			MSG_TOTAL_SIZE(*msg),
 			NULL,
 			0,
 			0,
-			msg_tmp
+			*msg
 	)) != 0) {
 		goto out;
 	}
 
-	msg_tmp = NULL;
+	*msg = NULL;
 
 	entry->send_time = rrr_time_get_64();
 
@@ -689,62 +718,32 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 		RRR_LL_APPEND(&data->from_msgdb_queue, entry);
 	}
 
+	httpclient_check_queues_and_activate_event_as_needed(data);
+
+	if ( RRR_LL_COUNT(&data->low_pri_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX ||
+	     RRR_LL_COUNT(&data->from_msgdb_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX
+	) {
+		RRR_DBG_1("msgdb poll limit of %i reached in httpclient instance %s, aborting polling for now.\n",
+			RRR_HTTPCLIENT_MSGDB_POLL_MAX, INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_READ_EOF;
+		goto out;
+	}
+
 	out:
 	if (entry != NULL) {
 		rrr_msg_holder_decref(entry);
 	}
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
-}
 
-static int __httpclient_msgdb_wait_callback (void *callback_arg) {
-	struct httpclient_data *data = callback_arg;
-	sched_yield();
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
-static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_data *data = callback_arg;
-
-	int ret = 0;
-
-	struct rrr_array paths = {0};
-
-	if ((ret = rrr_msgdb_client_cmd_idx_with_wait_callback (&paths, conn, __httpclient_msgdb_wait_callback, data)) != 0) {
-		goto out;
-	}
-
-	int max = RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX;
-
-	const uint64_t loop_begin_time = rrr_time_get_64();
-	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
-		// Max loop time 1 second
-		if (rrr_time_get_64() - loop_begin_time > 1 * 1000 * 1000) {
-			RRR_LL_ITERATE_BREAK();
-		}
-
-		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-		if ((ret = httpclient_msgdb_poll_callback_get_msg (data, node)) != 0) {
-			RRR_LL_ITERATE_BREAK();
-		}
-		if (--max == 0) {
-			RRR_LL_ITERATE_BREAK();
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	rrr_array_clear(&paths);
 	return ret;
 }
 
 static void httpclient_msgdb_poll (struct httpclient_data *data) {
-	if (rrr_msgdb_client_conn_ensure_with_callback (
-			&data->msgdb_conn,
+	rrr_msgdb_client_close(&data->msgdb_conn_iterate);
+	if (rrr_msgdb_helper_iterate (
+			&data->msgdb_conn_iterate,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
+			data->thread_data,
 			httpclient_msgdb_poll_callback,
 			data
 	) != 0) {
@@ -752,77 +751,47 @@ static void httpclient_msgdb_poll (struct httpclient_data *data) {
 	}
 }
 
-struct httpclient_msgdb_delete_callback_data {
-	struct httpclient_data *data;
-	const struct rrr_msg_msg *msg;
-};
+static int httpclient_msgdb_delete_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
 
-static int httpclient_msgdb_delete_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_msgdb_delete_callback_data *callback_data = callback_arg;
+	(void)(msg);
 
-	int ret = 0;
-
-	char *topic_tmp = NULL;
-
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, callback_data->msg)) != 0) {
-		goto out;
+	if (negative_ack) {
+		RRR_MSG_0("Warning: Delete from msgdb failed in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
+	if (positive_ack) {
+		// OK
 	}
 
-	ret = rrr_msgdb_client_cmd_del(conn, topic_tmp);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
+	return 0;
 }
 
 static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
-	struct httpclient_msgdb_delete_callback_data callback_data = {
-		data,
-		msg
-	};
-
-	if (rrr_msgdb_client_conn_ensure_with_callback (
-			&data->msgdb_conn,
+	if (rrr_msgdb_helper_delete (
+			&data->msgdb_conn_store,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			httpclient_msgdb_delete_callback,
-			&callback_data
+			data->thread_data,
+			msg,
+			httpclient_msgdb_delete_delivery_callback,
+			data
 	) != 0) {
 		RRR_MSG_0("Warning: Failed to delete from message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
 }
 
-struct httpclient_msgdb_notify_send_callback_data {
-	struct httpclient_data *data;
-	struct rrr_msg_holder *entry_locked;
-};
+static int httpclient_msgdb_store_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct httpclient_data *data = arg;
 
-static int httpclient_msgdb_notify_send_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
-	struct httpclient_msgdb_notify_send_callback_data *callback_data = callback_arg;
+	(void)(msg);
+	(void)(positive_ack);
 
-	struct rrr_msg_msg *msg = callback_data->entry_locked->message;
-	const uint8_t type_orig = MSG_TYPE(msg);
-
-	int ret = 0;
-
-	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
-		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from send was %i\n",
-			ret);
-		goto out;
+	if (negative_ack) {
+		RRR_MSG_0("Store to msgdb failed in httpclient instance %s, not safe to continue.\n", INSTANCE_D_NAME(data->thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		return 1;
 	}
 
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from await ack was %i positive ack was %i\n",
-			ret, positive_ack);
-		goto out;
-	}
-
-	out:
-	MSG_SET_TYPE(msg, type_orig);
-	return ret;
+	return 0;
 }
 
 #define HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() \
@@ -836,17 +805,13 @@ static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr
 		return 0;
 	}
 
-	struct httpclient_msgdb_notify_send_callback_data callback_data = {
-		data,
-		entry_locked
-	};
-
-	return rrr_msgdb_client_conn_ensure_with_callback (	
-			&data->msgdb_conn,
+	return rrr_msgdb_helper_send_to_msgdb (
+			&data->msgdb_conn_store,
 			data->msgdb_socket,
-			INSTANCE_D_EVENTS(data->thread_data),
-			httpclient_msgdb_notify_send_callback,
-			&callback_data
+			data->thread_data,
+			(const struct rrr_msg_msg *) entry_locked->message,
+			httpclient_msgdb_store_delivery_callback,
+			data
 	);
 }
 
@@ -938,13 +903,29 @@ static int httpclient_final_callback (
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
-		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
-				transaction->response_part->response_code,
-				rrr_http_util_iana_response_phrase_from_status_code ((unsigned int) transaction->response_part->response_code),
-				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-				transaction->endpoint_str,
-				httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
-		);
+
+		int do_print_error = 1;
+
+		if (transaction->method == RRR_HTTP_METHOD_PUT && httpclient_data->silent_put_error_limit_us != 0) {
+			rrr_msg_holder_lock(transaction_data->entry);
+
+			if (rrr_time_get_64() < ((struct rrr_msg_msg *) transaction_data->entry->message)->timestamp + httpclient_data->silent_put_error_limit_us) {
+				RRR_DBG_4("Error response %i for PUT query temporarily ignored per configuration\n", transaction->response_part->response_code);
+				do_print_error = 0;
+			}
+
+			rrr_msg_holder_unlock(transaction_data->entry);
+		}
+
+		if (do_print_error) {
+			RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
+					transaction->response_part->response_code,
+					rrr_http_util_iana_response_phrase_from_status_code ((unsigned int) transaction->response_part->response_code),
+					RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+					transaction->endpoint_str,
+					httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
+			);
+		}
 
 		if (httpclient_data->do_receive_ignore_error_part_data) {
 			goto out;
@@ -1365,10 +1346,14 @@ static int httpclient_session_query_prepare_callback (
 	rrr_length endpoint_length = 0;
 	rrr_length body_length = 0;
 	rrr_length format_length = 0;
+	rrr_length content_type_length = 0;
+	rrr_length content_type_boundary_length = 0;
 
 	char *endpoint_to_free = NULL;
 	char *body_to_free = NULL;
 	char *format_to_free = NULL;
+	char *content_type_to_free = NULL;
+	char *content_type_boundary_to_free = NULL;
 
 	struct rrr_array array_to_send_tmp = {0};
 
@@ -1404,8 +1389,34 @@ static int httpclient_session_query_prepare_callback (
 		if ( (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) &&
 		     (body_to_free != NULL && body_length > 0)
 		) {
+			HTTPCLIENT_OVERRIDE_PREPARE(content_type);
+			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(content_type);
+
 			if ((ret = rrr_http_transaction_send_body_set_allocated(transaction, (void **) &body_to_free, body_length)) != 0) {
 				goto out;
+			}
+
+			if (content_type_to_free != NULL && content_type_length > 0) {
+				if ((ret = rrr_http_transaction_request_content_type_set (transaction, content_type_to_free)) != 0
+				) {
+					goto out;
+				}
+				if (strcasecmp(content_type_to_free, "multipart/form-data") == 0) {
+					if (data->content_type_boundary_tag == NULL) {
+						RRR_MSG_0("Warning: Configuration http_content_type_boundary_tag is not set in the configuration for httpclient instance %s while a request has a content type of multipart/form-data. The resulting request may be malformed\n", INSTANCE_D_NAME(data->thread_data));
+					}
+					else {
+						HTTPCLIENT_OVERRIDE_PREPARE(content_type_boundary);
+						HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(content_type_boundary);
+						if ((ret = rrr_http_transaction_request_content_type_directive_set (
+								transaction,
+								"boundary",
+								content_type_boundary_to_free
+						)) != 0) {
+							goto out;
+						}
+					}
+				}
 			}
 		}
 		else {
@@ -1524,6 +1535,8 @@ static int httpclient_session_query_prepare_callback (
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(body_to_free);
 		RRR_FREE_IF_NOT_NULL(format_to_free);
+		RRR_FREE_IF_NOT_NULL(content_type_to_free);
+		RRR_FREE_IF_NOT_NULL(content_type_boundary_to_free);
 		return ret;
 }
 
@@ -1817,6 +1830,14 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_response_max_mb", response_max_mb, RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB);
+	data->response_max_size = data->response_max_mb;
+	if (((ret = rrr_biglength_mul_err(&data->response_max_size, 1024 * 1024))) != 0) {
+		RRR_MSG_0("Overflow in parameter 'http_response_max_mb' of httpclient instance %s, value too large\n",
+				config->name);
+		goto out;
+	}
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
@@ -1840,13 +1861,15 @@ static int httpclient_parse_config (
 	data->message_ttl_us *= 1000 * 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	data->message_timeout_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_silent_put_error_limit_s", silent_put_error_limit_us, 0);
+	data->silent_put_error_limit_us *= 1000 * 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_accept", http_header_accept);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_INTERVAL_S);
 
 	data->msgdb_poll_interval_us *= 1000 * 1000;
 
@@ -1858,11 +1881,20 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
+	HTTPCLIENT_OVERRIDE_TAG_GET(content_type);
+	HTTPCLIENT_OVERRIDE_TAG_GET(content_type_boundary);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
 	HTTPCLIENT_OVERRIDE_TAG_GET(port);
 	HTTPCLIENT_OVERRIDE_TAG_GET(body);
+
+	if (data->content_type_boundary_tag != NULL && data->content_type_tag == NULL) {
+		RRR_MSG_0("Setting http_content_type_boundary_tag was set for instance %s while http_content_type_tag was not. This is an error.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
@@ -1919,6 +1951,8 @@ static int httpclient_parse_config (
 	}
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type_boundary);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(server);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
@@ -1947,6 +1981,7 @@ static void httpclient_queue_process (
 		return;
 	}
 
+	uint64_t loop_max_time = rrr_time_get_64() + 2 * 1000 * 1000; // + 2 seconds
 	int loop_max = 256;
 
 	// Check timeouts based on the time the loop starts to be fair
@@ -1957,6 +1992,12 @@ static void httpclient_queue_process (
 	int send_busy_count = 0;
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
+
+		if ( rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0 || 
+		     rrr_time_get_64() >= loop_max_time
+		) {
+			RRR_LL_ITERATE_BREAK();
+		}
 
 		if (loop_max-- == 0) {
 			RRR_LL_ITERATE_LAST();
@@ -2059,11 +2100,7 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return ret_tmp;
 }
 
-static void httpclient_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void httpclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct httpclient_data *data = thread_data->private_data;
 
@@ -2077,6 +2114,15 @@ static void httpclient_pause_check (
 
 static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
+
+	RRR_DBG_1("httpclient instance %s from msgdb queue %i from senders queue %i low pri queue %i\n",
+		INSTANCE_D_NAME(thread_data),
+		RRR_LL_COUNT(&data->from_msgdb_queue),
+		RRR_LL_COUNT(&data->from_senders_queue),
+		RRR_LL_COUNT(&data->low_pri_queue)
+	);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
@@ -2120,10 +2166,10 @@ static void httpclient_event_msgdb_poll (
 	// take some time before the msgdb is polled.
 	if ( rrr_http_client_active_transaction_count_get(data->http_client) == 0 &&
 	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
-	     RRR_LL_COUNT(&data->from_senders_queue) == 0
+	     RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
+	     RRR_LL_COUNT(&data->low_pri_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
-		httpclient_check_queues_and_activate_event_as_needed(data);
 	}
 	else {
 		do_short_timeout = 1;
@@ -2153,6 +2199,10 @@ static void httpclient_event_queue_process (
 	}
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
 }
 
 static void httpclient_data_cleanup(void *arg) {
@@ -2162,7 +2212,8 @@ static void httpclient_data_cleanup(void *arg) {
 	if (data->http_client) {
 		rrr_http_client_destroy(data->http_client);
 	}
-	rrr_msgdb_client_close(&data->msgdb_conn);
+	rrr_msgdb_client_close(&data->msgdb_conn_store);
+	rrr_msgdb_client_close(&data->msgdb_conn_iterate);
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
@@ -2171,6 +2222,8 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
+	RRR_FREE_IF_NOT_NULL(data->content_type_tag);
+	RRR_FREE_IF_NOT_NULL(data->content_type_boundary_tag);
 	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);
@@ -2285,6 +2338,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	rrr_http_client_set_response_max_size(data->http_client, data->response_max_size);
+
 	if (data->msgdb_socket != NULL) {
 		if (rrr_event_collection_push_periodic (
 				&data->event_msgdb_poll,
@@ -2315,6 +2370,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			httpclient_pause_check,
 			thread_data
 	);

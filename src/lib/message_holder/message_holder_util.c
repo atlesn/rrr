@@ -54,9 +54,9 @@ int rrr_msg_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	message = rrr_allocate(message_size);
-	if (message == NULL) {
+	if ((message = rrr_allocate(message_size)) == NULL) {
 		RRR_MSG_0("Could not allocate message in message_holder_new_with_message\n");
+		ret = 1;
 		goto out;
 	}
 
@@ -93,22 +93,43 @@ int rrr_msg_holder_util_clone_no_locking (
 	// Note : Do calculation correctly, not incorrect
 	rrr_biglength message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
 
-	int ret = rrr_msg_holder_util_new_with_empty_message (
-			result,
+	int ret = 0;
+
+	*result = NULL;
+
+	struct rrr_msg_holder *entry = NULL;
+
+	if ((ret = rrr_msg_holder_util_new_with_empty_message (
+			&entry,
 			message_data_length,
 			(struct sockaddr *) &source->addr,
 			source->addr_len,
 			source->protocol
-	);
-
-	if (ret == 0) {
-		rrr_msg_holder_lock(*result);
-		(*result)->buffer_time = source->buffer_time;
-		(*result)->send_time = source->send_time;
-		rrr_memcpy((*result)->message, source->message, source->data_length);
-		rrr_msg_holder_unlock(*result);
+	)) != 0) {
+		goto out;
 	}
 
+	rrr_msg_holder_lock(entry);
+
+	entry->buffer_time = source->buffer_time;
+	entry->send_time = source->send_time;
+	rrr_memcpy(entry->message, source->message, source->data_length);
+
+	ret = rrr_instance_friend_collection_append_from (&entry->nexthops, &source->nexthops);
+
+	rrr_msg_holder_unlock(entry);
+
+	if (ret != 0) {
+		goto out;
+	}
+
+	*result = entry;
+	entry = NULL;
+
+	out:
+	if (entry != NULL) {
+		rrr_msg_holder_decref(entry);
+	}
 	return ret;
 }
 

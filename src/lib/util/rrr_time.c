@@ -76,7 +76,11 @@ void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add) 
 
 void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec) {
 	struct timeval result = {0};
-	result.tv_usec = (long) (usec % 1000000);
-	result.tv_sec = (long) (usec - (unsigned long) result.tv_usec) / 1000000;
+
+	const uint64_t usec_part = usec % 1000000;
+
+	result.tv_usec = (useconds_t) usec_part;
+	result.tv_sec = (time_t) ((usec - usec_part) / 1000000);
+
 	*__tv = result;
 }

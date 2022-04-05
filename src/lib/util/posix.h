@@ -27,11 +27,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include "../log.h"
 #include "../rrr_types.h"
+#include "../read_constants.h"
 
 #define RRR_POSIX_MUTEX_IS_RECURSIVE    (1<<0)
 #define RRR_POSIX_MUTEX_IS_PSHARED      (1<<1)
 #define RRR_POSIX_MUTEX_IS_ERRORCHECK   (1<<2)
+#define RRR_POSIX_MUTEX_IS_ROBUST       (1<<3)
 
+#define RRR_POSIX_MUTEX_ROBUST_OK       RRR_READ_OK
+#define RRR_POSIX_MUTEX_ROBUST_BUSY     RRR_READ_BUSY
+#define RRR_POSIX_MUTEX_ROBUST_ERROR    RRR_READ_HARD_ERROR
+
+void rrr_posix_msleep_signal_safe (int mseconds);
 int rrr_posix_usleep(size_t useconds);
 void *rrr_posix_mmap (size_t size, int is_shared);
 void *rrr_posix_mmap_with_fd (int fd, size_t size);
@@ -40,6 +47,9 @@ int rrr_posix_strncasecmp (const char *a, const char *b, size_t n);
 int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags);
 int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags);
 int rrr_posix_cond_init (pthread_cond_t *mutex, int flags);
+int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex);
+int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex);
+void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex);
 
 #if RRR_BIGLENGTH_MAX > SIZE_MAX
 

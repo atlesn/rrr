@@ -1,15 +1,15 @@
 Name:           rrr
-Version:        1.19
-Release:        1%{?dist}
+Version:        1.23
+Release:        2%{?dist}
 Summary:	RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 Group:		rrr
 
 License:        GPLv3+
 URL:            https://www.github.com/atlesn/rrr
-Source0:        rrr-1.19.tar.gz
+Source0:        rrr-1.21.tar.gz
 
-BuildRequires:  automake, autoconf, (mariadb-devel or community-mysql-devel), openssl-devel, perl-devel >= 5.26, systemd-devel, libusb-devel, pkgconf-pkg-config, python3-devel
-Requires:       libusb, systemd, openssl-libs, (mariadb-common or mysql-common), python3 >= 3.6, perl >= 5.26, librrr1
+BuildRequires:  automake, autoconf, (mariadb-devel or community-mysql-devel), openssl-devel, perl-devel >= 5.26, systemd-devel, libusb-devel, pkgconf-pkg-config, python3-devel, jemalloc-devel
+Requires:       libusb, systemd, openssl-libs, (mariadb-common or mysql-common), python3 >= 3.6, perl >= 5.26, librrr1, jemalloc
 
 %description
 RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
@@ -61,6 +61,7 @@ chown -R rrr:rrr /var/lib/rrr || true
 /usr/lib/rrr/mangler.*
 /usr/lib/rrr/msgdb.*
 /usr/lib/rrr/incrementer.*
+/usr/lib/rrr/cacher.*
 /usr/lib/tmpfiles.d/rrr.conf
 /var/lib/rrr/.placeholder
 

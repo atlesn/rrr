@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@ struct rrr_global_config rrr_config_global = {
 		0,
 		0,
 		0,
+		0,
 		"main",
 		RRR_RUN_DIR
 };
@@ -58,6 +59,7 @@ void rrr_config_set_debuglevel_orig(void) {
 void rrr_config_init (
 		unsigned int debuglevel,
 		unsigned int debuglevel_on_exit,
+		unsigned int start_interval,
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
 		unsigned int rfc5424_loglevel_output,
@@ -68,6 +70,7 @@ void rrr_config_init (
 	rrr_config_global.debuglevel = debuglevel;
 	rrr_config_global.debuglevel_orig = debuglevel;
 	rrr_config_global.debuglevel_on_exit = debuglevel_on_exit;
+	rrr_config_global.start_interval = start_interval;
 	rrr_config_global.no_watchdog_timers = no_watcdog_timers;
 	rrr_config_global.no_thread_restart = no_thread_restart;
 	rrr_config_global.rfc5424_loglevel_output = rfc5424_loglevel_output;
