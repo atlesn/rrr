@@ -33,10 +33,13 @@ struct rrr_event_queue;
 struct rrr_event_function {
 	int (*function)(RRR_EVENT_FUNCTION_ARGS);
 	void *function_arg;
+	void (*callback_pause)(RRR_EVENT_FUNCTION_PAUSE_ARGS);
+	void *callback_pause_arg;
 	struct rrr_socket_eventfd eventfd;
 	struct event *signal_event;
 	struct rrr_event_queue *queue;
 	unsigned short index;
+	unsigned short is_paused;
 };
 
 struct rrr_event_queue {
@@ -47,10 +50,6 @@ struct rrr_event_queue {
 
 	struct event *periodic_event;
 	struct event *unpause_event;
-
-	int is_paused;
-	void (*callback_pause)(int *do_pause, int is_paused, void *callback_arg);
-	void *callback_pause_arg;
 
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
 	void *callback_arg;

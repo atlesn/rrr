@@ -30,14 +30,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "allocator.h"
 
 int rrr_instance_friend_collection_check_empty (
-		struct rrr_instance_friend_collection *collection
+		const struct rrr_instance_friend_collection *collection
 ) {
 	return RRR_LL_IS_EMPTY(collection);
 }
 
 int rrr_instance_friend_collection_check_exists (
-		struct rrr_instance_friend_collection *collection,
-		struct rrr_instance *sender
+		const struct rrr_instance_friend_collection *collection,
+		const struct rrr_instance *sender
 ) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_friend);
 		if (node->instance == sender) {
@@ -62,7 +62,7 @@ int rrr_instance_friend_collection_append (
 
 	struct rrr_instance_friend *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in senders_add_sender\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -76,6 +76,22 @@ int rrr_instance_friend_collection_append (
 	return ret;
 }
 
+int rrr_instance_friend_collection_append_from (
+		struct rrr_instance_friend_collection *target,
+		const struct rrr_instance_friend_collection *source
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(source, struct rrr_instance_friend);
+		if ((ret = rrr_instance_friend_collection_append (target, node->instance)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 void rrr_instance_friend_collection_clear (
 		struct rrr_instance_friend_collection *collection
 ) {
@@ -83,7 +99,7 @@ void rrr_instance_friend_collection_clear (
 }
 
 int rrr_instance_friend_collection_count (
-		struct rrr_instance_friend_collection *collection
+		const struct rrr_instance_friend_collection *collection
 ) {
 	return RRR_LL_COUNT(collection);
 }

@@ -70,12 +70,14 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		void *custom_tick_callback_arg
 );
 void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,

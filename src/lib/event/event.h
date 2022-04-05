@@ -36,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_FUNCTION_PERIODIC_ARGS \
 	void *arg
 
+#define RRR_EVENT_FUNCTION_PAUSE_ARGS \
+	unsigned short *do_pause, unsigned short is_paused, void *callback_arg
+
 #define RRR_EVENT_QUEUE_FD_MAX \
 	(0x100 * 2)
 
@@ -95,7 +98,8 @@ int rrr_event_function_priority_set (
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
+		uint8_t code,
+		void (*callback)(RRR_EVENT_FUNCTION_PAUSE_ARGS),
 		void *callback_arg
 );
 int rrr_event_dispatch_once (

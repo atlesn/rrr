@@ -131,6 +131,16 @@ static int __rrr_http_application_http1_header_field_make (
 	ret |= rrr_string_builder_append(builder, ": ");
 //	ret |= rrr_string_builder_append(builder, value_tmp);
 	ret |= rrr_string_builder_append(builder, value);
+
+	RRR_LL_ITERATE_BEGIN(&field->fields, const struct rrr_http_field);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		ret |= rrr_string_builder_append(builder, "; ");
+		ret |= rrr_string_builder_append(builder, name);
+		ret |= rrr_string_builder_append(builder, "=");
+		ret |= rrr_string_builder_append(builder, value);
+	RRR_LL_ITERATE_END();
+
 	ret |= rrr_string_builder_append(builder, "\r\n");
 
 	out:
@@ -1208,6 +1218,20 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	return ret;
 }
 
+static void __rrr_http_application_http1_receive_get_target_size_error (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_http_application_http1_receive_data *receive_data = arg;
+
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(receive_data);
+
+	// Any error message goes here
+}
+
 struct rrr_http_application_http1_frame_callback_data {
 	struct rrr_http_application_http1 *http1;
 	struct rrr_net_transport_handle *handle;
@@ -1326,9 +1350,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	if ((ret = (rrr_websocket_transport_ctx_read_frames (
 			handle,
 			&http1->ws_state,
-			100,
 			4096,
-			65535,
+			1 * 1024 * 1024, // 1 MB
 			read_max_size,
 			0, // No ratelimit interval
 			0, // No ratelimit max bytes
@@ -1629,13 +1652,14 @@ static int __rrr_http_application_http1_tick (
 
 			ret = rrr_net_transport_ctx_read_message (
 						handle,
-						1,
 						4096,
-						65535,
+						1 * 1024 * 1024, // 1 MB
 						read_max_size,
 						0, // No ratelimit interval
 						0, // No ratelimit max bytes
 						__rrr_http_application_http1_receive_get_target_size,
+						&callback_data,
+						__rrr_http_application_http1_receive_get_target_size_error,
 						&callback_data,
 						unique_id_generator_callback == NULL // No generator indicates client
 							? __rrr_http_application_http1_response_receive_callback

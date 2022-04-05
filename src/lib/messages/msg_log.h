@@ -40,6 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_log {
 	RRR_MSG_HEAD;
+	char file[128];
+	uint32_t line;
 	uint8_t is_stdout;
 	uint8_t loglevel_translated;
 	uint8_t loglevel_orig;
@@ -52,6 +54,8 @@ int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg);
 void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size);
 int rrr_msg_msg_log_new (
 		struct rrr_msg_log **target,
+		const char *file,
+		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
 		const char *prefix,

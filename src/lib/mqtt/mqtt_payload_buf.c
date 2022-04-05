@@ -28,12 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_payload_buf.h"
 #include "../util/macro_utils.h"
+#include "../helpers/nullsafe_str.h"
 
 int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));
 	session->buf = rrr_allocate(RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
 	if (session->buf == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(session->buf, '\0', RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
@@ -63,7 +64,7 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session) {
 
 int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, rrr_length size) {
 	if (size <= 0) {
-		RRR_BUG("size was <= 0 in rrr_mqtt_payload_buf_ensure\n");
+		RRR_BUG("size was <= 0 in %s\n", __func__);
 	}
 
 	if (session->wpos + size <= session->buf + session->buf_size) {
@@ -76,7 +77,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, r
 	rrr_length size_diff = rrr_length_sub_bug_const(new_size, session->buf_size);
 
 	if (size_diff == 0) {
-		RRR_BUG("size_diff was 0 in rrr_mqtt_payload_buf_ensure\n");
+		RRR_BUG("size_diff was 0 in %s\n", __func__);
 	}
 
 	if (size_diff < RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE) {
@@ -86,7 +87,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, r
 
 	char *tmp = rrr_reallocate(session->buf, session->buf_size, new_size);
 	if (tmp == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(tmp + session->buf_size, '\0', size_diff);
@@ -107,6 +108,40 @@ char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *
 	char *ret = session->buf;
 	session->buf = NULL;
 	return ret;
+}
+
+static int __rrr_mqtt_payload_buf_put_nullsafe_callback (
+		const void *data,
+		rrr_nullsafe_len size,
+		void *arg
+) {
+	struct rrr_mqtt_payload_buf_session *session = arg;
+
+	rrr_length length = 0;
+
+	if (rrr_length_from_biglength_err(&length, size) != 0) {
+		return RRR_MQTT_PAYLOAD_BUF_ERR;
+	}
+
+	if (rrr_mqtt_payload_buf_ensure (session, length) != RRR_MQTT_PAYLOAD_BUF_OK) {
+		return RRR_MQTT_PAYLOAD_BUF_ERR;
+	}
+
+	memcpy(session->wpos, data, size);
+	session->wpos += size;
+
+	if (session->wpos > session->wpos_max) {
+		session->wpos_max = session->wpos;
+	}
+
+	return 0;
+}
+
+int rrr_mqtt_payload_buf_put_nullsafe (
+		struct rrr_mqtt_payload_buf_session *session,
+		const struct rrr_nullsafe_str *str
+) {
+	return rrr_nullsafe_str_with_raw_do_const (str, __rrr_mqtt_payload_buf_put_nullsafe_callback, session);
 }
 
 int rrr_mqtt_payload_buf_put_raw (
@@ -149,7 +184,7 @@ int rrr_mqtt_payload_buf_put_variable_int (
 		uint32_t value
 ) {
 	if (value > 0xfffffff) { // <-- Seven f's
-		RRR_BUG("Value too large in rrr_mqtt_payload_buf_put_variable_int\n");
+		RRR_BUG("Value too large in %s\n", __func__);
 	}
 
 	uint8_t chunks[4];

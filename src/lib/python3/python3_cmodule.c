@@ -241,7 +241,7 @@ int rrr_py_cmodule_runtime_init (
 	// LOAD PYTHON MAIN DICTIONARY
 	PyObject *py_main = PyImport_AddModule("__main__"); // Borrowed reference
 	if (py_main == NULL) {
-		RRR_MSG_0("Could not get python3 __main__ in __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get python3 __main__ in %s\n", __func__);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
@@ -249,7 +249,7 @@ int rrr_py_cmodule_runtime_init (
 
 	PyObject *py_main_dict = PyModule_GetDict(py_main); // Borrowed reference
 	if (py_main_dict == NULL) {
-		RRR_MSG_0("Could not get python3 main dictionary in __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get python3 main dictionary in %s\n", __func__);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
@@ -264,14 +264,14 @@ int rrr_py_cmodule_runtime_init (
 	}
 
 	if (__rrr_py_get_rrr_objects(py_main_dict, (const char **) module_path_array, module_path_length) != 0) {
-		RRR_MSG_0("Could not get rrr objects  __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get rrr objects  %s\n", __func__);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
 	}
 
 	if ((runtime->socket = rrr_python3_socket_new (worker)) == NULL) {
-		RRR_MSG_0("Could not create socket PyObject in  __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not create socket PyObject in  %s\n", __func__);
 		goto out_cleanup_istate;
 	}
 
@@ -302,16 +302,16 @@ int rrr_py_cmodule_call_application_raw (
 	PyObject *result = PyObject_CallFunctionObjArgs(function, arg1, arg2, NULL);
 
 	if (result == NULL) {
-		RRR_MSG_0("Error while calling python3 function in __rrr_py_persistent_process_call_application_raw pid %i\n",
-				getpid());
+		RRR_MSG_0("Error while calling python3 function in %s pid %i\n",
+				__func__, getpid());
 		PyErr_Print();
 		ret = 1;
 		goto out;
 
 	}
 	if (!PyObject_IsTrue(result)) {
-		RRR_MSG_0("Non-true returned from python3 function in __rrr_py_persistent_process_call_application_raw pid %i\n",
-				getpid());
+		RRR_MSG_0("Non-true returned from python3 function in %s pid %i\n",
+				__func__, getpid());
 		ret = 1;
 		goto out;
 	}

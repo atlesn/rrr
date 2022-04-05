@@ -146,6 +146,10 @@ int rrr_http_client_new (
 void rrr_http_client_destroy (
 		struct rrr_http_client *client
 );
+void rrr_http_client_set_response_max_size (
+		struct rrr_http_client *client,
+		rrr_biglength set
+);
 uint64_t rrr_http_client_active_transaction_count_get (
 		const struct rrr_http_client *http_client
 );

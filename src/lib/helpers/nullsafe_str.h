@@ -157,6 +157,9 @@ int rrr_nullsafe_str_dup (
 		struct rrr_nullsafe_str **target,
 		const struct rrr_nullsafe_str *source
 );
+const void *rrr_nullsafe_str_ptr_const (
+		const struct rrr_nullsafe_str *nullsafe
+);
 rrr_nullsafe_len rrr_nullsafe_str_len (
 		const struct rrr_nullsafe_str *nullsafe
 );

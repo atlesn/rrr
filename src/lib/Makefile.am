@@ -82,7 +82,7 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
-                net_transport/net_transport_ctx.c
+                net_transport/net_transport_ctx.c net_transport/net_transport_common.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
@@ -113,15 +113,17 @@ net_transport_libressl = net_transport/net_transport_libressl.c net_transport/ne
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
                     read.c mmap_channel.c rrr_shm.c \
-                    instances.c instance_friends.c poll_helper.c modules.c \
+                    instances.c instance_friends.c modules.c \
+		    poll_helper.c msgdb_helper.c \
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
+		    rrr_mmap.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
@@ -129,10 +131,6 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
 		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
-
-libadd_rrr_allocator = librrr_allocator.la
-librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
-librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -190,8 +188,7 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}               \
-    ${libadd_rrr_allocator}
+    ${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads

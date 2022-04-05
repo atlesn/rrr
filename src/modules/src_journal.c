@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -176,19 +176,12 @@ static int journal_preload (struct rrr_thread *thread) {
 }
 
 // Note : Context here is ANY thread
-static void journal_log_hook (
-		uint8_t *amount_written,
-		uint8_t loglevel_translated,
-		uint8_t loglevel_orig,
-		const char *prefix,
-		const char *message,
-		void *private_arg
-) {
+static void journal_log_hook (RRR_LOG_HOOK_ARGS) {
 	struct journal_data *data = private_arg;
 
 	(void)(loglevel_orig);
 
-	*amount_written = 0;
+	*write_amount = 0;
 
 	// Make the calling thread pause a bit to reduce the amount of messages
 	// coming in. This is done if we are unable to handle request due to
@@ -234,6 +227,8 @@ static void journal_log_hook (
 	}
 
 	int ret = 0;
+	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_file", file);
+	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_line", line < 0 ? 0 : (uint64_t) line);
 	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_prefix", prefix);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_message", message);
@@ -251,7 +246,7 @@ static void journal_log_hook (
 
 	data->is_in_hook = 0;
 
-	*amount_written = 1;
+	*write_amount = 1;
 
 	out_unlock:
 		if (entry != NULL) {
@@ -446,6 +441,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				NULL,
 				0,
 				0,
+				NULL,
 				journal_write_message_callback,
 				&callback_data,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)

@@ -191,8 +191,8 @@ struct rrr_readdir_entry_collection;
 struct rrr_readdir_entry {
 	RRR_LL_NODE(struct rrr_readdir_entry);
 	struct rrr_readdir_entry_collection *collection;
-	char orig_path[PATH_MAX + 1];
-	char resolved_path[PATH_MAX + 1];
+	char *orig_path;
+	char *resolved_path;
 	unsigned char type;
 };
 
@@ -210,6 +210,8 @@ static void __rrr_readdir_entry_destroy (
 	if (entry->collection != NULL) {
 		__rrr_readdir_entry_collection_destroy(entry->collection);
 	}
+	RRR_FREE_IF_NOT_NULL(entry->orig_path);
+	RRR_FREE_IF_NOT_NULL(entry->resolved_path);
 	rrr_free(entry);
 }
 
@@ -280,22 +282,33 @@ static int __rrr_readdir_foreach_recursive_descend_callback (
 
 	struct rrr_readdir_entry *new_entry = NULL;
 
-	if ((new_entry = rrr_allocate(sizeof(*new_entry))) == NULL) {
+	if ((new_entry = rrr_allocate_zero(sizeof(*new_entry))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_readdir_foreach_recursive_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	memset(new_entry, '\0', sizeof(*new_entry));
+	if ((new_entry->orig_path = rrr_strdup(orig_path)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for path in %s\n", __func__);
+		goto out_free;
+	}
 
-	strcpy(new_entry->orig_path, orig_path);
-	strcpy(new_entry->resolved_path, resolved_path);
+	if ((new_entry->resolved_path = rrr_strdup(resolved_path)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for resolved path in %s\n", __func__);
+		goto out_free;
+	}
+
 	new_entry->type = type;
 
 	RRR_LL_APPEND(target, new_entry);
 
+	goto out;
+	out_free:
+		RRR_FREE_IF_NOT_NULL(new_entry->orig_path);
+		RRR_FREE_IF_NOT_NULL(new_entry->resolved_path);
+		rrr_free(new_entry);
 	out:
-	return ret;
+		return ret;
 }
 
 int __rrr_readdir_foreach_recursive_descend (

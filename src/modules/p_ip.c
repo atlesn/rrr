@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -325,15 +325,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 	}
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->default_topic,
-			&data->default_topic_length,
-			config,
-			"ip_default_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_default_topic", default_topic, default_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_graylist_timeout_ms", graylist_timeout_ms, IP_DEFAULT_GRAYLIST_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
@@ -633,6 +625,7 @@ static int ip_array_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			ip_array_callback_broker,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -644,6 +637,7 @@ static int ip_array_callback (
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&callback_data.new_entries,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -1464,9 +1458,10 @@ static int ip_send_loop (
 					node->endian_indicator = 0;
 				}
 
-				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 						INSTANCE_D_BROKER_ARGS(ip_data->thread_data),
 						node,
+						NULL,
 						INSTANCE_D_CANCEL_CHECK_ARGS(ip_data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
@@ -1878,6 +1873,22 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return ret;
 }
 
+static void ip_array_parse_error_callback(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+	struct ip_data *data = arg;
+
+	(void)(read_session);
+	(void)(private_data);
+
+	char buf[256];
+	*buf = '\0';
+	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+	RRR_MSG_0("ip instance %s failed to parse array data from %s%s\n",
+			INSTANCE_D_NAME(data->thread_data),
+			buf,
+			(is_hard_err ? " (hard_error)": "")
+	);
+}
+
 static void ip_event_setup (
 		struct ip_data *data,
 		struct rrr_socket_client_collection *collection,
@@ -1895,6 +1906,8 @@ static void ip_event_setup (
 			4096,
 			0, /* No message max size */
 			ip_array_callback,
+			data,
+			ip_array_parse_error_callback,
 			data
 		);
 	}

@@ -341,6 +341,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"accept",                 RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-language",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
+	{"access-control-request-headers",
+	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"cache-control",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"connection",             RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
         {"upgrade",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -410,6 +412,54 @@ void rrr_http_header_field_collection_clear (
 		struct rrr_http_header_field_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_http_header_field, rrr_http_header_field_destroy(node));
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_raw (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_value_case (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *value_anycase
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
+				return node;
+			}
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
 }
 
 int rrr_http_header_field_new_raw (
@@ -489,6 +539,34 @@ int rrr_http_header_field_new_with_value (
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, rrr_length_from_size_t_bug_const (strlen(value)))) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
+		goto out_destroy;
+	}
+
+	*result = field;
+
+	goto out;
+	out_destroy:
+		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
+}
+
+int rrr_http_header_field_new_with_value_nullsafe (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new_raw(&field, name, rrr_length_from_size_t_bug_const (strlen(name)))) != 0) {
+		RRR_MSG_0("Could not create header field in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace(&field->value, value)) != 0) {
+		RRR_MSG_0("Could not allocate memory for value in %s\n", __func__);
 		goto out_destroy;
 	}
 
