@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
+#define RRR_READ_BUF_STACK_MAX_SIZE 8192
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 
 #define RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD  2 * 1024 * 1024
@@ -215,9 +216,26 @@ static int __rrr_read_message_using_callbacks (
 	int ret = RRR_READ_OK;
 	int ret_from_read = RRR_READ_OK;
 
+	char *buf_dynamic = NULL;
+	char buf_static[RRR_READ_BUF_STACK_MAX_SIZE];
+
 	rrr_biglength bytes = 0;
-	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
+
+	char *buf;
+
+	if (read_step_max_size > RRR_READ_BUF_STACK_MAX_SIZE) {
+		if ((buf_dynamic = rrr_allocate(read_step_max_size)) == NULL) {
+			RRR_MSG_0("Failed to allocate %" PRIrrrbl " bytes of read buffer in %s\n",
+					read_step_max_size, __func__);
+			ret = RRR_READ_HARD_ERROR;
+			goto out;
+		}
+		buf = buf_dynamic;
+	}
+	else {
+		buf = buf_static;
+	}
 
 	if ((read_session = function_get_read_session_with_overshoot(functions_callback_arg)) == NULL) {
 		if (function_read == NULL) {
@@ -504,6 +522,7 @@ static int __rrr_read_message_using_callbacks (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(buf_dynamic);
 	if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE && read_session != NULL) {
 		function_read_session_remove(read_session, functions_callback_arg);
 	}
