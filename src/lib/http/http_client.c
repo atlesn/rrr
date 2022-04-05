@@ -920,6 +920,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_tls,
 				&net_transport_config_tmp,
+				"HTTP client",
 				tls_flags,
 				http_client->events,
 				alpn_protos,
@@ -958,6 +959,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_plain,
 				&net_transport_config_tmp,
+				"HTTP client",
 				0,
 				http_client->events,
 				NULL,

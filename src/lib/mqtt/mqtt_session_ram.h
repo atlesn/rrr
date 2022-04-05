@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection;
 
-int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **sessions, void *arg);
+int rrr_mqtt_session_collection_ram_new_broker (struct rrr_mqtt_session_collection **sessions, void *arg);
+int rrr_mqtt_session_collection_ram_new_client (struct rrr_mqtt_session_collection **sessions, void *arg);
 
 #endif /* RRR_MQTT_SESSION_RAM_H */

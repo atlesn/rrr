@@ -87,16 +87,11 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 #define JOURNAL_UNLOCK()                                       \
     pthread_cleanup_pop(1)
 
-static void __rrr_stats_engine_log_listener (
-		uint8_t *write_amount,
-		uint8_t loglevel_translated,
-		uint8_t loglevel_orig,
-		const char *prefix,
-		const char *message,
-		void *private_arg
-) {
+static void __rrr_stats_engine_log_listener (RRR_LOG_HOOK_ARGS) {
 	struct rrr_stats_engine *stats = private_arg;
 
+	(void)(file);
+	(void)(line);
 	(void)(loglevel_orig);
 
 	*write_amount = 0;

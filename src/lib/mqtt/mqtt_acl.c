@@ -60,7 +60,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 	struct rrr_mqtt_acl_user_entry *user_entry = rrr_allocate(sizeof(*user_entry));
 
 	if (user_entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_acl_user_entry_new_and_append\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -68,7 +68,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 	memset(user_entry, '\0', sizeof(*user_entry));
 
 	if ((user_entry->username = rrr_strdup(username)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for username in __rrr_mqtt_acl_user_entry_new_and_append\n");
+		RRR_MSG_0("Could not allocate memory for username in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -107,23 +107,22 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_acl_entry *entry = rrr_allocate(sizeof(*entry));
-	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate entry in rrr_mqtt_acl_entry_collection_push_new\n");
+	struct rrr_mqtt_acl_entry *entry = NULL;
+
+	if ((entry = rrr_allocate_zero(sizeof(*entry))) == NULL) {
+		RRR_MSG_0("Could not allocate entry in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	memset(entry, '\0', sizeof(*entry));
-
 	if (rrr_mqtt_topic_tokens_clone(&entry->first_token, first_token) != 0) {
-		RRR_MSG_0("Could not clone topic tokens in rrr_mqtt_acl_entry_collection_push_new\n");
+		RRR_MSG_0("Could not clone topic tokens in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
 
 	if ((entry->topic_orig = rrr_strdup(topic_orig)) == NULL) {
-		RRR_MSG_0("Could not duplicate topic string in rrr_mqtt_acl_entry_collection_push_new\n");
+		RRR_MSG_0("Could not duplicate topic string in %s\n", __func__);
 		ret = 1;
 		goto out_free_topic_tokens;
 	}
@@ -131,7 +130,6 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 	entry->default_action = RRR_MQTT_ACL_ACTION_DEFAULT;
 
 	RRR_LL_APPEND(collection, entry);
-	entry = NULL;
 
 	goto out;
 	out_free_topic_tokens:
@@ -194,6 +192,7 @@ static int __rrr_mqtt_acl_parse_require_space_then_non_newline (
 	rrr_length pos_orig = pos->pos;
 	rrr_length line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
+
 	if (pos_orig == pos->pos || line_orig != pos->line) {
 		RRR_MSG_0("Syntax error at line %i: Expected whitespace and then string after keyword\n", pos->line);
 		ret = 1;
@@ -291,7 +290,7 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 			username_start,
 			rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(username_end, username_start))
 	)) != 0) {
-		RRR_MSG_0("Could not extract username in __rrr_mqtt_acl_parse_keyword_user\n");
+		RRR_MSG_0("Could not extract username in %s\n", __func__);
 		goto out;
 	}
 
@@ -308,7 +307,7 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 	}
 
 	if (strlen(username_tmp) == 0) {
-		RRR_BUG("BUG: Username length was 0 in __rrr_mqtt_acl_parse_keyword_user\n");
+		RRR_BUG("Username length was 0 in __rrr_mqtt_acl_parse_keyword_user\n");
 	}
 
 	if ((ret = __rrr_mqtt_acl_user_entry_new_and_append(entry, username_tmp, action)) != 0) {
@@ -515,13 +514,13 @@ int rrr_mqtt_acl_entry_collection_push_allow_all (
 	struct rrr_mqtt_topic_token *token_tmp = NULL;
 
 	if (rrr_mqtt_topic_tokenize(&token_tmp, "#") != 0) {
-		RRR_MSG_0("Could not create token in rrr_mqtt_acl_entry_collection_push_allow_all\n");
+		RRR_MSG_0("Could not create token in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if (__rrr_mqtt_acl_entry_collection_push_new(collection, token_tmp, "#") != 0) {
-		RRR_MSG_0("Could not insert entry in rrr_mqtt_acl_entry_collection_push_allow_all\n");
+		RRR_MSG_0("Could not insert entry in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -566,7 +565,7 @@ static int __rrr_mqtt_acl_check_access_single (
 		}
 	}
 	else {
-		RRR_BUG("Unknown access level %i to __rrr_mqtt_acl_check_access_single\n", requested_access_level);
+		RRR_BUG("Unknown access level %i to %s\n", requested_access_level, __func__);
 	}
 
 	return ret;

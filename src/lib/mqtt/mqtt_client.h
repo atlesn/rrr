@@ -47,13 +47,14 @@ struct rrr_mqtt_client_data {
 	void *suback_unsuback_handler_arg;
 	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
 	void *packet_parsed_handler_arg;
-	int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
 	void *receive_publish_callback_arg;
 };
 
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 );
@@ -76,6 +77,11 @@ int rrr_mqtt_client_unsubscribe (
 void rrr_mqtt_client_close_all_connections (
 		struct rrr_mqtt_client_data *data
 );
+int rrr_mqtt_client_disconnect (
+		struct rrr_mqtt_client_data *data,
+		int transport_handle,
+		uint8_t reason_v5
+);
 int rrr_mqtt_client_connect (
 		int *transport_handle,
 		struct rrr_mqtt_session **session,
@@ -87,7 +93,11 @@ int rrr_mqtt_client_connect (
 		uint8_t clean_start,
 		const char *username,
 		const char *password,
-		const struct rrr_mqtt_property_collection *connect_properties
+		const struct rrr_mqtt_property_collection *connect_properties,
+		const char *will_topic,
+		const struct rrr_nullsafe_str *will_message,
+		uint8_t will_qos,
+		uint8_t will_retain
 );
 int rrr_mqtt_client_start (
 		struct rrr_mqtt_client_data *data,
@@ -111,7 +121,7 @@ int rrr_mqtt_client_new (
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
 		void *packet_parsed_handler_arg,
-		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *receive_publish_callback_arg
 );
 int rrr_mqtt_client_late_set_client_identifier (

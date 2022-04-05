@@ -132,28 +132,14 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name
 ) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
-			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_BUG("Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
-						name, __func__);
-			}
-			return node;
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
+	return rrr_http_header_field_collection_get(&part->headers, name);
 }
 
 const struct rrr_http_header_field *rrr_http_part_header_field_get_raw (
 		const struct rrr_http_part *part,
 		const char *name
 ) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
-			return node;
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
+	return rrr_http_header_field_collection_get_raw(&part->headers, name);
 }
 
 const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_case (
@@ -161,18 +147,18 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 		const char *name_lowercase,
 		const char *value_anycase
 ) {
+	return rrr_http_header_field_collection_get_with_value_case(&part->headers, name_lowercase, value_anycase);
+}
+
+struct rrr_http_header_field *__rrr_http_part_header_field_get (
+		struct rrr_http_part *part,
+		const char *name
+) {
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
-			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
-						name, __func__);
-			}
-			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
-				return node;
-			}
-		}
+		if (rrr_nullsafe_str_cmpto(node->name, name) == 0)
+			return node;
 	RRR_LL_ITERATE_END();
+
 	return NULL;
 }
 
@@ -262,6 +248,37 @@ int rrr_http_part_header_field_push_and_replace (
 ) {
 	rrr_http_part_header_field_remove (part, name);
 	return rrr_http_part_header_field_push(part, name, value);
+}
+
+int rrr_http_part_header_field_push_subvalue (
+		struct rrr_http_part *part,
+		const char *field,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *content_type = __rrr_http_part_header_field_get (part, "content-type");
+	if (content_type == NULL) {
+		RRR_BUG("BUG: Field %s was not present in %s\n", field, __func__);
+	}
+
+	if ((ret = rrr_http_field_collection_add(
+			&content_type->fields,
+			name,
+			rrr_length_from_size_t_bug_const(strlen(name)),
+			value,
+			rrr_length_from_size_t_bug_const(strlen(value)),
+			NULL,
+			0,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Failed to add value to field collection in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_http_part_fields_iterate_const (

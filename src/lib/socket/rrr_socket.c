@@ -544,6 +544,7 @@ int rrr_socket_open_and_read_file_head (
 
 	*result = NULL;
 	*result_bytes = 0;
+	*file_size = 0;
 
 	char *contents_tmp = NULL;
 	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);

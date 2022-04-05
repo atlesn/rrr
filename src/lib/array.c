@@ -438,9 +438,9 @@ static int __rrr_array_get_value_64_by_tag (
 ) {
 	int ret = 0;
 
-	struct rrr_type_value *value = NULL;
+	const struct rrr_type_value *value = NULL;
 
-	if ((value = rrr_array_value_get_by_tag(array, tag)) == NULL) {
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
 		ret = 1;
 		goto out;
@@ -491,6 +491,40 @@ int rrr_array_get_value_signed_64_by_tag (
 		unsigned int index
 ) {
 	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
+}
+
+int rrr_array_get_value_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+) {
+	int ret = 0;
+
+	const struct rrr_type_value *value = NULL;
+	char *str = NULL;
+
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
+		RRR_MSG_0("Could not find value '%s' in array while getting str-value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (value->definition->to_str == NULL) {
+		RRR_MSG_0("Value '%s' of type '%s' can't be converted to string\n", tag, value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = value->definition->to_str(&str, value)) != 0) {
+		goto out;
+	}
+
+	*result = str;
+	str = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(str);
+	return ret;
 }
 
 void rrr_array_strip_type (
@@ -619,6 +653,21 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 	RRR_LL_ITERATE_END();
 
 	return NULL;
+}
+
+int rrr_array_has_tag (
+		const struct rrr_array *definition,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (node->tag != NULL) {
+			if (strcmp(node->tag, tag) == 0) {
+				return 1;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	return 0;
 }
 
 static int __rrr_array_get_packed_length (
@@ -1126,15 +1175,15 @@ static int __rrr_array_message_iterate_values_callback (
 		void *arg
 ) {
 	struct rrr_array_message_iterate_values_callback_data *callback_data = arg;
-	return rrr_type_value_raw_with_tmp_do (
-		data_start,
-		type,
-		flags,
-		tag_length,
-		total_length,
-		element_count,
-		callback_data->callback,
-		callback_data->callback_arg
+	return rrr_type_value_with_tmp_do (
+			data_start,
+			type,
+			flags,
+			tag_length,
+			total_length,
+			element_count,
+			callback_data->callback,
+			callback_data->callback_arg
 	);
 }
 
@@ -1251,35 +1300,25 @@ static int __rrr_array_message_append_to_array_callback (
 		void *arg
 ) {
 	struct rrr_array_message_append_to_array_callback_data *callback_data = arg;
+
 	int ret = 0;
 
 	struct rrr_type_value *template = NULL;
-	if ((ret = rrr_type_value_new (
+
+	if ((ret = rrr_type_value_new_and_unpack (
 			&template,
 			type,
+			data_start,
 			flags,
 			tag_length,
-			data_start,
 			total_length,
-			NULL,
-			element_count,
-			NULL,
-			total_length
+			element_count
 	)) != 0) {
-		RRR_MSG_0("Could not allocate value in __rrr_array_message_append_to_array_callbackn\n");
+		RRR_MSG_0("Failed to unpack value of type '%s' index %i of array message\n", type->identifier, RRR_LL_COUNT(callback_data->target_tmp));
 		goto out;
 	}
 
-	// Append immediately to array to manage memory
 	RRR_LL_APPEND(callback_data->target_tmp, template);
-
-	memcpy (template->data, data_start + tag_length, total_length);
-
-	if (template->definition->unpack(template) != 0) {
-		RRR_MSG_0("Error while converting endianess for type '%s' index %i of array message\n", type->identifier, RRR_LL_COUNT(callback_data->target_tmp));
-		ret = 1;
-		goto out;
-	}
 
 	out:
 	return ret;

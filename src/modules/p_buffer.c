@@ -110,11 +110,6 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 
 	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
 
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("buffer_do_duplicate",
-		RRR_MSG_0("Warning: Parameter 'buffer_do_duplicate' which is set for instance %s is deprecated. Use 'duplicate' instead, which also works on any mdoule.\n",
-			config->name);
-	);
-
 	out:
 	return ret;
 }
