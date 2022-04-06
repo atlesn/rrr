@@ -1,4 +1,31 @@
-rrr (1.23-5) bullseye; urgency=medium
+rrr (1.24-1) bullseye; urgency=medium
+
+  * RUNNING RELEASE
+
+  * Features:
+    * Add configurable delay between forks during startup
+
+  * Improvements:
+    * Show IP address of remote host in error message when array data parsing
+      fails in IP module
+    * Extract boundary directive from content-type fields of type
+      multipart/form-data in httpserver
+    * New configuration parameter in httpclient to set content-type boundary
+      directive in incoming messages.
+    * If conversion from str to PyUnicode fails in python3 for array values,
+      fallback to PyByteArray with a warning
+    * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
+
+  * Fixes:
+    * Misc. features in python RRR array handling API not working correctly, in particular
+      handling of multibyte character sets
+
+  * Under the hood:
+    * Cleanups in net transport framework
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 17:26:52 +0200
+
+rrr (1.23-2) bullseye; urgency=medium
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
@@ -10,7 +37,6 @@ rrr (1.23-5) bullseye; urgency=medium
     * Control subscriptions in MQTT client by sending in command messages
     * Control the tidy interval of the cacher module per configuration
       parameter
-    * Add configurable delay between forks during startup
 
   * Improvements:
     * Files in message database stored in a tree structure based on their hash
@@ -18,15 +44,6 @@ rrr (1.23-5) bullseye; urgency=medium
     * Asynchrounous operation in message DB for better performance with very large DBs
     * Tidy and revive intervals in cacher is calculated from the last
       completion of each of these processes.
-    * Show IP address of remote host in error message when array data parsing
-      fails in IP module
-    * Extract boundary directive from content-type fields of type
-      multipart/form-data in httpserver
-    * New configuration parameter in httpclient to set content-type boundary
-      directive in incoming messages.
-    * If conversion from str to PyUnicode fails in python3 for array values,
-      fallback to PyByteArray with a warning
-    * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
 
   * Fixes:
     * Prevent HTTP client from getting killed of if there are a lot of
@@ -39,12 +56,9 @@ rrr (1.23-5) bullseye; urgency=medium
     * Fix buffer overflow in httpclient when wide characters were given to an
       urlencoder function.
     * Fix random crashes in message DB when zero length files were found.
-    * Misc. features in python RRR array handling API not working correctly, in particular
-      handling of multibyte character sets
 
   * Under the hood:
     * Cleanups in MQTT framework
-    * Cleanups in net transport framework
 
  -- Atle Solbakken <atle@goliathdns.no>  Tue, 29 Mar 2022 09:26:52 +0200
 
