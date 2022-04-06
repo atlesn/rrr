@@ -95,6 +95,7 @@ int rrr_mmap_channel_new (
 		const char *name
 );
 void rrr_mmap_channel_get_counters_and_reset (
+		unsigned long long int *count,
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source

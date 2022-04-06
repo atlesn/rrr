@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
@@ -45,13 +46,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/message_holder/message_holder_util.h"
 #include "../lib/msgdb/msgdb_client.h"
+#include "../lib/msgdb/msgdb_common.h"
+
+#define RRR_CACHER_DEFAULT_TIDY_INTERVAL_S 300
+#define RRR_CACHER_DEFAULT_REVIVE_INTERVAL_S 60
 
 struct cacher_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	struct rrr_event_collection events;
 
-	struct rrr_msgdb_client_conn msgdb_conn;
+	struct rrr_msgdb_client_conn msgdb_conn_get;
+	struct rrr_msgdb_client_conn msgdb_conn_put;
+	struct rrr_msgdb_client_conn msgdb_conn_revive;
+	struct rrr_msgdb_client_conn msgdb_conn_tidy;
+
+	unsigned short tidy_in_progress;
+
+	rrr_event_handle tidy_event;
+	rrr_event_handle revive_event;
 
 	char *msgdb_socket;
 	char *request_tag;
@@ -64,6 +77,7 @@ struct cacher_data {
 
 	rrr_setting_uint revive_age_seconds;
 	rrr_setting_uint revive_interval_seconds;
+	rrr_setting_uint tidy_interval_seconds;
 
 	int do_forward_requests;
 	int do_forward_data;
@@ -91,7 +105,10 @@ static void cacher_data_cleanup(void *arg) {
 
 	rrr_event_collection_clear(&data->events);
 
-	rrr_msgdb_client_close(&data->msgdb_conn);
+	rrr_msgdb_client_close(&data->msgdb_conn_get);
+	rrr_msgdb_client_close(&data->msgdb_conn_put);
+	rrr_msgdb_client_close(&data->msgdb_conn_revive);
+	rrr_msgdb_client_close(&data->msgdb_conn_tidy);
 
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->request_tag);
@@ -103,19 +120,68 @@ static void cacher_data_cleanup(void *arg) {
 	rrr_instance_friend_collection_clear(&data->receivers_data);
 	rrr_instance_friend_collection_clear(&data->receivers_requests);
 	rrr_instance_friend_collection_clear(&data->receivers_other);
+	rrr_instance_friend_collection_clear(&data->receivers_revive);
+}
+
+struct cacher_broker_write_callback_data {
+	struct rrr_msg_msg **msg_ptr;
+};
+
+static int cacher_broker_write_callback (struct rrr_msg_holder *new_entry, void *arg) {
+	struct cacher_broker_write_callback_data *callback_data = arg;
+
+	rrr_msg_holder_set_data_unlocked(new_entry, *callback_data->msg_ptr, MSG_TOTAL_SIZE(*callback_data->msg_ptr));
+	*callback_data->msg_ptr = NULL;
+
+	rrr_msg_holder_unlock(new_entry);
+	return 0;
+}
+
+static int cacher_get_from_msgdb_delivery_callback (
+		RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS
+) {
+	struct cacher_data *data = arg;
+
+	struct cacher_broker_write_callback_data callback_data = { msg };
+
+	if (positive_ack) {
+		RRR_MSG_0("Unexpected ACK from server in %s in cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
+		return 1;
+	}
+
+	if (negative_ack) {
+		// OK, message probably does not exist
+		return 0;
+	}
+
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
+		return 1;
+	}
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			&data->receivers_data,
+			cacher_broker_write_callback,
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	);
 }
 
 static int cacher_get_from_msgdb (
 		struct cacher_data *data,
 		const char *topic
 ) {
-	return rrr_msgdb_helper_get_from_msgdb_to_broker (
-			&data->msgdb_conn,
+	return rrr_msgdb_helper_get_from_msgdb (
+			&data->msgdb_conn_get,
 			data->msgdb_socket,
 			data->thread_data,
 			topic,
-			&data->receivers_data,
-			"requested"
+			cacher_get_from_msgdb_delivery_callback,
+			data
 	);
 }
 
@@ -227,6 +293,23 @@ static int cacher_save_to_memory_cache (
 	return ret;
 }
 
+static int cacher_store_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct cacher_data *data = arg;
+
+	(void)(msg);
+	(void)(negative_ack);
+
+	if (positive_ack) {
+		// Store complete
+	}
+	else {
+		RRR_MSG_0("Warning: cacher instance %s store or delete completed with error\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
+
+	return 0;
+}
+
 static int cacher_store (
 		struct cacher_data *data,
 		const char *topic,
@@ -239,20 +322,24 @@ static int cacher_store (
 	if (data->msgdb_socket != NULL) {
 		if (do_delete) {
 			if ((ret = rrr_msgdb_helper_delete (
-					&data->msgdb_conn,
+					&data->msgdb_conn_put,
 					data->msgdb_socket,
 					data->thread_data,
-					msg
+					msg,
+					cacher_store_delivery_callback,
+					data
 			)) != 0) {
 				goto out;
 			}
 		}
 		else {
 			if ((ret = rrr_msgdb_helper_send_to_msgdb (
-					&data->msgdb_conn,
+					&data->msgdb_conn_put,
 					data->msgdb_socket,
 					data->thread_data,
-					msg
+					msg,
+					cacher_store_delivery_callback,
+					data
 			)) != 0) {
 				goto out;
 			}
@@ -423,7 +510,7 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
-	// Do not produce errors for message process failures, just drop them
+	// Do not produce errors for message process failures, just print warning and drop them
 
 	const struct rrr_instance_friend_collection *forward_to = NULL;
 
@@ -449,6 +536,28 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
+static int cacher_tidy_delivery_callback (
+		RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS
+) {
+	struct cacher_data *data = arg;
+
+	(void)(msg);
+	(void)(negative_ack);
+
+	if (positive_ack) {
+		RRR_DBG_1("cacher instance %s tidy message database completed\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
+	else {
+		RRR_MSG_0("Warning: cacher instance %s tidy message database completed with error\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
+
+	data->tidy_in_progress = 0;
+
+	return 0;
+}
+
 static void cacher_event_tidy (
 		int fd,
 		short flags,
@@ -461,25 +570,34 @@ static void cacher_event_tidy (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data;
 
+	EVENT_REMOVE(data->tidy_event);
+	data->tidy_in_progress = 1;
+
 	if (data->message_ttl_seconds == 0) {
-		RRR_DBG_1("Peridoc tidy in cacher instance %s: No TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+		RRR_DBG_1("Periodic tidy in cacher instance %s: No TTL set, not performing msgdb tidy\n", INSTANCE_D_NAME(thread_data));
 	}
 	else { 
 		RRR_DBG_1("cacher instance %s tidy message database...\n", INSTANCE_D_NAME(data->thread_data));
 
-		int ret_tmp = rrr_msgdb_helper_tidy (
-				&data->msgdb_conn,
+		rrr_msgdb_client_close(&data->msgdb_conn_tidy);
+	
+		int ret_tmp = 0;
+		if ((ret_tmp = rrr_msgdb_helper_tidy (
+				&data->msgdb_conn_tidy,
 				data->msgdb_socket,
 				data->thread_data,
-				rrr_length_from_biglength_bug_const(data->message_ttl_seconds)
-		);
-
-		RRR_DBG_1("cacher instance %s tidy message database completed with status %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret_tmp);
+				rrr_length_from_biglength_bug_const(data->message_ttl_seconds),
+				cacher_tidy_delivery_callback,
+				data
+		)) != 0) {
+			RRR_MSG_0("Tidy failed in cacher instance %s, return was %i\n", INSTANCE_D_NAME(data->thread_data), ret_tmp);
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+			return;
+		}
 	}
 
 	if (data->message_memory_ttl_seconds == 0) {
-		RRR_DBG_1("Peridoc tidy in cacher instance %s: No memory TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+		RRR_DBG_1("Periodic tidy in cacher instance %s: No memory TTL set, not performing memory tidy\n", INSTANCE_D_NAME(thread_data));
 	}
 	else {
 		RRR_DBG_1("cacher instance %s tidy memory cache, entry count is %i...\n",
@@ -492,15 +610,55 @@ static void cacher_event_tidy (
 				INSTANCE_D_NAME(data->thread_data), deleted_entries, (deleted_entries == 1 ? "message" : "messages"));
 	}
 
-	// Check for encourage stop, return code does not always
-	// propagate from msgdb client and we also cannot 
-	// distinguish between socket EOF and encourage stop from
-	// wait the callback.
-	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread) != 0) {
-		RRR_DBG_1("cacher instance %s received encourage stop while tidying, exiting now.\n",
-				INSTANCE_D_NAME(thread_data));
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+	data->tidy_in_progress = 0;
+	EVENT_ADD(data->tidy_event);
+}
+
+void cacher_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
+	struct rrr_thread *thread = callback_arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct cacher_data *data = thread_data->private_data;
+
+	(void)(is_paused);
+
+	*do_pause = data->tidy_in_progress;
+}
+
+static int cacher_revive_delivery_callback (
+		RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS
+) {
+	struct cacher_data *data = arg;
+
+	(void)(negative_ack);
+
+	if (positive_ack) {
+		RRR_DBG_1("cacher instance %s revive completed\n",
+				INSTANCE_D_NAME(data->thread_data));
+		return 0;
 	}
+	else if (negative_ack) {
+		RRR_MSG_0("Warning: cacher instance %s revive completed with error\n",
+				INSTANCE_D_NAME(data->thread_data));
+		return 0;
+	}
+
+	if (*msg == NULL) {
+		RRR_MSG_0("Unknown response from server in %s in cacher instance %s\n", __func__, INSTANCE_D_NAME(data->thread_data));
+		return 1;
+	}
+
+	struct cacher_broker_write_callback_data callback_data = { msg };
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			&data->receivers_revive,
+			cacher_broker_write_callback,
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	);
 }
 
 static void cacher_event_revive (
@@ -515,23 +673,26 @@ static void cacher_event_revive (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data;
 
-	int ret_tmp = rrr_msgdb_helper_iterate_min_age_to_broker (
-			&data->msgdb_conn,
+	int ret_tmp = 0;
+
+	rrr_msgdb_client_close(&data->msgdb_conn_revive);
+
+	EVENT_REMOVE(data->revive_event);
+
+	if ((ret_tmp = rrr_msgdb_helper_iterate_min_age (
+			&data->msgdb_conn_revive,
 			data->msgdb_socket,
 			data->thread_data,
-			&data->receivers_revive,
-			"revived",
 			rrr_length_from_biglength_bug_const(data->revive_age_seconds),
-			data->message_ttl_us
-	);
+			data->message_ttl_us,
+			cacher_revive_delivery_callback,
+			data
+	)) != 0) {
+		RRR_MSG_0("Revive failed in cacher instance %s, return was %i\n", INSTANCE_D_NAME(data->thread_data), ret_tmp);
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
 
-	if (ret_tmp == RRR_THREAD_STOP) {
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
-	}
-	else if (ret_tmp != 0) {
-		RRR_MSG_0("Warning: Revive failed in cacher instance %s return was %i\n",
-			INSTANCE_D_NAME(thread_data), ret_tmp);
-	}
+	EVENT_ADD(data->revive_event);
 }
 
 static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -592,7 +753,8 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_memory_ttl_seconds", message_memory_ttl_seconds, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_age_seconds", revive_age_seconds, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_interval_seconds", revive_interval_seconds, 60 /* Default 1 minute */);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_revive_interval_seconds", revive_interval_seconds, RRR_CACHER_DEFAULT_REVIVE_INTERVAL_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_tidy_interval_seconds", tidy_interval_seconds, RRR_CACHER_DEFAULT_TIDY_INTERVAL_S);
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter message_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
@@ -635,6 +797,17 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 		goto out;
 	}
 
+	if (data->tidy_interval_seconds > UINT32_MAX || data->tidy_interval_seconds < 1) {
+		RRR_MSG_0("Parameter tidy_interval_seconds in cacher instance %s out of range (%llu>%llu or %llu<1)\n",
+			config->name,
+			(unsigned long long int) data->tidy_interval_seconds,
+			(unsigned long long int) UINT32_MAX,
+			(unsigned long long int) data->tidy_interval_seconds
+		);
+		ret = 1;
+		goto out;
+	}
+
 	data->message_ttl_us = data->message_ttl_seconds * 1000 * 1000;
 	data->message_memory_ttl_us = data->message_memory_ttl_seconds * 1000 * 1000;
 
@@ -672,23 +845,25 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	RRR_DBG_1 ("cacher instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_handle tidy_event;
 	if (rrr_event_collection_push_periodic (
-			&tidy_event,
+			&data->tidy_event,
 			&data->events,
 			cacher_event_tidy,
 			thread,
-			300 * 1000 * 1000 /* 5 minutes */
+			data->tidy_interval_seconds * 1000 * 1000
 	) != 0) {
 		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
-	EVENT_ADD(tidy_event);
+
+	EVENT_ADD(data->tidy_event);
+
+	// Run tidy once upon startup
+	EVENT_ACTIVATE(data->tidy_event);
 
 	if (data->revive_age_seconds > 0) {
-		rrr_event_handle revive_event;
 		if (rrr_event_collection_push_periodic (
-				&revive_event,
+				&data->revive_event,
 				&data->events,
 				cacher_event_revive,
 				thread,
@@ -697,11 +872,15 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 			RRR_MSG_0("Failed to create revive event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
 		}
-		EVENT_ADD(revive_event);
+		EVENT_ADD(data->revive_event);
 	}
 
-	// Run tidy once upon startup
-	EVENT_ACTIVATE(tidy_event);
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			cacher_pause_check,
+			thread
+	);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

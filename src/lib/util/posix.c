@@ -295,7 +295,7 @@ int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex) {
 int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex) {
 	int ret = RRR_POSIX_MUTEX_ROBUST_OK;
 
-	if ((ret = pthread_mutex_lock (mutex)) != 0) {
+	if ((ret = pthread_mutex_trylock (mutex)) != 0) {
 		if (ret == EOWNERDEAD) {
 			__rrr_posix_mutex_robust_consistent(mutex);
 			ret = RRR_POSIX_MUTEX_ROBUST_ERROR;

@@ -69,6 +69,16 @@ do {if ((ret = rrr_instance_config_parse_optional_utf8(&data->target, config, st
         goto out;                                                                                           \
     }} while(0)
 
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC(string, target, target_len)                                \
+do {if ((ret = rrr_instance_config_parse_optional_topic_and_length(&data->target, &data->target_len, config, string)) != 0) { \
+        goto out;                                                                                           \
+    }} while(0)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC_FILTER(string, target)                                     \
+do {if ((ret = rrr_instance_config_parse_optional_topic_filter(&data->target, NULL, config, string)) != 0) {\
+        goto out;                                                                                           \
+    }} while(0)
+
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)                                \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, NULL)
 
@@ -108,6 +118,7 @@ struct rrr_map;
 struct rrr_instance_friend_collection;
 struct rrr_instance_collection;
 struct rrr_instance;
+struct rrr_mqtt_topic_token;
 
 struct rrr_instance_config_data {
 	RRR_LL_NODE(struct rrr_instance_config_data);
@@ -235,9 +246,15 @@ int rrr_instance_config_parse_optional_utf8 (
 		const char *string,
 		const char *def
 );
-int rrr_instance_config_parse_topic_and_length (
+int rrr_instance_config_parse_optional_topic_and_length (
 		char **target,
 		uint16_t *target_length,
+		struct rrr_instance_config_data *config,
+		const char *string
+);
+int rrr_instance_config_parse_optional_topic_filter (
+		struct rrr_mqtt_topic_token **target,
+		char **target_str,
 		struct rrr_instance_config_data *config,
 		const char *string
 );

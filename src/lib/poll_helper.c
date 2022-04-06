@@ -56,11 +56,12 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 	if (RRR_DEBUGLEVEL_3) {
 		char *topic_tmp = NULL;
 		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry->message);
-		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s' topic is '%s': %s\n",
+		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s' topic is '%s': %s%s\n",
 				INSTANCE_D_NAME(thread_data),
 				INSTANCE_D_TOPIC_STR(thread_data),
 				topic_tmp,
-				(*does_match ? "MATCH" : "MISMATCH/DROPPED")
+				(*does_match ? "MATCH" : "MISMATCH"),
+				INSTANCE_D_INSTANCE(thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT ? " (filter inverted)" : ""
 		);
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
 	}
@@ -101,6 +102,9 @@ static int __rrr_poll_intermediate_callback (
 	if (callback_data->thread_data->init_data.topic_first_token != NULL) {
 		if ((ret = __rrr_poll_intermediate_callback_topic_filter(&does_match, callback_data->thread_data, entry)) != 0) {
 			goto out;
+		}
+		if (INSTANCE_D_INSTANCE(callback_data->thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT) {
+			does_match = !does_match;
 		}
 	}
 

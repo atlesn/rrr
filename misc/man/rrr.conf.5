@@ -1,4 +1,4 @@
-.Dd 2021-10-05
+.Dd 2022-03-29
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -72,6 +72,10 @@ backstop=yes
 
 # Drop all messages from senders which do not match the set topic (optional)
 topic_filter=MQTT TOPIC FILTER
+
+# Invert topic filter (optional). If set to yes, messages in which a topic
+# matches any set topic_filter will be dropped (inverted filter).
+topic_filter_invert=yes
 
 # Module-specific arguments (module-dependant)
 argument1 = value1
@@ -705,10 +709,6 @@ The buffer collects all messages from all senders and wait for them to be collec
 .It buffer_ttl_seconds=SECONDS
 Any message received with timestamp older than the specified amount of seconds will be dropped. Useful in situations
 where messages circulate between modules.
-
-.It buffer_do_duplicate={yes|no}
-If set to yes, incoming messages will be duplicated so that one copy is received by every reader. If set to no,
-the readers will compete over the messages. Defaults to no. 
 .El
 .SS ipclient (PI)
 The ipclient module collects any messages from senders and sends them over the network to another 
@@ -1469,6 +1469,8 @@ Added if a body of non-zero length is present.
 Added if present in the header.
 .It http_content_type
 Added if present in the header.
+.It http_content_type_boundary
+Added if content-type is present in the header and is multipart/form-data.
 .El
 .sp
 Note that if
@@ -1684,6 +1686,7 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_body_tag=ARRAY TAG
 .It http_format_tag=ARRAY TAG
 .It http_content_type_tag=ARRAY TAG
+.It http_content_type_boundary_tag=ARRAY TAG
 
 .It http_endpoint_tag_force={yes|no}
 .It http_method_tag_force={yes|no}
@@ -1692,11 +1695,20 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_body_tag_force={yes|no}
 .It http_format_tag_force={yes|no}
 .It http_content_type_tag_force={yes|no}
+.It http_content_type_boundary_tag_force={yes|no}
 These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
 identified by the tag of the value.
 If the
 .B force
 options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+If
+.B http_content_type_boundary_tag_force
+is set to yes, the tag is only required to be present if the active content type is
+.B multipart/form-data.
+Any value from
+.B http_content_type_boundary_tag
+will only be used if the active content type is multipart/form-data.
 
 Values from the message, although they will be attempted converted, should be of the
 .B str
@@ -1909,6 +1921,11 @@ and does not affect any other parameters.
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
+	
+.It http_silent_put_error_limit_s=SECONDS
+If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
+This is useful if failed PUT are stored in a message DB and an error messages need not be printed immediately as the store is attempted again later.
+Defaults to 0 which means that all errors are printed regardless of the age of the messages.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
@@ -1954,6 +1971,12 @@ Multiple instances of the Message DB should not use the same directory and the d
 
 .It msgdb_socket=FILENAME
 The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
+.El
+
+.It msgdb_directory_levels=LEVELS
+The number of directory levels to use when storing files. Each file will be placed into a directory corresponding to the first letters of its name.
+A file beginning with 'af432...' will be placed in the directory 'a/f/' if LEVELS is set to be 2.
+Must be in the range 0 to 4 inclusive, defaults to 2.
 .El
 
 .SS incrementer (PA)
@@ -2103,7 +2126,7 @@ Defaults to no.
 
 .It cacher_ttl_seconds=SECONDS
 Any messages received from other modules with an age older than the set value is silently dropped.
-In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.
+In addition, the age of messages in the message database is checked whenever tidy is performed.
 Defaults to 0 which means that TTL check is not performed.
 
 .It cacher_memory_ttl_seconds=SECONDS
@@ -2118,7 +2141,13 @@ If set to 0 or left unset, message revive will be deactivated.
 
 .It cacher_revive_interval_seconds=SECONDS
 Specify how often cacher will check for messages to revive.
+The interval is calculated from the last time the revive process completed.
 Defaults to 60 seconds (1 minute), the minimum value is 1 second.
+
+.It cacher_tidy_interval_seconds=SECONDS
+Specify how often cacher will iterate through the cache for simple integrity checks and to look for expired messages.
+The interval is calculated from the last time the tidy process completed.
+Defaults to 300 seconds (5 minutes), the minimum value is 1 second.
 
 .El
 
@@ -2304,6 +2333,20 @@ Default MQTT protocol version to use, defaults to 3.1.1.
 Topic to use when publishing RRR messages without topic set in them.
 If left unspecified, RRR messages without a topic will be dropped.
 
+.It mqtt_will_topic=TOPIC
+If set, a will topic will be set as MQTT client connects to the broker.
+A PUBLISH message will be generated by the broker if the client unexpectedly disconnects.
+Other will-related parameters require this parameter to be set.
+
+.It mqtt_will_message=STRING
+If set, any generated will message will have the given string as message body.
+
+.It mqtt_will_qos={0|1|2}
+Default Quality of Service to use for will message, defaults to 1.
+
+.It mqtt_will_retain={yes|no}
+If given and set to yes, the retain flag will be set for will messages.
+
 .It mqtt_publish_topic_force={yes|no}
 Force use of the topic specified in
 .B mqtt_publish_topic
@@ -2322,6 +2365,18 @@ Messages without a topic are dropped if set to yes. Defaults to no.
 If set to yes, the client will send full RRR messages.
 If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
 type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
+
+.It mqtt_retain_tag={tag}
+If set and an incoming array message has the tag present, the resulting PUBLISH message will have the retain flag set.
+
+If the contents of the array value is the word "clear" without the quotes, an empty PUBLISH message will be sent to the broker instructing it to delete any pending retained message.
+Any data will not be processed for this message.
+
+If the contents of the array value is an unsigned number, this is used to set the expiry interval in seconds of the message.
+The broker will delete the retained message after the specified amount of seconds has passed.
+If the number is set to 0 or if the active protocol version is not 5, the retain message will never expire.
+
+If the contents of the array value is anything else or not present, the contents is ignored. 
 
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
@@ -2352,7 +2407,38 @@ Multiple data array records may reside in a single PUBLISH message, one RRR mess
 Refer to
 .Xr rrr_post(1)
 for syntax of array definitions.
+.sp
+.It mqtt_command_topic_filter=TOPIC FILTER
+If set, messages in which the given topic filter match will be treated as command messages.
+Command messages contains commands to the MQTT client itself which change its behaviour and do not result in any messages being published.
+
+Any commands sent will override corresponding configuration parameters, but if RRR due to some error condition restarts, any parameters set using commands will be lost.
+
+String-compatible values with special tag names are set in the array message.
+The command to perform is set in the value
+.B mqtt_command.
+Other values to set is different depending on the command.
+Debuglevel 1 may be activated to print information about command processing.
+
+Possible commands are:
+.sp
+.Bl -tag -width -indent
+.It subscribe
+Topics to subscribe to are set in the field
+.B mqtt_topic_filter.
+The field may be set multiple times, do not separate topics with comma. The given topics are added to any existing topics currently subscribed to and a SUBSCRIBE packet is sent to the broker for all current subscriptions.
+.It unsubscribe
+Topic filters are set as with the
+.B subscribe
+command. The client will unsubscribe from the given topics. Error messages may be printed if subscriptions do not already exist.
+.It disconnect
+The client will disconnect from the broker after which an automatic reconnect occurs.
+If the field
+.B mqtt_disconnect_with_will
+is present, any will message is activated (an abrubt disconnect is done for version 3.1.1 and disconnect with will is sent for version 5).
 .El
+.El
+
 .SS journal (SA)
 Picks up RRR journal log messages and places them into arrays for other modules to read. Please note that this is not possible
 to do with certain debuglevels active as passing messages generated by

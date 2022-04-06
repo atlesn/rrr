@@ -563,6 +563,14 @@ int rrr_nullsafe_str_dup (
 	return 0;
 }
 
+const void *rrr_nullsafe_str_ptr_const (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	static const char dummy[1] = {'\0'};
+
+	return (nullsafe != NULL ? nullsafe->str : dummy);
+}
+
 rrr_nullsafe_len rrr_nullsafe_str_len (
 		const struct rrr_nullsafe_str *nullsafe
 ) {
@@ -721,21 +729,28 @@ int rrr_nullsafe_str_with_raw_do (
 		void *callback_arg
 ) {
 	char str_dummy[] = "";
-	void *str_to_use = str_dummy;
-	rrr_nullsafe_len len = 0;
+	rrr_nullsafe_len len_tmp = 0;
+	rrr_nullsafe_len len_old = 0;
 
-	if (nullsafe->len > 0) {
+	void *str_to_use = str_dummy;
+
+	if (nullsafe != NULL && nullsafe->len > 0) {
 		str_to_use = nullsafe->str;
-		len = nullsafe->len;
+		len_tmp = nullsafe->len;
+		len_old = nullsafe->len;
 	}
 
-	int ret = callback(&len, str_to_use, callback_arg);
+	int ret = callback(&len_tmp, str_to_use, callback_arg);
 	if (ret != 0) {
 		return ret;
 	}
 
-	if (len > nullsafe->len) {
-		RRR_BUG("BUG: Callback returned len > allocated len %" PRIrrr_nullsafe_len ">%" PRIrrr_nullsafe_len "\n", len, nullsafe->len);
+	if (len_tmp > len_old) {
+		RRR_BUG("BUG: Callback returned len > allocated len %" PRIrrr_nullsafe_len ">%" PRIrrr_nullsafe_len "\n", len_tmp, len_old);
+	}
+
+	if (nullsafe != NULL) {
+		nullsafe->len = len_tmp;
 	}
 
 	return ret;

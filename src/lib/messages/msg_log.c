@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,10 +31,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_log *msg) {
 	msg->prefix_size = rrr_htobe16(msg->prefix_size);
+	msg->line = rrr_htobe32(msg->line);
 }
 
 int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg) {
 	msg->prefix_size = rrr_be16toh(msg->prefix_size);
+	msg->line = rrr_be32toh(msg->line);
 
 	if (!RRR_MSG_LOG_SIZE_OK(msg)) {
 		RRR_MSG_0("Invalid size of message in rrr_msg_msg_log_to_host\n");
@@ -67,6 +69,8 @@ void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size
 
 int rrr_msg_msg_log_new (
 		struct rrr_msg_log **target,
+		const char *file,
+		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
 		const char *prefix,
@@ -106,6 +110,22 @@ int rrr_msg_msg_log_new (
 			RRR_MSG_LOG_MSG_SIZE(result)
 	);
 */
+
+	strncpy(result->file, file, sizeof(result->file));
+	result->file[sizeof(result->file) - 1] = '\0';
+
+	if (line < 0) {
+		result->line = 0;
+	}
+#if INT_MAX > UINT32_MAX
+	else if ((uint32_t) line > UINT32_MAX) {
+		result->line = UINT32_MAX;
+	}
+#endif
+	else {
+		result->line = (uint32_t) line;
+	}
+
 	memcpy(result->prefix_and_message, prefix, prefix_size);
 	memcpy(RRR_MSG_LOG_MSG_POS(result), message, message_size);
 

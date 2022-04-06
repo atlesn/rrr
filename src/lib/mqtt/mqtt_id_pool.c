@@ -59,7 +59,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, rrr_
 
 	uint32_t *new_pool = rrr_reallocate(pool->pool, pool->allocated_majors * sizeof(*(pool->pool)), new_size);
 	if (new_pool == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return 1;
 	}
 
@@ -87,7 +87,7 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 		tmp >>= 1;
 	}
 
-	RRR_BUG("Did not find the free bit in __rrr_mqtt_id_pool_get_id_32\n");
+	RRR_BUG("Did not find the free bit in %s\n", __func__);
 
 	return 0;
 }
@@ -152,11 +152,11 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
 
 	if (maj >= pool->allocated_majors) {
-		RRR_BUG("Tried to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
+		RRR_BUG("Tried to release ID which was not yet allocated in %s\n", __func__);
 	}
 
 	if ((pool->pool[maj] & mask) == 0) {
-		RRR_BUG("Tried to release unused ID in rrr_mqtt_id_pool_release_id\n");
+		RRR_BUG("Tried to release unused ID in %s\n", __func__);
 	}
 
 	pool->pool[maj] &= ~mask;
