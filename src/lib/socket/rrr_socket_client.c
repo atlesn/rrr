@@ -186,21 +186,21 @@ static int __rrr_socket_client_fd_new (
 
 	struct rrr_socket_client_fd *client_fd = rrr_allocate_zero(sizeof(*client_fd));
 	if (client_fd == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_fd_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if (addr_string != NULL) {
 		if ((client_fd->addr_string = rrr_strdup(addr_string)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for address string in __rrr_socket_client_fd_new\n");
+			RRR_MSG_0("Could not allocate memory for address string in %s\n", __func__);
 			ret = 1;
 			goto out_free;
 		}
 	}
 
 	if (addr_len > sizeof(client_fd->addr)) {
-		RRR_BUG("BUG: Address length too long in __rrr_socket_client_fd_new\n");
+		RRR_BUG("BUG: Address length too long in %s\n", __func__);
 	}
 
 	rrr_event_collection_init(&client_fd->events, queue);
@@ -299,7 +299,7 @@ static int __rrr_socket_client_private_data_create_as_needed (
 				client->connected_fd->fd,
 				client->collection->callback_private_data_arg
 		)) != 0) {
-			RRR_MSG_0("Error while initializing private data in __rrr_socket_client_private_data_create_as_needed\n");
+			RRR_MSG_0("Error while initializing private data in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -337,7 +337,7 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 		fd, destroyed);
 
 	if (RRR_LL_COUNT(client) != 1) {
-		RRR_BUG("BUG: FD count was not exactly 1 in __rrr_socket_client_connected_fd_finalize_and_create_private_data\n");
+		RRR_BUG("BUG: FD count was not exactly 1 in %s\n", __func__);
 	}
 
 	client->connected_fd = RRR_LL_FIRST(client);
@@ -362,7 +362,7 @@ static int __rrr_socket_client_new_and_add (
 
 	struct rrr_socket_client *client = rrr_allocate (sizeof(*client));
 	if (client == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -449,14 +449,14 @@ static int __rrr_socket_client_collection_new (
 	struct rrr_socket_client_collection *collection = NULL;
 
 	if ((collection = rrr_allocate(sizeof(*collection))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	memset(collection, '\0', sizeof(*collection));
 	if ((collection->creator = rrr_strdup(creator)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for creator in rrr_socket_client_collection_init\n");
+		RRR_MSG_0("Could not allocate memory for creator in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -590,7 +590,7 @@ static int __rrr_socket_client_fd_event_setup (
 				event_read_callback_arg,
 				client_fd->client->collection->connect_timeout_us
 		)) != 0) {
-			RRR_MSG_0("Failed to create read event in __rrr_socket_client_fd_event_setup\n");
+			RRR_MSG_0("Failed to create read event in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -607,7 +607,7 @@ static int __rrr_socket_client_fd_event_setup (
 				event_write_callback_arg,
 				client_fd->client->collection->connect_timeout_us
 		)) != 0) {
-			RRR_MSG_0("Failed to create write event in __rrr_socket_client_fd_event_setup\n");
+			RRR_MSG_0("Failed to create write event in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -626,7 +626,7 @@ static int __rrr_socket_client_fd_event_setup (
 				client_fd,
 				client_fd->client->collection->idle_timeout_us
 		)) != 0) {
-				RRR_MSG_0("Failed to create timeout event in __rrr_socket_client_fd_event_setup\n");
+				RRR_MSG_0("Failed to create timeout event in %s\n", __func__);
 				ret = 1;
 				goto out;
 		}
@@ -689,7 +689,7 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 
 #if SSIZE_MAX > RRR_LENGTH_MAX
 	if ((rrr_slength) read_session->rx_buf_wpos > (rrr_slength) RRR_LENGTH_MAX) {
-		RRR_MSG_0("Message was too long in __rrr_socket_client_collection_read_message_complete_callback\n");
+		RRR_MSG_0("Message was too long in %s\n", __func__);
 		return RRR_READ_SOFT_ERROR;
 	}
 #endif
@@ -785,10 +785,10 @@ static void __rrr_socket_client_event_write (
 	CONNECTED_FD_ENSURE();
 
 	if (client->connected_fd == NULL) {
-		RRR_BUG("BUG: Connected FD not set in __rrr_socket_client_event_write\n");
+		RRR_BUG("BUG: Connected FD not set in %s\n", __func__);
 	}
 	if (client->connected_fd->fd != fd) {
-		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
+		RRR_BUG("BUG: FD mismatch in %s\n", __func__);
 	}
 
 	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) > 0) {
@@ -1098,7 +1098,7 @@ static int __rrr_socket_client_collection_fd_push (
 			collection,
 			create_type
 	)) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_fd_push\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		goto out;
 	}
 
@@ -1220,7 +1220,7 @@ static int __rrr_socket_client_send_push (
 	int ret = 0;
 
 	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push\n");
+		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push (
@@ -1248,7 +1248,7 @@ static int __rrr_socket_client_send_push_const (
 	int ret = 0;
 
 	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push_const\n");
+		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const (
@@ -1279,7 +1279,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 	int ret = 0;
 
 	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push_const_with_private_data\n");
+		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
@@ -1315,7 +1315,7 @@ static int __rrr_socket_client_sendto_push_const (
 	int ret = 0;
 
 	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_sendto_push_const\n");
+		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
@@ -1547,7 +1547,7 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 		}
 
 		if (tmp_fd < 0) {
-			RRR_BUG("BUG: FD not set after connect callback in rrr_socket_client_collection_send_push_const_with_address\n");
+			RRR_BUG("BUG: FD not set after connect callback in %s\n", __func__);
 		}
 
 		if ((ret = __rrr_socket_client_collection_not_ready_fd_push (
@@ -1559,7 +1559,7 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 				NULL,
 				RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
 		)) != 0) {
-			RRR_MSG_0("Failed to push new connection in rrr_socket_client_collection_send_push_const_with_address\n");
+			RRR_MSG_0("Failed to push new connection in %s\n", __func__);
 			goto out_close;
 		}
 	}
@@ -1650,7 +1650,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 	}
 
 	if (address_count == 0) {
-		RRR_BUG("BUG: address count was zero after resolve callback in __rrr_socket_client_collection_find_by_address_string_or_connect, callback must return error\n");
+		RRR_BUG("BUG: address count was zero after resolve callback in %s, callback must return error\n", __func__);
 	}
 
 	if ((ret = __rrr_socket_client_new_and_add (
@@ -1658,14 +1658,14 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 			collection,
 			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
 	)) != 0) {
-		RRR_MSG_0("Could not create client in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+		RRR_MSG_0("Could not create client in %s\n", __func__);
 		goto out;
 	}
 
 	for (size_t i = 0; i < address_count; i++) {
 		if ((ret = connect_callback (&tmp_fd, addresses[i], address_lengths[i], connect_callback_data)) == 0) {
 			if (tmp_fd < 0) {
-				RRR_BUG("BUG: FD not set after connect callback in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+				RRR_BUG("BUG: FD not set after connect callback in %s\n", __func__);
 			}
 
 			RRR_DBG_7("client collection connect to '%s' suggestion %llu/%llu now pending\n",
@@ -1678,7 +1678,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 					address_lengths[i],
 					addr_string
 			)) != 0) {
-				RRR_MSG_0("Failed to push new connection in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+				RRR_MSG_0("Failed to push new connection in %s\n", __func__);
 				goto out;
 			}
 			tmp_fd = -1;
@@ -1824,7 +1824,7 @@ static void __rrr_socket_client_event_accept (
 	ret_tmp = rrr_socket_accept(fd, (struct sockaddr *) &addr, &addr_len, collection->creator);
 	if (ret_tmp == -1) {
 		if (errno != EWOULDBLOCK) {
-			RRR_MSG_0("Error while accepting connection in __rrr_socket_client_event_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error while accepting connection in %s: %s\n", __func__, rrr_strerror(errno));
 			ret_tmp = 1;
 			goto out;
 		}
