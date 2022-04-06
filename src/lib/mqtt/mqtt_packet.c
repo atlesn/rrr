@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
+#include "../helpers/nullsafe_str.h"
 
 static const struct rrr_mqtt_p_protocol_version protocol_versions[] = {
 		{RRR_MQTT_VERSION_3_1, "MQISDP"},
@@ -80,7 +81,7 @@ int rrr_mqtt_p_payload_set_data (
 
 	target->packet_data = rrr_allocate(size);
 	if (target->packet_data == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_p_payload_set_data\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -103,7 +104,7 @@ int rrr_mqtt_p_payload_new (
 	struct rrr_mqtt_p_payload *result = rrr_allocate(sizeof(*result));
 
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -114,7 +115,7 @@ int rrr_mqtt_p_payload_new (
 			__rrr_mqtt_p_payload_destroy
 	);
 	if (ret != 0) {
-		RRR_MSG_0("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_0("Could not initialize refcount in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -135,7 +136,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 		rrr_length payload_length
 ) {
 	if (*target != NULL) {
-		RRR_BUG("BUG: Target was not NULL in rrr_mqtt_p_payload_new_with_allocated_payload\n");
+		RRR_BUG("BUG: Target was not NULL in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -144,7 +145,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 
 	ret = rrr_mqtt_p_payload_new (&result);
 	if (ret != 0) {
-		RRR_MSG_0("Could not create payload in rrr_mqtt_p_payload_new_with_allocated_payload\n");
+		RRR_MSG_0("Could not create payload in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -164,7 +165,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 static void __rrr_mqtt_p_destroy (void *arg) {
 	struct rrr_mqtt_p *p = arg;
 	if (p->users != 0) {
-		RRR_BUG("users was not 0 in __rrr_mqtt_p_destroy\n");
+		RRR_BUG("users was not 0 in %s\n", __func__);
 	}
 //	printf("Release pool ID %u: %p(%p, %p)\n",
 //			p->packet_identifier, p->release_packet_id_func, p->release_packet_id_arg1, p->release_packet_id_arg2);
@@ -181,14 +182,13 @@ static void __rrr_mqtt_p_destroy (void *arg) {
 static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
 	struct rrr_mqtt_p *ret = rrr_allocate(type_properties->packet_size);
 	if (ret == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_p_allocate_raw\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		goto out;
 	}
 
 	memset(ret, '\0', type_properties->packet_size);
 	ret->type_properties = type_properties;
 	ret->protocol_version = protocol_version;
-	ret->create_time = rrr_time_get_64();
 	ret->packet_identifier = 0;
 
 	if (type_properties->has_reserved_flags != 0) {
@@ -199,7 +199,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 			(struct rrr_mqtt_p_standarized_usercount *) ret,
 			__rrr_mqtt_p_destroy
 	) != 0) {
-		RRR_MSG_0("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_0("Could not initialize refcount in %s\n", __func__);
 		goto out_free;
 	}
 
@@ -211,20 +211,35 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 		return ret;
 }
 
-static struct rrr_mqtt_p *rrr_mqtt_p_allocate_sub_usub(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_publish(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) result;
+
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate subscribe packet in %s\n", __func__);
+		goto out;
+	}
+
+	publish->create_time = rrr_time_get_64();
+
+	out:
+	return result;
+}
+
+static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_sub_usub(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
 	struct rrr_mqtt_p *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
 	struct rrr_mqtt_p_sub_usub *sub_usub = (struct rrr_mqtt_p_sub_usub *) result;
 
 	int ret = 0;
 
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
+		RRR_MSG_0("Could not allocate subscribe packet in %s\n", __func__);
 		goto out;
 	}
 
 	ret = rrr_mqtt_subscription_collection_new(&sub_usub->subscriptions);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Could not allocate subscriptions in subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
+		RRR_MSG_0("Could not allocate subscriptions in subscribe packet in %s\n", __func__);
 		goto out_destroy_properties;
 	}
 
@@ -247,7 +262,7 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	RRR_FREE_IF_NOT_NULL(connect->username);
 	RRR_FREE_IF_NOT_NULL(connect->password);
 	RRR_FREE_IF_NOT_NULL(connect->will_topic);
-	RRR_FREE_IF_NOT_NULL(connect->will_message);
+	rrr_nullsafe_str_destroy_if_not_null(&connect->will_message);
 
 	rrr_free(connect);
 }
@@ -326,14 +341,14 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
     {0,  0, "RESERVED",      1, 0, 0,                                     NULL,                             NULL,                        NULL,                            NULL},
     {1,  0, "CONNECT",       1, 0, sizeof(struct rrr_mqtt_p_connect),     __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_connect,      rrr_mqtt_assemble_connect,       __rrr_mqtt_p_free_connect},
     {2,  1, "CONNACK",       1, 0, sizeof(struct rrr_mqtt_p_connack),     __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_connack,      rrr_mqtt_assemble_connack,       __rrr_mqtt_p_free_connack},
-    {3,  0, "PUBLISH",       0, 0, sizeof(struct rrr_mqtt_p_publish),     __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_publish,      rrr_mqtt_assemble_publish,       __rrr_mqtt_p_free_publish},
+    {3,  0, "PUBLISH",       0, 0, sizeof(struct rrr_mqtt_p_publish),     __rrr_mqtt_p_allocate_publish,    rrr_mqtt_parse_publish,      rrr_mqtt_assemble_publish,       __rrr_mqtt_p_free_publish},
     {4,  1, "PUBACK",        1, 0, sizeof(struct rrr_mqtt_p_puback),      __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_def_puback,   rrr_mqtt_assemble_def_puback,    __rrr_mqtt_p_free_def_puback},
     {5,  1, "PUBREC",        1, 0, sizeof(struct rrr_mqtt_p_pubrec),      __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_def_puback,   rrr_mqtt_assemble_def_puback,    __rrr_mqtt_p_free_def_puback},
     {6,  1, "PUBREL",        1, 2, sizeof(struct rrr_mqtt_p_pubrel),      __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_def_puback,   rrr_mqtt_assemble_def_puback,    __rrr_mqtt_p_free_def_puback},
     {7,  1, "PUBCOMP",       1, 0, sizeof(struct rrr_mqtt_p_pubcomp),     __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_def_puback,   rrr_mqtt_assemble_def_puback,    __rrr_mqtt_p_free_def_puback},
-    {8,  0, "SUBSCRIBE",     1, 2, sizeof(struct rrr_mqtt_p_subscribe),     rrr_mqtt_p_allocate_sub_usub,   rrr_mqtt_parse_subscribe,    rrr_mqtt_assemble_subscribe,     __rrr_mqtt_p_free_subscribe},
+    {8,  0, "SUBSCRIBE",     1, 2, sizeof(struct rrr_mqtt_p_subscribe),   __rrr_mqtt_p_allocate_sub_usub,   rrr_mqtt_parse_subscribe,    rrr_mqtt_assemble_subscribe,     __rrr_mqtt_p_free_subscribe},
     {9,  1, "SUBACK",        1, 0, sizeof(struct rrr_mqtt_p_suback),      __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_suback,       rrr_mqtt_assemble_suback,        __rrr_mqtt_p_free_suback},
-    {10, 0, "UNSUBSCRIBE",   1, 2, sizeof(struct rrr_mqtt_p_unsubscribe),   rrr_mqtt_p_allocate_sub_usub,   rrr_mqtt_parse_unsubscribe,  rrr_mqtt_assemble_unsubscribe,   __rrr_mqtt_p_free_unsubscribe},
+    {10, 0, "UNSUBSCRIBE",   1, 2, sizeof(struct rrr_mqtt_p_unsubscribe), __rrr_mqtt_p_allocate_sub_usub,   rrr_mqtt_parse_unsubscribe,  rrr_mqtt_assemble_unsubscribe,   __rrr_mqtt_p_free_unsubscribe},
     {11, 1, "UNSUBACK",      1, 0, sizeof(struct rrr_mqtt_p_unsuback),    __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_unsuback,     rrr_mqtt_assemble_unsuback,      __rrr_mqtt_p_free_unsuback},
     {12, 0, "PINGREQ",       1, 0, sizeof(struct rrr_mqtt_p_pingreq),     __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_pingreq,      rrr_mqtt_assemble_pingreq,       __rrr_mqtt_p_free_pingreq},
     {13, 1, "PINGRESP",      1, 0, sizeof(struct rrr_mqtt_p_pingresp),    __rrr_mqtt_p_allocate_raw,        rrr_mqtt_parse_pingresp,     rrr_mqtt_assemble_pingresp,      __rrr_mqtt_p_free_pingresp},
@@ -409,31 +424,31 @@ int rrr_mqtt_p_new_publish (
 	}
 
 	if (topic == NULL || *topic == '\0') {
-		RRR_BUG("BUG: No topic set in rrr_mqtt_p_new_publish\n");
+		RRR_BUG("BUG: No topic set in %s\n", __func__);
 	}
 
 	if (data_size > 0) {
 		if (rrr_mqtt_p_payload_new(&publish->payload) != 0) {
-			RRR_MSG_0("Could not create payload in rrr_mqtt_p_new_publish\n");
+			RRR_MSG_0("Could not create payload in %s\n", __func__);
 			ret = 1;
 			goto out_free;
 		}
 
 		if (rrr_mqtt_p_payload_set_data(publish->payload, data, data_size)) {
-			RRR_MSG_0("Could not set payload data in rrr_mqtt_p_new_publish\n");
+			RRR_MSG_0("Could not set payload data in %s\n", __func__);
 			ret = 1;
 			goto out_free;
 		}
 	}
 
 	if ((publish->topic = rrr_strdup(topic)) == NULL) {
-		RRR_MSG_0("Could not allocate topic in rrr_mqtt_p_new_publish\n");
+		RRR_MSG_0("Could not allocate topic in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
 
 	if (rrr_mqtt_topic_tokenize(&publish->token_tree_, publish->topic) != 0) {
-		RRR_MSG_0("Could not tokenize topic in rrr_mqtt_p_new_publish\n");
+		RRR_MSG_0("Could not tokenize topic in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -450,31 +465,31 @@ int rrr_mqtt_p_new_publish (
 static struct rrr_mqtt_p_publish *__rrr_mqtt_p_clone_publish_raw (
 		const struct rrr_mqtt_p_publish *publish
 ) {
-	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_raw (
+	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_publish (
 			publish->type_properties,
 			publish->protocol_version
 	);
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate PUBLISH packet while cloning in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_0("Could not allocate PUBLISH packet while cloning in %s\n", __func__);
 		goto out;
 	}
 
 	int ret = rrr_mqtt_property_collection_add_from_collection(&result->properties, &publish->properties);
 	if (ret != 0) {
-		RRR_MSG_0("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_0("Could not clone property collection in %s\n", __func__);
 		goto out_decref;
 	}
 
 	if (publish->topic != NULL) {
 		if ((result->topic = rrr_strdup(publish->topic)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
+			RRR_MSG_0("Could not allocate memory for topic in %s\n", __func__);
 			goto out_destroy_properties;
 		}
 	}
 
 	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree_, publish->token_tree_);
 	if (ret != 0) {
-		RRR_MSG_0("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_0("Could not clone topic tokens in %s\n", __func__);
 		goto out_free_topic;
 	}
 
@@ -502,7 +517,7 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		int do_preserve_reason
 ) {
 	if (RRR_MQTT_P_GET_TYPE(source) != RRR_MQTT_P_TYPE_PUBLISH) {
-		RRR_BUG("BUG: Non-publish packet of type %u given to rrr_mqtt_p_clone_publish\n", RRR_MQTT_P_GET_TYPE(source));
+		RRR_BUG("BUG: Non-publish packet of type %u in %s\n", RRR_MQTT_P_GET_TYPE(source), __func__);
 	}
 
 	struct rrr_mqtt_p_publish *result = NULL;
@@ -512,14 +527,16 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		return NULL;
 	}
 
+	result->is_outbound = source->is_outbound;
+
 	result->response_topic = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_RESPONSE_TOPIC, 0);
 	result->correlation_data = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_CORRELATION_DATA, 0);
 	result->content_type = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0);
 
-	result->is_outbound = source->is_outbound;
+	result->create_time = source->create_time;
+	result->message_expiry_interval = source->message_expiry_interval;
 
 	result->payload_format_indicator = source->payload_format_indicator;
-	result->message_expiry_interval = source->message_expiry_interval;
 	result->topic_alias = source->topic_alias;
 
 	if (do_preserve_type_flags) {
@@ -571,7 +588,6 @@ const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v31 (uint8_t reason_v31) {
 	return NULL;
 }
 
-
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {
 	for (int i = 0; rrr_mqtt_p_reason_map[i].description != NULL; i++) {
 		const struct rrr_mqtt_p_reason *test = &rrr_mqtt_p_reason_map[i];
@@ -579,7 +595,7 @@ uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {
 			return test->v31_reason;
 		}
 	}
-	RRR_BUG("Could not find v5 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v5_reason);
+	RRR_BUG("Could not find v5 reason code %u in %s\n", v5_reason, __func__);
 	return 0;
 }
 
@@ -593,6 +609,6 @@ uint8_t rrr_mqtt_p_translate_reason_from_v31 (uint8_t v31_reason) {
 			return test->v5_reason;
 		}
 	}
-	RRR_BUG("Could not find v31 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v31_reason);
+	RRR_BUG("Could not find v31 reason code %u in %s\n", v31_reason, __func__);
 	return 0;
 }

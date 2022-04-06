@@ -55,6 +55,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *private_data,                                     \
     void *arg
 
+#define RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS               \
+    struct rrr_read_session *read_session,                  \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    int is_hard_err,                                        \
+    void *private_data,                                     \
+    void *arg
+
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
 struct rrr_read_session;
@@ -211,6 +219,8 @@ void rrr_socket_client_collection_event_setup_raw (
 		int read_flags_socket,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
+		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
+		void *error_callback_arg,
 		int (*complete_callback)(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS),
 		void *complete_callback_arg
 );
@@ -226,7 +236,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		rrr_biglength read_step_max_size,
 		unsigned int message_max_size,
 		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
-		void *array_callback_arg
+		void *array_callback_arg,
+		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
+		void *error_callback_arg
 );
 void rrr_socket_client_collection_event_setup_ignore (
 		struct rrr_socket_client_collection *collection,

@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.19-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.19-1", [Full version])
+AC_INIT([Read Route Record],[1.23-2])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.23-2", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 19, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 23, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -61,6 +61,7 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
+AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -113,6 +114,7 @@ SHELL_VARS_OUTPUT
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
+AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -298,6 +300,22 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+# Make sure jemalloc-test does not include any libraries
+LIBS=""
+
+AC_MSG_CHECKING([for jemalloc usage])
+AS_IF([test "x$enable_jemalloc" != xno], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_JEMALLOC], [1], [Enable jemalloc allocation])
+	AC_CHECK_HEADERS([jemalloc/jemalloc.h], [], AC_MSG_ERROR([jemalloc/jemalloc.h not found]))
+	AC_CHECK_LIB(jemalloc, mallocx, [], AC_MSG_ERROR([mallocx from libjemalloc not found]))
+	JEMALLOC_LIBS=-ljemalloc
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_SUBST([JEMALLOC_LIBS])
+
 # Make sure Perl-test does not include any libraries
 LIBS=""
 
@@ -333,11 +351,12 @@ AS_IF([test "x$enable_perl5" = xno], [
 	# Remove -specs=/... causing -pie to get inserted on RH-systems
 
 	AC_MSG_CHECKING([Perl5 CFLAGS])
-	PERL5_CFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | sed 's/\s*-specs\S*//g'`
+	PERL5_CFLAGS=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
+
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | sed 's/\s*-specs\S*//g'`
+	perl5_ldflags_auto=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
 	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
@@ -409,7 +428,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.9 3.8 3.7; do
+		for version_tmp in 3.10 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
@@ -675,9 +694,8 @@ AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
 AC_SUBST(RRR_CONF_DIR)
 
 AC_MSG_CHECKING([for confdir usage])
+AC_CONFIG_FILES([misc/confdir/Makefile])
 AS_IF([test "x$enable_confdir" = xyes], [
-	AC_CONFIG_FILES([misc/confdir/Makefile])
-
 	AC_MSG_RESULT([yes, ${RRR_CONF_DIR}])
 ],[
 	AC_MSG_RESULT([no])
@@ -687,6 +705,7 @@ AM_CONDITIONAL([RRR_SYSTEMD_NO_UNIT_INSTALL], [test "x$RRR_SYSTEMD_NO_UNIT_INSTA
 AM_CONDITIONAL([RRR_SYSTEMD_NO_TMPFILES_INSTALL], [test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x1"])
 
 AC_MSG_CHECKING([for systemd usage])
+AC_CONFIG_FILES([misc/systemd/Makefile])
 AS_IF([test "x$enable_systemd" = xyes], [
 	REQUIRE_CONFDIR
 	SYSTEMD_INIT
@@ -703,7 +722,6 @@ AS_IF([test "x$enable_systemd" = xyes], [
 
 	AC_CONFIG_FILES([misc/systemd/make-service.sh])
 	AC_CONFIG_FILES([misc/systemd/make-tmpfiles.sh])
-	AC_CONFIG_FILES([misc/systemd/Makefile])
 
 	AC_MSG_CHECKING([for systemd service file no installation command])
 	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
@@ -748,11 +766,10 @@ AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
 AC_SUBST(RRR_DAEMON_USERNAME)
 
 AC_MSG_CHECKING([for runit usage])
+AC_CONFIG_FILES([misc/runit/Makefile])
 AS_IF([test "x$enable_runit" = xyes], [
 	REQUIRE_CONFDIR
 	AC_SUBST([RUNIT_SV_DIR], [/etc/sv/rrr/])
-	AC_CONFIG_FILES([misc/runit/Makefile])
-	
 	AC_CONFIG_FILES([misc/runit/make-runit.sh])
 	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
 ],[
@@ -760,9 +777,9 @@ AS_IF([test "x$enable_runit" = xyes], [
 ])
 
 AC_MSG_CHECKING([for openrc usage])
+AC_CONFIG_FILES([misc/openrc/Makefile])
 AS_IF([test "x$enable_openrc" = xyes], [
 	REQUIRE_CONFDIR
-	AC_CONFIG_FILES([misc/openrc/Makefile])
 	AC_CONFIG_FILES([misc/openrc/make-service.sh])
 	AC_MSG_RESULT([yes])
 ],[

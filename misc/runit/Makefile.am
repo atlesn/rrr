@@ -1,3 +1,5 @@
+if RRR_WITH_RUNIT
+
 runitdir = @RUNIT_SV_DIR@
 runit_SCRIPTS = run
 
@@ -16,3 +18,4 @@ clean-local:
 distclean-local:
 	rm -rf make-runit.sh || true
 
+endif

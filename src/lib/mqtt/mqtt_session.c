@@ -78,7 +78,7 @@ int rrr_mqtt_session_properties_update (
 	RRR_MQTT_SESSION_PROPERTIES_UPDATE_IF_NOT_NULL(auth_data);
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not update properties in rrr_mqtt_session_properties_update\n");
+		RRR_MSG_0("Could not update properties in %s\n", __func__);
 		goto out;
 	}
 

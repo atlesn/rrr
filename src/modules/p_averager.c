@@ -345,6 +345,7 @@ static int averager_spawn_message (
 			NULL,
 			0,
 			0,
+			NULL,
 			averager_spawn_message_callback,
 			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -439,6 +440,7 @@ static void averager_event_output_list (
 	if (rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&data->output_list,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not write to output buffer in averager instance %s\n",
@@ -481,15 +483,7 @@ static int averager_data_init(struct averager_data *data, struct rrr_instance_ru
 static int averager_parse_config (struct averager_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->msg_topic,
-			&data->msg_topic_length,
-			config,
-			"avg_message_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("avg_message_topic", msg_topic, msg_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_timespan", timespan_s, RRR_DEFAULT_AVERAGER_TIMESPAN_S);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_interval", interval_s, RRR_DEFAULT_AVERAGER_INTERVAL_S);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("avg_preserve_points", preserve_point_measurements, 0);

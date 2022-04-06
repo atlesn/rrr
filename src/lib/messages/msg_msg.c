@@ -494,9 +494,17 @@ int rrr_msg_msg_topic_match (
 }
 
 int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl) {
-	uint64_t limit = rrr_time_get_64() - ttl;
-	if (msg->timestamp < limit) {
+	const uint64_t time = rrr_time_get_64();
+
+	// Check for underflow, TTL is longer than maximum possible age of message
+	if (ttl > time) {
+		return 1;
+	}
+
+	// Check for TTL timeout
+	if (msg->timestamp < time - ttl) {
 		return 0;
 	}
+
 	return 1;
 }

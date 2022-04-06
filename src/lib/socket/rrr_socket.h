@@ -202,12 +202,16 @@ int rrr_socket_sendto_blocking (
 		const void *data,
 		rrr_biglength size,
 		struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 );
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
-		rrr_biglength send_size
+		rrr_biglength send_size,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 );
 int rrr_socket_check_alive (int fd);
 

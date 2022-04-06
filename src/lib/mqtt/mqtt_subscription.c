@@ -61,16 +61,16 @@ int rrr_mqtt_subscription_new (
 	*target = NULL;
 
 	if (nl > 0 || rap > 0 || retain_handling > 2) {
-		RRR_BUG("Invalid flags in rrr_mqtt_subscription_new\n");
+		RRR_BUG("Invalid flags in %s\n", __func__);
 	}
 
 	if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
-		RRR_BUG("BUG: Invalid topic filter passed to rrr_mqtt_subscription_new. Caller should check for this.\n");
+		RRR_BUG("Invalid topic filter passed to %s. Caller should check for this.\n", __func__);
 	}
 
 	struct rrr_mqtt_subscription *sub = rrr_allocate(sizeof(*sub));
 	if (sub == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -79,14 +79,14 @@ int rrr_mqtt_subscription_new (
 
 	// Callers must check for this
 	if (topic_filter == NULL || *topic_filter == '\0') {
-		RRR_BUG("Topic filter was NULL or zero length in rrr_mqtt_subscription_new\n");
+		RRR_BUG("Topic filter was NULL or zero length in %s\n", __func__);
 	}
 
 
 	else {
 		sub->topic_filter = rrr_allocate(strlen(topic_filter) + 1);
 		if (sub == NULL) {
-			RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscriptionB\n");
+			RRR_MSG_0("Could not allocate memory for topic filter in %s\n", __func__);
 			ret = 1;
 			goto out_free_subscription;
 		}
@@ -94,7 +94,7 @@ int rrr_mqtt_subscription_new (
 
 		ret = rrr_mqtt_topic_tokenize(&sub->token_tree, sub->topic_filter);
 		if (ret != 0) {
-			RRR_MSG_0("Error while creating token tree in rrr_mqtt_subscription_new\n");
+			RRR_MSG_0("Error while creating token tree in %s\n", __func__);
 			ret = 1;
 			goto out_free_topic_filter;
 		}
@@ -135,7 +135,7 @@ int rrr_mqtt_subscription_clone (
 			source->nl,
 			source->qos_or_reason_v5
 	)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Could not clone subscription in rrr_mqtt_subscription_clone return was %i\n", ret);
+		RRR_MSG_0("Could not clone subscription in %s return was %i\n", __func__, ret);
 		goto out;
 	}
 
@@ -160,7 +160,7 @@ static void __rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription **source
 ) {
 	if ((*source)->ptr_next != NULL) {
-		RRR_BUG("BUG: source->next was not NULL, part of a collection in rrr_mqtt_subscription_replace_and_destroy\n");
+		RRR_BUG("source->ptr_next was not NULL, part of a collection in %s\n", __func__);
 	}
 	/*
 	 * 1. Free the original dynamically allocated data in target
@@ -190,7 +190,7 @@ static int __rrr_mqtt_subscription_match_publish (
 	const char *topic_name = publish->topic;
 
 	if (rrr_mqtt_topic_validate_name(topic_name) != 0) {
-		RRR_BUG("Topic name of packet was not valid in __rrr_mqtt_subscription_match_publish, should be checked at parsing\n");
+		RRR_BUG("Topic name of packet was not valid in %s, should be checked at parsing\n", __func__);
 	}
 
 	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree_);
@@ -219,15 +219,15 @@ int rrr_mqtt_subscription_collection_match_publish_with_callback (
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
 			ret = match_callback(publish, node, callback_arg);
 			if (ret != 0) {
-				RRR_MSG_0("Error from match_callback in rrr_mqtt_subscription_collection_match_publish: %i\n",
-						ret);
+				RRR_MSG_0("Error from match_callback in %s: %i\n",
+						__func__, ret);
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 				RRR_LL_ITERATE_LAST();
 			}
 			rrr_length_inc_bug(match_count_final);
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
-			RRR_MSG_0("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			RRR_MSG_0("Error in %s, return was %i\n", __func__, ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			RRR_LL_ITERATE_LAST();
 		}
@@ -251,7 +251,7 @@ int rrr_mqtt_subscription_collection_match_publish (
 			RRR_LL_ITERATE_LAST();
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
-			RRR_MSG_0("Error from matcher in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			RRR_MSG_0("Error from matcher in %s, return was %i\n", __func__, ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			RRR_LL_ITERATE_LAST();
 		}
@@ -303,7 +303,7 @@ int rrr_mqtt_subscription_collection_new (
 
 	struct rrr_mqtt_subscription_collection *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_0("Could not allocate subscription in rrr_mqtt_subscription_collection_new\n");
+		RRR_MSG_0("Could not allocate subscription in %s\n", __func__);
 		return RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 	}
 
@@ -323,7 +323,7 @@ static int __rrr_mqtt_subscription_collection_append_unchecked_clone (
 	struct rrr_mqtt_subscription *new = NULL;
 
 	if ((ret = rrr_mqtt_subscription_clone(&new, old)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Could not clone subscription in __rrr_mqtt_subscription_collection_append_raw_clone\n");
+		RRR_MSG_0("Could not clone subscription in %s\n", __func__);
 		goto out;
 	}
 
@@ -345,7 +345,7 @@ int rrr_mqtt_subscription_collection_clone (
 
 	ret = rrr_mqtt_subscription_collection_new(&res);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Error while cloning subscriptions in rrr_mqtt_subscription_collection_clone\n");
+		RRR_MSG_0("Error while cloning subscriptions in %s\n", __func__);
 		goto out;
 	}
 
@@ -354,7 +354,7 @@ int rrr_mqtt_subscription_collection_clone (
 				res,
 				node
 		)) != RRR_MQTT_SUBSCRIPTION_OK) {
-			RRR_MSG_0("Error while appending subscriptions while cloning in rrr_mqtt_subscription_collection_clone\n");
+			RRR_MSG_0("Error while appending subscriptions while cloning in %s\n", __func__);
 			goto out_destroy_collection;
 		}
 	RRR_LL_ITERATE_END();
@@ -482,7 +482,7 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 		rrr_length idx
 ) {
 	if ((rrr_slength) idx > target->node_count - 1) {
-		RRR_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
+		RRR_BUG("Index out of range in %s\n", __func__);
 	}
 
 	int i = 0;
@@ -501,7 +501,7 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 		rrr_length idx
 ) {
 	if ((rrr_slength) idx > target->node_count - 1) {
-		RRR_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
+		RRR_BUG("Index out of range in %s\n", __func__);
 	}
 
 	int i = 0;
@@ -531,7 +531,7 @@ int rrr_mqtt_subscription_collection_remove_topic (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(target,rrr_mqtt_subscription_destroy(node));
 
 	if (did_destroy > 1) {
-		RRR_BUG("More than 1 subscription matched in rrr_mqtt_subscription_collection_remove_topic\n");
+		RRR_BUG("More than 1 subscription matched in %s\n", __func__);
 	}
 
 	*did_remove = did_destroy;
@@ -551,7 +551,7 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 	struct rrr_mqtt_subscription *subscription = NULL;
 
 	if (rrr_mqtt_subscription_new(&subscription, topic, retain_handling, rap, nl, qos) != 0) {
-		RRR_MSG_0("Could not create subscription in rrr_mqtt_subscription_collection_push_unique_str\n");
+		RRR_MSG_0("Could not create subscription in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -564,8 +564,8 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 			goto out;
 		}
 		else {
-			RRR_BUG("Unknown reason %u from rrr_mqtt_subscription_new in rrr_mqtt_subscription_collection_push_unique_str\n",
-					subscription->qos_or_reason_v5);
+			RRR_BUG("Unknown reason %u from rrr_mqtt_subscription_new in %s\n",
+					subscription->qos_or_reason_v5, __func__);
 		}
 	}
 
@@ -577,7 +577,7 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 			goto out;
 		}
 		else {
-			RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
+			RRR_MSG_0("Could not add subscription to collection in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -607,7 +607,7 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 
 		struct rrr_mqtt_subscription *subscription_tmp = NULL;
 		if (rrr_mqtt_subscription_clone(&subscription_tmp, node) != 0) {
-			RRR_MSG_0("Failed to clone subscription in rrr_mqtt_subscription_collection_append_unique_copy_from_collection\n");
+			RRR_MSG_0("Failed to clone subscription in %s\n", __func__);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			goto out;
 		}
@@ -625,7 +625,7 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		}
 
 		if (ret != 0) {
-			RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_append_unique_take_from_collection return was %i\n", ret);
+			RRR_MSG_0("Internal error in %s return was %i\n", __func__, ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			goto out;
 		}
@@ -660,7 +660,7 @@ int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 				target,
 				node->topic_filter
 		)) {
-			RRR_MSG_0("Error while removing topic in rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason\n");
+			RRR_MSG_0("Error while removing topic in %s\n", __func__);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 			goto out;

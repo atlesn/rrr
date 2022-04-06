@@ -103,6 +103,7 @@ struct rrr_mqtt_parse_session;
 struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_subscription_collection;
 struct rrr_mqtt_topic_token;
+struct rrr_nullsafe_str;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION                                 \
 		const struct rrr_mqtt_p_type_properties *type_properties,   \
@@ -203,7 +204,6 @@ struct rrr_mqtt_p_payload {
     int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \
     void *release_packet_id_arg1;                              \
     void *release_packet_id_arg2;                              \
-    uint64_t create_time;                                      \
     char *_assembled_data;                                     \
     rrr_length assembled_data_size;                            \
     rrr_length received_size;                                  \
@@ -324,8 +324,7 @@ struct rrr_mqtt_p_connect {
 	struct rrr_mqtt_property_collection will_properties;
 
 	char *will_topic;
-	char *will_message;
-	uint16_t will_message_size;
+	struct rrr_nullsafe_str *will_message;
 
 	char *username;
 	char *password;
@@ -339,6 +338,11 @@ struct rrr_mqtt_p_connect {
 #define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p)         (((1<<6) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)        (((1<<7) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
+#define RRR_MQTT_P_CONNECT_SET_FLAG_CLEAN_START(p)      (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<1))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL(p)             (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<2))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL_QOS(p,qos) \
+	((struct rrr_mqtt_p_connect *) p)->connect_flags = (((struct rrr_mqtt_p_connect *) p)->connect_flags & ~((1<<4)|(1<<3))) | ((uint8_t) ((qos & 3) << 3))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL_RETAIN(p)      (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<5))
 #define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p)         (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
 #define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)        (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
 
@@ -395,8 +399,11 @@ struct rrr_mqtt_p_publish {
 
 	struct rrr_mqtt_property_collection properties;
 
-	uint8_t payload_format_indicator;
+	uint64_t create_time;
 	uint32_t message_expiry_interval;
+	uint8_t message_expiry_interval_properties_updated;
+
+	uint8_t payload_format_indicator;
 	uint16_t topic_alias;
 	struct rrr_mqtt_property_collection subscription_ids;
 

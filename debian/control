@@ -15,7 +15,8 @@ Build-Depends: debhelper (>= 11),
                python3-dev (>= 3.6) | python3.8-dev | python3.7-dev | python3.6-dev,
                libnghttp2-dev,
                libjson-c-dev,
-               libevent-dev
+               libevent-dev,
+               libjemalloc-dev
 X-Python3-Version: 3.6,3.7,3.8
 Standards-Version: 4.1.4
 Homepage: https://github.com/atlesn/rrr
@@ -42,6 +43,7 @@ Depends: ${misc:Depends},
          ${shlibs:Depends},
          libssl1.1,
          python3 (>= 3.6),
+         libjemalloc2,
          libjson-c5,
          libnghttp2-14
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
