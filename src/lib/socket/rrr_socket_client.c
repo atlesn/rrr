@@ -457,6 +457,7 @@ static int __rrr_socket_client_collection_new (
 	memset(collection, '\0', sizeof(*collection));
 	if ((collection->creator = rrr_strdup(creator)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for creator in rrr_socket_client_collection_init\n");
+		ret = 1;
 		goto out_free;
 	}
 	collection->queue = queue;
