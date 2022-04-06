@@ -535,6 +535,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				0, // No ratelimit max bytes
 				data->max_message_size > RRR_LENGTH_MAX ? RRR_LENGTH_MAX : (rrr_length) data->max_message_size,
 				__rrr_post_read_callback,
+				NULL,
 				&callback_data
 		);
 

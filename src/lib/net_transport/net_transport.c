@@ -195,6 +195,18 @@ int rrr_net_transport_handle_allocate_and_add (
 static int __rrr_net_transport_handle_destroy (
 		struct rrr_net_transport_handle *handle
 ) {
+#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
+	RRR_DBG_7("net transport fd %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
+			handle->submodule_fd,
+			handle->transport->application_name,
+			handle->read_ret_debug_ok,
+			handle->read_ret_debug_incomplete,
+			handle->read_ret_debug_soft_error,
+			handle->read_ret_debug_hard_error,
+			handle->read_ret_debug_eof
+	);
+#endif
+
 	// Delete events first as libevent might produce warnings if
 	// this is performed after FD is closed
 	rrr_event_collection_clear(&handle->events);
@@ -294,7 +306,8 @@ static int __rrr_net_transport_handle_send_nonblock (
 			size
 	)) != 0) {
 		if (ret != RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			RRR_DBG_7("Error %i from submodule send() in __rrr_net_transport_handle_send_nonblock, connection should be closed\n", ret);
+			RRR_DBG_7("net transport fd %i [%s] return %i from submodule send function, connection should be closed\n",
+					handle->submodule_fd, handle->transport->application_name, ret);
 			goto out;
 		}
 	}
@@ -339,8 +352,8 @@ static void __rrr_net_transport_event_first_read_timeout (
 
 	(void)(flags);
 
-	RRR_DBG_7("net transport fd %i no data received within %" PRIu64 " ms, closing connection\n",
-			fd, handle->transport->first_read_timeout_ms);
+	RRR_DBG_7("net transport fd %i [%s] no data received within %" PRIu64 " ms, closing connection\n",
+			fd, handle->transport->application_name, handle->transport->first_read_timeout_ms);
 
 	int ret_tmp = RRR_READ_EOF;
 	CHECK_READ_WRITE_RETURN();
@@ -357,8 +370,8 @@ static void __rrr_net_transport_event_hard_read_timeout (
 	(void)(fd);
 	(void)(flags);
 
-	RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
-			handle->submodule_fd, handle->transport->hard_read_timeout_ms);
+	RRR_DBG_7("net transport fd %i [%s] no data received for %" PRIu64 " ms, closing connection\n",
+			handle->submodule_fd, handle->transport->application_name, handle->transport->hard_read_timeout_ms);
 
 	int ret_tmp = RRR_READ_EOF;
 	CHECK_READ_WRITE_RETURN();
@@ -386,15 +399,15 @@ static void __rrr_net_transport_event_handshake (
 			return;
 		}
 
-		RRR_DBG_7("net transport fd %i handshake error, closing connection. Return was %i.\n",
-				handle->submodule_fd, ret_tmp);
+		RRR_DBG_7("net transport fd %i [%s] handshake error, closing connection. Return was %i.\n",
+				handle->submodule_fd, handle->transport->application_name, ret_tmp);
 
 		ret_tmp = RRR_READ_EOF;
 		goto check_read_write_return;
 	}
 
-	RRR_DBG_7("net transport fd %i handshake complete\n",
-			handle->submodule_fd);
+	RRR_DBG_7("net transport fd %i [%s] handshake complete\n",
+			handle->submodule_fd, handle->transport->application_name);
 
 	if (handle->transport->handshake_complete_callback != NULL) {
 		handle->transport->handshake_complete_callback(handle, handle->transport->handshake_complete_callback_arg);
@@ -426,16 +439,38 @@ static void __rrr_net_transport_event_read (
 		return;
 	}
 
-	if (flags & EV_READ) {
+	EVENT_REMOVE(handle->event_first_read_timeout);
+	EVENT_REMOVE(handle->event_read_notify);
+
+	if ((ret_tmp = handle->transport->read_callback (
+			handle,
+			handle->transport->read_callback_arg
+	)) == 0 || flags & EV_READ) {
+		// Touch (prevent hard timeout) if:
+		// - We are in timeout event and something by chance was read (callback returns 0)
+		// - We are in read event (data was present on the socket)
 		rrr_net_transport_ctx_touch (handle);
 	}
 
-	EVENT_REMOVE(handle->event_first_read_timeout);
-
-	ret_tmp = handle->transport->read_callback (
-		handle,
-		handle->transport->read_callback_arg
-	);
+#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
+	switch (ret_tmp) {
+		case RRR_READ_OK:
+			handle->read_ret_debug_ok++;
+			break;
+		case RRR_READ_INCOMPLETE:
+			handle->read_ret_debug_incomplete++;
+			break;
+		case RRR_READ_SOFT_ERROR:
+			handle->read_ret_debug_soft_error++;
+			break;
+		case RRR_READ_HARD_ERROR:
+			handle->read_ret_debug_hard_error++;
+			break;
+		case RRR_READ_EOF:
+			handle->read_ret_debug_eof++;
+			break;
+	};
+#endif
 
 	CHECK_READ_WRITE_RETURN();
 }
@@ -527,6 +562,18 @@ static int __rrr_net_transport_handle_events_setup_connected (
 			__rrr_net_transport_event_read,
 			handle,
 			handle->transport->soft_read_timeout_ms * 1000
+	)) != 0) {
+		goto out;
+	}
+
+	// READ NOTIFY
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&handle->event_read_notify,
+			&handle->events,
+			__rrr_net_transport_event_read,
+			handle,
+			1 * 1000 // 1 ms
 	)) != 0) {
 		goto out;
 	}
@@ -956,6 +1003,8 @@ static int __rrr_net_transport_iterate_with_callback (
 ) {
 	int ret = 0;
 
+	// This function is only allowed to return OK or HARD ERROR (0 or 1)
+
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
@@ -972,23 +1021,20 @@ static int __rrr_net_transport_iterate_with_callback (
 			RRR_LL_ITERATE_LAST();
 		}
 
-		if ((ret = callback (
-				node,
-				arg
-		)) != 0) {
+		if ((ret = callback (node, arg)) != 0) {
 			if (ret == RRR_READ_INCOMPLETE) {
 				ret = 0;
 			}
 			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-				ret = 0;
 				// For nice treatment of remote, for instance send a disconnect packet
 				if (node->application_ptr_iterator_pre_destroy != NULL) {
-					ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
+					if ((ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+						RRR_MSG_0("Internal error from callback function in %s\n", __func__);
+						goto out;
+					}
 				}
-
-				if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-					RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
-					RRR_LL_ITERATE_BREAK();
+				else {
+					ret = 0;
 				}
 
 				// When pre_destroy returns 0 or is not set, go ahead with destruction
@@ -996,15 +1042,19 @@ static int __rrr_net_transport_iterate_with_callback (
 					__rrr_net_transport_handle_destroy(node);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
+				else {
+					ret = 0;
+				}
 			}
 			else {
-				RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
-				ret = 1;
-				RRR_LL_ITERATE_LAST();
+				RRR_MSG_0("Error %i from callback function in %s\n", ret, __func__);
+				ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+				goto out;
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 
+	out:
 	return ret;
 }
 
@@ -1103,6 +1153,7 @@ void rrr_net_transport_stats_get (
 static int __rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
+		const char *application_name,
 		int flags,
 		struct rrr_event_queue *queue,
 		const char *alpn_protos,
@@ -1186,6 +1237,9 @@ static int __rrr_net_transport_new (
 		}
 	}
 
+	strncpy(new_transport->application_name, application_name, sizeof(new_transport->application_name));
+	new_transport->application_name[sizeof(new_transport->application_name)-1] = '\0';
+
 	*result = new_transport;
 
 	goto out;
@@ -1198,6 +1252,7 @@ static int __rrr_net_transport_new (
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
+		const char *application_name,
 		int flags,
 		struct rrr_event_queue *queue,
 		const char *alpn_protos,
@@ -1216,6 +1271,7 @@ int rrr_net_transport_new (
 	return __rrr_net_transport_new (
 			result,
 			config,
+			application_name,
 			flags,
 			queue,
 			alpn_protos,
@@ -1237,12 +1293,14 @@ int rrr_net_transport_new (
 int rrr_net_transport_new_simple (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
+		const char *application_name,
 		int flags,
 		struct rrr_event_queue *queue
 ) {
 	return __rrr_net_transport_new (
 			result,
 			config,
+			application_name,
 			flags,
 			queue,
 			NULL,

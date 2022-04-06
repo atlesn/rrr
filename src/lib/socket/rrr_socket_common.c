@@ -65,6 +65,7 @@ int rrr_socket_common_receive_array_tree (
 		rrr_biglength ratelimit_max_bytes,
 		rrr_length message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
+		void (*error_callback)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
 		void *arg
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data_array = {
@@ -93,6 +94,8 @@ int rrr_socket_common_receive_array_tree (
 			ratelimit_max_bytes,
 			rrr_read_common_get_session_target_length_from_array_tree,
 			&callback_data_array,
+			error_callback,
+			arg,
 			__rrr_socket_common_receive_array_tree_callback,
 			&callback_data
 	);

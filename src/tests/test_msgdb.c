@@ -74,46 +74,84 @@ static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 	return ret;
 }
 
-static int __rrr_test_msgdb_await_ack(int *positive_ack, struct rrr_msgdb_client_conn *conn) {
+struct rrr_test_msgdb_await_callback_data {
+	short positive_ack;
+	short negative_ack;
+	struct rrr_msg_msg *msg;
+};
+
+static int __rrr_test_msgdb_await_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct rrr_test_msgdb_await_callback_data *callback_data = arg;
+
+	callback_data->positive_ack = positive_ack;
+	callback_data->negative_ack = negative_ack;
+	callback_data->msg = *msg;
+	*msg = NULL;
+
+	RRR_DBG_3("Await callback pos %u neg %u msg %p\n", positive_ack, negative_ack, *msg);
+
+	return 0;
+}
+
+static int __rrr_test_msgdb_await_ack(short *positive_ack, short *negative_ack, struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_await_ack(positive_ack, conn)) != 0) {
+	*positive_ack = 0;
+	*negative_ack = 0;
+
+	RRR_DBG_3("Await ACK...\n");
+
+	struct rrr_test_msgdb_await_callback_data callback_data = {0};
+
+	if ((ret = rrr_msgdb_client_await(conn, __rrr_test_msgdb_await_callback, &callback_data)) != 0) {
 		TEST_MSG("Non-zero return %i from await ACK\n", ret);
 		ret = 1;
 		goto out;
 	}
 
+	*positive_ack = callback_data.positive_ack;
+	*negative_ack = callback_data.negative_ack;
+
 	out:
+	RRR_FREE_IF_NOT_NULL(callback_data.msg);
 	return ret;
 }
 
 static int __rrr_test_msgdb_await_positive_ack(struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
-	int positive_ack;
-	if ((ret = __rrr_test_msgdb_await_ack(&positive_ack, conn)) != 0) {
+	RRR_DBG_3("Await positive ACK...\n");
+
+	struct rrr_test_msgdb_await_callback_data callback_data = {0};
+
+	if ((ret = rrr_msgdb_client_await(conn, __rrr_test_msgdb_await_callback, &callback_data)) != 0) {
 		goto out;
 	}
 
-	if (positive_ack != 1) {
+	if (callback_data.positive_ack != 1) {
 		TEST_MSG("Expected positive ACK, but negative was received\n");
 		ret = 1;
 		goto out;
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(callback_data.msg);
 	return ret;
 }
 
 static int __rrr_test_msgdb_await_negative_ack(struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
-	int positive_ack;
-	if ((ret = __rrr_test_msgdb_await_ack(&positive_ack, conn)) != 0) {
+	RRR_DBG_3("Await negative ACK...\n");
+
+	short positive_ack;
+	short negative_ack;
+
+	if ((ret = __rrr_test_msgdb_await_ack(&positive_ack, &negative_ack, conn)) != 0) {
 		goto out;
 	}
 
-	if (positive_ack != 0) {
+	if (negative_ack != 1) {
 		TEST_MSG("Expected negative ACK, but positive was received\n");
 		ret = 1;
 		goto out;
@@ -129,25 +167,33 @@ static int __rrr_test_msgdb_await_and_check_msg (
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *result_msg = NULL;
+	RRR_DBG_3("Await message...\n");
 
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
+	struct rrr_test_msgdb_await_callback_data callback_data = {0};
+
+	if ((ret = rrr_msgdb_client_await(conn, __rrr_test_msgdb_await_callback, &callback_data)) != 0) {
 		TEST_MSG("Non-zero return %i from await msg\n", ret);
 		ret = 1;
 		goto out;
 	}
 
-	if (MSG_TOTAL_SIZE(result_msg) != MSG_TOTAL_SIZE(expected_msg)) {
-		RRR_MSG_0("Message verification failed, size mismatch.\n");
+	if (callback_data.msg == NULL) {
+		TEST_MSG("Message verification failed, not message returned.\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (MSG_TOTAL_SIZE(callback_data.msg) != MSG_TOTAL_SIZE(expected_msg)) {
+		TEST_MSG("Message verification failed, size mismatch.\n");
 		ret = 1;
 	}
-	else if (memcmp(result_msg, expected_msg, MSG_TOTAL_SIZE(result_msg)) != 0) {
-		RRR_MSG_0("Message verification failed, the messages were not equal.\n");
+	else if (memcmp(callback_data.msg, expected_msg, MSG_TOTAL_SIZE(callback_data.msg)) != 0) {
+		TEST_MSG("Message verification failed, the messages were not equal.\n");
 		ret = 1;
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(result_msg);
+	RRR_FREE_IF_NOT_NULL(callback_data.msg);
 	return ret;
 }
 
@@ -159,14 +205,14 @@ static int __rrr_test_msgdb_await_and_check_ack (
 		struct rrr_msgdb_client_conn *conn,
 		int ack_mode
 ) {
-	int positive_ack_dummy = 0;
+	short ack_dummy = 0;
 	switch (ack_mode) {
 		case ACK_MODE_NOT_OK:
 			return __rrr_test_msgdb_await_negative_ack(conn);
 		case ACK_MODE_OK:
 			return __rrr_test_msgdb_await_positive_ack(conn);
 		default:
-			return  __rrr_test_msgdb_await_ack(&positive_ack_dummy, conn);
+			return __rrr_test_msgdb_await_ack(&ack_dummy, &ack_dummy, conn);
 	};
 }
 
@@ -190,7 +236,7 @@ static int __rrr_test_msgdb_send_empty (
 
 	MSG_SET_TYPE(msg, type);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
@@ -201,38 +247,32 @@ static int __rrr_test_msgdb_send_empty (
 	return ret;
 }
 
-static int __rrr_test_msgdb_get_msg (
-		struct rrr_msgdb_client_conn *conn,
-		const char *topic
-) {
+static int __rrr_test_msgdb_get_index_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg = NULL;
-	struct rrr_msg_msg *result_msg = NULL;
+	struct rrr_array *array_tmp = arg;
 
-	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+	char *topic_tmp = NULL;
+
+	if (positive_ack) {
+		ret = RRR_READ_EOF;
 		goto out;
 	}
-
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
-		goto out;
-	}
-
-	MSG_SET_TYPE(msg, MSG_TYPE_GET);
-
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn, NULL, NULL)) != 0) {
-		TEST_MSG("Non-zero return %i from await msg\n", ret);
+	if (negative_ack) {
 		ret = 1;
 		goto out;
 	}
 
+	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, *msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_str_with_tag (array_tmp, "file", topic_tmp)) != 0) {
+		goto out;
+	}
+
 	out:
-	RRR_FREE_IF_NOT_NULL(result_msg);
-	RRR_FREE_IF_NOT_NULL(msg);
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	return ret;
 }
 
@@ -244,11 +284,27 @@ static int __rrr_test_msgdb_get_index (
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
-	struct rrr_string_builder value_tmp = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx(&array_tmp, conn, min_age_s, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx(conn, min_age_s)) != 0) {
 		goto out;
 	}
+
+
+	do {
+		ret = rrr_msgdb_client_await (
+				conn,
+				__rrr_test_msgdb_get_index_delivery_callback,
+				&array_tmp
+		);
+	} while (ret == 0);
+
+	if (ret != RRR_READ_EOF) {
+		TEST_MSG("Error while reading data in %s return was %i\n", __func__, ret);
+		ret = 1;
+		goto out;
+	}
+
+	ret = 0;
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_array_dump(&array_tmp);
@@ -260,21 +316,7 @@ static int __rrr_test_msgdb_get_index (
 		goto out;
 	}
 
-	RRR_LL_ITERATE_BEGIN(&array_tmp, const struct rrr_type_value);
-		if (strcmp(node->tag, "dir") == 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-		if ((ret = rrr_string_builder_append_raw(&value_tmp, node->data, node->total_stored_length)) != 0) {
-			goto out;
-		}
-		if ((ret = __rrr_test_msgdb_get_msg (conn, rrr_string_builder_buf(&value_tmp))) != 0) {
-			goto out;
-		}
-		rrr_string_builder_clear(&value_tmp);
-	RRR_LL_ITERATE_END();
-
 	out:
-	rrr_string_builder_clear(&value_tmp);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -298,7 +340,7 @@ static int __rrr_test_msgdb_get_and_check_msg (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_GET);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
@@ -346,7 +388,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
@@ -357,7 +399,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 	MSG_SET_TYPE(msg, MSG_TYPE_GET);
 
 	// Data is ignored for GET messages, we simply change the type
-	if ((ret = rrr_msgdb_client_send(conn, msg, NULL, NULL)) != 0) {
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
@@ -383,6 +425,25 @@ static int __rrr_test_msgdb_send_and_get_array (
 	return ret;
 }
 
+static int __rrr_test_msgdb_tidy (
+		struct rrr_msgdb_client_conn *conn,
+		uint32_t max_age_s
+) {
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_client_cmd_tidy(conn, max_age_s)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_await_and_check_ack(conn, ACK_MODE_OK)) != 0) {
+		TEST_MSG("Missing positive ACK after tidy\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_test_msgdb(void) {
 	int ret = 0;
 
@@ -393,7 +454,7 @@ static int __rrr_test_msgdb(void) {
 	}
 
 	// Tidy everything
-	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 0)) != 0) {
+	if ((ret = __rrr_test_msgdb_tidy(&conn, 0)) != 0) {
 		goto out;
 	}
 
@@ -465,7 +526,7 @@ static int __rrr_test_msgdb(void) {
 	}
 
 	// Tidy everything older than 10 seconds (no messages should be tidied)
-	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 10)) != 0) {
+	if ((ret = __rrr_test_msgdb_tidy(&conn, 10)) != 0) {
 		goto out;
 	}
 
@@ -475,7 +536,7 @@ static int __rrr_test_msgdb(void) {
 	}
 
 	// Tidy everything
-	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 0)) != 0) {
+	if ((ret = __rrr_test_msgdb_tidy(&conn, 0)) != 0) {
 		goto out;
 	}
 

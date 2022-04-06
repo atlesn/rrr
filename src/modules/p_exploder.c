@@ -257,15 +257,7 @@ static int exploder_parse_config (struct exploder_data *data, struct rrr_instanc
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_timestamp", do_preserve_timestamp, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_topic", do_preserve_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_topic_append_tag", do_topic_append_tag, 0);
-
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"exploder_topic"
-	)) != 0) {
-		goto out;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("exploder_topic", topic, topic_len);
 
 	out:
 	return ret;

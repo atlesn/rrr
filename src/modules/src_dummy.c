@@ -161,16 +161,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"dummy_topic"
-	)) != 0) {
-		goto out;
-	}
-	/* On error, memory is freed by data_cleanup */
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("dummy_topic", topic, topic_len);
 
 	out:
 	return ret;

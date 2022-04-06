@@ -82,7 +82,7 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
-                net_transport/net_transport_ctx.c
+                net_transport/net_transport_ctx.c net_transport/net_transport_common.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \

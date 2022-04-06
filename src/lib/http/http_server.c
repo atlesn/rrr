@@ -441,6 +441,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 	return rrr_net_transport_new (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
+			"HTTP server",
 			callback_data->net_transport_flags,
 			callback_data->queue,
 			alpn_protos,
@@ -495,6 +496,7 @@ static int __rrr_http_server_start (
 		ret = rrr_net_transport_new (
 				result_transport,
 				net_transport_config,
+				"HTTP server",
 				net_transport_flags,
 				queue,
 				NULL,

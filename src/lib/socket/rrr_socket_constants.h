@@ -32,6 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_NOT_READY                RRR_READ_INCOMPLETE
 #define RRR_SOCKET_READ_EOF                 RRR_READ_EOF
 
+/*
+ * Avoid collisions with read framework flags in read_constants.h
+ */
+
 #define RRR_SOCKET_READ_METHOD_READ_FILE    (1<<0)
 #define RRR_SOCKET_READ_METHOD_RECVFROM     (1<<1)
 #define RRR_SOCKET_READ_CHECK_EOF           (1<<2)

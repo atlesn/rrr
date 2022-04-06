@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 
 #include "net_transport_plain.h"
+#include "net_transport_common.h"
 
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
@@ -146,26 +147,6 @@ static int __rrr_net_transport_plain_connect (
 		return ret;
 }
 
-struct rrr_net_transport_plain_read_session {
-	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
-};
-
-static int __rrr_net_transport_plain_read_get_target_size_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
-}
-
-static int __rrr_net_transport_plain_read_complete_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
-}
-
 static int __rrr_net_transport_plain_read_message (
 		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
@@ -173,48 +154,52 @@ static int __rrr_net_transport_plain_read_message (
 
 	*bytes_read = 0;
 
-	struct rrr_net_transport_plain_read_session callback_data = {
+	struct rrr_net_transport_read_callback_data callback_data = {
 			handle,
 			get_target_size,
 			get_target_size_arg,
+			get_target_size_error,
+			get_target_size_error_arg,
 			complete_callback,
 			complete_callback_arg,
 	};
 
-	rrr_slength read_attempts_signed = read_attempts;
-	while (--read_attempts_signed >= 0) {
-		uint64_t bytes_read_tmp = 0;
-		ret = rrr_socket_read_message_default (
-				&bytes_read_tmp,
-				&handle->read_sessions,
-				handle->submodule_fd,
-				read_step_initial,
-				read_step_max_size,
-				read_max_size,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF,
-				ratelimit_interval_us,
-				ratelimit_max_bytes,
-				__rrr_net_transport_plain_read_get_target_size_callback,
-				&callback_data,
-				__rrr_net_transport_plain_read_complete_callback,
-				&callback_data
-		);
-		*bytes_read += bytes_read_tmp;
+	uint64_t bytes_read_tmp = 0;
+	ret = rrr_socket_read_message_default (
+			&bytes_read_tmp,
+			&handle->read_sessions,
+			handle->submodule_fd,
+			read_step_initial,
+			read_step_max_size,
+			read_max_size,
+			(RRR_SOCKET_READ_METHOD_RECV |
+			 RRR_SOCKET_READ_CHECK_POLLHUP |
+			 RRR_SOCKET_READ_CHECK_EOF |
+			 RRR_READ_MESSAGE_FLUSH_OVERSHOOT),
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
+			rrr_net_transport_common_read_get_target_size,
+			&callback_data,
+			rrr_net_transport_common_read_get_target_size_error_callback,
+			&callback_data,
+			rrr_net_transport_common_read_complete_callback,
+			&callback_data
+	);
+	*bytes_read += bytes_read_tmp;
 
-		if (ret == RRR_SOCKET_OK || ret == RRR_READ_RATELIMIT) {
-			// TODO : Check for persistent connection/more results which might be
-			//		  stored in read session overshoot buffer
-			goto out;
+	if (ret == RRR_SOCKET_OK || ret == RRR_READ_RATELIMIT) {
+		// TODO : Check for persistent connection/more results which might be
+		//		  stored in read session overshoot buffer
+		// OK, no message printed
+	}
+	else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
+		if (ret == RRR_SOCKET_HARD_ERROR) {
+			RRR_MSG_0("Hard error on fd %i while reading from remote in %s\n", handle->submodule_fd, __func__);
 		}
-		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			if (ret == RRR_SOCKET_HARD_ERROR) {
-				RRR_MSG_0("Hard error while reading from remote in __rrr_net_transport_plain_read_message\n");
-			}
-			else {
-				RRR_DBG_7("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
-			}
-			goto out;
+		else {
+			RRR_DBG_7("Read on fd %i returned %i while reading from remote in %s\n", handle->submodule_fd, ret, __func__);
 		}
+		goto out;
 	}
 
 	out:

@@ -241,15 +241,7 @@ static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_length,
-			config,
-			"mangler_topic"
-	)) != 0) {
-		goto out;
-	}
-
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("mangler_topic", topic, topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_non_array_passthrough", do_non_array_passthrough, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_convert_tolerant_blobs", do_convert_tolerant_blobs, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_convert_tolerant_strings", do_convert_tolerant_strings, 0);

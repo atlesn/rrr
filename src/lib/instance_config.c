@@ -414,7 +414,7 @@ int rrr_instance_config_parse_optional_utf8 (
 	return ret;
 }
 
-int rrr_instance_config_parse_topic_and_length (
+int rrr_instance_config_parse_optional_topic_and_length (
 		char **target,
 		uint16_t *target_length,
 		struct rrr_instance_config_data *config,
@@ -458,6 +458,51 @@ int rrr_instance_config_parse_topic_and_length (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic);
+	return ret;
+}
+
+int rrr_instance_config_parse_optional_topic_filter (
+		struct rrr_mqtt_topic_token **target,
+		char **target_str,
+		struct rrr_instance_config_data *config,
+		const char *string
+) {
+	int ret = 0;
+
+	if (target != NULL) {
+		*target = NULL;
+	}
+	if (target_str != NULL) {
+		*target_str = NULL;
+	}
+
+	char *filter = NULL;
+
+	if ((ret = rrr_instance_config_parse_optional_utf8 (&filter, config, string, NULL)) != 0 || filter == NULL) {
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_filter_validate_name(filter) != 0) {
+		RRR_MSG_0("Invalid parameter %s in instance %s\n", string, config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (target != NULL) {
+		if (rrr_mqtt_topic_tokenize(target, filter) != 0) {
+			RRR_MSG_0("Error while tokenizing topic filter in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (target_str != NULL) {
+		*target_str = filter;
+		filter = NULL;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(filter);
 	return ret;
 }
 
