@@ -184,7 +184,7 @@ static int __rrr_socket_client_fd_new (
 ) {
 	int ret = 0;
 
-	struct rrr_socket_client_fd *client_fd = rrr_allocate(sizeof(*client_fd));
+	struct rrr_socket_client_fd *client_fd = rrr_allocate_zero(sizeof(*client_fd));
 	if (client_fd == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_fd_new\n");
 		ret = 1;
@@ -198,8 +198,6 @@ static int __rrr_socket_client_fd_new (
 			goto out_free;
 		}
 	}
-
-	memset(client_fd, '\0', sizeof(*client_fd));
 
 	if (addr_len > sizeof(client_fd->addr)) {
 		RRR_BUG("BUG: Address length too long in __rrr_socket_client_fd_new\n");
