@@ -234,27 +234,12 @@ int rrr_instance_load_and_save (
 static int __rrr_instance_parse_topic_filter (
 		struct rrr_instance *data
 ) {
-	int ret = 0;
-
-	struct rrr_instance_config_data *config = data->config;
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("topic_filter", topic_filter);
-
-	if (data->topic_filter != NULL) {
-		if (rrr_mqtt_topic_filter_validate_name(data->topic_filter) != 0) {
-			RRR_MSG_0("Invalid topic_filter setting found for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (rrr_mqtt_topic_tokenize(&data->topic_first_token, data->topic_filter) != 0) {
-			RRR_MSG_0("Error while tokenizing topic filter in __rrr_instance_parse_topic_filter\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
+	return rrr_instance_config_parse_optional_topic_filter (
+			&data->topic_first_token,
+			&data->topic_filter,
+			data->config,
+			"topic_filter"
+	);
 }
 
 static int __rrr_instance_parse_misc (
@@ -268,6 +253,7 @@ static int __rrr_instance_parse_misc (
 		int do_enable_buffer;
 		int do_enable_backstop;
 		int do_duplicate;
+		int do_topic_filter_invert;
 	} data_tmp;
 
 	struct data *data = &data_tmp;
@@ -288,6 +274,10 @@ static int __rrr_instance_parse_misc (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("duplicate", do_duplicate, 0);
 	if (data->do_duplicate) {
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DUPLICATE;
+	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("topic_filter_invert", do_topic_filter_invert, 0);
+	if (data->do_topic_filter_invert) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT;
 	}
 
 	out:

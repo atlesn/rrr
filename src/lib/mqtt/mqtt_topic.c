@@ -88,7 +88,7 @@ int rrr_mqtt_topic_filter_validate_name (
 	struct topic_name_seq seq = { 0, 0, topic_filter };
 
 	if (strlen(topic_filter) > 0xffff) {
-		RRR_MSG_0("Topic filter too long in rrr_mqtt_topic_filter_validate_name\n");
+		RRR_MSG_0("Topic filter too long in %s\n", __func__);
 		return 1;
 	}
 
@@ -183,13 +183,13 @@ int rrr_mqtt_topic_match_str_with_end (
 	struct rrr_mqtt_topic_token *pub_topic_tokens = NULL;
 
 	if (rrr_mqtt_topic_tokenize(&sub_filter_tokens, sub_filter) != 0) {
-		RRR_MSG_0("Failed to tokenize filter in rrr_mqtt_topic_match_str\n");
+		RRR_MSG_0("Failed to tokenize filter in %s\n", __func__);
 		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
 		goto out;
 	}
 
 	if (rrr_mqtt_topic_tokenize_with_end(&pub_topic_tokens, pub_topic, pub_topic_end) != 0) {
-		RRR_MSG_0("Failed to tokenize topic in rrr_mqtt_topic_match_str\n");
+		RRR_MSG_0("Failed to tokenize topic in %s\n", __func__);
 		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
 		goto out;
 	}
@@ -289,7 +289,7 @@ int rrr_mqtt_topic_tokens_clone (
 	struct rrr_mqtt_topic_token *result = rrr_allocate(strlen(first_token->data) + sizeof(*result));
 //	printf ("allocate token %p (clone)\n", result);
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -298,7 +298,7 @@ int rrr_mqtt_topic_tokens_clone (
 
 	ret = rrr_mqtt_topic_tokens_clone(&result->next, first_token->next);
 	if (ret != 0) {
-		RRR_MSG_0("Could not clone child topic token in rrr_mqtt_topic_tokens_clone\n");
+		RRR_MSG_0("Could not clone child topic token in %s\n", __func__);
 		goto out_free;
 	}
 
@@ -349,7 +349,7 @@ int rrr_mqtt_topic_tokenize_with_end (
 		token = rrr_allocate(sizeof(*token) + len + 1);
 //		printf ("allocate token %p\n", token);
 		if (token == NULL) {
-			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_subscription_topic_tokenize\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}

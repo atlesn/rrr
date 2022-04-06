@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
@@ -435,7 +436,7 @@ static void ipclient_event_send_queue (int fd, short flags, void *arg) {
 	}
 }
 
-static void ipclient_pause_check (int *do_pause, int is_paused, void *callback_arg) {
+static void ipclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct ipclient_data *data = callback_arg;
 
 	if (is_paused) {
@@ -549,6 +550,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			ipclient_pause_check,
 			data
 	);

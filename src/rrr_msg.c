@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -216,6 +216,7 @@ static int __rrr_msg_log_callback (
 	RRR_MSG_1("RRR loglevel: %u\n", message->loglevel_orig);
 	RRR_MSG_1("RFC loglevel: %u\n", message->loglevel_translated);
 	RRR_MSG_1("Is stdout: %u\n", message->is_stdout);
+	RRR_MSG_1("Location: %s:%" PRIu32 "\n", message->file, message->line);
 	RRR_MSG_1("Prefix: %s\n", prefix_tmp);
 	RRR_MSG_1("Message: %s\n", message_tmp);
 
@@ -331,9 +332,7 @@ static int __rrr_msg_read (
 	)) != 0) {
 		if (ret == RRR_MSG_READ_INCOMPLETE) {
 			RRR_MSG_0("Header of file '%s' was incomplete, file is too small\n",
-				file,
-				file_size_final,
-				target_size
+				file
 			);
 			ret = 1;
 			goto out;
@@ -434,7 +433,7 @@ static int __rrr_msg_selftest (
 	{
 		RRR_MSG_1("Test RRR Log Message\n");
 
-		if ((ret = rrr_msg_msg_log_new(&msg_log, 7, 3, "prefix", "This is the log message")) != 0) {
+		if ((ret = rrr_msg_msg_log_new(&msg_log, __FILE__, __LINE__, 7, 3, "prefix", "This is the log message")) != 0) {
 			goto out;
 		}
 

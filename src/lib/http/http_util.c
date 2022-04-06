@@ -291,16 +291,20 @@ int rrr_http_util_urlencoded_string_decode (
 	return rrr_nullsafe_str_with_raw_do(str, __rrr_http_util_decode_urlencoded_string_callback, NULL);
 }
 
+struct rrr_http_util_uri_encode_foreach_byte_callback_data {
+	char *wpos;
+};
+
 int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
-	char **wpos = arg;
+	struct rrr_http_util_uri_encode_foreach_byte_callback_data *callback_data = arg;
 
 	if (__rrr_http_util_is_alphanumeric((unsigned char) byte) || __rrr_http_util_is_uri_unreserved_rfc2396((unsigned char) byte)) {
-		**wpos = byte;
-		(*wpos)++;
+		*(callback_data->wpos) = byte;
+		callback_data->wpos++;
 	}
 	else {
-		sprintf((*wpos), "%s%02x", "%", byte);
-		(*wpos) += 3;
+		sprintf(callback_data->wpos, "%s%02X", "%", (unsigned char) byte);
+		callback_data->wpos += 3;
 	}
 
 	return 0;
@@ -335,22 +339,18 @@ int rrr_http_util_uri_encode (
 	}
 
 	if (result_max_length > 0) {
-		char *wpos = result;
-		char *wpos_max = result + result_max_length;
+		struct rrr_http_util_uri_encode_foreach_byte_callback_data callback_data = {
+			result
+		};
 
-		// NOTE : Pass double pointer to wpos
-		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &wpos)) != 0) {
+		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &callback_data)) != 0) {
 			goto out;
-		}
-
-		if (wpos > wpos_max) {
-			RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 		}
 
 		rrr_nullsafe_str_set_allocated (
 				*target,
 				(void **) &result,
-				rrr_length_from_ptr_sub_bug_const(wpos, result)
+				rrr_length_from_ptr_sub_bug_const(callback_data.wpos, result)
 		);
 	}
 

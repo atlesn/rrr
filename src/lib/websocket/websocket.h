@@ -118,7 +118,6 @@ int rrr_websocket_enqueue_ping_if_needed (
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
-		rrr_length read_attempts,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
