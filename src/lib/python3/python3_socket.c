@@ -106,7 +106,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 
 	message = rrr_msg_msg_duplicate(message_orig);
 	if (message == NULL) {
-		RRR_MSG_0("Could not duplicate message in rrr_python3_socket_f_send\n");
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -196,14 +196,14 @@ PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 
 	new_socket = PyObject_New(struct rrr_python3_socket_data, &rrr_python3_socket_type);
 	if (new_socket == NULL) {
-		RRR_MSG_0("Could not create new socket in rrr_python3_socket_new:\n");
+		RRR_MSG_0("Could not create new socket in %s\n", __func__);
 		PyErr_Print();
 		goto out;
 	}
 	new_socket->initialized = 0;
 
 	if (1 || rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize lock in rrr_python3_socket_new\n");
+		RRR_MSG_0("Could not initialize lock in %s\n", __func__);
 		goto out_free;
 	}
 
@@ -233,7 +233,7 @@ int rrr_python3_socket_send (
 	);
 
 	if (message->msg_size < sizeof(struct rrr_msg)) {
-		RRR_BUG("Received a socket message of wrong size in rrr_python3_socket_send (it says %u bytes)\n", message->msg_size);
+		RRR_BUG("Received a socket message of wrong size in %s (it says %u bytes)\n", __func__, message->msg_size);
 	}
 
 	pthread_mutex_lock(&socket_data->send_lock);
