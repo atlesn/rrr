@@ -23,6 +23,9 @@ rrr (1.24-1) bullseye; urgency=medium
   * Under the hood:
     * Cleanups in net transport framework
 
+  * Other:
+    * Remove obsolete configuration parameter ip_persistent_connections
+
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 17:26:52 +0200
 
 rrr (1.23-2) bullseye; urgency=medium

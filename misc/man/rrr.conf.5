@@ -514,9 +514,6 @@ Defaults to no which means that order is not guaranteed when there are connectio
 .It ip_send_multiple_per_connection={yes|no}
 If set to no, TCP connections are forced to be closed after a single message has been sent. Defaults to 'yes'.
 
-.It ip_persistent_connections={yes|no}
-OBSOLETE, has no effect. Use ip_persistent_timeout_ms. 
-
 .It ip_persistent_timeout_ms=MILLISECONDS
 After a packet is sent or data is read on a TCP connection, keep the connection alive for the specifed amout of milliseconds or until more data is sent or received.
 If set to 0, connections are closed promptly. Default value if left unset is 5000.
