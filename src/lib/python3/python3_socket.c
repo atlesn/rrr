@@ -202,7 +202,7 @@ PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 	}
 	new_socket->initialized = 0;
 
-	if (1 || rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in %s\n", __func__);
 		goto out_free;
 	}
