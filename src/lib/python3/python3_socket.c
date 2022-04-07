@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,6 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_python3_socket_data {
 	PyObject_HEAD
 	struct rrr_cmodule_worker *worker;
+	int initialized;
 	uint64_t time_start;
 	// Protects sending in case we have threads in the pythond program
 	pthread_mutex_t send_lock;
@@ -59,6 +60,9 @@ static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
 
 	socket_data->worker = NULL;
+	if (socket_data->initialized) {
+		pthread_mutex_destroy(&socket_data->send_lock);
+	}
 }
 
 static void rrr_python3_socket_f_dealloc (PyObject *self) {
@@ -76,10 +80,13 @@ static PyObject *rrr_python3_socket_f_new (PyTypeObject *type, PyObject *args, P
 }
 
 static int rrr_python3_socket_f_init (PyObject *self, PyObject *args, PyObject *kwds) {
-	__rrr_python3_socket_dealloc_internals(self);
+	(void)(self);
 	(void)(args);
 	(void)(kwds);
-	return 0;
+
+	PyErr_SetString(PyExc_NotImplementedError, "The type rrr_socket cannot be instantiated nor re-initialized\n");
+
+	return -1;
 }
 
 static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
@@ -193,15 +200,17 @@ PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 		PyErr_Print();
 		goto out;
 	}
+	new_socket->initialized = 0;
 
-	new_socket->worker = worker;
-
-	if (rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
+	if (1 || rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_python3_socket_new\n");
 		goto out_free;
 	}
 
+	new_socket->worker = worker;
 	new_socket->time_start = rrr_time_get_64();
+
+	new_socket->initialized = 1;
 
 	goto out;
 	out_free:
