@@ -33,7 +33,9 @@ def source(socket : rrr_socket, message: rrr_message):
 
 	my_array_value = rrr_array_value()
 	my_array_value.set_tag("my_tag")
-	my_array_value.set(0, "my_value")
+	my_array_value.set_type(my_array_value.TYPE_STR)
+	my_array_value.set(0, "my_value1")
+	my_array_value.set(1, "my_value2")
 
 	my_array = rrr_array()
 	my_array.append(my_array_value)
