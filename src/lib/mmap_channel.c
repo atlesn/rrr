@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -41,9 +41,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 #include "util/posix.h"
 
-// Messages larger than this limit are transferred using SHM
+// Blocks larger than this limit are allocated using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 8192
-#define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
+
+// SHM allocated blocks, upon re-use, are freed instead of being re-used
+// if the needed size is not greater than this limit
+#define RRR_MMAP_CHANNEL_SHM_MIN_REUSE_SIZE 4096
+
+// SHM allocated blocks exceeding this limit are freed immediately after being read. Set
+// to a value close to SHM_LIMIT for conservative RAM usage.
+#define RRR_MMAP_CHANNEL_MAX_PERSISTENT_SIZE (RRR_MMAP_CHANNEL_SHM_LIMIT + 1024)
 
 // Prevent multiple threads destroying mutexes simultaneously which
 // casue slowness on some systems (e.g. FreeBSD) due to mutexes in libc.
@@ -57,6 +64,7 @@ struct rrr_mmap_channel_block {
 
 	int shmid;
 	void *ptr_shm_or_mmap_writer;
+	int cleanup_needed;
 
 	rrr_shm_handle shm_handle;
 	rrr_mmap_handle mmap_handle;
@@ -77,6 +85,9 @@ struct rrr_mmap_channel {
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+
+	int cleanup_needed;
+
 	char name[64];
 
 	unsigned long long int read_starvation_counter;
@@ -150,6 +161,43 @@ static int __rrr_mmap_channel_block_free (
 	return 0;
 }
 
+static int __rrr_mmap_channel_cleanup (
+		struct rrr_mmap_channel *target
+) {
+	int ret = 0;
+
+	for (int i = 0; i < RRR_MMAP_CHANNEL_SLOTS; i++) {
+		struct rrr_mmap_channel_block *block = &(target->blocks[i]);
+
+		if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
+			if (ret != RRR_POSIX_MUTEX_ROBUST_BUSY) {
+				goto out;
+			}
+			continue;
+		}
+
+		if (block->cleanup_needed) {
+			block->cleanup_needed = 0;
+			ret = __rrr_mmap_channel_block_free(target, block);
+		}
+		else {
+			ret = 0;
+		}
+
+		pthread_mutex_unlock(&block->block_lock);
+
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	// Ensure any BUSY does not propagate
+	ret = 0;
+
+	out:
+	return ret;
+}
+
 static int __rrr_mmap_channel_allocate (
 		struct rrr_mmap_channel *target,
 		struct rrr_mmap_channel_block *block,
@@ -160,7 +208,7 @@ static int __rrr_mmap_channel_allocate (
 	// To reduce the chance of hitting the operating system limit on the total number of
 	// shared memory blocks, free the allocation if shm is not needed for this write.
 	if (block->shmid != 0 && block->ptr_shm_or_mmap_writer != NULL) {
-		if (data_size >= RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE && data_size <= block->size_capacity) {
+		if (data_size >= RRR_MMAP_CHANNEL_SHM_MIN_REUSE_SIZE && data_size <= block->size_capacity) {
 			goto out;
 		}
 	}
@@ -177,8 +225,8 @@ static int __rrr_mmap_channel_allocate (
 	if (data_size > RRR_MMAP_CHANNEL_SHM_LIMIT) {
 		key_t new_key;
 
-		data_size = data_size - (data_size % RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE) +
-				RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE;
+		data_size = data_size - (data_size % RRR_MMAP_CHANNEL_SHM_MIN_REUSE_SIZE) +
+				RRR_MMAP_CHANNEL_SHM_MIN_REUSE_SIZE;
 
 		int shmid = 0;
 		do {
@@ -241,13 +289,20 @@ int rrr_mmap_channel_write_using_callback (
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 
+	int cleanup_needed = 0;
 	int do_unlock_block = 0;
 
 	struct rrr_mmap_channel_block *block = NULL;
 
 	INDEX_LOCK(target);
+	cleanup_needed = target->cleanup_needed;
+	target->cleanup_needed = 0;
 	block = &(target->blocks[target->wpos]);
 	INDEX_UNLOCK(target);
+
+	if (cleanup_needed && (ret = __rrr_mmap_channel_cleanup(target)) != 0) {
+		goto out_final;
+	}
 
 	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
 		if (ret == RRR_POSIX_MUTEX_ROBUST_BUSY) {
@@ -284,6 +339,7 @@ int rrr_mmap_channel_write_using_callback (
 		goto out_unlock;
 	}
 
+	block->cleanup_needed = 0;
 	block->size_data = data_size;
 
 	RRR_MMAP_DBG("mmap channel %p %s wr blk %i size %llu\n",
@@ -437,14 +493,19 @@ int rrr_mmap_channel_read_with_callback (
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
-		*read_count = 1;
+		const int cleanup_needed = block->size_capacity > RRR_MMAP_CHANNEL_MAX_PERSISTENT_SIZE;
+		block->cleanup_needed = cleanup_needed;
 		block->size_data = 0;
+		*read_count = 1;
+
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
 
 		INDEX_LOCK(source);
+		source->cleanup_needed |= cleanup_needed;
 		source->entry_count--;
 		source->rpos++;
+
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
 			source->rpos = 0;
 		}

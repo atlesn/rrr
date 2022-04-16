@@ -1,4 +1,4 @@
-rrr (1.24-2) bullseye; urgency=medium
+rrr (1.24-3) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -15,6 +15,8 @@ rrr (1.24-2) bullseye; urgency=medium
     * If conversion from str to PyUnicode fails in python3 for array values,
       fallback to PyByteArray with a warning
     * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
+    * More aggressive cleanup of larger allocations in mmap channel to reduce
+      persistent memory usage in some situations.
 
   * Fixes:
     * Misc. features in python RRR array handling API not working correctly, in particular
