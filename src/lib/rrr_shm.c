@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -59,6 +59,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // the process which initially created the SHMs and it unregisters
 // the SHM.
 
+// SHMs are not allocated directly, the only public function of the
+// holder collection is rrr_shm_holders_cleanup. Instead, an
+// SHM collection with master/slave structure is used. 
+
+// When memory is to be shared between processes, and before forking,
+// a master is created. After forking, each fork then creates a slave.
+// Each master may hold up to RRR_SHM_COLLECTION_MAX allocations.
+
+// Allocations performed using rrr_shm_collection_master_allocate
+// can be accessed by the slave using the rrr_shm_resolve function by
+// communicating the SHM handle. Slaves may also allocate private memory
+// using rrr_shm_allocate and rrr_shm_free.
+
+// There is no locking in the SHM collection. Users must ensure that memory
+// is not allocated by multiple forks simultaneously or while rrr_shm_resolve
+// is called. If all memory is allocated prior to forking, no further locking
+// is required and the slaves may resolve the allocations asynchronously.
+
+// After a slave has obtained a pointer using rrr_shm_resolve, this pointer
+// is guaranteed to be valid at least until the next call of rrr_shm_resolve,
+// even if the master de-allocates the memory. The master or some other slave
+// may re-use the same slot for different memory. Note that the user must provide
+// synchronization for data being accessed if it is allocated and written to
+// after forking.
+
+// The collection does not provide the means to detect whether a pointer
+// refers to the same data after successive calls to rrr_shm_resolve for the
+// same handle.
+
 struct rrr_shm_holder {
 	RRR_LL_NODE(struct rrr_shm_holder);
 	pid_t pid;
@@ -113,9 +142,6 @@ static int __rrr_shm_holder_register (
 		const char *filename,
 		const char *creator
 ) {
-	// Use only raw malloc/free in the holder functions to avoid
-	// that rrr_freecalls back into the SHM framework causing deadlock
-
 	struct rrr_shm_holder *holder = malloc(sizeof(*holder));
 	if (holder == NULL) {
 		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
