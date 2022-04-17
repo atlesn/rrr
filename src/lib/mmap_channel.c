@@ -124,21 +124,21 @@ static int __rrr_mmap_channel_block_free (
 			// Attempt to recover from previously failed allocation
 			struct shmid_ds ds;
 			if (shmctl(block->shmid, IPC_STAT, &ds) != block->shmid) {
-				RRR_MSG_0("Warning: shmctl IPC_STAT failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("Warning: shmctl IPC_STAT failed in %s: %s\n", __func__, rrr_strerror(errno));
 			}
 			else {
 				if (ds.shm_nattch > 0) {
-					RRR_BUG("Dangling shared memory key in __rrr_mmap_channel_block_free, cannot continue\n");
+					RRR_BUG("Dangling shared memory key in %s, cannot continue\n", __func__);
 				}
 
 				if (shmctl(block->shmid, IPC_RMID, NULL) != 0) {
-					RRR_MSG_0("shmctl IPC_RMID failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
+					RRR_MSG_0("shmctl IPC_RMID failed in %s: %s\n", __func__, rrr_strerror(errno));
 					return 1;
 				}
 			}
 		}
 		else if (shmdt(block->ptr_shm_or_mmap_writer) != 0) {
-			RRR_MSG_0("shmdt failed in rrr_mmap_channel_write_using_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmdt failed in %s: %s\n", __func__, rrr_strerror(errno));
 			return 1;
 		}
 	}
@@ -147,7 +147,7 @@ static int __rrr_mmap_channel_block_free (
 				&target->writer_data.private_data,
 				block->ptr_shm_or_mmap_writer
 		) != 0) {
-			RRR_BUG("BUG: Free failed in __rrr_mmap_channel_block_free\n");
+			RRR_BUG("BUG: Free failed in %s\n", __func__);
 		}
 	}
 
@@ -236,7 +236,7 @@ static int __rrr_mmap_channel_allocate (
 					// OK, try another key
 				}
 				else {
-					RRR_MSG_0("Error from shmget in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+					RRR_MSG_0("Error from shmget in %s: %s\n", __func__, rrr_strerror(errno));
 					ret = 1;
 					goto out;
 				}
@@ -247,13 +247,13 @@ static int __rrr_mmap_channel_allocate (
 		block->size_capacity = data_size;
 
 		if ((block->ptr_shm_or_mmap_writer = shmat(shmid, NULL, 0)) == NULL) {
-			RRR_MSG_0("shmat failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmat failed in %s: %s\n", __func__, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 
 		if (shmctl(shmid, IPC_RMID, NULL) != 0) {
-			RRR_MSG_0("shmctl IPC_RMID failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmctl IPC_RMID failed in %s: %s\n", __func__, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -326,7 +326,7 @@ int rrr_mmap_channel_write_using_callback (
 	}
 
 	if (__rrr_mmap_channel_allocate(target, block, data_size) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_write\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out_unlock;
 	}
@@ -334,7 +334,7 @@ int rrr_mmap_channel_write_using_callback (
 	ret = callback(block->ptr_shm_or_mmap_writer, callback_arg);
 
 	if (ret != 0) {
-		RRR_MSG_0("Error from callback in rrr_mmap_channel_write_using_callback\n");
+		RRR_MSG_0("Error from callback in %s\n", __func__);
 		ret = 1;
 		goto out_unlock;
 	}
@@ -465,19 +465,19 @@ int rrr_mmap_channel_read_with_callback (
 		const char *data_pointer = NULL;
 
 		if ((data_pointer = shmat(block->shmid, NULL, 0)) == NULL) {
-			RRR_MSG_0("Could not get shm pointer in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not get shm pointer in %s: %s\n", __func__, rrr_strerror(errno));
 			ret = 1;
 			goto out_unlock;
 		}
 
 		if ((ret = callback(data_pointer, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_0("Error from callback in __rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in %s\n", __func__);
 			ret = 1;
 			do_rpos_increment = 0;
 		}
 
 		if (shmdt(data_pointer) != 0) {
-			RRR_MSG_0("shmdt failed in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmdt failed in %s: %s\n", __func__, rrr_strerror(errno));
 			ret = 1;
 			goto out_rpos_increment;
 		}
@@ -485,7 +485,7 @@ int rrr_mmap_channel_read_with_callback (
 	else {
 		void *ptr = rrr_mmap_collection_resolve (source->mmaps, block->shm_handle, block->mmap_handle);
 		if ((ret = callback(ptr, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_0("Error from callback in __rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in %s\n", __func__);
 			ret = 1;
 			do_rpos_increment = 0;
 		}
@@ -530,7 +530,7 @@ void rrr_mmap_channel_destroy (
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap_writer != NULL) {
 			if (++msg_count == 1) {
-				RRR_MSG_1("Note: Pointer was still present in block in rrr_mmap_channel_destroy, fork might not have exited yet or has been killed before cleanup.\n");
+				RRR_MSG_1("Note: Pointer was still present in block while destroying MMAP channel, fork might not have exited yet or has been killed before cleanup.\n");
 			}
 		}
 		rrr_posix_mutex_robust_destroy(&target->blocks[i].block_lock);
