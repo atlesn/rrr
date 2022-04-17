@@ -331,9 +331,7 @@ int rrr_mmap_channel_write_using_callback (
 		goto out_unlock;
 	}
 
-	ret = callback(block->ptr_shm_or_mmap_writer, callback_arg);
-
-	if (ret != 0) {
+	if ((ret = callback(block->ptr_shm_or_mmap_writer, callback_arg)) != 0) {
 		RRR_MSG_0("Error from callback in %s\n", __func__);
 		ret = 1;
 		goto out_unlock;
