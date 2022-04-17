@@ -144,12 +144,12 @@ static int __rrr_shm_holder_register (
 ) {
 	struct rrr_shm_holder *holder = rrr_allocate_zero(sizeof(*holder));
 	if (holder == NULL) {
-		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		return 1;
 	}
 
 	if (strlen(filename) > sizeof(holder->filename) - 1) {
-		RRR_BUG("BUG: Filename exceeds maximum length in rrr_shm_holder_register\rrr_shm_collection_slave_new");
+		RRR_BUG("BUG: Filename exceeds maximum length in %s\n", __func__);
 	}
 	strcpy(holder->filename, filename);
 
@@ -188,7 +188,7 @@ static int __rrr_shm_open (
 	*fd = 0;
 
 	if ((fd_tmp = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR)) < 0) {
-		RRR_MSG_0("shm_open failed in __rrr_shm_open: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("shm_open failed in %s: %s\n", __func__, rrr_strerror(errno));
 		return 1;
 	}
 
@@ -216,7 +216,7 @@ static int __rrr_shm_open_create (
 
 		if ((fd_tmp = shm_open(name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
 			if (errno != EEXIST) {
-				RRR_MSG_0("shm_open failed in __rrr_shm_open_create: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("shm_open failed in %s: %s\n", __func__, rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -226,12 +226,12 @@ static int __rrr_shm_open_create (
 	} while(fd_tmp <= 0);
 
 	if (ftruncate (fd_tmp, (off_t) size) != 0) {
-		RRR_MSG_0("ftruncate size %llu failed in __rrr_shm_open_create: %s\n", (long long unsigned) size, rrr_strerror(errno));
+		RRR_MSG_0("ftruncate size %llu failed in %s: %s\n", (long long unsigned) size, __func__, rrr_strerror(errno));
 		goto out_close;
 	}
 
 	if ((ret = __rrr_shm_holder_register (name, creator)) != 0) {
-		RRR_MSG_0("Failed to register SHM in __rrr_shm_open_create\n");
+		RRR_MSG_0("Failed to register SHM in %s\n", __func__);
 		goto out_close;
 	}
 
@@ -271,7 +271,7 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 	}
 
 	if ((ptr = rrr_posix_mmap_with_fd(fd_tmp, shm->data_size)) == NULL) {
-		RRR_MSG_0("mmap failed in rrr_shm_mmap: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("mmap failed in %s: %s\n", __func__, rrr_strerror(errno));
 		goto out_close;
 	}
 
@@ -337,7 +337,7 @@ int rrr_shm_collection_slave_new (
 
 	struct rrr_shm_collection_slave *slave = rrr_allocate_zero (sizeof(*slave));
 	if (slave == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_shm_collection_slave_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -368,7 +368,7 @@ int rrr_shm_collection_master_new (
 	struct rrr_shm_collection_master *collection;
 
 	if ((collection = rrr_posix_mmap(sizeof(*collection), 1 /* Is shared */)) == NULL) {
-		RRR_MSG_0("mmap failed in rrr_shm_collection_master_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("mmap failed in %s: %s\n", __func__, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -425,7 +425,7 @@ void rrr_shm_collection_master_free (
 		rrr_shm_handle handle
 ) {
 	if (collection->elements[handle].data_size == 0) {
-		RRR_BUG("BUG: Double free in rrr_shm_collection_master_free\n");
+		RRR_BUG("BUG: Double free in %s\n", __func__);
 	}
 	__rrr_shm_cleanup(&collection->elements[handle]);
 
@@ -503,8 +503,8 @@ void *rrr_shm_resolve (
 	}
 
 	if (slave->ptrs[handle].ptr == NULL) {
-		RRR_MSG_0("Invalid handle %llu in rrr_shm_resolve, not allocated by master\n",
-				(long long unsigned) handle);
+		RRR_MSG_0("Invalid handle %llu in %s, not allocated by master\n",
+				(long long unsigned) handle, __func__);
 		return NULL;
 	}
 
@@ -549,7 +549,7 @@ void rrr_shm_free (
 ) {
 	rrr_shm_handle handle;
 	if (rrr_shm_resolve_reverse(&handle, slave, ptr) != 0) {
-		RRR_BUG("BUG: ptr %p not found in rrr_shm_free()\n", ptr);
+		RRR_BUG("BUG: ptr %p not found in %s\n", ptr, __func__);
 	}
 	rrr_shm_collection_master_free(slave->master, handle);
 }
