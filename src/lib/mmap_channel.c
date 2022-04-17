@@ -90,7 +90,6 @@ struct rrr_mmap_channel {
 
 	char name[64];
 
-	unsigned long long int read_starvation_counter;
 	unsigned long long int write_full_counter;
 };
 
@@ -438,9 +437,6 @@ int rrr_mmap_channel_read_with_callback (
 
 	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
 		if (ret == RRR_POSIX_MUTEX_ROBUST_BUSY) {
-			INDEX_LOCK(source);
-			source->read_starvation_counter++;
-			INDEX_UNLOCK(source);
 			ret = RRR_MMAP_CHANNEL_EMPTY;
 		}
 		else {
@@ -642,7 +638,6 @@ int rrr_mmap_channel_new (
 
 void rrr_mmap_channel_get_counters_and_reset (
 		unsigned long long int *count,
-		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
 ) {
@@ -652,10 +647,7 @@ void rrr_mmap_channel_get_counters_and_reset (
 
 	*count = (unsigned long long int) source->entry_count;
 
-	*read_starvation_counter = source->read_starvation_counter;
 	*write_full_counter = source->write_full_counter;
-
-	source->read_starvation_counter = 0;
 	source->write_full_counter = 0;
 
 	INDEX_UNLOCK(source);
