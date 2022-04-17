@@ -142,13 +142,11 @@ static int __rrr_shm_holder_register (
 		const char *filename,
 		const char *creator
 ) {
-	struct rrr_shm_holder *holder = malloc(sizeof(*holder));
+	struct rrr_shm_holder *holder = rrr_allocate_zero(sizeof(*holder));
 	if (holder == NULL) {
 		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
 		return 1;
 	}
-
-	memset(holder, '\0', sizeof(*holder));
 
 	if (strlen(filename) > sizeof(holder->filename) - 1) {
 		RRR_BUG("BUG: Filename exceeds maximum length in rrr_shm_holder_register\rrr_shm_collection_slave_new");
@@ -177,7 +175,7 @@ void rrr_shm_holders_cleanup (void) {
 			}
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; rrr_free(node));
 	pthread_mutex_unlock(&shm_holders_lock);
 }
 
