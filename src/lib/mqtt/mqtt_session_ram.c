@@ -324,6 +324,9 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	// Always clear retain flag per specification
 	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(new_publish, 0);
+
+	// Always clear dup flag per speficiation
+	RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(new_publish, 0);
 	new_publish->dup = 0;
 
 	// We don't set the new packet ID yet in case the client is not currently connected
@@ -342,7 +345,6 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 			session->client_id_
 	);
 
-	new_publish->dup = 0;
 	new_publish->is_outbound = 1;
 
 	if (__rrr_mqtt_session_ram_fifo_write_simple (
@@ -2153,8 +2155,8 @@ static int __rrr_mqtt_session_ram_receive_publish (
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) {
 		// QOS 1 packets are released when we send PUBACK
 
-		RRR_DBG_3("Receive PUBLISH QOS 1 packet %p with id %u add to QoS 1/2 queue\n",
-				publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
+		RRR_DBG_3("Receive PUBLISH QOS 1 packet %p with id %u dup %u add to QoS 1/2 queue\n",
+				publish, RRR_MQTT_P_GET_IDENTIFIER(publish), publish->dup);
 
 		if (__rrr_mqtt_session_ram_fifo_write_ordered (
 				&ram_session->from_remote_buffer.buffer,
@@ -2199,12 +2201,6 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		struct rrr_mqtt_p_publish *publish_in_buffer = callback_data.publish_in_buffer;
 
 		if (publish_in_buffer == NULL) {
-			if (publish->dup != 0) {
-				RRR_MSG_0("Received a new QoS2 PUBLISH packet which had DUP flag set\n");
-				ret = RRR_MQTT_SESSION_ERROR;
-				goto out;
-			}
-
 			RRR_DBG_3("Receive PUBLISH packet %p with id %u add to QoS2 queue\n",
 					publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
