@@ -887,7 +887,6 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) suback,
-					0,
 					__rrr_mqtt_broker_send_now_callback,
 					handle
 			),
@@ -937,7 +936,6 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) unsuback,
-					0,
 					__rrr_mqtt_broker_send_now_callback,
 					handle
 			),

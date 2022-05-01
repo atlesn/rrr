@@ -829,10 +829,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_p *ack = NULL;
 	uint8_t reason_v5 = 0;
 
-	// If we send an ACK without giving the PUBLISH to session framework first, this
-	// must be set to 1
-	int allow_missing_originating_packet = 0;
-
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish) != 0 && RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 		RRR_MSG_0("Recevied PUBLISH with DUP 1 and QoS 0, this is a protocol error\n");
 		ret = RRR_MQTT_SOFT_ERROR;
@@ -841,8 +837,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	// Parser may set reason on the publish (in case of invalid data) which we check here
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		allow_missing_originating_packet = 1;
-
 		// If QoS is 0, we cannot send error reply and must close connection
 		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
@@ -877,7 +871,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 	};
 	if (reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		allow_missing_originating_packet = 1;
 		goto out_generate_ack;
 	}
 
@@ -951,7 +944,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					mqtt_data->sessions,
 					&connection->session,
 					ack,
-					allow_missing_originating_packet,
 					__rrr_mqtt_common_send_now_callback,
 					handle
 			),
@@ -1098,7 +1090,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 					mqtt_data->sessions,
 					&connection->session,
 					next_ack,
-					0,
 					__rrr_mqtt_common_send_now_callback,
 					handle
 			),
