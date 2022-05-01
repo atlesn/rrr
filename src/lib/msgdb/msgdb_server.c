@@ -1060,8 +1060,11 @@ static void __rrr_msgdb_client_event_iteration (
 		EVENT_REMOVE(client->iteration_event);
 	}
 
-	RRR_DBG_1("msgdb fd %i iteration time %lu remaining directories %i\n",
-		client->fd, rrr_time_get_64() - time_start, client->iteration_session != NULL ? RRR_LL_COUNT(&client->iteration_session->dirs) : 0);
+	RRR_DBG_1("msgdb fd %i iteration time %" PRIu64 " remaining directories %i\n",
+		client->fd,
+		rrr_time_get_64() - time_start,
+		client->iteration_session != NULL ? RRR_LL_COUNT(&client->iteration_session->dirs) : 0
+	);
 }
 
 static int __rrr_msgdb_server_client_new (
