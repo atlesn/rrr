@@ -402,6 +402,9 @@ void rrr_log_printf_nolock (
 		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
 	}
 	else {
+#else
+	(void)(file);
+	(void)(line);
 #endif
 
 #ifndef RRR_LOG_DISABLE_PRINT

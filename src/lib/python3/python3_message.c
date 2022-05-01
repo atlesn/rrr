@@ -1206,7 +1206,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 #endif
 
 	if (*size != 0 && (rrr_slength) *size != (rrr_slength) new_size) {
-		RRR_MSG_0("Size of string elements in array value were not equal, which is required (%li<>%li).\n",
+		RRR_MSG_0("Size of string elements in array value were not equal, which is required (%lli<>%lli).\n",
 			(long long int) *size, (long long int) new_size);
 		ret = 1;
 		goto out;
@@ -1312,7 +1312,7 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 	}
 
 	if (*size != 0 && (rrr_slength) *size != (rrr_slength) new_size) {
-		RRR_MSG_0("Size of blob elements in array value were not equal, which is required (%li<>%li).\n",
+		RRR_MSG_0("Size of blob elements in array value were not equal, which is required (%lli<>%lli).\n",
 			(long long int) *size, (long long int) new_size);
 		ret = 1;
 		goto out;
