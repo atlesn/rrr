@@ -2697,7 +2697,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			callback,
 			callback_arg,
 			ram_session->complete_publish_grace_time_s * 1000 * 1000,
-			ram_session->retry_interval_usec * 1000 * 1000,
+			ram_session->retry_interval_usec,
 			ram_data,
 			ram_session,
 			counters
@@ -2902,9 +2902,6 @@ static int __rrr_mqtt_session_ram_send_packet_queue (
 			RRR_BUG("Unknown packet type %s in %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet), __func__);
 	};
 
-	RRR_DBG_3("Send packet %p with identifier %u of type %s (queued for sending)\n",
-			packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
-
 	if (__rrr_mqtt_session_ram_fifo_write_simple (
 			&ram_session->to_remote_buffer.buffer,
 			packet
@@ -2915,6 +2912,10 @@ static int __rrr_mqtt_session_ram_send_packet_queue (
 
 	out:
 	*total_send_queue_count = rrr_fifo_get_entry_count(&ram_session->to_remote_buffer.buffer);
+	if (ret == 0) {
+		RRR_DBG_3("Send packet %p with identifier %u of type %s (queued for sending, queue size is now %" PRIrrrl ")\n",
+				packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet), *total_send_queue_count);
+	}
 	SESSION_RAM_DECREF();
 	return ret;
 }
