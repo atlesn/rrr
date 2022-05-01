@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -327,7 +327,6 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	// Always clear dup flag per speficiation
 	RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(new_publish, 0);
-	new_publish->dup = 0;
 
 	// We don't set the new packet ID yet in case the client is not currently connected
 	// and many packets would exhaust the 16-bit ID field. It is set when iterating the
@@ -932,7 +931,9 @@ static void __rrr_mqtt_session_ram_packet_reset_id (
 		struct rrr_mqtt_p *packet
 ) {
 	packet->packet_identifier = 0;
-	packet->dup = 0;
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(packet, 0);
+	}
 }
 
 static int __rrr_mqtt_session_ram_release_packet_id (
@@ -1631,6 +1632,21 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 					goto out;
 				}
 			}
+			if (*(ack_callback_data->found) == 1) {
+				RRR_DBG_1("PUBACK id %u matched more than one PUBLISH in direction %s\n",
+					ack_packet->packet_identifier,
+					publish->is_outbound ? "outbound" : "inbound"
+				);
+				if (!RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish)) {
+					RRR_MSG_0("Encountered duplicate PUBLISH in direction %s with id %u with missing DUP flag while handling PUBACK\n",
+						publish->is_outbound ? "outbound" : "inbound",
+						ack_packet->packet_identifier
+					);
+					ret = RRR_FIFO_CALLBACK_ERR;
+				}
+				goto out;
+			}
+
 			// Noisy
 			RRR_DBG_3 ("Bind PUBACK id %u to PUBLISH\n", ack_packet->packet_identifier);
 			publish->qos_packets.puback = (struct rrr_mqtt_p_puback *) ack_packet;
@@ -1722,11 +1738,6 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
 					RRR_MQTT_P_GET_TYPE_NAME(packet),
 					RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
-			if (sub_usuback->dup == 0) {
-				RRR_MSG_0("Duplicate %s did not have DUP flag set\n", RRR_MQTT_P_GET_TYPE_NAME(ack_packet));
-				ret = RRR_FIFO_CALLBACK_ERR;
-				goto out;
-			}
 			RRR_MQTT_P_DECREF(sub_usub->sub_usuback);
 			sub_usub->sub_usuback = NULL;
 		}
@@ -2156,7 +2167,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		// QOS 1 packets are released when we send PUBACK
 
 		RRR_DBG_3("Receive PUBLISH QOS 1 packet %p with id %u dup %u add to QoS 1/2 queue\n",
-				publish, RRR_MQTT_P_GET_IDENTIFIER(publish), publish->dup);
+				publish, RRR_MQTT_P_GET_IDENTIFIER(publish), RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish));
 
 		if (__rrr_mqtt_session_ram_fifo_write_ordered (
 				&ram_session->from_remote_buffer.buffer,
@@ -2224,7 +2235,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 				RRR_MSG_0("Received a QoS2 PUBLISH packet with equal id to another packet of different size\n");
 				ret = RRR_MQTT_SESSION_ERROR;
 			}
-			if (publish->dup != 1) {
+			if (!RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish)) {
 				RRR_MSG_0("Received a re-sent QoS2 PUBLISH packet which did not have DUP flag set\n");
 				ret = RRR_MQTT_SESSION_ERROR;
 			}
@@ -2517,11 +2528,6 @@ static int __rrr_mqtt_session_ram_packet_transmit (
 		int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 		void *callback_arg
 ) {
-	if (packet_to_transmit->dup != 0) {
-		RRR_DBG_1("!! Retransmit !! Packet of type %s id %u\n",
-				RRR_MQTT_P_GET_TYPE_NAME(packet_to_transmit), RRR_MQTT_P_GET_IDENTIFIER(packet_to_transmit));
-	}
-
 	RRR_DBG_3 ("Transmission of %s %p identifier %u last attempt %" PRIu64 " holder packet is %p\n",
 			RRR_MQTT_P_GET_TYPE_NAME(packet_to_transmit),
 			packet_to_transmit,
@@ -2581,7 +2587,9 @@ static void __rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or
 			rrr_time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec
 	) {
 		packet->last_attempt = 0;
-		packet->dup = 1;
+		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+			RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(packet, 1);
+		}
 	}
 
 	*do_transmit = (packet->last_attempt == 0 ? 1 : 0);

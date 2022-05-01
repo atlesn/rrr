@@ -543,7 +543,7 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		result->type_flags = source->type_flags;
 	}
 	if (do_preserve_dup) {
-		result->dup = source->dup;
+		RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(result, RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(source));
 	}
 	if (do_preserve_reason) {
 		result->reason_v5 = source->reason_v5;

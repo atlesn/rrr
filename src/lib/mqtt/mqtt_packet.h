@@ -198,7 +198,6 @@ struct rrr_mqtt_p_payload {
     uint64_t last_attempt;                                     \
     uint64_t planned_expiry_time;                              \
     uint8_t reason_v5;                                         \
-    uint8_t dup;                                               \
     RRR_LL_NODE(struct rrr_mqtt_p);                            \
     const struct rrr_mqtt_p_reason *reason;                    \
     int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \

@@ -1179,7 +1179,7 @@ static int __rrr_mqtt_common_handle_packet_callback (
 	}
 
 	RRR_DBG_3 ("Handling packet of type %s id %u dup %u\n",
-			RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet), packet->dup);
+			RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(packet));
 
 	if ((ret = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, handle, packet)) != 0) {
 		if (ret == RRR_MQTT_INTERNAL_ERROR) {
