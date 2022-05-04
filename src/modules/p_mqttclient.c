@@ -89,8 +89,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_CONNACK_TIMEOUT_S     3
 #define RRR_MQTT_DISCONNECT_TIMEOUT_S  1
-#define RRR_MQTT_RETRY_INTERVAL_S      3
-#define RRR_MQTT_CLOSE_WAIT_S          1
 
 // Timeout before we send PUBLISH packets to the broker. This is to allow,
 // if the broker has just been started, other clients to subscribe first
@@ -2253,8 +2251,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	struct rrr_mqtt_common_init_data init_data = {
 		data->client_identifier, // May be NULL
-		RRR_MQTT_RETRY_INTERVAL_S * 1000 * 1000,
-		RRR_MQTT_CLOSE_WAIT_S * 1000 * 1000,
+		RRR_MQTT_COMMON_RETRY_INTERVAL_S * 1000 * 1000,
+		RRR_MQTT_COMMON_CLOSE_WAIT_TIME_S * 1000 * 1000,
 		RRR_MQTT_COMMON_MAX_CONNECTIONS
 	};
 

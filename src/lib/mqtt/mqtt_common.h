@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE    4096
 #define RRR_MQTT_COMMON_CLOSE_WAIT_TIME_S              1
-#define RRR_MQTT_COMMON_RETRY_INTERVAL_S               5
+#define RRR_MQTT_COMMON_RETRY_INTERVAL_S               3
 #define RRR_MQTT_COMMON_MAX_CONNECTIONS              260
 #define RRR_MQTT_COMMON_FIRST_READ_TIMEOUT_S           2
 #define RRR_MQTT_COMMON_TICK_INTERVAL_S               10
