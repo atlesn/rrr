@@ -145,6 +145,7 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = 0;
 	*send_allowed = 0;
+	*close_wait = 0;
 
 	struct rrr_mqtt_client_check_alive_callback_data callback_data = {
 		data,
