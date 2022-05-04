@@ -2277,7 +2277,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	}
 
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
-	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
 	RRR_DBG_1 ("MQTT client started thread %p\n", thread_data);
 
@@ -2379,7 +2378,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	out_destroy_client:
 		RRR_DBG_1 ("MQTT client %p instance %s loop ended\n",
 				thread, INSTANCE_D_NAME(thread_data));
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("MQTT client %p instance %s exiting\n",

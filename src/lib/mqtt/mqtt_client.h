@@ -107,10 +107,6 @@ void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
 static inline void rrr_mqtt_client_destroy_void (void *client) {
 	rrr_mqtt_client_destroy(client);
 }
-void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client);
-static inline void rrr_mqtt_client_notify_pthread_cancel_void (void *client) {
-	rrr_mqtt_client_notify_pthread_cancel(client);
-}
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,

@@ -259,7 +259,6 @@ extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_
 
 void rrr_mqtt_common_will_properties_clear (struct rrr_mqtt_common_will_properties *will_properties);
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
-void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_clear_session_from_connections (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_session *session_to_remove,

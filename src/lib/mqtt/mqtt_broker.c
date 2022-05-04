@@ -1127,10 +1127,6 @@ void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	rrr_free(broker);
 }
 
-void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker) {
-	rrr_mqtt_common_data_notify_pthread_cancel(&broker->mqtt_data);
-}
-
 static int __rrr_mqtt_broker_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {

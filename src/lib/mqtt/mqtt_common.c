@@ -84,11 +84,6 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	data->handler_properties = NULL;
 }
 
-void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
-	// Nothing to do at the moment
-	(void)(data);
-}
-
 struct clear_sesion_from_connections_callback_data {
 	const struct rrr_mqtt_session *session_to_remove;
 	int disregard_transport_handle;
