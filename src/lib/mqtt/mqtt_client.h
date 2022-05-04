@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,6 +50,82 @@ struct rrr_mqtt_client_data {
 	void (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
 	void *receive_publish_callback_arg;
 };
+
+/* To start a client, connect, publish and subscribe:
+
+ * Steps prefixed with I are outside event loop, and steps with E are while event loop is running.
+
+ * I 1a. Initialize rrr_mqtt_common_init_data struct (client identifier and misc. timers)
+ * I 1b. Initialize event framework
+ * I 1c. rrr_mqtt_client_new, pass initialized structs and packet callbacks (see separate callback section)
+ 
+ * I 2a. Initialize net transport struct rrr_net_transport_config_parse (set PLAIN or TLS mod)
+ * I 2c. rrr_mqtt_client_start
+ 
+ * I 3a. Prepare connect property collection (irrelevant for v3, can be set to zeros for v5 if no properties are used)
+ * I 3b. rrr_mqtt_client_connect
+ 
+ * I 4a. Start event dispatching
+ * E 4b. Using a periodic event, wait for positive result from rrr_mqtt_client_connection_check_alive (alive and
+         send_allowed set)
+ * E 4c. Regularely check rrr_mqtt_client_connection_check_alive
+ 
+ * If subscribing:
+ * E 5a. Prepare subscription collection rrr_mqtt_subscription_collection_new + rrr_mqtt_subscription_collection_push_unique_str
+ * E 5b. Subscribe with rrr_mqtt_client_subscribe
+ 
+ * If unsubscribing:
+ * E 5a. Prepare subscription collection rrr_mqtt_subscription_collection_new + rrr_mqtt_subscription_collection_push_unique_str
+ * E 5b. Unsubscribe with rrr_mqtt_client_subscribe
+ 
+ * If publishing:
+ * E 6a. Allocate rrr_mqtt_p_publish using rrr_mqtt_p_allocate
+ * E 6b. Set topic in publish topic field using allocation function
+ * E 6c. Optionally set QoS using RRR_MQTT_P_PUBLISH_SET_FLAG_QOS
+ * E 6d. Optionally set retain using RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN
+ * E 6e. Optionally create payload using rrr_mqtt_p_payload_new + rrr_mqtt_p_payload_set_data or
+         rrr_mqtt_p_payload_new_with_allocated_payload. Set payload field of publish to the new payload.
+ * E 6f. Send publish using rrr_mqtt_client_publish, optionally handle returned send_discouraged value.
+ * E 6g. Decref the publish __IMMEDIATELY__ and __DO NOT__ re-use it both upon successful and erronous
+         publish using RRR_MQTT_P_DECREF_IF_NOT_NULL. Any payload and topic set in the struct MUST NEVER be
+	 freed, this is handled when the publish is destroyed.
+
+ * When disconnecting (politely):
+ * E 7a. Disconnect using rrr_mqtt_client_disconnect
+ * E 7b. Wait for rrr_mqtt_client_connection_check_alive to return false alive and false close_wait
+ * (Go to 3b to reconnect)
+
+ * Cleaning up:
+ * I 8a. rrr_mqtt_client_destroy
+ * I 8b. Destroy any subscription collections rrr_mqtt_subscription_collection_destroy
+ * I 8c. Clear any property collection rrr_mqtt_property_collection_destroy
+ * I 8d. Cleanup net transport config
+
+* Callbacks:
+
+XX Received packets in callbacks MUST NOT be decref'ed and the MUST NOT be re-used after callback has completed. XX
+
+* process_suback_unsuback
+  - Broker sends ACK after subscribing and unsubscribing
+  - Check for packet type RRR_MQTT_P_TYPE_SUBACK or RRR_MQTT_P_TYPE_UNSUBACK
+  - Number of acknowledgements in packet->acknowledgements_size and original subscription collection accessible
+    in packet->orig_sub_usub->subscriptions. Double check ACK count against rrr_mqtt_subscription_collection_count
+    of original collection.
+  - Acknowledgements with QoS or version 5 reason in array packet->acknowledgements in the same order as original
+    subscription collection.
+  - Verify subscriptions
+  - Received packets MUST NOT be stored
+  
+* process_parsed_packet
+  - Possibly check for PUBACK and PUBREC packets indicating rejected PUBLISH (reason macro RRR_MQTT_P_GET_REASON_V5
+    used for both V3 and V5).
+  - Received packets MUST NOT be stored
+
+* process_publish
+  - Handle a PUBLISH received when subscribing.
+  - Publishes may be cloned using rrr_mqtt_p_clone_publish if they are to be published later (ref. 6f) or used in some other way.
+
+*/
 
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
