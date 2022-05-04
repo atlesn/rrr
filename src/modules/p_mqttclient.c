@@ -1224,10 +1224,9 @@ static int mqttclient_process_suback_unsuback (
 
 	(void)(mqtt_client_data);
 
-	struct rrr_mqtt_p_suback_unsuback *ack = (struct rrr_mqtt_p_suback_unsuback *) packet;
-	const struct rrr_mqtt_subscription_collection *orig_collection = ack->orig_sub_usub->subscriptions;
+	const struct rrr_mqtt_subscription_collection *orig_collection = packet->orig_sub_usub->subscriptions;
 
-	rrr_length new_count = ack->acknowledgements_size;
+	rrr_length new_count = packet->acknowledgements_size;
 	rrr_length orig_count = (orig_collection != NULL ? rrr_mqtt_subscription_collection_count(orig_collection) : 0);
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBACK) {
@@ -1245,7 +1244,7 @@ static int mqttclient_process_suback_unsuback (
 					i
 			);
 
-			const uint8_t qos_or_reason_v5 = ack->acknowledgements[i];
+			const uint8_t qos_or_reason_v5 = packet->acknowledgements[i];
 			if (qos_or_reason_v5 > 2) {
 				const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
 				if (reason == NULL) {
@@ -1288,7 +1287,7 @@ static int mqttclient_process_suback_unsuback (
 						i
 				);
 
-				const uint8_t qos_or_reason_v5 = ack->acknowledgements[i];
+				const uint8_t qos_or_reason_v5 = packet->acknowledgements[i];
 				const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
 				if (qos_or_reason_v5 != 0) {
 					RRR_DBG_1("mqtt client instance %s unsubscription '%s' failed remotely with reason 0x%02x %s (version is 5)\n",
