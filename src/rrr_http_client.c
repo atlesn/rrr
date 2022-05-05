@@ -555,7 +555,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(raw_tmp);
 	rrr_array_clear(&array);
-	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE) {
+	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE && EVENT_INITIALIZED(http_client_data->event_stdin)) {
 		EVENT_REMOVE(http_client_data->event_stdin);
 	}
 	return ret;
@@ -635,7 +635,7 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	}
 
 	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
-		if (!EVENT_PENDING(data->event_stdin)) {
+		if (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) {
 			return RRR_EVENT_EXIT;
 		}
 	}
