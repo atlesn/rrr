@@ -25,11 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 
 #include "lib/rrr_config.h"
-#include "lib/rrr_strerror.h"
 #include "lib/array.h"
 #include "lib/helpers/string_builder.h"
 #include "lib/messages/msg.h"
-#include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_addr.h"
 #include "lib/messages/msg_log.h"
 #include "lib/messages/msg_checksum.h"
@@ -43,12 +41,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/common.h"
 #include "lib/version.h"
 #include "lib/log.h"
+#include "lib/rrr_strerror.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/mqtt/mqtt_subscription.h"
 #include "lib/mqtt/mqtt_client.h"
+#include "lib/mqtt/mqtt_subscription.h"
+#include "lib/mqtt/mqtt_packet.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/util/rrr_time.h"
+#include "lib/messages/msg.h"
+#include "lib/messages/msg_msg.h"
 
 #define RRR_MQTT_SUB_TOPICS_MAX 64
 #define RRR_MQTT_DISCONNECT_TIMEOUT_S 5
@@ -83,7 +85,7 @@ struct rrr_sub_data {
 	struct rrr_mqtt_session *session;
 
 	uint64_t disconnect_time;
-	uint64_t subscriptions_send_time
+	uint64_t subscriptions_send_time;
 };
 
 static void __rrr_sub_data_cleanup (
@@ -105,7 +107,61 @@ static int __rrr_sub_packet_parsed_handler (struct rrr_mqtt_client_data *client,
 	return ret;
 }
 
+static int __rrr_sub_receive_msg (struct rrr_msg_msg **message, void *arg1, void *arg2) {
+	struct rrr_sub_data *data = arg1;
+
+	(void)(arg2);
+
+	int ret = 0;
+
+	printf("Receive RRR message\n");
+
+	return ret;
+}
+
 static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
+	struct rrr_sub_data *data = arg;
+
+	struct rrr_msg *msg_tmp = NULL;
+	rrr_length msg_target_size = 0;
+
+	RRR_DBG_2("> Received PUBLISH with topic %s\n", publish->topic);
+
+	if (rrr_msg_get_target_size_and_check_checksum (
+			&msg_target_size,
+			(const struct rrr_msg *) publish->payload->payload_start,
+			publish->payload->length
+	) == 0) {
+		if (msg_target_size != publish->payload->length) {
+			RRR_DBG_2("> Incorrect size or incomplete RRR message, ignoring\n");
+			goto out;
+		}
+
+		if ((msg_tmp = rrr_allocate(publish->payload->length)) == NULL) {
+			RRR_MSG_0("Warning: Failed to allocate %" PRIrrrl " bytes in %s\n", publish->payload->length, __func__);
+			goto out;
+		}
+		memcpy(msg_tmp, publish->payload->payload_start, publish->payload->length);
+
+		rrr_msg_to_host_and_verify_with_callback (
+				&msg_tmp,
+				publish->payload->length,
+				__rrr_sub_receive_msg,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				data,
+				NULL
+		);
+	}
+	else if (publish->payload->length > 0) {
+		rrr_log_printn_plain(publish->payload->payload_start, publish->payload->length);
+		rrr_log_printn_plain("\n", 1);
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
 }
 
 static int __rrr_sub_init (
@@ -186,35 +242,35 @@ static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	int send_allowed = 0;
 	int close_wait = 0;
 
-	if (data->transport_handle > 0 && rrr_mqtt_client_connection_check_alive (
+	int ret_tmp;
+
+	if (data->transport_handle > 0 && (ret_tmp = rrr_mqtt_client_connection_check_alive (
 			&alive,
 			&send_allowed,
 			&close_wait,
 			data->mqtt_client,
 			data->transport_handle
-	) != 0) {
+	)) != 0) {
+		printf("Alive: %i\n", ret_tmp);
 		return RRR_EVENT_ERR;
 	}
 
-	printf("alive %i send allowed %i close wait %i\n", alive, send_allowed, close_wait);
-
 	if (data->disconnect_time > 0) {
 		if (!alive && !close_wait) {
-			RRR_DBG_1("Disconnect complete\n");
+			RRR_DBG_1("| Disconnect complete\n");
 			return RRR_EVENT_EXIT;
 		}
 		else if (rrr_time_get_64() > data->disconnect_time + RRR_MQTT_DISCONNECT_TIMEOUT_S * 1000 * 1000) {
-			RRR_DBG_1("Disconnect timeout\n");
+			RRR_DBG_1("| Disconnect timeout\n");
 			return RRR_EVENT_EXIT;
 		}
 	}
-	else if (!alive) {
-		RRR_DBG_1("Connecting to broker...\n");
+	else if (!alive && main_running) {
+		RRR_DBG_1("| Connecting to broker...\n");
 
 		data->subscriptions_send_time = 0;
 		data->disconnect_time = 0;
 
-		int ret_tmp;
 		if ((ret_tmp = rrr_mqtt_client_connect (
 				&data->transport_handle,
 				&data->session,
@@ -245,19 +301,32 @@ static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	}
 	else if (send_allowed) {
 		if (!main_running) {
-			RRR_DBG_1("Disconnecting...\n");
+			RRR_DBG_1("| Disconnecting...\n");
 			data->disconnect_time = rrr_time_get_64();
-			if (rrr_mqtt_client_disconnect(data->mqtt_client, data->transport_handle, 0) != 0) {
-				return RRR_EVENT_EXIT;
+
+			if ((ret_tmp = rrr_mqtt_client_disconnect (
+					data->mqtt_client,
+					data->transport_handle,
+					0 // Reason
+			)) != 0 && ret_tmp != RRR_MQTT_INCOMPLETE) {
+				return RRR_EVENT_ERR;
 			}
 		}
 		else if (!data->subscriptions_send_time) {
-			RRR_DBG_1("Sending subscriptions...\n");
+			RRR_DBG_1("| Sending subscriptions...\n");
 			data->subscriptions_send_time = rrr_time_get_64();
+
+			if ((ret_tmp = rrr_mqtt_client_subscribe (
+					data->mqtt_client,
+					&data->session,
+					&data->topics
+			)) != 0) {
+				return RRR_EVENT_ERR;
+			}
 		}
 	}
 	else if (!main_running) {
-		RRR_DBG_1("Exiting\n");
+		RRR_DBG_1("| Exiting\n");
 		return RRR_EVENT_EXIT;
 	}
 
@@ -285,7 +354,8 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_allocator;
 	}
 
-	//rrr_strerror_init();
+	rrr_strerror_init();
+
 	rrr_signal_default_signal_actions_register();
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 	rrr_signal_handler_set_active (RRR_SIGNALS_ACTIVE);
@@ -338,7 +408,6 @@ int main (int argc, const char **argv, const char **env) {
 			&data
 	) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_destroy_event;
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
@@ -352,7 +421,7 @@ int main (int argc, const char **argv, const char **env) {
 	out_cleanup_cmd:
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
-		//rrr_strerror_cleanup();
+		rrr_strerror_cleanup();
 	out_cleanup_allocator:
 		rrr_allocator_cleanup();
 	out_destroy_net_transport_config:
