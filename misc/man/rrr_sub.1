@@ -1,16 +1,16 @@
 .Dd 2022-05-05
-.TH RRR_MSG 1
+.TH RRR_SUB 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .PP
-.B rrr_msg
-shows the contents of RRR messages stored as files.
+.B rrr_sub
+subscribes to topics on an MQTT broker and prints out messages received.
+Both messages containing RRR messages and plain data are supported.
 .SH SYNOPSIS
-.B rrr_msg {FILE}...
-.Dl [-r|--read] (default mode)
-.Dl [-i|--ignore-errors]
-.Dl [-s|--selftest]
+.B rrr_sub [TOPIC]...
+.Dl [-B|--broker[=]BROKER] (defaults to localhost)
+.Dl [-P|--port[=]PORT] (defaults to 1883)
 .Dl [-l|--loglevel-translation]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -20,34 +20,21 @@ shows the contents of RRR messages stored as files.
 .Dl [-v|--version]
 
 .SH DESCRIPTION
-This program reads RRR messages stored as files and shows the contents.
-The timestamp, topic and other metadata from the messages are shown.
-Optionally, message data and array data can be printed out.
+This program reads plain or RRR messages from an MQTT broker.
 
-Multiple message types may be read, although only RRR data and array message are usually stored as files.
+The type of message is auto-detected. If it appers to be an RRR message, checksums will be validated.
 
-.Bl -dash
-.It
-RRR messages (data and array)
-.It
-RRR control messages (internal)
-.It
-RRR log messages (internal)
-.It
-RRR address messages (internal)
-.El
-
-The header and body checksums of messages will be validated when they are read. Messages which fail validation will not be parsed.
+If the connection to the MQTT broker is lost or cannot be established,
+.B rrr_sub
+will attempt to reconnect indefinately.
 
 .SH OPTIONS
-.IP FILE
-The RRR file or files to show.
-.IP -r|--read
-Activate read mode, default behaviour.
-.IP -i|--ignore-errors
-Continue even if an error occurs while reading a file. The program will not indicate an error in the return value.
-.IP -s|--selftest
-Runs an internal test of message parsing. File arguments are ignored.
+.IP [TOPIC]...
+One or more topic filters to subscribe to may be specified. If none are given, no subriptions are made.
+.IP -B|--broker[=]BROKER
+Set the address of the broker to use. 'localhost' is used if left unset.
+.IP -P|--port[=]PORT
+Set the port number to use when connecting to the broker. Port 1883 is used if left unset.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
@@ -65,8 +52,12 @@ The debuglevel is produced by adding one or more of the following numbers togeth
 .Bl -tag -width -indent
 .It 0
 Severe errors (always printed)
+.It 1
+General information about communication with the MQTT broker.
 .It 2
 Dumps any array data from an RRR array message.
+.It 4
+Detailed information about communication with the MQTT broker.
 .It 32
 Dumps any data from an RRR data message.
 .It 64
@@ -75,15 +66,15 @@ Prints debug information about sockets and file reading.
 
 Other debuglevels specified in
 .Xr rrr(1)
-can be used but or not likely to be useful.
+can be used but might not be useful.
 
 The parameter
 .B debuglevel_on_exit
 has not effect.
 
 .SH RETURN VALUE
-.B rrr_msg
-returns 0 on success or 1 if a message could not be read or if validation failed.
+.B rrr_sub
+returns 0 on success or 1 on errors.
 
 .SH DEBUG FLAGS
 Refer to

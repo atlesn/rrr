@@ -18,22 +18,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-/*
-#include <stdlib.h>
-#include <string.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
-#include "lib/rrr_config.h"
-#include "lib/array.h"
-#include "lib/helpers/string_builder.h"
-#include "lib/messages/msg.h"
-#include "lib/messages/msg_addr.h"
-#include "lib/messages/msg_log.h"
-#include "lib/messages/msg_checksum.h"
-#include "lib/ip/ip_defines.h"
-#include "lib/util/rrr_endian.h"
-*/
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "../build_timestamp.h"
 #include "main.h"
@@ -61,8 +48,8 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_sub");
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "topic",                "[TOPIC]..."},
-        {0,                            'b',    "broker",               "[-b|--broker]"},
-        {0,                            'p',    "port",                 "[-p|--port]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'B',    "broker",               "[-B|--broker]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'P',    "port",                 "[-P|--port]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {0,                            'b',    "banner",               "[-b|--banner]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
