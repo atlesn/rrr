@@ -49,8 +49,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/util/rrr_time.h"
+#include "lib/util/arguments.h"
 #include "lib/messages/msg.h"
 #include "lib/messages/msg_msg.h"
+#include "lib/messages/msg_dump.h"
 
 #define RRR_MQTT_SUB_TOPICS_MAX 64
 #define RRR_MQTT_DISCONNECT_TIMEOUT_S 5
@@ -59,10 +61,8 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_sub");
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "topic",                "[TOPIC]..."},
-//        {0,                            'b',    "broker",               "[-b|--broker]"},
-/*      {0,                            'p',    "port",                 "[-p|--port]"},
-        {0,                            'f',    "force",                "[-f|--force]"},
-        {0,                            's',    "selftest",             "[-s|--selftest]"}, */
+        {0,                            'b',    "broker",               "[-b|--broker]"},
+        {0,                            'p',    "port",                 "[-p|--port]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {0,                            'b',    "banner",               "[-b|--banner]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -76,7 +76,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 struct rrr_sub_data {
 	struct rrr_mqtt_subscription_collection topics;
 	char *broker;
-	unsigned int port;
+	uint16_t port;
 
 	struct rrr_mqtt_property_collection connect_properties;
 	struct rrr_mqtt_client_data *mqtt_client;
@@ -98,29 +98,29 @@ static void __rrr_sub_data_cleanup (
 }
 
 static int __rrr_sub_suback_unsuback_handler (struct rrr_mqtt_client_data *client, struct rrr_mqtt_p_suback_unsuback *packet, void *arg) {
-	int ret = RRR_MQTT_OK;
-	return ret;
+	struct rrr_sub_data *data = arg;
+
+	(void)(client);
+	(void)(packet);
+	(void)(data);
+
+	return RRR_MQTT_OK;
 }
 
 static int __rrr_sub_packet_parsed_handler (struct rrr_mqtt_client_data *client, struct rrr_mqtt_p *packet, void *arg) {
-	int ret = RRR_MQTT_OK;
-	return ret;
-}
+	struct rrr_sub_data *data = arg;
 
-static int __rrr_sub_receive_msg (struct rrr_msg_msg **message, void *arg1, void *arg2) {
-	struct rrr_sub_data *data = arg1;
+	(void)(client);
+	(void)(packet);
+	(void)(data);
 
-	(void)(arg2);
-
-	int ret = 0;
-
-	printf("Receive RRR message\n");
-
-	return ret;
+	return RRR_MQTT_OK;
 }
 
 static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	struct rrr_sub_data *data = arg;
+
+	(void)(data);
 
 	struct rrr_msg *msg_tmp = NULL;
 	rrr_length msg_target_size = 0;
@@ -143,17 +143,9 @@ static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 		}
 		memcpy(msg_tmp, publish->payload->payload_start, publish->payload->length);
 
-		rrr_msg_to_host_and_verify_with_callback (
-				&msg_tmp,
-				publish->payload->length,
-				__rrr_sub_receive_msg,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				data,
-				NULL
-		);
+		if (rrr_msg_dump_to_host_and_dump(msg_tmp, publish->payload->length) != 0) {
+			RRR_MSG_0("Failed to dump RRR message\n");
+		}
 	}
 	else if (publish->payload->length > 0) {
 		rrr_log_printn_plain(publish->payload->payload_start, publish->payload->length);
@@ -172,13 +164,23 @@ static int __rrr_sub_init (
 ) {
 	int ret = 0;
 
-	if ((data->broker = strdup("localhost")) == NULL) {
+	if ((data->broker = strdup(cmd_exists(cmd, "broker", 0)
+		? cmd_get_value(cmd, "broker", 0)
+		: "localhost"
+	)) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for broker in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	data->port = 1883;
+	if ((ret = rrr_arguments_parse_port (
+			&data->port,
+			cmd,
+			"port",
+			1883
+	)) != 0) {
+		goto out;
+	}
 
 	for (unsigned long i = 0; i <= RRR_MQTT_SUB_TOPICS_MAX; i++) {
 		if (i == RRR_MQTT_SUB_TOPICS_MAX) {

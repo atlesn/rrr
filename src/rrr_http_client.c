@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/util/rrr_time.h"
 #include "lib/util/posix.h"
+#include "lib/util/arguments.h"
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S 10
 
@@ -216,7 +217,7 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	request_data->server= rrr_strdup(server);
+	request_data->server = rrr_strdup(server);
 	if (request_data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -279,34 +280,14 @@ static int __rrr_http_client_parse_config (
 	}
 
 	// HTTP port
-	const char *port = cmd_get_value(cmd, "port", 0);
-	uint64_t port_tmp = 0;
-	if (cmd_get_value (cmd, "port", 1) != NULL) {
-		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
-		ret = 1;
+	if ((ret = rrr_arguments_parse_port (
+			&request_data->http_port,
+			cmd,
+			"port",
+			request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS ? 443 : 80
+	)) != 0) {
 		goto out;
 	}
-	if (port != NULL) {
-		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
-			ret = 1;
-			goto out;
-		}
-	}
-	if (port_tmp == 0) {
-		if (request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-			port_tmp = 443;
-		}
-		else {
-			port_tmp = 80;
-		}
-	}
-	if (port_tmp < 1 || port_tmp > 65535) {
-		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
-		ret = 1;
-		goto out;
-	}
-	request_data->http_port = (uint16_t) port_tmp;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(array_tree_tmp);

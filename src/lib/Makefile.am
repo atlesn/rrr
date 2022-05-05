@@ -87,7 +87,7 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c
+       util/increment.c util/sha256.c util/arguments.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -96,7 +96,7 @@ udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
                  message_holder/message_holder_slot.c
 
-messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
+messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
 helpers = helpers/nullsafe_str.c helpers/string_builder.c
 

@@ -10,7 +10,6 @@ shows the contents of RRR messages stored as files.
 .B rrr_msg {FILE}...
 .Dl [-r|--read] (default mode)
 .Dl [-i|--ignore-errors]
-.Dl [-f|--force]
 .Dl [-s|--selftest]
 .Dl [-l|--loglevel-translation]
 .Dl [-b|--banner]
@@ -47,8 +46,6 @@ The RRR file or files to show.
 Activate read mode, default behaviour.
 .IP -i|--ignore-errors
 Continue even if an error occurs while reading a file. The program will not indicate an error in the return value.
-.IP -f|--force
-Force read attempt for messages with unknown array version.
 .IP -s|--selftest
 Runs an internal test of message parsing. File arguments are ignored.
 .IP -l|--loglevel-translation
