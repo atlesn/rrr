@@ -50,6 +50,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "topic",                "[TOPIC]..."},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'B',    "broker",               "[-B|--broker]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'P',    "port",                 "[-P|--port]"},
+	{CMD_ARG_FLAG_HAS_ARGUMENT,    'Q',    "qos",                  "[-Q|--qos]"},
+	{0,                            '3',    "protocol-v3",          "[-3|--protocol-v3]"},
+	{0,                            '5',    "protocol-v5",          "[-5|--protocol-v5]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {0,                            'b',    "banner",               "[-b|--banner]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -64,6 +67,13 @@ struct rrr_sub_data {
 	struct rrr_mqtt_subscription_collection topics;
 	char *broker;
 	uint16_t port;
+
+	uint8_t use_v3;
+	uint8_t use_v5;
+
+	uint8_t ban_v5;
+
+	uint8_t qos;
 
 	struct rrr_mqtt_property_collection connect_properties;
 	struct rrr_mqtt_client_data *mqtt_client;
@@ -151,6 +161,7 @@ static int __rrr_sub_init (
 ) {
 	int ret = 0;
 
+	// Broker address
 	if ((data->broker = strdup(cmd_exists(cmd, "broker", 0)
 		? cmd_get_value(cmd, "broker", 0)
 		: "localhost"
@@ -160,6 +171,7 @@ static int __rrr_sub_init (
 		goto out;
 	}
 
+	// Broker port
 	if ((ret = rrr_arguments_parse_port (
 			&data->port,
 			cmd,
@@ -169,6 +181,45 @@ static int __rrr_sub_init (
 		goto out;
 	}
 
+	// QoS
+	if (cmd_exists(cmd, "qos", 0)) {
+		if (cmd_exists(cmd, "qos", 1)) {
+			RRR_MSG_0("Multiple --qos arguments was specified\n");
+			ret = 1;
+			goto out;
+		}
+
+		const char *qos = cmd_get_value(cmd, "qos", 0);
+		if (strcmp(qos, "2") == 0) {
+			data->qos = 2;
+		}
+		else if (strcmp(qos, "1") == 0) {
+			data->qos = 1;
+		}
+		else if (strcmp(qos, "0") == 0) {
+			data->qos = 0;
+		}
+		else {
+			RRR_MSG_0("Invalid value '%s' for argument --qos given\n", qos);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	// V3, V5 or both
+	const int v3 = cmd_exists(cmd, "protocol-v3", 0);
+	const int v5 = cmd_exists(cmd, "protocol-v5", 0);
+
+	if (v3 || v5) {
+		data->use_v3 = v3 != 0;
+		data->use_v5 = v5 != 0;
+	}
+	else {
+		data->use_v3 = 1;
+		data->use_v5 = 1;
+	}
+
+	// Subscribe topics
 	for (unsigned long i = 0; i <= RRR_MQTT_SUB_TOPICS_MAX; i++) {
 		if (i == RRR_MQTT_SUB_TOPICS_MAX) {
 			RRR_MSG_0("Too many topics given (max is %i)\n", RRR_MQTT_SUB_TOPICS_MAX);
@@ -183,7 +234,7 @@ static int __rrr_sub_init (
 					0,
 					0,
 					0,
-					0 // QoS
+					data->qos
 			)) != 0) {
 				goto out;
 			}
@@ -260,13 +311,23 @@ static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		data->subscriptions_send_time = 0;
 		data->disconnect_time = 0;
 
+		const uint8_t protocol_version = data->ban_v5 && data->use_v3
+			? 4
+			: data->use_v5
+				? 5
+				: 4
+		;
+
+		// Ban v5 every other connection attempt
+		data->ban_v5 = !data->ban_v5;
+
 		if ((ret_tmp = rrr_mqtt_client_connect (
 				&data->transport_handle,
 				&data->session,
 				data->mqtt_client,
 				data->broker,
 				(uint16_t) data->port,
-				4,    // Version 3.1.1
+				protocol_version,
 				30,   // Keep-alive
 				1,    // Clean start,
 				NULL, // Username
