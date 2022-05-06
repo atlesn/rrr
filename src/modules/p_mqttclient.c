@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt/mqtt_session.h"
 #include "../lib/mqtt/mqtt_subscription.h"
 #include "../lib/mqtt/mqtt_packet.h"
+#include "../lib/mqtt/mqtt_payload.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -606,7 +607,7 @@ static int mqttclient_publish (
 	RRR_DBG_2 ("|==> MQTT client %s: Send PUBLISH with topic %s payload size %" PRIrrrl " retain %u expiry interval %" PRIu32 "\n",
 			INSTANCE_D_NAME(data->thread_data),
 			publish->topic,
-			publish->payload != NULL ? publish->payload->length : 0,
+			publish->payload != NULL ? publish->payload->size : 0,
 			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish),
 			publish->message_expiry_interval
 	);
@@ -1360,11 +1361,7 @@ static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
 
 	int ret = 0;
 
-	if (publish->payload == NULL) {
-		goto out;
-	}
-
-	if (publish->payload->length == 0) {
+	if (publish->payload == NULL || publish->payload->size == 0) {
 		goto out;
 	}
 
@@ -1376,7 +1373,7 @@ static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
 			MSG_CLASS_DATA,
 			publish->create_time,
 			topic_len,
-			publish->payload->length
+			publish->payload->size
 	) != 0) {
 		RRR_MSG_0("Could not initialize message_final in receive_publish of MQTT client instance %s (A)\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -1385,7 +1382,7 @@ static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
 	}
 
 	memcpy(MSG_TOPIC_PTR(*result), publish->topic, topic_len);
-	memcpy(MSG_DATA_PTR(*result), publish->payload->payload_start, publish->payload->length);
+	memcpy(MSG_DATA_PTR(*result), publish->payload->payload_start, publish->payload->size);
 
 	out:
 	return ret;
@@ -1406,7 +1403,7 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	rrr_length message_actual_length = 0;
 
 	{
-		rrr_slength message_actual_length_signed = publish->payload->length;
+		rrr_slength message_actual_length_signed = publish->payload->size;
 		if (message_actual_length_signed < 0) {
 			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_msg_msg_from_publish\n");
 		}
@@ -1517,14 +1514,14 @@ static int mqttclient_try_create_array_message_from_publish (
 		goto out;
 	}
 
-	if (publish->payload->length == 0) {
+	if (publish->payload->size == 0) {
 		RRR_MSG_0("Received PUBLISH message had zero length in MQTT client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
 
-	if (read_pos >= publish->payload->length) {
+	if (read_pos >= publish->payload->size) {
 		ret = 0;
 		goto out;
 	}
@@ -1538,14 +1535,14 @@ static int mqttclient_try_create_array_message_from_publish (
 	if ((ret = rrr_array_tree_import_from_buffer (
 			parsed_bytes,
 			publish->payload->payload_start + read_pos,
-			publish->payload->length - read_pos,
+			publish->payload->size - read_pos,
 			data->tree,
 			__mqttclient_try_create_array_message_from_publish_callback,
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %" PRIrrrl "\n",
-					INSTANCE_D_NAME(data->thread_data), publish->payload->length);
+					INSTANCE_D_NAME(data->thread_data), publish->payload->size);
 			ret = 0;
 		}
 		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
@@ -1636,7 +1633,7 @@ static void mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void
 
 	RRR_DBG_2 (">==| MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s retain %u\n",
 			INSTANCE_D_NAME(data->thread_data),
-			(publish->payload != NULL ? publish->payload->length : 0),
+			(publish->payload != NULL ? publish->payload->size : 0),
 			(publish->topic),
 			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish)
 	);

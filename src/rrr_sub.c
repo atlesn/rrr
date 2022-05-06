@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/mqtt/mqtt_client.h"
 #include "lib/mqtt/mqtt_subscription.h"
 #include "lib/mqtt/mqtt_packet.h"
+#include "lib/mqtt/mqtt_payload.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/util/rrr_time.h"
@@ -127,25 +128,25 @@ static void __rrr_sub_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	if (rrr_msg_get_target_size_and_check_checksum (
 			&msg_target_size,
 			(const struct rrr_msg *) publish->payload->payload_start,
-			publish->payload->length
+			publish->payload->size
 	) == 0) {
-		if (msg_target_size != publish->payload->length) {
+		if (msg_target_size != publish->payload->size) {
 			RRR_DBG_2("> Incorrect size or incomplete RRR message, ignoring\n");
 			goto out;
 		}
 
-		if ((msg_tmp = rrr_allocate(publish->payload->length)) == NULL) {
-			RRR_MSG_0("Warning: Failed to allocate %" PRIrrrl " bytes in %s\n", publish->payload->length, __func__);
+		if ((msg_tmp = rrr_allocate(publish->payload->size)) == NULL) {
+			RRR_MSG_0("Warning: Failed to allocate %" PRIrrrl " bytes in %s\n", publish->payload->size, __func__);
 			goto out;
 		}
-		memcpy(msg_tmp, publish->payload->payload_start, publish->payload->length);
+		memcpy(msg_tmp, publish->payload->payload_start, publish->payload->size);
 
-		if (rrr_msg_dump_to_host_and_dump(msg_tmp, publish->payload->length) != 0) {
+		if (rrr_msg_dump_to_host_and_dump(msg_tmp, publish->payload->size) != 0) {
 			RRR_MSG_0("Failed to dump RRR message\n");
 		}
 	}
-	else if (publish->payload->length > 0) {
-		rrr_log_printn_plain(publish->payload->payload_start, publish->payload->length);
+	else if (publish->payload->size > 0) {
+		rrr_log_printn_plain(publish->payload->payload_start, publish->payload->size);
 		rrr_log_printn_plain("\n", 1);
 	}
 

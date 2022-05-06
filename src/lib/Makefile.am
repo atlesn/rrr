@@ -61,7 +61,8 @@ endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
-       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
+       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
+       mqtt/mqtt_payload.c mqtt/mqtt_usercount.c
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 

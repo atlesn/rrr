@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session_ram.h"
 #include "mqtt_session.h"
 #include "mqtt_packet.h"
+#include "mqtt_payload.h"
 #include "mqtt_subscription.h"
 #include "mqtt_common.h"
 #include "mqtt_id_pool.h"
@@ -436,7 +437,7 @@ static int __rrr_mqtt_session_collection_ram_delivery_forward_final (
 			is_zero_byte_payload = 1;
 		}
 		else {
-			if (publish->payload->length == 0) {
+			if (publish->payload->size == 0) {
 				is_zero_byte_payload = 1;
 			}
 		}
@@ -659,10 +660,10 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session (
 		goto out_destroy_subscriptions;
 	}
 
-	rrr_fifo_init_custom_refcount(&result->to_remote_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&result->to_remote_delayed_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&result->from_remote_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&result->publish_grace_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
+	rrr_fifo_init_custom_refcount(&result->to_remote_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
+	rrr_fifo_init_custom_refcount(&result->to_remote_delayed_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
+	rrr_fifo_init_custom_refcount(&result->from_remote_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
+	rrr_fifo_init_custom_refcount(&result->publish_grace_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
 
 	result->users = 1;
 	result->ram_data = data;
@@ -1237,7 +1238,7 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 			goto out;
 		}
 
-		if (rrr_mqtt_p_standardized_get_refcount(publish_new) != 1) {
+		if (RRR_MQTT_P_USERCOUNT(publish_new) != 1) {
 			RRR_BUG("Usercount was not 1 in %s\n", __func__);
 		}
 
@@ -1311,7 +1312,7 @@ static int __rrr_mqtt_session_ram_clean_final (struct rrr_mqtt_session_ram *ram_
 	);
 
 	out:
-	RRR_LL_DESTROY(&preserve_data, struct rrr_mqtt_p, rrr_mqtt_p_standardized_decref(node));
+	RRR_LL_DESTROY(&preserve_data, struct rrr_mqtt_p, RRR_MQTT_P_DECREF(node));
 	rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
 	rrr_mqtt_id_pool_clear(&ram_session->id_pool);
 
@@ -2211,7 +2212,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 					publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
 			if ((((publish_in_buffer->payload != NULL) ^ (publish->payload != NULL)) == 1) ||
-				(publish_in_buffer->payload != NULL && (publish_in_buffer->payload->length != publish->payload->length))
+				(publish_in_buffer->payload != NULL && (publish_in_buffer->payload->size != publish->payload->size))
 			) {
 				RRR_MSG_0("Received a QoS2 PUBLISH packet with equal id to another packet of different size\n");
 				ret = RRR_MQTT_SESSION_ERROR;
@@ -3185,8 +3186,8 @@ static int __rrr_mqtt_session_collection_ram_new (
 		goto out_destroy_ram_data;
 	}
 
-	rrr_fifo_init_custom_refcount(&ram_data->retain_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
-	rrr_fifo_init_custom_refcount(&ram_data->publish_local_buffer.buffer, rrr_mqtt_p_standardized_incref, rrr_mqtt_p_standardized_decref);
+	rrr_fifo_init_custom_refcount(&ram_data->retain_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
+	rrr_fifo_init_custom_refcount(&ram_data->publish_local_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
 
 	ram_data->delivery_method = delivery_method;
 	ram_data->pretransmit_method = pretransmit_method;

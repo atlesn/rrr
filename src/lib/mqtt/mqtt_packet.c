@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_topic.h"
 #include "mqtt_subscription.h"
+#include "mqtt_payload.h"
 
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
@@ -54,117 +55,9 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
 	return NULL;
 }
 
-static int __rrr_mqtt_p_standarized_usercount_init (
-		struct rrr_mqtt_p_standarized_usercount *head,
-		void (*destroy)(void *arg)
-) {
-	head->destroy = destroy;
-	head->users = 1;
-
-	return 0;
-}
-
-static void __rrr_mqtt_p_payload_destroy (void *arg) {
-	struct rrr_mqtt_p_payload *payload = arg;
-	RRR_FREE_IF_NOT_NULL(payload->packet_data);
-	rrr_free(payload);
-}
-
-int rrr_mqtt_p_payload_set_data (
-		struct rrr_mqtt_p_payload *target,
-		const char *data,
-		rrr_length size
-) {
-	int ret = 0;
-
-	RRR_FREE_IF_NOT_NULL(target->packet_data);
-
-	target->packet_data = rrr_allocate(size);
-	if (target->packet_data == NULL) {
-		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	memcpy(target->packet_data, data, size);
-	target->length = size;
-	target->payload_start = target->packet_data;
-
-	out:
-	return ret;
-}
-
-int rrr_mqtt_p_payload_new (
-		struct rrr_mqtt_p_payload **target
-) {
-	int ret = 0;
-
-	*target = NULL;
-
-	struct rrr_mqtt_p_payload *result = rrr_allocate(sizeof(*result));
-
-	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-	memset(result, '\0', sizeof(*result));
-
-	ret = __rrr_mqtt_p_standarized_usercount_init (
-			(struct rrr_mqtt_p_standarized_usercount *) result,
-			__rrr_mqtt_p_payload_destroy
-	);
-	if (ret != 0) {
-		RRR_MSG_0("Could not initialize refcount in %s\n", __func__);
-		ret = 1;
-		goto out_free;
-	}
-
-	*target = result;
-
-	goto out;
-	out_free:
-		rrr_free(result);
-	out:
-		return ret;
-}
-
-int rrr_mqtt_p_payload_new_with_allocated_payload (
-		struct rrr_mqtt_p_payload **target,
-		char **packet_start,
-		const char *payload_start,
-		rrr_length payload_length
-) {
-	if (*target != NULL) {
-		RRR_BUG("BUG: Target was not NULL in %s\n", __func__);
-	}
-
-	int ret = 0;
-
-	struct rrr_mqtt_p_payload *result = NULL;
-
-	ret = rrr_mqtt_p_payload_new (&result);
-	if (ret != 0) {
-		RRR_MSG_0("Could not create payload in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	result->packet_data = *packet_start;
-	result->payload_start = payload_start;
-	result->length = payload_length;
-
-	*packet_start = NULL;
-
-	*target = result;
-
-	out:
-	return ret;
-}
-
 static void __rrr_mqtt_p_destroy (void *arg) {
 	struct rrr_mqtt_p *p = arg;
-	if (p->users != 0) {
+	if (RRR_MQTT_P_USERCOUNT(p) != 0) {
 		RRR_BUG("users was not 0 in %s\n", __func__);
 	}
 //	printf("Release pool ID %u: %p(%p, %p)\n",
@@ -195,8 +88,8 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 		ret->type_flags = type_properties->flags;
 	}
 
-	if (__rrr_mqtt_p_standarized_usercount_init (
-			(struct rrr_mqtt_p_standarized_usercount *) ret,
+	if (rrr_mqtt_p_usercount_init (
+			(struct rrr_mqtt_p_usercount *) ret,
 			__rrr_mqtt_p_destroy
 	) != 0) {
 		RRR_MSG_0("Could not initialize refcount in %s\n", __func__);
