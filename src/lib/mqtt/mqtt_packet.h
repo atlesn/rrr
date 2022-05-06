@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_usercount.h"
 #include "../fifo.h"
 #include "../log.h"
-#include "../util/linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -176,7 +175,6 @@ struct rrr_mqtt_p_reason {
     uint64_t last_attempt;                                     \
     uint64_t planned_expiry_time;                              \
     uint8_t reason_v5;                                         \
-    RRR_LL_NODE(struct rrr_mqtt_p);                            \
     const struct rrr_mqtt_p_reason *reason;                    \
     int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \
     void *release_packet_id_arg1;                              \

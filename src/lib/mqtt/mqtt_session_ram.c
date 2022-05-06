@@ -1203,19 +1203,22 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	rrr_free(sessions);
 }
 
-struct preserve_publish_list {
-	RRR_LL_HEAD(struct rrr_mqtt_p);
+struct rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback_data {
+	struct rrr_mqtt_session_ram *ram_session;
+	struct rrr_mqtt_p_queue *preserve_buffer;
 	int error_in_callback;
 };
 
 static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback (RRR_FIFO_CLEAR_CALLBACK_ARGS) {
 	struct rrr_mqtt_p *packet = *((struct rrr_mqtt_p **) data);
 	struct rrr_mqtt_p_publish *publish = *((struct rrr_mqtt_p_publish **) data);
-	struct preserve_publish_list *preserve_data = callback_data;
+	struct rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback_data *preserve_callback_data = callback_data;
 
 	// Upon errors, the generated linked list must be cleared by caller
 
 	(void)(size);
+
+	struct rrr_mqtt_p_publish *publish_new = NULL;
 
 	// We need to check for all possible complete states, just like when housekeeping
 	// the queue. Complete packets are not preserved.
@@ -1228,13 +1231,14 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 	) {
 		// In case anybody else holds reference to the packet, we clone it. The payload
 		// is not cloned, but it is INCREF'ed by the clone function.
-		struct rrr_mqtt_p_publish *publish_new = rrr_mqtt_p_clone_publish (
+		if ((publish_new =rrr_mqtt_p_clone_publish (
 				(struct rrr_mqtt_p_publish *) packet,
-				1, 1, 1 // Preserve everything
-		);
-		if (publish_new == NULL) {
+				1, /* Type flags (preserve) */
+				0, /* DUP (don't preserve) */
+				1  /* Reason (preserve)*/
+		)) == NULL) {
 			RRR_MSG_0("Could not clone PUBLISH in %s\n", __func__);
-			preserve_data->error_in_callback = 1;
+			preserve_callback_data->error_in_callback = 1;
 			goto out;
 		}
 
@@ -1242,7 +1246,23 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 			RRR_BUG("Usercount was not 1 in %s\n", __func__);
 		}
 
-		RRR_LL_APPEND(preserve_data, (struct rrr_mqtt_p *) publish_new);
+		// Ensure packet identifier is zero
+		__rrr_mqtt_session_ram_packet_reset_id((struct rrr_mqtt_p *) publish_new);
+
+		if (__rrr_mqtt_session_ram_fifo_write_simple (
+				&preserve_callback_data->preserve_buffer->buffer,
+				(struct rrr_mqtt_p *) publish_new
+		) != 0) {
+			RRR_MSG_0("Could not add PUBLISH to buffer in %s\n", __func__);
+			preserve_callback_data->error_in_callback = 1;
+			goto out;
+		}
+
+		RRR_DBG_3("Preserved PUBLISH topic '%s' qos %u client %s\n",
+				publish_new->topic,
+				RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish_new),
+				preserve_callback_data->ram_session
+		);
 	}
 
 	if (__rrr_mqtt_session_ram_packet_id_release(packet) != 0) {
@@ -1250,54 +1270,51 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 	}
 
 	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish_new);
 
-	// We are not allowed to return anything but zero
+	// We are not allowed to return anything but OK
 	return RRR_FIFO_OK;
 }
 
 static int __rrr_mqtt_session_ram_clean_final (struct rrr_mqtt_session_ram *ram_session) {
 	int ret = 0;
 
-	struct preserve_publish_list preserve_data = {0};
+	struct rrr_mqtt_p_queue preserve_buffer;
+
+	rrr_fifo_init_custom_refcount(&preserve_buffer.buffer, rrr_mqtt_p_usercount_incref_void, rrr_mqtt_p_usercount_decref_void);
+
+	struct rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback_data callback_data = {
+		ram_session,
+		&preserve_buffer,
+		0
+	};
 
 	// We preserve the outbound PUBLISH packets
 	// by re-queing them after the list is emptied (QOS0 are deleted, QOS1-2 are preserved).
 	rrr_fifo_clear_with_callback (
 			&ram_session->to_remote_buffer.buffer,
 			__rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback,
-			&preserve_data
+			&callback_data
 	);
 
-	if (preserve_data.error_in_callback != 0) {
+	if (callback_data.error_in_callback != 0) {
 		RRR_MSG_0("Error from callback while clearing to_remote-buffer and preserving PUBLISH white cleaning ram session\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (RRR_LL_COUNT(&preserve_data) > 0) {
+	if (rrr_fifo_get_entry_count(&preserve_buffer.buffer) > 0) {
 		RRR_DBG_1("Preserved %i outbound PUBLISH when cleaning session. IDs will be reset.\n",
-				RRR_LL_COUNT(&preserve_data));
+				rrr_fifo_get_entry_count(&preserve_buffer.buffer)
+		);
 	}
 
 	// Add PUBLISH-packets to preserve back to buffer. The list is finally cleared further down.
-	RRR_LL_ITERATE_BEGIN(&preserve_data, struct rrr_mqtt_p);
-		__rrr_mqtt_session_ram_packet_reset_id(node);
-
-		RRR_DBG_3("Preserved PUBLISH topic '%s' qos %u client %s\n",
-				((struct rrr_mqtt_p_publish *) node)->topic,
-				RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(node),
-				ram_session->client_id_
-		);
-
-		if (__rrr_mqtt_session_ram_fifo_write_simple (
-				&ram_session->to_remote_buffer.buffer,
-				node
-		) != 0) {
-			RRR_MSG_0("Could not write to to_remote_queue in %s\n", __func__);
-			ret = RRR_MQTT_SESSION_ERROR;
-			goto out;
-		}
-	RRR_LL_ITERATE_END();
+	if (rrr_fifo_merge (&ram_session->to_remote_buffer.buffer, &preserve_buffer.buffer) != 0) {
+		RRR_MSG_0("Could not write to to_remote_queue in %s\n", __func__);
+		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
+	}
 
 	rrr_fifo_clear_with_callback (
 			&ram_session->from_remote_buffer.buffer,
@@ -1312,7 +1329,7 @@ static int __rrr_mqtt_session_ram_clean_final (struct rrr_mqtt_session_ram *ram_
 	);
 
 	out:
-	RRR_LL_DESTROY(&preserve_data, struct rrr_mqtt_p, RRR_MQTT_P_DECREF(node));
+	rrr_fifo_clear (&preserve_buffer.buffer);
 	rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
 	rrr_mqtt_id_pool_clear(&ram_session->id_pool);
 
