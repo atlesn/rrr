@@ -145,6 +145,9 @@ struct mqtt_client_data {
 	int do_recycle_assigned_client_identifier;
 	int do_discard_on_connect_retry;
 
+	int do_qos2_fail_once;
+	int fail_once_state;
+
 	struct rrr_mqtt_client_data *mqtt_client_data;
 	struct rrr_mqtt_session *session;
 	struct rrr_mqtt_property_collection connect_properties;
@@ -968,6 +971,16 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
+	// Undocumented parameter. Cases QoS2 to fail upon retrieval of PUBLISH and PUBREL (one time each),
+	// and mqttclient must reconnect upon which the broker should retransmit the PUBLISH.
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_qos2_fail_once", do_qos2_fail_once, 0);
+
+	if (data->do_qos2_fail_once && data->qos != 2) {
+		RRR_MSG_0("mqtt_qos2_fail_once was set to yes but mqtt_qos was not 2 in mqttclient instance %s, this is a configuration error.\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_client_identifier", client_identifier);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_retain_tag", retain_tag);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC_FILTER("mqtt_command_topic_filter", topic_filter_command);
@@ -1336,6 +1349,19 @@ static int mqttclient_process_parsed_packet (
 	struct mqtt_client_data *data = arg;
 
 	(void)(mqtt_client_data);
+
+	if (data->do_qos2_fail_once) {
+		if (data->fail_once_state == 0 && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+			RRR_MSG_0("Fail once on PUBLISH triggered per configuration in mqttclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			data->fail_once_state++;
+			return RRR_MQTT_SOFT_ERROR;
+		}
+		if (data->fail_once_state == 1 && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREL) {
+			RRR_MSG_0("Fail once on PUBREL triggered per configuration in mqttclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			data->fail_once_state++;
+			return RRR_MQTT_SOFT_ERROR;
+		}
+	}
 
 	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC) &&
@@ -1872,7 +1898,7 @@ static int mqttclient_wait_disconnect_event_periodic (RRR_EVENT_FUNCTION_PERIODI
 
 	if (rrr_time_get_64() > timeout) {
 		RRR_MSG_0("Timeout after %i seconds while waiting for disconnection in MQTT client instance %s\n",
-			RRR_MQTT_CONNACK_TIMEOUT_S, INSTANCE_D_NAME(data->thread_data));
+			RRR_MQTT_DISCONNECT_TIMEOUT_S, INSTANCE_D_NAME(data->thread_data));
 		return RRR_MQTT_SOFT_ERROR;
 	}
 

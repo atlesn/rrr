@@ -1367,9 +1367,11 @@ static int __rrr_mqtt_session_ram_init (
 		__rrr_mqtt_session_ram_clean_final(ram_session);
 	}
 
-	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 " have will publish %p\n",
+	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 " have will publish %p clean session %i to remote buffer count %" PRIrrrl "\n",
 			ram_session->session_properties.numbers.session_expiry,
-			ram_session->will_publish
+			ram_session->will_publish,
+			(int) clean_session,
+			rrr_fifo_get_entry_count(&ram_session->to_remote_buffer.buffer)
 	);
 
 	out:
