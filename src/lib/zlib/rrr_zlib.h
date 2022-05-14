@@ -37,5 +37,18 @@ int rrr_zlib_gzip_decompress (
 		char *data,
 		rrr_length size
 );
+int rrr_zlib_gzip_compress_with_outsize (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size,
+		rrr_length outsize
+);
+int rrr_zlib_gzip_compress (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size
+);
 
 #endif /* RRR_ZLIB_H */

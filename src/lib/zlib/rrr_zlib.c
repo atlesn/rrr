@@ -56,10 +56,6 @@ static int __rrr_zlib_stream_init(z_streamp stream) {
 	return 0;
 }
 
-static void __rrr_zlib_stream_end(z_streamp stream) {
-	inflateEnd(stream);
-}
-
 static int __rrr_zlib_loop (
 		char **result,
 		rrr_biglength *result_length,
@@ -78,7 +74,7 @@ static int __rrr_zlib_loop (
 	rrr_length buf_size = 0;
 	rrr_length buf_size_old = 0;
 
-	int flush = 0;
+	int flush = Z_NO_FLUSH;
 
 	RRR_ASSERT(sizeof(stream->avail_in) >= sizeof(buf_size),zstream_unsigned_cannot_hold_size_avail_in);
 	RRR_ASSERT(sizeof(buf_size) >= sizeof(stream->avail_out),zstream_unsigned_cannot_hold_outsize);
@@ -190,7 +186,7 @@ int rrr_zlib_gzip_decompress_with_outsize (
 	}
 
 	out_stream_end:
-		__rrr_zlib_stream_end(&stream);
+		inflateEnd(&stream);
 	out:
 	return ret ? RRR_ZLIB_ERR : RRR_ZLIB_OK;
 }
@@ -210,3 +206,80 @@ int rrr_zlib_gzip_decompress (
 	);
 }
 
+static int __rrr_zlib_compress (z_streamp stream, int *flush) {
+	*flush = Z_FINISH;
+
+	switch (deflate(stream, *flush)) {
+		case Z_OK:
+		case Z_BUF_ERROR:
+			/* Try again with bigger buffer */
+			return RRR_ZLIB_INCOMPLETE;
+		case Z_STREAM_END:
+			return RRR_ZLIB_OK;
+		default:
+			break;
+	};
+
+	return RRR_ZLIB_ERR;
+}
+
+int rrr_zlib_gzip_compress_with_outsize (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size,
+		rrr_length outsize
+) {
+	int ret = RRR_ZLIB_OK;
+
+	*result = NULL;
+	*result_length = 0;
+
+	z_stream stream;
+
+	RRR_ASSERT(sizeof(stream.avail_out) >= sizeof(size),zstream_unsigned_cannot_hold_size_avail_out);
+	RRR_ASSERT(sizeof(*result_length) >= sizeof(stream.total_out),biglength_cannot_hold_total_out);
+
+	if ((ret = __rrr_zlib_stream_init(&stream)) != 0) {
+		goto out;
+	}
+
+	if (deflateInit2 (
+			&stream,
+			Z_DEFAULT_COMPRESSION,
+			Z_DEFLATED,
+			15 + 16, /* Enable gzip compress (16) */
+			8,
+			Z_DEFAULT_STRATEGY
+	) != Z_OK) {
+		RRR_MSG_0("Failed to initialize stream in %s\n", __func__);
+		goto out;
+	}
+
+	stream.next_in = (Bytef *) data;
+	stream.avail_in = size;
+
+	if ((ret = __rrr_zlib_loop (result, result_length, &stream, outsize, __rrr_zlib_compress)) != RRR_ZLIB_OK) {
+		goto out_stream_end;
+	}
+
+	out_stream_end:
+		deflateEnd(&stream);
+	out:
+	return ret ? RRR_ZLIB_ERR : RRR_ZLIB_OK;
+}
+
+int rrr_zlib_gzip_compress (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size
+) {
+	return rrr_zlib_gzip_compress_with_outsize (
+			result,
+			result_length,
+			data,
+			size,
+			512 * 1024 // 512 kB
+	);
+}
