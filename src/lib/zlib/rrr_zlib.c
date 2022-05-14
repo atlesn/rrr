@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_zlib.h"
 #include "../util/macro_utils.h"
+#include "../helpers/nullsafe_str.h"
 #include "../allocator.h"
 #include "../read_constants.h"
 
@@ -155,7 +156,7 @@ static int __rrr_zlib_decompress (z_streamp stream, int *flush) {
 int rrr_zlib_gzip_decompress_with_outsize (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size,
 		rrr_length outsize
 ) {
@@ -178,7 +179,7 @@ int rrr_zlib_gzip_decompress_with_outsize (
 		goto out;
 	}
 
-	stream.next_in = (Bytef *) data;
+	stream.next_in = (z_const Bytef *) data;
 	stream.avail_in = size;
 
 	if ((ret = __rrr_zlib_loop (result, result_length, &stream, outsize, __rrr_zlib_decompress)) != RRR_ZLIB_OK) {
@@ -194,7 +195,7 @@ int rrr_zlib_gzip_decompress_with_outsize (
 int rrr_zlib_gzip_decompress (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size
 ) {
 	return rrr_zlib_gzip_decompress_with_outsize (
@@ -204,6 +205,42 @@ int rrr_zlib_gzip_decompress (
 			size,
 			512 * 1024 // 512 kB
 	);
+}
+
+static int __rrr_zlib_gzip_decompress_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct rrr_nullsafe_str *output = arg;
+
+	int ret = 0;
+
+	char *buf = NULL;
+	rrr_biglength buf_size = 0;
+	rrr_length len_checked = 0;
+
+	if ((ret = rrr_length_from_biglength_err(&len_checked, len)) != 0) {
+		RRR_MSG_0("Maximum size exceeded in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_zlib_gzip_decompress (&buf, &buf_size, str, len_checked)) != 0) {
+		goto out;
+	}
+
+	rrr_nullsafe_str_set_allocated(output, (void **) &buf, buf_size);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf);
+	return ret;
+}
+
+int rrr_zlib_gzip_decompress_nullsafe (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input
+) {
+	return rrr_nullsafe_str_with_raw_do_const (input, __rrr_zlib_gzip_decompress_nullsafe_callback, output);
 }
 
 static int __rrr_zlib_compress (z_streamp stream, int *flush) {
@@ -226,7 +263,7 @@ static int __rrr_zlib_compress (z_streamp stream, int *flush) {
 int rrr_zlib_gzip_compress_with_outsize (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size,
 		rrr_length outsize
 ) {
@@ -256,7 +293,7 @@ int rrr_zlib_gzip_compress_with_outsize (
 		goto out;
 	}
 
-	stream.next_in = (Bytef *) data;
+	stream.next_in = (z_const Bytef *) data;
 	stream.avail_in = size;
 
 	if ((ret = __rrr_zlib_loop (result, result_length, &stream, outsize, __rrr_zlib_compress)) != RRR_ZLIB_OK) {
@@ -272,7 +309,7 @@ int rrr_zlib_gzip_compress_with_outsize (
 int rrr_zlib_gzip_compress (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size
 ) {
 	return rrr_zlib_gzip_compress_with_outsize (

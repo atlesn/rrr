@@ -34,6 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len) \
 	char name[256]; rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok(name, sizeof(name), str, len)
 
+#ifdef RRR_WITH_ZLIB
+#	define RRR_HTTP_UTIL_WITH_ENCODING
+#endif
+
 struct rrr_array;
 struct rrr_nullsafe_str;
 
@@ -150,6 +154,14 @@ int rrr_http_util_json_to_arrays (
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
 );
+#endif
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+int rrr_http_util_decode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const struct rrr_nullsafe_str *encoding
+);
+const char *rrr_http_util_encodings_get (void);
 #endif
 
 #endif /* RRR_HTTP_UTIL_H */

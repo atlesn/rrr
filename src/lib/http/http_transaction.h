@@ -119,6 +119,10 @@ int rrr_http_transaction_request_content_type_set (
 		struct rrr_http_transaction *transaction,
 		const char *content_type
 );
+int rrr_http_transaction_request_accept_encoding_set (
+		struct rrr_http_transaction *transaction,
+		const char *accept_encoding
+);
 int rrr_http_transaction_request_content_type_directive_set (
 		struct rrr_http_transaction *transaction,
 		const char *name,

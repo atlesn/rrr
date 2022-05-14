@@ -24,30 +24,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
+struct rrr_nullsafe_str;
+
 int rrr_zlib_gzip_decompress_with_outsize (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size,
 		rrr_length outsize
 );
 int rrr_zlib_gzip_decompress (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size
+);
+int rrr_zlib_gzip_decompress_nullsafe (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input
 );
 int rrr_zlib_gzip_compress_with_outsize (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size,
 		rrr_length outsize
 );
 int rrr_zlib_gzip_compress (
 		char **result,
 		rrr_biglength *result_length,
-		char *data,
+		const char *data,
 		rrr_length size
 );
 

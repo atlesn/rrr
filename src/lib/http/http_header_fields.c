@@ -350,6 +350,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS |
 	                           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_single_unsigned_value},
         {"content-type",           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_content_type_value},
+        {"content-encoding",       RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
 	                           RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME, NULL},
