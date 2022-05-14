@@ -12,7 +12,11 @@ if RRR_WITH_JSONC
 test_jsonc = test_json.c
 endif
 
-noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
+if RRR_WITH_ZLIB
+test_zlib = zlib/zlibtest
+endif
+
+noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python} ${test_zlib}
 
 ldflags = ${JEMALLOC_LIBS} -L../lib -lrrr
 
@@ -62,4 +66,10 @@ sha256_shatest_SOURCES = sha256/shatest.c
 sha256_shatest_CFLAGS = -fpie
 sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
-TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest
+if RRR_WITH_ZLIB
+zlib_zlibtest_SOURCES = zlib/zlibtest.c
+zlib_zlibtest_CFLAGS = -fpie
+zlib_zlibtest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
+endif
+
+TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest ${test_zlib} 

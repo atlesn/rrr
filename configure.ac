@@ -52,6 +52,7 @@ AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic L
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
 AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
+AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
@@ -120,6 +121,7 @@ AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
+AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
@@ -592,6 +594,25 @@ AS_IF([test "x$enable_jsonc" = xno], [
 	AC_SUBST([JSONC_CFLAGS])
 	AC_SUBST([JSONC_LDFLAGS])
 	AC_SUBST([JSONC_LIBS])
+])
+
+AC_MSG_CHECKING([zlib bindings])
+AS_IF([test "x$enable_zlib" = xno], [
+	AC_MSG_RESULT([Not compiling with zlib bindings])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_JSONC], [1], [Compile with zlib bindings])
+	AC_CHECK_HEADERS([zlib.h])
+	AC_CHECK_LIB(z, inflate, [], AC_MSG_ERROR([inflate from zlib not found]))
+	AC_CHECK_LIB(z, deflate, [], AC_MSG_ERROR([deflate from zlib not found]))
+
+	ZLIB_CFLAGS=""
+	ZLIB_LDFLAGS=""
+	ZLIB_LIBS="-lz"
+
+	AC_SUBST([ZLIB_CFLAGS])
+	AC_SUBST([ZLIB_LDFLAGS])
+	AC_SUBST([ZLIB_LIBS])
 ])
 
 AC_MSG_CHECKING([NGHTTP2 bindings])

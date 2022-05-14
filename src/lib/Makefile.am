@@ -59,6 +59,15 @@ librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
 endif
 
+if RRR_WITH_ZLIB
+libadd_zlib = librrrzlib.la
+librrrzlib_la_SOURCES = zlib/rrr_zlib.c
+librrrzlib_la_CFLAGS = ${ZLIB_CFLAGS} ${AM_CFLAGS}
+librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
+librrrzlib_la_LIBS = ${ZLIB_LIBS}
+zlib_extra_ld = ${ZLIB_LDFLAGS} ${ZLIB_LIBS}
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
        mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
@@ -179,6 +188,7 @@ libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
     ${libadd_jsonc}                  \
+    ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
