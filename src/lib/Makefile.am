@@ -64,8 +64,7 @@ libadd_zlib = librrrzlib.la
 librrrzlib_la_SOURCES = zlib/rrr_zlib.c
 librrrzlib_la_CFLAGS = ${ZLIB_CFLAGS} ${AM_CFLAGS}
 librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
-librrrzlib_la_LIBS = ${ZLIB_LIBS}
-zlib_extra_ld = ${ZLIB_LDFLAGS} ${ZLIB_LIBS}
+zlib_extra_ld = ${ZLIB_LDFLAGS}
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -123,7 +122,7 @@ net_transport_libressl = net_transport/net_transport_libressl.c net_transport/ne
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \

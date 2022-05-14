@@ -24,6 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_zlib.h"
 #include "../util/macro_utils.h"
 #include "../allocator.h"
+#include "../read_constants.h"
+
+// Test with this parameter after working on the algorithm loops
+// #define RRR_ZLIB_NO_REALLOC 1
+
+#define RRR_ZLIB_OK          RRR_READ_OK
+#define RRR_ZLIB_INCOMPLETE  RRR_READ_INCOMPLETE
+#define RRR_ZLIB_ERR         RRR_READ_HARD_ERROR
 
 static void *__rrr_zlib_allocate (void *arg, unsigned int items, unsigned int size) {
 	(void)(arg);
@@ -35,57 +43,170 @@ static void *__rrr_zlib_allocate (void *arg, unsigned int items, unsigned int si
 	return rrr_allocate(size_final);
 }
 
-static void __rrr_zlib_free (void *ptr, void *arg) {
+static void __rrr_zlib_free (void *arg, void *ptr) {
 	(void)(arg);
 	rrr_free(ptr);
 }
 
-static void __rrr_zlib_stream_init(z_streamp stream) {
+static int __rrr_zlib_stream_init(z_streamp stream) {
 	memset(stream, '\0', sizeof(*stream));
 	stream->zfree = __rrr_zlib_free;
 	stream->zalloc = __rrr_zlib_allocate;
 	stream->opaque = NULL;
+	return 0;
 }
 
-int rrr_zlib_gzip_decompress_with_outsize (char **result, char *data, rrr_length size, rrr_length outsize) {
-	int ret = 0;
+static void __rrr_zlib_stream_end(z_streamp stream) {
+	inflateEnd(stream);
+}
+
+static int __rrr_zlib_loop (
+		char **result,
+		rrr_biglength *result_length,
+		z_streamp stream,
+		rrr_length outsize,
+		int (*func)(z_streamp strm, int *flush)
+) {
+	int ret = RRR_ZLIB_OK;
 
 	*result = NULL;
+	*result_length = 0;
+
+	char *buf = NULL;
+	char *buf_new = NULL;
 
 	rrr_length buf_size = 0;
-	char *buf = NULL;
+	rrr_length buf_size_old = 0;
 
-	z_stream stream;
-	__rrr_zlib_stream_init(&stream);
+	int flush = 0;
 
-	RRR_ASSERT(sizeof(stream.avail_in) >= sizeof(size),zstream_unsigned_cannot_hold_size);
-	RRR_ASSERT(sizeof(buf_size) >= sizeof(stream.avail_out),zstream_unsigned_cannot_hold_outsize);
+	RRR_ASSERT(sizeof(stream->avail_in) >= sizeof(buf_size),zstream_unsigned_cannot_hold_size_avail_in);
+	RRR_ASSERT(sizeof(buf_size) >= sizeof(stream->avail_out),zstream_unsigned_cannot_hold_outsize);
 
-	if (inflateInit(&stream) != Z_OK) {
-		RRR_MSG_0("Failed to initialize stream in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
+	while (1) {
+		buf_size_old = buf_size;
 
-	stream.next_in = (Bytef *) data;
-	stream.avail_in = size;
+		if (rrr_length_add_err (&buf_size, outsize)) {
+			RRR_MSG_0("Buffer size addition overflow in %s (%" PRIrrrl "+%" PRIrrrl ")\n",
+				__func__, buf_size, outsize);
+			ret = RRR_ZLIB_ERR;
+			goto out;
+		}
 
-	while (ret == 0) {
-		if (rrr_length_add_err (&rrr_length *a, rrr_length b) {
-		buf_size += outsize;
-		if ((ret = inflate(&stream, 0)) != Z_OK) {
-			if (ret == Z_BUF_ERROR) {
-				// Try again with bigger buffer
+#ifdef RRR_ZLIB_NO_REALLOC
+		if ((buf_new = rrr_allocate(buf_size)) == NULL) {
+			RRR_MSG_0("Buffer allocation failed in %s (%" PRIrrrl ")\n",
+				__func__, buf_size);
+			ret = RRR_ZLIB_ERR;
+			goto out;
+		}
+		if (buf != NULL) {
+			memcpy(buf_new, buf, buf_size_old);
+			rrr_free(buf);
+		}
+#else
+		if ((buf_new = rrr_reallocate(buf, buf_size_old, buf_size)) == NULL) {
+			RRR_MSG_0("Buffer (re)allocation failed in %s (%" PRIrrrl ")\n",
+				__func__, buf_size);
+			ret = RRR_ZLIB_ERR;
+			goto out;
+		}
+#endif
+
+		buf = buf_new;
+		stream->next_out = (Bytef *) buf + stream->total_out;
+		stream->avail_out += outsize;
+
+		switch (func(stream, &flush)) {
+			case RRR_ZLIB_OK:
+				goto done;
+			case RRR_ZLIB_INCOMPLETE:
 				continue;
-			}
+			default:
+				goto out;
 		}
 	}
+
+	done:
+	*result = buf;
+	*result_length = rrr_length_from_biglength_bug_const(stream->total_out);
+	buf = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf);
 	return ret;
 }
 
-int rrr_zlib_gzip_decompress (char **result, char *data, rrr_length size) {
-	return rrr_zlib_gzip_decompress_with_outsize(result, data, size, 512 * 1024); // 512 kB
+static int __rrr_zlib_decompress (z_streamp stream, int *flush) {
+	switch (inflate(stream, *flush)) {
+		case Z_OK:
+			if (stream->avail_out != 0) {
+				RRR_MSG_0("inflate returned Z_OK with non-zero avail_out in %s\n", __func__);
+				return RRR_ZLIB_ERR;
+			}
+			/* Fallthrough */
+		case Z_BUF_ERROR:
+			/* Try again with bigger buffer */
+			return RRR_ZLIB_INCOMPLETE;
+		case Z_STREAM_END:
+			return RRR_ZLIB_OK;
+		default:
+			break;
+	};
+	return RRR_ZLIB_ERR;
 }
+
+int rrr_zlib_gzip_decompress_with_outsize (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size,
+		rrr_length outsize
+) {
+	int ret = RRR_ZLIB_OK;
+
+	*result = NULL;
+	*result_length = 0;
+
+	z_stream stream;
+
+	RRR_ASSERT(sizeof(stream.avail_out) >= sizeof(size),zstream_unsigned_cannot_hold_size_avail_out);
+	RRR_ASSERT(sizeof(*result_length) >= sizeof(stream.total_out),biglength_cannot_hold_total_out);
+
+	if ((ret = __rrr_zlib_stream_init(&stream)) != 0) {
+		goto out;
+	}
+
+	if (inflateInit2(&stream, 32 /* Enable auto gzip decompress */) != Z_OK) {
+		RRR_MSG_0("Failed to initialize stream in %s\n", __func__);
+		goto out;
+	}
+
+	stream.next_in = (Bytef *) data;
+	stream.avail_in = size;
+
+	if ((ret = __rrr_zlib_loop (result, result_length, &stream, outsize, __rrr_zlib_decompress)) != RRR_ZLIB_OK) {
+		goto out_stream_end;
+	}
+
+	out_stream_end:
+		__rrr_zlib_stream_end(&stream);
+	out:
+	return ret ? RRR_ZLIB_ERR : RRR_ZLIB_OK;
+}
+
+int rrr_zlib_gzip_decompress (
+		char **result,
+		rrr_biglength *result_length,
+		char *data,
+		rrr_length size
+) {
+	return rrr_zlib_gzip_decompress_with_outsize (
+			result,
+			result_length,
+			data,
+			size,
+			512 * 1024 // 512 kB
+	);
+}
+

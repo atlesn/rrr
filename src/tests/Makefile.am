@@ -13,10 +13,10 @@ test_jsonc = test_json.c
 endif
 
 if RRR_WITH_ZLIB
-test_zlib = zlib/zlibtest
+test_zlib = test_zlib.c
 endif
 
-noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python} ${test_zlib}
+noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 ldflags = ${JEMALLOC_LIBS} -L../lib -lrrr
 
@@ -28,6 +28,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_condition.c \
 	${test_jsonc} \
+	${test_zlib} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
@@ -40,7 +41,7 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
 test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
-test_LDADD = -ldl -lpthread -lm -L../lib/.libs ${jsonc_libadd}
+test_LDADD = -ldl -lpthread -lm -L../lib/.libs
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
@@ -66,10 +67,4 @@ sha256_shatest_SOURCES = sha256/shatest.c
 sha256_shatest_CFLAGS = -fpie
 sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
-if RRR_WITH_ZLIB
-zlib_zlibtest_SOURCES = zlib/zlibtest.c
-zlib_zlibtest_CFLAGS = -fpie
-zlib_zlibtest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
-endif
-
-TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest ${test_zlib} 
+TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest

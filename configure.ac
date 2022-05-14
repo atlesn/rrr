@@ -601,18 +601,16 @@ AS_IF([test "x$enable_zlib" = xno], [
 	AC_MSG_RESULT([Not compiling with zlib bindings])
 ], [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_JSONC], [1], [Compile with zlib bindings])
+	AC_DEFINE([RRR_WITH_ZLIB], [1], [Compile with zlib bindings])
 	AC_CHECK_HEADERS([zlib.h])
 	AC_CHECK_LIB(z, inflate, [], AC_MSG_ERROR([inflate from zlib not found]))
 	AC_CHECK_LIB(z, deflate, [], AC_MSG_ERROR([deflate from zlib not found]))
 
 	ZLIB_CFLAGS=""
-	ZLIB_LDFLAGS=""
-	ZLIB_LIBS="-lz"
+	ZLIB_LDFLAGS="-lz"
 
 	AC_SUBST([ZLIB_CFLAGS])
 	AC_SUBST([ZLIB_LDFLAGS])
-	AC_SUBST([ZLIB_LIBS])
 ])
 
 AC_MSG_CHECKING([NGHTTP2 bindings])
