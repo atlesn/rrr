@@ -408,11 +408,18 @@ static int __rrr_http_client_receive_http_part_callback (
 	int ret = RRR_HTTP_OK;
 
 	struct rrr_http_part *response_part = transaction->response_part;
-	struct rrr_nullsafe_str *chunks_merged = NULL;
+	struct rrr_nullsafe_str *data_chunks_merged = NULL;
+	struct rrr_nullsafe_str *data_decoded = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&chunks_merged, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_chunks_merged, NULL, 0)) != 0) {
 		goto out;
 	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_decoded, NULL, 0)) != 0) {
+		goto out;
+	}
+
+	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
 	// Moved-codes. Maybe this parsing is too persmissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
@@ -448,20 +455,36 @@ static int __rrr_http_client_receive_http_part_callback (
 			response_part,
 			data_ptr,
 			__rrr_http_client_chunks_iterate_callback,
-			chunks_merged
+			data_chunks_merged
 	) != 0)) {
-		RRR_MSG_0("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
+		RRR_MSG_0("Error while iterating chunks in response in %s\n", __func__);
 		goto out;
 	}
 
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+	const struct rrr_http_header_field *encoding = rrr_http_part_header_field_get(response_part, "content-encoding");
+	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value)) {
+		if ((ret = rrr_http_util_decode (
+				data_decoded,
+				data_use,
+				encoding->value
+		) != 0)) {
+			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			goto out;
+		}
+		data_use = data_decoded;
+	}
+#endif
+
 	ret = http_client->callbacks.final_callback (
 			transaction,
-			chunks_merged,
+			data_use,
 			http_client->callbacks.final_callback_arg
 	);
 
 	out:
-	rrr_nullsafe_str_destroy_if_not_null(&chunks_merged);
+	rrr_nullsafe_str_destroy_if_not_null(&data_chunks_merged);
+	rrr_nullsafe_str_destroy_if_not_null(&data_decoded);
 	return ret;
 }
 
@@ -1022,6 +1045,16 @@ int rrr_http_client_request_send (
 		RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_request_send\n");
 		goto out;
 	}
+
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+	if ((ret = rrr_http_transaction_request_accept_encoding_set (
+			transaction,
+			rrr_http_util_encodings_get()
+	)) != 0) {
+		RRR_MSG_0("Failed to push accept encofing header in %s\n", __func__);
+		goto out;
+	}
+#endif
 
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;

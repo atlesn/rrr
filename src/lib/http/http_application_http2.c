@@ -173,15 +173,13 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 }
 
 static int __rrr_http_application_http2_request_send_final_callback (
-		struct rrr_http_part *request_part,
-		const struct rrr_nullsafe_str *send_body,
+		struct rrr_http_transaction *transaction,
 		void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
 
-	(void)(request_part);
-	(void)(send_body);
+	(void)(transaction);
 
 	int ret = 0;
 
@@ -905,16 +903,12 @@ static int __rrr_http_application_http2_response_submit_response_code_callback (
 }
 
 static int __rrr_http_application_http2_response_submit_final_callback (
-		struct rrr_http_part *request_part,
-		struct rrr_http_part *response_part,
-		const struct rrr_nullsafe_str *send_data,
+		struct rrr_http_transaction *transaction,
 		void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
-	(void)(request_part);
-	(void)(response_part);
-	(void)(send_data);
+	(void)(transaction);
 
 	int ret = 0;
 

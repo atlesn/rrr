@@ -228,14 +228,10 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 }
 
 static int __rrr_http_application_http1_response_send_final (
-	struct rrr_http_part *request_part,
-	struct rrr_http_part *response_part,
-	const struct rrr_nullsafe_str *send_data,
-	void *arg
+		struct rrr_http_transaction *transaction,
+		void *arg
 ) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
-
-	(void)(response_part);
 
 	int ret = 0;
 
@@ -243,9 +239,9 @@ static int __rrr_http_application_http1_response_send_final (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_len(send_data)) {
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
-				send_data,
+				transaction->send_body,
 				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
@@ -254,7 +250,7 @@ static int __rrr_http_application_http1_response_send_final (
 		}
 	}
 
-	if (request_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
+	if (transaction->request_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
 		rrr_net_transport_ctx_close_when_send_complete_set(callback_data->handle);
 	}
 
@@ -1504,13 +1500,10 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 }
 
 static int __rrr_http_application_http1_request_send_final_callback (
-		struct rrr_http_part *request_part,
-		const struct rrr_nullsafe_str *send_body,
+		struct rrr_http_transaction *transaction,
 		void *arg
 ) {
 	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
-
-	(void)(request_part);
 
 	int ret = 0;
 
@@ -1526,9 +1519,9 @@ static int __rrr_http_application_http1_request_send_final_callback (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_len(send_body)) {
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
-				send_body,
+				transaction->send_body,
 				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
