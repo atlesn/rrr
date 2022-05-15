@@ -1526,6 +1526,11 @@ will generate default responses.
 .It http_server_test_page_default_response={yes|no}
 Send a simple test HTML page with the RRR logo whenever an empty default response otherwise would have been sent. Defaults to 'no'.
 
+.It http_server_favicon_not_found_response={yes|no}
+Always respond with 404 NOT FOUND to requests with
+.B /favicon.ico
+endpoint. If set to 'no' or left unset, these requests are treated as any other.
+
 .It http_server_response_timeout=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout

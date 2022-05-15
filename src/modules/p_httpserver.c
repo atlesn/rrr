@@ -91,6 +91,7 @@ struct httpserver_data {
 	int do_disable_http2;
 	int do_get_response_from_senders;
 	int do_test_page_default_response;
+	int do_favicon_not_found_response;
 
 	rrr_setting_uint response_timeout_ms;
 
@@ -220,6 +221,7 @@ static int httpserver_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_test_page_default_response", do_test_page_default_response, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_favicon_not_found_response", do_favicon_not_found_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
 
 	if (data->do_get_response_from_senders) {
@@ -1165,6 +1167,12 @@ static int httpserver_receive_callback (
 			}
 		}
 
+	}
+
+	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		ret = RRR_HTTP_OK;
+		goto out;
 	}
 
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {

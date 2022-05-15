@@ -1,10 +1,4 @@
-rrr (1.24-4posten1) bullseye; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Fri, 06 May 2022 10:06:23 +0200
-
-rrr (1.24-4) bullseye; urgency=medium
+rrr (1.24-5) bullseye; urgency=medium
 
   * RUNNING RELEASE
 
@@ -16,6 +10,9 @@ rrr (1.24-4) bullseye; urgency=medium
     * Add configurable delay between forks during startup
     * New rrr_sub binary which can read RRR messages in the payload of MQTT
       messages.
+    * Support gzip compression in HTTP server and client
+    * Default test page in HTTP server
+    * Option in HTTP server to produce 404 responses to /favicon.ico requets
 
   * Improvements:
     * Show IP address of remote host in error message when array data parsing
