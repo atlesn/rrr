@@ -1329,7 +1329,35 @@ int rrr_http_util_json_to_arrays (
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
 
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+int rrr_http_util_encode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const char *encoding
+) {
+	int ret = 0;
+
+	/* Only one single gzip encoding is supported, and parsing 
+	 * of multiple encodings is not performed. */
+
 #ifdef RRR_WITH_ZLIB
+	if (strcmp(encoding, "gzip") == 0) {
+		if ((ret = rrr_zlib_gzip_compress_nullsafe (
+				output,
+				input
+		)) != 0) {
+			RRR_MSG_0("Compression failed in %s\n", __func__);
+		}
+		goto out;
+	}
+#endif
+
+	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding);
+
+	out:
+	return ret;
+}
+
 int rrr_http_util_decode (
 		struct rrr_nullsafe_str *output,
 		const struct rrr_nullsafe_str *input,
@@ -1340,6 +1368,7 @@ int rrr_http_util_decode (
 	/* Only one single gzip encoding is supported, and parsing 
 	 * of multiple encodings is not performed. */
 
+#ifdef RRR_WITH_ZLIB
 	if (rrr_nullsafe_str_cmpto_case(encoding, "gzip") == 0) {
 		if ((ret = rrr_zlib_gzip_decompress_nullsafe (
 				output,
@@ -1349,6 +1378,7 @@ int rrr_http_util_decode (
 		}
 		goto out;
 	}
+#endif
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(encoding_str,encoding);
 	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding_str);

@@ -156,6 +156,11 @@ int rrr_http_util_json_to_arrays (
 );
 #endif
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
+int rrr_http_util_encode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const char *encoding
+);
 int rrr_http_util_decode (
 		struct rrr_nullsafe_str *output,
 		const struct rrr_nullsafe_str *input,

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "../config.h"
+#include "lib/banner.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
 #include "lib/common.h"
@@ -309,20 +310,6 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	return ret;
 }
 
-static const char *rrr_main_banner =
-		"======================================\n"
-		"  =      RRRRRRRRRRR  RRRR  RRRR\n"
-		"  =       RRRRRRRRRRR   RRR   RRR\n"
-		"  =       RRR      RRR   RRR   RRR\n"
-		"  =       RRR      RRR   RRR   RRR\n"
-		"  =       RRRRRRRRRR  RRRR  RRRR\n"
-		"  =       RRRRRRRRR  RRRR  RRRR\n"
-		"  =       RRR    RRR   RRR   RRR\n"
-		"  =       RRR     RRR   RRR   RRR\n"
-		"  =       RRR      RRR   RRR   RRR\n"
-		"  =      RRRR       RRRR   RRRR  RRRR\n"
-		"================================================\n\n";
-
 int rrr_main_print_banner_help_and_version (
 		struct cmd_data *cmd,
 		unsigned int argc_minimum
@@ -330,7 +317,7 @@ int rrr_main_print_banner_help_and_version (
 	int help_or_version_printed = 0;
 
 	if (cmd_exists(cmd, "banner", 0)) {
-		RRR_MSG_PLAIN("%s", rrr_main_banner);
+		RRR_MSG_PLAIN("%s", rrr_banner);
 		argc_minimum++;
 	}
 

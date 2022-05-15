@@ -56,5 +56,9 @@ int rrr_zlib_gzip_compress (
 		const char *data,
 		rrr_length size
 );
+int rrr_zlib_gzip_compress_nullsafe (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input
+);
 
 #endif /* RRR_ZLIB_H */

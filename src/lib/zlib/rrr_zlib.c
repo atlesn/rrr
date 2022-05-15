@@ -320,3 +320,39 @@ int rrr_zlib_gzip_compress (
 			512 * 1024 // 512 kB
 	);
 }
+
+static int __rrr_zlib_gzip_compress_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct rrr_nullsafe_str *output = arg;
+
+	int ret = 0;
+
+	char *buf = NULL;
+	rrr_biglength buf_size = 0;
+	rrr_length len_checked = 0;
+
+	if ((ret = rrr_length_from_biglength_err(&len_checked, len)) != 0) {
+		RRR_MSG_0("Maximum size exceeded in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_zlib_gzip_compress (&buf, &buf_size, str, len_checked)) != 0) {
+		goto out;
+	}
+
+	rrr_nullsafe_str_set_allocated(output, (void **) &buf, buf_size);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf);
+	return ret;
+}
+
+int rrr_zlib_gzip_compress_nullsafe (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input
+) {
+	return rrr_nullsafe_str_with_raw_do_const (input, __rrr_zlib_gzip_compress_nullsafe_callback, output);
+}

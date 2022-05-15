@@ -1,4 +1,4 @@
-.Dd 2022-03-29
+.Dd 2022-05-15
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1523,7 +1523,10 @@ If set to 'no' or left unset,
 .B httpserver
 will generate default responses.
 
-.It http_serve_response_timeout=MILLISECONDS
+.It http_server_test_page_default_response={yes|no}
+Send a simple test HTML page with the RRR logo whenever an empty default response otherwise would have been sent. Defaults to 'no'.
+
+.It http_server_response_timeout=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
 response.

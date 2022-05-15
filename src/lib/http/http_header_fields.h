@@ -86,6 +86,11 @@ const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_va
 		const char *name_lowercase,
 		const char *value_anycase
 );
+int rrr_http_header_field_collection_has_subvalue (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *name_subvalue_lowercase
+);
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
