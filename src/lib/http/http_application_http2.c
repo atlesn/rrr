@@ -214,7 +214,7 @@ static int __rrr_http_application_http2_request_send (
 
 		if (selected_proto == NULL || strcmp("h2", selected_proto) != 0) {
 			RRR_DBG_3("HTTP2 downgrading to HTTP1 as TLS ALPN negotiation failed\n");
-			if ((ret = rrr_http_application_http1_new(&http1)) != 0) {
+			if ((ret = rrr_http_application_http1_new(&http1, &http2->callbacks)) != 0) {
 				goto out;
 			}
 
@@ -307,14 +307,6 @@ struct rrr_http_application_http2_callback_data {
 	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
 	const struct rrr_http_rules *rules;
-	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
-	void *callback_arg;
-	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
-	void *failure_callback_arg;
-	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
-	void *async_response_get_callback_arg;
 };
 
 static int __rrr_http_application_http2_data_receive_callback (
@@ -332,8 +324,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
 	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
-		if (callback_data->failure_callback == NULL) {
-			if (callback_data->unique_id_generator_callback == NULL) {
+		if (callback_data->http2->callbacks.failure_callback == NULL) {
+			if (callback_data->http2->callbacks.unique_id_generator_callback == NULL) {
 				// Is client
 				RRR_MSG_0("HTTP2 request failed and no failure delivery defined, data is lost\n");
 			}
@@ -343,16 +335,16 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		ret = callback_data->failure_callback (
+		ret = callback_data->http2->callbacks.failure_callback (
 				callback_data->handle,
 				transaction,
 				stream_error_msg,
-				callback_data->failure_callback_arg
+				callback_data->http2->callbacks.failure_callback_arg
 		);
 		goto out;
 	}
 
-	if (callback_data->unique_id_generator_callback == NULL) {
+	if (callback_data->http2->callbacks.unique_id_generator_callback == NULL) {
 		// Is client
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
@@ -408,8 +400,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 					0,
 					0,
 					0,
-					callback_data->unique_id_generator_callback,
-					callback_data->unique_id_generator_callback_arg,
+					callback_data->http2->callbacks.unique_id_generator_callback,
+					callback_data->http2->callbacks.unique_id_generator_callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
@@ -486,15 +478,15 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 
-	if ((ret = callback_data->callback (
+	if ((ret = callback_data->http2->callbacks.callback (
 			callback_data->handle,
 			transaction,
 			data,
 			0,
 			RRR_HTTP_APPLICATION_HTTP2,
-			callback_data->callback_arg
+			callback_data->http2->callbacks.callback_arg
 	)) != 0) {
-		if (callback_data->unique_id_generator_callback != NULL) {
+		if (callback_data->http2->callbacks.unique_id_generator_callback != NULL) {
 			// Is server
 
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
@@ -508,7 +500,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 		goto out;
 	}
 
-	if (callback_data->unique_id_generator_callback != NULL) {
+	if (callback_data->http2->callbacks.unique_id_generator_callback != NULL) {
 		// Is server
 		goto out_send_response;
 	}
@@ -605,7 +597,7 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 	int ret = 0;
 
 	if (transaction && transaction->need_response) {
-		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
+		if ((ret = callback_data->http2->callbacks.async_response_get_callback(transaction, callback_data->http2->callbacks.async_response_get_callback_arg)) != 0) {
 			ret &= ~(RRR_HTTP_NO_RESULT);
 			goto out;
 		}
@@ -629,31 +621,15 @@ static int __rrr_http_application_http2_tick (
 	(void)(received_bytes);
 	(void)(upgraded_app);
 	(void)(read_max_size);
-	(void)(upgrade_verify_callback);
-	(void)(upgrade_verify_callback_arg);
-	(void)(websocket_callback);
-	(void)(websocket_callback_arg);
-	(void)(get_response_callback);
-	(void)(get_response_callback_arg);
-	(void)(frame_callback);
-	(void)(frame_callback_arg);
 
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
 			handle,
-			rules,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
-			callback,
-			callback_arg,
-			failure_callback,
-			failure_callback_arg,
-			async_response_get_callback,
-			async_response_get_callback_arg
+			rules
 	};
 
 	if (http2->transaction_incomplete_upgrade != NULL) {
-		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) == 0) {
+		if ((ret = http2->callbacks.async_response_get_callback(http2->transaction_incomplete_upgrade, http2->callbacks.async_response_get_callback_arg)) == 0) {
 			ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
 
 			rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
@@ -665,7 +641,7 @@ static int __rrr_http_application_http2_tick (
 		}
 	}
 	else {
-		if (async_response_get_callback != NULL) {
+		if (http2->callbacks.async_response_get_callback != NULL) {
 			if ((ret = rrr_http2_transport_ctx_streams_iterate (
 					http2->http2_session,
 					__rrr_http_application_http2_streams_iterate_callback,
@@ -733,7 +709,8 @@ static int __rrr_http_application_http2_new (
 		struct rrr_http_application_http2 **target,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
-		int is_server
+		int is_server,
+		const struct rrr_http_application_callbacks *callbacks
 ) {
 	struct rrr_http_application_http2 *result = NULL;
 
@@ -757,6 +734,7 @@ static int __rrr_http_application_http2_new (
 	}
 
 	result->constants = &rrr_http_application_http2_constants;
+	result->callbacks = *callbacks;
 
 	*target = result;
 
@@ -771,11 +749,12 @@ int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
 		void **initial_receive_data,
-		rrr_length initial_receive_data_len
+		rrr_length initial_receive_data_len,
+		const struct rrr_http_application_callbacks *callbacks
 ) {
 	int ret = 0;
 
-	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, initial_receive_data, initial_receive_data_len, is_server)) != 0) {
+	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, initial_receive_data, initial_receive_data_len, is_server, callbacks)) != 0) {
 		goto out;
 	}
 
@@ -852,7 +831,8 @@ int rrr_http_application_http2_new_from_upgrade (
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
-		int is_server
+		int is_server,
+		const struct rrr_http_application_callbacks *callbacks
 ) {
 	struct rrr_http_application_http2 *result = NULL;
 
@@ -864,7 +844,8 @@ int rrr_http_application_http2_new_from_upgrade (
 			&result,
 			initial_receive_data,
 			initial_receive_data_len,
-			is_server
+			is_server,
+			callbacks
 	)) != 0) {
 		goto out;
 	}

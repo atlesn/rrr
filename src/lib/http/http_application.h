@@ -80,6 +80,25 @@ struct rrr_http_transaction;
 struct rrr_nullsafe_str;
 struct rrr_http_rules;
 
+struct rrr_http_application_callbacks {
+	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+	int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS);
+	void *upgrade_verify_callback_arg;
+	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
+	void *websocket_callback_arg;
+	int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
+	void *get_response_callback_arg;
+	int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS);
+	void *frame_callback_arg;
+	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
+	void *callback_arg;
+	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
+	void *failure_callback_arg;
+	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
+	void *async_response_get_callback_arg;
+};
+
 void rrr_http_application_destroy_if_not_null (
 		struct rrr_http_application **app
 );
@@ -92,7 +111,8 @@ uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 int rrr_http_application_new (
 		struct rrr_http_application **target,
 		enum rrr_http_application_type type,
-		int is_server
+		int is_server,
+		const struct rrr_http_application_callbacks *callbacks
 );
 int rrr_http_application_transport_ctx_request_send_possible (
 		int *is_possible,
@@ -117,23 +137,7 @@ int rrr_http_application_transport_ctx_tick (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
-		const struct rrr_http_rules *rules,
-		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
-		void *upgrade_verify_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
-		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
-		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
-		void *async_response_get_callback_arg
+		const struct rrr_http_rules *rules
 );
 int rrr_http_application_alpn_protos_with_all_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),

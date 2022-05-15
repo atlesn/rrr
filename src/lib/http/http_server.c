@@ -160,10 +160,30 @@ static void __rrr_http_server_handshake_complete_callback (
 	const char *alpn_selected_proto = NULL;
 	rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle);
 
+	const struct rrr_http_application_callbacks callbacks = {
+		http_server->callbacks.unique_id_generator_callback,
+		http_server->callbacks.unique_id_generator_callback_arg,
+		__rrr_http_server_upgrade_verify_callback,
+		http_server,
+		__rrr_http_server_websocket_handshake_callback,
+		http_server,
+		__rrr_http_server_websocket_get_response_callback,
+		http_server,
+		__rrr_http_server_websocket_frame_callback,
+		http_server,
+		__rrr_http_server_receive_callback,
+		http_server,
+		NULL,
+		NULL,
+		http_server->callbacks.async_response_get_callback,
+		http_server->callbacks.async_response_get_callback_arg,
+	};
+
 	if (rrr_http_application_new (
 			&application,
 			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
-			1 // Is server
+			1, // Is server
+			&callbacks
 	) != 0) {
 		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_handshake_comlete_callback\n");
 		goto out;
@@ -171,21 +191,7 @@ static void __rrr_http_server_handshake_complete_callback (
 
 	if (rrr_http_session_transport_ctx_server_new (
 			&application,
-			handle,
-			http_server->callbacks.unique_id_generator_callback,
-			http_server->callbacks.unique_id_generator_callback_arg,
-			__rrr_http_server_upgrade_verify_callback,
-			http_server,
-			__rrr_http_server_websocket_handshake_callback,
-			http_server,
-			__rrr_http_server_receive_callback,
-			http_server,
-			http_server->callbacks.async_response_get_callback,
-			http_server->callbacks.async_response_get_callback_arg,
-			__rrr_http_server_websocket_get_response_callback,
-			http_server,
-			__rrr_http_server_websocket_frame_callback,
-			http_server
+			handle
 	) != 0) {
 		RRR_MSG_0("Could not create HTTP session in %s\n", __func__);
 		goto out;
