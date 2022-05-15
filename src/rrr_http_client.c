@@ -356,11 +356,11 @@ static int __rrr_http_client_final_callback (
 			goto out;
 		}
 		else {
-			data_start += (rrr_nullsafe_len) bytes;
-			data_size -= (rrr_nullsafe_len) bytes;
-			if (data_size > (rrr_nullsafe_len) bytes) {
+			if ((rrr_nullsafe_len) bytes > data_size) {
 				RRR_BUG("BUG: Underflow in __rrr_http_client_final_callack\n");
 			}
+			data_start += (rrr_nullsafe_len) bytes;
+			data_size -= (rrr_nullsafe_len) bytes;
 		}
 	}
 
