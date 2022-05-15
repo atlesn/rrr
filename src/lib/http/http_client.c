@@ -602,17 +602,7 @@ static int __rrr_http_client_read_callback (
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
 			handle,
-			http_client->rules.client_response_max_size,
-			__rrr_http_client_websocket_handshake_callback,
-			NULL,
-			__rrr_http_client_receive_http_part_callback,
-			http_client,
-			__rrr_http_client_request_failure_callback,
-			http_client,
-			http_client->callbacks.get_response_callback,
-			http_client->callbacks.get_response_callback_arg,
-			http_client->callbacks.frame_callback,
-			http_client->callbacks.frame_callback_arg
+			http_client->rules.client_response_max_size
 	)) != 0) {
 		if (ret == RRR_HTTP_DONE) {
 			ret_done = RRR_HTTP_DONE;
@@ -677,7 +667,17 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application_type,
 			handle,
-			callback_data->data->user_agent
+			callback_data->data->user_agent,
+			__rrr_http_client_websocket_handshake_callback,
+			NULL,
+			__rrr_http_client_receive_http_part_callback,
+			callback_data->http_client,
+			__rrr_http_client_request_failure_callback,
+			callback_data->http_client,
+			callback_data->http_client->callbacks.get_response_callback,
+			callback_data->http_client->callbacks.get_response_callback_arg,
+			callback_data->http_client->callbacks.frame_callback,
+			callback_data->http_client->callbacks.frame_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
 		goto out;
@@ -1056,6 +1056,7 @@ int rrr_http_client_request_send (
 	}
 #endif
 
+	callback_data.http_client = http_client;
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
 	callback_data.data = data;

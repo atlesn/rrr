@@ -120,9 +120,9 @@ RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(server_request_max_size);
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
-	(void)(callback_data);
+	(void)(http_server);
 
 	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
@@ -130,12 +130,30 @@ static void __rrr_http_server_accept_callback (
 			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
 }
 
+
+static int __rrr_http_server_upgrade_verify_callback (
+		RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_handshake_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
+);
+static int __rrr_http_server_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_get_response_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_frame_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+);
+static int __rrr_http_server_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+);
+
 static void __rrr_http_server_handshake_complete_callback (
 		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
-
-	(void)(callback_data);
+	struct rrr_http_server *http_server = arg;
 
 	struct rrr_http_application *application = NULL;
 
@@ -151,8 +169,25 @@ static void __rrr_http_server_handshake_complete_callback (
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_server_new (&application, handle) != 0) {
-		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_callback\n");
+	if (rrr_http_session_transport_ctx_server_new (
+			&application,
+			handle,
+			http_server->callbacks.unique_id_generator_callback,
+			http_server->callbacks.unique_id_generator_callback_arg,
+			__rrr_http_server_upgrade_verify_callback,
+			http_server,
+			__rrr_http_server_websocket_handshake_callback,
+			http_server,
+			__rrr_http_server_receive_callback,
+			http_server,
+			http_server->callbacks.async_response_get_callback,
+			http_server->callbacks.async_response_get_callback_arg,
+			__rrr_http_server_websocket_get_response_callback,
+			http_server,
+			__rrr_http_server_websocket_frame_callback,
+			http_server
+	) != 0) {
+		RRR_MSG_0("Could not create HTTP session in %s\n", __func__);
 		goto out;
 	}
 
@@ -373,21 +408,7 @@ static int __rrr_http_server_read_callback (
 			&received_bytes_dummy,
 			handle,
 			http_server->rules.server_request_max_size,
-			&http_server->rules,
-			http_server->callbacks.unique_id_generator_callback,
-			http_server->callbacks.unique_id_generator_callback_arg,
-			__rrr_http_server_upgrade_verify_callback,
-			http_server,
-			__rrr_http_server_websocket_handshake_callback,
-			http_server,
-			__rrr_http_server_receive_callback,
-			http_server,
-			http_server->callbacks.async_response_get_callback,
-			http_server->callbacks.async_response_get_callback_arg,
-			__rrr_http_server_websocket_get_response_callback,
-			http_server,
-			__rrr_http_server_websocket_frame_callback,
-			http_server
+			&http_server->rules
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
 			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",

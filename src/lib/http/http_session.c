@@ -97,7 +97,21 @@ void rrr_http_session_transport_ctx_application_set (
 
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_http_application **application,
-		struct rrr_net_transport_handle *handle
+		struct rrr_net_transport_handle *handle,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
+		void *upgrade_verify_callback_arg,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *callback_arg,
+		int (*async_response_get_callback)(RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
 ) {
 	int ret = 0;
 
@@ -108,6 +122,21 @@ int rrr_http_session_transport_ctx_server_new (
 		ret = 1;
 		goto out;
 	}
+
+	session->unique_id_generator_callback = unique_id_generator_callback;
+	session->unique_id_generator_callback_arg = unique_id_generator_callback_arg;
+	session->upgrade_verify_callback = upgrade_verify_callback;
+	session->upgrade_verify_callback_arg = upgrade_verify_callback_arg;
+	session->websocket_callback = websocket_callback;
+	session->websocket_callback_arg = websocket_callback_arg;
+	session->callback = callback;
+	session->callback_arg = callback_arg;
+	session->async_response_get_callback = async_response_get_callback;
+	session->async_response_get_callback_arg = async_response_get_callback_arg;
+	session->get_response_callback = get_response_callback;
+	session->get_response_callback_arg = get_response_callback_arg;
+	session->frame_callback = frame_callback;
+	session->frame_callback_arg = frame_callback_arg;
 
 	// DO NOT STORE HANDLE POINTER
 
@@ -131,7 +160,17 @@ int rrr_http_session_transport_ctx_server_new (
 int rrr_http_session_transport_ctx_client_new_or_clean (
 		enum rrr_http_application_type application_type,
 		struct rrr_net_transport_handle *handle,
-		const char *user_agent
+		const char *user_agent,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
 ) {
 	int ret = 0;
 
@@ -143,6 +182,17 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			RRR_MSG_0("Could not allocate memory in rrr_http_session_transport_ctx_client_new\n");
 			goto out;
 		}
+
+		session->websocket_callback = websocket_callback;
+		session->websocket_callback_arg = websocket_callback_arg;
+		session->callback = callback;
+		session->callback_arg = callback_arg;
+		session->failure_callback = failure_callback;
+		session->failure_callback_arg = failure_callback_arg;
+		session->get_response_callback = get_response_callback;
+		session->get_response_callback_arg = get_response_callback_arg;
+		session->frame_callback = frame_callback;
+		session->frame_callback_arg = frame_callback_arg;
 
 		if ((ret = rrr_http_application_new (
 				&session->application,
@@ -249,23 +299,7 @@ static int __rrr_http_session_transport_ctx_tick (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
-		const struct rrr_http_rules *rules,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_args,
-		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
-		void *upgrade_verify_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
-		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),	
-		void *failure_callback_arg,
-		int (*async_response_get_callback)(RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
-		void *async_response_get_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		const struct rrr_http_rules *rules
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
@@ -290,22 +324,22 @@ static int __rrr_http_session_transport_ctx_tick (
 			handle,
 			read_max_size,
 			rules,
-			unique_id_generator_callback,
-			unique_id_generator_callback_args,
-			upgrade_verify_callback,
-			upgrade_verify_callback_arg,
-			websocket_callback,
-			websocket_callback_arg,
-			get_response_callback,
-			get_response_callback_arg,
-			frame_callback,
-			frame_callback_arg,
-			callback,
-			callback_arg,
-			failure_callback,
-			failure_callback_arg,
-			async_response_get_callback,
-			async_response_get_callback_arg
+			session->unique_id_generator_callback,
+			session->unique_id_generator_callback_arg,
+			session->upgrade_verify_callback,
+			session->upgrade_verify_callback_arg,
+			session->websocket_callback,
+			session->websocket_callback_arg,
+			session->get_response_callback,
+			session->get_response_callback_arg,
+			session->frame_callback,
+			session->frame_callback_arg,
+			session->callback,
+			session->callback_arg,
+			session->failure_callback,
+			session->failure_callback_arg,
+			session->async_response_get_callback,
+			session->async_response_get_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -328,17 +362,7 @@ static int __rrr_http_session_transport_ctx_tick (
 int rrr_http_session_transport_ctx_tick_client (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
-		rrr_biglength read_max_size,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
-		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		rrr_biglength read_max_size
 ) {
 	struct rrr_http_rules rules_dummy = {0};
 
@@ -346,23 +370,7 @@ int rrr_http_session_transport_ctx_tick_client (
 			received_bytes,
 			handle,
 			read_max_size,
-			&rules_dummy,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			websocket_callback,
-			websocket_callback_arg,
-			callback,
-			callback_arg,
-			failure_callback,
-			failure_callback_arg,
-			NULL,
-			NULL,
-			get_response_callback,
-			get_response_callback_arg,
-			frame_callback,
-			frame_callback_arg
+			&rules_dummy
 	);
 }
 
@@ -370,43 +378,13 @@ int rrr_http_session_transport_ctx_tick_server (
 		rrr_biglength *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
-		const struct rrr_http_rules *rules,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
-		void *upgrade_verify_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
-		int (*async_response_get_callback)(RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
-		void *async_response_get_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		const struct rrr_http_rules *rules
 ) {
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
 			handle,
 			read_max_size,
-			rules,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
-			upgrade_verify_callback,
-			upgrade_verify_callback_arg,
-			websocket_callback,
-			websocket_callback_arg,
-			callback,
-			callback_arg,
-			NULL,
-			NULL,
-			async_response_get_callback,
-			async_response_get_callback_arg,
-			get_response_callback,
-			get_response_callback_arg,
-			frame_callback,
-			frame_callback_arg
+			rules
 	);
 }
 
