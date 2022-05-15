@@ -154,12 +154,7 @@ int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
 		int (*response_code_callback)(unsigned response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(
-				struct rrr_http_part *request_part,
-				struct rrr_http_part *response_part,
-				const struct rrr_nullsafe_str *send_data,
-				void *arg
-		),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 );
 int rrr_http_transaction_request_prepare_wrapper (
@@ -176,7 +171,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 			void *arg
 		),
 		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 );
 

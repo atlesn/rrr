@@ -440,20 +440,19 @@ static int __rrr_http_transaction_part_content_length_set (
 }
 
 static void __rrr_http_transaction_response_code_ensure (
-		struct rrr_http_transaction *transaction,
-		const struct rrr_nullsafe_str *send_body
+		struct rrr_http_transaction *transaction
 ) {
 	unsigned int response_code = transaction->response_part->response_code;
 
 	if (response_code < 100 || response_code > 599) {
-		response_code = rrr_nullsafe_str_len(send_body) > 0
+		response_code = rrr_nullsafe_str_len(transaction->send_body) > 0
 			? RRR_HTTP_RESPONSE_CODE_OK
 			: RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT
 		;
 	}
 
 	// Predict that we are going to send data later on stream 1 (during ticking)?
-	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(send_body) > 0) {
+	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(transaction->send_body) > 0) {
 		response_code = RRR_HTTP_RESPONSE_CODE_OK;
 	}
 
@@ -463,19 +462,18 @@ static void __rrr_http_transaction_response_code_ensure (
 }
 
 static int __rrr_http_transaction_response_content_length_ensure (
-		struct rrr_http_transaction *transaction,
-		const struct rrr_nullsafe_str *send_body
+		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
 
-	if (rrr_nullsafe_str_len(send_body) > 0 && transaction->response_part->response_code == 204) {
+	if (rrr_nullsafe_str_len(transaction->send_body) > 0 && transaction->response_part->response_code == 204) {
 		RRR_MSG_0("HTTP response to send had a body while response code was 204 No Content, this is an error.\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
 	if (transaction->response_part->response_code != 204) {
-		if ((ret = __rrr_http_transaction_part_content_length_set(transaction->response_part, send_body)) != 0) {
+		if ((ret = __rrr_http_transaction_part_content_length_set(transaction->response_part, transaction->send_body)) != 0) {
 			goto out;
 		}
 	}
@@ -488,18 +486,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
 		int (*response_code_callback)(unsigned int response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(
-				struct rrr_http_part *request_part,
-				struct rrr_http_part *response_part,
-				const struct rrr_nullsafe_str *send_data,
-				void *arg
-		),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	struct rrr_nullsafe_str *send_body_encoded = NULL;
-	const struct rrr_nullsafe_str *send_body = transaction->send_body;
 
 	// The order of the function calls matter
 
@@ -508,25 +500,25 @@ int rrr_http_transaction_response_prepare_wrapper (
 			&transaction->request_part->headers,
 			"accept-encoding",
 			"gzip"
-	) && rrr_nullsafe_str_len(send_body) > RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE) {
+	) && rrr_nullsafe_str_len(transaction->send_body) > RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE) {
 		if ((ret = rrr_nullsafe_str_new_or_replace_empty (&send_body_encoded)) != 0) {
 			RRR_MSG_0("Failed to allocate nullsafe str in %s\n", __func__);
 			goto out;
 		}
-		if ((ret = rrr_http_util_encode (send_body_encoded, send_body, "gzip")) != 0) {
+		if ((ret = rrr_http_util_encode (send_body_encoded, transaction->send_body, "gzip")) != 0) {
 			RRR_MSG_0("Failed to encode body in %s\n", __func__);
 			goto out;
 		}
 		if ((ret = rrr_http_part_header_field_push_and_replace (transaction->response_part, "content-encoding", "gzip")) != 0) {
 			goto out;
 		}
-		send_body = send_body_encoded;
+		rrr_nullsafe_str_move(&transaction->send_body, &send_body_encoded);
 	}
 #endif
 
-	__rrr_http_transaction_response_code_ensure (transaction, send_body);
+	__rrr_http_transaction_response_code_ensure (transaction);
 
-	if ((ret = __rrr_http_transaction_response_content_length_ensure(transaction, send_body)) != 0) {
+	if ((ret = __rrr_http_transaction_response_content_length_ensure(transaction)) != 0) {
 		goto out;
 	}
 
@@ -545,9 +537,7 @@ int rrr_http_transaction_response_prepare_wrapper (
 	}
 
 	if ((ret = final_callback (
-			transaction->request_part,
-			transaction->response_part,
-			send_body,
+			transaction,
 			callback_arg
 	)) != 0) {
 		goto out;
@@ -572,7 +562,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 			void *arg
 		),
 		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -624,7 +614,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = final_callback(transaction->request_part, transaction->send_body, callback_arg)) != 0) {
+	if ((ret = final_callback(transaction, callback_arg)) != 0) {
 		goto out;
 	}
 
