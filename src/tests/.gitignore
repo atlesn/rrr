@@ -1,6 +1,7 @@
 sha1/sha
 sha1/shatest
 sha256/shatest
+zlib/zlibtest
 tests/
 *.log
 test
