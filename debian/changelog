@@ -1,15 +1,22 @@
-rrr (1.24-1focal1) focal; urgency=medium
+rrr (1.25-1focal1) focal; urgency=medium
 
-  * Focal development release.
+  * Focal release.
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 18:59:25 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:58:25 +0200
 
-rrr (1.24-1) bullseye; urgency=medium
+rrr (1.25-1) bullseye; urgency=medium
 
-  * RUNNING RELEASE
+  * Changes:
+    * Argument '-f|--force', force read of unsupported array message version,
+      is removed from rrr_msg utility.
 
   * Features:
     * Add configurable delay between forks during startup
+    * New rrr_sub binary which can read RRR messages in the payload of MQTT
+      messages.
+    * Support gzip compression in HTTP server and client
+    * Default test page in HTTP server
+    * Option in HTTP server to produce 404 responses to /favicon.ico requets
 
   * Improvements:
     * Show IP address of remote host in error message when array data parsing
@@ -21,15 +28,22 @@ rrr (1.24-1) bullseye; urgency=medium
     * If conversion from str to PyUnicode fails in python3 for array values,
       fallback to PyByteArray with a warning
     * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
+    * More aggressive cleanup of larger allocations in mmap channel to reduce
+      persistent memory usage in some situations.
 
   * Fixes:
-    * Misc. features in python RRR array handling API not working correctly, in particular
-      handling of multibyte character sets
+    * Misc. features in python RRR array handling API not working correctly,
+      in particular handling of multibyte character sets
+    * cmodule test failed if it found the dummy module on the filesystem with
+      non-compatible version.
 
   * Under the hood:
     * Cleanups in net transport framework
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 17:26:52 +0200
+  * Other:
+    * Remove obsolete configuration parameter ip_persistent_connections
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:19:19 +0200
 
 rrr (1.23-2) bullseye; urgency=medium
 

@@ -145,6 +145,7 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = 0;
 	*send_allowed = 0;
+	*close_wait = 0;
 
 	struct rrr_mqtt_client_check_alive_callback_data callback_data = {
 		data,
@@ -883,10 +884,6 @@ static int __rrr_mqtt_client_acl_handler (
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	rrr_mqtt_common_data_destroy(&client->mqtt_data);
 	rrr_free(client);
-}
-
-void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client) {
-	rrr_mqtt_common_data_notify_pthread_cancel(&client->mqtt_data);
 }
 
 static int __rrr_mqtt_client_iterate_and_clear_local_delivery (
