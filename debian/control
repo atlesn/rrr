@@ -55,11 +55,11 @@ Depends: librrr1 (= ${binary:Version}),
          ${misc:Depends}
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
-Package: rrr-mod-mariadb
+Package: rrr-mod-mysql
 Architecture: any
 Multi-Arch: foreign
 Depends: libmysqlclient21,
          rrr (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
-Description: Read Route Record module for writing to MariaDB SQL Database.
+Description: Read Route Record module for writing to MySQL Database.
