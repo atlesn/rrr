@@ -6,7 +6,7 @@ Build-Depends: debhelper (>= 13),
                dh-autoreconf,
                dh-python,
                libmysqlclient-dev | libmariadbclient-dev-compat,
-               libperl-dev (>= 5.31),
+               libperl-dev (>= 5.32),
                libssl-dev,
                libsystemd-dev,
                libusb-dev,
@@ -17,7 +17,7 @@ Build-Depends: debhelper (>= 13),
                libevent-dev,
                libjemalloc-dev
 X-Python3-Version: 3.9,3.10
-Standards-Version: 4.6.0
+Standards-Version: 4.6.1
 Homepage: https://github.com/atlesn/rrr
 
 Package: rrr
