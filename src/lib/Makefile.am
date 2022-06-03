@@ -59,9 +59,18 @@ librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
 endif
 
+if RRR_WITH_ZLIB
+libadd_zlib = librrrzlib.la
+librrrzlib_la_SOURCES = zlib/rrr_zlib.c
+librrrzlib_la_CFLAGS = ${ZLIB_CFLAGS} ${AM_CFLAGS}
+librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
+zlib_extra_ld = ${ZLIB_LDFLAGS}
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
-       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
+       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
+       mqtt/mqtt_payload.c mqtt/mqtt_usercount.c
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
@@ -87,7 +96,7 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c
+       util/increment.c util/sha256.c util/arguments.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -96,7 +105,7 @@ udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
                  message_holder/message_holder_slot.c
 
-messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
+messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
 helpers = helpers/nullsafe_str.c helpers/string_builder.c
 
@@ -113,9 +122,9 @@ net_transport_libressl = net_transport/net_transport_libressl.c net_transport/ne
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
-                    version.c configuration.c parse.c settings.c instance_config.c common.c \
+                    version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c \
                     read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c modules.c \
@@ -179,6 +188,7 @@ libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
     ${libadd_jsonc}                  \
+    ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
