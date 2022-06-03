@@ -5,19 +5,19 @@ Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>= 13),
                dh-autoreconf,
                dh-python,
-               libmysqlclient-dev | libmariadbclient-dev-compat,
-               libperl-dev (>= 5.31),
+               libmysqlclient-dev,
+               libperl-dev (>= 5.34),
                libssl-dev,
                libsystemd-dev,
                libusb-dev,
                pkg-config,
-               python3-dev (>= 3.9),
+               python3-dev (>= 3.10),
                libnghttp2-dev,
                libjson-c-dev,
                libevent-dev,
                libjemalloc-dev
-X-Python3-Version: 3.9,3.10
-Standards-Version: 4.6.0
+X-Python3-Version: 3.10
+Standards-Version: 4.6.1
 Homepage: https://github.com/atlesn/rrr
 
 Package: rrr
@@ -58,7 +58,7 @@ Description: RRR (Read Route Record) is a general purpose acquirement, transmiss
 Package: rrr-mod-mariadb
 Architecture: any
 Multi-Arch: foreign
-Depends: libmariadb-dev-compat,
+Depends: libmysqlclient21,
          rrr (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
