@@ -133,6 +133,7 @@ Some systems have customized branches, choose one of the following if appropriat
 	$ git checkout alpine
 	$ git checkout freebsd
 	$ git checkout ubuntu (Current LTS release)
+	$ git checkout ubuntu-focal (Old LTS release)
 	$ git checkout ubuntu-hirsute
 
 The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
@@ -151,14 +152,16 @@ See the *COMPILE* section below for further information.
 To use Debian Buster, replace "bullseye.list" with "buster.list".
 The i386 platform is available for Buster.
 
-#### Pre-compiled package for Ubuntu Focal amd64 using APT
+#### Pre-compiled package for Ubuntu Jammy Jellyfish amd64 using APT
 
 	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
-	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/jammy.list > /etc/apt/sources.list.d/goliathdns.list"
 	$ sudo apt update
 	$ sudo apt install rrr
 
-To use Ubuntu Hirsute, replace "focal.list" with "hirsute.list".
+To use Ubuntu Hirsute, replace "jammy.list" with "hirsute.list".
+
+To use Ubuntu Focal, replace "jammy.list" with "focal.list".
 
 #### Pre-compiled Fedora package using yum
 
