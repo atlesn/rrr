@@ -65,6 +65,10 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## NEWS
 
+### v1.25
+ - gzip support in HTTP protocols
+ - `rrr_sub` binary to monitor RRR messages in MQTT traffic
+
 ### v1.23
  - Improve MQTT protocol support and control the MQTT client module by passing command messages
  - Possibility to invert the topic filter for instances
