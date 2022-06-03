@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
 #include "mqtt_assemble.h"
+#include "mqtt_payload.h"
 
 #include "../ip/ip.h"
 #include "../ip/ip_accept_data.h"
@@ -279,8 +280,8 @@ static int __rrr_mqtt_conn_new (
 
 	rrr_fifo_init_custom_refcount (
 			&res->receive_buffer.buffer,
-			rrr_mqtt_p_standardized_incref,
-			rrr_mqtt_p_standardized_decref
+			rrr_mqtt_p_usercount_incref_void,
+			rrr_mqtt_p_usercount_decref_void
 	);
 
 	res->connect_time = res->last_read_time = res->last_write_time = rrr_time_get_64();
@@ -754,7 +755,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 
 	rrr_mqtt_packet_parse_session_extract_packet(&packet, &connection->parse_session);
 
-	if (rrr_mqtt_p_standardized_get_refcount(packet) != 1) {
+	if (RRR_MQTT_P_USERCOUNT(packet) != 1) {
 		RRR_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
 	}
 
@@ -963,30 +964,30 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	struct rrr_mqtt_p_header header = {0};
 	rrr_length variable_int_length = 0;
-	rrr_length payload_length = 0;
+	rrr_length payload_size = 0;
 	payload = packet->payload;
 	if (payload != NULL) {
-		payload_length = packet->payload->length;
+		payload_size = packet->payload->size;
 	}
 
 	if ((ret = __rrr_mqtt_connection_create_variable_int (
 			header.length,
 			&variable_int_length,
-			rrr_length_add_bug_const(packet->assembled_data_size, payload_length)
+			rrr_length_add_bug_const(packet->assembled_data_size, payload_size)
 	)) != 0) {
 		RRR_MSG_0("Error while creating variable int in %s\n", __func__);
 		goto out;
 	}
 	header.type = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
 
-	rrr_biglength total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
+	rrr_biglength total_size = 1 + variable_int_length + packet->assembled_data_size + payload_size;
 
 	RRR_DBG_3("Sending packet %p of type %s flen: 1, vlen: %" PRIrrrl ", alen: %" PRIrrrl ", plen: %" PRIrrrl ", total: %" PRIrrrbl ", id: %u, urgent: %i\n",
 			packet,
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			variable_int_length,
 			packet->assembled_data_size,
-			payload_length,
+			payload_size,
 			total_size,
 			RRR_MQTT_P_GET_IDENTIFIER(packet),
 			urgent
@@ -994,7 +995,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	__rrr_mqtt_connection_update_last_write_time(connection);
 
-	const rrr_biglength send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
+	const rrr_biglength send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->size : 0);
 	if (send_size > RRR_LENGTH_MAX) {
 		RRR_BUG("Bug: Send size overflow in rrr_mqtt_conn_iterator_ctx_send_packet (%llu>%llu)\n",
 			(unsigned long long) send_size, (unsigned long long) RRR_LENGTH_MAX);
@@ -1020,10 +1021,10 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 
 	if (payload != NULL) {
-		if (payload_length == 0) {
+		if (payload_size == 0) {
 			RRR_BUG("Payload size was 0 but payload pointer was not NULL in %s\n", __func__);
 		}
-		memcpy(send_data_pos, payload->payload_start, payload->length);
+		memcpy(send_data_pos, payload->payload_start, payload->size);
 	}
 
 	int (*send_method)(

@@ -24,6 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "net_transport_defines.h"
 
+#define RRR_NET_TRANSPORT_CONFIG_PLAIN_INITIALIZER \
+    {NULL, NULL, NULL, NULL, NULL, RRR_NET_TRANSPORT_PLAIN}
+
 struct rrr_instance_config_data;
 
 struct rrr_net_transport_config {

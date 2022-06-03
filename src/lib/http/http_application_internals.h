@@ -49,29 +49,13 @@ struct rrr_http_rules;
 #define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \
     struct rrr_http_application *app
 
-#define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
-    rrr_biglength *received_bytes,                                                               \
-    struct rrr_http_application **upgraded_app,                                                  \
-    struct rrr_http_application *app,                                                            \
-    struct rrr_net_transport_handle *handle,                                                     \
-    rrr_biglength read_max_size,                                                                 \
-    const struct rrr_http_rules *rules,                                                          \
-    int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS), \
-    void *unique_id_generator_callback_arg,                                                      \
-    int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),           \
-    void *upgrade_verify_callback_arg,                                                           \
-    int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),           \
-    void *websocket_callback_arg,                                                                \
-    int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),     \
-    void *get_response_callback_arg,                                                             \
-    int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),                   \
-    void *frame_callback_arg,                                                                    \
-    int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),                                 \
-    void *callback_arg,                                                                          \
-    int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),                         \
-    void *failure_callback_arg,                                                                  \
-    int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),   \
-    void *async_response_get_callback_arg
+#define RRR_HTTP_APPLICATION_TICK_ARGS                         \
+    rrr_biglength *received_bytes,                             \
+    struct rrr_http_application **upgraded_app,                \
+    struct rrr_http_application *app,                          \
+    struct rrr_net_transport_handle *handle,                   \
+    rrr_biglength read_max_size,                               \
+    const struct rrr_http_rules *rules
 
 #define RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS              \
     const char **target,                                       \
@@ -94,7 +78,8 @@ struct rrr_http_application_constants {
 };
 
 #define RRR_HTTP_APPLICATION_HEAD                              \
-    const struct rrr_http_application_constants *constants;
+    const struct rrr_http_application_constants *constants;    \
+    struct rrr_http_application_callbacks callbacks
 
 struct rrr_http_application {
 	RRR_HTTP_APPLICATION_HEAD;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -59,6 +59,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // the process which initially created the SHMs and it unregisters
 // the SHM.
 
+// SHMs are not allocated directly, the only public function of the
+// holder collection is rrr_shm_holders_cleanup. Instead, an
+// SHM collection with master/slave structure is used. 
+
+// When memory is to be shared between processes, and before forking,
+// a master is created. After forking, each fork then creates a slave.
+// Each master may hold up to RRR_SHM_COLLECTION_MAX allocations.
+
+// Allocations performed using rrr_shm_collection_master_allocate
+// can be accessed by the slave using the rrr_shm_resolve function by
+// communicating the SHM handle. Slaves may also allocate private memory
+// using rrr_shm_allocate and rrr_shm_free.
+
+// There is no locking in the SHM collection. Users must ensure that memory
+// is not allocated by multiple forks simultaneously or while rrr_shm_resolve
+// is called. If all memory is allocated prior to forking, no further locking
+// is required and the slaves may resolve the allocations asynchronously.
+
+// After a slave has obtained a pointer using rrr_shm_resolve, this pointer
+// is guaranteed to be valid at least until the next call of rrr_shm_resolve,
+// even if the master de-allocates the memory. The master or some other slave
+// may re-use the same slot for different memory. Note that the user must provide
+// synchronization for data being accessed if it is allocated and written to
+// after forking.
+
+// The collection does not provide the means to detect whether a pointer
+// refers to the same data after successive calls to rrr_shm_resolve for the
+// same handle.
+
 struct rrr_shm_holder {
 	RRR_LL_NODE(struct rrr_shm_holder);
 	pid_t pid;
@@ -113,19 +142,14 @@ static int __rrr_shm_holder_register (
 		const char *filename,
 		const char *creator
 ) {
-	// Use only raw malloc/free in the holder functions to avoid
-	// that rrr_freecalls back into the SHM framework causing deadlock
-
-	struct rrr_shm_holder *holder = malloc(sizeof(*holder));
+	struct rrr_shm_holder *holder = rrr_allocate_zero(sizeof(*holder));
 	if (holder == NULL) {
-		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		return 1;
 	}
 
-	memset(holder, '\0', sizeof(*holder));
-
 	if (strlen(filename) > sizeof(holder->filename) - 1) {
-		RRR_BUG("BUG: Filename exceeds maximum length in rrr_shm_holder_register\rrr_shm_collection_slave_new");
+		RRR_BUG("BUG: Filename exceeds maximum length in %s\n", __func__);
 	}
 	strcpy(holder->filename, filename);
 
@@ -151,7 +175,7 @@ void rrr_shm_holders_cleanup (void) {
 			}
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; rrr_free(node));
 	pthread_mutex_unlock(&shm_holders_lock);
 }
 
@@ -164,7 +188,7 @@ static int __rrr_shm_open (
 	*fd = 0;
 
 	if ((fd_tmp = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR)) < 0) {
-		RRR_MSG_0("shm_open failed in __rrr_shm_open: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("shm_open failed in %s: %s\n", __func__, rrr_strerror(errno));
 		return 1;
 	}
 
@@ -192,7 +216,7 @@ static int __rrr_shm_open_create (
 
 		if ((fd_tmp = shm_open(name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
 			if (errno != EEXIST) {
-				RRR_MSG_0("shm_open failed in __rrr_shm_open_create: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("shm_open failed in %s: %s\n", __func__, rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -202,12 +226,12 @@ static int __rrr_shm_open_create (
 	} while(fd_tmp <= 0);
 
 	if (ftruncate (fd_tmp, (off_t) size) != 0) {
-		RRR_MSG_0("ftruncate size %llu failed in __rrr_shm_open_create: %s\n", (long long unsigned) size, rrr_strerror(errno));
+		RRR_MSG_0("ftruncate size %llu failed in %s: %s\n", (long long unsigned) size, __func__, rrr_strerror(errno));
 		goto out_close;
 	}
 
 	if ((ret = __rrr_shm_holder_register (name, creator)) != 0) {
-		RRR_MSG_0("Failed to register SHM in __rrr_shm_open_create\n");
+		RRR_MSG_0("Failed to register SHM in %s\n", __func__);
 		goto out_close;
 	}
 
@@ -247,7 +271,7 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 	}
 
 	if ((ptr = rrr_posix_mmap_with_fd(fd_tmp, shm->data_size)) == NULL) {
-		RRR_MSG_0("mmap failed in rrr_shm_mmap: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("mmap failed in %s: %s\n", __func__, rrr_strerror(errno));
 		goto out_close;
 	}
 
@@ -313,7 +337,7 @@ int rrr_shm_collection_slave_new (
 
 	struct rrr_shm_collection_slave *slave = rrr_allocate_zero (sizeof(*slave));
 	if (slave == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_shm_collection_slave_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -344,7 +368,7 @@ int rrr_shm_collection_master_new (
 	struct rrr_shm_collection_master *collection;
 
 	if ((collection = rrr_posix_mmap(sizeof(*collection), 1 /* Is shared */)) == NULL) {
-		RRR_MSG_0("mmap failed in rrr_shm_collection_master_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("mmap failed in %s: %s\n", __func__, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -401,7 +425,7 @@ void rrr_shm_collection_master_free (
 		rrr_shm_handle handle
 ) {
 	if (collection->elements[handle].data_size == 0) {
-		RRR_BUG("BUG: Double free in rrr_shm_collection_master_free\n");
+		RRR_BUG("BUG: Double free in %s\n", __func__);
 	}
 	__rrr_shm_cleanup(&collection->elements[handle]);
 
@@ -479,8 +503,8 @@ void *rrr_shm_resolve (
 	}
 
 	if (slave->ptrs[handle].ptr == NULL) {
-		RRR_MSG_0("Invalid handle %llu in rrr_shm_resolve, not allocated by master\n",
-				(long long unsigned) handle);
+		RRR_MSG_0("Invalid handle %llu in %s, not allocated by master\n",
+				(long long unsigned) handle, __func__);
 		return NULL;
 	}
 
@@ -525,7 +549,7 @@ void rrr_shm_free (
 ) {
 	rrr_shm_handle handle;
 	if (rrr_shm_resolve_reverse(&handle, slave, ptr) != 0) {
-		RRR_BUG("BUG: ptr %p not found in rrr_shm_free()\n", ptr);
+		RRR_BUG("BUG: ptr %p not found in %s\n", ptr, __func__);
 	}
 	rrr_shm_collection_master_free(slave->master, handle);
 }

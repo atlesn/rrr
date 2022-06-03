@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/banner.h"
 #include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -89,6 +90,8 @@ struct httpserver_data {
 	int do_receive_websocket_rrr_message;
 	int do_disable_http2;
 	int do_get_response_from_senders;
+	int do_test_page_default_response;
+	int do_favicon_not_found_response;
 
 	rrr_setting_uint response_timeout_ms;
 
@@ -217,6 +220,8 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_test_page_default_response", do_test_page_default_response, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_favicon_not_found_response", do_favicon_not_found_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
 
 	if (data->do_get_response_from_senders) {
@@ -993,6 +998,50 @@ static int httpserver_async_response_process (
 	return ret;
 }
 
+static int httpserver_default_test_response_set (
+		struct rrr_http_transaction *transaction
+) {
+	int ret = 0;
+
+	char *body = NULL;
+	int body_len = 0;
+
+	if ((body_len = rrr_asprintf (
+			&body,
+			"<!DOCTYPE HTML>\r\n"
+			"<html>\r\n"
+			"<head>\r\n"
+			"<title>RRR %s Test Page</title>\r\n"
+			"</head>\r\n"
+			"<body>\r\n"
+			"<pre>\r\n"
+			"%s\r\n"
+			"</pre>\r\n"
+			"</body>\r\n"
+			"</html>\r\n",
+			VERSION,
+			rrr_banner
+	)) <= 0) {
+		RRR_MSG_0("Failed to allocate response body in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_send_body_set (
+			transaction,
+			body,
+			rrr_length_from_slength_bug_const(body_len)
+	)) != 0) {
+		goto out;
+	}
+
+	transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(body);
+	return ret;
+}
+
 static int httpserver_async_response_get_and_process (
 		struct httpserver_data *data,
 		const struct httpserver_response_data *response_data,
@@ -1120,6 +1169,12 @@ static int httpserver_receive_callback (
 
 	}
 
+	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		ret = RRR_HTTP_OK;
+		goto out;
+	}
+
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
@@ -1211,6 +1266,12 @@ static int httpserver_receive_callback (
 	if (data->do_get_response_from_senders) {
 		rrr_http_transaction_application_data_set(transaction, (void **) &response_data, httpserver_response_data_destroy_void);
 		ret = RRR_HTTP_NO_RESULT;
+	}
+	else if (data->do_test_page_default_response) {
+		if ((ret = httpserver_default_test_response_set (transaction)) != 0) {
+			goto out;
+		}
+		ret = RRR_HTTP_OK;
 	}
 
 	out:
