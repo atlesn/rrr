@@ -1,5 +1,5 @@
 Source: rrr
-	Section: main
+Section: main
 Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>=13~),
