@@ -1,6 +1,4 @@
-rrr (1.24-5) bullseye; urgency=medium
-
-  * RUNNING RELEASE
+rrr (1.25-1) bullseye; urgency=medium
 
   * Changes:
     * Argument '-f|--force', force read of unsupported array message version,
@@ -39,7 +37,7 @@ rrr (1.24-5) bullseye; urgency=medium
   * Other:
     * Remove obsolete configuration parameter ip_persistent_connections
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 17:26:52 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:19:19 +0200
 
 rrr (1.23-2) bullseye; urgency=medium
 
