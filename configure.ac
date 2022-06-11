@@ -358,6 +358,7 @@ AC_MSG_CHECKING([for enabled OpenSSL with QUIC usage])
 AS_IF([test "x$enable_quictls_openssl" = xyes], [
 	AC_MSG_RESULT([yes])
 	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "xyes"],[AC_MSG_ERROR([OpenSSL with QUIC was enabled but not found])])
+	AC_DEFINE([RRR_WITH_QUIC], [1], [Compile with OpenSSL QUIC bindings])
 ], [
 	AC_MSG_RESULT([no])
 ])
