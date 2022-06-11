@@ -30,11 +30,46 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_tls_common.h"
 #include "net_transport_common.h"
 
+#include "../allocator.h"
 #include "../rrr_openssl.h"
+#include "../ip/ip.h"
 
-static int __rrr_net_transport_quic_ssl_data_close (struct rrr_net_transport_handle *handle) {
-	(void)(handle);
-	return 1;
+struct rrr_net_transport_quic_data {
+	struct rrr_ip_data ip_data;
+};
+
+static int __rrr_net_transport_quic_data_new (
+		struct rrr_net_transport_quic_data **result,
+		const struct rrr_ip_data *ip_data
+) {
+	*result = NULL;
+
+	struct rrr_net_transport_quic_data *data;
+
+	if ((data = rrr_allocate_zero(sizeof(*data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	data->ip_data = *ip_data;
+
+	*result = data;
+
+	return 0;
+}
+
+static void __rrr_net_transport_quic_data_destroy (
+		struct rrr_net_transport_quic_data *data
+) {
+	RRR_FREE_IF_NOT_NULL(data);
+}
+
+static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *handle) {
+	if (rrr_socket_close(handle->submodule_fd) != 0) {
+		RRR_MSG_0("Warning: Error from rrr_socket_close in %s\n", __func__);
+	}
+	__rrr_net_transport_quic_data_destroy(handle->submodule_private_ptr);
+	return 0;
 }
 
 static void __rrr_net_transport_quic_destroy (
@@ -58,29 +93,61 @@ static int __rrr_net_transport_quic_connect (
 	return 1;
 }
 
+struct rrr_net_transport_quic_allocate_and_add_callback_data {
+	const struct rrr_ip_data *ip_data;
+};
+
+static int __rrr_net_transport_quic_allocate_and_add_callback (RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS) {
+	struct rrr_net_transport_quic_allocate_and_add_callback_data *callback_data = arg;
+
+	struct rrr_net_transport_quic_data *data = NULL;
+	if (__rrr_net_transport_quic_data_new (&data, callback_data->ip_data) != 0) {
+		return 1;
+	}
+
+	*submodule_private_ptr = data;
+	*submodule_fd = callback_data->ip_data->fd;
+
+	return 0;
+}
+
 static int __rrr_net_transport_quic_bind_and_listen (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS
 ) {
-	(void)(transport);
-	(void)(port);
-	(void)(do_ipv6);
-	(void)(callback);
-	(void)(callback_arg);
-	(void)(callback_final);
-	(void)(callback_final_arg);
-	return 1;
-}
+	int ret = 0;
 
-int __rrr_net_transport_quic_accept (
-		RRR_NET_TRANSPORT_ACCEPT_ARGS
-) {
-	(void)(did_accept);
-	(void)(listen_handle);
-	(void)(callback);
-	(void)(callback_arg);
-	(void)(final_callback);
-	(void)(final_callback_arg);
-	return 1;
+	struct rrr_ip_data ip_data = {0};
+
+	ip_data.port = port;
+
+	if ((ret = rrr_ip_network_start_udp (&ip_data, do_ipv6)) != 0) {
+		goto out;
+	}
+
+	struct rrr_net_transport_quic_allocate_and_add_callback_data callback_data = {
+		&ip_data
+	};
+
+	rrr_net_transport_handle new_handle = 0;
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
+			&new_handle,
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			__rrr_net_transport_quic_allocate_and_add_callback,
+			&callback_data
+	)) != 0) {
+		goto out_destroy_ip;
+	}
+
+	RRR_DBG_7("QUIC started on port %u IPv%s transport handle %p/%i\n", port, do_ipv6 ? "6" : "4", transport, new_handle);
+
+	ret = callback(transport, new_handle, callback_final, callback_final_arg, callback_arg);
+
+	goto out;
+	out_destroy_ip:
+		rrr_ip_close(&ip_data);
+	out:
+		return ret;
 }
 
 static int __rrr_net_transport_quic_read_message (
@@ -99,6 +166,7 @@ static int __rrr_net_transport_quic_read_message (
 	(void)(get_target_size_error_arg);
 	(void)(complete_callback);
 	(void)(complete_callback_arg);
+	printf("Read message\n");
 	return 1;
 }
 
@@ -109,6 +177,7 @@ static int __rrr_net_transport_quic_read (
 	(void)(handle);
 	(void)(buf);
 	(void)(buf_size);
+	printf("Read\n");
 	return 1;
 }
 
@@ -119,6 +188,7 @@ static int __rrr_net_transport_quic_send (
 	(void)(handle);
 	(void)(data);
 	(void)(size);
+	printf("Send\n");
 	return 1;
 }
 
@@ -133,6 +203,7 @@ static int __rrr_net_transport_quic_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
 	(void)(handle);
+	printf("Poll\n");
 	return 1;
 }
 
@@ -140,6 +211,7 @@ static int __rrr_net_transport_quic_handshake (
 		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
 	(void)(handle);
+	printf("Handshake\n");
 	return 1;
 }
 
@@ -151,8 +223,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_destroy,
 	__rrr_net_transport_quic_connect,
 	__rrr_net_transport_quic_bind_and_listen,
-	__rrr_net_transport_quic_accept,
-	__rrr_net_transport_quic_ssl_data_close,
+	NULL,
+	__rrr_net_transport_quic_close,
 	__rrr_net_transport_quic_read_message,
 	__rrr_net_transport_quic_read,
 	__rrr_net_transport_quic_send,

@@ -71,6 +71,10 @@ static int __rrr_event_collection_push (
 		RRR_BUG("BUG: Collection not initialized in __rrr_event_collection_push\n");
 	}
 
+	if (target->event != NULL) {
+		RRR_BUG("BUG: Event handle was already filled in %s\n", __func__);
+	}
+
 	struct event *event;
 
 	struct timeval tv;

@@ -122,11 +122,19 @@ msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 event = event/event.c event/event_collection.c
 
 if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
+net_transport_openssl = net_transport/net_transport_openssl.c
 endif
 
 if RRR_WITH_LIBRESSL
-net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
+net_transport_libressl = net_transport/net_transport_libressl.c
+endif
+
+if RRR_WITH_QUIC
+net_transport_quic = net_transport/net_transport_quic.c
+endif
+
+if RRR_WITH_TLS
+net_transport_tls = net_transport/net_transport_tls_common.c
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
@@ -142,7 +150,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     serial/serial.c \
 		    rrr_mmap.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-                    ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
+                    ${net_transport} ${net_transport_openssl} ${net_transport_libressl} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} \
 		    ${msgdb} ${event}

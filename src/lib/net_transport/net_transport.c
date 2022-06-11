@@ -53,6 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../socket/rrr_socket_send_chunk.h"
 
+#include <assert.h>
+
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
@@ -329,7 +331,7 @@ static int __rrr_net_transport_handle_send_nonblock (
 static void __rrr_net_transport_handle_event_read_add_if_needed (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!EVENT_PENDING(handle->event_read)) {
+	if (handle->event_read.event != NULL && !EVENT_PENDING(handle->event_read)) {
 		EVENT_ADD(handle->event_read);
 	}
 }
@@ -536,26 +538,51 @@ static void __rrr_net_transport_event_write (
 	CHECK_READ_WRITE_RETURN();
 }
 
-static int __rrr_net_transport_handle_events_setup_connected (
-	struct rrr_net_transport_handle *handle
+static int __rrr_net_transport_handle_events_setup_timeouts (
+		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
 
-	// HANDSHAKE
+	// FIRST READ TIMEOUT
 
-	if ((ret = rrr_event_collection_push_read (
-			&handle->event_handshake,
-			&handle->events,
-			handle->submodule_fd,
-			__rrr_net_transport_event_handshake,
-			handle,
-			1000 // 1 ms
-	)) != 0) {
-		goto out;
+	if (handle->transport->first_read_timeout_ms > 0) {
+		if ((ret = rrr_event_collection_push_periodic (
+				&handle->event_first_read_timeout,
+				&handle->events,
+				__rrr_net_transport_event_first_read_timeout,
+				handle,
+				handle->transport->first_read_timeout_ms * 1000
+		)) != 0) {
+			goto out;
+		}
+
+		EVENT_ADD(handle->event_first_read_timeout);
 	}
 
-	EVENT_ADD(handle->event_handshake);
-	EVENT_ACTIVATE(handle->event_handshake);
+	// HARD TIMEOUT
+
+	if (handle->transport->hard_read_timeout_ms > 0) {
+		if ((ret = rrr_event_collection_push_periodic (
+				&handle->event_hard_read_timeout,
+				&handle->events,
+				__rrr_net_transport_event_hard_read_timeout,
+				handle,
+				handle->transport->hard_read_timeout_ms * 1000
+		)) != 0) {
+			goto out;
+		}
+
+		EVENT_ADD(handle->event_hard_read_timeout);
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_handle_events_setup_read_write (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
 
 	// READ
 
@@ -582,8 +609,6 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	// Don't add read events, it is done after handshake is complete
-
 	// WRITE
 
 	if ((ret = rrr_event_collection_push_write (
@@ -597,34 +622,50 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	// Don't add write to events, it is done when data is pushed and we need to write
+	out:
+	return ret;
+}
 
-	if (handle->transport->first_read_timeout_ms > 0) {
-		if ((ret = rrr_event_collection_push_periodic (
-				&handle->event_first_read_timeout,
-				&handle->events,
-				__rrr_net_transport_event_first_read_timeout,
-				handle,
-				handle->transport->first_read_timeout_ms * 1000
-		)) != 0) {
-			goto out;
-		}
+static int __rrr_net_transport_handle_events_setup_connected_tcp (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
 
-		EVENT_ADD(handle->event_first_read_timeout);
+	if ((ret =  __rrr_net_transport_handle_events_setup_read_write (handle)) != 0) {
+		goto out;
 	}
 
-	if (handle->transport->hard_read_timeout_ms > 0) {
-		if ((ret = rrr_event_collection_push_periodic (
-				&handle->event_hard_read_timeout,
-				&handle->events,
-				__rrr_net_transport_event_hard_read_timeout,
-				handle,
-				handle->transport->hard_read_timeout_ms * 1000
-		)) != 0) {
-			goto out;
-		}
+	if ((ret =  __rrr_net_transport_handle_events_setup_timeouts (handle)) != 0) {
+		goto out;
+	}
 
-		EVENT_ADD(handle->event_hard_read_timeout);
+	// HANDSHAKE
+
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_handshake,
+			&handle->events,
+			handle->submodule_fd,
+			__rrr_net_transport_event_handshake,
+			handle,
+			1000 // 1 ms
+	)) != 0) {
+		goto out;
+	}
+
+	EVENT_ADD(handle->event_handshake);
+	EVENT_ACTIVATE(handle->event_handshake);
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_handle_events_setup_connected_udp (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	if ((ret =  __rrr_net_transport_handle_events_setup_timeouts (handle)) != 0) {
+		goto out;
 	}
 
 	out:
@@ -675,7 +716,7 @@ static int __rrr_net_transport_connect (
 	handle->connected_addr_len = socklen;
 
 	if (transport->event_queue != NULL) {
-		if ((ret = __rrr_net_transport_handle_events_setup_connected (
+		if ((ret = __rrr_net_transport_handle_events_setup_connected_tcp (
 				handle
 		)) != 0) {
 			goto out;
@@ -794,7 +835,10 @@ static int __rrr_net_transport_accept_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_accept_callback_intermediate");
 
-	if ((ret = __rrr_net_transport_handle_events_setup_connected (
+	if ((ret = (handle->transport->methods->accept != NULL
+		? __rrr_net_transport_handle_events_setup_connected_tcp
+		: __rrr_net_transport_handle_events_setup_connected_udp
+	) (
 			handle
 	)) != 0) {
 		goto out;
@@ -839,6 +883,8 @@ static int __rrr_net_transport_handle_events_setup_listen (
 ) {
 	int ret = 0;
 
+	// READ (accept connections)
+
 	if ((ret = rrr_event_collection_push_read (
 			&handle->event_read,
 			&handle->events,
@@ -856,6 +902,23 @@ static int __rrr_net_transport_handle_events_setup_listen (
 	return ret;
 }
 
+static int __rrr_net_transport_handle_events_setup_listen_udp (
+	struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	if ((ret =  __rrr_net_transport_handle_events_setup_read_write (handle)) != 0) {
+		goto out;
+	}
+
+	EVENT_ADD(handle->event_read);
+
+	handle->handshake_complete = 1;
+
+	out:
+	return ret;
+}
+
 static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS
 ) {
@@ -865,7 +928,10 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_bind_and_listen_callback_intermediate");
 
-	if ((ret = __rrr_net_transport_handle_events_setup_listen (
+	if ((ret = (handle->transport->methods->accept != NULL
+		? __rrr_net_transport_handle_events_setup_listen
+		: __rrr_net_transport_handle_events_setup_listen_udp
+	) (
 			handle
 	)) != 0) {
 		goto out;
@@ -927,7 +993,8 @@ void rrr_net_transport_event_activate_all_connected_read (
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		EVENT_ACTIVATE(node->event_read);
+		if (node->event_read.event != NULL)
+			EVENT_ACTIVATE(node->event_read);
 	RRR_LL_ITERATE_END();
 }
 
@@ -1198,7 +1265,6 @@ static int __rrr_net_transport_new (
 			break;
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
-		case RRR_NET_TRANSPORT_QUIC:
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
@@ -1212,6 +1278,7 @@ static int __rrr_net_transport_new (
 			break;
 #endif
 #if defined(RRR_WITH_QUIC)
+		case RRR_NET_TRANSPORT_QUIC:
 			ret = rrr_net_transport_quic_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
