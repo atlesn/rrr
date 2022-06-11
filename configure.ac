@@ -369,6 +369,11 @@ SHELL_VARS_EXPORT([RRR_WITH_QUICTLS_OPENSSL], $enable_quictls_openssl)
 AM_CONDITIONAL([RRR_WITH_QUIC], [test "x$enable_quictls_openssl" != "xno"])
 AM_CONDITIONAL([RRR_WITH_QUICTLS_OPENSSL], [test "x$enable_quictls_openssl" != "xno"])
 
+AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
+
+AM_CONDITIONAL([RRR_WITH_TLS], [test "x$enable_openssl" != xno -o "x$enable_libressl" != xno -o "x$enable_quictls_openssl" != xno ])
+
 # Make sure jemalloc-test does not include any libraries
 LIBS=""
 
