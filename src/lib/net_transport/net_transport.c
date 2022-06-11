@@ -45,6 +45,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../event/event_collection.h"
+
+#if defined(RRR_WITH_QUICTLS_OPENSL)
+#	include "net_transport_quic.h"
+#endif
+
+#include "../event/event.h"
 #include "../ip/ip_util.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
@@ -1261,7 +1267,7 @@ static int __rrr_net_transport_new (
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg
 ) {
-#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL)
+#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL) && !defined(RRR_WITH_QUIC)
 	(void)(alpn_protos_length);
 #endif
 	int ret = 0;
@@ -1285,7 +1291,21 @@ static int __rrr_net_transport_new (
 			break;
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
+		case RRR_NET_TRANSPORT_QUIC:
 			ret = rrr_net_transport_tls_new (
+					(struct rrr_net_transport_tls **) &new_transport,
+					flags,
+					config->tls_certificate_file,
+					config->tls_key_file,
+					config->tls_ca_file,
+					config->tls_ca_path,
+					alpn_protos,
+					alpn_protos_length
+			);
+			break;
+#endif
+#if defined(RRR_WITH_QUIC)
+			ret = rrr_net_transport_quic_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
 					config->tls_certificate_file,
