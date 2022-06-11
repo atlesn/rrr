@@ -52,6 +52,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+#ifdef RRR_WITH_QUIC
+#	include "test_quic.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
@@ -180,6 +183,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {
 		ret_tmp = rrr_test_zlib();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_QUIC
+	TEST_BEGIN("quic handshake") {
+		ret_tmp = rrr_test_quic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

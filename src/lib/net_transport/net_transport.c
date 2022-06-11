@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "net_transport_tls.h"
 #endif
 
-#if defined(RRR_WITH_QUICTLS_OPENSL)
+#if defined(RRR_WITH_QUIC)
 #	include "net_transport_quic.h"
 #endif
 

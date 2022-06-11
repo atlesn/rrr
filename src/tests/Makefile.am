@@ -16,6 +16,10 @@ if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
 
+if RRR_WITH_QUIC
+test_quic = test_quic.c
+endif
+
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 ldflags = ${JEMALLOC_LIBS} -L../lib -lrrr
@@ -29,6 +33,7 @@ test_SOURCES = test.c \
 	test_condition.c \
 	${test_jsonc} \
 	${test_zlib} \
+	${test_quic} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
