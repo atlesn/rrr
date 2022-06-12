@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
+struct rrr_net_transport_datagram;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
 struct rrr_socket_graylist;
@@ -95,6 +96,10 @@ struct rrr_socket_graylist;
     void **submodule_private_ptr,                              \
     int *submodule_fd,                                         \
     void *arg
+
+void rrr_net_transport_datagram_reset (
+		struct rrr_net_transport_datagram *datagram
+);
 
 int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,

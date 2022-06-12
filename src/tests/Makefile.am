@@ -13,7 +13,7 @@ js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${JS_LDFLAGS}
 js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
-if RRR_WITH_QUIC
+if RRR_WITH_HTTP3
 test_quic = test_quic.c
 endif
 

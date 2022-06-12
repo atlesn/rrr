@@ -58,7 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_NODE
 #	include "lib/testjs.h"
 #endif
-#ifdef RRR_WITH_QUIC
+#ifdef RRR_WITH_HTTP3
 #	include "test_quic.h"
 #endif
 #include "test_conversion.h"

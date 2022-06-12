@@ -358,16 +358,12 @@ AC_MSG_CHECKING([for enabled OpenSSL with QUIC usage])
 AS_IF([test "x$enable_quictls_openssl" = xyes], [
 	AC_MSG_RESULT([yes])
 	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "xyes"],[AC_MSG_ERROR([OpenSSL with QUIC was enabled but not found])])
-	AC_DEFINE([RRR_WITH_QUIC], [1], [Compile with OpenSSL QUIC bindings])
+	AC_DEFINE([RRR_HAVE_QUIC], [1], [OpenSSL has QUIC bindings])
 ], [
 	AC_MSG_RESULT([no])
 ])
 
-SHELL_VARS_EXPORT([RRR_WITH_QUIC], $enable_quictls_openssl)
-SHELL_VARS_EXPORT([RRR_WITH_QUICTLS_OPENSSL], $enable_quictls_openssl)
-
-AM_CONDITIONAL([RRR_WITH_QUIC], [test "x$enable_quictls_openssl" != "xno"])
-AM_CONDITIONAL([RRR_WITH_QUICTLS_OPENSSL], [test "x$enable_quictls_openssl" != "xno"])
+SHELL_VARS_EXPORT([RRR_HAVE_QUIC], $enable_quictls_openssl)
 
 AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
@@ -961,10 +957,13 @@ AS_IF([test "x$enable_http3" = xno], [
 	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
 	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
 	HTTP3_CFLAGS=""
-	HTTP3_LDFLAGS="-lnghttp3 -lngtcp2"
+	HTTP3_LDFLAGS="-lnghttp3"
+	NGTCP2_CFLAGS=""
+	NGTCP2_LDFLAGS="-lngtcp2"
 	AC_SUBST([HTTP3_CFLAGS])
 	AC_SUBST([HTTP3_LDFLAGS])
-	AC_SUBST([HTTP3_LIBS])
+	AC_SUBST([NGTCP2_CFLAGS])
+	AC_SUBST([NGTCP2_LDFLAGS])
 ])
 
 SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)

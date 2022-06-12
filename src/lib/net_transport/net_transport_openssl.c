@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 #include "net_transport_struct.h"
 #include "net_transport_openssl.h"
+#include "net_transport_openssl_common.h"
 #include "net_transport_tls_common.h"
 #include "net_transport_common.h"
 
@@ -53,27 +54,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct in6_addr;
 
-static void __rrr_net_transport_openssl_ssl_data_destroy (struct rrr_net_transport_tls_data *ssl_data) {
-	if (ssl_data != NULL) {
-/*		if (ssl_data->out != NULL) {
-			BIO_free(ssl_data->out);
-		}*/
-		if (ssl_data->web != NULL) {
-			BIO_free_all(ssl_data->web);
-		}
-		if (ssl_data->ctx != NULL) {
-			SSL_CTX_free(ssl_data->ctx);
-		}
-		if (ssl_data->ip_data.fd != 0) {
-			rrr_ip_close(&ssl_data->ip_data);
-		}
-		RRR_FREE_IF_NOT_NULL(ssl_data->alpn_selected_proto);
-		rrr_free(ssl_data);
-	}
-}
-
 static int __rrr_net_transport_openssl_ssl_data_close (struct rrr_net_transport_handle *handle) {
-	__rrr_net_transport_openssl_ssl_data_destroy (handle->submodule_private_ptr);
+	rrr_net_transport_openssl_common_ssl_data_destroy (handle->submodule_private_ptr);
 
 	return 0;
 }
@@ -106,205 +88,6 @@ static void __rrr_net_transport_openssl_dump_enabled_ciphers(SSL *ssl) {
 	RRR_MSG_1("== END DUMP ENABLED TLS/SSL CIPHERS ===============\n");
 
 	sk_SSL_CIPHER_free(sk);
-}
-
-static int __rrr_net_transport_openssl_verify_always_ok (X509_STORE_CTX *x509, void *arg) {
-	(void)(x509);
-	(void)(arg);
-	return 1;
-}
-
-struct rrr_net_transport_tls_data *__rrr_net_transport_openssl_ssl_data_new (void) {
-	struct rrr_net_transport_tls_data *ssl_data = NULL;
-
-	if ((ssl_data = rrr_allocate(sizeof(*ssl_data))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_ssl_data_new \n");
-		return NULL;
-	}
-	memset (ssl_data, '\0', sizeof(*ssl_data));
-
-	return ssl_data;
-}
-
-static int __rrr_net_transport_openssl_alpn_select_cb (
-		SSL *s,
-		const unsigned char **out,
-		unsigned char *outlen,
-		const unsigned char *in,
-		unsigned int inlen,
-		void *arg
-) {
-	struct rrr_net_transport_tls_alpn *alpn = arg;
-
-	(void)(s);
-
-	int ret = SSL_TLSEXT_ERR_NOACK;
-
-	*out = NULL;
-	*outlen = 0;
-
-	// -2 for comma and \0
-	if (alpn->length > 256 - 2|| inlen > 256 - 2) {
-		RRR_MSG_1("Error: Large ALPN proto vectors (%u and %u) in __rrr_net_transport_openssl_alpn_select_cb\n", alpn->length, inlen);
-		ret = SSL_TLSEXT_ERR_ALERT_FATAL;
-		goto out;
-	}
-
-	if (RRR_DEBUGLEVEL_3) {
-		unsigned char server_protocols_tmp[256];
-		unsigned char client_protocols_tmp[256];
-		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated(server_protocols_tmp, sizeof(server_protocols_tmp), (unsigned char *) alpn->protos, alpn->length);
-		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated(client_protocols_tmp, sizeof(client_protocols_tmp), in, inlen);
-		RRR_DBG_3("TLS ALPN server protocols: '%s' client protocols: '%s'\n", server_protocols_tmp, client_protocols_tmp);
-	}
-
-	if (alpn->length == 0 || inlen == 0) {
-		goto out;
-	}
-
-	// Strategy : Pick the first protocol from the server list which is also in the client list
-	int server_index = 0;
-	for (unsigned int i = 0; i < alpn->length;/* increment at loop end */) {
-		const char *i_text = alpn->protos + i + 1;
-		unsigned char i_text_length = (unsigned char) alpn->protos[i];
-
-		if (i + i_text_length >= alpn->length) {
-			RRR_BUG("BUG: Invalid size in self-created ALPN vector in __rrr_net_transport_openssl_alpn_select_cb\n");
-		}
-
-		for (unsigned int j = 0; j < inlen;/* increment at loop end */) {
-			const unsigned char *j_text = in + j + 1;
-			unsigned char j_text_length = in[j];
-
-			if (j + j_text_length >= inlen) {
-				RRR_MSG_0("Error: Invalid size in vector from input in __rrr_net_transport_openssl_alpn_select_cb\n");
-				ret = SSL_TLSEXT_ERR_ALERT_FATAL;
-				goto out;
-			}
-
-			if (i_text_length == j_text_length && memcmp(i_text, j_text, i_text_length) == 0) {
-				*out = (const unsigned char *) alpn->protos + i + 1;
-				*outlen = i_text_length;
-				RRR_DBG_3("TLS ALPN selected protocol at server position %i\n", server_index);
-				ret = SSL_TLSEXT_ERR_OK;
-				goto out;
-			}
-
-			j += (unsigned int) j_text_length + 1;
-		}
-
-		server_index++;
-		i += (unsigned int) i_text_length + 1;
-	}
-
-	RRR_DBG_3("TLS ALPN no protocol selected\n");
-
-	out:
-	return ret;
-}
-
-// Memory in *alpn must be permanently available during connection lifetime
-static int __rrr_net_transport_openssl_new_ctx (
-		SSL_CTX **target,
-		const SSL_METHOD *method,
-		int flags,
-		const char *certificate_file,
-		const char *private_key_file,
-		const char *ca_file,
-		const char *ca_path,
-		struct rrr_net_transport_tls_alpn *alpn
-) {
-	int ret = 0;
-
-	*target = NULL;
-
-	SSL_CTX *ctx = NULL;
-
-	if (((certificate_file == NULL || *certificate_file == '\0') && (private_key_file != NULL && *private_key_file != '\0')) ||
-		((private_key_file == NULL || *private_key_file == '\0') && (certificate_file != NULL && *certificate_file != '\0'))
-	) {
-		RRR_BUG("BUG: Certificate file and private key file must both be either set or unset in __rrr_net_transport_openssl_new_ctx\n");
-	}
-
-	if ((ctx = SSL_CTX_new(method)) == NULL) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_new_ctx ");
-		ret = 1;
-		goto out;
-	}
-
-	// NULL callback causes verification failure to cancel further processing
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-	SSL_CTX_set_verify_depth(ctx, 4);
-
-	// Unused flag: SSL_OP_NO_TLSv1_2, we need to support 1.2
-	// TODO : Apparently the version restrictions with set_options are deprecated
-	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_COMPRESSION);
-
-	unsigned int min_version = TLS1_2_VERSION;
-	if ((flags & RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1) != 0) {
-		min_version = TLS1_1_VERSION;
-	}
-
-	if (SSL_CTX_set_min_proto_version(ctx, (long int) min_version) != 1) {
-		RRR_SSL_ERR("Could not set minimum protocol version to TLSv1.2");
-		ret = 1;
-		goto out_destroy;
-	}
-
-	if ((ret = rrr_openssl_load_verify_locations(ctx, ca_file, ca_path)) != 0) {
-		ret = 1;
-		goto out_destroy;
-	}
-
-	// Disable verification if required
-	if ((flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
-		SSL_CTX_set_cert_verify_callback (ctx, __rrr_net_transport_openssl_verify_always_ok, NULL);
-	}
-
-	if (certificate_file != NULL && *certificate_file != '\0') {
-		RRR_DBG_1("Opening certificate chain file '%s'\n", certificate_file);
-		if (SSL_CTX_use_certificate_chain_file(ctx, certificate_file) <= 0) {
-			RRR_SSL_ERR("Could not set certificate file while starting TLS");
-			ret = 1;
-			goto out_destroy;
-		}
-	}
-
-	if (private_key_file != NULL && *private_key_file != '\0') {
-		RRR_DBG_1("Opening private key file '%s', expecting PEM format\n", private_key_file);
-		if (SSL_CTX_use_PrivateKey_file(ctx, private_key_file, SSL_FILETYPE_PEM) <= 0 ) {
-			RRR_SSL_ERR("Could not set private key file while starting TLS");
-			ret = 1;
-			goto out_destroy;
-		}
-
-		if (SSL_CTX_check_private_key(ctx) != 1) {
-			RRR_SSL_ERR("Error encoutered while checking private key while starting TLS");
-			ret = 1;
-			goto out_destroy;
-		}
-	}
-
-	if (alpn != NULL && alpn->protos != NULL) {
-		// For client
-		// Note: Returns 0 on success as opposed to other OpenSSL functions
-		if (SSL_CTX_set_alpn_protos(ctx, (unsigned const char *) alpn->protos, alpn->length) != 0) {
-			RRR_SSL_ERR("SSL_CTX_set_alpn_protos failed");
-			ret = 1;
-			goto out_destroy;
-		}
-
-		// For server
-		SSL_CTX_set_alpn_select_cb(ctx, __rrr_net_transport_openssl_alpn_select_cb, alpn);
-	}
-
-	*target = ctx;
-
-	goto out;
-	out_destroy:
-		SSL_CTX_free(ctx);
-	out:
-		return ret;
 }
 
 struct rrr_net_transport_openssl_connect_callback_data {
@@ -386,13 +169,13 @@ int __rrr_net_transport_openssl_connect_callback (
 	int ret = 0;
 
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
-	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
+	if ((ssl_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_connect_callback\n");
 		ret = 1;
 		goto out_final;
 	}
 
-	if (__rrr_net_transport_openssl_new_ctx (
+	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_client_method,
 			tls->flags,
@@ -471,7 +254,7 @@ int __rrr_net_transport_openssl_connect_callback (
 
 	goto out_final;
 	out_destroy_ssl_data:
-		__rrr_net_transport_openssl_ssl_data_destroy(ssl_data);
+		rrr_net_transport_openssl_common_ssl_data_destroy(ssl_data);
 	out_final:
 		return ret;
 }
@@ -544,7 +327,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
-	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
+	if ((ssl_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out;
@@ -558,7 +341,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 		goto out_free_ssl_data;
 	}
 
-	if (__rrr_net_transport_openssl_new_ctx (
+	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_server_method,
 			tls->flags,
@@ -646,13 +429,13 @@ static int __rrr_net_transport_openssl_accept_callback (
 
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
-	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
+	if ((ssl_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_accept_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (__rrr_net_transport_openssl_new_ctx (
+	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_server_method,
 			tls->flags,
@@ -698,7 +481,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 
 	goto out;
 	out_destroy_ssl_data:
-		__rrr_net_transport_openssl_ssl_data_destroy(ssl_data);
+		rrr_net_transport_openssl_common_ssl_data_destroy(ssl_data);
 	out:
 		return ret;
 }
@@ -709,9 +492,9 @@ int __rrr_net_transport_openssl_accept (
 	struct rrr_ip_accept_data *accept_data = NULL;
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
 
-	int ret = 0;
+	(void)(connection_id);
 
-	*did_accept = 0;
+	int ret = 0;
 
 	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
 
@@ -730,9 +513,8 @@ int __rrr_net_transport_openssl_accept (
 		accept_data
 	};
 
-	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
-			&new_handle,
+			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_net_transport_openssl_accept_callback,
@@ -751,15 +533,13 @@ int __rrr_net_transport_openssl_accept (
 
 	ret = callback (
 			listen_handle->transport,
-			new_handle,
+			*new_handle,
 			(struct sockaddr *) &accept_data->addr,
 			accept_data->len,
 			final_callback,
 			final_callback_arg,
 			callback_arg
 	);
-
-	*did_accept = 1;
 
 	goto out;
 
@@ -1000,6 +780,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_destroy,
 	__rrr_net_transport_openssl_connect,
 	__rrr_net_transport_openssl_bind_and_listen,
+	NULL,
 	__rrr_net_transport_openssl_accept,
 	__rrr_net_transport_openssl_ssl_data_close,
 	__rrr_net_transport_openssl_read_message,

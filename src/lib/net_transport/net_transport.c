@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../event/event_collection.h"
 
-#if defined(RRR_WITH_QUIC)
+#if defined(RRR_WITH_HTTP3)
 #	include "net_transport_quic.h"
 #endif
 
@@ -131,6 +131,25 @@ static int __rrr_net_transport_handle_create_and_push (
 		rrr_free(new_handle);
 	out:
 		return ret;
+}
+
+void rrr_net_transport_datagram_reset (
+		struct rrr_net_transport_datagram *datagram
+) {
+	memset (&datagram->msg, '\0', sizeof(datagram->msg));
+	memset (&datagram->msg_iov, '\0', sizeof(datagram->msg_iov));
+
+	datagram->msg_iov.iov_base = datagram->buf;
+	datagram->msg_iov.iov_len = sizeof(datagram->buf);
+
+	datagram->msg.msg_name = &datagram->addr;
+	datagram->msg.msg_namelen = sizeof(datagram->addr);
+	datagram->msg.msg_iov = &datagram->msg_iov;
+	datagram->msg.msg_iovlen = 1;
+	// datagram->msg.msg_control = datagram->ctrl_buf;
+	// datagram->msg.msg_controllen = sizeof(datagram->ctrl_buf);
+
+	datagram->size = 0;
 }
 
 /* Allocate an unused handle. The strategy is to begin with 1, check if it is available,
@@ -663,7 +682,7 @@ static int __rrr_net_transport_handle_events_setup_read_write (
 	return ret;
 }
 
-static int __rrr_net_transport_handle_events_setup_connected_tcp (
+static int __rrr_net_transport_handle_events_setup_connected (
 		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
@@ -691,19 +710,6 @@ static int __rrr_net_transport_handle_events_setup_connected_tcp (
 
 	EVENT_ADD(handle->event_handshake);
 	EVENT_ACTIVATE(handle->event_handshake);
-
-	out:
-	return ret;
-}
-
-static int __rrr_net_transport_handle_events_setup_connected_udp (
-		struct rrr_net_transport_handle *handle
-) {
-	int ret = 0;
-
-	if ((ret =  __rrr_net_transport_handle_events_setup_timeouts (handle)) != 0) {
-		goto out;
-	}
 
 	out:
 	return ret;
@@ -753,7 +759,7 @@ static int __rrr_net_transport_connect (
 	handle->connected_addr_len = socklen;
 
 	if (transport->event_queue != NULL) {
-		if ((ret = __rrr_net_transport_handle_events_setup_connected_tcp (
+		if ((ret = __rrr_net_transport_handle_events_setup_connected (
 				handle
 		)) != 0) {
 			goto out;
@@ -844,6 +850,7 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 
 	return ret;
 }
+
 static void __rrr_net_transport_event_read_add (
 		evutil_socket_t fd,
 		short flags,
@@ -872,10 +879,7 @@ static int __rrr_net_transport_accept_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET();
 
-	if ((ret = (handle->transport->methods->accept != NULL
-		? __rrr_net_transport_handle_events_setup_connected_tcp
-		: __rrr_net_transport_handle_events_setup_connected_udp
-	) (
+	if ((ret = __rrr_net_transport_handle_events_setup_connected (
 			handle
 	)) != 0) {
 		goto out;
@@ -895,27 +899,115 @@ static void __rrr_net_transport_event_accept (
 		short flags,
 		void *arg
 ) {
-	struct rrr_net_transport_handle *handle = arg;
+	struct rrr_net_transport_handle *listen_handle = arg;
+	rrr_net_transport_handle new_handle = 0;
 
 	(void)(fd);
 	(void)(flags);
 
-	int did_accept = 0;
-	int ret_tmp = handle->transport->methods->accept (
-			&did_accept,
-			handle,
+	int ret_tmp = listen_handle->transport->methods->accept (
+			&new_handle,
+			listen_handle,
+			NULL,
 			__rrr_net_transport_accept_callback_intermediate,
 			NULL,
-			handle->transport->accept_callback,
-			handle->transport->accept_callback_arg
+			listen_handle->transport->accept_callback,
+			listen_handle->transport->accept_callback_arg
 	);
 
 	if (ret_tmp != 0) {
-		rrr_event_dispatch_break(handle->transport->event_queue);
+		rrr_event_dispatch_break(listen_handle->transport->event_queue);
 	}
 }
 
-static int __rrr_net_transport_handle_events_setup_listen (
+static int __rrr_net_transport_connection_id_equals (
+		const struct rrr_net_transport_connection_id *a,
+		const struct rrr_net_transport_connection_id *b
+) {
+	if (a->length != b->length)
+		return 0;
+
+	for (size_t i = 0; i < a->length; i++) {
+		if (a->data[i] != b->data[i])
+			return 0;
+	}
+
+	return 1;
+}
+
+static void __rrr_net_transport_event_decode (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *listen_handle = arg;
+	struct rrr_net_transport_handle_collection *collection = &listen_handle->transport->handles;
+	rrr_net_transport_handle new_handle = 0;
+
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_net_transport_connection_id connection_id = {.length = sizeof(connection_id.data)};
+
+	int ret_tmp;
+
+	// The decode function fills the datagram buffer
+	if ((ret_tmp = listen_handle->transport->methods->decode (
+			&connection_id,
+			listen_handle
+	)) != 0) {
+		if (ret_tmp != RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			rrr_event_dispatch_break(listen_handle->transport->event_queue);
+		}
+		return;
+	}
+
+	if (listen_handle->datagram.size == 0) {
+		return;
+	}
+
+	// Try to find existing handle and deliver the datagram to it. If non-existent,
+	// call accept to create a new handle. Accept may or may not create a new handle,
+	// and if no handle is created, no further processing of the datagram occurs.
+	for (int i = 2; i > 0; i--) {
+		if (connection_id.length > 0) {
+			RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+				if (__rrr_net_transport_connection_id_equals(&connection_id, &node->connection_id)) {
+					RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
+							listen_handle->submodule_fd,
+							listen_handle->transport->application_name,
+							(long long unsigned) listen_handle->datagram.size,
+							node->handle
+					);
+					memcpy(&node->datagram, &listen_handle->datagram, sizeof(node->datagram));
+					rrr_net_transport_ctx_notify_read(node);
+					return;
+				}
+			RRR_LL_ITERATE_END();
+		}
+
+		if ((ret_tmp = listen_handle->transport->methods->accept (
+				&new_handle,
+				listen_handle,
+				NULL,
+				__rrr_net_transport_accept_callback_intermediate,
+				NULL,
+				listen_handle->transport->accept_callback,
+				listen_handle->transport->accept_callback_arg
+		)) != 0) {
+			rrr_event_dispatch_break(listen_handle->transport->event_queue);
+			return;
+		}
+	}
+
+	RRR_DBG_7("net transport fd %i [%s] datagram of size %llu not delivered to any handle\n",
+			listen_handle->submodule_fd,
+			listen_handle->transport->application_name,
+			(long long unsigned) listen_handle->datagram.size
+	);
+}
+
+static int __rrr_net_transport_handle_events_setup_listen_accept (
 	struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
@@ -939,18 +1031,38 @@ static int __rrr_net_transport_handle_events_setup_listen (
 	return ret;
 }
 
-static int __rrr_net_transport_handle_events_setup_listen_udp (
+static int __rrr_net_transport_handle_events_setup_listen_decode (
 	struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
 
-	if ((ret =  __rrr_net_transport_handle_events_setup_read_write (handle)) != 0) {
+	// READ (decode packet and look up connection)
+
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_read,
+			&handle->events,
+			handle->submodule_fd,
+			__rrr_net_transport_event_decode,
+			handle,
+			0
+	)) != 0) {
+		goto out;
+	}
+
+	// WRITE (write for all connections)
+
+	if ((ret = rrr_event_collection_push_write (
+			&handle->event_write,
+			&handle->events,
+			handle->submodule_fd,
+			__rrr_net_transport_event_write,
+			handle,
+			0
+	)) != 0) {
 		goto out;
 	}
 
 	EVENT_ADD(handle->event_read);
-
-	handle->handshake_complete = 1;
 
 	out:
 	return ret;
@@ -965,9 +1077,9 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET();
 
-	if ((ret = (handle->transport->methods->accept != NULL
-		? __rrr_net_transport_handle_events_setup_listen
-		: __rrr_net_transport_handle_events_setup_listen_udp
+	if ((ret = (handle->transport->methods->decode != NULL
+		? __rrr_net_transport_handle_events_setup_listen_decode
+		: __rrr_net_transport_handle_events_setup_listen_accept
 	) (
 			handle
 	)) != 0) {
@@ -1370,7 +1482,7 @@ static int __rrr_net_transport_new (
 			);
 			break;
 #endif
-#if defined(RRR_WITH_QUIC)
+#if defined(RRR_WITH_HTTP3)
 		case RRR_NET_TRANSPORT_QUIC:
 			ret = rrr_net_transport_quic_new (
 					(struct rrr_net_transport_tls **) &new_transport,
