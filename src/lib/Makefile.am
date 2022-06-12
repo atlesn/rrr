@@ -122,15 +122,16 @@ msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 event = event/event.c event/event_collection.c
 
 if RRR_WITH_OPENSSL
-net_transport_openssl = net_transport/net_transport_openssl.c
+net_transport_openssl = net_transport/net_transport_openssl.c net_transport/net_transport_openssl_common.c
 endif
 
 if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c
 endif
 
-if RRR_WITH_QUIC
+if RRR_WITH_HTTP3
 net_transport_quic = net_transport/net_transport_quic.c
+ngtcp2_extra_ld = ${NGTCP2_LDFLAGS}
 endif
 
 if RRR_WITH_TLS
@@ -138,7 +139,7 @@ net_transport_tls = net_transport/net_transport_tls_common.c
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} ${ngtcp2_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c \

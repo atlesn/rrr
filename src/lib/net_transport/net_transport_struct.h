@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_STRUCT_H
 
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <pthread.h>
 
 #include "net_transport.h"
@@ -75,6 +77,10 @@ struct rrr_nullsafe_str;
     void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),  \
     void *callback_final_arg
 
+#define RRR_NET_TRANSPORT_DECODE_ARGS                                      \
+    struct rrr_net_transport_connection_id *connection_id,                 \
+    struct rrr_net_transport_handle *listen_handle
+
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
     struct rrr_net_transport *transport,                                   \
     rrr_net_transport_handle transport_handle,                             \
@@ -85,8 +91,9 @@ struct rrr_nullsafe_str;
     void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_ARGS                                      \
-    int *did_accept,                                                       \
+    rrr_net_transport_handle *new_handle,                                  \
     struct rrr_net_transport_handle *listen_handle,                        \
+    const struct rrr_net_transport_connection_id *connection_id,           \
     int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),  \
     void *callback_arg,                                                    \
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
@@ -136,10 +143,25 @@ struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
 };
 
+struct rrr_net_transport_connection_id {
+	uint8_t data[RRR_NET_TRANSPORT_CONNECTION_ID_MAX];
+	size_t length;
+};
+
+struct rrr_net_transport_datagram {
+	size_t size;
+	struct iovec msg_iov;
+	struct sockaddr_storage addr;
+	struct msghdr msg;
+	uint8_t buf[65536];
+	// uint8_t ctrl_buf[CMSG_SPACE(sizeof(uint8_t)) + CMSG_SPACE(sizeof(in6_pktinfo))];
+};
+
 struct rrr_net_transport_methods {
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
 	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);
+	int (*decode)(RRR_NET_TRANSPORT_DECODE_ARGS);
 	int (*accept)(RRR_NET_TRANSPORT_ACCEPT_ARGS);
 	// Only call close() from parent mode destroy function
 	int (*close)(RRR_NET_TRANSPORT_CLOSE_ARGS);
@@ -159,9 +181,14 @@ struct rrr_net_transport_handle {
 
 	struct rrr_net_transport *transport;
 	enum rrr_net_transport_socket_mode mode;
+
+	// Used for stream type communication
+	int submodule_fd;
 	struct rrr_read_session_collection read_sessions;
 
-	int submodule_fd;
+	// Used for datagram type communication
+	struct rrr_net_transport_connection_id connection_id;
+	struct rrr_net_transport_datagram datagram;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;

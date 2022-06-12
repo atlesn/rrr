@@ -16,7 +16,7 @@ if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
 
-if RRR_WITH_QUIC
+if RRR_WITH_HTTP3
 test_quic = test_quic.c
 endif
 

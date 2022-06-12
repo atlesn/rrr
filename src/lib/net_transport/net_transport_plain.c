@@ -298,11 +298,13 @@ int __rrr_net_transport_plain_bind_and_listen (
 int __rrr_net_transport_plain_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
+	(void)(connection_id);
+
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	int ret = 0;
 
-	*did_accept = 0;
+	*new_handle = 0;
 
 	struct rrr_ip_data ip_data = {0};
 
@@ -322,9 +324,8 @@ int __rrr_net_transport_plain_accept (
 			&accept_data->ip_data
 	};
 
-	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
-			&new_handle,
+			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
@@ -341,20 +342,18 @@ int __rrr_net_transport_plain_accept (
 		char buf[128];
 		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
 		RRR_DBG_7("Plain transport accepted connection on port %u from %s transport handle %p/%i\n",
-				listen_plain_data->ip_data.port, buf, listen_handle->transport, new_handle);
+				listen_plain_data->ip_data.port, buf, listen_handle->transport, *new_handle);
 	}
 
 	ret = callback (
 			listen_handle->transport,
-			new_handle,
+			*new_handle,
 			(struct sockaddr *) &accept_data->addr,
 			accept_data->len,
 			final_callback,
 			final_callback_arg,
 			callback_arg
 	);
-
-	*did_accept = 1;
 
 	goto out;
 	out_destroy_ip:
@@ -392,6 +391,7 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
 	__rrr_net_transport_plain_bind_and_listen,
+	NULL,
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
