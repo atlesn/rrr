@@ -93,7 +93,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
-		const struct rrr_net_transport_connection_id *connection_id,
+		const struct rrr_net_transport_connection_id_triplet *connection_ids,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -115,8 +115,8 @@ static int __rrr_net_transport_handle_create_and_push (
 	new_handle->handle = handle;
 	new_handle->mode = mode;
 
-	if (connection_id != NULL) {
-		new_handle->connection_id = *connection_id;
+	if (connection_ids != NULL) {
+		new_handle->connection_ids = *connection_ids;
 	}
 
 	rrr_event_collection_init(&new_handle->events, transport->event_queue);
@@ -163,7 +163,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		const struct rrr_net_transport_connection_id *connection_id,
+		const struct rrr_net_transport_connection_id_triplet *connection_ids,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -215,7 +215,7 @@ int rrr_net_transport_handle_allocate_and_add (
 			transport,
 			new_handle_id,
 			mode,
-			connection_id,
+			connection_ids,
 			submodule_callback,
 			submodule_callback_arg
 	)) != 0) {

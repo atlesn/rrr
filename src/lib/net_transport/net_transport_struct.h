@@ -79,7 +79,7 @@ struct rrr_nullsafe_str;
     void *callback_final_arg
 
 #define RRR_NET_TRANSPORT_DECODE_ARGS                                      \
-    struct rrr_net_transport_connection_id *connection_id,                 \
+    struct rrr_net_transport_connection_id_triplet *connection_ids,        \
     struct rrr_net_transport_handle *listen_handle
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
@@ -149,6 +149,12 @@ struct rrr_net_transport_connection_id {
 	size_t length;
 };
 
+struct rrr_net_transport_connection_id_triplet {
+	struct rrr_net_transport_connection_id src;
+	struct rrr_net_transport_connection_id dest;
+	struct rrr_net_transport_connection_id orig;
+};
+
 struct rrr_net_transport_methods {
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
@@ -179,7 +185,7 @@ struct rrr_net_transport_handle {
 	struct rrr_read_session_collection read_sessions;
 
 	// Used for datagram type communication
-	struct rrr_net_transport_connection_id connection_id;
+	struct rrr_net_transport_connection_id_triplet connection_ids;
 	struct rrr_socket_datagram datagram;
 
 	struct rrr_event_collection events;

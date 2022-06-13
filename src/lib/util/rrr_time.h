@@ -28,6 +28,7 @@ struct timeval;
 struct timespec;
 
 uint64_t rrr_time_get_64(void);
+int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor);
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
 void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
 void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec);
