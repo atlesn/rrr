@@ -1436,7 +1436,9 @@ int rrr_socket_send_blocking (
 	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0, wait_callback, wait_callback_arg);
 }
 
-int rrr_socket_check_alive (int fd) {
+int rrr_socket_check_alive (
+		int fd
+) {
 	struct pollfd pollfd = {0};
 
 	pollfd.fd = fd;
@@ -1462,4 +1464,56 @@ int rrr_socket_check_alive (int fd) {
 	}
 
 	return RRR_SOCKET_OK;
+}
+
+void rrr_socket_datagram_reset (
+		struct rrr_socket_datagram *datagram
+) {
+	memset (&datagram->msg, '\0', sizeof(datagram->msg));
+	memset (&datagram->msg_iov, '\0', sizeof(datagram->msg_iov));
+
+	datagram->msg_iov.iov_base = datagram->buf;
+	datagram->msg_iov.iov_len = sizeof(datagram->buf);
+
+	datagram->msg.msg_name = &datagram->addr_remote;
+	datagram->msg.msg_namelen = sizeof(datagram->addr_remote);
+	datagram->msg.msg_iov = &datagram->msg_iov;
+	datagram->msg.msg_iovlen = 1;
+	// datagram->msg.msg_control = datagram->ctrl_buf;
+	// datagram->msg.msg_controllen = sizeof(datagram->ctrl_buf);
+
+	datagram->size = 0;
+}
+
+int rrr_socket_recvmsg (
+		struct rrr_socket_datagram *datagram,
+		int fd
+) {
+	int ret = 0;
+
+	// rrr_socket_datagram_reset must be called prior to calling this function.
+	// Other fields in the msghdr struct may be initialized just after resetting.
+
+	if (datagram->size != 0) {
+		RRR_BUG("Datagram struct was not clean in %s\n", __func__);
+	}
+
+	ssize_t bytes = recvmsg(fd, &datagram->msg, 0);
+	if (bytes == 0 || bytes == EAGAIN || bytes == ENOTCONN) {
+		ret = RRR_SOCKET_READ_INCOMPLETE;
+		goto out;
+	}
+	else if (bytes < 0) {
+		RRR_MSG_0("recvmsg failed for fd %i: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	datagram->size = (size_t) bytes;
+	datagram->addr_remote_len = datagram->msg.msg_namelen;
+
+	// The local address may be set by higher level protocol recvmsg function as needed
+
+	out:
+	return ret;
 }

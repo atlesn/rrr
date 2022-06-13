@@ -52,6 +52,20 @@ struct rrr_socket_options {
 void rrr_socket_unlink (
 		int fd
 );
+
+struct rrr_socket_datagram {
+	struct sockaddr_storage addr_remote;
+	socklen_t addr_remote_len;
+	struct sockaddr_storage addr_local;
+	socklen_t addr_local_len;
+	rrr_length interface_index;
+	rrr_length tos;
+	size_t size;
+	struct iovec msg_iov;
+	struct msghdr msg;
+	uint8_t buf[65536];
+};
+
 int rrr_socket_with_filename_do (
 		int fd,
 		int (*callback)(const char *filename, void *arg),
@@ -217,7 +231,15 @@ int rrr_socket_send_blocking (
 		int (*wait_callback)(void *arg),
 		void *wait_callback_arg
 );
-int rrr_socket_check_alive (int fd);
-
+int rrr_socket_check_alive (
+		int fd
+);
+void rrr_socket_datagram_reset (
+		struct rrr_socket_datagram *datagram
+);
+int rrr_socket_recvmsg (
+		struct rrr_socket_datagram *datagram,
+		int fd
+);
 
 #endif /* RRR_SOCKET_H */

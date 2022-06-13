@@ -93,6 +93,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
+		const struct rrr_net_transport_connection_id *connection_id,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -114,6 +115,10 @@ static int __rrr_net_transport_handle_create_and_push (
 	new_handle->handle = handle;
 	new_handle->mode = mode;
 
+	if (connection_id != NULL) {
+		new_handle->connection_id = *connection_id;
+	}
+
 	rrr_event_collection_init(&new_handle->events, transport->event_queue);
 
 	if ((ret = submodule_callback (
@@ -133,23 +138,22 @@ static int __rrr_net_transport_handle_create_and_push (
 		return ret;
 }
 
-void rrr_net_transport_datagram_reset (
-		struct rrr_net_transport_datagram *datagram
+void rrr_net_transport_connection_id_to_str (
+		char *buf,
+		size_t buf_len,
+		const struct rrr_net_transport_connection_id *id
 ) {
-	memset (&datagram->msg, '\0', sizeof(datagram->msg));
-	memset (&datagram->msg_iov, '\0', sizeof(datagram->msg_iov));
+	if (buf_len < id->length * 2 + 1) {
+		RRR_BUG("Output buffer too small in %s (%s<%s)\n", __func__, buf_len, id->length);
+	}
 
-	datagram->msg_iov.iov_base = datagram->buf;
-	datagram->msg_iov.iov_len = sizeof(datagram->buf);
+	*buf = '\0';
 
-	datagram->msg.msg_name = &datagram->addr;
-	datagram->msg.msg_namelen = sizeof(datagram->addr);
-	datagram->msg.msg_iov = &datagram->msg_iov;
-	datagram->msg.msg_iovlen = 1;
-	// datagram->msg.msg_control = datagram->ctrl_buf;
-	// datagram->msg.msg_controllen = sizeof(datagram->ctrl_buf);
-
-	datagram->size = 0;
+	for (size_t i = 0; i < id->length; i++) {
+		const uint8_t *ipos = id->data + i;
+		char *opos = buf + i * 2;
+		sprintf(opos, "%02x", *ipos);
+	}
 }
 
 /* Allocate an unused handle. The strategy is to begin with 1, check if it is available,
@@ -159,6 +163,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
+		const struct rrr_net_transport_connection_id *connection_id,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -210,6 +215,7 @@ int rrr_net_transport_handle_allocate_and_add (
 			transport,
 			new_handle_id,
 			mode,
+			connection_id,
 			submodule_callback,
 			submodule_callback_arg
 	)) != 0) {
@@ -226,8 +232,9 @@ static int __rrr_net_transport_handle_destroy (
 		struct rrr_net_transport_handle *handle
 ) {
 #ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
-	RRR_DBG_7("net transport fd %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
+	RRR_DBG_7("net transport fd %i h %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
 			handle->submodule_fd,
+			handle->handle,
 			handle->transport->application_name,
 			handle->read_ret_debug_ok,
 			handle->read_ret_debug_incomplete,
@@ -436,8 +443,8 @@ static void __rrr_net_transport_event_handshake (
 		goto check_read_write_return;
 	}
 
-	RRR_DBG_7("net transport fd %i [%s] handshake complete\n",
-			handle->submodule_fd, handle->transport->application_name);
+	RRR_DBG_7("net transport fd %i h %i [%s] handshake complete\n",
+			handle->submodule_fd, handle->handle, handle->transport->application_name);
 
 	if (handle->transport->handshake_complete_callback != NULL) {
 		handle->transport->handshake_complete_callback(handle, handle->transport->handshake_complete_callback_arg);
@@ -972,6 +979,7 @@ static void __rrr_net_transport_event_decode (
 	for (int i = 2; i > 0; i--) {
 		if (connection_id.length > 0) {
 			RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+				printf("Match CID %lu<>%lu\n", connection_id.length, node->connection_id.length);
 				if (__rrr_net_transport_connection_id_equals(&connection_id, &node->connection_id)) {
 					RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
 							listen_handle->submodule_fd,
@@ -989,7 +997,7 @@ static void __rrr_net_transport_event_decode (
 		if ((ret_tmp = listen_handle->transport->methods->accept (
 				&new_handle,
 				listen_handle,
-				NULL,
+				&connection_id,
 				__rrr_net_transport_accept_callback_intermediate,
 				NULL,
 				listen_handle->transport->accept_callback,

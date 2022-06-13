@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 #include "../read.h"
 #include "../read_constants.h"
+#include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
 #include "../event/event_collection_struct.h"
 
@@ -148,15 +149,6 @@ struct rrr_net_transport_connection_id {
 	size_t length;
 };
 
-struct rrr_net_transport_datagram {
-	size_t size;
-	struct iovec msg_iov;
-	struct sockaddr_storage addr;
-	struct msghdr msg;
-	uint8_t buf[65536];
-	// uint8_t ctrl_buf[CMSG_SPACE(sizeof(uint8_t)) + CMSG_SPACE(sizeof(in6_pktinfo))];
-};
-
 struct rrr_net_transport_methods {
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
@@ -188,7 +180,7 @@ struct rrr_net_transport_handle {
 
 	// Used for datagram type communication
 	struct rrr_net_transport_connection_id connection_id;
-	struct rrr_net_transport_datagram datagram;
+	struct rrr_socket_datagram datagram;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;

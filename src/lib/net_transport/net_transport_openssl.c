@@ -56,7 +56,6 @@ struct in6_addr;
 
 static int __rrr_net_transport_openssl_ssl_data_close (struct rrr_net_transport_handle *handle) {
 	rrr_net_transport_openssl_common_ssl_data_destroy (handle->submodule_private_ptr);
-
 	return 0;
 }
 
@@ -290,6 +289,7 @@ static int __rrr_net_transport_openssl_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			__rrr_net_transport_openssl_connect_callback,
 			&callback_data
 	)) != 0) {
@@ -394,6 +394,7 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			NULL,
 			__rrr_net_transport_openssl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
@@ -517,6 +518,7 @@ int __rrr_net_transport_openssl_accept (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			__rrr_net_transport_openssl_accept_callback,
 			&callback_data
 	)) != 0) {

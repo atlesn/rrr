@@ -42,6 +42,7 @@ struct rrr_net_transport_tls_data *rrr_net_transport_openssl_common_ssl_data_new
 }
 
 void rrr_net_transport_openssl_common_ssl_data_destroy (struct rrr_net_transport_tls_data *ssl_data) {
+	printf("Openssl common destroy %p\n", ssl_data);
 	if (ssl_data != NULL) {
 		if (ssl_data->web != NULL) {
 			BIO_free_all(ssl_data->web);

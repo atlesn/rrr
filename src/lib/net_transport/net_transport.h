@@ -40,7 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
-struct rrr_net_transport_datagram;
+struct rrr_socket_datagram;
+struct rrr_net_transport_connection_id;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
 struct rrr_socket_graylist;
@@ -97,14 +98,17 @@ struct rrr_socket_graylist;
     int *submodule_fd,                                         \
     void *arg
 
-void rrr_net_transport_datagram_reset (
-		struct rrr_net_transport_datagram *datagram
+void rrr_net_transport_connection_id_to_str (
+		char *buf,
+		size_t buf_len,
+		const struct rrr_net_transport_connection_id *id
 );
 
 int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
+		const struct rrr_net_transport_connection_id *connection_id,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );

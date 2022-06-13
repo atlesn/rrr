@@ -21,15 +21,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
+
+// Allow in_pktinfo on linux
+#define _GNU_SOURCE 1
+
 #include <sys/socket.h>
-#undef __BSD_VISIBLE
+#include <netinet/in.h>
 
 #include <poll.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
 #include <inttypes.h>
@@ -38,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -93,6 +97,7 @@ int rrr_ip_network_start_udp_nobind (
 	}
 
 	data->fd = fd;
+	data->is_ipv6 = do_ipv6;
 
 	return 0;
 }
@@ -145,6 +150,7 @@ int rrr_ip_network_start_udp (
 	}
 
 	data->fd = fd;
+	data->is_ipv6 = do_ipv6;
 
 	return 0;
 
@@ -392,6 +398,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
 		goto out_error_free_accept;
 	}
+	accept_result->ip_data.is_ipv6 = accept_result->addr.ss_family == AF_INET6;
 
 	*accept_data = accept_result;
 
@@ -440,6 +447,7 @@ int rrr_ip_network_start_tcp (
 	}
 
 	data->fd = fd;
+	data->is_ipv6 = do_ipv6;
 
 	return 0;
 
@@ -538,6 +546,7 @@ int rrr_ip_accept (
 	res->ip_data.fd = fd;
 	res->addr = sockaddr_tmp;
 	res->len = socklen_tmp;
+	res->ip_data.is_ipv6 = sockaddr_tmp.ss_family == AF_INET6;
 
 	{
 		struct sockaddr_in client_tmp;
@@ -557,4 +566,131 @@ int rrr_ip_accept (
 	out:
 		RRR_FREE_IF_NOT_NULL(res);
 		return ret;
+}
+
+static int __rrr_ip_recvmsg_get_local_addr (
+		struct rrr_socket_datagram *datagram
+) {
+	int ret = RRR_SOCKET_READ_INCOMPLETE;
+
+	if (datagram->addr_remote.ss_family == AF_INET) {
+		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+			printf("cmsg %p\n", cmsg);
+			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_PKTINFO)
+				continue;
+
+			const struct in_pktinfo *pktinfo = (const struct in_pktinfo *) CMSG_DATA(cmsg);
+			datagram->interface_index = rrr_length_from_ssize_bug_const(pktinfo->ipi_ifindex);
+			struct sockaddr_in *addr_local = (struct sockaddr_in *) &datagram->addr_local;
+			assert(sizeof(addr_local->sin_addr) >= sizeof(pktinfo->ipi_addr));
+			addr_local->sin_family = AF_INET;
+			addr_local->sin_addr = pktinfo->ipi_addr;
+			datagram->addr_local_len = sizeof(*addr_local);
+			ret = RRR_SOCKET_OK;
+			break;
+		}
+	}
+	else if (datagram->addr_remote.ss_family == AF_INET6) {
+		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+			if (cmsg->cmsg_level != IPPROTO_IPV6 || cmsg->cmsg_type != IPV6_PKTINFO)
+				continue;
+
+			const struct in6_pktinfo *pktinfo = (const struct in6_pktinfo *) CMSG_DATA(cmsg);
+			datagram->interface_index = rrr_length_from_biglength_bug_const(pktinfo->ipi6_ifindex);
+			struct sockaddr_in6 *addr_local = (struct sockaddr_in6 *) &datagram->addr_local;
+			assert(sizeof(addr_local->sin6_addr) >= sizeof(pktinfo->ipi6_addr));
+			addr_local->sin6_family = AF_INET6;
+			addr_local->sin6_addr = pktinfo->ipi6_addr;
+			datagram->addr_local_len = sizeof(*addr_local);
+			ret = RRR_SOCKET_OK;
+			break;
+		}
+	}
+	else {
+		RRR_MSG_0("Unknown family %u in %s\n", datagram->addr_remote.ss_family, __func__);
+	}
+
+	if (ret != RRR_SOCKET_OK) {
+		RRR_MSG_0("Unable to get local address in %s\n", __func__);
+	}
+
+	return ret;
+}
+
+static void __rrr_ip_recvmsg_get_tos (
+		struct rrr_socket_datagram *datagram
+) {
+	if (datagram->addr_remote.ss_family == AF_INET) {
+		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_TOS || cmsg->cmsg_len == 0)
+				continue;
+			datagram->tos = * (uint8_t *) CMSG_DATA(cmsg);
+			break;
+		}
+	}
+	else if (datagram->addr_remote.ss_family == AF_INET6) {
+		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+			if (cmsg->cmsg_level != IPPROTO_IPV6 || cmsg->cmsg_type != IPV6_TCLASS || cmsg->cmsg_len == 0)
+				continue;
+			datagram->tos = * (uint8_t *) CMSG_DATA(cmsg);
+			break;
+		}
+	}
+	else {
+		RRR_BUG("Unknown family %u in %s\n", datagram->addr_remote.ss_family, __func__);
+	}
+}
+
+int rrr_ip_recvmsg (
+		struct rrr_socket_datagram *datagram,
+		struct rrr_ip_data *data
+) {
+	int ret = RRR_SOCKET_OK;
+
+	uint8_t ctrl_buf[CMSG_SPACE(sizeof(uint8_t)) + CMSG_SPACE(sizeof(struct in6_pktinfo))];
+
+	rrr_socket_datagram_reset(datagram);
+
+	datagram->msg.msg_control = ctrl_buf;
+	datagram->msg.msg_controllen = sizeof(ctrl_buf);
+
+	printf("controllen %lu\n", datagram->msg.msg_controllen);
+
+	if ((ret = rrr_socket_recvmsg(datagram, data->fd)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_ip_recvmsg_get_local_addr(datagram)) != 0) {
+		goto out;
+	}
+
+	__rrr_ip_recvmsg_get_tos(datagram);
+
+	out:
+	datagram->msg.msg_control = NULL;
+	datagram->msg.msg_controllen = 0;
+	return ret;
+}
+
+#define SET(name,ip6,ip)       \
+    int enabled = 1;           \
+    if (setsockopt(data->fd, data->is_ipv6 ? IPPROTO_IPV6 : IPPROTO_IP, data->is_ipv6 ? ip6 : ip, &enabled, sizeof(enabled)) != 0) {  \
+	RRR_MSG_0("Failed to set option %s on socket in %s: %s\n", name, __func__, rrr_strerror(errno));                  \
+	return RRR_SOCKET_HARD_ERROR;                                                                                     \
+    }
+
+#define TEST_AND_SET(name,ip6,ip)                    \
+    do {if (flags & name) {                          \
+        SET(RRR_QUOTE(name), ip6, ip);               \
+        flags &= ~(RRR_IP_SOCKOPT_RECV_TOS);         \
+    }} while (0)
+
+int rrr_ip_setsockopts (
+		struct rrr_ip_data *data,
+		int flags
+) {
+	TEST_AND_SET(RRR_IP_SOCKOPT_RECV_TOS, IPV6_RECVTCLASS, IP_RECVTOS);
+	TEST_AND_SET(RRR_IP_SOCKOPT_RECV_PKTINFO, IPV6_RECVPKTINFO, IP_PKTINFO);
+
+	return 0;
 }
