@@ -584,7 +584,6 @@ static int __rrr_ip_recvmsg_get_local_addr (
 			const struct in_pktinfo *pktinfo = (const struct in_pktinfo *) CMSG_DATA(cmsg);
 			assert(sizeof(addr_local->sin_addr) >= sizeof(pktinfo->ipi_addr));
 			addr_local->sin_addr = pktinfo->ipi_addr;
-			datagram->interface_index = rrr_length_from_ssize_bug_const(pktinfo->ipi_ifindex);
 #else
 			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_RECVDSTADDR)
 				continue;
