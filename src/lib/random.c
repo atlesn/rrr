@@ -63,3 +63,12 @@ void rrr_random_string(char *target, size_t target_size) {
 	}
 	target[target_size - 1] = '\0';
 }
+
+void rrr_random_bytes(void *target, size_t bytes) {
+	unsigned char *dataptr = target;
+
+	for (size_t i = 0; i < bytes; i++) {
+		*dataptr = (unsigned char) rrr_rand() % 0xff;
+		dataptr++;
+	}
+}

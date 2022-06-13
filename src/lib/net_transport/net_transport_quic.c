@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <openssl/err.h>
 #include <ngtcp2/ngtcp2.h>
+#include <ngtcp2/ngtcp2_crypto.h>
+#include <ngtcp2/ngtcp2_crypto_openssl.h>
 #include <assert.h>
 
 #include "../log.h"
@@ -38,10 +40,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 #include "../rrr_openssl.h"
 #include "../rrr_strerror.h"
+#include "../random.h"
 #include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
+#include "../util/rrr_time.h"
 
 #define RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH 18
+#define RRR_NET_TRANSPORT_QUIC_KEEPALIVE_S 10
 
 static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *handle) {
 	printf("Quic close %p\n", handle->submodule_private_ptr);
@@ -73,15 +78,176 @@ static int __rrr_net_transport_quic_connect (
 
 struct rrr_net_transport_quic_allocate_and_add_callback_data {
 	const struct rrr_ip_data *ip_data;
+	const char *dcid;
+	size_t dcid_len;
+	const char *alpn;
+	const char *quic_ciphers;
+	const char *quic_groups;
 };
 
+static int my_ngtcp2_cb_initial (
+		ngtcp2_conn *conn,
+		void *user_data
+) {
+	printf("Initial\n");
+	return ngtcp2_crypto_client_initial_cb(conn, user_data);
+}
+
+static int my_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
+	(void)(user_data);
+
+	printf("Handshake complete\n");
+
+	ngtcp2_conn_set_keep_alive_timeout(conn, (ngtcp2_duration) RRR_NET_TRANSPORT_QUIC_KEEPALIVE_S * 1000 * 1000 * 1000);
+
+	return 0;
+}
+
+static int my_ngtcp2_cb_receive_stream_data (
+		ngtcp2_conn *conn,
+		uint32_t flags,
+		int64_t stream_id,
+		uint64_t offset,
+		const uint8_t *buf,
+		size_t buflen,
+		void *user_data,
+		void *stream_user_data
+) {
+	struct my_ngtcp2_ctx *ctx = user_data;
+
+	(void)(offset);
+	(void)(stream_user_data);
+
+	size_t consumed = 0;
+
+	printf("Receive: %llu - %s fin %i\n", (unsigned long long) buflen, buf, flags & NGTCP2_STREAM_DATA_FLAG_FIN);
+
+	if (ctx->cb_deliver_data (
+			&consumed,
+			stream_id,
+			buf,
+			buflen,
+			(flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0,
+			ctx->cb_arg
+	) != 0) {
+		return 1;
+	}
+
+	// NGTCP2_ERR_CALLBACK_FAILURE / ngtcp2_conection_close_error_set_application_error
+
+	ngtcp2_conn_extend_max_stream_offset(conn, stream_id, consumed);
+	ngtcp2_conn_extend_max_offset(conn, consumed);
+
+	return 0;
+}
+
 static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS) {
+	int ret = 0;
+
 	struct rrr_net_transport_quic_allocate_and_add_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
+	SSL_CTX *ctx = ssl_data->ctx;
+	SSL *ssl = NULL;
+	BIO_get_ssl(ssl_data->web, &ssl);
+
 	if ((ssl_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in %s\n", __func__);
-		return 1;
+		ret = 1;
+		goto out;
+	}
+
+	if (SSL_CTX_set_ciphersuites(ctx, callback_data->quic_ciphers) != 1) {
+		RRR_MSG_0("Failed to set SSL ciphersuites in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_ssl;
+	}
+
+	if (SSL_CTX_set1_groups_list(ctx, callback_data->quic_groups) != 1) {
+		RRR_MSG_0("Failed to set SSL groups in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_ssl;
+	}
+
+	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+
+	SSL_set_app_data(ssl, &ssl_data->conn_ref);
+	SSL_set_connect_state(ssl);
+	SSL_set_quic_use_legacy_codepoint(ssl, 0);
+
+	SSL_set_alpn_protos(ssl, (const uint8_t *) callback_data->alpn, (unsigned int) strlen(callback_data->alpn));
+	// SSL_set_tlsext_host_name(ssl, name_remote); - Not needed for server?
+	SSL_set_quic_transport_version(ssl, TLSEXT_TYPE_quic_transport_parameters);
+
+	ngtcp2_cid dcid = {.datalen = NGTCP2_MAX_CIDLEN};
+	ngtcp2_cid scid = {.datalen = NGTCP2_MAX_CIDLEN};
+
+	assert(sizeof(dcid.data) >= NGTCP2_MAX_CIDLEN);
+
+	ngtcp2_settings_default(&ctx->settings);
+	ngtcp2_transport_params_default(&ctx->transport_params);
+
+	rrr_random_bytes(&dcid.data, dcid.datalen);
+	rrr_random_bytes(&scid.data, scid.datalen);
+
+	if (rrr_time_get_64_nano(&ctx->settings.initial_ts, NGTCP2_SECONDS) != 0) {
+		goto out_destroy_ssl;
+	}
+
+	ctx->transport_params.initial_max_streams_uni = 3;
+	ctx->transport_params.initial_max_stream_data_bidi_local = 128 * 1024;
+	ctx->transport_params.initial_max_data = 1024 * 1024;
+
+	static ngtcp2_callbacks callbacks = {
+		my_ngtcp2_cb_initial,
+		NULL, /* recv_client_initial */
+		ngtcp2_crypto_recv_crypto_data_cb,
+		my_ngtcp2_cb_handshake_complete,
+		NULL, /* recv_version_negotiation */
+		ngtcp2_crypto_encrypt_cb,
+		ngtcp2_crypto_decrypt_cb,
+		ngtcp2_crypto_hp_mask_cb,
+		my_ngtcp2_cb_receive_stream_data,
+		my_ngtcp2_cb_acked_stream_data_offset,
+		NULL, /* stream_open */
+		my_ngtcp2_cb_stream_close,
+		NULL, /* recv_stateless_reset */
+		ngtcp2_crypto_recv_retry_cb,
+		my_ngtcp2_cb_extend_max_local_streams_bidi,
+		NULL, /* extend_max_local_streams_uni */
+		my_ngtcp2_cb_random,
+		my_ngtcp2_cb_get_new_connection_id,
+		NULL, /* remove_connection_id */
+		ngtcp2_crypto_update_key_cb,
+		NULL, /* path_validation */
+		NULL, /* select_preferred_addr */
+		my_ngtcp2_cb_stream_reset,
+		NULL, /* extend_max_remote_streams_bidi */
+		NULL, /* extend_max_remote_streams_uni */
+		my_ngtcp2_cb_extend_max_stream_data,
+		NULL, /* dcid_status */
+		NULL, /* handshake_confirmed */
+		NULL, /* recv_new_token */
+		ngtcp2_crypto_delete_crypto_aead_ctx_cb,
+		ngtcp2_crypto_delete_crypto_cipher_ctx_cb,
+		NULL, /* recv_datagram */
+		NULL, /* ack_datagram */
+		NULL, /* lost_datagram */
+		ngtcp2_crypto_get_path_challenge_data_cb,
+		my_ngtcp2_cb_stream_stop_sending,
+		ngtcp2_crypto_version_negotiation_cb,
+		NULL, /* recv_rx_key */
+		NULL  /* recv_tx_key */
+	};
+
+	int ret_tmp;
+	if ((ret_tmp = ngtcp2_conn_server_new (
+			&ssl_data->conn
+	)) != 0) {
+		RRR_MSG_0("Could not create ngtcp2 connection in %s: %s\n",
+			__func__, ngtcp2_strerror(ret_tmp));
+		ret = 1;
+		goto out_destroy_ssl;
 	}
 
 	ssl_data->ip_data = *callback_data->ip_data;
@@ -89,7 +255,11 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 	*submodule_private_ptr = ssl_data;
 	*submodule_fd = callback_data->ip_data->fd;
 
-	return 0;
+	goto out;
+	out_destroy_ssl:
+		rrr_net_transport_openssl_common_ssl_data_destroy(ssl_data);
+	out:
+		return ret;
 }
 
 static int __rrr_net_transport_quic_bind_and_listen (
@@ -361,6 +531,166 @@ static int __rrr_net_transport_quic_read_message (
 	return 1;
 }
 
+int my_ngtcp2_send_packet (
+		evutil_socket_t fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const uint8_t *data,
+		size_t data_size
+) {
+	ssize_t bytes_written = 0;
+
+	printf("Sending %llu bytes\n", (unsigned long long) data_size);
+
+	do {
+		bytes_written = sendto(fd, data, data_size, 0, addr, addr_len);
+	} while (bytes_written < 0 && errno == EINTR);
+
+	if (bytes_written < 0) {
+		printf("Error while sending: %s\n", strerror(errno));
+		return 1;
+	}
+
+	if ((size_t) bytes_written < data_size) {
+		printf("All bytes not written in %s\n", __func__);
+		return 1;
+	}
+
+	return 0;
+}
+
+int my_ngtcp2_get_message (
+		struct my_ngtcp2_ctx *ctx,
+		int64_t *stream_id,
+		ngtcp2_vec *data_vector,
+		size_t *data_vector_count,
+		int *fin
+) {
+	int ret = 0;
+
+	// Get message
+
+	return ret;
+}
+
+uint64_t vec_len(const ngtcp2_vec *vec, size_t n) {
+	size_t i;
+	size_t res = 0;
+
+	for (i = 0; i < n; ++i) {
+		res += vec[i].len;
+	}
+
+	return res;
+}
+
+static int __rrr_net_transport_quic_write (
+		struct rrr_net_transport_handle *handle
+) {
+	char buf[1280];
+	ngtcp2_vec data_vector[128] = {0};
+	size_t data_vector_count = 0;
+	ngtcp2_path_storage path_storage;
+	ngtcp2_pkt_info packet_info = {0};
+	int fin = 0;
+	ngtcp2_ssize bytes_from_src = 0;
+	ngtcp2_ssize bytes_to_buf = 0;
+	uint64_t timestamp = 0;
+	int64_t stream_id = -1;
+
+	ngtcp2_path_storage_zero(&path_storage);
+
+	printf("Write event\n");
+
+	for (;;) {
+		if (my_timestamp_nano(&timestamp) != 0) {
+			goto out_failure;
+		}
+
+		printf("++ Loop\n");
+
+		data_vector_count = sizeof(data_vector)/sizeof(*data_vector);
+/*		if (my_ngtcp2_get_message (
+					ctx,
+					&stream_id,
+					data_vector,
+					&data_vector_count,
+					&fin
+		) != 0) {
+			goto out_failure;
+		}*/
+
+		printf("Vector count %llu len %llu stream ID %lli fin %i\n",
+				(unsigned long long) data_vector_count,
+				(unsigned long long) vec_len(data_vector, data_vector_count),
+				(long long int) stream_id,
+				fin
+		);
+
+		if (!fin && stream_id == -1 && data_vector_count == 0) {
+			printf("- No data from http3\n");
+		}
+
+		bytes_to_buf = ngtcp2_conn_writev_stream (
+				ctx->conn,
+				&path_storage.path,
+				&packet_info,
+				(uint8_t *) buf,
+				sizeof(buf),
+				&bytes_from_src,
+				NGTCP2_WRITE_STREAM_FLAG_MORE | (fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : 0),
+				stream_id,
+				data_vector,
+				data_vector_count,
+				timestamp
+		);
+
+		printf("- Write out: %li, Write in: %li\n", bytes_to_buf, bytes_from_src);
+
+		if (bytes_to_buf < 0) {
+			if (bytes_to_buf == NGTCP2_ERR_STREAM_DATA_BLOCKED || bytes_to_buf == NGTCP2_ERR_STREAM_SHUT_WR) {
+				printf("- Blocked\n");
+				if (ctx->cb_block_stream(stream_id, 1 /* Blocked*/, ctx->cb_arg) != 0) {
+					//		ngtcp2_connection_close_error_set_application_error();
+					goto out_failure;
+				}
+			}
+			else if (bytes_to_buf == NGTCP2_ERR_WRITE_MORE) {
+				// Must call writev repeatedly until complete.
+				assert(bytes_from_src >= 0);
+				printf("- More\n");
+
+				if (ctx->cb_ack_data(stream_id, bytes_from_src, ctx->cb_arg) != 0) {
+					//		ngtcp2_connection_close_error_set_application_error();
+					goto out_failure;
+				}
+			}
+			else {
+				printf("Error while writing: %s\n", ngtcp2_strerror((int) bytes_to_buf));
+				goto out_failure;
+			}
+		}
+		else if (bytes_to_buf == 0) {
+			break;
+		}
+
+		if (bytes_to_buf > 0 && my_ngtcp2_send_packet (
+					fd,
+					(const struct sockaddr *) path_storage.path.remote.addr,
+					path_storage.path.remote.addrlen,
+					(const uint8_t *) buf,
+					bytes_to_buf
+		) != 0) {
+			goto out_failure;
+		}
+	}
+
+	return 0;
+
+	out_failure:
+	return RRR_NET_TRANSPORT_READ_HARD_ERROR;
+}
+
 static int __rrr_net_transport_quic_read (
 		RRR_NET_TRANSPORT_READ_ARGS
 ) {
@@ -369,6 +699,7 @@ static int __rrr_net_transport_quic_read (
 	(void)(buf);
 	(void)(buf_size);
 	printf("Read\n");
+
 	return 1;
 }
 
@@ -441,7 +772,16 @@ int rrr_net_transport_quic_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 ) {
-	if ((rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
+	if ((rrr_net_transport_tls_common_new(
+			target,
+			flags,
+			certificate_file,
+			private_key_file,
+			ca_file,
+			ca_path,
+			alpn_protos,
+			alpn_protos_length
+	)) != 0) {
 		return 1;
 	}
 

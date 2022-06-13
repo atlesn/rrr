@@ -54,6 +54,21 @@ uint64_t rrr_time_get_64(void) {
 	return (tv_sec * tv_factor) + (tv_usec);
 }
 
+int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor) {
+	struct timespec tp;
+
+	*result = 0;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &tp) != 0) {
+		RRR_MSG_0("Failed to get time in %s: %s\n", __func__, rrr_strerror(errno));
+		return 1;
+	}
+
+	*result = (uint64_t) tp.tv_sec * s_factor + (uint64_t) tp.tv_nsec;
+
+	return 0;
+}
+
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add) {
 	if (gettimeofday(__tv, NULL) != 0) {
 		RRR_BUG("Error while getting time in rrr_time_gettimeofday, cannot recover from this: %s\n", rrr_strerror(errno));

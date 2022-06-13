@@ -30,6 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include <openssl/ssl.h>
 #endif
 
+#ifdef RRR_WITH_HTTP3
+#	include <ngtcp2/ngtcp2.h>
+#	include <ngtcp2/ngtcp2_crypto.h>
+#endif
+
 struct rrr_read_session;
 
 struct rrr_net_transport_tls_alpn {
@@ -73,6 +78,10 @@ struct rrr_net_transport_tls_data {
 	struct tls *ctx;
 #endif
 
+#ifdef RRR_WITH_HTTP3
+	ngtcp2_conn *conn;
+	ngtcp2_crypto_conn_ref conn_ref;
+#endif
 };
 
 int rrr_net_transport_tls_common_new (
