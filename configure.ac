@@ -170,6 +170,25 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+AC_MSG_CHECKING([for IP_PKTINFO])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <netinet/in.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			printf("IP_PKTINFO: %i\n", IP_PKTINFO);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_IP_PKTINFO], [1], [Use Linux style IP_PKTINFO])
+], [
+	AC_MSG_RESULT([no])
+])
+
 AC_MSG_CHECKING([precense of gettid()])
 AC_RUN_IFELSE([
 	AC_LANG_SOURCE([[

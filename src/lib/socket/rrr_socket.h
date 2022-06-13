@@ -53,7 +53,6 @@ struct rrr_socket_datagram {
 	socklen_t addr_remote_len;
 	struct sockaddr_storage addr_local;
 	socklen_t addr_local_len;
-	rrr_length interface_index;
 	rrr_length tos;
 	size_t size;
 	struct iovec msg_iov;

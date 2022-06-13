@@ -575,16 +575,22 @@ static int __rrr_ip_recvmsg_get_local_addr (
 
 	if (datagram->addr_remote.ss_family == AF_INET) {
 		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
-			printf("cmsg %p\n", cmsg);
+			struct sockaddr_in *addr_local = (struct sockaddr_in *) &datagram->addr_local;
+			addr_local->sin_family = AF_INET;
+#ifdef RRR_HAVE_IP_PKTINFO
 			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_PKTINFO)
 				continue;
 
 			const struct in_pktinfo *pktinfo = (const struct in_pktinfo *) CMSG_DATA(cmsg);
-			datagram->interface_index = rrr_length_from_ssize_bug_const(pktinfo->ipi_ifindex);
-			struct sockaddr_in *addr_local = (struct sockaddr_in *) &datagram->addr_local;
 			assert(sizeof(addr_local->sin_addr) >= sizeof(pktinfo->ipi_addr));
-			addr_local->sin_family = AF_INET;
 			addr_local->sin_addr = pktinfo->ipi_addr;
+			datagram->interface_index = rrr_length_from_ssize_bug_const(pktinfo->ipi_ifindex);
+#else
+			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_RECVDSTADDR)
+				continue;
+
+			addr_local->sin_addr = * ((struct in_addr *) CMSG_DATA(cmsg));
+#endif
 			datagram->addr_local_len = sizeof(*addr_local);
 			ret = RRR_SOCKET_OK;
 			break;
@@ -596,7 +602,6 @@ static int __rrr_ip_recvmsg_get_local_addr (
 				continue;
 
 			const struct in6_pktinfo *pktinfo = (const struct in6_pktinfo *) CMSG_DATA(cmsg);
-			datagram->interface_index = rrr_length_from_biglength_bug_const(pktinfo->ipi6_ifindex);
 			struct sockaddr_in6 *addr_local = (struct sockaddr_in6 *) &datagram->addr_local;
 			assert(sizeof(addr_local->sin6_addr) >= sizeof(pktinfo->ipi6_addr));
 			addr_local->sin6_family = AF_INET6;
@@ -654,8 +659,6 @@ int rrr_ip_recvmsg (
 	datagram->msg.msg_control = ctrl_buf;
 	datagram->msg.msg_controllen = sizeof(ctrl_buf);
 
-	printf("controllen %lu\n", datagram->msg.msg_controllen);
-
 	if ((ret = rrr_socket_recvmsg(datagram, data->fd)) != 0) {
 		goto out;
 	}
@@ -690,7 +693,11 @@ int rrr_ip_setsockopts (
 		int flags
 ) {
 	TEST_AND_SET(RRR_IP_SOCKOPT_RECV_TOS, IPV6_RECVTCLASS, IP_RECVTOS);
+#ifdef RRR_HAVE_IP_PKTINFO
 	TEST_AND_SET(RRR_IP_SOCKOPT_RECV_PKTINFO, IPV6_RECVPKTINFO, IP_PKTINFO);
+#else
+	TEST_AND_SET(RRR_IP_SOCKOPT_RECV_DSTADDR, IPV6_RECVPKTINFO, IP_RECVDSTADDR);
+#endif
 
 	return 0;
 }
