@@ -36,6 +36,7 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(arg);
+	printf("Accept callback\n");
 }
 
 static void __rrr_test_quic_handshake_complete_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {

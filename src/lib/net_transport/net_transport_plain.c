@@ -126,6 +126,7 @@ static int __rrr_net_transport_plain_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {
@@ -278,6 +279,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
 			&callback_data
 	)) != 0) {
@@ -328,6 +330,7 @@ int __rrr_net_transport_plain_accept (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <openssl/err.h>
 #include <ngtcp2/ngtcp2.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -42,41 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH 18
 
-struct rrr_net_transport_quic_data {
-	struct rrr_ip_data ip_data;
-};
-
-static int __rrr_net_transport_quic_data_new (
-		struct rrr_net_transport_quic_data **result,
-		const struct rrr_ip_data *ip_data
-) {
-	*result = NULL;
-
-	struct rrr_net_transport_quic_data *data;
-
-	if ((data = rrr_allocate_zero(sizeof(*data))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		return 1;
-	}
-
-	data->ip_data = *ip_data;
-
-	*result = data;
-
-	return 0;
-}
-
-static void __rrr_net_transport_quic_data_destroy (
-		struct rrr_net_transport_quic_data *data
-) {
-	RRR_FREE_IF_NOT_NULL(data);
-}
-
 static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *handle) {
-	if (rrr_socket_close(handle->submodule_fd) != 0) {
+	printf("Quic close %p\n", handle->submodule_private_ptr);
+	if (handle->submodule_fd > 0 && rrr_socket_close(handle->submodule_fd) != 0) {
 		RRR_MSG_0("Warning: Error from rrr_socket_close in %s\n", __func__);
 	}
-	__rrr_net_transport_quic_data_destroy(handle->submodule_private_ptr);
+	rrr_net_transport_openssl_common_ssl_data_destroy (handle->submodule_private_ptr);
 	return 0;
 }
 
@@ -106,15 +78,18 @@ struct rrr_net_transport_quic_allocate_and_add_callback_data {
 	const struct rrr_ip_data *ip_data;
 };
 
-static int __rrr_net_transport_quic_allocate_and_add_callback (RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS) {
+static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS) {
 	struct rrr_net_transport_quic_allocate_and_add_callback_data *callback_data = arg;
+	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
-	struct rrr_net_transport_quic_data *data = NULL;
-	if (__rrr_net_transport_quic_data_new (&data, callback_data->ip_data) != 0) {
+	if ((ssl_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
+		RRR_MSG_0("Could not allocate memory for SSL data in %s\n", __func__);
 		return 1;
 	}
 
-	*submodule_private_ptr = data;
+	ssl_data->ip_data = *callback_data->ip_data;
+
+	*submodule_private_ptr = ssl_data;
 	*submodule_fd = callback_data->ip_data->fd;
 
 	return 0;
@@ -133,6 +108,10 @@ static int __rrr_net_transport_quic_bind_and_listen (
 		goto out;
 	}
 
+	if ((ret = rrr_ip_setsockopts (&ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO)) != 0) {
+		goto out;
+	}
+
 	struct rrr_net_transport_quic_allocate_and_add_callback_data callback_data = {
 		&ip_data
 	};
@@ -142,7 +121,8 @@ static int __rrr_net_transport_quic_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
-			__rrr_net_transport_quic_allocate_and_add_callback,
+			NULL,
+			__rrr_net_transport_quic_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
 		goto out_destroy_ip;
@@ -170,28 +150,17 @@ static int __rrr_net_transport_quic_send_version_negotiation (
 static int __rrr_net_transport_quic_decode (
 		RRR_NET_TRANSPORT_DECODE_ARGS
 ) {
-	struct rrr_net_transport_datagram *datagram = &listen_handle->datagram;
+	struct rrr_socket_datagram *datagram = &listen_handle->datagram;
+	struct rrr_net_transport_tls_data *ssl_data = listen_handle->submodule_private_ptr;
 
 	int ret = 0;
 
-	rrr_net_transport_datagram_reset(datagram);
-
-	ssize_t bytes = recvmsg(listen_handle->submodule_fd, &datagram->msg, 0);
-	
-	if (bytes == 0 || bytes == EAGAIN || bytes == ENOTCONN) {
-		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
-		goto out;
-	}
-	else if (bytes < 0) {
-		RRR_MSG_0("recvmsg failed for fd %i: %s\n", rrr_strerror(errno));
-		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+	if ((ret = rrr_ip_recvmsg(&listen_handle->datagram, &ssl_data->ip_data)) != 0) {
 		goto out;
 	}
 
-	datagram->size = (size_t) bytes;
-
-	// TODO : Read ECN from IP header
-	// ngtcp2_pkt_info pi = {.ecn = NGTCP2_ECN_NOT_ECT};
+	ngtcp2_pkt_info pi = {.ecn = datagram->tos};
+	(void)(pi);
 
 	uint32_t version;
 	const uint8_t *dcid, *scid;
@@ -204,7 +173,7 @@ static int __rrr_net_transport_quic_decode (
 			&scid,
 			&scidlen,
 			datagram->buf,
-			(size_t) bytes,
+			datagram->size,
 			RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH
 	);
 
@@ -213,7 +182,8 @@ static int __rrr_net_transport_quic_decode (
 
 	if (ret_tmp < 0) {
 		if (ret_tmp == NGTCP2_ERR_INVALID_ARGUMENT) {
-			RRR_DBG_7("fd %i failed to decode QUIC packet of size %llu\n", listen_handle->submodule_fd, (long long unsigned) bytes);
+			RRR_DBG_7("fd %i failed to decode QUIC packet of size %llu\n",
+					listen_handle->submodule_fd, (long long unsigned) datagram->size);
 			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 			goto out;
 		}
@@ -233,11 +203,27 @@ static int __rrr_net_transport_quic_decode (
 	}
 
 	if (dcidlen > connection_id->length) {
-		RRR_DBG_7("fd %i dcid too long in received QUIC paccket (%llu>%llu)\n",
+		RRR_DBG_7("fd %i dcid too long in received QUIC packet (%llu>%llu)\n",
 				listen_handle->submodule_fd, (long long unsigned) dcidlen, (long long unsigned) connection_id->length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
+
+	ngtcp2_pkt_hd dest;
+	ret_tmp = ngtcp2_accept (&dest, datagram->buf, datagram->size);
+
+	if (ret_tmp < 0) {
+		if (ret_tmp == NGTCP2_ERR_RETRY) {
+			RRR_BUG("SEND RETRY");
+		}
+		else {
+			RRR_DBG_7("fd %i error while accepting QUIC packet: %s\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+			goto out;
+		}
+	}
+
+	// Add any stateless address validation here
 
 	memcpy(connection_id->data, dcid, dcidlen);
 	connection_id->length = dcidlen;
@@ -248,12 +234,14 @@ static int __rrr_net_transport_quic_decode (
 
 struct rrr_net_transport_quic_accept_callback_data {
 	struct rrr_net_transport_tls *tls;
+	struct rrr_net_transport_handle *listen_handle;
 };
 
 static int __rrr_net_transport_quic_accept_callback (
 		RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_quic_accept_callback_data *callback_data = arg;
+	struct rrr_socket_datagram *datagram = &callback_data->listen_handle->datagram;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
 	int ret = 0;
@@ -291,6 +279,10 @@ static int __rrr_net_transport_quic_accept_callback (
 	BIO_get_ssl(ssl_data->web, &ssl);
 	SSL_set_accept_state(ssl);
 
+	assert(sizeof(ssl_data->sockaddr) == sizeof(datagram->addr_remote));
+	memcpy(&ssl_data->sockaddr, &datagram->addr_remote, sizeof(ssl_data->sockaddr));
+	ssl_data->socklen = datagram->msg.msg_namelen;
+
 	*submodule_private_ptr = ssl_data;
 	*submodule_fd = -1; // Set to disable polling on events for this handle
 
@@ -304,52 +296,52 @@ static int __rrr_net_transport_quic_accept_callback (
 static int __rrr_net_transport_quic_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
-	struct rrr_ip_accept_data *accept_data = NULL;
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
-
-	(void)(connection_id);
+	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
+	struct rrr_socket_datagram *datagram = &listen_handle->datagram;
 
 	int ret = 0;
 
-	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
-
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
-		tls
+		tls,
+		listen_handle
 	};
 
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			connection_id,
 			__rrr_net_transport_quic_accept_callback,
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not get handle in %s return was %i\n", __func__, ret);
-		goto out_destroy_ip;
+		goto out;
 	}
 
 	{
-		RRR_DBG_7("QUIC OpenSSL accepted connection on port %u transport handle %p/%i\n",
-				listen_ssl_data->ip_data.port, listen_handle->transport, new_handle);
+		char buf_addr[128];
+		char buf_dcid[sizeof(connection_id->data) * 2 + 1];
+
+		rrr_ip_to_str(buf_addr, sizeof(buf_addr), (const struct sockaddr *) datagram->msg.msg_name, datagram->msg.msg_namelen);
+		rrr_net_transport_connection_id_to_str(buf_dcid, sizeof(buf_dcid), connection_id);
+
+		RRR_DBG_7("net transport quic fd %i h %i accepted connection on port %u from %s dcid %s\n",
+				listen_handle->submodule_fd, *new_handle, listen_ssl_data->ip_data.port, buf_addr, buf_dcid);
 	}
 
 	ret = callback (
 			listen_handle->transport,
 			*new_handle,
-			(struct sockaddr *) &accept_data->addr,
-			accept_data->len,
+			(struct sockaddr *) datagram->msg.msg_name,
+			datagram->msg.msg_namelen,
 			final_callback,
 			final_callback_arg,
 			callback_arg
 	);
 
-	goto out;
-
-	out_destroy_ip:
-		rrr_ip_close(&accept_data->ip_data);
 	out:
-		RRR_FREE_IF_NOT_NULL(accept_data);
-		return ret;
+	return ret;
 }
 
 static int __rrr_net_transport_quic_read_message (
@@ -401,6 +393,12 @@ static void __rrr_net_transport_quic_selected_proto_get (
 	(void)(proto);
 }
 
+static int __rrr_net_transport_quic_deliver (
+	const struct rrr_net_transport_handle *listen_handle,
+	const struct rrr_net_transport_handle *handle
+) {
+}
+
 static int __rrr_net_transport_quic_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
@@ -413,8 +411,7 @@ static int __rrr_net_transport_quic_handshake (
 		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
 	(void)(handle);
-	printf("Handshake\n");
-	return 1;
+	return 0;
 }
 
 static int __rrr_net_transport_quic_is_tls (void) {
