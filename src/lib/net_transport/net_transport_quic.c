@@ -45,9 +45,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *handle) {
 	printf("Quic close %p\n", handle->submodule_private_ptr);
-	if (handle->submodule_fd > 0 && rrr_socket_close(handle->submodule_fd) != 0) {
-		RRR_MSG_0("Warning: Error from rrr_socket_close in %s\n", __func__);
-	}
 	rrr_net_transport_openssl_common_ssl_data_destroy (handle->submodule_private_ptr);
 	return 0;
 }
