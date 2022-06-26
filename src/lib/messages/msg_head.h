@@ -83,6 +83,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
      RRR_MSG_IS_TREE_DATA(msg)                                 \
     )
 
+#define RRR_MSG_SIZE_MAX RRR_U32_MAX
+
 // The header_crc32 is calculated AFTER conversion to network
 // byte order (big endian). The crc32 is then converted itself.
 
