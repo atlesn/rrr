@@ -94,7 +94,7 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_ACCEPT_ARGS                                      \
     rrr_net_transport_handle *new_handle,                                  \
     struct rrr_net_transport_handle *listen_handle,                        \
-    const struct rrr_net_transport_connection_id *connection_id,           \
+    const struct rrr_net_transport_connection_id_triplet *connection_ids,  \
     int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),  \
     void *callback_arg,                                                    \
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
@@ -154,6 +154,12 @@ struct rrr_net_transport_connection_id_triplet {
 	struct rrr_net_transport_connection_id dest;
 	struct rrr_net_transport_connection_id orig;
 };
+
+#define RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER \
+    {.length = RRR_NET_TRANSPORT_CONNECTION_ID_MAX}
+
+#define RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER \
+    {RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER,RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER,RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER}
 
 struct rrr_net_transport_methods {
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);

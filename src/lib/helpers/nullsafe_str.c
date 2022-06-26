@@ -165,7 +165,7 @@ int rrr_nullsafe_str_append_raw (
 
 	RRR_SIZE_CHECK(len,"New nullsafe string append",return 1);
 
-	void *new_str = rrr_reallocate(nullsafe->str, nullsafe->len, new_size_a);
+	void *new_str = rrr_reallocate(nullsafe->str, new_size_a);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append\n");
 		return 1;

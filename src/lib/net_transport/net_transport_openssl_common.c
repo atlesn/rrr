@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <assert.h>
 
 #include "../allocator.h"
 
@@ -45,7 +46,12 @@ void rrr_net_transport_openssl_common_ssl_data_destroy (struct rrr_net_transport
 	printf("Openssl common destroy %p\n", ssl_data);
 	if (ssl_data != NULL) {
 		if (ssl_data->web != NULL) {
+			assert(ssl_data->ssl == NULL);
 			BIO_free_all(ssl_data->web);
+		}
+		if (ssl_data->ssl != NULL) {
+			assert(ssl_data->web == NULL);
+			SSL_free(ssl_data->ssl);
 		}
 		if (ssl_data->ctx != NULL) {
 			SSL_CTX_free(ssl_data->ctx);

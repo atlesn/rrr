@@ -974,11 +974,12 @@ AS_IF([test "x$enable_http3" = xno], [
 	AC_CHECK_HEADERS([ngtcp2/ngtcp2.h])
 	AC_CHECK_HEADERS([nghttp3/nghttp3.h])
 	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
+	AC_CHECK_LIB(ngtcp2_crypto_openssl, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_openssl not found]))
 	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
 	HTTP3_CFLAGS=""
 	HTTP3_LDFLAGS="-lnghttp3"
 	NGTCP2_CFLAGS=""
-	NGTCP2_LDFLAGS="-lngtcp2"
+	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_openssl"
 	AC_SUBST([HTTP3_CFLAGS])
 	AC_SUBST([HTTP3_LDFLAGS])
 	AC_SUBST([NGTCP2_CFLAGS])

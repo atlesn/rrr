@@ -64,6 +64,15 @@ static inline void *rrr_allocate_zero (rrr_biglength bytes) {
 	return mallocx((size_t) bytes, MALLOCX_ZERO);
 }
 
+/* Allocate array from OS allocator */
+static inline void *rrr_callocate (size_t nmemb, size_t size) {
+	const rrr_biglength size_total = nmemb * size;
+	if (nmemb > size_total || size > size_total) {
+		return __rrr_allocate_failure(size_total);
+	}
+	return mallocx((size_t) size_total, MALLOCX_ZERO);
+}
+
 /* Allocate memory from group allocator */
 static inline void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
 	(void)(group);
@@ -76,8 +85,7 @@ static inline void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group_num) {
-	(void)(bytes_old);
+static void *__rrr_reallocate (void *ptr_old, size_t bytes_new, size_t group_num) {
 	(void)(group_num);
 
 	if (ptr_old == NULL) {
@@ -92,17 +100,15 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 }
 
 /* Caller must ensure that old allocation is done by OS allocator */
-static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
+static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_new) {
 	VERIFY_SIZE(bytes_new);
-	VERIFY_SIZE(bytes_old);
-	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, 0);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_new, 0);
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
-static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
+static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_new, size_t group) {
 	VERIFY_SIZE(bytes_new);
-	VERIFY_SIZE(bytes_old);
-	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_new, group);
 }
 
 /* Duplicate string using OS allocator */
@@ -166,6 +172,10 @@ static inline void *rrr_allocate_zero (rrr_biglength bytes) {
 	return ptr;
 }
 
+static inline void *rrr_callocate (size_t nmemb, size_t size) {
+	return calloc(nmemb, size);
+}
+
 static inline void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
 	(void)(group);
 	VERIFY_SIZE(bytes);
@@ -176,17 +186,15 @@ static inline void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
-	(void)(bytes_old);
+static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_new) {
 	VERIFY_SIZE(bytes_new);
 	return realloc(ptr_old, bytes_new);
 }
 
-static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
+static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_new, size_t group) {
 	(void)(group);
 	VERIFY_SIZE(bytes_new);
-	VERIFY_SIZE(bytes_old);
-	return rrr_reallocate(ptr_old, bytes_old, bytes_new);
+	return rrr_reallocate(ptr_old, bytes_new);
 }
 
 static inline char *rrr_strdup (const char *str) {

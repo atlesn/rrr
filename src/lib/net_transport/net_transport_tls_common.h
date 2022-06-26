@@ -72,6 +72,7 @@ struct rrr_net_transport_tls_data {
 #ifdef RRR_WITH_OPENSSL
 	SSL_CTX *ctx;
 	BIO *web;
+	SSL *ssl;
 #endif
 
 #ifdef RRR_WITH_LIBRESSL
@@ -79,8 +80,9 @@ struct rrr_net_transport_tls_data {
 #endif
 
 #ifdef RRR_WITH_HTTP3
-	ngtcp2_conn *conn;
-	ngtcp2_crypto_conn_ref conn_ref;
+	ngtcp2_settings settings;
+	ngtcp2_transport_params transport_params;
+	const ngtcp2_callbacks *callbacks;
 #endif
 };
 
