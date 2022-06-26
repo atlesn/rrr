@@ -448,13 +448,13 @@ static int __rrr_net_transport_openssl_accept_callback (
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
-		goto out_destroy_ssl_data;
+		goto out_destroy;
 	}
 
 	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 0)) == NULL) {
 		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
-		goto out_destroy_ssl_data;
+		goto out_destroy;
 	}
 
 	SSL *ssl;
@@ -463,7 +463,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	if (SSL_set_fd(ssl, callback_data->accept_data->ip_data.fd) != 1) {
 		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
-		goto out_destroy_ssl_data;
+		goto out_destroy;
 	}
 
 	BIO_set_nbio(ssl_data->web, 1);
@@ -481,7 +481,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	*submodule_fd = ssl_data->ip_data.fd;
 
 	goto out;
-	out_destroy_ssl_data:
+	out_destroy:
 		rrr_net_transport_openssl_common_ssl_data_destroy(ssl_data);
 	out:
 		return ret;
@@ -493,7 +493,7 @@ int __rrr_net_transport_openssl_accept (
 	struct rrr_ip_accept_data *accept_data = NULL;
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
 
-	(void)(connection_id);
+	(void)(connection_ids);
 
 	int ret = 0;
 

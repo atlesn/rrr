@@ -917,13 +917,13 @@ static void __rrr_net_transport_event_decode (
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_net_transport_connection_id connection_id = {.length = sizeof(connection_id.data)};
+	struct rrr_net_transport_connection_id_triplet connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER;
 
 	int ret_tmp;
 
 	// The decode function fills the datagram buffer
 	if ((ret_tmp = listen_handle->transport->methods->decode (
-			&connection_id,
+			&connection_ids,
 			listen_handle
 	)) != 0) {
 		if (ret_tmp != RRR_NET_TRANSPORT_READ_INCOMPLETE) {
@@ -940,10 +940,10 @@ static void __rrr_net_transport_event_decode (
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 	for (int i = 2; i > 0; i--) {
-		if (connection_id.length > 0) {
+		if (connection_ids.dest.length > 0) {
 			RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-				printf("Match CID %lu<>%lu\n", connection_id.length, node->connection_id.length);
-				if (__rrr_net_transport_connection_id_equals(&connection_id, &node->connection_id)) {
+				printf("Match CID %lu<>%lu\n", connection_ids.dest.length, node->connection_ids.dest.length);
+				if (__rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.dest)) {
 					RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
 							listen_handle->submodule_fd,
 							listen_handle->transport->application_name,
@@ -960,7 +960,7 @@ static void __rrr_net_transport_event_decode (
 		if ((ret_tmp = listen_handle->transport->methods->accept (
 				&new_handle,
 				listen_handle,
-				&connection_id,
+				&connection_ids,
 				__rrr_net_transport_accept_callback_intermediate,
 				NULL,
 				listen_handle->transport->accept_callback,

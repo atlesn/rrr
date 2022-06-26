@@ -300,7 +300,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 int __rrr_net_transport_plain_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
-	(void)(connection_id);
+	(void)(connection_ids);
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 

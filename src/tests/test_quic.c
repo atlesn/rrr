@@ -24,7 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 
 #define RRR_TEST_QUIC_ALPN_PROTO "\x03RRR"
-#define RRR_TEST_QUIC_PORT 5555
+#define RRR_TEST_QUIC_PORT 4433
+//#define RRR_TEST_QUIC_PORT 5555
 #define RRR_TEST_QUIC_TIMEOUT_S 5
 
 struct rrr_test_quic_data {

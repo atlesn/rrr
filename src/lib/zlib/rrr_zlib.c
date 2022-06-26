@@ -103,7 +103,8 @@ static int __rrr_zlib_loop (
 			rrr_free(buf);
 		}
 #else
-		if ((buf_new = rrr_reallocate(buf, buf_size_old, buf_size)) == NULL) {
+		(void)(buf_size_old);
+		if ((buf_new = rrr_reallocate(buf, buf_size)) == NULL) {
 			RRR_MSG_0("Buffer (re)allocation failed in %s (%" PRIrrrl ")\n",
 				__func__, buf_size);
 			ret = RRR_ZLIB_ERR;

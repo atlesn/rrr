@@ -243,7 +243,7 @@ int __rrr_http2_stream_data_push (
 
 	if (target->data_wpos + data_size > target->data_size) {
 		size_t new_size = target->data_size + data_size + 65536;
-		void *data_new = rrr_reallocate(target->data, target->data_size, new_size);
+		void *data_new = rrr_reallocate(target->data, new_size);
 		if (data_new == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in __rrr_http2_stream_collection_data_push\n");
 			ret = RRR_HTTP2_HARD_ERROR;
