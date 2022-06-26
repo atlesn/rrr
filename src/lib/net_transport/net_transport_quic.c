@@ -52,6 +52,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_QUIC_GROUPS \
     "P-256:X25519:P-384:P-521"
 
+// Enable printf logging in ngtcp2 library
+#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+
 struct rrr_net_transport_quic_ctx {
 	SSL *ssl;
 
@@ -60,8 +63,7 @@ struct rrr_net_transport_quic_ctx {
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
 	ngtcp2_path path;
-	ngtcp2_cid scid_orig;
-	ngtcp2_cid dcid_orig;
+	ngtcp2_connection_close_error last_error;
 
 	struct sockaddr_storage addr_remote;
 	socklen_t addr_remote_len;
@@ -98,11 +100,22 @@ static const ngtcp2_mem rrr_net_transport_quic_ngtcp2_mem = {
 	.realloc = __rrr_net_transport_quic_cb_realloc
 };
 
+static ngtcp2_conn *__rrr_net_transport_quic_cb_get_conn (
+		ngtcp2_crypto_conn_ref *conn_ref
+) {
+	struct rrr_net_transport_quic_ctx *ctx = conn_ref->user_data;
+	return ctx->conn;
+}
+
 static int __rrr_net_transport_quic_ctx_new (
 		struct rrr_net_transport_quic_ctx **target,
 		struct rrr_net_transport_handle *listen_handle,
     		const struct rrr_net_transport_connection_id_triplet *connection_ids,
-		const uint32_t client_chosen_version
+		const uint32_t client_chosen_version,
+		const struct sockaddr *addr_remote,
+		socklen_t addr_remote_len,
+		const struct sockaddr *addr_local,
+		socklen_t addr_local_len
 ) {
 	struct rrr_net_transport_tls_data *listen_tls_data = listen_handle->submodule_private_ptr;
 
@@ -119,13 +132,13 @@ static int __rrr_net_transport_quic_ctx_new (
 		goto out;
 	}
 
-	assert(sizeof(ctx->scid_orig.data) >= sizeof(connection_ids->src.data));
-	memcpy(ctx->scid_orig.data, connection_ids->src.data, connection_ids->src.length);
-	ctx->scid_orig.datalen = connection_ids->src.length;
+	assert(sizeof(ctx->addr_remote) >= addr_remote_len);
+	memcpy(&ctx->addr_remote, addr_remote, addr_remote_len);
+	ctx->addr_remote_len = addr_remote_len;
 
-	assert(sizeof(ctx->dcid_orig.data) >= sizeof(connection_ids->dest.data));
-	memcpy(ctx->dcid_orig.data, connection_ids->dest.data, connection_ids->dest.length);
-	ctx->dcid_orig.datalen = connection_ids->dest.length;
+	assert(sizeof(ctx->addr_local) >= addr_local_len);
+	memcpy(&ctx->addr_local, addr_local, addr_local_len);
+	ctx->addr_local_len = addr_local_len;
 
 	ctx->listen_handle = listen_handle;
 
@@ -140,10 +153,32 @@ static int __rrr_net_transport_quic_ctx_new (
 		NULL
 	};
 
+	{
+		char buf_addr[128];
+		char buf_scid[sizeof(connection_ids->src.data) * 2 + 1];
+
+		rrr_ip_to_str(buf_addr, sizeof(buf_addr), (const struct sockaddr *) path.remote.addr, path.remote.addrlen);
+		rrr_net_transport_connection_id_to_str(buf_scid, sizeof(buf_scid), &connection_ids->src);
+
+		RRR_DBG_7("net transport quic fd %i new ctx src %s scid %s\n",
+				listen_handle->submodule_fd, buf_addr, buf_scid);
+	}
+
+	// New source connection ID is randomly generated
+	ngtcp2_cid scid = {.datalen = NGTCP2_MAX_CIDLEN};
+	assert(sizeof(scid.data) >= NGTCP2_MAX_CIDLEN);
+	rrr_random_bytes(&scid.data, scid.datalen);
+
+	// New destination connection ID is source connection ID from client
+	ngtcp2_cid dcid;
+	assert(sizeof(dcid.data) >= sizeof(connection_ids->src.data) && sizeof(dcid.data) >= connection_ids->src.length);
+	memcpy(dcid.data, connection_ids->src.data, connection_ids->src.length);
+	dcid.datalen = connection_ids->src.length;
+
 	if ((ret_tmp = ngtcp2_conn_server_new (
 			&ctx->conn,
-			&ctx->dcid_orig,
-			&ctx->scid_orig,
+			&dcid,
+			&scid,
 			&path,
 			client_chosen_version,
 			listen_tls_data->callbacks,
@@ -163,6 +198,12 @@ static int __rrr_net_transport_quic_ctx_new (
 		ret = 1;
 		goto out_destroy_conn;
 	}
+
+	ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
+	ngtcp2_connection_close_error_default(&ctx->last_error);
+
+	ctx->conn_ref.user_data = ctx;
+	ctx->conn_ref.get_conn = __rrr_net_transport_quic_cb_get_conn;
 
 	SSL_set_app_data(ctx->ssl, &ctx->conn_ref);
 
@@ -225,7 +266,7 @@ static int __rrr_net_transport_quic_connect (
 }
 
 static int my_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
-	(void)(user_data);
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
 	printf("Handshake complete\n");
 
@@ -251,7 +292,7 @@ static int my_ngtcp2_cb_receive_stream_data (
 
 	size_t consumed = 0;
 
-	printf("Receive: %llu - %s fin %i\n", (unsigned long long) buflen, buf, flags & NGTCP2_STREAM_DATA_FLAG_FIN);
+	printf("Receive stream data: %llu - %s fin %i\n", (unsigned long long) buflen, buf, flags & NGTCP2_STREAM_DATA_FLAG_FIN);
 /*
 	if (ctx->cb_deliver_data (
 			&consumed,
@@ -437,6 +478,19 @@ static int my_ngtcp2_cb_initial_server (
 	return ngtcp2_crypto_client_initial_cb(conn, user_data);
 }
 
+static void __rrr_net_transport_quic_cb_printf (
+		void *user_data,
+		const char *format,
+		...
+) {
+	(void)(user_data);
+	va_list args;
+	va_start(args, format);
+	vprintf(format, args);
+	printf("\n");
+	va_end(args);
+}
+
 struct rrr_net_transport_quic_bind_and_listen_callback_data {
 	const struct rrr_ip_data *ip_data;
 	struct rrr_net_transport_tls *tls;
@@ -445,6 +499,9 @@ struct rrr_net_transport_quic_bind_and_listen_callback_data {
 static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS) {
 	struct rrr_net_transport_quic_bind_and_listen_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
+
+	(void)(connection_ids_new);
+	(void)(connection_ids);
 
 	int ret = 0;
 
@@ -473,11 +530,10 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 
 	SSL_CTX *ctx = tls_data->ctx;
 
-	if ((tls_data->ssl = SSL_new(ctx)) == NULL) {
-		RRR_SSL_ERR("Could not get SSL in QUIC");
+	if (ngtcp2_crypto_openssl_configure_server_context(ctx) != 0) {
+		RRR_MSG_0("Failed to configure SSL CTX to ngtcp2 in %s\n", __func__);
 		ret = 1;
 		goto out_destroy;
-		
 	}
 
 	if (SSL_CTX_set_ciphersuites(ctx, RRR_NET_TRANSPORT_QUIC_CIPHERS) != 1) {
@@ -494,6 +550,14 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 
 	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
 
+	// The created SSL object is only used as a template and
+	// is copied using SSL_dup as new connections are created.
+	if ((tls_data->ssl = SSL_new(ctx)) == NULL) {
+		RRR_SSL_ERR("Could create SSL in QUIC");
+		ret = 1;
+		goto out_destroy;
+	}
+
 	SSL_set_accept_state(tls_data->ssl);
 	SSL_set_quic_use_legacy_codepoint(tls_data->ssl, 0);
 
@@ -505,24 +569,23 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 	// SSL_set_tlsext_host_name(ssl, name_remote); - Not needed for server?
 	SSL_set_quic_transport_version(tls_data->ssl, TLSEXT_TYPE_quic_transport_parameters);
 
-	ngtcp2_cid dcid = {.datalen = NGTCP2_MAX_CIDLEN};
-	ngtcp2_cid scid = {.datalen = NGTCP2_MAX_CIDLEN};
-
-	assert(sizeof(dcid.data) >= NGTCP2_MAX_CIDLEN);
-
+	// Set ngtcp2 settings
 	ngtcp2_settings_default(&tls_data->settings);
-	ngtcp2_transport_params_default(&tls_data->transport_params);
+#ifdef RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG
+	tls_data->settings.log_printf = __rrr_net_transport_quic_cb_printf;
+#else
+	(void)(__rrr_net_transport_quic_cb_printf);
+#endif
 
-	rrr_random_bytes(&dcid.data, dcid.datalen);
-	rrr_random_bytes(&scid.data, scid.datalen);
+	// Set ngtcp2 transport parameters
+	ngtcp2_transport_params_default(&tls_data->transport_params);
+	tls_data->transport_params.initial_max_streams_uni = 3;
+	tls_data->transport_params.initial_max_stream_data_bidi_local = 128 * 1024;
+	tls_data->transport_params.initial_max_data = 1024 * 1024;
 
 	if (rrr_time_get_64_nano(&tls_data->settings.initial_ts, NGTCP2_SECONDS) != 0) {
 		goto out_destroy;
 	}
-
-	tls_data->transport_params.initial_max_streams_uni = 3;
-	tls_data->transport_params.initial_max_stream_data_bidi_local = 128 * 1024;
-	tls_data->transport_params.initial_max_data = 1024 * 1024;
 
 	static const ngtcp2_callbacks callbacks = {
 		NULL, /* client_initial */
@@ -628,6 +691,7 @@ static int __rrr_net_transport_quic_bind_and_listen (
 static int __rrr_net_transport_quic_send_version_negotiation (
 		struct rrr_net_transport_handle *handle
 ) {
+	RRR_BUG("Version negotiation\n");
 	(void)(handle);
 	// ngtcp2_pkt_write_version_negotiation
 	return 1;
@@ -716,7 +780,6 @@ static int __rrr_net_transport_quic_decode (
 
 struct rrr_net_transport_quic_accept_callback_data {
 	struct rrr_net_transport_handle *listen_handle;
-    	const struct rrr_net_transport_connection_id_triplet *connection_ids;
 	uint32_t client_chosen_version;
 };
 
@@ -730,26 +793,24 @@ static int __rrr_net_transport_quic_accept_callback (
 
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
 
+	*connection_ids_new = *connection_ids;
+
 	if ((ret = __rrr_net_transport_quic_ctx_new (
 			&ctx,
 			callback_data->listen_handle,
-			callback_data->connection_ids,
-			callback_data->client_chosen_version
+			connection_ids_new,
+			callback_data->client_chosen_version,
+			(const struct sockaddr *) &datagram->addr_remote,
+			datagram->addr_remote_len,
+			(const struct sockaddr *) &datagram->addr_local,
+			datagram->addr_local_len
 	)) != 0) {
 		goto out;
 	}
 
 	SSL_set_accept_state(ctx->ssl);
 
-	assert(sizeof(ctx->addr_remote) == sizeof(datagram->addr_remote));
-	assert(sizeof(ctx->addr_local) == sizeof(datagram->addr_local));
-
-	memcpy(&ctx->addr_remote, &datagram->addr_remote, sizeof(ctx->addr_remote));
-	ctx->addr_remote_len = datagram->addr_remote_len;
-
-	memcpy(&ctx->addr_local, &datagram->addr_local, sizeof(ctx->addr_local));
-	ctx->addr_local_len = datagram->addr_local_len;
-
+	*connection_ids_new = *connection_ids;
 	*submodule_private_ptr = ctx;
 	*submodule_fd = -1; // Set to disable polling on events for this handle
 
@@ -784,7 +845,6 @@ static int __rrr_net_transport_quic_accept (
 
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
 		listen_handle,
-		connection_ids,
 		pkt.version
 	};
 
@@ -1014,9 +1074,99 @@ static int __rrr_net_transport_quic_read (
 	(void)(handle);
 	(void)(buf);
 	(void)(buf_size);
-	printf("Read\n");
 
-	return 1;
+	printf("Read buf size %lu\n", handle->datagram.size);
+
+	return __rrr_net_transport_quic_write(handle);
+}
+
+static int __rrr_net_transport_quic_receive (
+		RRR_NET_TRANSPORT_RECEIVE_ARGS
+) {
+	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
+
+	printf("Receive datagram size %lu\n", datagram->size);
+
+	int ret = 0;
+
+	if (!ngtcp2_conn_get_handshake_completed(ctx->conn)) {
+		if (ctx->addr_local_len != datagram->addr_local_len || memcmp(&ctx->addr_local, &datagram->addr_local, ctx->addr_local_len) != 0) {
+			RRR_DBG_7("net transport quic fd %i h %i local address changed during handshake. Closing.\n",
+				handle->submodule_fd, handle->handle);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
+		if (ctx->addr_remote_len != datagram->addr_remote_len || memcmp(&ctx->addr_remote, &datagram->addr_remote, ctx->addr_remote_len) != 0) {
+			RRR_DBG_7("net transport quic fd %i h %i remote address changed during handshake. Closing.\n",
+				handle->submodule_fd, handle->handle);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
+	}
+	else {
+		memcpy(&ctx->addr_local, &datagram->addr_local, datagram->addr_local_len);
+		ctx->addr_local_len = datagram->addr_local_len;
+
+		memcpy(&ctx->addr_remote, &datagram->addr_remote, datagram->addr_remote_len);
+		ctx->addr_remote_len = datagram->addr_remote_len;
+	}
+
+	int ret_tmp;
+	const ngtcp2_path path = {
+		{
+			(struct sockaddr *) &ctx->addr_local,
+			ctx->addr_local_len
+		}, {
+			(struct sockaddr *) &ctx->addr_remote,
+			ctx->addr_remote_len
+		},
+		NULL
+	};
+	ngtcp2_pkt_info pi = {.ecn = datagram->tos};
+	uint64_t timestamp = 0;
+
+	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret_tmp = ngtcp2_conn_read_pkt (
+			ctx->conn,
+			&path,
+			&pi,
+			datagram->buf,
+			datagram->size,
+			timestamp
+	)) != 0) {
+		if (ret_tmp == NGTCP2_ERR_DRAINING) {
+			printf("Connection was closed (now in draining state) while reading\n");
+			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
+		}
+		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
+			printf("Crypto error while reading packet: %s\n", ngtcp2_strerror(ret_tmp));
+			ngtcp2_connection_close_error_set_transport_error_tls_alert (
+					&ctx->last_error,
+					ngtcp2_conn_get_tls_alert(ctx->conn),
+					NULL,
+					0
+			);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+		}
+		else {
+			printf("Transport error while reading packet: %s\n", ngtcp2_strerror(ret_tmp));
+			ngtcp2_connection_close_error_set_transport_error_liberr (
+					&ctx->last_error,
+					ret_tmp,
+					NULL,
+					0
+			);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_net_transport_quic_send (
@@ -1035,12 +1185,6 @@ static void __rrr_net_transport_quic_selected_proto_get (
 ) {
 	(void)(handle);
 	(void)(proto);
-}
-
-static int __rrr_net_transport_quic_deliver (
-	const struct rrr_net_transport_handle *listen_handle,
-	const struct rrr_net_transport_handle *handle
-) {
 }
 
 static int __rrr_net_transport_quic_poll (
@@ -1071,6 +1215,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_close,
 	__rrr_net_transport_quic_read_message,
 	__rrr_net_transport_quic_read,
+	__rrr_net_transport_quic_receive,
 	__rrr_net_transport_quic_send,
 	__rrr_net_transport_quic_poll,
 	__rrr_net_transport_quic_handshake,

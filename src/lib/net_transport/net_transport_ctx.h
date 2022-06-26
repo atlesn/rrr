@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_net_transport_handle;
 struct rrr_read_session;
+struct rrr_socket_datagram;
 
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
@@ -122,6 +123,10 @@ int rrr_net_transport_ctx_read (
 		struct rrr_net_transport_handle *handle,
 		char *buf,
 		size_t buf_size
+);
+int rrr_net_transport_ctx_receive (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_socket_datagram *datagram
 );
 int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle

@@ -300,6 +300,17 @@ int rrr_net_transport_ctx_read (
 	return ret;
 }
 
+int rrr_net_transport_ctx_receive (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_socket_datagram *datagram
+) {
+	int ret = handle->transport->methods->receive(handle, datagram);
+
+	handle->bytes_read_total += datagram->size;
+
+	return ret;
+}
+
 int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
 ) {
