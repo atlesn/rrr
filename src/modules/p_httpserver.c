@@ -1534,6 +1534,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 
 	struct rrr_msg_msg *msg = entry->message;
 
+#if RRR_MSG_SIZE_MAX > RRR_LENGTH_MAX
 	if (MSG_DATA_LENGTH(msg) > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%" PRIu64 "\n",
 				unique_id,
@@ -1543,7 +1544,11 @@ static int httpserver_websocket_get_response_callback_extract_data (
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out_unlock;
 	}
-	else if (MSG_DATA_LENGTH(msg) == 0) {
+	else
+#else
+	(void)(unique_id);
+#endif
+	if (MSG_DATA_LENGTH(msg) == 0) {
 		if ((response_data = rrr_strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;
