@@ -4,6 +4,13 @@ rrr (1.26-1) bullseye; urgency=medium
 
  -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Jun 2022 10:55:09 +0200
 
+rrr (1.25-2) bullseye; urgency=medium
+
+  * Under the hood:
+    * Fix misc. code quality issues
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 26 Jun 2022 12:05:57 +0200
+
 rrr (1.25-1) bullseye; urgency=medium
 
   * Changes:

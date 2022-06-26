@@ -3,7 +3,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
-#include "../util/linked_list.h"
 #include "../util/rrr_time.h"
 #include "../http/http_common.h"
 #include "../http/http_header_fields.h"
@@ -42,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_PING_MAINTENANCE_INTERVAL_S 1
 
 struct rrr_http2_stream {
-	RRR_LL_NODE(struct rrr_http2_stream);
 	struct rrr_http_header_field_collection headers;
 	void *data;
 	size_t data_size;
@@ -1159,7 +1157,7 @@ int rrr_http2_transport_ctx_tick (
 	int ret = RRR_HTTP2_DONE;
 
 	// Just to clean up any streams needing deletion
-	__rrr_http2_stream_find(session, 0);
+	// __rrr_http2_stream_find(session, 0); /* Cleanup not needed with fixed number of streams */
 
 	// Happens if server refuses a stream, close connection after all other streams are complete.
 	if (session->no_more_streams && session->streams.stream_count == 0) {

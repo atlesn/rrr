@@ -45,7 +45,7 @@ int rrr_arguments_parse_port (
 			goto out;
 		}
 		if (port_tmp < 1 || port_tmp > 65535) {
-			RRR_MSG_0("Argument '%s' out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+			RRR_MSG_0("Argument '%s' out of range (must be 1-65535, got %" PRIu64 ")\n", arg, port_tmp);
 			ret = 1;
 			goto out;
 		}

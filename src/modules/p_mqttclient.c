@@ -1426,19 +1426,7 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	}
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) publish->payload->payload_start;
-	rrr_length message_actual_length = 0;
-
-	{
-		rrr_slength message_actual_length_signed = publish->payload->size;
-		if (message_actual_length_signed < 0) {
-			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_msg_msg_from_publish\n");
-		}
-		if (message_actual_length_signed > RRR_LENGTH_MAX) {
-			RRR_MSG_0("Received RRR message in publish was too long in mqttclient instance %s: %" PRIrrrsl " > %u\n",
-					INSTANCE_D_NAME(data->thread_data), message_actual_length_signed, RRR_LENGTH_MAX);
-		}
-		message_actual_length = (rrr_length) message_actual_length_signed;
-	}
+	const rrr_length message_actual_length = publish->payload->size;
 
 	if (message_actual_length < sizeof(struct rrr_msg)) {
 		RRR_DBG_1("RRR Message of unknown length %" PRIrrrl " in MQTT client instance %s\n",

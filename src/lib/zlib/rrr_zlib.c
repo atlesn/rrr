@@ -38,7 +38,8 @@ static void *__rrr_zlib_allocate (void *arg, unsigned int items, unsigned int si
 	(void)(arg);
 	rrr_biglength size_final = size;
 	if (rrr_biglength_mul_err(&size_final, items) != 0) {
-		RRR_MSG_0("Maximum allocation size exceeded in %s (attempted to allocate %u * %u bytes)\n", items, size);
+		RRR_MSG_0("Maximum allocation size exceeded in %s (attempted to allocate %u * %u bytes)\n",
+			__func__, items, size);
 		return NULL;
 	}
 	return rrr_allocate(size_final);

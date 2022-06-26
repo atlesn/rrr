@@ -1148,7 +1148,7 @@ int rrr_http_header_field_parse_name_and_value (
 		const char *start_orig,
 		const char *end
 ) {
-	if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {
+	if ((unsigned long long) (end - start_orig) > (unsigned long long) RRR_LENGTH_MAX) {
 		RRR_MSG_0("HTTP header too long to be parsed (%llu>%llu)\n",
 			(unsigned long long) (end - start_orig),
 			(unsigned long long) RRR_LENGTH_MAX
