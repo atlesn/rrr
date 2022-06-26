@@ -399,6 +399,7 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
 	__rrr_net_transport_plain_read,
+	NULL,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll,
 	__rrr_net_transport_plain_handshake,

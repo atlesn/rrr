@@ -46,9 +46,29 @@ static void __rrr_test_quic_handshake_complete_callback (RRR_NET_TRANSPORT_HANDS
 }
 
 static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS) {
-	(void)(handle);
 	(void)(arg);
-	return 1;
+
+	int ret = 0;
+
+	char buf[65535];
+	uint64_t bytes_read = 0;
+
+	if ((ret = rrr_net_transport_ctx_read (
+			&bytes_read,
+			handle,
+			buf,
+			sizeof(buf)
+	)) != 0) {
+		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			ret = 0;
+			goto out;
+		}
+	}
+
+	printf("Quic read %" PRIu64 "\n", bytes_read);
+
+	out:
+	return ret;
 }
 
 static void __rrr_test_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS) {

@@ -124,6 +124,10 @@ struct rrr_nullsafe_str;
     char *buf,                                                 \
     rrr_biglength buf_size
 
+#define RRR_NET_TRANSPORT_RECEIVE_ARGS                         \
+    struct rrr_net_transport_handle *handle,                   \
+    const struct rrr_socket_datagram *datagram
+
 #define RRR_NET_TRANSPORT_POLL_ARGS                            \
     struct rrr_net_transport_handle *handle
 
@@ -171,6 +175,7 @@ struct rrr_net_transport_methods {
 	int (*close)(RRR_NET_TRANSPORT_CLOSE_ARGS);
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
+	int (*receive)(RRR_NET_TRANSPORT_RECEIVE_ARGS);
 	int (*send)(RRR_NET_TRANSPORT_SEND_ARGS);
 	int (*poll)(RRR_NET_TRANSPORT_POLL_ARGS);
 	int (*handshake)(RRR_NET_TRANSPORT_HANDSHAKE_ARGS);
