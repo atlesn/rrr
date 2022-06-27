@@ -956,9 +956,6 @@ static void __rrr_net_transport_event_decode (
 	uint8_t buf[65536];
 	struct rrr_socket_datagram datagram;
 
-	uint8_t *hdr =      buf;
-	uint32_t *version =  (uint32_t *) (buf + 1);
-
 	if ((ret_tmp = listen_handle->transport->methods->decode (
 			&connection_ids,
 			&datagram,
@@ -972,8 +969,6 @@ static void __rrr_net_transport_event_decode (
 		return;
 	}
 
-	printf("A hdr %u version %u len %lu\n", *hdr, *version, datagram.msg_len);
-
 	if (datagram.msg_len == 0) {
 		return;
 	}
@@ -984,15 +979,28 @@ static void __rrr_net_transport_event_decode (
 
 	if (connection_ids.dest.length > 0) {
 		RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-			printf("Match dst CID %lu<>%lu\n", connection_ids.dest.length, node->connection_ids.dest.length);
-			if (__rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.dest)) {
+			{
+				char buf_cid_a[sizeof(connection_ids.dest.data) * 2 + 1];
+				char buf_cid_b[sizeof(connection_ids.dest.data) * 2 + 1];
+				char buf_cid_c[sizeof(connection_ids.dest.data) * 2 + 1];
+
+				rrr_net_transport_connection_id_to_str(buf_cid_a, sizeof(buf_cid_a), &connection_ids.dest);
+				rrr_net_transport_connection_id_to_str(buf_cid_b, sizeof(buf_cid_b), &node->connection_ids.dest);
+				rrr_net_transport_connection_id_to_str(buf_cid_c, sizeof(buf_cid_c), &node->connection_ids.orig);
+
+				RRR_DBG_7("net transport quic fd %i match cid %s vs %s/%s\n",
+						listen_handle->submodule_fd, buf_cid_a, buf_cid_b, buf_cid_c);
+			}
+
+			if (__rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.dest) ||
+			    __rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.orig)
+			) {
 				// Note : May modify linked list
 				 __rrr_net_transport_receive(listen_handle, &datagram, node);
 				return;
 			}
 		RRR_LL_ITERATE_END();
 	}
-	printf("B hdr %u version %u\n", *hdr, *version);
 
 	if ((ret_tmp = listen_handle->transport->methods->accept (
 			&new_handle,
@@ -1004,11 +1012,16 @@ static void __rrr_net_transport_event_decode (
 			listen_handle->transport->accept_callback,
 			listen_handle->transport->accept_callback_arg
 	)) != 0) {
+		if (ret_tmp == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			// OK, drop packet
+			return;
+		}
+
+		// Unhandled error
 		rrr_event_dispatch_break(listen_handle->transport->event_queue);
+
 		return;
 	}
-
-	printf("C hdr %u version %u\n", *hdr, *version);
 
 	if (new_handle > 0) {
 		struct rrr_net_transport_decode_receive_callback_data callback_data = {

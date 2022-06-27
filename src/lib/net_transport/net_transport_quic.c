@@ -110,6 +110,7 @@ static ngtcp2_conn *__rrr_net_transport_quic_cb_get_conn (
 static int __rrr_net_transport_quic_ctx_new (
 		struct rrr_net_transport_quic_ctx **target,
 		struct rrr_net_transport_handle *listen_handle,
+    		struct rrr_net_transport_connection_id_triplet *connection_ids_new,
     		const struct rrr_net_transport_connection_id_triplet *connection_ids,
 		const uint32_t client_chosen_version,
 		const struct sockaddr *addr_remote,
@@ -122,6 +123,10 @@ static int __rrr_net_transport_quic_ctx_new (
 	int ret = 0;
 
 	*target = NULL;
+	*connection_ids_new = *connection_ids;
+
+	// Store original connection ID
+	connection_ids_new->orig = connection_ids->dest;
 
 	int ret_tmp;
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
@@ -168,6 +173,11 @@ static int __rrr_net_transport_quic_ctx_new (
 	ngtcp2_cid scid = {.datalen = NGTCP2_MAX_CIDLEN};
 	assert(sizeof(scid.data) >= NGTCP2_MAX_CIDLEN);
 	rrr_random_bytes(&scid.data, scid.datalen);
+
+	// Store new connection ID as destination
+	assert(sizeof(connection_ids_new->dest) >= scid.datalen);
+	memcpy(connection_ids_new->dest.data, scid.data, scid.datalen);
+	connection_ids_new->dest.length = scid.datalen;
 
 	// New destination connection ID is source connection ID from client
 	ngtcp2_cid dcid;
@@ -787,12 +797,11 @@ static int __rrr_net_transport_quic_accept_callback (
 
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
 
-	*connection_ids_new = *connection_ids;
-
 	if ((ret = __rrr_net_transport_quic_ctx_new (
 			&ctx,
 			callback_data->listen_handle,
 			connection_ids_new,
+			connection_ids,
 			callback_data->client_chosen_version,
 			(const struct sockaddr *) &datagram->addr_remote,
 			datagram->addr_remote_len,
@@ -801,6 +810,8 @@ static int __rrr_net_transport_quic_accept_callback (
 	)) != 0) {
 		goto out;
 	}
+
+	assert(connection_ids_new->orig.length > 0);
 
 	SSL_set_accept_state(ctx->ssl);
 
@@ -817,7 +828,6 @@ static int __rrr_net_transport_quic_accept_callback (
 				callback_data->listen_handle->submodule_fd, buf_addr_remote, buf_addr_local, buf_scid);
 	}
 
-	*connection_ids_new = *connection_ids;
 	*submodule_private_ptr = ctx;
 	*submodule_fd = -1; // Set to disable polling on events for this handle
 
@@ -843,7 +853,7 @@ static int __rrr_net_transport_quic_accept (
 		}
 		else {
 			/* Packet is not stored into dest */
-			RRR_DBG_7("fd %i error while accepting QUIC packet: %s\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+			RRR_DBG_7("fd %i error while accepting QUIC packet: %s. Dropping it.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
 			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 			goto out;
 		}
@@ -959,7 +969,7 @@ static uint64_t vec_len(const ngtcp2_vec *vec, size_t n) {
 static int __rrr_net_transport_quic_write (
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_net_transport_quic_ctx *ctx = handle->application_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
 
 	char buf[1280];
 	ngtcp2_vec data_vector[128] = {0};
@@ -993,6 +1003,7 @@ static int __rrr_net_transport_quic_write (
 		) != 0) {
 			goto out_failure;
 		}*/
+		data_vector_count = 0;
 
 		printf("Vector count %llu len %llu stream ID %lli fin %i\n",
 				(unsigned long long) data_vector_count,
@@ -1130,11 +1141,6 @@ static int __rrr_net_transport_quic_receive (
 	uint8_t flags = * (uint8_t *) datagram->msg_iov.iov_base;
 	printf("Receive datagram size %lu max %lu flags %u\n", datagram->msg_len, datagram->msg_iov.iov_len, flags);
 
-	ngtcp2_pkt_hd hd;
-	ngtcp2_pkt_decode_hd_long(&hd, datagram->msg_iov.iov_base, datagram->msg_len);
-	printf("B pkn %li flags %u version %u pktnumlen %lu\n", hd.pkt_num, hd.flags, hd.version, hd.pkt_numlen);
-	printf("Receive datagram size %lu max %lu flags %u\n", datagram->msg_len, datagram->msg_iov.iov_len, flags);
-
 	if ((ret_tmp = ngtcp2_conn_read_pkt (
 			ctx->conn,
 			&path,
@@ -1158,7 +1164,6 @@ static int __rrr_net_transport_quic_receive (
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
 		else {
-	printf("Receive datagram size %lu max %lu flags %u\n", datagram->msg_len, datagram->msg_iov.iov_len, flags);
 			printf("Transport error while reading packet: %s\n", ngtcp2_strerror(ret_tmp));
 			ngtcp2_connection_close_error_set_transport_error_liberr (
 					&ctx->last_error,
@@ -1168,6 +1173,10 @@ static int __rrr_net_transport_quic_receive (
 			);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
+		goto out;
+	}
+
+	if ((ret = __rrr_net_transport_quic_write(handle)) != 0) {
 		goto out;
 	}
 
