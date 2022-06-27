@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "net_transport.h"
 #include "net_transport_defines.h"
+#include "net_transport_connection_id.h"
 
 #include "../rrr_types.h"
 #include "../read.h"
@@ -79,7 +80,7 @@ struct rrr_nullsafe_str;
     void *callback_final_arg
 
 #define RRR_NET_TRANSPORT_DECODE_ARGS                                      \
-    struct rrr_net_transport_connection_id_triplet *connection_ids,        \
+    struct rrr_net_transport_connection_id_pair *connection_ids,           \
     struct rrr_socket_datagram *datagram,                                  \
     uint8_t *buf,                                                          \
     size_t buf_size,                                                       \
@@ -97,7 +98,7 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_ACCEPT_ARGS                                      \
     rrr_net_transport_handle *new_handle,                                  \
     struct rrr_net_transport_handle *listen_handle,                        \
-    const struct rrr_net_transport_connection_id_triplet *connection_ids,  \
+    const struct rrr_net_transport_connection_id_pair *connection_ids,     \
     const struct rrr_socket_datagram *datagram,                            \
     int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),  \
     void *callback_arg,                                                    \
@@ -152,23 +153,6 @@ struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
 };
 
-struct rrr_net_transport_connection_id {
-	uint8_t data[RRR_NET_TRANSPORT_CONNECTION_ID_MAX];
-	size_t length;
-};
-
-struct rrr_net_transport_connection_id_triplet {
-	struct rrr_net_transport_connection_id src;
-	struct rrr_net_transport_connection_id dest;
-	struct rrr_net_transport_connection_id orig;
-};
-
-#define RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER \
-    {.length = RRR_NET_TRANSPORT_CONNECTION_ID_MAX}
-
-#define RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER \
-    {RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER,RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER,RRR_NET_TRANSPORT_CONNECTION_ID_DEFAULT_INITIALIZER}
-
 struct rrr_net_transport_methods {
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
@@ -200,7 +184,7 @@ struct rrr_net_transport_handle {
 	struct rrr_read_session_collection read_sessions;
 
 	// Used for datagram type communication
-	struct rrr_net_transport_connection_id_triplet connection_ids;
+	struct rrr_net_transport_connection_id_collection cids;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;
