@@ -54,10 +54,9 @@ struct rrr_socket_datagram {
 	struct sockaddr_storage addr_local;
 	socklen_t addr_local_len;
 	rrr_length tos;
-	size_t size;
 	struct iovec msg_iov;
 	struct msghdr msg;
-	uint8_t buf[65536];
+	size_t msg_len;
 };
 
 int rrr_socket_with_filename_do (
@@ -228,8 +227,10 @@ int rrr_socket_send_blocking (
 int rrr_socket_check_alive (
 		int fd
 );
-void rrr_socket_datagram_reset (
-		struct rrr_socket_datagram *datagram
+void rrr_socket_datagram_init (
+		struct rrr_socket_datagram *datagram,
+		uint8_t *buf,
+		size_t size
 );
 int rrr_socket_recvmsg (
 		struct rrr_socket_datagram *datagram,

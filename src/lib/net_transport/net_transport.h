@@ -97,6 +97,7 @@ struct rrr_event_queue;
     int *submodule_fd,                                                     \
     struct rrr_net_transport_connection_id_triplet *connection_ids_new,    \
     const struct rrr_net_transport_connection_id_triplet *connection_ids,  \
+    const struct rrr_socket_datagram *datagram,                            \
     void *arg
 
 void rrr_net_transport_connection_id_to_str (
@@ -110,6 +111,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );

@@ -306,7 +306,7 @@ int rrr_net_transport_ctx_receive (
 ) {
 	int ret = handle->transport->methods->receive(handle, datagram);
 
-	handle->bytes_read_total += datagram->size;
+	handle->bytes_read_total += datagram->msg_len;
 
 	return ret;
 }

@@ -569,7 +569,8 @@ int rrr_ip_accept (
 }
 
 static int __rrr_ip_recvmsg_get_local_addr (
-		struct rrr_socket_datagram *datagram
+		struct rrr_socket_datagram *datagram,
+		uint16_t port
 ) {
 	int ret = RRR_SOCKET_READ_INCOMPLETE;
 
@@ -577,6 +578,7 @@ static int __rrr_ip_recvmsg_get_local_addr (
 		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
 			struct sockaddr_in *addr_local = (struct sockaddr_in *) &datagram->addr_local;
 			addr_local->sin_family = AF_INET;
+			addr_local->sin_port = htons(port);
 #ifdef RRR_HAVE_IP_PKTINFO
 			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_PKTINFO)
 				continue;
@@ -605,6 +607,7 @@ static int __rrr_ip_recvmsg_get_local_addr (
 			assert(sizeof(addr_local->sin6_addr) >= sizeof(pktinfo->ipi6_addr));
 			addr_local->sin6_family = AF_INET6;
 			addr_local->sin6_addr = pktinfo->ipi6_addr;
+			addr_local->sin6_port = htons(port);
 			datagram->addr_local_len = sizeof(*addr_local);
 			ret = RRR_SOCKET_OK;
 			break;
@@ -616,6 +619,10 @@ static int __rrr_ip_recvmsg_get_local_addr (
 
 	if (ret != RRR_SOCKET_OK) {
 		RRR_MSG_0("Unable to get local address in %s\n", __func__);
+	}
+
+	for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+		printf("%u - %u\n", cmsg->cmsg_level, cmsg->cmsg_type);
 	}
 
 	return ret;
@@ -647,13 +654,15 @@ static void __rrr_ip_recvmsg_get_tos (
 
 int rrr_ip_recvmsg (
 		struct rrr_socket_datagram *datagram,
-		struct rrr_ip_data *data
+		struct rrr_ip_data *data,
+		uint8_t *buf,
+		size_t buf_size
 ) {
 	int ret = RRR_SOCKET_OK;
 
 	uint8_t ctrl_buf[CMSG_SPACE(sizeof(uint8_t)) + CMSG_SPACE(sizeof(struct in6_pktinfo))];
 
-	rrr_socket_datagram_reset(datagram);
+	rrr_socket_datagram_init(datagram, buf, buf_size);
 
 	datagram->msg.msg_control = ctrl_buf;
 	datagram->msg.msg_controllen = sizeof(ctrl_buf);
@@ -662,7 +671,7 @@ int rrr_ip_recvmsg (
 		goto out;
 	}
 
-	if ((ret = __rrr_ip_recvmsg_get_local_addr(datagram)) != 0) {
+	if ((ret = __rrr_ip_recvmsg_get_local_addr(datagram, data->port)) != 0) {
 		goto out;
 	}
 

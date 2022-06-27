@@ -1445,23 +1445,27 @@ int rrr_socket_check_alive (
 	return RRR_SOCKET_OK;
 }
 
-void rrr_socket_datagram_reset (
-		struct rrr_socket_datagram *datagram
+void rrr_socket_datagram_init (
+		struct rrr_socket_datagram *datagram,
+		uint8_t *buf,
+		size_t size
 ) {
-	memset (&datagram->msg, '\0', sizeof(datagram->msg));
-	memset (&datagram->msg_iov, '\0', sizeof(datagram->msg_iov));
+	memset (datagram, '\0', sizeof(*datagram));
 
-	datagram->msg_iov.iov_base = datagram->buf;
-	datagram->msg_iov.iov_len = sizeof(datagram->buf);
+	datagram->msg_iov.iov_base = buf;
+	datagram->msg_iov.iov_len = size;
 
 	datagram->msg.msg_name = &datagram->addr_remote;
 	datagram->msg.msg_namelen = sizeof(datagram->addr_remote);
 	datagram->msg.msg_iov = &datagram->msg_iov;
 	datagram->msg.msg_iovlen = 1;
-	// datagram->msg.msg_control = datagram->ctrl_buf;
-	// datagram->msg.msg_controllen = sizeof(datagram->ctrl_buf);
 
-	datagram->size = 0;
+	// Higher level protocol should set these and provide control
+	// message buffer as needed
+	datagram->msg.msg_control = NULL;
+	datagram->msg.msg_controllen = 0;
+
+	datagram->msg_len = 0;
 }
 
 int rrr_socket_recvmsg (
@@ -1473,7 +1477,7 @@ int rrr_socket_recvmsg (
 	// rrr_socket_datagram_reset must be called prior to calling this function.
 	// Other fields in the msghdr struct may be initialized just after resetting.
 
-	if (datagram->size != 0) {
+	if (datagram->msg_len != 0) {
 		RRR_BUG("Datagram struct was not clean in %s\n", __func__);
 	}
 
@@ -1488,7 +1492,13 @@ int rrr_socket_recvmsg (
 		goto out;
 	}
 
-	datagram->size = (size_t) bytes;
+	if (datagram->msg.msg_flags & MSG_TRUNC) {
+		RRR_MSG_0("Warning: Data was truncated in %s, dropping it.\n", __func__);
+		ret = RRR_SOCKET_READ_INCOMPLETE;
+		goto out;
+	}
+
+	datagram->msg_len = (size_t) bytes;
 	datagram->addr_remote_len = datagram->msg.msg_namelen;
 
 	// The local address may be set by higher level protocol recvmsg function as needed
