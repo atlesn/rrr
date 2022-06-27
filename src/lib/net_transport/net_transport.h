@@ -41,8 +41,7 @@ struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
 struct rrr_socket_datagram;
-struct rrr_net_transport_connection_id;
-struct rrr_net_transport_connection_id_triplet;
+struct rrr_net_transport_connection_id_pair;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
 struct rrr_socket_graylist;
@@ -97,22 +96,15 @@ struct rrr_socket_graylist;
 #define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS                           \
     void **submodule_private_ptr,                                          \
     int *submodule_fd,                                                     \
-    struct rrr_net_transport_connection_id_triplet *connection_ids_new,    \
-    const struct rrr_net_transport_connection_id_triplet *connection_ids,  \
+    const struct rrr_net_transport_connection_id_pair *connection_ids,     \
     const struct rrr_socket_datagram *datagram,                            \
     void *arg
-
-void rrr_net_transport_connection_id_to_str (
-		char *buf,
-		size_t buf_len,
-		const struct rrr_net_transport_connection_id *id
-);
 
 int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_net_transport_connection_id_pair *connection_ids,
 		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg

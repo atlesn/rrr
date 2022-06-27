@@ -64,6 +64,7 @@ struct rrr_net_transport_quic_ctx {
 	ngtcp2_crypto_conn_ref conn_ref;
 	ngtcp2_path path;
 	ngtcp2_connection_close_error last_error;
+	ngtcp2_transport_params transport_params;
 
 	struct sockaddr_storage addr_remote;
 	socklen_t addr_remote_len;
@@ -107,11 +108,29 @@ static ngtcp2_conn *__rrr_net_transport_quic_cb_get_conn (
 	return ctx->conn;
 }
 
+static void __rrr_net_transport_quic_connection_id_to_ngtcp2_cid (
+		ngtcp2_cid *target,
+		const struct rrr_net_transport_connection_id *source
+) {
+	assert(sizeof(target->data) >= sizeof(source->data) && sizeof(target->data) >= source->length);
+	memcpy(target->data, source->data, source->length);
+	target->datalen = source->length;
+}
+
+static void __rrr_net_transport_quic_ngtcp2_cid_to_connection_id (
+		struct rrr_net_transport_connection_id *target,
+		const ngtcp2_cid *source
+) {
+	assert(sizeof(target->data) >= sizeof(source->data) && sizeof(target->data) >= source->datalen);
+	memcpy(target->data, source->data, source->datalen);
+	target->length = source->datalen;
+}
+
 static int __rrr_net_transport_quic_ctx_new (
 		struct rrr_net_transport_quic_ctx **target,
 		struct rrr_net_transport_handle *listen_handle,
-    		struct rrr_net_transport_connection_id_triplet *connection_ids_new,
-    		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+    		struct rrr_net_transport_connection_id_pair *connection_ids_new,
+    		const struct rrr_net_transport_connection_id_pair *connection_ids,
 		const uint32_t client_chosen_version,
 		const struct sockaddr *addr_remote,
 		socklen_t addr_remote_len,
@@ -123,10 +142,6 @@ static int __rrr_net_transport_quic_ctx_new (
 	int ret = 0;
 
 	*target = NULL;
-	*connection_ids_new = *connection_ids;
-
-	// Store original connection ID
-	connection_ids_new->orig = connection_ids->dest;
 
 	int ret_tmp;
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
@@ -169,21 +184,24 @@ static int __rrr_net_transport_quic_ctx_new (
 				listen_handle->submodule_fd, buf_addr, buf_scid);
 	}
 
-	// New source connection ID is randomly generated
-	ngtcp2_cid scid = {.datalen = NGTCP2_MAX_CIDLEN};
-	assert(sizeof(scid.data) >= NGTCP2_MAX_CIDLEN);
-	rrr_random_bytes(&scid.data, scid.datalen);
+	ngtcp2_cid scid, dcid;
 
-	// Store new connection ID as destination
-	assert(sizeof(connection_ids_new->dest) >= scid.datalen);
-	memcpy(connection_ids_new->dest.data, scid.data, scid.datalen);
-	connection_ids_new->dest.length = scid.datalen;
+	// New source connection ID is randomly generated
+	assert(sizeof(scid.data) >= NGTCP2_MAX_CIDLEN);
+	rrr_random_bytes(&scid.data, NGTCP2_MAX_CIDLEN);
+	scid.datalen = NGTCP2_MAX_CIDLEN;
+
+	// Store new and original connection ID as expected future destination from client
+	__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&connection_ids_new->a, &scid);
+	connection_ids_new->b = connection_ids->dst;
 
 	// New destination connection ID is source connection ID from client
-	ngtcp2_cid dcid;
-	assert(sizeof(dcid.data) >= sizeof(connection_ids->src.data) && sizeof(dcid.data) >= connection_ids->src.length);
-	memcpy(dcid.data, connection_ids->src.data, connection_ids->src.length);
-	dcid.datalen = connection_ids->src.length;
+	__rrr_net_transport_quic_connection_id_to_ngtcp2_cid(&dcid, &connection_ids->src);
+
+	// Copy and modify transport parameters
+	ctx->transport_params = listen_tls_data->transport_params;
+	// TODO : handle retry
+	__rrr_net_transport_quic_connection_id_to_ngtcp2_cid(&ctx->transport_params.original_dcid, &connection_ids->dst);
 
 	if ((ret_tmp = ngtcp2_conn_server_new (
 			&ctx->conn,
@@ -193,7 +211,7 @@ static int __rrr_net_transport_quic_ctx_new (
 			client_chosen_version,
 			listen_tls_data->callbacks,
 			&listen_tls_data->settings,
-			&listen_tls_data->transport_params,
+			&ctx->transport_params,
 			&rrr_net_transport_quic_ngtcp2_mem,
 			ctx
 	)) != 0) {
@@ -414,6 +432,16 @@ static int my_ngtcp2_cb_get_new_connection_id (
 	return 0;
 }
 
+static int my_ngtcp2_cb_remove_connection_id (
+		ngtcp2_conn *conn,
+		const ngtcp2_cid *cid,
+		void *user_data
+) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+
+
+}
+
 static int my_ngtcp2_cb_stream_reset (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
@@ -501,7 +529,6 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 	struct rrr_net_transport_quic_bind_and_listen_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
-	(void)(connection_ids_new);
 	(void)(connection_ids);
 	(void)(datagram);
 
@@ -581,9 +608,12 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 
 	// Set ngtcp2 transport parameters
 	ngtcp2_transport_params_default(&tls_data->transport_params);
-	tls_data->transport_params.initial_max_streams_uni = 3;
 	tls_data->transport_params.initial_max_stream_data_bidi_local = 128 * 1024;
+	tls_data->transport_params.initial_max_stream_data_bidi_remote = 128 * 1024;
+	tls_data->transport_params.initial_max_stream_data_uni = 128 * 1024;
 	tls_data->transport_params.initial_max_data = 1024 * 1024;
+	tls_data->transport_params.initial_max_streams_bidi = 100;
+	tls_data->transport_params.initial_max_streams_uni = 0;
 
 	if (rrr_time_get_64_nano(&tls_data->settings.initial_ts, NGTCP2_SECONDS) != 0) {
 		goto out_destroy;
@@ -608,7 +638,7 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		NULL, /* extend_max_local_streams_uni */
 		my_ngtcp2_cb_random,
 		my_ngtcp2_cb_get_new_connection_id,
-		NULL, /* remove_connection_id */
+		my_ngtcp2_cb_remove_connection_id,
 		ngtcp2_crypto_update_key_cb,
 		NULL, /* path_validation */
 		NULL, /* select_preferred_addr */
@@ -757,9 +787,9 @@ static int __rrr_net_transport_quic_decode (
 		goto out;
 	}
 
-	if (dcidlen > connection_ids->dest.length) {
+	if (dcidlen > connection_ids->dst.length) {
 		RRR_DBG_7("fd %i dcid too long in received QUIC packet (%llu>%llu)\n",
-				listen_handle->submodule_fd, (long long unsigned) dcidlen, (long long unsigned) connection_ids->dest.length);
+				listen_handle->submodule_fd, (long long unsigned) dcidlen, (long long unsigned) connection_ids->dst.length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
@@ -773,8 +803,8 @@ static int __rrr_net_transport_quic_decode (
 
 	// Add any stateless address validation here
 
-	memcpy(connection_ids->dest.data, dcid, dcidlen);
-	connection_ids->dest.length = dcidlen;
+	memcpy(connection_ids->dst.data, dcid, dcidlen);
+	connection_ids->dst.length = dcidlen;
 
 	memcpy(connection_ids->src.data, scid, scidlen);
 	connection_ids->src.length = scidlen;
@@ -797,10 +827,11 @@ static int __rrr_net_transport_quic_accept_callback (
 
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
 
+	struct rrr_net_transport_connection_id_pair connection_ids_new = {0};
 	if ((ret = __rrr_net_transport_quic_ctx_new (
 			&ctx,
 			callback_data->listen_handle,
-			connection_ids_new,
+			&connection_ids_new,
 			connection_ids,
 			callback_data->client_chosen_version,
 			(const struct sockaddr *) &datagram->addr_remote,

@@ -28,6 +28,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "net_transport_struct.h"
 
+int rrr_net_transport_ctx_connection_id_push (
+		int *did_push,
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+		
+) {
+	*did_push = 0;
+
+	if (rrr_net_transport_handle_get_by_cid(cid)) {
+		return;
+	}
+}
+
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 ) {

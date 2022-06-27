@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <limits.h>
+#include <assert.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -39,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
 #include "net_transport_ctx.h"
+#include "net_transport_connection_id.h"
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 #	include "net_transport_tls.h"
@@ -58,7 +60,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_send_chunk.h"
 #include "../socket/rrr_socket_graylist.h"
 
-#include <assert.h>
+static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (rrr_net_transport_connection_id_collection_has(&node->cids, cid))
+			return node;
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(transport, cid);
+	return handle == NULL ? 0 : handle->handle;
+}
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 		struct rrr_net_transport *transport,
@@ -82,6 +102,46 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 	return result;
 }
 
+static int __rrr_net_transport_handle_destroy (
+		struct rrr_net_transport_handle *handle
+) {
+#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
+	RRR_DBG_7("net transport fd %i h %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
+			handle->submodule_fd,
+			handle->handle,
+			handle->transport->application_name,
+			handle->read_ret_debug_ok,
+			handle->read_ret_debug_incomplete,
+			handle->read_ret_debug_soft_error,
+			handle->read_ret_debug_hard_error,
+			handle->read_ret_debug_eof
+	);
+#endif
+
+	// Delete events first as libevent might produce warnings if
+	// this is performed after FD is closed
+	rrr_event_collection_clear(&handle->events);
+
+	rrr_read_session_collection_clear(&handle->read_sessions);
+
+	// Submodule should free any data stored in submodule_private_ptr
+	handle->transport->methods->close(handle);
+
+	if (handle->application_private_ptr != NULL && handle->application_ptr_destroy != NULL) {
+		handle->application_ptr_destroy(handle->application_private_ptr);
+	}
+
+	RRR_FREE_IF_NOT_NULL(handle->match_string);
+
+	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
+
+	rrr_net_transport_connection_id_collection_clear(&handle->cids);
+
+	rrr_free(handle);
+
+	return RRR_LL_DID_DESTROY;
+}
+
 #define RRR_NET_TRANSPORT_HANDLE_GET()                                                                                         \
     struct rrr_net_transport_handle *handle = NULL;                                                                            \
     do {if ((handle = __rrr_net_transport_handle_get(transport, transport_handle, __func__)) == NULL) {                        \
@@ -93,7 +153,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
-		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_net_transport_connection_id_pair *connection_ids,
 		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
@@ -121,7 +181,6 @@ static int __rrr_net_transport_handle_create_and_push (
 	if ((ret = submodule_callback (
 			&new_handle->submodule_private_ptr,
 			&new_handle->submodule_fd,
-			&new_handle->connection_ids,
 			connection_ids,
 			datagram,
 			submodule_callback_arg
@@ -132,28 +191,12 @@ static int __rrr_net_transport_handle_create_and_push (
 	RRR_LL_APPEND(collection, new_handle);
 
 	goto out;
+//	out_destroy:
+//		__rrr_net_transport_handle_destroy(new_handle);
 	out_free:
 		rrr_free(new_handle);
 	out:
 		return ret;
-}
-
-void rrr_net_transport_connection_id_to_str (
-		char *buf,
-		size_t buf_len,
-		const struct rrr_net_transport_connection_id *id
-) {
-	if (buf_len < id->length * 2 + 1) {
-		RRR_BUG("Output buffer too small in %s (%s<%s)\n", __func__, buf_len, id->length);
-	}
-
-	*buf = '\0';
-
-	for (size_t i = 0; i < id->length; i++) {
-		const uint8_t *ipos = id->data + i;
-		char *opos = buf + i * 2;
-		sprintf(opos, "%02x", *ipos);
-	}
 }
 
 /* Allocate an unused handle. The strategy is to begin with 1, check if it is available,
@@ -163,7 +206,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_net_transport_connection_id_pair *connection_ids,
 		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
@@ -228,43 +271,6 @@ int rrr_net_transport_handle_allocate_and_add (
 
 	out:
 	return ret;
-}
-
-static int __rrr_net_transport_handle_destroy (
-		struct rrr_net_transport_handle *handle
-) {
-#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
-	RRR_DBG_7("net transport fd %i h %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
-			handle->submodule_fd,
-			handle->handle,
-			handle->transport->application_name,
-			handle->read_ret_debug_ok,
-			handle->read_ret_debug_incomplete,
-			handle->read_ret_debug_soft_error,
-			handle->read_ret_debug_hard_error,
-			handle->read_ret_debug_eof
-	);
-#endif
-
-	// Delete events first as libevent might produce warnings if
-	// this is performed after FD is closed
-	rrr_event_collection_clear(&handle->events);
-
-	rrr_read_session_collection_clear(&handle->read_sessions);
-
-	handle->transport->methods->close(handle);
-
-	if (handle->application_private_ptr != NULL && handle->application_ptr_destroy != NULL) {
-		handle->application_ptr_destroy(handle->application_private_ptr);
-	}
-
-	RRR_FREE_IF_NOT_NULL(handle->match_string);
-
-	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
-
-	rrr_free(handle);
-
-	return RRR_LL_DID_DESTROY;
 }
 
 struct rrr_net_transport_handle_close_callback_data {
@@ -930,21 +936,6 @@ static void __rrr_net_transport_event_accept (
 	}
 }
 
-static int __rrr_net_transport_connection_id_equals (
-		const struct rrr_net_transport_connection_id *a,
-		const struct rrr_net_transport_connection_id *b
-) {
-	if (a->length != b->length)
-		return 0;
-
-	for (size_t i = 0; i < a->length; i++) {
-		if (a->data[i] != b->data[i])
-			return 0;
-	}
-
-	return 1;
-}
-
 static void __rrr_net_transport_receive (
 		const struct rrr_net_transport_handle *listen_handle,
 		const struct rrr_socket_datagram *datagram,
@@ -982,14 +973,13 @@ static void __rrr_net_transport_event_decode (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *listen_handle = arg;
-	struct rrr_net_transport_handle_collection *collection = &listen_handle->transport->handles;
 	rrr_net_transport_handle new_handle = 0;
 
 	(void)(fd);
 	(void)(flags);
 
 	int ret_tmp;
-	struct rrr_net_transport_connection_id_triplet connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER;
+	struct rrr_net_transport_connection_id_pair connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER;
 	uint8_t buf[65536];
 	struct rrr_socket_datagram datagram;
 
@@ -1014,29 +1004,12 @@ static void __rrr_net_transport_event_decode (
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 
-	if (connection_ids.dest.length > 0) {
-		RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-			{
-				char buf_cid_a[sizeof(connection_ids.dest.data) * 2 + 1];
-				char buf_cid_b[sizeof(connection_ids.dest.data) * 2 + 1];
-				char buf_cid_c[sizeof(connection_ids.dest.data) * 2 + 1];
-
-				rrr_net_transport_connection_id_to_str(buf_cid_a, sizeof(buf_cid_a), &connection_ids.dest);
-				rrr_net_transport_connection_id_to_str(buf_cid_b, sizeof(buf_cid_b), &node->connection_ids.dest);
-				rrr_net_transport_connection_id_to_str(buf_cid_c, sizeof(buf_cid_c), &node->connection_ids.orig);
-
-				RRR_DBG_7("net transport quic fd %i match cid %s vs %s/%s\n",
-						listen_handle->submodule_fd, buf_cid_a, buf_cid_b, buf_cid_c);
-			}
-
-			if (__rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.dest) ||
-			    __rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.orig)
-			) {
-				// Note : May modify linked list
-				 __rrr_net_transport_receive(listen_handle, &datagram, node);
-				return;
-			}
-		RRR_LL_ITERATE_END();
+	if (connection_ids.dst.length > 0) {
+		struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(listen_handle->transport, &connection_ids.dst);
+		if (handle != NULL) {
+			 __rrr_net_transport_receive(listen_handle, &datagram, handle);
+			return;
+		}
 	}
 
 	if ((ret_tmp = listen_handle->transport->methods->accept (
