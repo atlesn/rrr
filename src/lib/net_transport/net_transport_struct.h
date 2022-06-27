@@ -80,6 +80,9 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_DECODE_ARGS                                      \
     struct rrr_net_transport_connection_id_triplet *connection_ids,        \
+    struct rrr_socket_datagram *datagram,                                  \
+    uint8_t *buf,                                                          \
+    size_t buf_size,                                                       \
     struct rrr_net_transport_handle *listen_handle
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
@@ -95,6 +98,7 @@ struct rrr_nullsafe_str;
     rrr_net_transport_handle *new_handle,                                  \
     struct rrr_net_transport_handle *listen_handle,                        \
     const struct rrr_net_transport_connection_id_triplet *connection_ids,  \
+    const struct rrr_socket_datagram *datagram,                            \
     int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),  \
     void *callback_arg,                                                    \
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
@@ -197,7 +201,6 @@ struct rrr_net_transport_handle {
 
 	// Used for datagram type communication
 	struct rrr_net_transport_connection_id_triplet connection_ids;
-	struct rrr_socket_datagram datagram;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;

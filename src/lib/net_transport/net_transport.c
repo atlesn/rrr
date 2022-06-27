@@ -94,6 +94,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
 		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -122,6 +123,7 @@ static int __rrr_net_transport_handle_create_and_push (
 			&new_handle->submodule_fd,
 			&new_handle->connection_ids,
 			connection_ids,
+			datagram,
 			submodule_callback_arg
 	)) != 0) {
 		goto out_free;
@@ -162,6 +164,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		const struct rrr_net_transport_connection_id_triplet *connection_ids,
+		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -214,6 +217,7 @@ int rrr_net_transport_handle_allocate_and_add (
 			new_handle_id,
 			mode,
 			connection_ids,
+			datagram,
 			submodule_callback,
 			submodule_callback_arg
 	)) != 0) {
@@ -914,6 +918,7 @@ static void __rrr_net_transport_event_accept (
 			&new_handle,
 			listen_handle,
 			NULL,
+			NULL,
 			__rrr_net_transport_accept_callback_intermediate,
 			NULL,
 			listen_handle->transport->accept_callback,
@@ -942,26 +947,32 @@ static int __rrr_net_transport_connection_id_equals (
 
 static void __rrr_net_transport_receive (
 		const struct rrr_net_transport_handle *listen_handle,
+		const struct rrr_socket_datagram *datagram,
 		struct rrr_net_transport_handle *handle
 ) {
 	RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
 			listen_handle->submodule_fd,
 			listen_handle->transport->application_name,
-			(long long unsigned) listen_handle->datagram.size,
+			(long long unsigned) datagram->msg_len,
 			handle->handle
 	);
 
-	if (rrr_net_transport_ctx_receive(handle, &listen_handle->datagram) != 0) {
+	if (rrr_net_transport_ctx_receive(handle, datagram) != 0) {
 		__rrr_net_transport_handle_close (handle);
 	}
 }
+
+struct rrr_net_transport_decode_receive_callback_data {
+	const struct rrr_net_transport_handle *listen_handle;
+	const struct rrr_socket_datagram *datagram;
+};
 		
-static int __rrr_net_transport_receive_callback (
+static int __rrr_net_transport_decode_receive_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	const struct rrr_net_transport_handle *listen_handle = arg;
-	__rrr_net_transport_receive(listen_handle, handle);
+	struct rrr_net_transport_decode_receive_callback_data *callback_data = arg;
+	__rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 	return 0;
 }
 
@@ -977,13 +988,19 @@ static void __rrr_net_transport_event_decode (
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_net_transport_connection_id_triplet connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER;
-
 	int ret_tmp;
+	struct rrr_net_transport_connection_id_triplet connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_TRIPLET_DEFAULT_INITIALIZER;
+	uint8_t buf[65536];
+	struct rrr_socket_datagram datagram;
 
-	// The decode function fills the datagram buffer
+	uint8_t *hdr =      buf;
+	uint32_t *version =  (uint32_t *) (buf + 1);
+
 	if ((ret_tmp = listen_handle->transport->methods->decode (
 			&connection_ids,
+			&datagram,
+			buf,
+			sizeof(buf),
 			listen_handle
 	)) != 0) {
 		if (ret_tmp != RRR_NET_TRANSPORT_READ_INCOMPLETE) {
@@ -992,7 +1009,9 @@ static void __rrr_net_transport_event_decode (
 		return;
 	}
 
-	if (listen_handle->datagram.size == 0) {
+	printf("A hdr %u version %u len %lu\n", *hdr, *version, datagram.msg_len);
+
+	if (datagram.msg_len == 0) {
 		return;
 	}
 
@@ -1002,19 +1021,21 @@ static void __rrr_net_transport_event_decode (
 
 	if (connection_ids.dest.length > 0) {
 		RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-			printf("Match CID %lu<>%lu\n", connection_ids.dest.length, node->connection_ids.dest.length);
+			printf("Match dst CID %lu<>%lu\n", connection_ids.dest.length, node->connection_ids.dest.length);
 			if (__rrr_net_transport_connection_id_equals(&connection_ids.dest, &node->connection_ids.dest)) {
 				// Note : May modify linked list
-				 __rrr_net_transport_receive(listen_handle, node);
+				 __rrr_net_transport_receive(listen_handle, &datagram, node);
 				return;
 			}
 		RRR_LL_ITERATE_END();
 	}
+	printf("B hdr %u version %u\n", *hdr, *version);
 
 	if ((ret_tmp = listen_handle->transport->methods->accept (
 			&new_handle,
 			listen_handle,
 			&connection_ids,
+			&datagram,
 			__rrr_net_transport_accept_callback_intermediate,
 			NULL,
 			listen_handle->transport->accept_callback,
@@ -1024,12 +1045,18 @@ static void __rrr_net_transport_event_decode (
 		return;
 	}
 
+	printf("C hdr %u version %u\n", *hdr, *version);
+
 	if (new_handle > 0) {
+		struct rrr_net_transport_decode_receive_callback_data callback_data = {
+			listen_handle,
+			&datagram
+		};
 		rrr_net_transport_handle_with_transport_ctx_do (
 				listen_handle->transport,
 				new_handle,
-				__rrr_net_transport_receive_callback,
-				listen_handle
+				__rrr_net_transport_decode_receive_callback,
+				&callback_data
 		);
 		return;
 	}
@@ -1037,7 +1064,7 @@ static void __rrr_net_transport_event_decode (
 	RRR_DBG_7("net transport fd %i [%s] datagram of size %llu not delivered to any handle\n",
 			listen_handle->submodule_fd,
 			listen_handle->transport->application_name,
-			(long long unsigned) listen_handle->datagram.size
+			(long long unsigned) datagram.msg_len
 	);
 }
 

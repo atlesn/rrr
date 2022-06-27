@@ -165,6 +165,10 @@ int __rrr_net_transport_openssl_connect_callback (
 	struct rrr_net_transport_openssl_connect_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
+	(void)(connection_ids_new);
+	(void)(connection_ids);
+	(void)(datagram);
+
 	int ret = 0;
 
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
@@ -290,6 +294,7 @@ static int __rrr_net_transport_openssl_connect (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			NULL,
+			NULL,
 			__rrr_net_transport_openssl_connect_callback,
 			&callback_data
 	)) != 0) {
@@ -322,6 +327,10 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 ) {
 	struct rrr_net_transport_openssl_bind_and_listen_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
+
+	(void)(connection_ids_new);
+	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
@@ -395,6 +404,7 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
 			NULL,
+			NULL,
 			__rrr_net_transport_openssl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
@@ -425,6 +435,10 @@ static int __rrr_net_transport_openssl_accept_callback (
 ) {
 	struct rrr_net_transport_openssl_accept_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
+
+	(void)(connection_ids_new);
+	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
@@ -494,6 +508,7 @@ int __rrr_net_transport_openssl_accept (
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
 
 	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
@@ -518,6 +533,7 @@ int __rrr_net_transport_openssl_accept (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			NULL,
 			__rrr_net_transport_openssl_accept_callback,
 			&callback_data

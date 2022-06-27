@@ -83,6 +83,10 @@ static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 ) {
 	struct rrr_net_transport_plain_allocate_and_add_callback_data *callback_data = arg;
 
+	(void)(connection_ids_new);
+	(void)(connection_ids);
+	(void)(datagram);
+
 	struct rrr_net_transport_plain_data *data = NULL;
 	if (__rrr_net_transport_plain_data_new(&data) != 0) {
 		return 1;
@@ -126,6 +130,7 @@ static int __rrr_net_transport_plain_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
@@ -280,6 +285,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
 			NULL,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
 			&callback_data
 	)) != 0) {
@@ -301,6 +307,7 @@ int __rrr_net_transport_plain_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
 	(void)(connection_ids);
+	(void)(datagram);
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 
@@ -330,6 +337,7 @@ int __rrr_net_transport_plain_accept (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
 			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data

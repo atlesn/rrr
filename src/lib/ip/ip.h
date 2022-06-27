@@ -112,7 +112,9 @@ int rrr_ip_accept (
 );
 int rrr_ip_recvmsg (
 		struct rrr_socket_datagram *datagram,
-		struct rrr_ip_data *data
+		struct rrr_ip_data *data,
+		uint8_t *buf,
+		size_t buf_size
 );
 int rrr_ip_setsockopts (
 		struct rrr_ip_data *data,
