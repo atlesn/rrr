@@ -83,7 +83,6 @@ static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 ) {
 	struct rrr_net_transport_plain_allocate_and_add_callback_data *callback_data = arg;
 
-	(void)(connection_ids_new);
 	(void)(connection_ids);
 	(void)(datagram);
 

@@ -58,6 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport_quic_ctx {
 	SSL *ssl;
 
+	rrr_net_transport_handle handle;
 	struct rrr_net_transport_handle *listen_handle;
 
 	ngtcp2_conn *conn;
@@ -124,6 +125,13 @@ static void __rrr_net_transport_quic_ngtcp2_cid_to_connection_id (
 	assert(sizeof(target->data) >= sizeof(source->data) && sizeof(target->data) >= source->datalen);
 	memcpy(target->data, source->data, source->datalen);
 	target->length = source->datalen;
+}
+
+static void __rrr_net_transport_quic_ctx_post_connect_patch (
+		struct rrr_net_transport_quic_ctx *ctx,
+		rrr_net_transport_handle handle
+) {
+	ctx->handle = handle;
 }
 
 static int __rrr_net_transport_quic_ctx_new (
@@ -232,6 +240,9 @@ static int __rrr_net_transport_quic_ctx_new (
 
 	ctx->conn_ref.user_data = ctx;
 	ctx->conn_ref.get_conn = __rrr_net_transport_quic_cb_get_conn;
+
+	// Additional parameters must be set by __rrr_net_transport_quic_ctx_post_connect_patch
+	// after the transport handle is known.
 
 	SSL_set_app_data(ctx->ssl, &ctx->conn_ref);
 
@@ -422,14 +433,44 @@ static int my_ngtcp2_cb_get_new_connection_id (
 		size_t cidlen,
 		void *user_data
 ) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+
 	(void)(conn);
-	(void)(user_data);
 
-	cid->datalen = cidlen;
-	rrr_random_bytes(&cid->data, cidlen);
-	rrr_random_bytes(token, NGTCP2_STATELESS_RESET_TOKENLEN);
+	int ret = NGTCP2_ERR_CALLBACK_FAILURE;
 
-	return 0;
+	assert(ctx->handle > 0);
+
+	for (int max = 500; max > 0; max--) {
+		cid->datalen = cidlen;
+		rrr_random_bytes(&cid->data, cidlen);
+		rrr_random_bytes(token, NGTCP2_STATELESS_RESET_TOKENLEN);
+
+		struct rrr_net_transport_connection_id cid_;
+		__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&cid_, cid);
+
+		int ret_tmp;
+		if ((ret_tmp = rrr_net_transport_handle_cid_push (ctx->listen_handle->transport, ctx->handle, &cid_)) != 0) {
+			if (ret_tmp == RRR_NET_TRANSPORT_READ_BUSY) {
+				// OK, try again with another CID
+			}
+			else {
+				RRR_MSG_0("Error while pushing cid to handle in %s\n", __func__);
+				break;
+			}
+		}
+		else {
+			// OK, done
+			ret = 0;
+			break;
+		}
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to generate unique cid in %s after multiple attempts\n", __func__);
+	}
+
+	return ret;
 }
 
 static int my_ngtcp2_cb_remove_connection_id (
@@ -439,7 +480,16 @@ static int my_ngtcp2_cb_remove_connection_id (
 ) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
+	(void)(conn);
 
+	assert(ctx->handle > 0);
+
+	struct rrr_net_transport_connection_id cid_;
+	__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&cid_, cid);
+
+	rrr_net_transport_handle_cid_remove (ctx->listen_handle->transport, ctx->handle, &cid_);
+
+	return 0;
 }
 
 static int my_ngtcp2_cb_stream_reset (
@@ -816,6 +866,7 @@ static int __rrr_net_transport_quic_decode (
 struct rrr_net_transport_quic_accept_callback_data {
 	struct rrr_net_transport_handle *listen_handle;
 	uint32_t client_chosen_version;
+	struct rrr_net_transport_connection_id_pair connection_ids_new;
 };
 
 static int __rrr_net_transport_quic_accept_callback (
@@ -827,11 +878,10 @@ static int __rrr_net_transport_quic_accept_callback (
 
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
 
-	struct rrr_net_transport_connection_id_pair connection_ids_new = {0};
 	if ((ret = __rrr_net_transport_quic_ctx_new (
 			&ctx,
 			callback_data->listen_handle,
-			&connection_ids_new,
+			&callback_data->connection_ids_new,
 			connection_ids,
 			callback_data->client_chosen_version,
 			(const struct sockaddr *) &datagram->addr_remote,
@@ -842,21 +892,21 @@ static int __rrr_net_transport_quic_accept_callback (
 		goto out;
 	}
 
-	assert(connection_ids_new->orig.length > 0);
-
 	SSL_set_accept_state(ctx->ssl);
 
 	{
 		char buf_addr_remote[128];
 		char buf_addr_local[128];
 		char buf_scid[sizeof(connection_ids->src.data) * 2 + 1];
+		char buf_dcid[sizeof(connection_ids->src.data) * 2 + 1];
 
 		rrr_ip_to_str(buf_addr_remote, sizeof(buf_addr_remote), (const struct sockaddr *) &ctx->addr_remote, ctx->addr_remote_len);
 		rrr_ip_to_str(buf_addr_local, sizeof(buf_addr_local), (const struct sockaddr *) &ctx->addr_local, ctx->addr_local_len);
 		rrr_net_transport_connection_id_to_str(buf_scid, sizeof(buf_scid), &connection_ids->src);
+		rrr_net_transport_connection_id_to_str(buf_dcid, sizeof(buf_dcid), &connection_ids->dst);
 
-		RRR_DBG_7("net transport quic fd %i accepted connection from %s to %s scid %s\n",
-				callback_data->listen_handle->submodule_fd, buf_addr_remote, buf_addr_local, buf_scid);
+		RRR_DBG_7("net transport quic fd %i accepted connection from %s to %s scid %s dcid %s\n",
+				callback_data->listen_handle->submodule_fd, buf_addr_remote, buf_addr_local, buf_scid, buf_dcid);
 	}
 
 	*submodule_private_ptr = ctx;
@@ -865,6 +915,21 @@ static int __rrr_net_transport_quic_accept_callback (
 	goto out;
 	out:
 		return ret;
+}
+
+int __rrr_net_transport_quic_early_close_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {}
+
+static int __rrr_net_transport_quic_early_close_pre_destroy_set_callback () {}
+
+static void __rrr_net_transport_quic_early_close (
+		struct rrr_net_transport_handle *listen_handle,
+		rrr_net_transport_handle handle,
+		const uint32_t close_reason
+) {
+	// This will override any pre destroy set by application
+	rrr_net_transport_handle_close_with_reason(listen_handle->transport, handle, close_reason, __rrr_net_transport_quic_early_close_pre_destroy);
 }
 
 static int __rrr_net_transport_quic_accept (
@@ -876,6 +941,7 @@ static int __rrr_net_transport_quic_accept (
 
 	int ret_tmp;
 	ngtcp2_pkt_hd pkt;
+	const uint32_t close_reason = NGTCP2_INTERNAL_ERROR;
 
 	if ((ret_tmp = ngtcp2_accept (&pkt, datagram->msg_iov.iov_base, datagram->msg_len)) < 0) {
 		if (ret_tmp == NGTCP2_ERR_RETRY) {
@@ -894,7 +960,8 @@ static int __rrr_net_transport_quic_accept (
 
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
 		listen_handle,
-		pkt.version
+		pkt.version,
+		{0}
 	};
 
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
@@ -910,7 +977,7 @@ static int __rrr_net_transport_quic_accept (
 		goto out;
 	}
 
-	ret = callback (
+	if ((ret = callback (
 			listen_handle->transport,
 			*new_handle,
 			(struct sockaddr *) datagram->msg.msg_name,
@@ -918,10 +985,25 @@ static int __rrr_net_transport_quic_accept (
 			final_callback,
 			final_callback_arg,
 			callback_arg
-	);
+	)) != 0) {
+		RRR_DBG_7("fd %i cid error from application initializor while accepting QUIC packet: %s. Closing connection.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+		goto out_close;
+	}
 
+	if (rrr_net_transport_handle_get_by_cid_pair (
+			listen_handle->transport,
+			&callback_data.connection_ids_new
+	) != 0) {
+		RRR_DBG_7("fd %i cid collision while accepting QUIC packet: %s. Closing connection.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+		goto out_close;
+	}
+
+	goto out;
+	out_close:
+		__rrr_net_transport_quic_early_close(listen_handle, *new_handle, close_reason);
+		ret = 0;
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_net_transport_quic_read_message (
@@ -1095,7 +1177,7 @@ static int __rrr_net_transport_quic_write (
 					(const struct sockaddr *) path_storage.path.remote.addr,
 					path_storage.path.remote.addrlen,
 					(const uint8_t *) buf,
-					bytes_to_buf
+					(size_t) bytes_to_buf
 		) != 0) {
 			goto out_failure;
 		}
@@ -1127,6 +1209,13 @@ static int __rrr_net_transport_quic_receive (
 	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
 
 	int ret = 0;
+
+	if (ctx->handle == 0) {
+		__rrr_net_transport_quic_ctx_post_connect_patch(ctx, handle->handle);
+	}
+	else {
+		assert(ctx->handle == handle->handle);
+	}
 
 	if (!ngtcp2_conn_get_handshake_completed(ctx->conn)) {
 		if (ctx->addr_local_len != datagram->addr_local_len || memcmp(&ctx->addr_local, &datagram->addr_local, ctx->addr_local_len) != 0) {

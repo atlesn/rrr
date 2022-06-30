@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -229,10 +229,15 @@ struct rrr_net_transport_handle {
 	// Transport handshake is complete, application may be called
 	int handshake_complete;
 
+	// Like error code in a close frame
+	uint32_t submodule_close_reason;
+
 	// Called first when we try to destroy. When it returns 0,
 	// we go ahead with destruction and call ptr_destroy. Only
-	// used from within the iterator function.
-	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
+	// used from within the iterator function. Both submodule and
+	// application layer may set this function. Submodule should
+	// override any function set by application layer as needed.
+	int (*iterator_pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS);
 };
 
 struct rrr_net_transport_handle_collection {

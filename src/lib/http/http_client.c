@@ -881,7 +881,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				goto out;
 			}
 
-			if ((ret = rrr_net_transport_match_data_set (
+			if ((ret = rrr_net_transport_handle_match_data_set (
 					transport_keepalive,
 					keepalive_handle,
 					server_to_use,
@@ -895,7 +895,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 		// Make sure connection does not time out just after request has been sent
 		rrr_net_transport_handle_touch(transport_keepalive, keepalive_handle);
 
-		if ((ret = rrr_net_transport_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
+		if ((ret = rrr_net_transport_handle_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
 			goto out;
 		}
 

@@ -165,7 +165,6 @@ int __rrr_net_transport_openssl_connect_callback (
 	struct rrr_net_transport_openssl_connect_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
-	(void)(connection_ids_new);
 	(void)(connection_ids);
 	(void)(datagram);
 
@@ -328,7 +327,6 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	struct rrr_net_transport_openssl_bind_and_listen_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
-	(void)(connection_ids_new);
 	(void)(connection_ids);
 	(void)(datagram);
 
@@ -436,7 +434,6 @@ static int __rrr_net_transport_openssl_accept_callback (
 	struct rrr_net_transport_openssl_accept_callback_data *callback_data = arg;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
-	(void)(connection_ids_new);
 	(void)(connection_ids);
 	(void)(datagram);
 
