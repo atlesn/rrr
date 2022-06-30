@@ -61,6 +61,8 @@ struct rrr_net_transport_quic_ctx {
 	rrr_net_transport_handle handle;
 	struct rrr_net_transport_handle *listen_handle;
 
+	int initial_received;
+
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
 	ngtcp2_path path;
@@ -772,7 +774,35 @@ static int __rrr_net_transport_quic_bind_and_listen (
 	out:
 		return ret;
 }
-		
+
+static int __rrr_net_transport_quic_send_packet (
+		evutil_socket_t fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const uint8_t *data,
+		size_t data_size
+) {
+	ssize_t bytes_written = 0;
+
+	printf("Sending %llu bytes\n", (unsigned long long) data_size);
+
+	do {
+		bytes_written = sendto(fd, data, data_size, 0, addr, addr_len);
+	} while (bytes_written < 0 && errno == EINTR);
+
+	if (bytes_written < 0) {
+		printf("Error while sending: %s\n", rrr_strerror(errno));
+		return 1;
+	}
+
+	if ((size_t) bytes_written < data_size) {
+		printf("All bytes not written in %s\n", __func__);
+		return 1;
+	}
+
+	return 0;
+}
+
 static int __rrr_net_transport_quic_send_version_negotiation (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -917,19 +947,89 @@ static int __rrr_net_transport_quic_accept_callback (
 		return ret;
 }
 
-int __rrr_net_transport_quic_early_close_pre_destroy (
+int __rrr_net_transport_quic_pre_destroy (
 		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
-) {}
+) {
+	struct rrr_net_transport_quic_ctx *ctx = submodule_private_ptr;
 
-static int __rrr_net_transport_quic_early_close_pre_destroy_set_callback () {}
+	if (!ctx->initial_received) {
+		// Wait for first packet to be handled
+		printf("Wait in pre destroy\n");
+		return RRR_NET_TRANSPORT_READ_READ_EOF;
+	}
 
-static void __rrr_net_transport_quic_early_close (
+	(void)(application_private_ptr);
+
+	const char msg[] = "Connection rejected, try again.";
+	ngtcp2_connection_close_error cerr = {0};
+	ngtcp2_path_storage path_storage;
+	ngtcp2_pkt_info pi = {0};
+	uint8_t pb[1200];
+	uint64_t timestamp = 0;
+
+	ngtcp2_connection_close_error_set_transport_error(&cerr, handle->submodule_close_reason, (const uint8_t *) msg, strlen(msg));
+	ngtcp2_path_storage_zero(&path_storage);
+
+	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
+		RRR_MSG_0("Warning: Failed to produce timestamp in %s\n", __func__);
+		goto out;
+	}
+
+	ssize_t bytes = ngtcp2_conn_write_connection_close (
+			ctx->conn,
+			&path_storage.path,
+			&pi,
+			pb,
+			sizeof(pb),
+			&cerr,
+			timestamp
+	);
+
+	if (bytes == 0 || bytes == NGTCP2_ERR_INVALID_STATE) {
+		printf("No data %s\n", ngtcp2_strerror((int) bytes));
+		// No data to send or ignore error
+		goto out;
+	}
+	else if (bytes < 0) {
+		RRR_MSG_0("Warning: Failed to make connection close packet in %s: %s\n", __func__, ngtcp2_strerror((int) bytes));
+		goto out;
+	}
+
+	{
+		char addrbuf[128];
+		rrr_ip_to_str(addrbuf, sizeof(addrbuf), (const struct sockaddr *) path_storage.path.remote.addr, path_storage.path.remote.addrlen);
+		RRR_DBG_7("net transport quic fd %i h %i tx connection close %lli bytes to %s\n",
+			ctx->listen_handle->submodule_fd, handle->handle, (long long int) bytes, addrbuf);
+	}
+
+	if (__rrr_net_transport_quic_send_packet (
+				ctx->listen_handle->submodule_fd,
+				(const struct sockaddr *) path_storage.path.remote.addr,
+				path_storage.path.remote.addrlen,
+				(const uint8_t *) pb,
+				(size_t) bytes
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to send connection close packet in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	// OK now to destroy connection (any errors ignored)
+	return 0;
+}
+
+static void __rrr_net_transport_quic_connection_close (
 		struct rrr_net_transport_handle *listen_handle,
 		rrr_net_transport_handle handle,
 		const uint32_t close_reason
 ) {
 	// This will override any pre destroy set by application
-	rrr_net_transport_handle_close_with_reason(listen_handle->transport, handle, close_reason, __rrr_net_transport_quic_early_close_pre_destroy);
+	rrr_net_transport_handle_close_with_reason (
+			listen_handle->transport,
+			handle,
+			close_reason,
+			__rrr_net_transport_quic_pre_destroy
+	);
 }
 
 static int __rrr_net_transport_quic_accept (
@@ -961,7 +1061,7 @@ static int __rrr_net_transport_quic_accept (
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
 		listen_handle,
 		pkt.version,
-		{0}
+		{{{0}},{{0}}}
 	};
 
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
@@ -998,9 +1098,17 @@ static int __rrr_net_transport_quic_accept (
 		goto out_close;
 	}
 
+/*
+	Enable to test early close
+	if (1) {
+		printf("Early close\n");
+		goto out_close;
+	}
+*/
+
 	goto out;
 	out_close:
-		__rrr_net_transport_quic_early_close(listen_handle, *new_handle, close_reason);
+		__rrr_net_transport_quic_connection_close(listen_handle, *new_handle, close_reason);
 		ret = 0;
 	out:
 		return ret;
@@ -1024,34 +1132,6 @@ static int __rrr_net_transport_quic_read_message (
 	(void)(complete_callback_arg);
 	printf("Read message\n");
 	return 1;
-}
-
-static int my_ngtcp2_send_packet (
-		evutil_socket_t fd,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		const uint8_t *data,
-		size_t data_size
-) {
-	ssize_t bytes_written = 0;
-
-	printf("Sending %llu bytes\n", (unsigned long long) data_size);
-
-	do {
-		bytes_written = sendto(fd, data, data_size, 0, addr, addr_len);
-	} while (bytes_written < 0 && errno == EINTR);
-
-	if (bytes_written < 0) {
-		printf("Error while sending: %s\n", rrr_strerror(errno));
-		return 1;
-	}
-
-	if ((size_t) bytes_written < data_size) {
-		printf("All bytes not written in %s\n", __func__);
-		return 1;
-	}
-
-	return 0;
 }
 /*
 int my_ngtcp2_get_message (
@@ -1172,7 +1252,7 @@ static int __rrr_net_transport_quic_write (
 			break;
 		}
 
-		if (bytes_to_buf > 0 && my_ngtcp2_send_packet (
+		if (bytes_to_buf > 0 && __rrr_net_transport_quic_send_packet (
 					ctx->listen_handle->submodule_fd,
 					(const struct sockaddr *) path_storage.path.remote.addr,
 					path_storage.path.remote.addrlen,
@@ -1211,6 +1291,7 @@ static int __rrr_net_transport_quic_receive (
 	int ret = 0;
 
 	if (ctx->handle == 0) {
+		ctx->initial_received = 1;
 		__rrr_net_transport_quic_ctx_post_connect_patch(ctx, handle->handle);
 	}
 	else {
@@ -1293,6 +1374,13 @@ static int __rrr_net_transport_quic_receive (
 			);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
+		goto out;
+	}
+
+	if (handle->close_now) {
+		// Don't write anything, wait for connection close to be sent
+		rrr_net_transport_ctx_notify_read (handle);
+		printf("Connection close before write\n");
 		goto out;
 	}
 

@@ -373,7 +373,7 @@ static int __rrr_net_transport_handle_close (
 	);
 
 	if (callback_data.found != 1) {
-		RRR_BUG("BUG: Handle %p not found in rrr_net_transport_cyx_close\n", handle);
+		RRR_BUG("BUG: Handle %p not found in %s\n", handle, __func__);
 	}
 
 	return ret;
@@ -866,6 +866,12 @@ void rrr_net_transport_handle_close_with_reason (
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
+}
+
+void rrr_net_transport_handle_ptr_close (
+		struct rrr_net_transport_handle *handle
+) {
+	__rrr_net_transport_handle_close(handle);
 }
 
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
