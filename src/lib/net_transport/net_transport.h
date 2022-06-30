@@ -140,6 +140,9 @@ void rrr_net_transport_handle_close_with_reason (
 		uint32_t submodule_close_reason,
 		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
 );
+void rrr_net_transport_handle_ptr_close (
+		struct rrr_net_transport_handle *handle
+);
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
