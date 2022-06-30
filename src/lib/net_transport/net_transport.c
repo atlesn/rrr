@@ -55,26 +55,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../socket/rrr_socket_send_chunk.h"
 
-static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_by_cid (
-		struct rrr_net_transport *transport,
-		const struct rrr_net_transport_connection_id *cid
-) {
-	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
-		if (rrr_net_transport_connection_id_collection_has(&node->cids, cid))
-			return node;
-	RRR_LL_ITERATE_END();
-
-	return NULL;
-}
-
-rrr_net_transport_handle rrr_net_transport_handle_get_by_cid (
-		struct rrr_net_transport *transport,
-		const struct rrr_net_transport_connection_id *cid
-) {
-	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(transport, cid);
-	return handle == NULL ? 0 : handle->handle;
-}
-
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
@@ -135,6 +115,89 @@ static int __rrr_net_transport_handle_destroy (
 	rrr_free(handle);
 
 	return RRR_LL_DID_DESTROY;
+}
+
+static int __rrr_net_transport_iterate_with_callback (
+		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode search_mode,
+		struct rrr_net_transport_handle *search_handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	int ret = 0;
+
+	// This function is only allowed to return OK or HARD ERROR (0 or 1)
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		if (search_mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && search_mode != node->mode) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if (search_handle != NULL) {
+			if (search_handle != node) {
+				RRR_LL_ITERATE_NEXT();
+			}
+
+			// There can only be one match if we match on handle
+			RRR_LL_ITERATE_LAST();
+		}
+
+		if ((ret = callback (node, arg)) != 0) {
+			if (ret == RRR_READ_INCOMPLETE) {
+				ret = 0;
+			}
+			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
+				// For nice treatment of remote, for instance send a disconnect packet
+				if (node->iterator_pre_destroy != NULL) {
+					if ((ret = node->iterator_pre_destroy (
+							node,
+							node->submodule_private_ptr,
+							node->application_private_ptr
+					)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+						RRR_MSG_0("Internal error from callback function in %s\n", __func__);
+						goto out;
+					}
+				}
+				else {
+					ret = 0;
+				}
+
+				// When pre_destroy returns 0 or is not set, go ahead with destruction
+				if (ret == 0) {
+					__rrr_net_transport_handle_destroy(node);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				else {
+					ret = 0;
+				}
+			}
+			else {
+				RRR_MSG_0("Error %i from callback function in %s\n", ret, __func__);
+				ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_iterate_by_mode_and_do (
+		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	return __rrr_net_transport_iterate_with_callback (
+			transport,
+			mode,
+			NULL,
+			callback,
+			arg
+	);
 }
 
 #define RRR_NET_TRANSPORT_HANDLE_GET(error_source)                                                                             \
@@ -301,8 +364,9 @@ static int __rrr_net_transport_handle_close (
 
 	handle->close_now = 1;
 
-	int ret = rrr_net_transport_iterate_by_handle_and_do (
+	int ret = __rrr_net_transport_iterate_with_callback (
 			handle->transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
 			handle,
 			__rrr_net_transport_handle_close_callback,
 			&callback_data
@@ -787,6 +851,23 @@ void rrr_net_transport_handle_touch (
 	RRR_LL_ITERATE_END();
 }
 
+// Close using iterator method which includes calling any pre destroy method
+void rrr_net_transport_handle_close_with_reason (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle handle,
+		uint32_t submodule_close_reason,
+		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->handle == handle) {
+			node->submodule_close_reason = submodule_close_reason;
+			node->iterator_pre_destroy = pre_destroy;
+			__rrr_net_transport_handle_close(node);
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+}
+
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
@@ -815,6 +896,48 @@ rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 	return result_handle;
 }
 
+static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (rrr_net_transport_connection_id_collection_has(&node->cids, cid))
+			return node;
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid (transport, cid);
+	return handle != NULL ? handle->handle : 0;
+}
+
+static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_by_cid_pair (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id_pair *cids
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (rrr_net_transport_connection_id_collection_has(&node->cids, &cids->a))
+			return node;
+		if (rrr_net_transport_connection_id_collection_has(&node->cids, &cids->b))
+			return node;
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid_pair (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id_pair *cids
+) {
+	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid_pair (transport, cids);
+	return handle != NULL ? handle->handle : 0;
+}
+
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
@@ -827,6 +950,40 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 	ret = callback(handle, arg);
 
 	return ret;
+}
+
+int rrr_net_transport_handle_cid_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_add");
+
+	int ret = 0;
+
+	if (__rrr_net_transport_handle_get_by_cid (transport, cid) != NULL) {
+		ret = RRR_NET_TRANSPORT_READ_BUSY;
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_ctx_connection_id_push(handle, cid)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_handle_cid_remove (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_remove");
+
+	rrr_net_transport_ctx_connection_id_remove(handle, cid);
+
+	return 0;
 }
 
 static void __rrr_net_transport_event_read_add (
@@ -1230,116 +1387,45 @@ void rrr_net_transport_notify_read_all_connected (
 	RRR_LL_ITERATE_END();
 }
 
-static int __rrr_net_transport_iterate_with_callback (
-		struct rrr_net_transport *transport,
-		enum rrr_net_transport_socket_mode search_mode,
-		struct rrr_net_transport_handle *search_handle,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-) {
-	int ret = 0;
-
-	// This function is only allowed to return OK or HARD ERROR (0 or 1)
-
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (search_mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && search_mode != node->mode) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		if (search_handle != NULL) {
-			if (search_handle != node) {
-				RRR_LL_ITERATE_NEXT();
-			}
-
-			// There can only be one match if we match on handle
-			RRR_LL_ITERATE_LAST();
-		}
-
-		if ((ret = callback (node, arg)) != 0) {
-			if (ret == RRR_READ_INCOMPLETE) {
-				ret = 0;
-			}
-			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-				// For nice treatment of remote, for instance send a disconnect packet
-				if (node->application_ptr_iterator_pre_destroy != NULL) {
-					if ((ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-						RRR_MSG_0("Internal error from callback function in %s\n", __func__);
-						goto out;
-					}
-				}
-				else {
-					ret = 0;
-				}
-
-				// When pre_destroy returns 0 or is not set, go ahead with destruction
-				if (ret == 0) {
-					__rrr_net_transport_handle_destroy(node);
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-				else {
-					ret = 0;
-				}
-			}
-			else {
-				RRR_MSG_0("Error %i from callback function in %s\n", ret, __func__);
-				ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
-				goto out;
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
-
-	out:
-	return ret;
-}
-
-int rrr_net_transport_iterate_by_mode_and_do (
-		struct rrr_net_transport *transport,
-		enum rrr_net_transport_socket_mode mode,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-) {
-	return __rrr_net_transport_iterate_with_callback (
-			transport,
-			mode,
-			NULL,
-			callback,
-			arg
-	);
-}
-
-int rrr_net_transport_iterate_by_handle_and_do (
-		struct rrr_net_transport *transport,
-		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-) {
-	return __rrr_net_transport_iterate_with_callback (
-			transport,
-			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
-			handle,
-			callback,
-			arg
-	);
-}
-
-int rrr_net_transport_match_data_set (
+int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		const char *string,
 		uint64_t number
 ) {
-	int ret = 0;
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_match_data_set");
 
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
+	RRR_FREE_IF_NOT_NULL(handle->match_string);
+	if ((handle->match_string = rrr_strdup(string)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
 
-	ret = rrr_net_transport_ctx_handle_match_data_set(handle, string, number);
+	handle->match_number = number;
 
-	return ret;
+	return 0;
 }
 
-int rrr_net_transport_check_handshake_complete (
+void rrr_net_transport_handle_ptr_application_data_bind (
+		struct rrr_net_transport_handle *handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+) {
+	if (handle->application_private_ptr != NULL) {
+		RRR_BUG("rrr_net_transport_handle_ptr_application_data_bind called twice, pointer was already set\n");
+	}
+	handle->application_private_ptr = application_data;
+	handle->application_ptr_destroy = application_data_destroy;
+}
+
+void rrr_net_transport_handle_ptr_pre_destroy_function_set (
+		struct rrr_net_transport_handle *handle,
+		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+) {
+	handle->iterator_pre_destroy = pre_destroy;
+}
+
+int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 ) {

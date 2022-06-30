@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_types.h"
 
 #define RRR_NET_TRANSPORT_CTX_FD(handle) rrr_net_transport_ctx_get_fd(handle)
-#define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_private_ptr(handle)
+#define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_application_private_ptr(handle)
 #define RRR_NET_TRANSPORT_CTX_HANDLE(handle) rrr_net_transport_ctx_get_handle(handle)
 
 /*
@@ -44,7 +44,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport_handle;
 struct rrr_read_session;
 struct rrr_socket_datagram;
+struct rrr_net_transport_connection_id;
 
+int rrr_net_transport_ctx_connection_id_push (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+);
+void rrr_net_transport_ctx_connection_id_remove (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+);
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 );
@@ -54,16 +63,11 @@ void rrr_net_transport_ctx_notify_read (
 int rrr_net_transport_ctx_get_fd (
 		struct rrr_net_transport_handle *handle
 );
-void *rrr_net_transport_ctx_get_private_ptr (
+void *rrr_net_transport_ctx_get_application_private_ptr (
 		struct rrr_net_transport_handle *handle
 );
 rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_handle_match_data_set (
-		struct rrr_net_transport_handle *handle,
-		const char *string,
-		uint64_t number
 );
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
@@ -130,15 +134,6 @@ int rrr_net_transport_ctx_receive (
 );
 int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_handle_application_data_bind (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-);
-void rrr_net_transport_ctx_handle_pre_destroy_function_set (
-		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
 );
 void rrr_net_transport_ctx_get_socket_stats (
 		uint64_t *bytes_read_total,

@@ -89,6 +89,11 @@ struct rrr_event_queue;
     void *read_callback_arg;                                                \
     char application_name[16]
 
+#define RRR_NET_TRANSPORT_PRE_DESTROY_ARGS                                  \
+    struct rrr_net_transport_handle *handle,                                \
+    void *submodule_private_ptr,                                            \
+    void *application_private_ptr
+
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS                           \
@@ -127,16 +132,40 @@ void rrr_net_transport_handle_touch (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle
 );
+void rrr_net_transport_handle_close_with_reason (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle handle,
+		uint32_t submodule_close_reason,
+		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+);
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
+);
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+);
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid_pair (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id_pair *cids
 );
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
+);
+int rrr_net_transport_handle_cid_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
+);
+int rrr_net_transport_handle_cid_remove (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
 );
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
@@ -159,19 +188,22 @@ int rrr_net_transport_iterate_by_mode_and_do (
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );
-int rrr_net_transport_iterate_by_handle_and_do (
-		struct rrr_net_transport *transport,
-		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-);
-int rrr_net_transport_match_data_set (
+int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		const char *string,
 		uint64_t number
 );
-int rrr_net_transport_check_handshake_complete (
+void rrr_net_transport_handle_ptr_application_data_bind (
+		struct rrr_net_transport_handle *handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+);
+void rrr_net_transport_handle_ptr_pre_destroy_function_set (
+		struct rrr_net_transport_handle *handle,
+		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+);
+int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 );

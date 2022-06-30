@@ -112,7 +112,7 @@ int rrr_http_session_transport_ctx_server_new (
 	// DO NOT STORE HANDLE POINTER
 
 	// Transport framework responsible for cleaning up
-	rrr_net_transport_ctx_handle_application_data_bind (
+	rrr_net_transport_handle_ptr_application_data_bind (
 			handle,
 			session,
 			__rrr_http_session_destroy_void
@@ -192,7 +192,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		}
 
 		// Transport framework responsible for cleaning up
-		rrr_net_transport_ctx_handle_application_data_bind (
+		rrr_net_transport_handle_ptr_application_data_bind (
 				handle,
 				session,
 				__rrr_http_session_destroy_void

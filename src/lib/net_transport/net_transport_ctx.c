@@ -29,16 +29,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 
 int rrr_net_transport_ctx_connection_id_push (
-		int *did_push,
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_net_transport_connection_id *cid
 		
 ) {
-	*did_push = 0;
+	return rrr_net_transport_connection_id_collection_push(&handle->cids, cid);
+}
 
-	if (rrr_net_transport_handle_get_by_cid(cid)) {
-		return;
-	}
+void rrr_net_transport_ctx_connection_id_remove (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	rrr_net_transport_connection_id_collection_remove(&handle->cids, cid);
 }
 
 void rrr_net_transport_ctx_touch (
@@ -63,7 +65,7 @@ int rrr_net_transport_ctx_get_fd (
 	return handle->submodule_fd;
 }
 
-void *rrr_net_transport_ctx_get_private_ptr (
+void *rrr_net_transport_ctx_get_application_private_ptr (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->application_private_ptr;
@@ -73,22 +75,6 @@ rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->handle;
-}
-
-int rrr_net_transport_ctx_handle_match_data_set (
-		struct rrr_net_transport_handle *handle,
-		const char *string,
-		uint64_t number
-) {
-	RRR_FREE_IF_NOT_NULL(handle->match_string);
-	if ((handle->match_string = rrr_strdup(string)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
-		return 1;
-	}
-
-	handle->match_number = number;
-
-	return 0;
 }
 
 int rrr_net_transport_ctx_check_alive (
@@ -328,25 +314,6 @@ int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
 ) {
 	return (handle->application_private_ptr != NULL);
-}
-
-void rrr_net_transport_ctx_handle_application_data_bind (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-) {
-	if (handle->application_private_ptr != NULL) {
-		RRR_BUG("rrr_net_transport_handle_application_data_bind called twice, pointer was already set\n");
-	}
-	handle->application_private_ptr = application_data;
-	handle->application_ptr_destroy = application_data_destroy;
-}
-
-void rrr_net_transport_ctx_handle_pre_destroy_function_set (
-		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
-) {
-	handle->application_ptr_iterator_pre_destroy = pre_destroy_function;
 }
 
 void rrr_net_transport_ctx_get_socket_stats (
