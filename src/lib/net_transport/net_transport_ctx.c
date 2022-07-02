@@ -288,11 +288,12 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
+		int64_t *stream_id,
 		struct rrr_net_transport_handle *handle,
 		char *buf,
 		size_t buf_size
 ) {
-	int ret = handle->transport->methods->read(bytes_read, handle, buf, buf_size);
+	int ret = handle->transport->methods->read(bytes_read, stream_id, handle, buf, buf_size);
 
 	handle->bytes_read_total += *bytes_read;
 

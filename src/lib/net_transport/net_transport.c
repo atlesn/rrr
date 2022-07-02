@@ -1458,6 +1458,17 @@ void rrr_net_transport_notify_read_all_connected (
 	RRR_LL_ITERATE_END();
 }
 
+int rrr_net_transport_handle_notify_read (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_notify_read");
+
+	rrr_net_transport_ctx_notify_read(handle);
+
+	return 0;
+}
+
 int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
