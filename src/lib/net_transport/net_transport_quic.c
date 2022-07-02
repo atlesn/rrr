@@ -59,7 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL (1<<0)
 
 struct rrr_net_transport_quic_recv_buf {
-	size_t rpos;
+	rrr_biglength rpos;
 	struct rrr_nullsafe_str *str;
 };
 
@@ -68,6 +68,10 @@ struct rrr_net_transport_quic_stream {
 	int64_t stream_id;
 	int flags;
 	struct rrr_net_transport_quic_recv_buf recv_buf;
+	int (*cb_get_message)(int64_t *stream_id, ngtcp2_vec *data_vector, size_t *data_vector_count, int *fin, void *arg);
+	int (*cb_blocked)(int64_t stream_id, void *arg);
+	int (*cb_ack)(int64_t stream_id, size_t bytes, void *arg);
+	void *cb_arg;
 };
 
 struct rrr_net_transport_quic_stream_collection {
@@ -89,7 +93,7 @@ struct rrr_net_transport_quic_ctx {
 	ngtcp2_transport_params transport_params;
 
 	struct rrr_net_transport_quic_stream_collection streams;
-	int64_t next_stream_id;
+	int is_server;
 
 	struct sockaddr_storage addr_remote;
 	socklen_t addr_remote_len;
@@ -168,7 +172,11 @@ static void __rrr_net_transport_quic_stream_destroy (
 static int __rrr_net_transport_quic_stream_new (
 		struct rrr_net_transport_quic_stream **target,
 		int64_t stream_id,
-		int flags
+		int flags,
+		int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void *cb_arg
 ) {
 	int ret = 0;
 
@@ -193,29 +201,34 @@ static int __rrr_net_transport_quic_stream_new (
 static int __rrr_net_transport_quic_ctx_stream_open (
 		struct rrr_net_transport_quic_ctx *ctx,
 		int64_t stream_id,
-		int flags
+		int flags,
+		int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void *cb_arg
 ) {
 	int ret = 0;
 
 	struct rrr_net_transport_quic_stream *stream = NULL;
 
 	if (flags & RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL) {
-		assert(stream_id == -1);
-		if (ctx->next_stream_id < 0) {
-			RRR_MSG_0("Stream IDs exhausted in %s\n", __func__);
-			ret = 1;
-			goto out;
-		}
-		stream_id = ctx->next_stream_id;
-		ctx->next_stream_id += 2;
+		assert((!ctx->is_server && stream_id % 2 == 0 && stream_id >= 0) || (ctx->is_server && stream_id % 2 == 1 && stream_id >= 1));
 		RRR_DBG_7("net transport quic h %i new local stream %" PRIi64 "\n", ctx->handle, stream_id);
 	}
 	else {
-		assert((ctx->next_stream_id % 2 == 0 && stream_id % 2 == 1 && stream_id >= 1) || (ctx->next_stream_id % 2 == 1 && stream_id % 2 == 0 && stream_id >= 0));
+		assert((!ctx->is_server && stream_id % 2 == 1 && stream_id >= 1) || (ctx->is_server && stream_id % 2 == 0 && stream_id >= 0));
 		RRR_DBG_7("net transport quic h %i new remote stream %" PRIi64 "\n", ctx->handle, stream_id);
 	}
 
-	if ((ret = __rrr_net_transport_quic_stream_new (&stream, stream_id, flags)) != 0) {
+	if ((ret = __rrr_net_transport_quic_stream_new (
+			&stream,
+			stream_id,
+			flags,
+			cb_get_message,
+			cb_blocked,
+			cb_ack,
+			cb_arg
+	)) != 0) {
 		goto out;
 	}
 
@@ -235,6 +248,25 @@ static void __rrr_net_transport_quic_ctx_stream_close (
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
+}
+
+static int __rrr_net_transport_quic_ctx_stream_recv (
+		struct rrr_net_transport_quic_ctx *ctx,
+		int64_t stream_id,
+		const uint8_t *buf,
+		size_t buflen
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id == stream_id) {
+			ret = rrr_nullsafe_str_new_or_append_raw(&node->recv_buf.str, buf, buflen);
+			goto out;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
+
+	out:
+	return ret;
 }
 
 static int __rrr_net_transport_quic_ctx_new (
@@ -297,7 +329,7 @@ static int __rrr_net_transport_quic_ctx_new (
 	}
 
 	if (is_server) {
-		ctx->next_stream_id = 1;
+		ctx->is_server = 1;
 
 		ngtcp2_cid scid, dcid;
 
@@ -336,7 +368,7 @@ static int __rrr_net_transport_quic_ctx_new (
 		}
 	}
 	else {
-		ctx->next_stream_id = 2;
+		ctx->is_server = 0;
 		RRR_BUG("Client not implemented\n");
 	}
 
@@ -446,25 +478,19 @@ static int my_ngtcp2_cb_receive_stream_data (
 	(void)(offset);
 	(void)(stream_user_data);
 
-	size_t consumed = 0;
-
-	printf("Receive stream data: %llu - %s fin %i\n", (unsigned long long) buflen, buf, flags & NGTCP2_STREAM_DATA_FLAG_FIN);
-/*
-	if (ctx->cb_deliver_data (
-			&consumed,
-			stream_id,
-			buf,
-			buflen,
-			(flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0,
-			ctx->cb_arg
-	) != 0) {
-		return 1;
+	if (__rrr_net_transport_quic_ctx_stream_recv(ctx, stream_id, buf, buflen) != 0) {
+		RRR_MSG_0("net transport quic h %i failed to store received stream data (%llu bytes)\n",
+			ctx->handle, (long long unsigned) buflen);
+		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
-*/
-	// NGTCP2_ERR_CALLBACK_FAILURE / ngtcp2_conection_close_error_set_application_error
 
-	ngtcp2_conn_extend_max_stream_offset(conn, stream_id, consumed);
-	ngtcp2_conn_extend_max_offset(conn, consumed);
+	RRR_DBG_7("net transport quic h %i stream id %" PRIi64 " recv %llu fin %i\n",
+		ctx->handle, stream_id, (unsigned long long) buflen, (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0);
+
+	ngtcp2_conn_extend_max_stream_offset(conn, stream_id, buflen);
+	ngtcp2_conn_extend_max_offset(conn, buflen);
+
+	rrr_net_transport_handle_notify_read(ctx->listen_handle->transport, ctx->handle);
 
 	return 0;
 }
@@ -478,7 +504,7 @@ static int my_ngtcp2_cb_stream_open (
 
 	(void)(conn);
 
-	if (__rrr_net_transport_quic_ctx_stream_open(ctx, stream_id, 0) != 0) {
+	if (__rrr_net_transport_quic_ctx_stream_open(ctx, stream_id, 0, NULL, NULL, NULL, NULL) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
 
@@ -1313,7 +1339,11 @@ static uint64_t vec_len(const ngtcp2_vec *vec, size_t n) {
 }
 
 static int __rrr_net_transport_quic_write (
-		struct rrr_net_transport_handle *handle
+		struct rrr_net_transport_handle *handle,
+		int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void *cb_arg
 ) {
 	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
 
@@ -1328,6 +1358,8 @@ static int __rrr_net_transport_quic_write (
 	uint64_t timestamp = 0;
 	int64_t stream_id = -1;
 
+	RRR_ASSERT(sizeof(ngtcp2_vec) == sizeof(struct rrr_net_transport_vector),size_of_ngtpc2_vector_is_not_equal_to_size_of_net_transport_vector);
+
 	ngtcp2_path_storage_zero(&path_storage);
 
 	printf("Write event\n");
@@ -1339,24 +1371,22 @@ static int __rrr_net_transport_quic_write (
 
 		printf("++ Loop\n");
 
-		data_vector_count = sizeof(data_vector)/sizeof(*data_vector);
-/*		if (my_ngtcp2_get_message (
-					ctx,
-					&stream_id,
-					data_vector,
-					&data_vector_count,
-					&fin
-		) != 0) {
-			goto out_failure;
-		}*/
-		data_vector_count = 0;
-
-		printf("Vector count %llu len %llu stream ID %lli fin %i\n",
-				(unsigned long long) data_vector_count,
-				(unsigned long long) vec_len(data_vector, data_vector_count),
-				(long long int) stream_id,
-				fin
-		);
+		if (cb_get_message != NULL) {
+			data_vector_count = sizeof(data_vector)/sizeof(*data_vector);
+			if (cb_get_message(&stream_id, (struct rrr_net_transport_vector *) data_vector, &data_vector_count, &fin, cb_arg) != 0) {
+				goto out_failure;
+			}
+			printf("Vector count %llu len %llu stream ID %lli fin %i\n",
+					(unsigned long long) data_vector_count,
+					(unsigned long long) vec_len(data_vector, data_vector_count),
+					(long long int) stream_id,
+					fin
+			);
+		}
+		else {
+			data_vector_count = 0;
+			printf("No application data\n");
+		}
 
 		if (!fin && stream_id == -1 && data_vector_count == 0) {
 			printf("- No data from http3\n");
@@ -1381,20 +1411,20 @@ static int __rrr_net_transport_quic_write (
 		if (bytes_to_buf < 0) {
 			if (bytes_to_buf == NGTCP2_ERR_STREAM_DATA_BLOCKED || bytes_to_buf == NGTCP2_ERR_STREAM_SHUT_WR) {
 				printf("- Blocked\n");
-		//		if (ctx->cb_block_stream(stream_id, 1 /* Blocked*/, ctx->cb_arg) != 0) {
-		//			//		ngtcp2_connection_close_error_set_application_error();
-		//			goto out_failure;
-		//		}
+				if (cb_blocked != NULL && cb_blocked(stream_id, cb_arg) != 0) {
+					// ngtcp2_connection_close_error_set_application_error();
+					goto out_failure;
+				}
 			}
 			else if (bytes_to_buf == NGTCP2_ERR_WRITE_MORE) {
 				// Must call writev repeatedly until complete.
 				assert(bytes_from_src >= 0);
 				printf("- More\n");
 
-		//		if (ctx->cb_ack_data(stream_id, bytes_from_src, ctx->cb_arg) != 0) {
-		//			//		ngtcp2_connection_close_error_set_application_error();
-		//			goto out_failure;
-		//		}
+				if (cb_ack != NULL && cb_ack(stream_id, (size_t) bytes_from_src, cb_arg) != 0) {
+					// ngtcp2_connection_close_error_set_application_error();
+					goto out_failure;
+				}
 			}
 			else {
 				printf("Error while writing: %s\n", ngtcp2_strerror((int) bytes_to_buf));
@@ -1425,15 +1455,56 @@ static int __rrr_net_transport_quic_write (
 static int __rrr_net_transport_quic_read (
 		RRR_NET_TRANSPORT_READ_ARGS
 ) {
-	(void)(bytes_read);
-	(void)(handle);
-	(void)(buf);
-	(void)(buf_size);
+	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
 
-	// printf("Read buf size %lu\n", handle->datagram.size);
-	printf("Read\n");
+	int ret = 0;
 
-	return __rrr_net_transport_quic_write(handle);
+	rrr_nullsafe_len written_size = 0;	
+
+	*bytes_read = 0;
+	*stream_id = 0;
+
+	if ((ret = __rrr_net_transport_quic_write(handle, NULL, NULL, NULL, NULL)) != 0) {
+		goto out;
+	}
+
+	assert(sizeof(bytes_read) >= sizeof(written_size));
+
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		rrr_nullsafe_str_copyto_offset (
+				&written_size,
+				buf,
+				buf_size,
+				node->recv_buf.str,
+				node->recv_buf.rpos
+		);
+		if (written_size > 0) {
+			// Increment read position
+			rrr_biglength_add_bug (&node->recv_buf.rpos, written_size);
+
+			// Clear buffer if all data was written to the outbut buffer
+			if (rrr_nullsafe_str_len(node->recv_buf.str) == node->recv_buf.rpos) {
+				rrr_nullsafe_str_clear(node->recv_buf.str);
+				node->recv_buf.rpos = 0;
+			}
+
+			// Make downstream call read again in case there is more data
+			rrr_net_transport_ctx_notify_read(handle);
+
+			*bytes_read = written_size;
+			*stream_id = node->stream_id;
+
+			RRR_DBG_7("net transport quic h %i read stream id %" PRIi64 " deliver %" PRIrrrbl " bytes to downstream\n",
+					handle->handle, node->stream_id, written_size);
+
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+
+	out:
+	return ret;
 }
 
 static int __rrr_net_transport_quic_receive (
@@ -1537,7 +1608,7 @@ static int __rrr_net_transport_quic_receive (
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_quic_write(handle)) != 0) {
+	if ((ret = __rrr_net_transport_quic_write(handle, NULL, NULL, NULL, NULL)) != 0) {
 		goto out;
 	}
 
@@ -1545,15 +1616,47 @@ static int __rrr_net_transport_quic_receive (
 	return ret;
 }
 
-static int __rrr_net_transport_quic_send (
-		RRR_NET_TRANSPORT_SEND_ARGS
+static int __rrr_net_transport_quic_stream_open (
+		RRR_NET_TRANSPORT_STREAM_OPEN_ARGS
 ) {
-	(void)(bytes_written);
-	(void)(handle);
-	(void)(data);
-	(void)(size);
-	printf("Send\n");
-	return 1;
+	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
+
+	int ret = 0;
+
+	int64_t stream_id = 0;
+
+	int ret_tmp;
+	if ((ret_tmp = (is_bidirectional ? ngtcp2_conn_open_bidi_stream : ngtcp2_conn_open_uni_stream) (
+			ctx->conn,
+			&stream_id,
+			NULL
+	)) != 0) {
+		if (ret == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+		}
+		else {
+			RRR_MSG_0("Failed to allocate stream ID in %s: %s\n", __func__,
+				ngtcp2_strerror(ret_tmp));
+		}
+		goto out;
+	}
+
+	if ((ret = __rrr_net_transport_quic_ctx_stream_open (
+			ctx,
+			stream_id,
+			RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL,
+			cb_get_message,
+			cb_blocked,
+			cb_ack,
+			cb_arg
+	)) != 0) {
+		goto out;
+	}
+
+	*result = stream_id;
+
+	out:
+	return ret;
 }
 
 static void __rrr_net_transport_quic_selected_proto_get (
@@ -1574,8 +1677,21 @@ static int __rrr_net_transport_quic_poll (
 static int __rrr_net_transport_quic_handshake (
 		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
-	(void)(handle);
-	return 0;
+	struct rrr_net_transport_quic_ctx *ctx = handle->submodule_private_ptr;
+
+	int ret = 0;
+
+	if ((ret = __rrr_net_transport_quic_write (handle, NULL, NULL, NULL, NULL)) != 0) {
+		goto out;
+	}
+
+	ret = ngtcp2_conn_get_handshake_completed(ctx->conn)
+		? 0
+		: RRR_NET_TRANSPORT_READ_INCOMPLETE
+	;
+
+	out:
+	return ret;
 }
 
 static int __rrr_net_transport_quic_is_tls (void) {
@@ -1592,7 +1708,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_read_message,
 	__rrr_net_transport_quic_read,
 	__rrr_net_transport_quic_receive,
-	__rrr_net_transport_quic_send,
+	__rrr_net_transport_quic_stream_open,
+	NULL,
 	__rrr_net_transport_quic_poll,
 	__rrr_net_transport_quic_handshake,
 	__rrr_net_transport_quic_is_tls,

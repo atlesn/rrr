@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -176,6 +177,32 @@ int rrr_nullsafe_str_append_raw (
 	nullsafe->len += len;
 
 	return 0;
+}
+
+int rrr_nullsafe_str_new_or_append_raw (
+		struct rrr_nullsafe_str **result,
+		const void *str,
+		rrr_nullsafe_len len
+) {
+	int ret = 0;
+
+	struct rrr_nullsafe_str *nullsafe = *result;
+
+	if (nullsafe == NULL) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_raw (&nullsafe, str, len)) != 0) {
+			goto out;
+		}
+		*result = nullsafe;
+	}
+	else {
+		if ((ret = rrr_nullsafe_str_append_raw (nullsafe, str, len)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+	
 }
 
 int rrr_nullsafe_str_append_asprintf (
@@ -346,6 +373,12 @@ int rrr_nullsafe_str_set (
 	}
 
 	return 0;
+}
+
+void rrr_nullsafe_str_clear (
+		struct rrr_nullsafe_str *nullsafe
+) {
+	rrr_nullsafe_str_set(nullsafe, NULL, 0);
 }
 
 int rrr_nullsafe_str_chr (
@@ -700,6 +733,31 @@ void rrr_nullsafe_str_copyto (
 	}
 	rrr_memcpy(target, nullsafe->str, to_write);
 	*written_size = to_write;
+}
+
+void rrr_nullsafe_str_copyto_offset (
+		rrr_nullsafe_len *written_size,
+		void *target,
+		rrr_nullsafe_len target_size,
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset
+) {
+	if (nullsafe == NULL || nullsafe->len == 0) {
+		assert(offset == 0);
+		return;
+	}
+
+	assert(offset <= nullsafe->len);
+	assert(target_size > 0);
+
+	size_t bytes_to_copy = nullsafe->len - offset;
+
+	if (bytes_to_copy > target_size) {
+		bytes_to_copy = target_size;
+	}
+
+	memcpy(target, nullsafe->str + offset, bytes_to_copy);
+	*written_size = bytes_to_copy;
 }
 
 int rrr_nullsafe_str_with_str_do (

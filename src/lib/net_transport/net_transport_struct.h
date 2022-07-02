@@ -125,6 +125,7 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_READ_ARGS                            \
     uint64_t *bytes_read,                                      \
+    int64_t *stream_id,                                        \
     struct rrr_net_transport_handle *handle,                   \
     char *buf,                                                 \
     rrr_biglength buf_size
@@ -138,6 +139,15 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_HANDSHAKE_ARGS                       \
     struct rrr_net_transport_handle *handle
+
+#define RRR_NET_TRANSPORT_STREAM_OPEN_ARGS                     \
+    int64_t *result,                                           \
+    struct rrr_net_transport_handle *handle,                   \
+    int is_bidirectional,                                      \
+    int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),   \
+    int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),           \
+    int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                   \
+    void *cb_arg
 
 #define RRR_NET_TRANSPORT_SEND_ARGS                            \
     rrr_biglength *bytes_written,                              \
@@ -154,20 +164,54 @@ struct rrr_net_transport_read_callback_data {
 };
 
 struct rrr_net_transport_methods {
+	// Destroy handle
 	void (*destroy)(RRR_NET_TRANSPORT_DESTROY_ARGS);
+
+	// Create outbound connection
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
+
+	// Start listening on inbound connections (server mode)
 	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);
+
+	// Decode datagram and get identifiers for datagram oriented transports
 	int (*decode)(RRR_NET_TRANSPORT_DECODE_ARGS);
+
+	// Create handle on datagram oriented transport or accept
+	// connection + create handle on connection oriented transport
 	int (*accept)(RRR_NET_TRANSPORT_ACCEPT_ARGS);
-	// Only call close() from parent mode destroy function
+
+	// Close handle nicely, only call close() from parent mode destroy function
 	int (*close)(RRR_NET_TRANSPORT_CLOSE_ARGS);
+
+	// Read message on connection oriented handle
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
+
+	// Poll alredy received data on datagram oriented transport handle
+	// or read data on connection oriented handle
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
+
+	// Receive data on datagram-oriented transport handle. After the
+	// main (listen ) handle has received data and identified the
+	// corresponding handle, receive is called.
 	int (*receive)(RRR_NET_TRANSPORT_RECEIVE_ARGS);
+
+	// Send data on stream-oriented transport handle. Callbacks
+	// must be provided.
+	int (*stream_open)(RRR_NET_TRANSPORT_STREAM_OPEN_ARGS);
+
+	// Send data on non-stream oriented transport
 	int (*send)(RRR_NET_TRANSPORT_SEND_ARGS);
+
+	// Check for data on non-stream oriented transport
 	int (*poll)(RRR_NET_TRANSPORT_POLL_ARGS);
+
+	// Perform handshake on non-stream oriented transport
 	int (*handshake)(RRR_NET_TRANSPORT_HANDSHAKE_ARGS);
+
+	// Check if transport is TLS
 	int (*is_tls)(void);
+
+	// Get selected ALPN protocol
 	void (*selected_proto_get)(RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS);
 };
 

@@ -45,6 +45,22 @@ struct rrr_net_transport_connection_id_pair;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
 
+#define RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS     \
+    int64_t *stream_id,                                        \
+    struct rrr_net_transport_vector *data_vector,              \
+    size_t *data_vector_count,                                 \
+    int *fin,                                                  \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
+    int64_t stream_id,                                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+    int64_t stream_id,                                         \
+    size_t bytes,                                              \
+    void *arg
+
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
@@ -195,6 +211,10 @@ int rrr_net_transport_iterate_by_mode_and_do (
 		enum rrr_net_transport_socket_mode mode,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
+);
+int rrr_net_transport_handle_notify_read (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
 );
 int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,

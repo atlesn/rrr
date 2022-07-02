@@ -18,6 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <string.h>
+#include <assert.h>
+
 #include "test.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
@@ -31,6 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_test_quic_data {
 	char a;
 };
+
+static const char rrr_test_quic_expected_data[] = "GET /\r\n";
 
 static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
 	(void)(handle);
@@ -52,20 +57,29 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 
 	char buf[65535];
 	uint64_t bytes_read = 0;
+	int64_t stream_id = 0;
 
 	if ((ret = rrr_net_transport_ctx_read (
 			&bytes_read,
+			&stream_id,
 			handle,
 			buf,
 			sizeof(buf)
 	)) != 0) {
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			assert(bytes_read == 0 && stream_id == 0);
 			ret = 0;
 			goto out;
 		}
 	}
 
-	printf("Quic read %" PRIu64 "\n", bytes_read);
+	printf("Quic read %" PRIu64 " stream id %" PRIi64 "\n", bytes_read, stream_id);
+
+	if (bytes_read != sizeof(rrr_test_quic_expected_data) && memcmp(buf, rrr_test_quic_expected_data, bytes_read) != 0) {
+		RRR_MSG_0("Unexpected data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;
