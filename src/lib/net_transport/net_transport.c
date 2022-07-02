@@ -995,21 +995,49 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 	return ret;
 }
 
-int rrr_net_transport_handle_cid_push (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle,
+static int __rrr_net_transport_handle_ptr_cid_push (
+		struct rrr_net_transport_handle *handle,
 		const struct rrr_net_transport_connection_id *cid
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_add");
-
 	int ret = 0;
 
-	if (__rrr_net_transport_handle_get_by_cid (transport, cid) != NULL) {
+	if (__rrr_net_transport_handle_get_by_cid (handle->transport, cid) != NULL) {
 		ret = RRR_NET_TRANSPORT_READ_BUSY;
 		goto out;
 	}
 
 	if ((ret = rrr_net_transport_ctx_connection_id_push(handle, cid)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_handle_cid_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_push");
+
+	return __rrr_net_transport_handle_ptr_cid_push (handle, cid);
+}
+
+int rrr_net_transport_handle_cids_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id_pair *cids
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cids_push");
+
+	int ret = 0;
+
+	if ((ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->a)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->b)) != 0) {
 		goto out;
 	}
 

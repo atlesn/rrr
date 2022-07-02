@@ -197,9 +197,8 @@ static int __rrr_net_transport_quic_ctx_new (
 	ngtcp2_cid scid, dcid;
 
 	// New source connection ID is randomly generated
-	assert(sizeof(scid.data) >= NGTCP2_MAX_CIDLEN);
-	rrr_random_bytes(&scid.data, NGTCP2_MAX_CIDLEN);
-	scid.datalen = NGTCP2_MAX_CIDLEN;
+	rrr_random_bytes(&scid.data, RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH);
+	scid.datalen = RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH;
 
 	// Store new and original connection ID as expected future destination from client
 	__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&connection_ids_new->a, &scid);
@@ -437,9 +436,16 @@ static int my_ngtcp2_cb_get_new_connection_id (
 ) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
+	// We rely on a fixed length when decoding short header packets. ngtcp2
+	// library is expected to request a cidlen with the same value as the
+	// first cid generated when the connection was initially accepted.
+	assert(cidlen == RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH);
+
 	(void)(conn);
 
 	int ret = NGTCP2_ERR_CALLBACK_FAILURE;
+
+	struct rrr_net_transport_connection_id cid_;
 
 	assert(ctx->handle > 0);
 
@@ -448,11 +454,19 @@ static int my_ngtcp2_cb_get_new_connection_id (
 		rrr_random_bytes(&cid->data, cidlen);
 		rrr_random_bytes(token, NGTCP2_STATELESS_RESET_TOKENLEN);
 
-		struct rrr_net_transport_connection_id cid_;
 		__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&cid_, cid);
 
 		int ret_tmp;
-		if ((ret_tmp = rrr_net_transport_handle_cid_push (ctx->listen_handle->transport, ctx->handle, &cid_)) != 0) {
+		if ((ret_tmp = rrr_net_transport_handle_cid_push (ctx->listen_handle->transport, ctx->handle, &cid_)) == 0) {
+			char buf[64];
+			rrr_net_transport_connection_id_to_str(buf, sizeof(buf), &cid_);
+			RRR_DBG_7("net transport quic h %i new cid %s\n", ctx->handle, buf);
+
+			ret = 0;
+
+			break;
+		}
+		else {
 			if (ret_tmp == RRR_NET_TRANSPORT_READ_BUSY) {
 				// OK, try again with another CID
 			}
@@ -460,11 +474,6 @@ static int my_ngtcp2_cb_get_new_connection_id (
 				RRR_MSG_0("Error while pushing cid to handle in %s\n", __func__);
 				break;
 			}
-		}
-		else {
-			// OK, done
-			ret = 0;
-			break;
 		}
 	}
 
@@ -847,7 +856,7 @@ static int __rrr_net_transport_quic_decode (
 
 	if (ret_tmp < 0) {
 		if (ret_tmp == NGTCP2_ERR_INVALID_ARGUMENT) {
-			RRR_DBG_7("fd %i failed to decode QUIC packet of size %llu\n",
+			RRR_DBG_7("net transport quic fd %i failed to decode QUIC packet of size %llu\n",
 					listen_handle->submodule_fd, (long long unsigned) datagram->msg_len);
 			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 			goto out;
@@ -868,14 +877,14 @@ static int __rrr_net_transport_quic_decode (
 	}
 
 	if (dcidlen > connection_ids->dst.length) {
-		RRR_DBG_7("fd %i dcid too long in received QUIC packet (%llu>%llu)\n",
+		RRR_DBG_7("net transport quic fd %i dcid too long in received QUIC packet (%llu>%llu)\n",
 				listen_handle->submodule_fd, (long long unsigned) dcidlen, (long long unsigned) connection_ids->dst.length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
 
 	if (scidlen > connection_ids->src.length) {
-		RRR_DBG_7("fd %i scid too long in received QUIC packet (%llu>%llu)\n",
+		RRR_DBG_7("net transport quic fd %i scid too long in received QUIC packet (%llu>%llu)\n",
 				listen_handle->submodule_fd, (long long unsigned) scidlen, (long long unsigned) connection_ids->src.length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
@@ -1050,7 +1059,7 @@ static int __rrr_net_transport_quic_accept (
 		}
 		else {
 			/* Packet is not stored into dest */
-			RRR_DBG_7("fd %i error while accepting QUIC packet: %s. Dropping it.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+			RRR_DBG_7("net transport quic fd %i error while accepting QUIC packet: %s. Dropping it.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
 			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 			goto out;
 		}
@@ -1061,7 +1070,7 @@ static int __rrr_net_transport_quic_accept (
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
 		listen_handle,
 		pkt.version,
-		{{{0}},{{0}}}
+		RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER
 	};
 
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
@@ -1086,16 +1095,24 @@ static int __rrr_net_transport_quic_accept (
 			final_callback_arg,
 			callback_arg
 	)) != 0) {
-		RRR_DBG_7("fd %i cid error from application initializor while accepting QUIC packet: %s. Closing connection.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+		RRR_DBG_7("net transport quic fd %i h %i cid error from application initializor while accepting QUIC packet: %s. Closing connection.\n",
+				listen_handle->submodule_fd, *new_handle, ngtcp2_strerror(ret_tmp));
 		goto out_close;
 	}
 
-	if (rrr_net_transport_handle_get_by_cid_pair (
+	if ((ret = rrr_net_transport_handle_cids_push (
 			listen_handle->transport,
+			*new_handle,
 			&callback_data.connection_ids_new
-	) != 0) {
-		RRR_DBG_7("fd %i cid collision while accepting QUIC packet: %s. Closing connection.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
-		goto out_close;
+	)) != 0) {
+		if (ret == RRR_NET_TRANSPORT_READ_BUSY) {
+			RRR_DBG_7("net transport quic fd %i h %i cid collision while accepting QUIC packet. Closing connection.\n",
+					listen_handle->submodule_fd, *new_handle
+			);
+			goto out_close;
+		}
+		RRR_MSG_0("Error while adding CID to newly accepted connection in %s\n", __func__);
+		goto out;
 	}
 
 /*
