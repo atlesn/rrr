@@ -165,6 +165,11 @@ int rrr_net_transport_handle_cid_push (
 		rrr_net_transport_handle transport_handle,
 		const struct rrr_net_transport_connection_id *cid
 );
+int rrr_net_transport_handle_cids_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id_pair *cids
+);
 int rrr_net_transport_handle_cid_remove (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,

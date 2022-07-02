@@ -61,6 +61,14 @@ static int __rrr_net_transport_connection_id_equals (
 		const struct rrr_net_transport_connection_id *a,
 		const struct rrr_net_transport_connection_id *b
 ) {
+/*	{
+		char buf_a[64];
+		char buf_b[64];
+		rrr_net_transport_connection_id_to_str (buf_a, sizeof(buf_a), a);
+		rrr_net_transport_connection_id_to_str (buf_b, sizeof(buf_b), b);
+		printf("Match CID %lu<>%lu %s<>%s\n", a->length, b->length, buf_a, buf_b);
+	}*/
+
 	if (a->length != b->length)
 		return 0;
 
