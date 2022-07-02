@@ -955,6 +955,7 @@ static int httpserver_async_response_process (
 				}
 				break;
 			default:
+				// TODO : body_to_free is not used afterwards?
 				if ((ret = value_body->definition->to_str(&body_to_free, value_body)) != 0) {
 					RRR_MSG_0("Failed to process body field in httpserver instance %s. Data type of array field was %s.\n",
 						INSTANCE_D_NAME(data->thread_data), value_body->definition->identifier);

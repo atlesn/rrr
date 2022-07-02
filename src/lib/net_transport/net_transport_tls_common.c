@@ -45,7 +45,9 @@ int rrr_net_transport_tls_common_new (
 		const char *ca_file,
 		const char *ca_path,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		unsigned int alpn_protos_length,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 ) {
 	struct rrr_net_transport_tls *result = NULL;
 
@@ -57,23 +59,24 @@ int rrr_net_transport_tls_common_new (
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_ALPN);
-/*
- *
-					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? NULL : alpn_protos),
-					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? 0 : alpn_protos_length)
- */
 
 	if (flags != 0) {
 		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
 	}
 
-	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate_zero(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_tls_new\n");
 		ret = 1;
 		goto out;
 	}
 
-	memset(result, '\0', sizeof(*result));
+#ifdef RRR_WITH_HTTP3
+	result->stream_open_callback = stream_open_callback;
+	result->stream_open_callback_arg = stream_open_callback_arg;
+#else
+	assert(stream_open_callback == NULL);
+	assert(stream_open_callback_arg == NULL);
+#endif
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
 		if ((result->certificate_file = rrr_strdup(certificate_file)) == NULL) {

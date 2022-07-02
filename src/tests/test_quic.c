@@ -32,10 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_QUIC_TIMEOUT_S 5
 
 struct rrr_test_quic_data {
-	char a;
+	int request_received;
+	int response_acked;
 };
 
 static const char rrr_test_quic_expected_data[] = "GET /\r\n";
+static const char rrr_test_quic_response_data[] = "MY RESPONSE DATA\r\n";
 
 static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
 	(void)(handle);
@@ -51,7 +53,7 @@ static void __rrr_test_quic_handshake_complete_callback (RRR_NET_TRANSPORT_HANDS
 }
 
 static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS) {
-	(void)(arg);
+	struct rrr_test_quic_data *data = arg;
 
 	int ret = 0;
 
@@ -81,8 +83,66 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 		goto out;
 	}
 
+	data->request_received = 1;
+
 	out:
 	return ret;
+}
+
+int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	if (!data->request_received || data->response_acked) {
+		*data_vector_count = 0;
+		*fin = 0;
+		*stream_id = -1;
+		return 0;
+	}
+
+	printf("Stream get message %li\n", *stream_id);
+
+	data_vector[0].base = (uint8_t *) rrr_test_quic_response_data;
+	data_vector[0].len = sizeof(rrr_test_quic_response_data);
+
+	*data_vector_count = 1;
+	*fin = 1;
+
+	return 0;
+}
+
+int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
+	(void)(stream_id);
+	(void)(arg);
+
+	TEST_MSG("Stream blocked?");
+
+	return 1;
+}
+
+int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	(void)(stream_id);
+	(void)(arg);
+
+	printf("Quic stream ACK message %li bytes %llu\n", stream_id, (unsigned long long) bytes);
+
+	data->response_acked = 1;
+
+	return 0;
+}
+
+static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS) {
+	(void)(handle);
+
+	*cb_get_message = __rrr_test_quic_cb_get_message;
+	*cb_blocked = __rrr_test_quic_cb_blocked;
+	*cb_ack = __rrr_test_quic_cb_ack;
+	*cb_arg = arg;
+
+	printf("Quic stream open remote %li\n", stream_id);
+
+	return 0;
 }
 
 static void __rrr_test_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS) {
@@ -136,6 +196,8 @@ int rrr_test_quic (void) {
 			__rrr_test_quic_handshake_complete_callback,
 			&data,
 			__rrr_test_quic_read_callback,
+			&data,
+			__rrr_test_quic_stream_open_callback,
 			&data
 	)) != 0) {
 		goto out_destroy_queue;

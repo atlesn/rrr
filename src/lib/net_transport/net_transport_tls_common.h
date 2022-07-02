@@ -55,11 +55,17 @@ struct rrr_net_transport_tls {
 #endif
 
 	int flags;
+
 	char *certificate_file;
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
 	struct rrr_net_transport_tls_alpn alpn;
+
+#ifdef RRR_WITH_HTTP3
+	int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS);
+	void *stream_open_callback_arg;
+#endif
 };
 
 struct rrr_net_transport_tls_data {
@@ -94,7 +100,9 @@ int rrr_net_transport_tls_common_new (
 		const char *ca_file,
 		const char *ca_path,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		unsigned int alpn_protos_length,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 );
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *target

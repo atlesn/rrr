@@ -83,6 +83,15 @@ struct rrr_event_queue;
     struct rrr_net_transport_handle *handle,                   \
     void *arg
 
+#define RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS                             \
+    int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
+    int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
+    int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
+    void **cb_arg,                                                              \
+    rrr_net_transport_handle handle,                                            \
+    int64_t stream_id,                                                          \
+    void *arg
+
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
     const struct rrr_net_transport_methods *methods;                        \
@@ -260,7 +269,9 @@ int rrr_net_transport_new (
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
+		void *read_callback_arg,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 );
 int rrr_net_transport_new_simple (
 		struct rrr_net_transport **result,

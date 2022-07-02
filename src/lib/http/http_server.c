@@ -477,7 +477,9 @@ static int __rrr_http_server_start_alpn_protos_callback (
 			callback_data->ping_timeout_ms,
 			callback_data->hard_timeout_ms,
 			callback_data->send_chunk_count_limit,
-			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
+			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS,
+			NULL,
+			NULL
 	);
 }
 
@@ -532,7 +534,9 @@ static int __rrr_http_server_start (
 				ping_timeout_ms,
 				hard_timeout_ms,
 				send_chunk_count_limit,
-				RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
+				RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS,
+				NULL,
+				NULL
 		);
 	}
 
