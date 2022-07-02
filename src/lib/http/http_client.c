@@ -995,7 +995,9 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				NULL,
 				__rrr_http_client_read_callback,
-				http_client
+				http_client,
+				NULL,
+				NULL
 		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
@@ -1034,7 +1036,9 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				NULL,
 				__rrr_http_client_read_callback,
-				http_client
+				http_client,
+				NULL,
+				NULL
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;

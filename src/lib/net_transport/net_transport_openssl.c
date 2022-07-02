@@ -821,7 +821,18 @@ int rrr_net_transport_openssl_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 ) {
-	if ((rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
+	if ((rrr_net_transport_tls_common_new (
+			target,
+			flags,
+			certificate_file,
+			private_key_file,
+			ca_file,
+			ca_path,
+			alpn_protos,
+			alpn_protos_length,
+			NULL,
+			NULL
+	)) != 0) {
 		return 1;
 	}
 

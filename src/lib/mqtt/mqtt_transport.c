@@ -150,7 +150,9 @@ int rrr_mqtt_transport_start (
 				net_transport_config,
 				application_name,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
-				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS,
+				NULL,
+				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not initialize TLS network type in %s\n", __func__);
 			goto out;
@@ -164,7 +166,9 @@ int rrr_mqtt_transport_start (
 				&net_transport_config_plain,
 				application_name,
 				0,
-				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS,
+				NULL,
+				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not initialize plain network type in %s\n", __func__);
 			goto out;

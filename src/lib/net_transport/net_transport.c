@@ -1628,10 +1628,16 @@ static int __rrr_net_transport_new (
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
+		void *read_callback_arg,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 ) {
 #if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL) && !defined(RRR_WITH_QUIC)
 	(void)(alpn_protos_length);
+#endif
+#if !defined(RRR_WITH_HTTP3)
+	(void)(stream_open_callback);
+	(void)(stream_open_callback_arg);
 #endif
 	int ret = 0;
 
@@ -1650,10 +1656,16 @@ static int __rrr_net_transport_new (
 			if (alpn_protos != NULL) {
 				RRR_BUG("BUG: Plain method does not support ALPN in %s but it was given\n", __func__);
 			}
+			if (stream_open_callback != NULL) {
+				RRR_BUG("BUG: Stream open callback provided to rrr_net_transport_new in plain mode\n");
+			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
+			if (stream_open_callback != NULL) {
+				RRR_BUG("BUG: Stream open callback provided to rrr_net_transport_new in TLS mode\n");
+			}
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
@@ -1668,6 +1680,9 @@ static int __rrr_net_transport_new (
 #endif
 #if defined(RRR_WITH_HTTP3)
 		case RRR_NET_TRANSPORT_QUIC:
+			if (stream_open_callback == NULL) {
+				RRR_BUG("BUG: Stream open callback not provided to rrr_net_transport_new in QUIC mode\n");
+			}
 			ret = rrr_net_transport_quic_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
@@ -1676,7 +1691,9 @@ static int __rrr_net_transport_new (
 					config->tls_ca_file,
 					config->tls_ca_path,
 					alpn_protos,
-					alpn_protos_length
+					alpn_protos_length,
+					stream_open_callback,
+					stream_open_callback_arg
 			);
 			break;
 #endif
@@ -1747,7 +1764,9 @@ int rrr_net_transport_new (
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
+		void *read_callback_arg,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 ) {
 	return __rrr_net_transport_new (
 			result,
@@ -1767,7 +1786,9 @@ int rrr_net_transport_new (
 			handshake_complete_callback,
 			handshake_complete_callback_arg,
 			read_callback,
-			read_callback_arg
+			read_callback_arg,
+			stream_open_callback,
+			stream_open_callback_arg
 	);
 }
 
@@ -1791,6 +1812,8 @@ int rrr_net_transport_new_simple (
 			0,
 			0,
 			0,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

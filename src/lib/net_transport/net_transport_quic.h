@@ -49,7 +49,9 @@ int rrr_net_transport_quic_new (
 		const char *ca_file,
 		const char *ca_path,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		unsigned int alpn_protos_length,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 );
 
 #endif /* RRR_NET_TRANSPORT_QUIC_H */
