@@ -906,6 +906,8 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_by_cid (
 		struct rrr_net_transport *transport,
 		const struct rrr_net_transport_connection_id *cid
 ) {
+	assert(cid->length > 0);
+
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (rrr_net_transport_connection_id_collection_has(&node->cids, cid))
 			return node;
@@ -996,11 +998,11 @@ int rrr_net_transport_handle_cids_push (
 
 	int ret = 0;
 
-	if ((ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->a)) != 0) {
+	if (cids->a.length > 0 && (ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->a)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->b)) != 0) {
+	if (cids->b.length > 0 && (ret = __rrr_net_transport_handle_ptr_cid_push (handle, &cids->b)) != 0) {
 		goto out;
 	}
 
