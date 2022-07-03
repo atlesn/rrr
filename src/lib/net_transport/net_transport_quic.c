@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 #define RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL (1<<0)
 
@@ -457,7 +457,7 @@ static int __rrr_net_transport_quic_connect (
 	return 1;
 }
 
-static int my_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
+static int __rrr_net_transport_quic_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
 	RRR_DBG_7("net transport quic h %i handshake complete\n", ctx->handle);
@@ -470,7 +470,7 @@ static int my_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) 
 	return 0;
 }
 
-static int my_ngtcp2_cb_receive_stream_data (
+static int __rrr_net_transport_quic_ngtcp2_cb_receive_stream_data (
 		ngtcp2_conn *conn,
 		uint32_t flags,
 		int64_t stream_id,
@@ -502,7 +502,7 @@ static int my_ngtcp2_cb_receive_stream_data (
 	return 0;
 }
 
-static int my_ngtcp2_cb_stream_open (
+static int __rrr_net_transport_quic_ngtcp2_cb_stream_open (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
 		void *user_data
@@ -538,7 +538,7 @@ static int my_ngtcp2_cb_stream_open (
 	return 0;
 }
 
-static int my_ngtcp2_cb_acked_stream_data_offset (
+static int __rrr_net_transport_quic_ngtcp2_cb_acked_stream_data_offset (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
 		uint64_t offset,
@@ -559,7 +559,7 @@ static int my_ngtcp2_cb_acked_stream_data_offset (
 	return 0;
 }
 
-static int my_ngtcp2_cb_stream_close (
+static int __rrr_net_transport_quic_ngtcp2_cb_stream_close (
 		ngtcp2_conn *conn,
 		uint32_t flags,
 		int64_t stream_id,
@@ -583,29 +583,8 @@ static int my_ngtcp2_cb_stream_close (
 
 	return 0;
 }
-/*
-static int my_ngtcp2_cb_extend_max_local_streams_bidi (
-		ngtcp2_conn *conn,
-		uint64_t max_streams,
-		void *user_data
-) {
-	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
-	(void)(conn);
-
-	printf("Extend max streams: %llu\n", (unsigned long long) max_streams);
-
-	if (ctx->cb_ready != NULL && ctx->cb_ready(ctx->cb_arg) != 0) {
-		return 1;
-	}
-
-	// Call only once
-	ctx->cb_ready = NULL;
-	return 0;
-}
-*/
-
-static void my_ngtcp2_cb_random (
+static void __rrr_net_transport_quic_ngtcp2_cb_random (
 		uint8_t *dest,
 		size_t destlen,
 		const ngtcp2_rand_ctx *rand_ctx
@@ -614,7 +593,7 @@ static void my_ngtcp2_cb_random (
 	rrr_random_bytes(dest, destlen);
 }
 
-static int my_ngtcp2_cb_get_new_connection_id (
+static int __rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id (
 		ngtcp2_conn *conn,
 		ngtcp2_cid *cid,
 		uint8_t *token,
@@ -671,7 +650,7 @@ static int my_ngtcp2_cb_get_new_connection_id (
 	return ret;
 }
 
-static int my_ngtcp2_cb_remove_connection_id (
+static int __rrr_net_transport_quic_ngtcp2_cb_remove_connection_id (
 		ngtcp2_conn *conn,
 		const ngtcp2_cid *cid,
 		void *user_data
@@ -696,7 +675,7 @@ static int my_ngtcp2_cb_remove_connection_id (
 	return 0;
 }
 
-static int my_ngtcp2_cb_stream_reset (
+static int __rrr_net_transport_quic_ngtcp2_cb_stream_reset (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
 		uint64_t final_size,
@@ -719,7 +698,7 @@ static int my_ngtcp2_cb_stream_reset (
 	return 0;
 }
 
-static int my_ngtcp2_cb_extend_max_stream_data (
+static int __rrr_net_transport_quic_ngtcp2_cb_extend_max_stream_data (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
 		uint64_t max_data,
@@ -741,7 +720,7 @@ static int my_ngtcp2_cb_extend_max_stream_data (
 	return 0;
 }
 
-static int my_ngtcp2_cb_stream_stop_sending (
+static int __rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
 		uint64_t app_error_code,
@@ -855,6 +834,7 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 
 	// Set ngtcp2 settings
 	ngtcp2_settings_default(&tls_data->settings);
+
 #ifdef RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG
 	tls_data->settings.log_printf = __rrr_net_transport_quic_cb_printf;
 #else
@@ -868,7 +848,7 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 	tls_data->transport_params.initial_max_stream_data_uni = 128 * 1024;
 	tls_data->transport_params.initial_max_data = 1024 * 1024;
 	tls_data->transport_params.initial_max_streams_bidi = 100;
-	tls_data->transport_params.initial_max_streams_uni = 0;
+	tls_data->transport_params.initial_max_streams_uni = 3;
 
 	if (rrr_time_get_64_nano(&tls_data->settings.initial_ts, NGTCP2_SECONDS) != 0) {
 		goto out_destroy;
@@ -878,29 +858,29 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		NULL, /* client_initial */
 		ngtcp2_crypto_recv_client_initial_cb,
 		ngtcp2_crypto_recv_crypto_data_cb,
-		my_ngtcp2_cb_handshake_complete,
+		__rrr_net_transport_quic_ngtcp2_cb_handshake_complete,
 		NULL, /* recv_version_negotiation */
 		ngtcp2_crypto_encrypt_cb,
 		ngtcp2_crypto_decrypt_cb,
 		ngtcp2_crypto_hp_mask_cb,
-		my_ngtcp2_cb_receive_stream_data,
-		my_ngtcp2_cb_acked_stream_data_offset,
-		my_ngtcp2_cb_stream_open,
-		my_ngtcp2_cb_stream_close,
+		__rrr_net_transport_quic_ngtcp2_cb_receive_stream_data,
+		__rrr_net_transport_quic_ngtcp2_cb_acked_stream_data_offset,
+		__rrr_net_transport_quic_ngtcp2_cb_stream_open,
+		__rrr_net_transport_quic_ngtcp2_cb_stream_close,
 		NULL, /* recv_stateless_reset */
 		NULL, /* recv_retry */
-		NULL, /* extend_max_local_streams_bidi */
 		NULL, /* extend_max_local_streams_uni */
-		my_ngtcp2_cb_random,
-		my_ngtcp2_cb_get_new_connection_id,
-		my_ngtcp2_cb_remove_connection_id,
+		NULL, /* extend_max_local_streams_uni */
+		__rrr_net_transport_quic_ngtcp2_cb_random,
+		__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
+		__rrr_net_transport_quic_ngtcp2_cb_remove_connection_id,
 		ngtcp2_crypto_update_key_cb,
 		NULL, /* path_validation */
 		NULL, /* select_preferred_addr */
-		my_ngtcp2_cb_stream_reset,
+		__rrr_net_transport_quic_ngtcp2_cb_stream_reset,
 		NULL, /* extend_max_remote_streams_bidi */
 		NULL, /* extend_max_remote_streams_uni */
-		my_ngtcp2_cb_extend_max_stream_data,
+		__rrr_net_transport_quic_ngtcp2_cb_extend_max_stream_data,
 		NULL, /* dcid_status */
 		NULL, /* handshake_confirmed */
 		NULL, /* recv_new_token */
@@ -910,7 +890,7 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		NULL, /* ack_datagram */
 		NULL, /* lost_datagram */
 		ngtcp2_crypto_get_path_challenge_data_cb,
-		my_ngtcp2_cb_stream_stop_sending,
+		__rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending,
 		ngtcp2_crypto_version_negotiation_cb,
 		NULL, /* recv_rx_key */
 		NULL  /* recv_tx_key */
