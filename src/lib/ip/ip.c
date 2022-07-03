@@ -119,11 +119,6 @@ int rrr_ip_network_start_udp (
 		goto out_error;
 	}
 
-	if (data->port < 1) {
-		RRR_MSG_0 ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
-		goto out_close_socket;
-	}
-
 	struct sockaddr_storage s;
 	memset(&s, '\0', sizeof(s));
 
