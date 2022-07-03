@@ -207,6 +207,21 @@ int rrr_net_transport_iterate_by_mode_and_do (
         return 1;                                                                                                              \
     }} while (0)
 
+static int __rrr_net_transport_iterate_by_handle_ptr_and_do (
+		struct rrr_net_transport *transport,
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	return __rrr_net_transport_iterate_with_callback (
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
+			handle,
+			callback,
+			arg
+	);
+}
+
 static int __rrr_net_transport_iterate_by_handle_and_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
@@ -214,9 +229,8 @@ static int __rrr_net_transport_iterate_by_handle_and_do (
 		void *arg
 ) {
 	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_iterate_by_handle_and_do");
-	return __rrr_net_transport_iterate_with_callback (
+	return __rrr_net_transport_iterate_by_handle_ptr_and_do (
 			transport,
-			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
 			handle,
 			callback,
 			arg
@@ -1091,6 +1105,7 @@ static int __rrr_net_transport_decode_server (
 	int ret = RRR_NET_TRANSPORT_READ_OK;
 
 	rrr_net_transport_handle new_handle = 0;
+	struct rrr_net_transport_handle *handle = NULL;
 	struct rrr_net_transport_connection_id_pair connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER;
 	uint8_t buf[65536];
 	struct rrr_socket_datagram datagram;
@@ -1113,10 +1128,19 @@ static int __rrr_net_transport_decode_server (
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 
-	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(listen_handle->transport, &connection_ids.dst);
-	if (handle != NULL) {
-		if (__rrr_net_transport_receive(listen_handle, &datagram, handle) != 0) {
-			__rrr_net_transport_handle_close(handle);
+	struct rrr_net_transport_decode_receive_callback_data callback_data = {
+		listen_handle,
+		&datagram
+	};
+
+	if ((handle = __rrr_net_transport_handle_get_by_cid(listen_handle->transport, &connection_ids.dst)) != NULL) {
+		if ((ret = __rrr_net_transport_iterate_by_handle_ptr_and_do (
+				listen_handle->transport,
+				handle,
+				__rrr_net_transport_decode_receive_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
 		}
 		goto out;
 	}
@@ -1139,12 +1163,6 @@ static int __rrr_net_transport_decode_server (
 	}
 
 	if (new_handle > 0) {
-		struct rrr_net_transport_decode_receive_callback_data callback_data = {
-			listen_handle,
-			&datagram
-		};
-
-		// Use the iterator for error handle (closing etc.)
 		if ((ret = __rrr_net_transport_iterate_by_handle_and_do (
 				listen_handle->transport,
 				new_handle,
