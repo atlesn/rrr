@@ -1515,13 +1515,15 @@ static int __rrr_net_transport_quic_connect_resolve_callback (
 	RRR_DBG_7("net transport quic connect attempt [%i] to %s:%u->%s.\n",
 		callback_data->attempt, host, port, buf);
 
+	ip_data->port = 0;
+
 	if (addr->sa_family == AF_INET) {
-		if ((ret = rrr_ip_network_start_udp_nobind(ip_data, 0)) != 0) {
+		if ((ret = rrr_ip_network_start_udp(ip_data, 0)) != 0) {
 			goto out;
 		}
 	}
 	else if (addr->sa_family == AF_INET6) {
-		if ((ret = rrr_ip_network_start_udp_nobind(ip_data, 1)) != 0) {
+		if ((ret = rrr_ip_network_start_udp(ip_data, 1)) != 0) {
 			goto out;
 		}
 	}
