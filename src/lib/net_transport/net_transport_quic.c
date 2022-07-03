@@ -1531,6 +1531,10 @@ static int __rrr_net_transport_quic_connect_resolve_callback (
 		RRR_BUG("Unknown address family %u in %s\n", addr->sa_family, __func__);
 	}
 
+	if ((ret = rrr_ip_setsockopts (ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO)) != 0) {
+		goto out;
+	}
+
 	assert(sizeof(remote_addr) >= addr_len);
 	memcpy(&remote_addr, addr, addr_len);
 	remote_addr_len = addr_len;
