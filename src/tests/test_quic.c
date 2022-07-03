@@ -88,7 +88,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 	return ret;
 }
 
-int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
+static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
 	if (!data->request_received || data->response_acked) {
@@ -109,16 +109,16 @@ int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBAC
 	return 0;
 }
 
-int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
+static int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
 	(void)(stream_id);
 	(void)(arg);
 
-	TEST_MSG("Stream blocked?");
+	TEST_MSG("Stream blocked: %i", is_blocked);
 
-	return 1;
+	return 0;
 }
 
-int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
+static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
 	(void)(stream_id);

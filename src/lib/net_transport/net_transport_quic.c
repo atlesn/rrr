@@ -713,9 +713,14 @@ static int __rrr_net_transport_quic_ngtcp2_cb_extend_max_stream_data (
 	RRR_DBG_7("net transport quic h %i stream %" PRIi64 " extend max stream data size %" PRIu64 "\n",
 		ctx->handle, stream_id, max_data);
 
-//	if (ctx->cb_ready != NULL && ctx->cb_block_stream(stream_id, 0 /* Unblock */, ctx->cb_arg) != 0) {
-//		return 1;
-//	}
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (stream_id == node->stream_id) {
+			if (node->cb_blocked != NULL && node->cb_blocked(stream_id, 0, node->cb_arg) != 0) {
+				// ngtcp2_connection_close_error_set_application_error();
+				return NGTCP2_ERR_CALLBACK_FAILURE;
+			}
+		}
+	RRR_LL_ITERATE_END();
 
 	return 0;
 }
@@ -1394,7 +1399,7 @@ static int __rrr_net_transport_quic_write (
 				RRR_DBG_7("net transport quic h %i stream %" PRIi64 " blocked\n",
 					ctx->handle, stream_id);
 
-				if (cb_blocked != NULL && cb_blocked(stream_id, cb_arg) != 0) {
+				if (cb_blocked != NULL && cb_blocked(stream_id, 1, cb_arg) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
 					goto out_failure;
 				}
