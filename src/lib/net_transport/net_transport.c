@@ -426,6 +426,55 @@ static int __rrr_net_transport_handle_send_nonblock (
 	return ret;
 }
 
+static int __rrr_net_transport_receive (
+		const struct rrr_net_transport_handle *listen_handle,
+		const struct rrr_socket_datagram *datagram,
+		struct rrr_net_transport_handle *handle
+) {
+	RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
+			listen_handle->submodule_fd,
+			listen_handle->transport->application_name,
+			(long long unsigned) datagram->msg_len,
+			handle->handle
+	);
+
+	return rrr_net_transport_ctx_receive(handle, datagram);
+}
+
+static int __rrr_net_transport_decode_client (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret_tmp;
+	struct rrr_net_transport_connection_id_pair connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER;
+	uint8_t buf[65536];
+	struct rrr_socket_datagram datagram;
+
+	if ((ret_tmp = handle->transport->methods->decode (
+			&connection_ids,
+			&datagram,
+			buf,
+			sizeof(buf),
+			handle
+	)) != 0) {
+		return ret_tmp;
+	}
+
+	if (datagram.msg_len == 0 || connection_ids.dst.length == 0) {
+		return 0;
+	}
+
+	if (!rrr_net_transport_connection_id_collection_has(&handle->cids, &connection_ids.dst)) {
+		RRR_DBG_7("net transport fd %i [%s] datagram of size %llu not delivered to handle (cid mismatch)\n",
+				handle->submodule_fd,
+				handle->transport->application_name,
+				(long long unsigned) datagram.msg_len
+		);
+		return 0;
+	}
+
+	return __rrr_net_transport_receive(handle, &datagram, handle);
+}
+
 static void __rrr_net_transport_handle_event_read_add_if_needed (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -538,8 +587,13 @@ static void __rrr_net_transport_event_read (
 
 	CHECK_CLOSE_NOW();
 
+	if (handle->submodule_fd > 0 && handle->transport->methods->decode != NULL) {
+		if ((ret_tmp = __rrr_net_transport_decode_client(handle)) != 0) {
+			goto err;
+		}
+	}
+
 	if (!handle->handshake_complete) {
-		EVENT_REMOVE(handle->event_read);
 		return;
 	}
 
@@ -555,6 +609,8 @@ static void __rrr_net_transport_event_read (
 		// - We are in read event (data was present on the socket)
 		rrr_net_transport_ctx_touch (handle);
 	}
+
+	err:
 
 #ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
 	switch (ret_tmp) {
@@ -639,7 +695,7 @@ static void __rrr_net_transport_event_write (
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ  (1<<0)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD        (1<<1)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ           (1<<2)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE         (1<<3)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER         (1<<3)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT         (1<<4)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE               (1<<5)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL           (1<<6)
@@ -698,6 +754,7 @@ static int __rrr_net_transport_connect (
 			handle,
 				RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
 				RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
+				RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
 				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
 				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
 		)) != 0) {
@@ -993,23 +1050,6 @@ static void __rrr_net_transport_event_accept (
 	}
 }
 
-static void __rrr_net_transport_receive (
-		const struct rrr_net_transport_handle *listen_handle,
-		const struct rrr_socket_datagram *datagram,
-		struct rrr_net_transport_handle *handle
-) {
-	RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
-			listen_handle->submodule_fd,
-			listen_handle->transport->application_name,
-			(long long unsigned) datagram->msg_len,
-			handle->handle
-	);
-
-	if (rrr_net_transport_ctx_receive(handle, datagram) != 0) {
-		__rrr_net_transport_handle_close (handle);
-	}
-}
-
 struct rrr_net_transport_decode_receive_callback_data {
 	const struct rrr_net_transport_handle *listen_handle;
 	const struct rrr_socket_datagram *datagram;
@@ -1020,11 +1060,10 @@ static int __rrr_net_transport_decode_receive_callback (
 		void *arg
 ) {
 	struct rrr_net_transport_decode_receive_callback_data *callback_data = arg;
-	__rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
-	return 0;
+	return __rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 }
 
-static void __rrr_net_transport_event_decode (
+static void __rrr_net_transport_event_decode_server (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -1155,7 +1194,7 @@ static int __rrr_net_transport_handle_event_setup (
 
 	// READ
 	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ) {
-		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)));
+		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
@@ -1169,14 +1208,14 @@ static int __rrr_net_transport_handle_event_setup (
 		EVENT_ADD(handle->event_read);
 	}
 
-	// READ (decode packet and look up connection)
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE) {
+	// READ (decode packet and look up or create connection)
+	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER) {
 		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
 				handle->submodule_fd,
-				__rrr_net_transport_event_decode,
+				__rrr_net_transport_event_decode_server,
 				handle,
 				0
 		)) != 0) {
@@ -1187,7 +1226,7 @@ static int __rrr_net_transport_handle_event_setup (
 
 	// READ (accept connections)
 	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT) {
-		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE)));
+		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
@@ -1202,7 +1241,7 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// READ NOTIFY
-	if (flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)) {
+	if (flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&handle->event_read_notify,
 				&handle->events,
@@ -1277,7 +1316,7 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 	if ((ret = __rrr_net_transport_handle_event_setup (
 			handle,
 			handle->transport->methods->decode != NULL
-				? RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE | RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL
+				? RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER | RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL
 				: RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT
 	)) != 0) {
 		goto out;
