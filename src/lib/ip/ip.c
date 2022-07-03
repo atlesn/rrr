@@ -621,10 +621,6 @@ static int __rrr_ip_recvmsg_get_local_addr (
 		RRR_MSG_0("Unable to get local address in %s\n", __func__);
 	}
 
-	for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
-		printf("%u - %u\n", cmsg->cmsg_level, cmsg->cmsg_type);
-	}
-
 	return ret;
 }
 
