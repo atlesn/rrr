@@ -318,6 +318,12 @@ static void __rrr_net_transport_quic_handle_data_destroy (
 	rrr_free(handle_data);
 }
 
+static int __rrr_net_transport_quic_ngtcp2_cb_client_initial (ngtcp2_conn *conn, void *user_data) {
+	int ret = ngtcp2_crypto_client_initial_cb(conn, user_data);
+	printf("Initial %i\n", ret);
+	return ret;
+}
+
 static int __rrr_net_transport_quic_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
@@ -804,14 +810,14 @@ static int __rrr_net_transport_quic_ctx_new (
 		// Store new source connection ID as expected future destination from server
 		__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&connection_ids_new->a, &scid);
 
-		// Second CID not used
+		// Second CID slot not used
 		connection_ids_new->b.length = 0;
 
 		RRR_DBG_7("net transport quic fd %i new client ctx src %s dst %s\n",
 				fd, buf_local_addr, buf_remote_addr);
 
 		static const ngtcp2_callbacks callbacks = {
-			ngtcp2_crypto_client_initial_cb,
+			__rrr_net_transport_quic_ngtcp2_cb_client_initial,
 			NULL, /* recv_client_initial */
 			ngtcp2_crypto_recv_crypto_data_cb,
 			__rrr_net_transport_quic_ngtcp2_cb_handshake_complete,
@@ -871,9 +877,10 @@ static int __rrr_net_transport_quic_ctx_new (
 		}
 
 		ctx->ssl = client_tls->ssl;
+
 		SSL_up_ref(ctx->ssl);
-		SSL_set_tlsext_host_name(ctx->ssl, remote_hostname);
 		SSL_set_connect_state(ctx->ssl);
+		SSL_set_tlsext_host_name(ctx->ssl, remote_hostname);
 	}
 
 	ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
@@ -959,7 +966,8 @@ static int __rrr_net_transport_quic_ctx_new_client (
 static int __rrr_net_transport_quic_tls_data_new (
 		struct rrr_net_transport_tls_data **result,
 		struct rrr_net_transport_tls *tls,
-		const struct rrr_ip_data *ip_data
+		const struct rrr_ip_data *ip_data,
+		const SSL_METHOD *tls_method
 ) {
 	int ret = 0;
 
@@ -973,7 +981,7 @@ static int __rrr_net_transport_quic_tls_data_new (
 
 	if (rrr_net_transport_openssl_common_new_ctx (
 			&tls_data->ctx,
-			tls->ssl_server_method,
+			tls_method,
 			tls->flags,
 			tls->certificate_file,
 			tls->private_key_file,
@@ -1060,7 +1068,8 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			tls,
-			callback_data->ip_data
+			callback_data->ip_data,
+			tls->ssl_server_method
 	)) != 0) {
 		goto out_destroy_handle;
 	}
@@ -1418,7 +1427,8 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			callback_data->tls,
-			callback_data->ip_data
+			callback_data->ip_data,
+			callback_data->tls->ssl_client_method
 	)) != 0) {
 		goto out_destroy_handle;
 	}
