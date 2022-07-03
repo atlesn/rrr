@@ -2326,6 +2326,8 @@ int rrr_udpstream_connect (
 ) {
 	int ret = 0;
 
+	// TODO : Use rrr_ip_network_resolve_ipv4_or_ipv6_with_callback
+
 	if (data->ip.fd == 0) {
 		RRR_BUG("FD was 0 in rrr_udpstream_connect, must bind first\n");
 	}

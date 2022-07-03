@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,15 +27,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../allocator.h"
 #include "../util/macro_utils.h"
+#include "../socket/rrr_socket_graylist.h"
 #include "net_transport.h"
 #include "net_transport_struct.h"
 #include "net_transport_tls_common.h"
 
-#define CHECK_FLAG(flag)				\
-	do {if ((flags & flag) != 0) {		\
-		flags_checked |= flag;			\
-		flags &= ~(flag);				\
-	}} while(0)
+#define CHECK_FLAG(flag)                                       \
+    do {if ((flags & flag) != 0) {                             \
+        flags_checked |= flag;                                 \
+        flags &= ~(flag);                                      \
+    }} while(0)
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
@@ -144,6 +145,8 @@ int rrr_net_transport_tls_common_destroy (
 	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
+
+	rrr_socket_graylist_clear(&tls->connect_graylist);
 
 	rrr_free(tls);
 

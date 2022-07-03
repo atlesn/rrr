@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,14 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport.h"
 #include "../ip/ip.h"
+#include "../socket/rrr_socket_graylist.h"
 
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/ssl.h>
-#endif
-
-#ifdef RRR_WITH_HTTP3
-#	include <ngtcp2/ngtcp2.h>
-#	include <ngtcp2/ngtcp2_crypto.h>
 #endif
 
 struct rrr_read_session;
@@ -62,6 +58,8 @@ struct rrr_net_transport_tls {
 	char *ca_path;
 	struct rrr_net_transport_tls_alpn alpn;
 
+	struct rrr_socket_graylist connect_graylist;
+
 #ifdef RRR_WITH_HTTP3
 	int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS);
 	void *stream_open_callback_arg;
@@ -83,12 +81,6 @@ struct rrr_net_transport_tls_data {
 
 #ifdef RRR_WITH_LIBRESSL
 	struct tls *ctx;
-#endif
-
-#ifdef RRR_WITH_HTTP3
-	ngtcp2_settings settings;
-	ngtcp2_transport_params transport_params;
-	const ngtcp2_callbacks *callbacks;
 #endif
 };
 

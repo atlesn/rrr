@@ -318,6 +318,8 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 ) {
 	int ret = 0;
 
+	// TODO : Use rrr_ip_network_resolve_ipv4_or_ipv6_with_callback
+
 	int fd = 0;
 
 	*accept_data = NULL;
