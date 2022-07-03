@@ -44,7 +44,6 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(arg);
-	printf("Accept callback\n");
 }
 
 static void __rrr_test_quic_handshake_complete_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
@@ -75,7 +74,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 		}
 	}
 
-	printf("Quic read %" PRIu64 " stream id %" PRIi64 "\n", bytes_read, stream_id);
+	TEST_MSG("Read %" PRIu64 " stream id %" PRIi64 "\n", bytes_read, stream_id);
 
 	if (bytes_read != sizeof(rrr_test_quic_expected_data) && memcmp(buf, rrr_test_quic_expected_data, bytes_read) != 0) {
 		RRR_MSG_0("Unexpected data in %s\n", __func__);
@@ -99,7 +98,7 @@ int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBAC
 		return 0;
 	}
 
-	printf("Stream get message %li\n", *stream_id);
+	TEST_MSG("Stream get message %li\n", *stream_id);
 
 	data_vector[0].base = (uint8_t *) rrr_test_quic_response_data;
 	data_vector[0].len = sizeof(rrr_test_quic_response_data);
@@ -125,7 +124,7 @@ int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 	(void)(stream_id);
 	(void)(arg);
 
-	printf("Quic stream ACK message %li bytes %llu\n", stream_id, (unsigned long long) bytes);
+	TEST_MSG("Stream ACK message %li bytes %llu\n", stream_id, (unsigned long long) bytes);
 
 	data->response_acked = 1;
 
@@ -140,7 +139,7 @@ static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_C
 	*cb_ack = __rrr_test_quic_cb_ack;
 	*cb_arg = arg;
 
-	printf("Quic stream open remote %li\n", stream_id);
+	TEST_MSG("Stream open remote %li\n", stream_id);
 
 	return 0;
 }
