@@ -212,6 +212,22 @@ int rrr_net_transport_iterate_by_mode_and_do (
         return 1;                                                                                                              \
     }} while (0)
 
+static int __rrr_net_transport_iterate_by_handle_and_do (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_iterate_by_handle_and_do");
+	return __rrr_net_transport_iterate_with_callback (
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
+			handle,
+			callback,
+			arg
+	);
+}
+
 static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
@@ -449,23 +465,24 @@ static int __rrr_net_transport_receive (
 static int __rrr_net_transport_decode_client (
 		struct rrr_net_transport_handle *handle
 ) {
-	int ret_tmp;
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
 	struct rrr_net_transport_connection_id_pair connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER;
 	uint8_t buf[65536];
 	struct rrr_socket_datagram datagram;
 
-	if ((ret_tmp = handle->transport->methods->decode (
+	if ((ret = handle->transport->methods->decode (
 			&connection_ids,
 			&datagram,
 			buf,
 			sizeof(buf),
 			handle
 	)) != 0) {
-		return ret_tmp;
+		goto out;
 	}
 
 	if (datagram.msg_len == 0 || connection_ids.dst.length == 0) {
-		return 0;
+		goto out;
 	}
 
 	if (!rrr_net_transport_connection_id_collection_has(&handle->cids, &connection_ids.dst)) {
@@ -474,10 +491,15 @@ static int __rrr_net_transport_decode_client (
 				handle->transport->application_name,
 				(long long unsigned) datagram.msg_len
 		);
-		return 0;
+		goto out;
 	}
 
-	return __rrr_net_transport_receive(handle, &datagram, handle);
+	if ((ret = __rrr_net_transport_receive(handle, &datagram, handle)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static void __rrr_net_transport_handle_event_read_add_if_needed (
@@ -946,6 +968,7 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 	int ret = 0;
 
 	RRR_NET_TRANSPORT_HANDLE_GET();
+
 	ret = callback(handle, arg);
 
 	return ret;
@@ -1100,52 +1123,43 @@ static int __rrr_net_transport_decode_receive_callback (
 	return __rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 }
 
-static void __rrr_net_transport_event_decode_server (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
+static int __rrr_net_transport_decode_server (
+		struct rrr_net_transport_handle *listen_handle
 ) {
-	struct rrr_net_transport_handle *listen_handle = arg;
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
 	rrr_net_transport_handle new_handle = 0;
-
-	(void)(fd);
-	(void)(flags);
-
-	int ret_tmp;
 	struct rrr_net_transport_connection_id_pair connection_ids = RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER;
 	uint8_t buf[65536];
 	struct rrr_socket_datagram datagram;
 
-	if ((ret_tmp = listen_handle->transport->methods->decode (
+	if ((ret = listen_handle->transport->methods->decode (
 			&connection_ids,
 			&datagram,
 			buf,
 			sizeof(buf),
 			listen_handle
 	)) != 0) {
-		if (ret_tmp != RRR_NET_TRANSPORT_READ_INCOMPLETE) {
-			rrr_event_dispatch_break(listen_handle->transport->event_queue);
-		}
-		return;
+		goto out;
 	}
 
-	if (datagram.msg_len == 0) {
-		return;
+	if (datagram.msg_len == 0 || connection_ids.dst.length == 0) {
+		goto out;
 	}
 
 	// Try to find existing handle and deliver the datagram to it. If non-existent,
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 
-	if (connection_ids.dst.length > 0) {
-		struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(listen_handle->transport, &connection_ids.dst);
-		if (handle != NULL) {
-			 __rrr_net_transport_receive(listen_handle, &datagram, handle);
-			return;
+	struct rrr_net_transport_handle *handle = __rrr_net_transport_handle_get_by_cid(listen_handle->transport, &connection_ids.dst);
+	if (handle != NULL) {
+		if (__rrr_net_transport_receive(listen_handle, &datagram, handle) != 0) {
+			__rrr_net_transport_handle_close(handle);
 		}
+		goto out;
 	}
 
-	if ((ret_tmp = listen_handle->transport->methods->accept (
+	if ((ret = listen_handle->transport->methods->accept (
 			&new_handle,
 			listen_handle,
 			&connection_ids,
@@ -1155,15 +1169,11 @@ static void __rrr_net_transport_event_decode_server (
 			listen_handle->transport->accept_callback,
 			listen_handle->transport->accept_callback_arg
 	)) != 0) {
-		if (ret_tmp == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 			// OK, drop packet
-			return;
+			ret = RRR_NET_TRANSPORT_READ_OK;
 		}
-
-		// Unhandled error
-		rrr_event_dispatch_break(listen_handle->transport->event_queue);
-
-		return;
+		goto out;
 	}
 
 	if (new_handle > 0) {
@@ -1171,20 +1181,43 @@ static void __rrr_net_transport_event_decode_server (
 			listen_handle,
 			&datagram
 		};
-		rrr_net_transport_handle_with_transport_ctx_do (
+
+		// Use the iterator for error handle (closing etc.)
+		if ((ret = __rrr_net_transport_iterate_by_handle_and_do (
 				listen_handle->transport,
 				new_handle,
 				__rrr_net_transport_decode_receive_callback,
 				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		RRR_DBG_7("net transport fd %i [%s] datagram of size %llu not delivered to any handle\n",
+				listen_handle->submodule_fd,
+				listen_handle->transport->application_name,
+				(long long unsigned) datagram.msg_len
 		);
-		return;
 	}
 
-	RRR_DBG_7("net transport fd %i [%s] datagram of size %llu not delivered to any handle\n",
-			listen_handle->submodule_fd,
-			listen_handle->transport->application_name,
-			(long long unsigned) datagram.msg_len
-	);
+	out:
+	return ret;
+}
+
+static void __rrr_net_transport_event_decode_server (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *listen_handle = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (__rrr_net_transport_decode_server (listen_handle) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+		// Unhandled error
+		rrr_event_dispatch_break(listen_handle->transport->event_queue);
+	}
 }
 
 static int __rrr_net_transport_handle_event_setup (
