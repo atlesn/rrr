@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/event/event.h"
+#include "../lib/util/rrr_time.h"
 
 #define RRR_TEST_QUIC_ALPN_PROTO "\x03RRR"
 #define RRR_TEST_QUIC_PORT 4433
@@ -32,11 +33,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_QUIC_TIMEOUT_S 5
 
 struct rrr_test_quic_data {
-	int request_received;
-	int response_acked;
+	const char *msg_out;
+	const char *msg_in;
+	int send_now;
+	int send_acked;
+	int complete_in;
+	int complete_out;
 };
 
-static const char rrr_test_quic_expected_data[] = "GET /\r\n";
+struct rrr_test_quic_data_common {
+	struct rrr_test_quic_data client;
+	struct rrr_test_quic_data server;
+	uint64_t timeout;
+};
+
+static const char rrr_test_quic_request_data[] = "GET /\r\n";
 static const char rrr_test_quic_response_data[] = "MY RESPONSE DATA\r\n";
 
 static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
@@ -46,7 +57,15 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 	(void)(arg);
 }
 
-static void __rrr_test_quic_handshake_complete_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
+static void __rrr_test_quic_handshake_complete_client_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	(void)(handle);
+
+	data->send_now = 1;
+}
+
+static void __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
 	(void)(handle);
 	(void)(arg);
 }
@@ -76,13 +95,16 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 
 	TEST_MSG("Read %" PRIu64 " stream id %" PRIi64 "\n", bytes_read, stream_id);
 
-	if (bytes_read != sizeof(rrr_test_quic_expected_data) && memcmp(buf, rrr_test_quic_expected_data, bytes_read) != 0) {
+	if (bytes_read != strlen(data->msg_in) && memcmp(buf, data->msg_in, bytes_read) != 0) {
 		RRR_MSG_0("Unexpected data in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	data->request_received = 1;
+	data->complete_in = 1;
+	if (!data->complete_out) {
+		data->send_now = 1;
+	}
 
 	out:
 	return ret;
@@ -91,7 +113,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	if (!data->request_received || data->response_acked) {
+	if (data->send_now && !data->send_acked) {
 		*data_vector_count = 0;
 		*fin = 0;
 		*stream_id = -1;
@@ -100,8 +122,8 @@ static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_
 
 	TEST_MSG("Stream get message %li\n", *stream_id);
 
-	data_vector[0].base = (uint8_t *) rrr_test_quic_response_data;
-	data_vector[0].len = sizeof(rrr_test_quic_response_data);
+	data_vector[0].base = (uint8_t *) data->msg_out;
+	data_vector[0].len = strlen(data->msg_out);
 
 	*data_vector_count = 1;
 	*fin = 1;
@@ -124,9 +146,17 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 	(void)(stream_id);
 	(void)(arg);
 
-	TEST_MSG("Stream ACK message %li bytes %llu\n", stream_id, (unsigned long long) bytes);
+	if (bytes != strlen(data->msg_out)) {
+		TEST_MSG("Stream ACK message %li error bytes were %llu expected %llu\n",
+			stream_id, (unsigned long long) bytes, (unsigned long long) strlen(data->msg_out));
+		return 1;
+	}
 
-	data->response_acked = 1;
+	TEST_MSG("Stream ACK message %li bytes %llu\n",
+		stream_id, (unsigned long long) bytes);
+
+	data->send_acked = 1;
+	data->complete_out = 1;
 
 	return 0;
 }
@@ -149,29 +179,68 @@ static void __rrr_test_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_BIND_AND
 	(void)(arg);
 }
 
-static int __rrr_test_quic_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+static void __rrr_test_quic_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
+	(void)(handle);
+	(void)(sockaddr);
+	(void)(socklen);
 	(void)(arg);
+}
 
-	RRR_MSG_0("Timeout in QUIC test after %i seconds\n", RRR_TEST_QUIC_TIMEOUT_S);
+static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_test_quic_data_common *data = arg;
 
-	return 1;
+	if (rrr_time_get_64() > data->timeout) {
+		TEST_MSG("QUIC test timeout after %i seconds\n", RRR_TEST_QUIC_TIMEOUT_S);
+		return RRR_EVENT_ERR;
+	}
+
+	if ( data->client.complete_in &&
+	     data->server.complete_in &&
+	     data->client.complete_out &&
+	     data->server.complete_out
+	) {
+		TEST_MSG("QUIC test completed successfully\n");
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
 }
 
 int rrr_test_quic (void) {
 	struct rrr_event_queue *queue;
 	struct rrr_net_transport *transport_server;
+	struct rrr_net_transport *transport_client;
 
 	int ret = 0;
-
-	struct rrr_test_quic_data data = {0};
 
 	if ((ret = rrr_event_queue_new(&queue)) != 0) {
 		goto out;
 	}
 
+	struct rrr_test_quic_data_common data = {
+		.client = {
+			.msg_in = rrr_test_quic_response_data,
+			.msg_out = rrr_test_quic_request_data
+		},
+		.server = {
+			.msg_in = rrr_test_quic_request_data,
+			.msg_out = rrr_test_quic_response_data
+		},
+		.timeout = rrr_time_get_64() + RRR_TEST_QUIC_TIMEOUT_S * 1000 * 1000
+	};
+
 	static const struct rrr_net_transport_config config_server = {
 		"../../misc/ssl/rrr.crt",
 		"../../misc/ssl/rrr.key",
+		NULL, //"../../misc/ssl/rootca/goliathdns.no.crt",
+		NULL, //"../../misc/ssl/rootca",
+		"RRR QUIC",
+		RRR_NET_TRANSPORT_QUIC
+	};
+
+	static const struct rrr_net_transport_config config_client = {
+		NULL,
+		NULL,
 		"../../misc/ssl/rootca/goliathdns.no.crt",
 		"../../misc/ssl/rootca",
 		"RRR QUIC",
@@ -181,7 +250,7 @@ int rrr_test_quic (void) {
 	if ((ret = rrr_net_transport_new (
 			&transport_server,
 			&config_server,
-			"quictest",
+			"quicserver",
 			0,
 			queue,
 			RRR_TEST_QUIC_ALPN_PROTO,
@@ -191,34 +260,70 @@ int rrr_test_quic (void) {
 			30 * 1000, // 30s hard timeout
 			16,        // 16  max send chunks
 			__rrr_test_quic_accept_callback,
-			&data,
-			__rrr_test_quic_handshake_complete_callback,
-			&data,
+			&data.server,
+			__rrr_test_quic_handshake_complete_server_callback,
+			&data.server,
 			__rrr_test_quic_read_callback,
-			&data,
+			&data.server,
 			__rrr_test_quic_stream_open_callback,
-			&data
+			&data.server
 	)) != 0) {
 		goto out_destroy_queue;
+	}
+
+	if ((ret = rrr_net_transport_new (
+			&transport_client,
+			&config_client,
+			"quicclient",
+			0,
+			queue,
+			RRR_TEST_QUIC_ALPN_PROTO,
+			sizeof(RRR_TEST_QUIC_ALPN_PROTO) - 1,
+			5 * 1000,  //  5s first read timeout
+			15 * 1000, // 15s soft timeout
+			30 * 1000, // 30s hard timeout
+			16,        // 16  max send chunks
+			__rrr_test_quic_accept_callback,
+			&data.client,
+			__rrr_test_quic_handshake_complete_client_callback,
+			&data.client,
+			__rrr_test_quic_read_callback,
+			&data.client,
+			__rrr_test_quic_stream_open_callback,
+			&data.client
+	)) != 0) {
+		goto out_destroy_transport_server;
 	}
 
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
 			transport_server,
 			RRR_TEST_QUIC_PORT,
 			__rrr_test_quic_bind_and_listen_callback,
-			&data
+			NULL
 	)) != 0) {
-		goto out_destroy_transport_server;
+		goto out_destroy_transport_client;
+	}
+
+	if ((ret = rrr_net_transport_connect (
+			transport_client,
+			RRR_TEST_QUIC_PORT,
+			"localhost",
+			__rrr_test_quic_connect_callback,
+			NULL
+	)) != 0) {
+		goto out_destroy_transport_client;
 	}
 
 	ret = rrr_event_dispatch (
 			queue,
-			RRR_TEST_QUIC_TIMEOUT_S * 1000 * 1000,
+			250 * 1000, // 250 ms
 			__rrr_test_quic_periodic,
 			&data
 	);
 
-	goto out_destroy_transport_server;
+	goto out_destroy_transport_client;
+	out_destroy_transport_client:
+		rrr_net_transport_destroy(transport_client);
 	out_destroy_transport_server:
 		rrr_net_transport_destroy(transport_server);
 	out_destroy_queue:
