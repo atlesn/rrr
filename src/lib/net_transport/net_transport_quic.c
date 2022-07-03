@@ -1479,6 +1479,8 @@ struct rrr_net_transport_quic_connect_resolve_callback_data {
 	int attempt;
 	struct rrr_ip_data ip_data;
 	rrr_net_transport_handle new_handle;
+	struct sockaddr *addr;
+	socklen_t *socklen;
 };
 
 static int __rrr_net_transport_quic_connect_resolve_callback (
@@ -1587,6 +1589,10 @@ static int __rrr_net_transport_quic_connect_resolve_callback (
 		goto out;
 	}
 
+	assert(*callback_data->socklen >= addr_len);
+	memcpy(callback_data->socklen, addr, addr_len);
+	*callback_data->socklen = addr_len;
+
 	ret = RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE;
 
 	goto out;
@@ -1601,13 +1607,12 @@ static int __rrr_net_transport_quic_connect (
 ) {
 	struct rrr_net_transport_tls *transport_tls = (struct rrr_net_transport_tls *) transport;
 
-	(void)(addr);
-	(void)(socklen);
-
 	int ret = 0;
 
 	struct rrr_net_transport_quic_connect_resolve_callback_data callback_data = {
-		.tls = transport_tls
+		.tls = transport_tls,
+		.addr = addr,
+		.socklen = socklen
 	};
 
 	if ((ret = rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
