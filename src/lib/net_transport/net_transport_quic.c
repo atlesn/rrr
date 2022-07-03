@@ -421,16 +421,16 @@ static void __rrr_net_transport_quic_ctx_destroy (
 static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *handle) {
 	if (handle->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
 		assert(handle->submodule_fd == -1);
-		printf("Quic close ctx data %p\n", handle->submodule_private_ptr);
+		RRR_DBG_7("net transport quic h %i close connected handle\n", handle->handle);
 		__rrr_net_transport_quic_ctx_destroy(handle->submodule_private_ptr);
 	}
 	else if (handle->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
 		assert(handle->submodule_fd > 0);
-		printf("Quic close listen data %p\n", handle->submodule_private_ptr);
+		RRR_DBG_7("net transport quic h %i close listen handle\n", handle->handle);
 		rrr_net_transport_openssl_common_ssl_data_destroy (handle->submodule_private_ptr);
 	}
 	else {
-		assert(0);
+		RRR_BUG("Unknown handle mode %i in %s\n", handle->mode, __func__);
 	}
 	return 0;
 }
@@ -460,9 +460,7 @@ static int __rrr_net_transport_quic_connect (
 static int my_ngtcp2_cb_handshake_complete (ngtcp2_conn *conn, void *user_data) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
-	(void)(ctx);
-
-	printf("Handshake complete\n");
+	RRR_DBG_7("net transport quic h %i handshake complete\n", ctx->handle);
 
 	ngtcp2_conn_set_keep_alive_timeout(conn, (ngtcp2_duration) RRR_NET_TRANSPORT_QUIC_KEEPALIVE_S * 1000 * 1000 * 1000);
 
@@ -550,12 +548,11 @@ static int my_ngtcp2_cb_acked_stream_data_offset (
 ) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
-	(void)(ctx);
 	(void)(conn);
-	(void)(offset);
 	(void)(stream_user_data);
 
-	printf("ACK from remote Stream %lli, %llu bytes \n", (long long int) stream_id, (unsigned long long) datalen);
+	RRR_DBG_7("net transport quic h %i remote ACK stream %" PRIi64 " offset %" PRIu64 " length %" PRIu64 "\n",
+		ctx->handle, stream_id, offset, datalen);
 
 	// nghttp3_conn_add_ack_offset(m stream_id, datalen);
 	// NGTCP2_ERR_CALLBACK_FAILURE / ngtcp2_conection_close_error_set_application_error
@@ -688,6 +685,12 @@ static int my_ngtcp2_cb_remove_connection_id (
 	struct rrr_net_transport_connection_id cid_;
 	__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&cid_, cid);
 
+	{
+		char buf[64];
+		rrr_net_transport_connection_id_to_str(buf, sizeof(buf), &cid_);
+		RRR_DBG_7("net transport quic h %i remove cid %s\n", ctx->handle, buf);
+	}
+
 	rrr_net_transport_handle_cid_remove (ctx->listen_handle->transport, ctx->handle, &cid_);
 
 	return 0;
@@ -701,14 +704,15 @@ static int my_ngtcp2_cb_stream_reset (
 		void *user_data,
 		void *stream_user_data
 ) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+
 	(void)(conn);
-	(void)(stream_id);
-	(void)(final_size);
 	(void)(app_error_code);
 	(void)(user_data);
 	(void)(stream_user_data);
 
-	printf("Stream reset\n");
+	RRR_DBG_7("net transport quic h %i stream %" PRIi64 " reset final size %" PRIu64 "\n",
+		ctx->handle, stream_id, final_size);
 
 	// NGTCP2_ERR_CALLBACK_FAILURE - nghttp3_conn_shutdown_stream_read
 	
@@ -725,10 +729,10 @@ static int my_ngtcp2_cb_extend_max_stream_data (
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
 	(void)(conn);
-	(void)(max_data);
 	(void)(stream_user_data);
 
-	printf("Extend max stream data stream %lli\n", (long long int) stream_id);
+	RRR_DBG_7("net transport quic h %i stream %" PRIi64 " extend max stream data size %" PRIu64 "\n",
+		ctx->handle, stream_id, max_data);
 
 //	if (ctx->cb_ready != NULL && ctx->cb_block_stream(stream_id, 0 /* Unblock */, ctx->cb_arg) != 0) {
 //		return 1;
@@ -737,7 +741,6 @@ static int my_ngtcp2_cb_extend_max_stream_data (
 	return 0;
 }
 
-/*
 static int my_ngtcp2_cb_stream_stop_sending (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
@@ -745,19 +748,20 @@ static int my_ngtcp2_cb_stream_stop_sending (
 		void *user_data,
 		void *stream_user_data
 ) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+
 	(void)(conn);
-	(void)(stream_id);
 	(void)(app_error_code);
-	(void)(user_data);
 	(void)(stream_user_data);
 
-	printf("Stop sending\n");
+	RRR_DBG_7("net transport quic h %i stream %" PRIi64 " stop sending\n",
+		ctx->handle, stream_id);
 
 	// NGTCP2_ERR_CALLBACK_FAILURE - nghttp3_conn_shutdown_stream_read
 
 	return 0;
 }
-*/
+
 static void __rrr_net_transport_quic_cb_printf (
 		void *user_data,
 		const char *format,
@@ -906,13 +910,14 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		NULL, /* ack_datagram */
 		NULL, /* lost_datagram */
 		ngtcp2_crypto_get_path_challenge_data_cb,
-		NULL, /* stream_stop_sending */
+		my_ngtcp2_cb_stream_stop_sending,
 		ngtcp2_crypto_version_negotiation_cb,
 		NULL, /* recv_rx_key */
 		NULL  /* recv_tx_key */
 	};
 
-	printf("Bind and listen port %u\n", callback_data->ip_data->port);
+	RRR_DBG_7("net transport quic fd %i bind and listen port %u\n",
+		callback_data->ip_data->fd, callback_data->ip_data->port);
 
 	tls_data->callbacks = &callbacks;
 	tls_data->ip_data = *callback_data->ip_data;
@@ -963,7 +968,8 @@ static int __rrr_net_transport_quic_bind_and_listen (
 		goto out_destroy_ip;
 	}
 
-	RRR_DBG_7("QUIC started on port %u IPv%s transport handle %p/%i\n", port, do_ipv6 ? "6" : "4", transport, new_handle);
+	RRR_DBG_7("net transport quic fd %i h %i listening on port %u IPv%s\n",
+		ip_data.fd, new_handle, port, do_ipv6 ? "6" : "4");
 
 	ret = callback(transport, new_handle, callback_final, callback_final_arg, callback_arg);
 
@@ -983,19 +989,20 @@ static int __rrr_net_transport_quic_send_packet (
 ) {
 	ssize_t bytes_written = 0;
 
-	printf("Sending %llu bytes\n", (unsigned long long) data_size);
+	RRR_DBG_7("net transport quic fd %i transmit %llu bytes\n",
+		fd, (unsigned long long) data_size);
 
 	do {
 		bytes_written = sendto(fd, data, data_size, 0, addr, addr_len);
 	} while (bytes_written < 0 && errno == EINTR);
 
 	if (bytes_written < 0) {
-		printf("Error while sending: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("net transport quic fd %i error while sending: %s\n", fd, rrr_strerror(errno));
 		return 1;
 	}
 
 	if ((size_t) bytes_written < data_size) {
-		printf("All bytes not written in %s\n", __func__);
+		RRR_MSG_0("net transport quic fd %i all bytes not written in %s\n", fd, __func__);
 		return 1;
 	}
 
@@ -1005,7 +1012,7 @@ static int __rrr_net_transport_quic_send_packet (
 static int __rrr_net_transport_quic_send_version_negotiation (
 		struct rrr_net_transport_handle *handle
 ) {
-	RRR_BUG("Version negotiation\n");
+	RRR_BUG("Version negotiation not implemented\n");
 	(void)(handle);
 	// ngtcp2_pkt_write_version_negotiation
 	return 1;
@@ -1016,19 +1023,18 @@ static int __rrr_net_transport_quic_decode (
 ) {
 	struct rrr_net_transport_tls_data *tls_data = listen_handle->submodule_private_ptr;
 
-	printf("Decode local port %u\n", tls_data->ip_data.port);
-
 	int ret = 0;
 
 	if ((ret = rrr_ip_recvmsg(datagram, &tls_data->ip_data, buf, buf_size)) != 0) {
 		goto out;
 	}
 
+	RRR_DBG_7("net transport quic fd %i decode datagram %llu bytes\n",
+		listen_handle->submodule_fd, (unsigned long long) datagram->msg_len);
+
 	uint32_t version;
 	const uint8_t *dcid, *scid;
 	size_t dcidlen, scidlen;
-
-	printf("Decode msg len %lu\n", datagram->msg_len);
 
 	int ret_tmp = ngtcp2_pkt_decode_version_cid (
 			&version,
@@ -1154,7 +1160,6 @@ int __rrr_net_transport_quic_pre_destroy (
 
 	if (!ctx->initial_received) {
 		// Wait for first packet to be handled
-		printf("Wait in pre destroy\n");
 		return RRR_NET_TRANSPORT_READ_READ_EOF;
 	}
 
@@ -1186,7 +1191,6 @@ int __rrr_net_transport_quic_pre_destroy (
 	);
 
 	if (bytes == 0 || bytes == NGTCP2_ERR_INVALID_STATE) {
-		printf("No data %s\n", ngtcp2_strerror((int) bytes));
 		// No data to send or ignore error
 		goto out;
 	}
@@ -1235,8 +1239,6 @@ static void __rrr_net_transport_quic_connection_close (
 static int __rrr_net_transport_quic_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
-	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
-
 	int ret = 0;
 
 	int ret_tmp;
@@ -1246,17 +1248,16 @@ static int __rrr_net_transport_quic_accept (
 	if ((ret_tmp = ngtcp2_accept (&pkt, datagram->msg_iov.iov_base, datagram->msg_len)) < 0) {
 		if (ret_tmp == NGTCP2_ERR_RETRY) {
 			/* Packet is stored into dest */
-			RRR_BUG("SEND RETRY");
+			RRR_BUG("SEND RETRY not implemented");
 		}
 		else {
 			/* Packet is not stored into dest */
-			RRR_DBG_7("net transport quic fd %i error while accepting QUIC packet: %s. Dropping it.\n", listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
+			RRR_DBG_7("net transport quic fd %i error while accepting QUIC packet: %s. Dropping it.\n",
+				listen_handle->submodule_fd, ngtcp2_strerror(ret_tmp));
 			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 			goto out;
 		}
 	}
-
-	printf("A pkn %li\n", pkt.pkt_num);
 
 	struct rrr_net_transport_quic_accept_callback_data callback_data = {
 		listen_handle,
@@ -1358,14 +1359,10 @@ static int __rrr_net_transport_quic_write (
 
 	ngtcp2_path_storage_zero(&path_storage);
 
-	printf("Write event\n");
-
 	for (;;) {
 		if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
 			goto out_failure;
 		}
-
-		printf("++ Loop\n");
 
 		if (cb_get_message != NULL) {
 			data_vector_count = sizeof(data_vector)/sizeof(*data_vector);
@@ -1412,11 +1409,11 @@ static int __rrr_net_transport_quic_write (
 				timestamp
 		);
 
-		printf("- Write out: %li, Write in: %li\n", bytes_to_buf, bytes_from_src);
-
 		if (bytes_to_buf < 0) {
 			if (bytes_to_buf == NGTCP2_ERR_STREAM_DATA_BLOCKED || bytes_to_buf == NGTCP2_ERR_STREAM_SHUT_WR) {
-				printf("- Blocked\n");
+				RRR_DBG_7("net transport quic h %i stream %" PRIi64 " blocked\n",
+					ctx->handle, stream_id);
+
 				if (cb_blocked != NULL && cb_blocked(stream_id, cb_arg) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
 					goto out_failure;
@@ -1425,7 +1422,6 @@ static int __rrr_net_transport_quic_write (
 			else if (bytes_to_buf == NGTCP2_ERR_WRITE_MORE) {
 				// Must call writev repeatedly until complete.
 				assert(bytes_from_src >= 0);
-				printf("- More\n");
 
 				if (cb_ack != NULL && cb_ack(stream_id, (size_t) bytes_from_src, cb_arg) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
@@ -1433,7 +1429,8 @@ static int __rrr_net_transport_quic_write (
 				}
 			}
 			else {
-				printf("Error while writing: %s\n", ngtcp2_strerror((int) bytes_to_buf));
+				RRR_MSG_0("net transport quic h %i error while writing: %s\n",
+					ctx->handle, ngtcp2_strerror((int) bytes_to_buf));
 				goto out_failure;
 			}
 		}
@@ -1620,7 +1617,9 @@ static int __rrr_net_transport_quic_receive (
 	}
 
 	uint8_t flags = * (uint8_t *) datagram->msg_iov.iov_base;
-	printf("Receive datagram size %lu max %lu flags %u\n", datagram->msg_len, datagram->msg_iov.iov_len, flags);
+
+	RRR_DBG_7("net transport quic h %i receive datagram size %llu max %llu flags %u\n",
+		ctx->handle, (unsigned long long) datagram->msg_len, (unsigned long long) datagram->msg_iov.iov_len, (unsigned long) flags);
 
 	if ((ret_tmp = ngtcp2_conn_read_pkt (
 			ctx->conn,
@@ -1631,11 +1630,11 @@ static int __rrr_net_transport_quic_receive (
 			timestamp
 	)) != 0) {
 		if (ret_tmp == NGTCP2_ERR_DRAINING) {
-			printf("Connection was closed (now in draining state) while reading\n");
+			RRR_MSG_0("net transport quic h %i connection closed while reading (now in draining state)\n", ctx->handle);
 			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
 		}
 		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
-			printf("Crypto error while reading packet: %s\n", ngtcp2_strerror(ret_tmp));
+			RRR_MSG_0("net transport quic h %i crypto error while reading\n", ctx->handle);
 			ngtcp2_connection_close_error_set_transport_error_tls_alert (
 					&ctx->last_error,
 					ngtcp2_conn_get_tls_alert(ctx->conn),
@@ -1645,7 +1644,7 @@ static int __rrr_net_transport_quic_receive (
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
 		else {
-			printf("Transport error while reading packet: %s\n", ngtcp2_strerror(ret_tmp));
+			RRR_MSG_0("net transport quic %i transport error while reading packet: %s\n", ctx->handle, ngtcp2_strerror(ret_tmp));
 			ngtcp2_connection_close_error_set_transport_error_liberr (
 					&ctx->last_error,
 					ret_tmp,
@@ -1659,12 +1658,12 @@ static int __rrr_net_transport_quic_receive (
 
 	if (handle->close_now) {
 		// Don't write anything, wait for connection close to be sent
+		RRR_DBG_7("net transport quic h %i close now set after reading before writing\n", ctx->handle);
 		rrr_net_transport_ctx_notify_read (handle);
-		printf("Connection close before write\n");
 		goto out;
 	}
 
-	// Write any data from ngtcp2 only
+	// Write any data generated by ngtcp2
 	if ((ret = __rrr_net_transport_quic_write_no_streams (handle)) != 0) {
 		goto out;
 	}
@@ -1725,7 +1724,7 @@ static int __rrr_net_transport_quic_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
 	(void)(handle);
-	printf("Poll\n");
+	RRR_BUG("poll not implemented\n");
 	return 1;
 }
 
