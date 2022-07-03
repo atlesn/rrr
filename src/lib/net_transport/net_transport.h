@@ -55,6 +55,7 @@ struct rrr_socket_graylist;
 
 #define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
+    int is_blocked,                                            \
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
