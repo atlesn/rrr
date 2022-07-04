@@ -1062,7 +1062,7 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 
 	int ret = 0;
 
-	struct rrr_net_transport_quic_handle_data *handle_data;
+	struct rrr_net_transport_quic_handle_data *handle_data = NULL;
 
 	if ((ret = __rrr_net_transport_quic_handle_data_new (&handle_data)) != 0) {
 		goto out;
@@ -1272,7 +1272,7 @@ static int __rrr_net_transport_quic_accept_callback (
 
 	int ret = 0;
 
-	struct rrr_net_transport_quic_handle_data *handle_data;
+	struct rrr_net_transport_quic_handle_data *handle_data = NULL;
 
 	if ((ret = __rrr_net_transport_quic_handle_data_new (&handle_data)) != 0) {
 		goto out;
@@ -1423,7 +1423,7 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 
 	int ret = 0;
 
-	struct rrr_net_transport_quic_handle_data *handle_data;
+	struct rrr_net_transport_quic_handle_data *handle_data = NULL;
 
 	if ((ret = __rrr_net_transport_quic_handle_data_new (&handle_data)) != 0) {
 		goto out;
