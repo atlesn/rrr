@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 #define RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL (1<<0)
 
@@ -2131,8 +2131,12 @@ static int __rrr_net_transport_quic_receive_verify_path (
 				assert(ctx->path_migration.addr_local_len == datagram->addr_local_len);
 				memcpy(&ctx->path_migration.addr_local, &datagram->addr_local, datagram->addr_local_len);
 				ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND;
+				RRR_DBG_7("net transport quic fd %i h %i performing local rebind during handshake\n",
+					ctx->fd, handle->handle);
 			}
 			else {
+				// Verify that local bound address does not change
+				// after migration is requested.
 				struct rrr_net_transport_quic_path path_test = ctx->path_active;
 				assert(path_test.addr_local_len == datagram->addr_local_len);
 				memcpy(&path_test.addr_local, &datagram->addr_local, datagram->addr_local_len);
@@ -2159,11 +2163,13 @@ static int __rrr_net_transport_quic_receive_verify_path (
 		if (addr_remote_mismatch) {
 			rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_remote, ctx->path_active.addr_remote_len);
 			rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
-			RRR_DBG_7("net transport quic fd %i h %i remote address changed during handshake. Closing.\n",
-				ctx->fd, handle->handle);
+			RRR_DBG_7("net transport quic fd %i h %i remote address changed during handshake (%s->%s). Closing.\n",
+				ctx->fd, handle->handle, buf_a, buf_b);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 			goto out;
 		}
+
+		// No migration or rebind is performed until handshake is complete
 		goto out;
 	}
 
