@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,7 +32,54 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_util.h"
 #include "../rrr_strerror.h"
 
-void rrr_ip_to_str (char *dest, rrr_biglength dest_size, const struct sockaddr *addr, socklen_t addr_len) {
+int rrr_ip_addr_is_any (
+		const struct sockaddr *addr
+) {
+	int ret = 0;
+
+	if (addr->sa_family == AF_INET6) {
+		struct sockaddr_in6 *in = (struct sockaddr_in6 *) addr;
+		struct in6_addr zero = {0};
+		ret = 0 == memcmp(&in->sin6_addr, &zero, sizeof(zero));
+	}
+	else if (addr->sa_family == AF_INET) {
+		struct sockaddr_in *in = (struct sockaddr_in *) addr;
+		struct in_addr zero = {0};
+		ret = 0 == memcmp(&in->sin_addr, &zero, sizeof(zero));
+	}
+	else {
+		RRR_BUG("Unknown address family %u to %s\n", addr->sa_family, __func__);
+	}
+
+	return ret;
+}
+
+uint16_t rrr_ip_addr_get_port (
+		const struct sockaddr *addr
+) {
+	uint16_t port = 0;
+
+	if (addr->sa_family == AF_INET6) {
+		struct sockaddr_in6 *in = (struct sockaddr_in6 *) addr;
+		port = ntohs(in->sin6_port);
+	}
+	else if (addr->sa_family == AF_INET) {
+		struct sockaddr_in *in = (struct sockaddr_in *) addr;
+		port = ntohs(in->sin_port);
+	}
+	else {
+		RRR_BUG("Unknown address family %u to %s\n", addr->sa_family, __func__);
+	}
+
+	return port;
+}
+
+void rrr_ip_to_str (
+		char *dest,
+		rrr_biglength dest_size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
 	const char *result = NULL;
 
 	*dest = '\0';

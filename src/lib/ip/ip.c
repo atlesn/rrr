@@ -122,26 +122,41 @@ int rrr_ip_network_start_udp (
 	struct sockaddr_storage s;
 	memset(&s, '\0', sizeof(s));
 
+	struct sockaddr_in6 *si6 = (struct sockaddr_in6 *) &s;
+	struct sockaddr_in *si4 = (struct sockaddr_in *) &s;
+
 	socklen_t size = 0;
 	if (do_ipv6) {
-		struct sockaddr_in6 *si = (struct sockaddr_in6 *) &s;
-		si->sin6_family = AF_INET6;
-		si->sin6_port = htons(data->port);
-		memset (&si->sin6_addr, 0, sizeof(si->sin6_addr));
-		size = sizeof(*si);
+		si6->sin6_family = AF_INET6;
+		si6->sin6_port = htons(data->port);
+		memset (&si6->sin6_addr, 0, sizeof(si6->sin6_addr));
+		size = sizeof(*si6);
 	}
 	else {
-		struct sockaddr_in *si = (struct sockaddr_in *) &s;
-		si->sin_family = AF_INET;
-		si->sin_port = htons(data->port);
-		si->sin_addr.s_addr = INADDR_ANY;
-		size = sizeof(*si);
+		si4->sin_family = AF_INET;
+		si4->sin_port = htons(data->port);
+		si4->sin_addr.s_addr = INADDR_ANY;
+		size = sizeof(*si4);
 	}
 
 	if (bind (fd, (struct sockaddr *) &s, size) == -1) {
 		RRR_DBG_1 ("Note: Could not bind to port %d %s: %s\n",
 				data->port, (do_ipv6 ? "IPv6" : "IPv4"), rrr_strerror(errno));
 		goto out_close_socket;
+	}
+
+	if (data->port == 0) {
+		size = sizeof(s);
+		if (getsockname(fd, (struct sockaddr *) &s, &size) != 0) {
+			RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
+			goto out_close_socket;
+		}
+		if (do_ipv6) {
+			data->port = ntohs(si6->sin6_port);
+		}
+		else {
+			data->port = ntohs(si4->sin_port);
+		}
 	}
 
 	data->fd = fd;
