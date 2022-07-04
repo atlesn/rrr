@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,8 +26,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
+int rrr_ip_addr_is_any (
+		const struct sockaddr *addr
+);
+uint16_t rrr_ip_addr_get_port (
+		const struct sockaddr *addr
+);
 void rrr_ip_to_str (
-		char *dest, rrr_biglength dest_size, const struct sockaddr *addr, socklen_t addr_len
+		char *dest,
+		rrr_biglength dest_size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
 );
 int rrr_ip_to_str_and_port (
 		uint16_t *target_port,
