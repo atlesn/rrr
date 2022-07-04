@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "../lib/net_transport/net_transport.h"
+#include "../lib/net_transport/net_transport_ctx.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/event/event.h"
 #include "../lib/util/rrr_time.h"
@@ -35,7 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_test_quic_data {
 	const char *msg_out;
 	const char *msg_in;
-	int send_now;
+	int64_t send_stream_id;
+	int stream_blocked;
 	int send_acked;
 	int complete_in;
 	int complete_out;
@@ -57,17 +59,25 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 	(void)(arg);
 }
 
-static void __rrr_test_quic_handshake_complete_client_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
+static int __rrr_test_quic_handshake_complete_client_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	(void)(handle);
+	TEST_MSG("Quic client handshake complete\n");
 
-	data->send_now = 1;
+	return rrr_net_transport_ctx_stream_open (
+			&data->send_stream_id,
+			handle,
+			RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
+	);
 }
 
-static void __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
+static int __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
 	(void)(handle);
 	(void)(arg);
+
+	TEST_MSG("Quic server handshake complete\n");
+
+	return 0;
 }
 
 static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS) {
@@ -93,7 +103,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 		}
 	}
 
-	TEST_MSG("Read %" PRIu64 " stream id %" PRIi64 "\n", bytes_read, stream_id);
+	TEST_MSG("Stream %" PRIi64 " read %" PRIu64 " bytes\n", stream_id, bytes_read);
 
 	if (bytes_read != strlen(data->msg_in) && memcmp(buf, data->msg_in, bytes_read) != 0) {
 		RRR_MSG_0("Unexpected data in %s\n", __func__);
@@ -103,7 +113,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 
 	data->complete_in = 1;
 	if (!data->complete_out) {
-		data->send_now = 1;
+		data->send_stream_id = stream_id;
 	}
 
 	out:
@@ -113,14 +123,14 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	if (data->send_now && !data->send_acked) {
+	if (data->send_stream_id < 0 || data->send_acked || data->stream_blocked) {
 		*data_vector_count = 0;
 		*fin = 0;
 		*stream_id = -1;
 		return 0;
 	}
 
-	TEST_MSG("Stream get message %li\n", *stream_id);
+	TEST_MSG("Stream %" PRIi64 " get message\n", *stream_id);
 
 	data_vector[0].base = (uint8_t *) data->msg_out;
 	data_vector[0].len = strlen(data->msg_out);
@@ -132,10 +142,11 @@ static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_
 }
 
 static int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
-	(void)(stream_id);
-	(void)(arg);
+	struct rrr_test_quic_data *data = arg;
 
-	TEST_MSG("Stream blocked: %i", is_blocked);
+	TEST_MSG("Stream %" PRIi64 " %i blocked\n", stream_id, is_blocked);
+
+	data->stream_blocked = is_blocked;
 
 	return 0;
 }
@@ -147,12 +158,15 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 	(void)(arg);
 
 	if (bytes != strlen(data->msg_out)) {
-		TEST_MSG("Stream ACK message %li error bytes were %llu expected %llu\n",
-			stream_id, (unsigned long long) bytes, (unsigned long long) strlen(data->msg_out));
+		TEST_MSG("Stream %" PRIi64 " ACK message error bytes were %llu expected %llu\n",
+			stream_id,
+			(unsigned long long) bytes,
+			(unsigned long long) strlen(data->msg_out)
+		);
 		return 1;
 	}
 
-	TEST_MSG("Stream ACK message %li bytes %llu\n",
+	TEST_MSG("Stream %" PRIi64 " ACK message %llu bytes\n",
 		stream_id, (unsigned long long) bytes);
 
 	data->send_acked = 1;
@@ -163,13 +177,14 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 
 static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS) {
 	(void)(handle);
+	(void)(flags);
 
 	*cb_get_message = __rrr_test_quic_cb_get_message;
 	*cb_blocked = __rrr_test_quic_cb_blocked;
 	*cb_ack = __rrr_test_quic_cb_ack;
 	*cb_arg = arg;
 
-	TEST_MSG("Stream open remote %li\n", stream_id);
+	TEST_MSG("Stream %" PRIi64 " open local or remote\n", stream_id);
 
 	return 0;
 }
@@ -190,7 +205,7 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_quic_data_common *data = arg;
 
 	if (rrr_time_get_64() > data->timeout) {
-		TEST_MSG("QUIC test timeout after %i seconds\n", RRR_TEST_QUIC_TIMEOUT_S);
+		TEST_MSG("Quic test timeout after %i seconds\n", RRR_TEST_QUIC_TIMEOUT_S);
 		return RRR_EVENT_ERR;
 	}
 
@@ -199,7 +214,7 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	     data->client.complete_out &&
 	     data->server.complete_out
 	) {
-		TEST_MSG("QUIC test completed successfully\n");
+		TEST_MSG("Quic test completed successfully, cleanup up.\n");
 		return RRR_EVENT_EXIT;
 	}
 
@@ -220,11 +235,13 @@ int rrr_test_quic (void) {
 	struct rrr_test_quic_data_common data = {
 		.client = {
 			.msg_in = rrr_test_quic_response_data,
-			.msg_out = rrr_test_quic_request_data
+			.msg_out = rrr_test_quic_request_data,
+			.send_stream_id = -1
 		},
 		.server = {
 			.msg_in = rrr_test_quic_request_data,
-			.msg_out = rrr_test_quic_response_data
+			.msg_out = rrr_test_quic_response_data,
+			.send_stream_id = -1
 		},
 		.timeout = rrr_time_get_64() + RRR_TEST_QUIC_TIMEOUT_S * 1000 * 1000
 	};

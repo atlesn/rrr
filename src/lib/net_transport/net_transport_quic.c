@@ -56,8 +56,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Enable printf logging in ngtcp2 library
 //#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
-#define RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL (1<<0)
-
 struct rrr_net_transport_quic_recv_buf {
 	rrr_biglength rpos;
 	struct rrr_nullsafe_str *str;
@@ -230,16 +228,16 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 		int64_t stream_id,
 		int flags
 ) {
+	struct rrr_net_transport_tls *transport = ctx->transport_tls;
+	const char *local = flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ? "local" : "remote";
+	const char *bidi = flags & RRR_NET_TRANSPORT_STREAM_F_BIDI ? "bidi" : "uni";
+
 	int ret = 0;
 
 	struct rrr_net_transport_quic_stream *stream = NULL;
 
-	if (flags & RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL) {
-		RRR_DBG_7("net transport quic h %i new local stream %" PRIi64 "\n", ctx->connected_handle, stream_id);
-	}
-	else {
-		RRR_DBG_7("net transport quic h %i new remote stream %" PRIi64 "\n", ctx->connected_handle, stream_id);
-	}
+	RRR_DBG_7("net transport quic h %i new %s %s stream %" PRIi64 "\n",
+		ctx->connected_handle, local, bidi, stream_id);
 
 	if ((ret = __rrr_net_transport_quic_stream_new (
 			&stream,
@@ -249,10 +247,27 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 		goto out;
 	}
 
+	if (transport->stream_open_callback (
+			&stream->cb_get_message,
+			&stream->cb_blocked,
+			&stream->cb_ack,
+			&stream->cb_arg,
+			ctx->connected_handle,
+			stream->stream_id,
+			stream->flags,
+			transport->stream_open_callback_arg
+	) != 0) {
+		ret = 1;
+		goto out_destroy;
+	}
+
 	RRR_LL_PUSH(&ctx->streams, stream);
 
+	goto out;
+	out_destroy:
+		__rrr_net_transport_quic_stream_destroy(stream);
 	out:
-	return ret;
+		return ret;
 }
 
 static void __rrr_net_transport_quic_ctx_stream_close (
@@ -261,31 +276,12 @@ static void __rrr_net_transport_quic_ctx_stream_close (
 ) {
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
 		if (node->stream_id == stream_id) {
-			RRR_LL_ITERATE_SET_DESTROY();
+			// Stream must be closed by read loop after all data
+			// is delivered to application.
+			node->flags |= RRR_NET_TRANSPORT_STREAM_F_CLOSING;
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
-}
-
-static void __rrr_net_transport_quic_ctx_stream_set_cb (
-		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id,
-		int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
-		int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
-		int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
-		void *cb_arg
-) {
-	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
-		if (node->stream_id == stream_id) {
-			node->cb_get_message = cb_get_message;
-			node->cb_blocked = cb_blocked;
-			node->cb_ack = cb_ack;
-			node->cb_arg = cb_arg;
-			return;
-		}
 	RRR_LL_ITERATE_END();
-
-	RRR_BUG("stream id not found in %s\n", __func__);
 }
 
 static int __rrr_net_transport_quic_ctx_stream_recv (
@@ -398,32 +394,16 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_open (
 		void *user_data
 ) {
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
-	struct rrr_net_transport_tls *transport = ctx->transport_tls;
 
 	(void)(conn);
 
-	if (__rrr_net_transport_quic_ctx_stream_open(ctx, stream_id, 0) != 0) {
-		return NGTCP2_ERR_CALLBACK_FAILURE;
-	}
-
-	int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
-	int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
-	void *cb_arg;
-
-	if (transport->stream_open_callback (
-			&cb_get_message,
-			&cb_blocked,
-			&cb_ack,
-			&cb_arg,
-			ctx->connected_handle,
+	if (__rrr_net_transport_quic_ctx_stream_open (
+			ctx,
 			stream_id,
-			transport->stream_open_callback_arg
+			ngtcp2_is_bidi_stream(stream_id) ? RRR_NET_TRANSPORT_STREAM_F_BIDI : 0
 	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
-
-	__rrr_net_transport_quic_ctx_stream_set_cb(ctx, stream_id, cb_get_message, cb_blocked, cb_ack, cb_arg);
 
 	return 0;
 }
@@ -467,7 +447,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_close (
 		// app_error_close = NGHTTP3_H3_NO_ERROR;
 	}
 
-	RRR_DBG_7("net transport quic fd %i h %i close stream %" PRIi64 "\n",
+	RRR_DBG_7("net transport quic fd %i h %i close stream %" PRIi64 " (after data is delivered to application)\n",
 		ctx->fd, ctx->connected_handle, stream_id);
 
 	__rrr_net_transport_quic_ctx_stream_close(ctx, stream_id);
@@ -1813,7 +1793,8 @@ static int __rrr_net_transport_quic_write (
 			}
 
 			if (data_vector_count > 0) {
-				RRR_DBG_7("net transport quic h %i write stream id %" PRIi64 " received %llu bytes from downstream in %llu vectors fin %i\n",
+				RRR_DBG_7("net transport quic fd %i h %i write stream id %" PRIi64 " received %llu bytes from downstream in %llu vectors fin %i\n",
+						ctx->fd,
 						handle->handle,
 						stream_id,
 						(unsigned long long) vec_len(data_vector, (unsigned long long) data_vector_count),
@@ -1985,7 +1966,12 @@ static int __rrr_net_transport_quic_read (
 
 			goto out;
 		}
-	RRR_LL_ITERATE_END();
+		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING && rrr_nullsafe_str_len(node->recv_buf.str) == 0) {
+			RRR_DBG_7("net transport quic fd %i h %i stream id %" PRIi64 " closing now\n",
+					ctx->fd, ctx->connected_handle, node->stream_id);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
 
 	ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 
@@ -2278,7 +2264,7 @@ static int __rrr_net_transport_quic_receive (
 		goto out;
 	}
 
-	// Write any data generated by ngtcp2
+	// Write any data generated by ngtcp2 or application
 	if ((ret = __rrr_net_transport_quic_write_no_streams (handle)) != 0) {
 		goto out;
 	}
@@ -2297,8 +2283,10 @@ static int __rrr_net_transport_quic_stream_open (
 
 	int64_t stream_id = 0;
 
+	assert(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL);
+
 	int ret_tmp;
-	if ((ret_tmp = (is_bidirectional ? ngtcp2_conn_open_bidi_stream : ngtcp2_conn_open_uni_stream) (
+	if ((ret_tmp = (flags & RRR_NET_TRANSPORT_STREAM_F_BIDI ? ngtcp2_conn_open_bidi_stream : ngtcp2_conn_open_uni_stream) (
 			ctx->conn,
 			&stream_id,
 			NULL
@@ -2316,12 +2304,15 @@ static int __rrr_net_transport_quic_stream_open (
 	if ((ret = __rrr_net_transport_quic_ctx_stream_open (
 			ctx,
 			stream_id,
-			RRR_NET_TRANSPORT_QUIC_STREAM_F_LOCAL
+			flags
 	)) != 0) {
 		goto out;
 	}
 
-	__rrr_net_transport_quic_ctx_stream_set_cb(ctx, stream_id, cb_get_message, cb_blocked, cb_ack, cb_arg);
+	// Write any data generated by ngtcp2
+	if ((ret = __rrr_net_transport_quic_write_all_streams (handle)) != 0) {
+		goto out;
+	}
 
 	*result = stream_id;
 
@@ -2421,9 +2412,7 @@ int rrr_net_transport_quic_new (
 			ca_file,
 			ca_path,
 			alpn_protos,
-			alpn_protos_length,
-			stream_open_callback,
-			stream_open_callback_arg
+			alpn_protos_length
 	)) != 0) {
 		return 1;
 	}
@@ -2433,6 +2422,8 @@ int rrr_net_transport_quic_new (
 	(*target)->methods = &tls_methods;
 	(*target)->ssl_client_method = TLS_client_method();
 	(*target)->ssl_server_method = TLS_server_method();
+	(*target)->stream_open_callback = stream_open_callback;
+	(*target)->stream_open_callback_arg = stream_open_callback_arg;
 
 	return 0;
 }

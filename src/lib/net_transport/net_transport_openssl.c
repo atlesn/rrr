@@ -829,9 +829,7 @@ int rrr_net_transport_openssl_new (
 			ca_file,
 			ca_path,
 			alpn_protos,
-			alpn_protos_length,
-			NULL,
-			NULL
+			alpn_protos_length
 	)) != 0) {
 		return 1;
 	}

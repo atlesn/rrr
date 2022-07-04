@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
+struct rrr_net_transport_data_vector;
 struct rrr_socket_datagram;
 struct rrr_net_transport_connection_id_pair;
 struct rrr_nullsafe_str;
@@ -92,6 +93,7 @@ struct rrr_socket_graylist;
     void **cb_arg,                                                              \
     rrr_net_transport_handle handle,                                            \
     int64_t stream_id,                                                          \
+    int flags,                                                                  \
     void *arg
 
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
@@ -111,10 +113,12 @@ struct rrr_socket_graylist;
     struct timeval hard_read_timeout_tv;                                    \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
-    void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
+    int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
     void *handshake_complete_callback_arg;                                  \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg;                                                \
+    int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS); \
+    void *stream_open_callback_arg;                                         \
     char application_name[16]
 
 #define RRR_NET_TRANSPORT_PRE_DESTROY_ARGS                                  \
@@ -280,7 +284,7 @@ int rrr_net_transport_new (
 		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,

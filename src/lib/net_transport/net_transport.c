@@ -604,7 +604,12 @@ static void __rrr_net_transport_event_handshake (
 			handle->submodule_fd, handle->handle, handle->transport->application_name);
 
 	if (handle->transport->handshake_complete_callback != NULL) {
-		handle->transport->handshake_complete_callback(handle, handle->transport->handshake_complete_callback_arg);
+		if ((ret_tmp = handle->transport->handshake_complete_callback(handle, handle->transport->handshake_complete_callback_arg)) != 0) {
+			// Noisy
+			// RRR_DBG_7("net transport fd %i h %i [%s] return %i from downstream handshake callback\n",
+			//	handle->submodule_fd, handle->handle, handle->transport->application_name, ret_tmp);
+			goto check_read_write_return;
+		}
 	}
 
 	handle->handshake_complete = 1;
@@ -627,6 +632,10 @@ static void __rrr_net_transport_event_read (
 	int ret_tmp = 0;
 	ssize_t bytes = 0;
 	char buf;
+
+//	Noisy
+//	RRR_DBG_7("net transport fd %i h %i [%s] read event handshake complete %i\n",
+//		handle->submodule_fd, handle->handle, handle->transport->application_name, handle->handshake_complete);
 
 	CHECK_CLOSE_NOW();
 
@@ -1082,6 +1091,7 @@ static int __rrr_net_transport_accept_callback_intermediate (
 		handle,
 			RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
 			RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
+			RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
 			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
 			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
 	)) != 0) {
@@ -1479,7 +1489,7 @@ static int __rrr_net_transport_event_setup (
 		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg
@@ -1705,7 +1715,7 @@ static int __rrr_net_transport_new (
 		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,
@@ -1841,7 +1851,7 @@ int rrr_net_transport_new (
 		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,

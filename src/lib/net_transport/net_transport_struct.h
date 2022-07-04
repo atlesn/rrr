@@ -143,11 +143,7 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_STREAM_OPEN_ARGS                     \
     int64_t *result,                                           \
     struct rrr_net_transport_handle *handle,                   \
-    int is_bidirectional,                                      \
-    int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),   \
-    int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),           \
-    int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                   \
-    void *cb_arg
+    int flags
 
 #define RRR_NET_TRANSPORT_SEND_ARGS                            \
     rrr_biglength *bytes_written,                              \
