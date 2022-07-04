@@ -150,10 +150,12 @@ static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 );
 
-static void __rrr_http_server_handshake_complete_callback (
+static int __rrr_http_server_handshake_complete_callback (
 		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
 
 	struct rrr_http_application *application = NULL;
 
@@ -179,20 +181,20 @@ static void __rrr_http_server_handshake_complete_callback (
 		http_server->callbacks.async_response_get_callback_arg,
 	};
 
-	if (rrr_http_application_new (
+	if ((ret = rrr_http_application_new (
 			&application,
 			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
 			1, // Is server
 			&callbacks
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_handshake_comlete_callback\n");
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_server_new (
+	if ((ret = rrr_http_session_transport_ctx_server_new (
 			&application,
 			handle
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in %s\n", __func__);
 		goto out;
 	}
@@ -202,7 +204,7 @@ static void __rrr_http_server_handshake_complete_callback (
 
 	out:
 	rrr_http_application_destroy_if_not_null(&application);
-	return;
+	return ret;
 }
 
 static int __rrr_http_server_upgrade_verify_callback (

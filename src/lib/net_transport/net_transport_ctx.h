@@ -122,6 +122,11 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_nullsafe_str *nullsafe
 );
+int rrr_net_transport_ctx_stream_open (
+		int64_t *result,
+		struct rrr_net_transport_handle *handle,
+		int flags
+);
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		int64_t *stream_id,

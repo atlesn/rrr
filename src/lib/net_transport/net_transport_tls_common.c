@@ -46,9 +46,7 @@ int rrr_net_transport_tls_common_new (
 		const char *ca_file,
 		const char *ca_path,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length,
-		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
-		void *stream_open_callback_arg
+		unsigned int alpn_protos_length
 ) {
 	struct rrr_net_transport_tls *result = NULL;
 
@@ -70,14 +68,6 @@ int rrr_net_transport_tls_common_new (
 		ret = 1;
 		goto out;
 	}
-
-#ifdef RRR_WITH_HTTP3
-	result->stream_open_callback = stream_open_callback;
-	result->stream_open_callback_arg = stream_open_callback_arg;
-#else
-	assert(stream_open_callback == NULL);
-	assert(stream_open_callback_arg == NULL);
-#endif
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
 		if ((result->certificate_file = rrr_strdup(certificate_file)) == NULL) {

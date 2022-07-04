@@ -59,11 +59,6 @@ struct rrr_net_transport_tls {
 	struct rrr_net_transport_tls_alpn alpn;
 
 	struct rrr_socket_graylist connect_graylist;
-
-#ifdef RRR_WITH_HTTP3
-	int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS);
-	void *stream_open_callback_arg;
-#endif
 };
 
 struct rrr_net_transport_tls_data {
@@ -92,9 +87,7 @@ int rrr_net_transport_tls_common_new (
 		const char *ca_file,
 		const char *ca_path,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length,
-		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
-		void *stream_open_callback_arg
+		unsigned int alpn_protos_length
 );
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *target
