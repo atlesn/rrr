@@ -1722,7 +1722,7 @@ static int __rrr_net_transport_new (
 		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
 		void *stream_open_callback_arg
 ) {
-#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL) && !defined(RRR_WITH_QUIC)
+#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL) && !defined(RRR_WITH_HTTP3)
 	(void)(alpn_protos_length);
 #endif
 #if !defined(RRR_WITH_HTTP3)

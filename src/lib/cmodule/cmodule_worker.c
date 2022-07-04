@@ -610,7 +610,7 @@ static int __rrr_cmodule_worker_loop (
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
 
 	struct rrr_event_collection events = {0};
-	rrr_event_handle event_spawn;
+	rrr_event_handle event_spawn = {0};
 
 	rrr_event_collection_init(&events, worker->event_queue_worker);
 
