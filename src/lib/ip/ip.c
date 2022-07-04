@@ -574,39 +574,42 @@ static int __rrr_ip_recvmsg_get_local_addr (
 	if (datagram->addr_remote.ss_family == AF_INET) {
 		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
 			struct sockaddr_in *addr_local = (struct sockaddr_in *) &datagram->addr_local;
-			addr_local->sin_family = AF_INET;
-			addr_local->sin_port = htons(port);
+			assert(sizeof(datagram->addr_local) >= sizeof(*addr_local));
+
 #ifdef RRR_HAVE_IP_PKTINFO
 			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_PKTINFO)
 				continue;
-
-			const struct in_pktinfo *pktinfo = (const struct in_pktinfo *) CMSG_DATA(cmsg);
-			assert(sizeof(addr_local->sin_addr) >= sizeof(pktinfo->ipi_addr));
-			addr_local->sin_addr = pktinfo->ipi_addr;
+			addr_local->sin_addr = ((const struct in_pktinfo *) CMSG_DATA(cmsg))->ipi_addr;
 #else
 			if (cmsg->cmsg_level != IPPROTO_IP || cmsg->cmsg_type != IP_RECVDSTADDR)
 				continue;
-
-			addr_local->sin_addr = * ((struct in_addr *) CMSG_DATA(cmsg));
+			addr_local->sin_addr = * ((const struct in_addr *) CMSG_DATA(cmsg));
 #endif
+
+			addr_local->sin_family = AF_INET;
+			addr_local->sin_port = htons(port);
 			datagram->addr_local_len = sizeof(*addr_local);
+
 			ret = RRR_SOCKET_OK;
+
 			break;
 		}
 	}
 	else if (datagram->addr_remote.ss_family == AF_INET6) {
 		for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&datagram->msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&datagram->msg, cmsg)) {
+			struct sockaddr_in6 *addr_local = (struct sockaddr_in6 *) &datagram->addr_local;
+			assert(sizeof(datagram->addr_local) >= sizeof(*addr_local));
+
 			if (cmsg->cmsg_level != IPPROTO_IPV6 || cmsg->cmsg_type != IPV6_PKTINFO)
 				continue;
+			addr_local->sin6_addr = ((const struct in6_pktinfo *) CMSG_DATA(cmsg))->ipi6_addr;
 
-			const struct in6_pktinfo *pktinfo = (const struct in6_pktinfo *) CMSG_DATA(cmsg);
-			struct sockaddr_in6 *addr_local = (struct sockaddr_in6 *) &datagram->addr_local;
-			assert(sizeof(addr_local->sin6_addr) >= sizeof(pktinfo->ipi6_addr));
 			addr_local->sin6_family = AF_INET6;
-			addr_local->sin6_addr = pktinfo->ipi6_addr;
 			addr_local->sin6_port = htons(port);
 			datagram->addr_local_len = sizeof(*addr_local);
+
 			ret = RRR_SOCKET_OK;
+
 			break;
 		}
 	}
