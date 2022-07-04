@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <tls.h>
+#include <libressl/tls.h>
 #include <poll.h>
 #include <string.h>
 #include <errno.h>
@@ -142,10 +142,12 @@ static int __rrr_net_transport_libressl_connect_callback (
 ) {
 	struct rrr_net_transport_libressl_connect_callback_data *callback_data = arg;
 
-	const char *err_str = NULL;
+	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
+	const char *err_str = NULL;
 	struct rrr_net_transport_tls_data *data = NULL;
 
 	*submodule_private_ptr = NULL;
@@ -227,6 +229,8 @@ static int __rrr_net_transport_libressl_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
+			NULL,
 			__rrr_net_transport_libressl_connect_callback,
 			&callback_data
 	)) != 0) {
@@ -257,10 +261,12 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 ) {
 	struct rrr_net_transport_libressl_bind_and_listen_callback_data *callback_data = arg;
 
-	const char *err_str = NULL;
+	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
+	const char *err_str = NULL;
 	struct rrr_net_transport_tls_data *data = NULL;
 
 	*submodule_private_ptr = NULL;
@@ -329,6 +335,8 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			NULL,
+			NULL,
 			__rrr_net_transport_libressl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
@@ -359,6 +367,9 @@ int __rrr_net_transport_libressl_accept_callback (
 		RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_libressl_accept_callback_data *callback_data = arg;
+
+	(void)(connection_ids);
+	(void)(datagram);
 
 	int ret = 0;
 
@@ -402,9 +413,10 @@ int __rrr_net_transport_libressl_accept (
 	struct rrr_net_transport_tls_data *data = listen_handle->submodule_private_ptr;
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
 
-	int ret = 0;
+	(void)(connection_ids);
+	(void)(datagram);
 
-	*did_accept = 0;
+	int ret = 0;
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 
@@ -424,11 +436,12 @@ int __rrr_net_transport_libressl_accept (
 		data->ctx
 	};
 
-	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
-			&new_handle,
+			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL,
+			NULL,
 			__rrr_net_transport_libressl_accept_callback,
 			&callback_data
 	)) != 0) {
@@ -445,15 +458,13 @@ int __rrr_net_transport_libressl_accept (
 
 	ret = callback (
 			listen_handle->transport,
-			new_handle,
+			*new_handle,
 			(struct sockaddr *) &accept_data->addr,
 			accept_data->len,
 			final_callback,
 			final_callback_arg,
 			callback_arg
 	);
-
-	*did_accept = 1;
 
 	goto out;
 	out_destroy_ip:
@@ -547,7 +558,7 @@ static int __rrr_net_transport_libressl_read_message (
 	);
 	*bytes_read += bytes_read_tmp;
 
-	if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT || ret = RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+	if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT || ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 		// OK, no message printed
 	}
 	else {
@@ -562,6 +573,8 @@ static int __rrr_net_transport_libressl_read_message (
 static int __rrr_net_transport_libressl_read (
 		RRR_NET_TRANSPORT_READ_ARGS
 ) {
+	(void)(stream_id);
+
 	int ret = RRR_NET_TRANSPORT_READ_OK;
 
 	if (buf_size > SSIZE_MAX) {
@@ -673,10 +686,12 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_destroy,
 	__rrr_net_transport_libressl_connect,
 	__rrr_net_transport_libressl_bind_and_listen,
+	NULL,
 	__rrr_net_transport_libressl_accept,
 	__rrr_net_transport_libressl_close,
 	__rrr_net_transport_libressl_read_message,
 	__rrr_net_transport_libressl_read,
+	NULL,
 	NULL,
 	__rrr_net_transport_libressl_send,
 	__rrr_net_transport_libressl_poll,
