@@ -129,7 +129,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-/*
+
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -187,14 +187,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 #endif
-#ifdef RRR_WITH_QUIC
-*/
+#ifdef RRR_WITH_HTTP3
 	TEST_BEGIN("quic handshake") {
 		ret_tmp = rrr_test_quic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-/*
 #endif
 	TEST_BEGIN("type conversion") {
 		ret_tmp = rrr_test_conversion();
@@ -219,7 +217,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-*/
+
 	return ret;
 }
 
