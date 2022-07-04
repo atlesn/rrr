@@ -1482,12 +1482,12 @@ int rrr_socket_recvmsg (
 	}
 
 	ssize_t bytes = recvmsg(fd, &datagram->msg, 0);
-	if (bytes == 0 || bytes == EAGAIN || bytes == ENOTCONN) {
+	if (bytes == 0 || errno == EAGAIN || errno == ENOTCONN || errno == EWOULDBLOCK) {
 		ret = RRR_SOCKET_READ_INCOMPLETE;
 		goto out;
 	}
 	else if (bytes < 0) {
-		RRR_MSG_0("recvmsg failed for fd %i: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("recvmsg failed for fd %i: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
