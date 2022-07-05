@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 struct rrr_net_transport_quic_recv_buf {
 	rrr_biglength rpos;
@@ -121,7 +121,7 @@ struct rrr_net_transport_quic_handle_data {
 	struct rrr_net_transport_quic_ctx *ctx;
 };
 
-void rrr_net_transport_quic_path_to_ngtcp2_path (
+static void __rrr_net_transport_quic_path_to_ngtcp2_path (
 		ngtcp2_path *target,
 		const struct rrr_net_transport_quic_path *source
 ) {
@@ -130,6 +130,22 @@ void rrr_net_transport_quic_path_to_ngtcp2_path (
 	target->remote.addr = (ngtcp2_sockaddr *) &source->addr_remote;
 	target->remote.addrlen = source->addr_remote_len;
 	target->user_data = NULL;
+}
+
+static void __rrr_net_transport_quic_path_fill (
+		struct rrr_net_transport_quic_path *target,
+		const struct sockaddr *addr_remote,
+		socklen_t addr_remote_len,
+		const struct sockaddr *addr_local,
+		socklen_t addr_local_len
+) {
+	assert(sizeof(target->addr_remote) >= addr_remote_len);
+	memcpy(&target->addr_remote, addr_remote, addr_remote_len);
+	target->addr_remote_len = addr_remote_len;
+
+	assert(sizeof(target->addr_local) >= addr_local_len);
+	memcpy(&target->addr_local, addr_local, addr_local_len);
+	target->addr_local_len = addr_local_len;
 }
 
 static void *__rrr_net_transport_quic_cb_malloc (size_t size, void *user_data) {
@@ -339,7 +355,7 @@ static void __rrr_net_transport_quic_handle_data_destroy (
 
 static int __rrr_net_transport_quic_ngtcp2_cb_client_initial (ngtcp2_conn *conn, void *user_data) {
 	int ret = ngtcp2_crypto_client_initial_cb(conn, user_data);
-	printf("Initial %i\n", ret);
+	//printf("Initial %i\n", ret);
 	return ret;
 }
 
@@ -670,13 +686,13 @@ static int __rrr_net_transport_quic_ctx_new (
 		goto out;
 	}
 
-	assert(sizeof(ctx->path_active.addr_remote) >= addr_remote_len);
-	memcpy(&ctx->path_active.addr_remote, addr_remote, addr_remote_len);
-	ctx->path_active.addr_remote_len = addr_remote_len;
-
-	assert(sizeof(ctx->path_active.addr_local) >= addr_local_len);
-	memcpy(&ctx->path_active.addr_local, addr_local, addr_local_len);
-	ctx->path_active.addr_local_len = addr_local_len;
+	__rrr_net_transport_quic_path_fill (
+			&ctx->path_active,
+			addr_remote,
+			addr_remote_len,
+			addr_local,
+			addr_local_len
+	);
 
 	ctx->transport_tls = transport_tls;
 	ctx->fd = fd;
@@ -964,6 +980,76 @@ static int __rrr_net_transport_quic_ctx_new_client (
 			addr_local,
 			addr_local_len
 	);
+}
+
+static void __rrr_net_transport_quic_ctx_report_migration (
+		struct rrr_net_transport_quic_ctx *ctx
+) {
+	char buf_a[128];
+	char buf_b[128];
+
+	const int addr_local_mismatch = (
+			ctx->path_active.addr_local_len != ctx->path_migration.addr_local_len ||
+			memcmp(&ctx->path_active.addr_local, &ctx->path_migration.addr_local, ctx->path_active.addr_local_len) != 0
+	);
+	const int addr_remote_mismatch = (
+			ctx->path_active.addr_remote_len != ctx->path_migration.addr_remote_len ||
+			memcmp(&ctx->path_active.addr_remote, &ctx->path_migration.addr_remote, ctx->path_active.addr_remote_len) != 0
+	);
+
+	if (addr_local_mismatch) {
+		rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_local, ctx->path_active.addr_local_len);
+		rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &ctx->path_migration.addr_local, ctx->path_migration.addr_local_len);
+		RRR_DBG_7("net transport quic fd %i h %i local address migration %s->%s\n",
+			ctx->fd, ctx->connected_handle, buf_a, buf_b);
+	}
+
+	if (addr_remote_mismatch) {
+		rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_remote, ctx->path_active.addr_remote_len);
+		rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &ctx->path_migration.addr_remote, ctx->path_migration.addr_remote_len);
+		RRR_DBG_7("net transport quic fd %i h %i remote address migration %s->%s\n",
+			ctx->fd, ctx->connected_handle, buf_a, buf_b);
+	}
+}
+
+static int __rrr_net_transport_quic_ctx_migrate (
+		struct rrr_net_transport_quic_ctx *ctx,
+		const struct sockaddr *addr_remote,
+		socklen_t addr_remote_len,
+		const struct sockaddr *addr_local,
+		socklen_t addr_local_len
+) {
+	int ret = 0;
+
+	int ret_tmp;
+	ngtcp2_path path;
+	uint64_t timestamp = 0;
+
+	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	__rrr_net_transport_quic_path_fill (
+			&ctx->path_migration,
+			addr_remote,
+			addr_remote_len,
+			addr_local,
+			addr_local_len
+	);
+
+	__rrr_net_transport_quic_ctx_report_migration(ctx);
+
+	__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
+	if ((ret_tmp = ngtcp2_conn_initiate_migration (ctx->conn, &path, timestamp)) != 0) {
+		RRR_MSG_0("net transport quic fd %i h %i failed to initiate migration: %s\n",
+			ctx->fd, ctx->connected_handle, ngtcp2_strerror(ret_tmp));
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_net_transport_quic_tls_data_new (
@@ -1477,25 +1563,53 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 		return ret;
 }
 
+struct rrr_net_transport_quic_modify_callback_data {
+	const struct sockaddr *remote_addr;
+	const socklen_t remote_addr_len;
+	const struct sockaddr *local_addr;
+	const socklen_t local_addr_len;
+	const struct rrr_ip_data *ip_data;
+};
+
+static int __rrr_net_transport_quic_modify_callback (RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS) {
+	struct rrr_net_transport_quic_modify_callback_data *callback_data = arg;
+	struct rrr_net_transport_quic_handle_data *handle_data = *submodule_private_ptr;
+
+	__rrr_net_transport_quic_ctx_migrate (
+			handle_data->ctx,
+			callback_data->remote_addr,
+			callback_data->remote_addr_len,
+			callback_data->local_addr,
+			callback_data->local_addr_len
+	);
+
+	handle_data->ctx->fd = callback_data->ip_data->fd;
+
+	*submodule_fd = callback_data->ip_data->fd;
+
+	return 0;
+}
+
 #define RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE RRR_READ_PERFORMED
 
-struct rrr_net_transport_quic_connect_resolve_callback_data {
+struct rrr_net_transport_quic_connect_or_modify_resolve_callback_data {
 	struct rrr_net_transport_tls *tls;
 	int attempt;
 	struct rrr_ip_data ip_data;
+	struct rrr_net_transport_handle *migrating_handle;
 	rrr_net_transport_handle new_handle;
 	struct sockaddr *addr;
 	socklen_t *socklen;
 };
 
-static int __rrr_net_transport_quic_connect_resolve_callback (
+static int __rrr_net_transport_quic_connect_or_modify_resolve_callback (
 		const char *host,
 		uint16_t port,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void *arg
 ) {
-	struct rrr_net_transport_quic_connect_resolve_callback_data *callback_data = arg;
+	struct rrr_net_transport_quic_connect_or_modify_resolve_callback_data *callback_data = arg;
 	struct rrr_ip_data *ip_data = &callback_data->ip_data;
 	struct rrr_net_transport_tls *tls = callback_data->tls;
 
@@ -1506,6 +1620,11 @@ static int __rrr_net_transport_quic_connect_resolve_callback (
 	socklen_t remote_addr_len = sizeof(remote_addr);
 	struct sockaddr_storage local_addr = {0};
 	socklen_t local_addr_len = sizeof(local_addr);
+	uint64_t timestamp = 0;
+
+	if ((ret = rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS)) != 0) {
+		goto out;
+	}
 
 	callback_data->attempt++;
 	memset(ip_data, '\0', sizeof(*ip_data));
@@ -1552,56 +1671,74 @@ static int __rrr_net_transport_quic_connect_resolve_callback (
 		goto out_close;
 	}
 
-	struct rrr_net_transport_quic_connect_callback_data allocate_callback_data = {
-		callback_data->tls,
-		host,
-		(const struct sockaddr *) &remote_addr,
-		remote_addr_len,
-		(const struct sockaddr *) &local_addr,
-		local_addr_len,
-		&callback_data->ip_data,
-		RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER
-	};
-
-	if ((ret = rrr_net_transport_handle_allocate_and_add (
-			&callback_data->new_handle,
-			(struct rrr_net_transport *) callback_data->tls,
-			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			NULL,
-			NULL,
-			__rrr_net_transport_quic_connect_callback,
-			&allocate_callback_data
-	)) != 0) {
-		RRR_MSG_0("Could not register handle in %s\n", __func__);
-		ret = 1;
-		goto out_close;
+	if (callback_data->migrating_handle) {
+		struct rrr_net_transport_quic_modify_callback_data modify_callback_data = {
+			(const struct sockaddr *) &remote_addr,
+			remote_addr_len,
+			(const struct sockaddr *) &local_addr,
+			local_addr_len,
+			&callback_data->ip_data,
+		};
+		if ((ret = rrr_net_transport_handle_ptr_modify (
+				callback_data->migrating_handle,
+				__rrr_net_transport_quic_modify_callback,
+				&modify_callback_data
+		)) != 0) {
+			goto out;
+		}
 	}
+	else {
+		struct rrr_net_transport_quic_connect_callback_data allocate_callback_data = {
+			callback_data->tls,
+			host,
+			(const struct sockaddr *) &remote_addr,
+			remote_addr_len,
+			(const struct sockaddr *) &local_addr,
+			local_addr_len,
+			&callback_data->ip_data,
+			RRR_NET_TRANSPORT_CONNECTION_ID_PAIR_DEFAULT_INITIALIZER
+		};
 
-/*	{
-		char buf_scid[sizeof(allocate_callback_data.connection_ids_new.src.data) * 2 + 1];
-		char buf_dcid[sizeof(allocate_callback_data.connection_ids_new.src.data) * 2 + 1];
-		rrr_net_transport_connection_id_to_str(buf_scid, sizeof(buf_scid), &allocate_callback_data.connection_ids_new.src);
-		rrr_net_transport_connection_id_to_str(buf_dcid, sizeof(buf_dcid), &allocate_callback_data.connection_ids_new.dst);
-		printf("cid a %s cib b %s\n", buf_scid, buf_dcid);
-	}*/
-
-	if ((ret = rrr_net_transport_handle_cids_push (
-			(struct rrr_net_transport *) callback_data->tls,
-			callback_data->new_handle,
-			&allocate_callback_data.connection_ids_new
-	)) != 0) {
-		if (ret == RRR_NET_TRANSPORT_READ_BUSY) {
-			RRR_DBG_7("net transport quic fd %i h %i cid collision while connecting. Closing connection.\n",
-					callback_data->ip_data.fd, callback_data->new_handle
-			);
+		if ((ret = rrr_net_transport_handle_allocate_and_add (
+				&callback_data->new_handle,
+				(struct rrr_net_transport *) callback_data->tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				NULL,
+				NULL,
+				__rrr_net_transport_quic_connect_callback,
+				&allocate_callback_data
+		)) != 0) {
+			RRR_MSG_0("Could not register handle in %s\n", __func__);
+			ret = 1;
 			goto out_close;
 		}
-		RRR_MSG_0("Error while adding CID to newly created connection in %s\n", __func__);
-		goto out;
+
+	/*	{
+			char buf_scid[sizeof(allocate_callback_data.connection_ids_new.src.data) * 2 + 1];
+			char buf_dcid[sizeof(allocate_callback_data.connection_ids_new.src.data) * 2 + 1];
+			rrr_net_transport_connection_id_to_str(buf_scid, sizeof(buf_scid), &allocate_callback_data.connection_ids_new.src);
+			rrr_net_transport_connection_id_to_str(buf_dcid, sizeof(buf_dcid), &allocate_callback_data.connection_ids_new.dst);
+			printf("cid a %s cib b %s\n", buf_scid, buf_dcid);
+		}*/
+
+		if ((ret = rrr_net_transport_handle_cids_push (
+				(struct rrr_net_transport *) callback_data->tls,
+				callback_data->new_handle,
+				&allocate_callback_data.connection_ids_new
+		)) != 0) {
+			if (ret == RRR_NET_TRANSPORT_READ_BUSY) {
+				RRR_DBG_7("net transport quic fd %i h %i cid collision while connecting. Closing connection.\n",
+						callback_data->ip_data.fd, callback_data->new_handle
+				);
+				goto out_close;
+			}
+			RRR_MSG_0("Error while adding CID to newly created connection in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	assert(*callback_data->socklen >= addr_len);
-	memcpy(callback_data->socklen, addr, addr_len);
+	memcpy(callback_data->addr, addr, addr_len);
 	*callback_data->socklen = addr_len;
 
 	ret = RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE;
@@ -1620,7 +1757,7 @@ static int __rrr_net_transport_quic_connect (
 
 	int ret = 0;
 
-	struct rrr_net_transport_quic_connect_resolve_callback_data callback_data = {
+	struct rrr_net_transport_quic_connect_or_modify_resolve_callback_data callback_data = {
 		.tls = transport_tls,
 		.addr = addr,
 		.socklen = socklen
@@ -1629,7 +1766,7 @@ static int __rrr_net_transport_quic_connect (
 	if ((ret = rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 			port,
 			host,
-			__rrr_net_transport_quic_connect_resolve_callback,
+			__rrr_net_transport_quic_connect_or_modify_resolve_callback,
 			&callback_data
 	)) == RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE) {
 		ret = 0;
@@ -1638,6 +1775,10 @@ static int __rrr_net_transport_quic_connect (
 		RRR_MSG_0("net transport quic connection to %s:%u failed\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (callback_data.attempt == 0) {
+		RRR_MSG_0("net transport quic could not resolve host %s while connecting\n", host);
 	}
 
 	*handle = callback_data.new_handle;
@@ -1979,39 +2120,6 @@ static int __rrr_net_transport_quic_read (
 	return ret;
 }
 
-static void __rrr_net_transport_quic_receive_verify_path_report_migration (
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
-	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
-
-	char buf_a[128];
-	char buf_b[128];
-
-	const int addr_local_mismatch = (
-			ctx->path_active.addr_local_len != ctx->path_migration.addr_local_len ||
-			memcmp(&ctx->path_active.addr_local, &ctx->path_migration.addr_local, ctx->path_active.addr_local_len) != 0
-	);
-	const int addr_remote_mismatch = (
-			ctx->path_active.addr_remote_len != ctx->path_migration.addr_remote_len ||
-			memcmp(&ctx->path_active.addr_remote, &ctx->path_migration.addr_remote, ctx->path_active.addr_remote_len) != 0
-	);
-
-	if (addr_local_mismatch) {
-		rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_local, ctx->path_active.addr_local_len);
-		rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &ctx->path_migration.addr_local, ctx->path_migration.addr_local_len);
-		RRR_DBG_7("net transport quic fd %i h %i local address migration %s->%s\n",
-			ctx->fd, handle->handle, buf_a, buf_b);
-	}
-
-	if (addr_remote_mismatch) {
-		rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_remote, ctx->path_active.addr_remote_len);
-		rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &ctx->path_migration.addr_remote, ctx->path_migration.addr_remote_len);
-		RRR_DBG_7("net transport quic fd %i h %i remote address migration %s->%s\n",
-			ctx->fd, handle->handle, buf_a, buf_b);
-	}
-}
-
 static int __rrr_net_transport_quic_receive_handle_migration (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_socket_datagram *datagram
@@ -2033,32 +2141,27 @@ static int __rrr_net_transport_quic_receive_handle_migration (
 	switch (ctx->path_migration_mode) {
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE:
 			// Migration with path validation
-			memcpy(&ctx->path_migration.addr_local, &datagram->addr_local, datagram->addr_local_len);
-			ctx->path_migration.addr_local_len = datagram->addr_local_len;
-			memcpy(&ctx->path_migration.addr_remote, &datagram->addr_remote, datagram->addr_remote_len);
-			ctx->path_migration.addr_remote_len = datagram->addr_remote_len;
-
-			__rrr_net_transport_quic_receive_verify_path_report_migration (handle);
-
-			rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
-			if ((ret_tmp = ngtcp2_conn_initiate_migration (ctx->conn, &path, timestamp)) != 0) {
-				RRR_MSG_0("net transport quic fd %i h %i failed to initiate migration: %s\n",
-					ctx->fd, handle->handle, ngtcp2_strerror(ret_tmp));
-				ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			if ((ret = __rrr_net_transport_quic_ctx_migrate (
+					ctx,
+					(const struct sockaddr *) &datagram->addr_remote,
+					datagram->addr_remote_len,
+					(const struct sockaddr *) &datagram->addr_local,
+					datagram->addr_local_len
+			)) != 0) {
 				goto out;
 			}
 			break;
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND:
 			// Rebind (simply set new address)
-			__rrr_net_transport_quic_receive_verify_path_report_migration (handle);
-			rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
+			__rrr_net_transport_quic_ctx_report_migration (ctx);
+			__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
 			ngtcp2_conn_set_local_addr(ctx->conn, &path.local);
 			break;
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_IMMEDIATE:
 			// Immediate migration requested
-			__rrr_net_transport_quic_receive_verify_path_report_migration (handle);
+			__rrr_net_transport_quic_ctx_report_migration (ctx);
 
-			rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
+			__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
 			if ((ret_tmp = ngtcp2_conn_initiate_immediate_migration (ctx->conn, &path, timestamp)) != 0) {
 				RRR_MSG_0("net transport quic fd %i h %i failed to initiate immediate migration: %s\n",
 					ctx->fd, handle->handle, ngtcp2_strerror(ret_tmp));
@@ -2067,7 +2170,7 @@ static int __rrr_net_transport_quic_receive_handle_migration (
 			}
 			break;
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION:
-			RRR_BUG("Migration mode VALIDATION cannot be set expicitly in %s\n", __func__);
+			RRR_BUG("Migration mode %i VALIDATION cannot be used explicitly in %s\n", __func__);
 			break;
 		default:
 			RRR_BUG("Migration mode %i node implemented in %s\n", __func__);
@@ -2356,6 +2459,50 @@ static int __rrr_net_transport_quic_handshake (
 	return ret;
 }
 
+static int __rrr_net_transport_quic_migrate (
+		RRR_NET_TRANSPORT_MIGRATE_ARGS
+) {
+	struct rrr_net_transport_tls *transport_tls = (struct rrr_net_transport_tls *) transport;
+
+	int ret = 0;
+
+	struct rrr_net_transport_quic_connect_or_modify_resolve_callback_data callback_data = {
+		.tls = transport_tls,
+		.addr = addr,
+		.socklen = socklen,
+		.migrating_handle = handle
+	};
+
+	RRR_DBG_7("net transport fd %i h %i migrate to %s:%u\n",
+		handle->submodule_fd, handle->handle, host, port);
+
+	if ((ret = rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
+			port,
+			host,
+			__rrr_net_transport_quic_connect_or_modify_resolve_callback,
+			&callback_data
+	)) == RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE) {
+		ret = 0;
+	}
+	else {
+		RRR_MSG_0("net transport quic connection to %s:%u failed\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (callback_data.attempt == 0) {
+		RRR_MSG_0("net transport quic fd %i h %i could not resolve host %s while migrating\n",
+			handle->submodule_fd, handle->handle, host);
+	}
+
+	if ((ret = __rrr_net_transport_quic_write_no_streams (handle)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_net_transport_quic_is_tls (void) {
 	return 1;
 }
@@ -2377,6 +2524,7 @@ static void __rrr_net_transport_quic_destroy (
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_destroy,
 	__rrr_net_transport_quic_connect,
+	__rrr_net_transport_quic_migrate,
 	__rrr_net_transport_quic_bind_and_listen,
 	__rrr_net_transport_quic_decode,
 	__rrr_net_transport_quic_accept,

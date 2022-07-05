@@ -737,6 +737,19 @@ static void __rrr_net_transport_event_write (
 	CHECK_READ_WRITE_RETURN();
 }
 
+static void __rrr_net_transport_handle_event_clear (
+		struct rrr_net_transport_handle *handle
+) {
+	rrr_event_collection_clear(&handle->events);
+	rrr_event_collection_init(&handle->events, handle->transport->event_queue);
+	rrr_event_handle_clear (&handle->event_handshake);
+	rrr_event_handle_clear (&handle->event_read);
+	rrr_event_handle_clear (&handle->event_read_notify);
+	rrr_event_handle_clear (&handle->event_write);
+	rrr_event_handle_clear (&handle->event_first_read_timeout);
+	rrr_event_handle_clear (&handle->event_hard_read_timeout);
+}
+
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ  (1<<0)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD        (1<<1)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ           (1<<2)
@@ -1540,6 +1553,58 @@ int rrr_net_transport_handle_match_data_set (
 	return 0;
 }
 
+int rrr_net_transport_handle_migrate (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		uint16_t port,
+		const char *host,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_migrate");
+
+	int ret = 0;
+
+	struct sockaddr_storage addr;
+	socklen_t socklen = sizeof(addr);
+
+	if ((ret = transport->methods->migrate (
+			handle,
+			(struct sockaddr *) &addr,
+			&socklen,
+			transport,
+			port,
+			host
+	)) != 0) {
+		goto out;
+	}
+
+	if (handle->submodule_fd == 0) {
+		RRR_BUG("BUG: Submodule FD not set in %s\n", __func__);
+	}
+
+	memcpy(&handle->connected_addr, &addr, socklen);
+	handle->connected_addr_len = socklen;
+
+	if (transport->event_queue != NULL) {
+		__rrr_net_transport_handle_event_clear(handle);
+		if ((ret = __rrr_net_transport_handle_event_setup (
+			handle,
+				RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
+				RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
+				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
+				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	callback(handle, (struct sockaddr *) &addr, socklen, callback_arg);
+
+	out:
+	return ret;
+}
+
 void rrr_net_transport_handle_ptr_application_data_bind (
 		struct rrr_net_transport_handle *handle,
 		void *application_data,
@@ -1557,6 +1622,40 @@ void rrr_net_transport_handle_ptr_pre_destroy_function_set (
 		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
 ) {
 	handle->iterator_pre_destroy = pre_destroy;
+}
+
+int rrr_net_transport_handle_ptr_modify (
+		struct rrr_net_transport_handle *handle,
+		int (*submodule_callback)(RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS),
+		void *submodule_callback_arg
+) {
+	int ret = 0;
+
+	void *submodule_private_ptr = handle->submodule_private_ptr;
+	int submodule_fd = handle->submodule_fd;
+
+	if ((ret = submodule_callback (
+			&submodule_private_ptr,
+			&submodule_fd,
+			submodule_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	if (submodule_private_ptr != handle->submodule_private_ptr) {
+		RRR_DBG_7("net transport fd %i [%s] new submodule data\n",
+				handle->submodule_fd, handle->transport->application_name);
+		handle->submodule_private_ptr = submodule_private_ptr;
+	}
+
+	if (submodule_fd != handle->submodule_fd) {
+		RRR_DBG_7("net transport fd %i [%s] new fd %i\n",
+				handle->submodule_fd, handle->transport->application_name, submodule_fd);
+		handle->submodule_fd = submodule_fd;
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_net_transport_handle_check_handshake_complete (

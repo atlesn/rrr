@@ -54,6 +54,14 @@ struct rrr_nullsafe_str;
     uint16_t port,                                             \
     const char *host
 
+#define RRR_NET_TRANSPORT_MIGRATE_ARGS                         \
+    struct rrr_net_transport_handle *handle,                   \
+    struct sockaddr *addr,                                     \
+    socklen_t *socklen,                                        \
+    struct rrr_net_transport *transport,                       \
+    uint16_t port,                                             \
+    const char *host
+
 #define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD                                                      \
     struct rrr_net_transport_handle *handle;                                                           \
     int (*get_target_size)(struct rrr_read_session *read_session, void *arg);                          \
@@ -165,6 +173,9 @@ struct rrr_net_transport_methods {
 
 	// Create outbound connection
 	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
+
+	// Migrate outbound connection
+	int (*migrate)(RRR_NET_TRANSPORT_MIGRATE_ARGS);
 
 	// Start listening on inbound connections (server mode)
 	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);

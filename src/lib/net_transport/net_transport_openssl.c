@@ -793,6 +793,7 @@ static int __rrr_net_transport_openssl_is_tls (void) {
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_destroy,
 	__rrr_net_transport_openssl_connect,
+	NULL,
 	__rrr_net_transport_openssl_bind_and_listen,
 	NULL,
 	__rrr_net_transport_openssl_accept,

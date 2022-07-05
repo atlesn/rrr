@@ -402,6 +402,7 @@ static void __rrr_net_transport_plain_selected_proto_get (
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
+	NULL,
 	__rrr_net_transport_plain_bind_and_listen,
 	NULL,
 	__rrr_net_transport_plain_accept,

@@ -36,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_test_quic_data {
 	const char *msg_out;
 	const char *msg_in;
+	struct rrr_net_transport *transport;
+	rrr_net_transport_handle transport_handle;
+	int is_ipv6;
 	int64_t send_stream_id;
 	int stream_blocked;
 	int send_acked;
@@ -47,6 +50,7 @@ struct rrr_test_quic_data_common {
 	struct rrr_test_quic_data client;
 	struct rrr_test_quic_data server;
 	uint64_t timeout;
+	int round;
 };
 
 static const char rrr_test_quic_request_data[] = "GET /\r\n";
@@ -195,10 +199,23 @@ static void __rrr_test_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_BIND_AND
 }
 
 static void __rrr_test_quic_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
-	(void)(handle);
-	(void)(sockaddr);
+	struct rrr_test_quic_data *data = arg;
+
 	(void)(socklen);
-	(void)(arg);
+
+	data->transport_handle = rrr_net_transport_ctx_get_handle(handle);
+
+	if (sockaddr->sa_family == AF_INET) {
+		assert(socklen == sizeof(struct sockaddr_in));
+		data->is_ipv6 = 0;
+	}
+	else if (sockaddr->sa_family == AF_INET6) {
+		assert(socklen == sizeof(struct sockaddr_in6));
+		data->is_ipv6 = 1;
+	}
+	else {
+		RRR_BUG("Unknown family %i in %s\n", sockaddr->sa_family, __func__);
+	}
 }
 
 static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -214,8 +231,35 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	     data->client.complete_out &&
 	     data->server.complete_out
 	) {
-		TEST_MSG("Quic test completed successfully, cleanup up.\n");
-		return RRR_EVENT_EXIT;
+		if (data->round++ == 0) {
+			TEST_MSG("Quic test migrating client %s.\n",
+				data->client.is_ipv6 ? "from IPv6 to IPv4" : "from IPv4 to IPv6");
+
+			data->client.complete_in = 0;
+			data->server.complete_in = 0;
+			data->client.complete_out = 0;
+			data->server.complete_out = 0;
+			data->client.stream_blocked = 0;
+			data->server.stream_blocked = 0;
+			data->client.send_acked = 0;
+			data->server.send_acked = 0;
+
+			if (rrr_net_transport_handle_migrate (
+					data->client.transport,
+					data->client.transport_handle,
+					RRR_TEST_QUIC_PORT,
+					data->client.is_ipv6 ? "127.0.0.1" : "::1",
+					__rrr_test_quic_connect_callback,
+					data
+			) != 0) {
+				TEST_MSG("Quic test migration failed\n");
+				return RRR_EVENT_ERR;
+			}
+		}
+		else {
+			TEST_MSG("Quic test completed successfully, cleanup up.\n");
+			return RRR_EVENT_EXIT;
+		}
 	}
 
 	return RRR_EVENT_OK;
@@ -326,10 +370,13 @@ int rrr_test_quic (void) {
 			RRR_TEST_QUIC_PORT,
 			"localhost",
 			__rrr_test_quic_connect_callback,
-			NULL
+			&data
 	)) != 0) {
 		goto out_destroy_transport_client;
 	}
+
+	data.client.transport = transport_client;
+	data.server.transport = transport_server;
 
 	ret = rrr_event_dispatch (
 			queue,

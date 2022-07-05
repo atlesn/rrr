@@ -133,6 +133,11 @@ struct rrr_event_queue;
     const struct rrr_socket_datagram *datagram,                            \
     void *arg
 
+#define RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS                             \
+    void **submodule_private_ptr,                                          \
+    int *submodule_fd,                                                     \
+    void *arg
+
 int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
@@ -140,6 +145,11 @@ int rrr_net_transport_handle_allocate_and_add (
 		const struct rrr_net_transport_connection_id_pair *connection_ids,
 		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
+		void *submodule_callback_arg
+);
+int rrr_net_transport_handle_ptr_modify (
+		struct rrr_net_transport_handle *handle,
+		int (*submodule_callback)(RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );
 #endif
@@ -235,6 +245,14 @@ int rrr_net_transport_handle_match_data_set (
 		rrr_net_transport_handle transport_handle,
 		const char *string,
 		uint64_t number
+);
+int rrr_net_transport_handle_migrate (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		uint16_t port,
+		const char *host,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
 );
 void rrr_net_transport_handle_ptr_application_data_bind (
 		struct rrr_net_transport_handle *handle,
