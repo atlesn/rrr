@@ -1045,17 +1045,17 @@ int rrr_socket_send_check (
 		fd, POLLOUT, 0
 	};
 
-	if ((poll(&pollfd, 1, 0) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+	if ((ret = poll(&pollfd, 1, 0) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
 			RRR_DBG_7("fd %i connection refused or closed in send check (POLLHUP)\n", fd);
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
-		else if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
+		else if (ret == -1 && (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK)) {
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;
 		}
-		else if (errno == ECONNREFUSED) {
+		else if (ret == -1 && (errno == ECONNREFUSED)) {
 			RRR_DBG_7("fd %i connection refused in send check (ECONNREFUSED)\n", fd);
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -1088,17 +1088,17 @@ static int __rrr_socket_send_check (
 
 	int timeout = 10; // 5 ms
 
-	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+	if ((ret = poll(&pollfd, 1, timeout)) == -1 || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
 			RRR_DBG_7("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
-		else if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
+		else if (ret == -1 || (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK)) {
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
-		else if (errno == ECONNREFUSED) {
+		else if (ret == -1 || (errno == ECONNREFUSED)) {
 			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
@@ -1153,24 +1153,23 @@ int rrr_socket_connect_nonblock (
 ) {
 	int ret = 0;
 
-	if (connect(fd, addr, addr_len) == 0) {
-		goto out;
-	}
-	else if (errno == EINPROGRESS || errno == EAGAIN) {
-		RRR_DBG_7 ("fd %i connection in progress\n", fd);
-		ret = 0;
-		goto out;
-	}
-	else if (errno == ECONNREFUSED) {
-		RRR_DBG_7 ("fd %i connection refused\n", fd);
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out;
-	}
-	else {
-		RRR_MSG_0 ("fd %i error while connecting, address family was %u: %s\n",
-				fd, addr->sa_family, rrr_strerror(errno));
-		ret = 1;
-		goto out;
+	if ((ret = connect(fd, addr, addr_len)) != 0) {
+		if (errno == EINPROGRESS || errno == EAGAIN) {
+			RRR_DBG_7 ("fd %i connection in progress\n", fd);
+			ret = 0;
+			goto out;
+		}
+		else if (errno == ECONNREFUSED) {
+			RRR_DBG_7 ("fd %i connection refused\n", fd);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else {
+			RRR_MSG_0 ("fd %i error while connecting, address family was %u: %s\n",
+					fd, addr->sa_family, rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
@@ -1301,7 +1300,9 @@ int rrr_socket_sendto_nonblock (
 
 	if (done_bytes_total != size) {
 		if (done_bytes <= 0) {
-			*err = errno;
+			if (done_bytes == -1) {
+				*err = errno;
+			}
 			if (done_bytes == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
 				rrr_posix_usleep(10);
 				goto retry;
@@ -1447,7 +1448,9 @@ int rrr_socket_check_alive (
 	ssize_t ret_tmp = poll(&pollfd, 1, 10);
 
 	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n", fd, rrr_strerror(errno), pollfd.revents);
+		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n",
+			fd, ret_tmp == -1 ? rrr_strerror(errno) : "POLLHUP/POLLERR/POLLNVAL", pollfd.revents
+		);
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 	else if (ret_tmp > 0) {
@@ -1503,11 +1506,11 @@ int rrr_socket_recvmsg (
 	}
 
 	ssize_t bytes = recvmsg(fd, &datagram->msg, 0);
-	if (bytes == 0 || errno == EAGAIN || errno == ENOTCONN || errno == EWOULDBLOCK) {
+	if (bytes == 0 || (bytes == -1 && (errno == EAGAIN || errno == ENOTCONN || errno == EWOULDBLOCK))) {
 		ret = RRR_SOCKET_READ_INCOMPLETE;
 		goto out;
 	}
-	else if (bytes < 0) {
+	else if (bytes == -1) {
 		RRR_MSG_0("recvmsg failed for fd %i: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
