@@ -86,6 +86,7 @@ struct rrr_net_transport_quic_path {
 enum rrr_net_transport_quic_migration_mode {
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND,
+	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_IMMEDIATE,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION
 };
@@ -1233,8 +1234,12 @@ static int __rrr_net_transport_quic_send_packet (
 ) {
 	ssize_t bytes_written = 0;
 
-	RRR_DBG_7("net transport quic fd %i transmit %llu bytes\n",
-		fd, (unsigned long long) data_size);
+	char buf[128];
+
+	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+
+	RRR_DBG_7("net transport quic fd %i transmit %llu bytes to %s\n",
+		fd, (unsigned long long) data_size, buf);
 
 	do {
 		bytes_written = sendto(fd, data, data_size, 0, addr, addr_len);
@@ -1276,8 +1281,12 @@ static int __rrr_net_transport_quic_decode (
 		goto out;
 	}
 
-	RRR_DBG_7("net transport quic fd %i decode datagram %llu bytes\n",
-		listen_handle->submodule_fd, (unsigned long long) datagram->msg_len);
+	{
+		char ip_buf[128];
+		rrr_ip_to_str(ip_buf, sizeof(ip_buf), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
+		RRR_DBG_7("net transport quic fd %i decode datagram %llu bytes from %s\n",
+			listen_handle->submodule_fd, (unsigned long long) datagram->msg_len, ip_buf);
+	}
 
 	uint32_t version;
 	const uint8_t *dcid, *scid;
@@ -2041,6 +2050,9 @@ static int __rrr_net_transport_quic_write_all_streams (
 	}
 
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING) {
+			RRR_LL_ITERATE_NEXT();
+		}
 		if ((ret = __rrr_net_transport_quic_write (
 				handle,
 				node->stream_id,
@@ -2157,6 +2169,12 @@ static int __rrr_net_transport_quic_receive_handle_migration (
 			__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
 			ngtcp2_conn_set_local_addr(ctx->conn, &path.local);
 			break;
+		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER:
+			// Simply set new addresses into active path.
+			// ngtcp2 library will detect that the path has
+			// changed and initiate path validation.
+			__rrr_net_transport_quic_ctx_report_migration (ctx);
+			break;
 		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_IMMEDIATE:
 			// Immediate migration requested
 			__rrr_net_transport_quic_ctx_report_migration (ctx);
@@ -2263,6 +2281,18 @@ static int __rrr_net_transport_quic_receive_verify_path (
 	}
 
 	if (addr_local_mismatch || addr_remote_mismatch || ctx->path_migration_mode) {
+		if (ngtcp2_conn_is_server(ctx->conn)) {
+			assert(ctx->path_migration_mode == 0);
+			ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER;
+			__rrr_net_transport_quic_path_fill (
+					&ctx->path_migration,
+					(const struct sockaddr *) &datagram->addr_remote,
+					datagram->addr_remote_len,
+					(const struct sockaddr *) &datagram->addr_local,
+					datagram->addr_local_len
+			);
+		}
+
 		if ((ret = __rrr_net_transport_quic_receive_handle_migration(handle, datagram)) != 0) {
 			goto out;
 		}

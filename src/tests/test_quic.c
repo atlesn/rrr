@@ -66,13 +66,20 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 static int __rrr_test_quic_handshake_complete_client_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
+	int ret = 0;
+
 	TEST_MSG("Quic client handshake complete\n");
 
-	return rrr_net_transport_ctx_stream_open (
+	if ((ret = rrr_net_transport_ctx_stream_open (
 			&data->send_stream_id,
 			handle,
 			RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
@@ -133,6 +140,8 @@ static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_
 		*stream_id = -1;
 		return 0;
 	}
+
+	assert(data->send_stream_id == *stream_id);
 
 	TEST_MSG("Stream %" PRIi64 " get message\n", *stream_id);
 
@@ -243,6 +252,8 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			data->server.stream_blocked = 0;
 			data->client.send_acked = 0;
 			data->server.send_acked = 0;
+			data->client.send_stream_id = -1;
+			data->server.send_stream_id = -1;
 
 			if (rrr_net_transport_handle_migrate (
 					data->client.transport,
@@ -253,6 +264,15 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					data
 			) != 0) {
 				TEST_MSG("Quic test migration failed\n");
+				return RRR_EVENT_ERR;
+			}
+
+			if (rrr_net_transport_handle_stream_open (
+					&data->client.send_stream_id,
+					data->client.transport,
+					data->client.transport_handle,
+					RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
+			) != 0) {
 				return RRR_EVENT_ERR;
 			}
 		}

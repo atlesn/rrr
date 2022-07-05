@@ -1765,6 +1765,17 @@ int rrr_net_transport_handle_check_handshake_complete (
 	return ret;
 }
 
+int rrr_net_transport_handle_stream_open (
+		int64_t *result,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int flags
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_open");
+
+	return rrr_net_transport_ctx_stream_open(result, handle, flags);
+}
+
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 ) {
