@@ -128,6 +128,12 @@ void rrr_event_count (
 		struct rrr_event_queue *queue,
 		uint8_t function
 );
+static inline void rrr_event_handle_clear (
+		rrr_event_handle *handle
+) {
+	rrr_event_handle blank = {0};
+	*handle = blank;
+}
 static inline void rrr_event_activate (
 		rrr_event_handle *handle
 ) {
