@@ -392,11 +392,12 @@ static int __rrr_net_transport_plain_is_tls (void) {
 	return 0;
 }
 
-static void __rrr_net_transport_plain_selected_proto_get (
+static int __rrr_net_transport_plain_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	(void)(handle);
 	*proto = NULL;
+	return 0;
 }
 
 static const struct rrr_net_transport_methods plain_methods = {

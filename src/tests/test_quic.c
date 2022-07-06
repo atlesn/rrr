@@ -22,13 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 
 #include "test.h"
+#include "../lib/allocator.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_ctx.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/event/event.h"
 #include "../lib/util/rrr_time.h"
 
-#define RRR_TEST_QUIC_ALPN_PROTO "\x03RRR"
+#define RRR_TEST_QUIC_PROTOCOL "RRR"
+#define RRR_TEST_QUIC_ALPN_PROTO "\x03" RRR_TEST_QUIC_PROTOCOL
 #define RRR_TEST_QUIC_PORT 4433
 //#define RRR_TEST_QUIC_PORT 5555
 #define RRR_TEST_QUIC_TIMEOUT_S 5
@@ -74,8 +76,26 @@ static int __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT
 	(void)(handle);
 	(void)(arg);
 
-	TEST_MSG("Quic server handshake complete\n");
+	char *alpn_selected_proto = NULL;
 
+	if (rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle)) {
+		return 1;
+	}
+
+	if (alpn_selected_proto == NULL) {
+		TEST_MSG("Quic server no ALPN selected\n");
+		return 1;
+	}
+
+	if (strcmp(RRR_TEST_QUIC_PROTOCOL, alpn_selected_proto) != 0) {
+		TEST_MSG("Quic server unexpected ALPN selected (%s vs expected %s)\n",
+			alpn_selected_proto, RRR_TEST_QUIC_PROTOCOL);
+		return 1;
+	}
+
+	TEST_MSG("Quic server handshake complete selected ALPN is %s\n", alpn_selected_proto);
+
+	rrr_free(alpn_selected_proto);
 	return 0;
 }
 

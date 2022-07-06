@@ -71,8 +71,6 @@ static void __rrr_net_transport_libressl_data_destroy (
 		rrr_ip_close(&data->ip_data);
 	}
 
-	RRR_FREE_IF_NOT_NULL(data->alpn_selected_proto);
-
 	rrr_free(data);
 }
 
@@ -674,12 +672,24 @@ static int __rrr_net_transport_libressl_is_tls (void) {
 	return 1;
 }
 
-static void __rrr_net_transport_libressl_selected_proto_get (
+static int __rrr_net_transport_libressl_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
 
-	*proto = tls_conn_alpn_selected(tls_data->ctx);
+	const char *proto_source = tls_conn_alpn_selected(tls_data->ctx);
+	char *proto_new = NULL;
+
+	*proto = NULL;
+
+	if (proto_source != 0 && (proto_new = rrr_strdup(proto_source)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	*proto = proto_new;
+
+	return 0;
 }
 
 static const struct rrr_net_transport_methods libressl_methods = {

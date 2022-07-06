@@ -66,8 +66,6 @@ struct rrr_net_transport_tls_data {
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
 
-	char *alpn_selected_proto;
-
 #ifdef RRR_WITH_OPENSSL
 	SSL_CTX *ctx;
 	BIO *web;

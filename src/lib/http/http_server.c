@@ -158,9 +158,11 @@ static int __rrr_http_server_handshake_complete_callback (
 	int ret = 0;
 
 	struct rrr_http_application *application = NULL;
+	char *alpn_selected_proto = NULL;
 
-	const char *alpn_selected_proto = NULL;
-	rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle);
+	if ((ret = rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle)) != 0) {
+		goto out;
+	}
 
 	const struct rrr_http_application_callbacks callbacks = {
 		http_server->callbacks.unique_id_generator_callback,
@@ -203,6 +205,7 @@ static int __rrr_http_server_handshake_complete_callback (
 			RRR_NET_TRANSPORT_CTX_FD(handle));
 
 	out:
+	RRR_FREE_IF_NOT_NULL(alpn_selected_proto);
 	rrr_http_application_destroy_if_not_null(&application);
 	return ret;
 }

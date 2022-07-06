@@ -374,9 +374,9 @@ void rrr_net_transport_ctx_connected_address_get (
 	*addr_len = handle->connected_addr_len;
 }
 
-void rrr_net_transport_ctx_selected_proto_get (
-		const char **proto,
+int rrr_net_transport_ctx_selected_proto_get (
+		char **proto,
 		struct rrr_net_transport_handle *handle
 ) {
-	handle->transport->methods->selected_proto_get(proto, handle);
+	return handle->transport->methods->selected_proto_get(proto, handle);
 }

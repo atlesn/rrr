@@ -60,7 +60,6 @@ void rrr_net_transport_openssl_common_ssl_data_destroy (
 		if (ssl_data->ip_data.fd != 0) {
 			rrr_ip_close(&ssl_data->ip_data);
 		}
-		RRR_FREE_IF_NOT_NULL(ssl_data->alpn_selected_proto);
 		rrr_free(ssl_data);
 	}
 }
@@ -153,6 +152,32 @@ static int __rrr_net_transport_openssl_common_alpn_select_cb (
 	}
 
 	RRR_DBG_3("TLS ALPN no protocol selected\n");
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_openssl_common_alpn_selected_proto_get (
+		char **target,
+		SSL *ssl
+) {
+	int ret = 0;
+
+	const unsigned char *alpn_proto = NULL;
+	unsigned int alpn_proto_length = 0;
+
+	SSL_get0_alpn_selected(ssl, &alpn_proto, &alpn_proto_length);
+
+	if (alpn_proto != NULL && alpn_proto_length > 0) {
+		unsigned int str_size = alpn_proto_length + 1;
+		if ((*target = rrr_allocate(str_size)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for ALPN protocol name %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+		memcpy(*target, alpn_proto, alpn_proto_length);
+		(*target)[alpn_proto_length] = '\0';
+	}
 
 	out:
 	return ret;

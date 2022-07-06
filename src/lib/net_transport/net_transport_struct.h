@@ -160,7 +160,7 @@ struct rrr_nullsafe_str;
     rrr_biglength size
 
 #define RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS              \
-    const char **proto,                                        \
+    char **proto,                                              \
     struct rrr_net_transport_handle *handle
 
 struct rrr_net_transport_read_callback_data {
@@ -219,7 +219,7 @@ struct rrr_net_transport_methods {
 	int (*is_tls)(void);
 
 	// Get selected ALPN protocol
-	void (*selected_proto_get)(RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS);
+	int (*selected_proto_get)(RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS);
 };
 
 struct rrr_net_transport_handle {

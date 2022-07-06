@@ -110,8 +110,6 @@ struct rrr_net_transport_quic_ctx {
 	struct rrr_net_transport_quic_path path_active;
 	struct rrr_net_transport_quic_path path_migration;
 	enum rrr_net_transport_quic_migration_mode path_migration_mode;
-
-	char *alpn_selected_proto;
 };
 
 struct rrr_net_transport_quic_handle_data {
@@ -2541,11 +2539,12 @@ static int __rrr_net_transport_quic_stream_open (
 	return ret;
 }
 
-static void __rrr_net_transport_quic_selected_proto_get (
+static int __rrr_net_transport_quic_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
-	(void)(handle);
-	(void)(proto);
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+
+	return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, handle_data->ctx->ssl);
 }
 
 static int __rrr_net_transport_quic_poll (
@@ -2568,10 +2567,10 @@ static int __rrr_net_transport_quic_handshake (
 		goto out;
 	}
 
-	ret = ngtcp2_conn_get_handshake_completed(ctx->conn)
-		? 0
-		: RRR_NET_TRANSPORT_READ_INCOMPLETE
-	;
+	if (!ngtcp2_conn_get_handshake_completed(ctx->conn)) {
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+		goto out;
+	}
 
 	out:
 	return ret;

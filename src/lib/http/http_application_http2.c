@@ -204,11 +204,13 @@ static int __rrr_http_application_http2_request_send (
 
 	int ret = 0;
 
+	char *selected_proto = NULL;
 	struct rrr_http_application *http1 = NULL;
 
 	if (rrr_net_transport_ctx_is_tls(handle)) {
-		const char *selected_proto = NULL;
-		rrr_net_transport_ctx_selected_proto_get(&selected_proto, handle);
+		if ((ret = rrr_net_transport_ctx_selected_proto_get(&selected_proto, handle)) != 0) {
+			goto out;
+		}
 
 		RRR_DBG_3("HTTP2 ALPN selected protocol: %s\n", (selected_proto != NULL ? selected_proto : "none"));
 
@@ -299,6 +301,7 @@ static int __rrr_http_application_http2_request_send (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(selected_proto);
 	rrr_http_application_destroy_if_not_null(&http1);
 	return ret;
 }
