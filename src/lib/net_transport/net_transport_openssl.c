@@ -133,32 +133,6 @@ const char *__rrr_net_transport_openssl_ssl_version_to_str (
 	return result;
 }
 
-static int __rrr_net_transport_openssl_alpn_selected_proto_save (
-		struct rrr_net_transport_tls_data *ssl_data,
-		SSL *ssl
-) {
-	int ret = 0;
-
-	const unsigned char *alpn_proto = NULL;
-	unsigned int alpn_proto_length = 0;
-
-	SSL_get0_alpn_selected(ssl, &alpn_proto, &alpn_proto_length);
-
-	if (alpn_proto != NULL && alpn_proto_length > 0) {
-		unsigned int str_size = alpn_proto_length + 1;
-		if ((ssl_data->alpn_selected_proto = rrr_allocate(str_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for ALPN protocol name in __rrr_net_transport_openssl_alpn_selected_proto_save\n");
-			ret = 1;
-			goto out;
-		}
-		memcpy(ssl_data->alpn_selected_proto, alpn_proto, alpn_proto_length);
-		ssl_data->alpn_selected_proto[alpn_proto_length] = '\0';
-	}
-
-	out:
-	return ret;
-}
-
 int __rrr_net_transport_openssl_connect_callback (
 		RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS
 ) {
@@ -710,12 +684,12 @@ static int __rrr_net_transport_openssl_send (
 	return RRR_NET_TRANSPORT_SEND_OK;
 }
 
-static void __rrr_net_transport_openssl_selected_proto_get (
+static int __rrr_net_transport_openssl_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
 
-	*proto = ssl_data->alpn_selected_proto;
+	return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, ssl_data->ssl);
 }
 
 static int __rrr_net_transport_openssl_poll (
@@ -775,11 +749,6 @@ static int __rrr_net_transport_openssl_handshake (
 	if ((verify_result = SSL_get_verify_result(ssl)) != X509_V_OK) {
 		RRR_MSG_0("Certificate verification failed for fd %i with reason %li\n",
 				handle->submodule_fd, verify_result);
-		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
-	}
-
-	if (__rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) {
-		RRR_MSG_0("Failed to save ALPN selected protocol\n");
 		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 	}
 

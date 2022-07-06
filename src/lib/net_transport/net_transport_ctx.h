@@ -160,8 +160,8 @@ void rrr_net_transport_ctx_connected_address_get (
 		socklen_t *addr_len,
 		const struct rrr_net_transport_handle *handle
 );
-void rrr_net_transport_ctx_selected_proto_get (
-		const char **proto,
+int rrr_net_transport_ctx_selected_proto_get (
+		char **proto,
 		struct rrr_net_transport_handle *handle
 );
 

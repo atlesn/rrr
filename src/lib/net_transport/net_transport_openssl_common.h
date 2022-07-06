@@ -36,6 +36,10 @@ void rrr_net_transport_openssl_common_ssl_data_ip_replace (
 		struct rrr_net_transport_tls_data *ssl_data,
 		const struct rrr_ip_data *ip_data
 );
+int rrr_net_transport_openssl_common_alpn_selected_proto_get (
+		char **target,
+		SSL *ssl
+);
 int rrr_net_transport_openssl_common_new_ctx (
 		SSL_CTX **target,
 		const SSL_METHOD *method,
