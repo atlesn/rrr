@@ -1064,23 +1064,24 @@ static int __rrr_socket_send_check (
 ) {
 	int ret = RRR_SOCKET_OK;
 
+	int items;
 	struct pollfd pollfd = {
 		fd, POLLOUT, 0
 	};
 
 	int timeout = 10; // 5 ms
 
-	if ((ret = poll(&pollfd, 1, timeout)) == -1 || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+	if ((items = poll(&pollfd, 1, timeout)) == -1 || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
 			RRR_DBG_7("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
-		else if (ret == -1 || (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK)) {
+		else if (items == -1 && (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK)) {
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
-		else if (ret == -1 || (errno == ECONNREFUSED)) {
+		else if (items == -1 && (errno == ECONNREFUSED)) {
 			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
