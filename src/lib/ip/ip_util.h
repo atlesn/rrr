@@ -51,5 +51,9 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		const struct sockaddr *source,
 		const socklen_t source_len
 );
+void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
+		struct sockaddr *addr,
+		socklen_t *addr_len
+);
 
 #endif /* RRR_IP_UTIL_H */

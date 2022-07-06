@@ -26,10 +26,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_net_transport_tls_alpn;
 struct rrr_net_transport_tls_data;
+struct rrr_ip_data;
 
 struct rrr_net_transport_tls_data *rrr_net_transport_openssl_common_ssl_data_new (void);
 void rrr_net_transport_openssl_common_ssl_data_destroy (
 		struct rrr_net_transport_tls_data *ssl_data
+);
+void rrr_net_transport_openssl_common_ssl_data_ip_replace (
+		struct rrr_net_transport_tls_data *ssl_data,
+		const struct rrr_ip_data *ip_data
 );
 int rrr_net_transport_openssl_common_new_ctx (
 		SSL_CTX **target,

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <assert.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -174,9 +175,13 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		const struct sockaddr *source,
 		const socklen_t source_len
 ) {
-	const struct sockaddr_in6 *source_in6 = (const struct sockaddr_in6 *) source;
-	
-//	printf("source length: %u, source family: %u\n", source_len, source->sa_family);
+	// Allow target and source to be the same
+	struct sockaddr_storage source_tmp;
+
+	assert(sizeof(source_tmp) >= source_len);
+	memcpy(&source_tmp, source, source_len);
+
+	const struct sockaddr_in6 *source_in6 = (const struct sockaddr_in6 *) &source_tmp;
 
 	if (source_len != sizeof(*source_in6) || source->sa_family != AF_INET6) {
 		goto out_copy;
@@ -206,8 +211,6 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 #	error "Neither HAVE_INET_IN6_BSD, HAVE_INET_IN6_LINUX nor HAVE_INET_IN6_MUSL was defined"
 #endif
 
-//	printf ("ipv4: %08x, ffff: %04x zeros: %u,%u,%u\n", ipv4, ffff, zero_a, zero_b, zero_c);
-
 	if (zero_a != 0 || zero_b != 0 || zero_c != 0 || ffff != 0xffff) {
 		goto out_copy;
 	}
@@ -231,8 +234,20 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		if (*target_len < source_len) {
 			RRR_BUG("BUG: Target length too small in rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed B\n");
 		}
-		memcpy(target, source, source_len);
+		memcpy(target, &source_tmp, source_len);
 		*target_len = source_len;
 	out:
 	return;
+}
+
+void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
+		struct sockaddr *addr,
+		socklen_t *addr_len
+) {
+	return rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
+			(struct sockaddr_storage *) addr,
+			addr_len,
+			addr,
+			*addr_len
+	);
 }

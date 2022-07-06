@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 struct rrr_net_transport_quic_recv_buf {
 	rrr_biglength rpos;
@@ -87,7 +87,6 @@ enum rrr_net_transport_quic_migration_mode {
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER,
-	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_IMMEDIATE,
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION
 };
 
@@ -100,6 +99,7 @@ struct rrr_net_transport_quic_ctx {
 	int fd;
 
 	int initial_received;
+	int await_path_validation;
 
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
@@ -253,8 +253,13 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 
 	struct rrr_net_transport_quic_stream *stream = NULL;
 
-	RRR_DBG_7("net transport quic h %i new %s %s stream %" PRIi64 "\n",
-		ctx->connected_handle, local, bidi, stream_id);
+	if (ctx->await_path_validation) {
+		ret = RRR_NET_TRANSPORT_READ_BUSY;
+		goto out;
+	}
+
+	RRR_DBG_7("net transport quic fd %i h %i new %s %s stream %" PRIi64 "\n",
+		ctx->fd, ctx->connected_handle, local, bidi, stream_id);
 
 	if ((ret = __rrr_net_transport_quic_stream_new (
 			&stream,
@@ -569,6 +574,36 @@ static int __rrr_net_transport_quic_ngtcp2_cb_remove_connection_id (
 	return 0;
 }
 
+static int __rrr_net_transport_quic_ngtcp2_cb_path_validation (
+		ngtcp2_conn *conn,
+		uint32_t flags,
+		const ngtcp2_path *path,
+		ngtcp2_path_validation_result res,
+		void *user_data
+) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+
+	(void)(conn);
+	(void)(flags);
+	(void)(path);
+
+	// Add any check for NGTCP2_PATH_VALIDATION_FLAG_PREFERRED_ADDR here
+
+
+	if (res == NGTCP2_PATH_VALIDATION_RESULT_SUCCESS) {
+		RRR_DBG_7("net transport quic fd %i h %i path valdiation complete\n",
+			ctx->fd, ctx->connected_handle);
+		ctx->await_path_validation = 0;
+	}
+	else {
+		RRR_DBG_7("net transport quic fd %i h %i path valdiation failed\n",
+			ctx->fd, ctx->connected_handle);
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
+
+	return 0;
+}
+
 static int __rrr_net_transport_quic_ngtcp2_cb_stream_reset (
 		ngtcp2_conn *conn,
 		int64_t stream_id,
@@ -775,7 +810,7 @@ static int __rrr_net_transport_quic_ctx_new (
 			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
 			__rrr_net_transport_quic_ngtcp2_cb_remove_connection_id,
 			ngtcp2_crypto_update_key_cb,
-			NULL, /* path_validation */
+			__rrr_net_transport_quic_ngtcp2_cb_path_validation,
 			NULL, /* select_preferred_addr */
 			__rrr_net_transport_quic_ngtcp2_cb_stream_reset,
 			NULL, /* extend_max_remote_streams_bidi */
@@ -857,7 +892,7 @@ static int __rrr_net_transport_quic_ctx_new (
 			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
 			__rrr_net_transport_quic_ngtcp2_cb_remove_connection_id,
 			ngtcp2_crypto_update_key_cb,
-			NULL, /* path_validation */
+			__rrr_net_transport_quic_ngtcp2_cb_path_validation,
 			NULL, /* select_preferred_addr */
 			__rrr_net_transport_quic_ngtcp2_cb_stream_reset,
 			NULL, /* extend_max_remote_streams_bidi */
@@ -1020,17 +1055,6 @@ static int __rrr_net_transport_quic_ctx_migrate (
 		const struct sockaddr *addr_local,
 		socklen_t addr_local_len
 ) {
-	int ret = 0;
-
-	int ret_tmp;
-	ngtcp2_path path;
-	uint64_t timestamp = 0;
-
-	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
-		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
-		goto out;
-	}
-
 	__rrr_net_transport_quic_path_fill (
 			&ctx->path_migration,
 			addr_remote,
@@ -1039,18 +1063,36 @@ static int __rrr_net_transport_quic_ctx_migrate (
 			addr_local_len
 	);
 
-	__rrr_net_transport_quic_ctx_report_migration(ctx);
+	ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION;
 
-	__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
-	if ((ret_tmp = ngtcp2_conn_initiate_migration (ctx->conn, &path, timestamp)) != 0) {
-		RRR_MSG_0("net transport quic fd %i h %i failed to initiate migration: %s\n",
-			ctx->fd, ctx->connected_handle, ngtcp2_strerror(ret_tmp));
-		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
-		goto out;
-	}
+	// Prevent opening of new streams until completion of path validation
+	ctx->await_path_validation = 1;
 
-	out:
-	return ret;
+	return 0;
+}
+
+static void __rrr_net_transport_quic_ctx_migrate_start_local_rebind (
+		struct rrr_net_transport_quic_ctx *ctx,
+		const struct rrr_socket_datagram *datagram
+) {
+	ctx->path_migration = ctx->path_active;
+	assert(ctx->path_migration.addr_local_len == datagram->addr_local_len);
+	memcpy(&ctx->path_migration.addr_local, &datagram->addr_local, datagram->addr_local_len);
+	ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND;
+}
+
+static void __rrr_net_tansport_quic_ctx_migrate_start_server (
+		struct rrr_net_transport_quic_ctx *ctx,
+		const struct rrr_socket_datagram *datagram
+) {
+	__rrr_net_transport_quic_path_fill (
+			&ctx->path_migration,
+			(const struct sockaddr *) &datagram->addr_remote,
+			datagram->addr_remote_len,
+			(const struct sockaddr *) &datagram->addr_local,
+			datagram->addr_local_len
+	);
+	ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER;
 }
 
 static int __rrr_net_transport_quic_tls_data_new (
@@ -1281,11 +1323,17 @@ static int __rrr_net_transport_quic_decode (
 		goto out;
 	}
 
+	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt((struct sockaddr *) &datagram->addr_local, &datagram->addr_local_len);
+	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt((struct sockaddr *) &datagram->addr_remote, &datagram->addr_remote_len);
+
+
 	{
-		char ip_buf[128];
-		rrr_ip_to_str(ip_buf, sizeof(ip_buf), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
-		RRR_DBG_7("net transport quic fd %i decode datagram %llu bytes from %s\n",
-			listen_handle->submodule_fd, (unsigned long long) datagram->msg_len, ip_buf);
+		char ip_buf_a[128];
+		char ip_buf_b[128];
+		rrr_ip_to_str(ip_buf_a, sizeof(ip_buf_a), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
+		rrr_ip_to_str(ip_buf_b, sizeof(ip_buf_b), (const struct sockaddr *) &datagram->addr_local, datagram->addr_local_len);
+		RRR_DBG_7("net transport quic fd %i decode datagram %llu bytes from %s to %s\n",
+			listen_handle->submodule_fd, (unsigned long long) datagram->msg_len, ip_buf_a, ip_buf_b);
 	}
 
 	uint32_t version;
@@ -1593,6 +1641,9 @@ static int __rrr_net_transport_quic_modify_callback (RRR_NET_TRANSPORT_MODIFY_CA
 	);
 
 	handle_data->ctx->fd = callback_data->ip_data->fd;
+
+	// This will cause the old FD to be closed
+	rrr_net_transport_openssl_common_ssl_data_ip_replace (handle_data->tls_data, callback_data->ip_data);
 
 	*submodule_fd = callback_data->ip_data->fd;
 
@@ -2132,9 +2183,8 @@ static int __rrr_net_transport_quic_read (
 	return ret;
 }
 
-static int __rrr_net_transport_quic_receive_handle_migration (
-		struct rrr_net_transport_handle *handle,
-		const struct rrr_socket_datagram *datagram
+static int __rrr_net_transport_quic_process_migration (
+		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
 	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
@@ -2151,15 +2201,13 @@ static int __rrr_net_transport_quic_receive_handle_migration (
 	}
 
 	switch (ctx->path_migration_mode) {
-		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE:
-			// Migration with path validation
-			if ((ret = __rrr_net_transport_quic_ctx_migrate (
-					ctx,
-					(const struct sockaddr *) &datagram->addr_remote,
-					datagram->addr_remote_len,
-					(const struct sockaddr *) &datagram->addr_local,
-					datagram->addr_local_len
-			)) != 0) {
+		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION:
+			__rrr_net_transport_quic_ctx_report_migration(ctx);
+			__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
+			if ((ret_tmp = ngtcp2_conn_initiate_migration (ctx->conn, &path, timestamp)) != 0) {
+				RRR_MSG_0("net transport quic fd %i h %i failed to initiate migration: %s\n",
+					ctx->fd, ctx->connected_handle, ngtcp2_strerror(ret_tmp));
+				ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 				goto out;
 			}
 			break;
@@ -2175,20 +2223,8 @@ static int __rrr_net_transport_quic_receive_handle_migration (
 			// changed and initiate path validation.
 			__rrr_net_transport_quic_ctx_report_migration (ctx);
 			break;
-		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_IMMEDIATE:
-			// Immediate migration requested
-			__rrr_net_transport_quic_ctx_report_migration (ctx);
-
-			__rrr_net_transport_quic_path_to_ngtcp2_path (&path, &ctx->path_migration);
-			if ((ret_tmp = ngtcp2_conn_initiate_immediate_migration (ctx->conn, &path, timestamp)) != 0) {
-				RRR_MSG_0("net transport quic fd %i h %i failed to initiate immediate migration: %s\n",
-					ctx->fd, handle->handle, ngtcp2_strerror(ret_tmp));
-				ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
-				goto out;
-			}
-			break;
-		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION:
-			RRR_BUG("Migration mode %i VALIDATION cannot be used explicitly in %s\n", __func__);
+		case RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_NONE:
+			RRR_BUG("Migration mode %i NONE or VALIDATION cannot be used explicitly in %s\n", __func__);
 			break;
 		default:
 			RRR_BUG("Migration mode %i node implemented in %s\n", __func__);
@@ -2228,18 +2264,16 @@ static int __rrr_net_transport_quic_receive_verify_path (
 		rrr_ip_addr_get_port((const struct sockaddr *) &ctx->path_active.addr_local) == rrr_ip_addr_get_port((const struct sockaddr *) &datagram->addr_local) &&
 		ctx->path_active.addr_local_len == datagram->addr_local_len
 	);
+	const int is_server = ngtcp2_conn_is_server(ctx->conn);
 
 	if (!ngtcp2_conn_get_handshake_completed(ctx->conn)) {
 		if (addr_local_is_any) {
 			if (!ctx->path_migration_mode) {
 				// The local address may change from all zeros to an actual address during handshake.
 				// Initiale migration which will take place after the handshake to store the correct address.
-				ctx->path_migration = ctx->path_active;
-				assert(ctx->path_migration.addr_local_len == datagram->addr_local_len);
-				memcpy(&ctx->path_migration.addr_local, &datagram->addr_local, datagram->addr_local_len);
-				ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_LOCAL_REBIND;
 				RRR_DBG_7("net transport quic fd %i h %i performing local rebind during handshake\n",
-					ctx->fd, handle->handle);
+					ctx->fd, ctx->connected_handle);
+				__rrr_net_transport_quic_ctx_migrate_start_local_rebind (ctx, datagram);
 			}
 			else {
 				// Verify that local bound address does not change
@@ -2280,26 +2314,65 @@ static int __rrr_net_transport_quic_receive_verify_path (
 		goto out;
 	}
 
-	if (addr_local_mismatch || addr_remote_mismatch || ctx->path_migration_mode) {
-		if (ngtcp2_conn_is_server(ctx->conn)) {
-			assert(ctx->path_migration_mode == 0);
-			ctx->path_migration_mode = RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_SERVER;
-			__rrr_net_transport_quic_path_fill (
-					&ctx->path_migration,
-					(const struct sockaddr *) &datagram->addr_remote,
-					datagram->addr_remote_len,
-					(const struct sockaddr *) &datagram->addr_local,
-					datagram->addr_local_len
-			);
-		}
+	if (ctx->await_path_validation) {
+		goto out;
+	}
 
-		if ((ret = __rrr_net_transport_quic_receive_handle_migration(handle, datagram)) != 0) {
-			goto out;
+	if (ctx->path_migration_mode) {
+		assert(!is_server);
+		goto migrate;
+	}
+	else if (addr_local_mismatch || addr_remote_mismatch) {
+		if (is_server) {
+			assert(ctx->path_migration_mode == 0);
+
+			rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_local, ctx->path_active.addr_local_len);
+			rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &datagram->addr_local, datagram->addr_local_len);
+
+			RRR_DBG_7("net transport quic fd %i h %i new client address (%s->%s). Storing addresses.\n",
+				ctx->fd, handle->handle, buf_a, buf_b);
+
+			__rrr_net_tansport_quic_ctx_migrate_start_server (ctx, datagram);
+
+			goto migrate;
+		}
+		else {
+			if (addr_remote_mismatch) {
+				rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_remote, ctx->path_active.addr_remote_len);
+				rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
+				RRR_DBG_7("net transport quic fd %i h %i server address mismatch (%s<>%s). Dropping packet.\n",
+					ctx->fd, handle->handle, buf_a, buf_b);
+
+				ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+
+				goto out;
+			}
+
+			rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_local, ctx->path_active.addr_local_len);
+			rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &datagram->addr_local, datagram->addr_local_len);
+
+			RRR_DBG_7("net transport quic fd %i h %i new local address (%s->%s). Performing local rebind.\n",
+				ctx->fd, handle->handle, buf_a, buf_b);
+
+			rrr_ip_to_str(buf_a, sizeof(buf_a), (const struct sockaddr *) &ctx->path_active.addr_remote, ctx->path_active.addr_remote_len);
+			rrr_ip_to_str(buf_b, sizeof(buf_b), (const struct sockaddr *) &datagram->addr_remote, datagram->addr_remote_len);
+
+			RRR_DBG_7("net transport quic fd %i h %i server addresses are %s and %s.\n",
+				ctx->fd, handle->handle, buf_a, buf_b);
+
+			__rrr_net_transport_quic_ctx_migrate_start_local_rebind (ctx, datagram);
+
+			goto migrate;
 		}
 	}
 
+	goto out;
+	migrate:
+		if ((ret = __rrr_net_transport_quic_process_migration(handle)) != 0) {
+			goto out;
+		}
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_net_transport_quic_receive (
@@ -2350,6 +2423,21 @@ static int __rrr_net_transport_quic_receive (
 		(unsigned long long) datagram->msg_iov.iov_len,
 		(unsigned long) flags
 	);
+
+	{
+		const ngtcp2_path *path_active = ngtcp2_conn_get_path(ctx->conn);
+		char buf_a[128];
+		char buf_b[128];
+		rrr_ip_to_str(buf_a, sizeof(buf_a), path_active->local.addr, path_active->local.addrlen);
+		rrr_ip_to_str(buf_b, sizeof(buf_b), path_active->remote.addr, path_active->remote.addrlen);
+		RRR_DBG_7("net transport quic fd %i h %i ngtcp2 addresses: %s/%s\n",
+			ctx->fd,
+			ctx->connected_handle,
+			buf_a,
+			buf_b
+		);
+	}
+
 
 	if ((ret_tmp = ngtcp2_conn_read_pkt (
 			ctx->conn,
@@ -2424,8 +2512,8 @@ static int __rrr_net_transport_quic_stream_open (
 			&stream_id,
 			NULL
 	)) != 0) {
-		if (ret == NGTCP2_ERR_STREAM_ID_BLOCKED) {
-			ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+		if (ret_tmp == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+			ret = RRR_NET_TRANSPORT_READ_BUSY;
 		}
 		else {
 			RRR_MSG_0("Failed to allocate stream ID in %s: %s\n", __func__,
@@ -2523,6 +2611,10 @@ static int __rrr_net_transport_quic_migrate (
 	if (callback_data.attempt == 0) {
 		RRR_MSG_0("net transport quic fd %i h %i could not resolve host %s while migrating\n",
 			handle->submodule_fd, handle->handle, host);
+	}
+
+	if ((ret = __rrr_net_transport_quic_process_migration (handle)) != 0) {
+		goto out;
 	}
 
 	if ((ret = __rrr_net_transport_quic_write_no_streams (handle)) != 0) {
