@@ -38,10 +38,7 @@ struct rrr_test_quic_data {
 	const char *msg_in;
 	struct rrr_net_transport *transport;
 	rrr_net_transport_handle transport_handle;
-	int is_ipv6;
-	int64_t send_stream_id;
 	int stream_blocked;
-	int send_acked;
 	int complete_in;
 	int complete_out;
 };
@@ -51,6 +48,7 @@ struct rrr_test_quic_data_common {
 	struct rrr_test_quic_data server;
 	uint64_t timeout;
 	int round;
+	int stream_opened;
 };
 
 static const char rrr_test_quic_request_data[] = "GET /\r\n";
@@ -64,22 +62,12 @@ static void __rrr_test_quic_accept_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_F
 }
 
 static int __rrr_test_quic_handshake_complete_client_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
-	struct rrr_test_quic_data *data = arg;
-
-	int ret = 0;
+	(void)(handle);
+	(void)(arg);
 
 	TEST_MSG("Quic client handshake complete\n");
-
-	if ((ret = rrr_net_transport_ctx_stream_open (
-			&data->send_stream_id,
-			handle,
-			RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	
+	return 0;
 }
 
 static int __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS) {
@@ -123,9 +111,6 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 	}
 
 	data->complete_in = 1;
-	if (!data->complete_out) {
-		data->send_stream_id = stream_id;
-	}
 
 	out:
 	return ret;
@@ -134,14 +119,12 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	if (data->send_stream_id < 0 || data->send_acked || data->stream_blocked) {
+	if (data->complete_out || data->stream_blocked) {
 		*data_vector_count = 0;
 		*fin = 0;
 		*stream_id = -1;
 		return 0;
 	}
-
-	assert(data->send_stream_id == *stream_id);
 
 	TEST_MSG("Stream %" PRIi64 " get message\n", *stream_id);
 
@@ -182,7 +165,6 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 	TEST_MSG("Stream %" PRIi64 " ACK message %llu bytes\n",
 		stream_id, (unsigned long long) bytes);
 
-	data->send_acked = 1;
 	data->complete_out = 1;
 
 	return 0;
@@ -197,7 +179,7 @@ static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_C
 	*cb_ack = __rrr_test_quic_cb_ack;
 	*cb_arg = arg;
 
-	TEST_MSG("Stream %" PRIi64 " open local or remote\n", stream_id);
+	TEST_MSG("Stream %" PRIi64 " open local or remote arg %p\n", stream_id, arg);
 
 	return 0;
 }
@@ -216,11 +198,9 @@ static void __rrr_test_quic_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_
 
 	if (sockaddr->sa_family == AF_INET) {
 		assert(socklen == sizeof(struct sockaddr_in));
-		data->is_ipv6 = 0;
 	}
 	else if (sockaddr->sa_family == AF_INET6) {
 		assert(socklen == sizeof(struct sockaddr_in6));
-		data->is_ipv6 = 1;
 	}
 	else {
 		RRR_BUG("Unknown family %i in %s\n", sockaddr->sa_family, __func__);
@@ -241,38 +221,25 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	     data->server.complete_out
 	) {
 		if (data->round++ == 0) {
-			TEST_MSG("Quic test migrating client %s.\n",
-				data->client.is_ipv6 ? "from IPv6 to IPv4" : "from IPv4 to IPv6");
+			TEST_MSG("Quic test migrating client\n");
 
+			data->stream_opened = 0;
 			data->client.complete_in = 0;
 			data->server.complete_in = 0;
 			data->client.complete_out = 0;
 			data->server.complete_out = 0;
 			data->client.stream_blocked = 0;
 			data->server.stream_blocked = 0;
-			data->client.send_acked = 0;
-			data->server.send_acked = 0;
-			data->client.send_stream_id = -1;
-			data->server.send_stream_id = -1;
 
 			if (rrr_net_transport_handle_migrate (
 					data->client.transport,
 					data->client.transport_handle,
 					RRR_TEST_QUIC_PORT,
-					data->client.is_ipv6 ? "127.0.0.1" : "::1",
+					"localhost",
 					__rrr_test_quic_connect_callback,
 					data
 			) != 0) {
 				TEST_MSG("Quic test migration failed\n");
-				return RRR_EVENT_ERR;
-			}
-
-			if (rrr_net_transport_handle_stream_open (
-					&data->client.send_stream_id,
-					data->client.transport,
-					data->client.transport_handle,
-					RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
-			) != 0) {
 				return RRR_EVENT_ERR;
 			}
 		}
@@ -280,6 +247,27 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			TEST_MSG("Quic test completed successfully, cleanup up.\n");
 			return RRR_EVENT_EXIT;
 		}
+	}
+
+	if (!data->stream_opened) {
+		int64_t stream_id;
+		switch (rrr_net_transport_handle_stream_open (
+				&stream_id,
+				data->client.transport,
+				data->client.transport_handle,
+				RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
+		)) {
+			case RRR_NET_TRANSPORT_READ_BUSY:
+				// OK, try again
+				TEST_MSG("Quic busy while opening stream...\n");
+				break;
+			case RRR_NET_TRANSPORT_READ_OK:
+				TEST_MSG("Quic stream %" PRIi64 " opened...\n", stream_id);
+				data->stream_opened = 1;
+				break;
+			default:
+				return RRR_EVENT_ERR;
+		};
 	}
 
 	return RRR_EVENT_OK;
@@ -292,6 +280,26 @@ int rrr_test_quic (void) {
 
 	int ret = 0;
 
+	/*
+	 * TEST DESCRIPTION
+	 *
+	 * 1. Server starts listening and client connects. Client is bound to 0 (any) local address.
+	 *
+	 * 2. When client sees the first response from the server, the actual local address will
+	 *    be set in the client path (local rebind).
+	 *
+	 * 3. Client opens a stream and sends data to the server.
+	 *
+	 * 4. When the correct response from the server arrives, the client initiates a dummy migration
+	 *    back to the 0 (any) local address. This triggers path validation.
+	 *
+	 * 5. Once the path validation arrives at the client, local rebind is triggered again to the
+	 *    actual local address.
+	 *
+	 * 6. Client opens a stream and sends data to the server and awaits correct response once again.
+	 *  
+	 */
+
 	if ((ret = rrr_event_queue_new(&queue)) != 0) {
 		goto out;
 	}
@@ -299,13 +307,11 @@ int rrr_test_quic (void) {
 	struct rrr_test_quic_data_common data = {
 		.client = {
 			.msg_in = rrr_test_quic_response_data,
-			.msg_out = rrr_test_quic_request_data,
-			.send_stream_id = -1
+			.msg_out = rrr_test_quic_request_data
 		},
 		.server = {
 			.msg_in = rrr_test_quic_request_data,
-			.msg_out = rrr_test_quic_response_data,
-			.send_stream_id = -1
+			.msg_out = rrr_test_quic_response_data
 		},
 		.timeout = rrr_time_get_64() + RRR_TEST_QUIC_TIMEOUT_S * 1000 * 1000
 	};
@@ -376,6 +382,9 @@ int rrr_test_quic (void) {
 		goto out_destroy_transport_server;
 	}
 
+	data.client.transport = transport_client;
+	data.server.transport = transport_server;
+
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
 			transport_server,
 			RRR_TEST_QUIC_PORT,
@@ -390,13 +399,10 @@ int rrr_test_quic (void) {
 			RRR_TEST_QUIC_PORT,
 			"localhost",
 			__rrr_test_quic_connect_callback,
-			&data
+			&data.client
 	)) != 0) {
 		goto out_destroy_transport_client;
 	}
-
-	data.client.transport = transport_client;
-	data.server.transport = transport_server;
 
 	ret = rrr_event_dispatch (
 			queue,

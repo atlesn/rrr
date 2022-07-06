@@ -42,7 +42,9 @@ struct rrr_net_transport_tls_data *rrr_net_transport_openssl_common_ssl_data_new
 	return ssl_data;
 }
 
-void rrr_net_transport_openssl_common_ssl_data_destroy (struct rrr_net_transport_tls_data *ssl_data) {
+void rrr_net_transport_openssl_common_ssl_data_destroy (
+		struct rrr_net_transport_tls_data *ssl_data
+) {
 	if (ssl_data != NULL) {
 		if (ssl_data->web != NULL) {
 			assert(ssl_data->ssl == NULL);
@@ -61,6 +63,16 @@ void rrr_net_transport_openssl_common_ssl_data_destroy (struct rrr_net_transport
 		RRR_FREE_IF_NOT_NULL(ssl_data->alpn_selected_proto);
 		rrr_free(ssl_data);
 	}
+}
+
+void rrr_net_transport_openssl_common_ssl_data_ip_replace (
+		struct rrr_net_transport_tls_data *ssl_data,
+		const struct rrr_ip_data *ip_data
+) {
+	if (ssl_data->ip_data.fd != 0) {
+		rrr_ip_close(&ssl_data->ip_data);
+	}
+	ssl_data->ip_data = *ip_data;
 }
 
 static int __rrr_net_transport_openssl_common_verify_always_ok (X509_STORE_CTX *x509, void *arg) {

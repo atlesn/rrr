@@ -106,11 +106,14 @@ int rrr_ip_network_start_udp (
 		struct rrr_ip_data *data,
 		int do_ipv6
 ) {
+	static const char description_ipv4[] = "ip_network_start_udp (ipv4)";
+	static const char description_ipv6[] = "ip_network_start_udp (ipv6)";
+
 	int fd = rrr_socket (
 			(do_ipv6 ? AF_INET6 : AF_INET),
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
-			"ip_network_start_udp_ipv4",
+			(do_ipv6 ? description_ipv6 : description_ipv4),
 			NULL,
 			0
 	);
