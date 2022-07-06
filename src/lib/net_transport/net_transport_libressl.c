@@ -695,6 +695,7 @@ static int __rrr_net_transport_libressl_selected_proto_get (
 static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_destroy,
 	__rrr_net_transport_libressl_connect,
+	NULL,
 	__rrr_net_transport_libressl_bind_and_listen,
 	NULL,
 	__rrr_net_transport_libressl_accept,
