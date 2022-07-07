@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_NGHTTP2
 #	include "http_application_http2.h"
 #endif
+#ifdef RRR_WITH_HTTP3
+#	include "http_application_http3.h"
+#endif
 #include "http_application_http1.h"
 
 void rrr_http_application_destroy_if_not_null (
@@ -61,6 +64,9 @@ int rrr_http_application_new (
 		int is_server,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
+#if !defined(RRR_WITH_NGHTTP2) && !defined(RRR_WITH_HTTP3)
+	(void)(is_server);
+#endif
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
 		return rrr_http_application_http1_new(target, callbacks);
 	}
@@ -68,8 +74,11 @@ int rrr_http_application_new (
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
 		return rrr_http_application_http2_new(target, is_server, NULL, 0, callbacks);
 	}
-#else
-	(void)(is_server);
+#endif
+#ifdef RRR_WITH_HTTP3
+	else if (type == RRR_HTTP_APPLICATION_HTTP3) {
+		return rrr_http_application_http3_new(target, is_server, callbacks);
+	}
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);
 	return 1;
@@ -116,6 +125,28 @@ int rrr_http_application_transport_ctx_tick (
 			handle,
 			read_max_size,
 			rules
+	);
+}
+
+int rrr_http_application_transport_ctx_stream_open (
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle,
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void **cb_arg,
+		int64_t stream_id,
+		int flags
+) {
+	return app->constants->stream_open (
+			app,
+			handle,
+			cb_get_message,
+			cb_blocked,
+			cb_ack,
+			cb_arg,
+			stream_id,
+			flags
 	);
 }
 

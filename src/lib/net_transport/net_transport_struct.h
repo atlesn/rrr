@@ -202,8 +202,9 @@ struct rrr_net_transport_methods {
 	// corresponding handle, receive is called.
 	int (*receive)(RRR_NET_TRANSPORT_RECEIVE_ARGS);
 
-	// Send data on stream-oriented transport handle. Callbacks
-	// must be provided.
+	// Send data on stream-oriented transport handle. Causes the stream_open
+	// callback given to rrr_net_transport_new to be called from which the
+	// application must return data delivery callbacks.
 	int (*stream_open)(RRR_NET_TRANSPORT_STREAM_OPEN_ARGS);
 
 	// Send data on non-stream oriented transport

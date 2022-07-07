@@ -665,24 +665,6 @@ static int __rrr_http_client_read_callback (
 	return ret != 0 ? ret : ret_done;
 }
 
-static int __rrr_http_client_stream_open_callback (
-		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
-) {
-	struct rrr_http_client *http_client = arg;
-
-	(void)(cb_get_message);
-	(void)(cb_blocked);
-	(void)(cb_ack);
-	(void)(cb_arg);
-	(void)(handle);
-	(void)(stream_id);
-	(void)(flags);
-
-	(void)(http_client);	
-
-	RRR_BUG("%s\n", __func__);
-}
-
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -1034,11 +1016,18 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		net_transport_config_tmp_ssl.transport_type = RRR_NET_TRANSPORT_QUIC;
 		rrr_http_application_http3_alpn_protos_get(&alpn_protos, &alpn_protos_length);
 
+		// !!! The stream open callback must only be called for local streams
+		// and the flag dictating this must be given here.
+		//
+		// Not giving the flag may cause the callback to be called prior to the
+		// HTTP session being created which results in a null pointer access.
+		const int flags = tls_flags | RRR_NET_TRANSPORT_F_QUIC_STREAM_OPEN_CB_LOCAL_ONLY;
+
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_quic,
 				&net_transport_config_tmp_ssl,
 				"HTTP client",
-				tls_flags,
+				flags,
 				http_client->events,
 				alpn_protos,
 				alpn_protos_length,
@@ -1052,8 +1041,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				__rrr_http_client_read_callback,
 				http_client,
-				__rrr_http_client_stream_open_callback,
-				http_client
+				rrr_http_session_net_transport_cb_stream_open,
+				NULL
 		) != 0) {
 			RRR_MSG_0("Could not create QUIC transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;

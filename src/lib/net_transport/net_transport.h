@@ -91,6 +91,7 @@ struct rrr_socket_graylist;
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
+    struct rrr_net_transport *transport,                                        \
     rrr_net_transport_handle handle,                                            \
     int64_t stream_id,                                                          \
     int flags,                                                                  \

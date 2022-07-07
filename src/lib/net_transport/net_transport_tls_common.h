@@ -50,7 +50,8 @@ struct rrr_net_transport_tls {
 	struct tls_config *config;
 #endif
 
-	int flags;
+	int flags_tls;
+	int flags_submodule;
 
 	char *certificate_file;
 	char *private_key_file;
@@ -79,7 +80,8 @@ struct rrr_net_transport_tls_data {
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
-		int flags,
+		int flags_tls,
+		int flags_submodule,
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,

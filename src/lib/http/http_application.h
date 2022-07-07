@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 
 #include "../rrr_types.h"
+#include "../net_transport/net_transport.h"
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS      \
     struct rrr_net_transport_handle *handle,                   \
@@ -138,6 +139,16 @@ int rrr_http_application_transport_ctx_tick (
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
 		const struct rrr_http_rules *rules
+);
+int rrr_http_application_transport_ctx_stream_open (
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle,
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void **cb_arg,
+		int64_t stream_id,
+		int flags
 );
 int rrr_http_application_alpn_protos_with_all_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),

@@ -150,5 +150,8 @@ int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 );
+int rrr_http_session_net_transport_cb_stream_open (
+		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
+);
 
 #endif /* RRR_HTTP_SESSION_H */

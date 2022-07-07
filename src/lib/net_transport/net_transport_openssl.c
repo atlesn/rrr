@@ -154,7 +154,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_client_method,
-			tls->flags,
+			tls->flags_tls,
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
@@ -325,7 +325,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_server_method,
-			tls->flags,
+			tls->flags_tls,
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
@@ -424,7 +424,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	if (rrr_net_transport_openssl_common_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_server_method,
-			tls->flags,
+			tls->flags_tls,
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
@@ -797,6 +797,7 @@ int rrr_net_transport_openssl_new (
 	if ((rrr_net_transport_tls_common_new (
 			target,
 			flags,
+			0,
 			certificate_file,
 			private_key_file,
 			ca_file,

@@ -1866,6 +1866,9 @@ static int __rrr_net_transport_new (
 			if (stream_open_callback != NULL) {
 				RRR_BUG("BUG: Stream open callback provided to rrr_net_transport_new in TLS mode\n");
 			}
+			if (flags & RRR_NET_TRANSPORT_F_QUIC_STREAM_OPEN_CB_LOCAL_ONLY) {
+				RRR_BUG("BUG: Stream open local only flag provided to rrr_net_transport_new in TLS mode\n");
+			}
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
