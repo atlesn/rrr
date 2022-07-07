@@ -689,7 +689,10 @@ static int __rrr_net_transport_openssl_selected_proto_get (
 ) {
 	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
 
-	return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, ssl_data->ssl);
+	SSL *ssl = NULL;
+	BIO_get_ssl(ssl_data->web, &ssl);
+
+	return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, ssl);
 }
 
 static int __rrr_net_transport_openssl_poll (
