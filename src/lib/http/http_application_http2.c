@@ -705,7 +705,8 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
 	__rrr_http_application_http2_need_tick,
-	__rrr_http_application_http2_polite_close
+	__rrr_http_application_http2_polite_close,
+	NULL
 };
 
 static int __rrr_http_application_http2_new (

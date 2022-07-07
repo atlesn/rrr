@@ -1680,7 +1680,8 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
 	__rrr_http_application_http1_need_tick,
-	__rrr_http_application_http1_polite_close
+	__rrr_http_application_http1_polite_close,
+	NULL
 };
 
 int rrr_http_application_http1_new (

@@ -24,11 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_common.h"
 #include "http_application.h"
+#include "../net_transport/net_transport.h"
 
 #include "../rrr_types.h"
 
 struct rrr_http_application;
-struct rrr_net_transport_handle;
 struct rrr_http_transaction;
 struct rrr_http_rules;
 
@@ -65,6 +65,15 @@ struct rrr_http_rules;
     struct rrr_http_application *app,                          \
     struct rrr_net_transport_handle *handle
 
+#define RRR_HTTP_APPLICATION_STREAM_OPEN_ARGS                                   \
+    struct rrr_http_application *app,                                           \
+    struct rrr_net_transport_handle *handle,                                    \
+    int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
+    int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
+    int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
+    void **cb_arg,                                                              \
+    int64_t stream_id,                                                          \
+    int flags
 
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
@@ -75,6 +84,9 @@ struct rrr_http_application_constants {
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
 	int (*need_tick)(RRR_HTTP_APPLICATION_NEED_TICK_ARGS);
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);
+
+	// Only for applications using QUIC
+	int (*stream_open)(RRR_HTTP_APPLICATION_STREAM_OPEN_ARGS);
 };
 
 #define RRR_HTTP_APPLICATION_HEAD                              \

@@ -25,13 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_read.h"
 #include "../read_constants.h"
 
-#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY  (1<<0)
-#define RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1 (1<<1)
-#define RRR_NET_TRANSPORT_F_TLS_NO_ALPN         (1<<2)
+#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY              (1<<0)
+#define RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1             (1<<1)
+#define RRR_NET_TRANSPORT_F_TLS_NO_ALPN                     (1<<2)
+#define RRR_NET_TRANSPORT_F_QUIC_STREAM_OPEN_CB_LOCAL_ONLY  (1<<3)
 
-#define RRR_NET_TRANSPORT_STREAM_F_LOCAL        (1<<0)
-#define RRR_NET_TRANSPORT_STREAM_F_BIDI         (1<<1)
-#define RRR_NET_TRANSPORT_STREAM_F_CLOSING      (1<<2)
+#define RRR_NET_TRANSPORT_STREAM_F_LOCAL               (1<<0)
+#define RRR_NET_TRANSPORT_STREAM_F_BIDI                (1<<1)
+#define RRR_NET_TRANSPORT_STREAM_F_CLOSING             (1<<2)
+#define RRR_NET_TRANSPORT_STREAM_F_BLOCKED             (1<<3)
 
 #define RRR_NET_TRANSPORT_READ_OK				RRR_READ_OK
 #define RRR_NET_TRANSPORT_READ_HARD_ERROR		RRR_READ_HARD_ERROR

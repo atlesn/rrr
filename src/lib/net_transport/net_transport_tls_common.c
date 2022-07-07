@@ -33,14 +33,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_tls_common.h"
 
 #define CHECK_FLAG(flag)                                       \
-    do {if ((flags & flag) != 0) {                             \
-        flags_checked |= flag;                                 \
-        flags &= ~(flag);                                      \
+    do {if ((flags_tls & flag) != 0) {                         \
+        flags_tls_checked |= flag;                             \
+        flags_tls &= ~(flag);                                  \
     }} while(0)
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
-		int flags,
+		int flags_tls,
+		int flags_submodule,
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
@@ -54,13 +55,13 @@ int rrr_net_transport_tls_common_new (
 
 	int ret = 0;
 
-	int flags_checked = 0;
+	int flags_tls_checked = 0;
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_ALPN);
 
-	if (flags != 0) {
-		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
+	if (flags_tls != 0) {
+		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags_tls);
 	}
 
 	if ((result = rrr_allocate_zero(sizeof(*result))) == NULL) {
@@ -111,7 +112,8 @@ int rrr_net_transport_tls_common_new (
 		result->alpn.length = alpn_protos_length;
 	}
 
-	result->flags = flags_checked;
+	result->flags_tls = flags_tls_checked;
+	result->flags_submodule = flags_submodule;
 
 	*target = result;
 

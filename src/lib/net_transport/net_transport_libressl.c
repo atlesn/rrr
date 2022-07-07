@@ -732,7 +732,17 @@ int rrr_net_transport_libressl_new (
 		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated((unsigned char *) alpn_protos_tmp, sizeof(alpn_protos_tmp), (unsigned const char *) alpn_protos, alpn_protos_length);
 	}
 
-	if ((ret = rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
+	if ((ret = rrr_net_transport_tls_common_new (
+			target,
+			flags,
+			0,
+			certificate_file,
+			private_key_file,
+			ca_file,
+			ca_path,
+			alpn_protos,
+			alpn_protos_length
+	)) != 0) {
 		goto out;
 	}
 
