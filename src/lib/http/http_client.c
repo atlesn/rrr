@@ -35,7 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_application.h"
 #ifdef RRR_WITH_NGHTTP2
 #	include "http_application_http2.h"
-#endif /* RRR_WITH_NGHTTP2 */
+#endif
+#ifdef RRR_WITH_HTTP3
+#	include "http_application_http3.h"
+#endif
 #include "http_transaction.h"
 #include "http_redirect.h"
 
@@ -61,6 +64,7 @@ struct rrr_http_client {
 
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
+	struct rrr_net_transport *transport_keepalive_quic;
 
 	struct rrr_http_redirect_collection redirects;
 
@@ -109,6 +113,9 @@ void rrr_http_client_destroy (
 	if (client->transport_keepalive_tls) {
 		rrr_net_transport_destroy(client->transport_keepalive_tls);
 	}
+	if (client->transport_keepalive_quic) {
+		rrr_net_transport_destroy(client->transport_keepalive_quic);
+	}
 	rrr_http_redirect_collection_clear(&client->redirects);
 	rrr_free(client);
 }
@@ -156,6 +163,15 @@ uint64_t rrr_http_client_active_transaction_count_get (
 		);
 	}
 
+	if (http_client->transport_keepalive_quic != NULL) {
+		rrr_net_transport_iterate_by_mode_and_do (
+				http_client->transport_keepalive_quic,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_active_transaction_count_get_callback,
+				&result_accumulator
+		);
+	}
+
 	return result_accumulator + (unsigned long) RRR_LL_COUNT(&http_client->redirects);;
 }
 
@@ -183,6 +199,15 @@ void rrr_http_client_websocket_response_available_notify (
 	if (http_client->transport_keepalive_tls != NULL) {
 		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_websocket_response_available_notify_callback,
+				NULL
+		);
+	}
+
+	if (http_client->transport_keepalive_quic != NULL) {
+		rrr_net_transport_iterate_by_mode_and_do (
+				http_client->transport_keepalive_quic,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_websocket_response_available_notify_callback,
 				NULL
@@ -640,6 +665,24 @@ static int __rrr_http_client_read_callback (
 	return ret != 0 ? ret : ret_done;
 }
 
+static int __rrr_http_client_stream_open_callback (
+		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	(void)(cb_get_message);
+	(void)(cb_blocked);
+	(void)(cb_ack);
+	(void)(cb_arg);
+	(void)(handle);
+	(void)(stream_id);
+	(void)(flags);
+
+	(void)(http_client);	
+
+	RRR_BUG("%s\n", __func__);
+}
+
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -934,8 +977,12 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
 		*transport_keepalive_use = http_client->transport_keepalive_tls;
 	}
-	else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-		RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
+	else if (transport_code == RRR_HTTP_TRANSPORT_QUIC) {
+		*transport_keepalive_use = http_client->transport_keepalive_quic;
+	}
+	else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS || transport_force == RRR_HTTP_TRANSPORT_QUIC) {
+		RRR_MSG_0("Warning: %s force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n",
+			RRR_HTTP_TRANSPORT_TO_STR(transport_force));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -960,27 +1007,70 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 ) {
 	int ret = 0;
 
-#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
-	if (http_client->transport_keepalive_tls == NULL) {
-		struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
+	struct rrr_net_transport_config net_transport_config_tmp_plain = {
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			RRR_NET_TRANSPORT_PLAIN
+	};
 
-		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_HTTP3)
+	struct rrr_net_transport_config net_transport_config_tmp_ssl = *net_transport_config;
 
-		int tls_flags = 0;
-		if (ssl_no_cert_verify != 0) {
-			tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
-		}
+	int tls_flags = 0;
+	if (ssl_no_cert_verify != 0) {
+		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+	}
 
-		const char *alpn_protos = NULL;
-		unsigned alpn_protos_length = 0;
+	const char *alpn_protos = NULL;
+	unsigned alpn_protos_length = 0;
 
-#if RRR_WITH_NGHTTP2
-		rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
-#endif /* RRR_WITH_NGHTTP2 */
+#endif
+
+#ifdef RRR_WITH_HTTP3
+	if (http_client->transport_keepalive_quic == NULL) {
+		net_transport_config_tmp_ssl.transport_type = RRR_NET_TRANSPORT_QUIC;
+		rrr_http_application_http3_alpn_protos_get(&alpn_protos, &alpn_protos_length);
 
 		if (rrr_net_transport_new (
+				&http_client->transport_keepalive_quic,
+				&net_transport_config_tmp_ssl,
+				"HTTP client",
+				tls_flags,
+				http_client->events,
+				alpn_protos,
+				alpn_protos_length,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client,
+				__rrr_http_client_stream_open_callback,
+				http_client
+		) != 0) {
+			RRR_MSG_0("Could not create QUIC transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+	}
+#endif
+
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+	if (http_client->transport_keepalive_tls == NULL) {
+		net_transport_config_tmp_ssl.transport_type = RRR_NET_TRANSPORT_TLS;
+#if RRR_WITH_NGHTTP2
+		rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+#endif
+		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_tls,
-				&net_transport_config_tmp,
+				&net_transport_config_tmp_ssl,
 				"HTTP client",
 				tls_flags,
 				http_client->events,
@@ -1010,18 +1100,9 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 #endif
 
 	if (http_client->transport_keepalive_plain == NULL) {
-		struct rrr_net_transport_config net_transport_config_tmp = {
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				RRR_NET_TRANSPORT_PLAIN
-		};
-
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_plain,
-				&net_transport_config_tmp,
+				&net_transport_config_tmp_plain,
 				"HTTP client",
 				0,
 				http_client->events,
@@ -1072,8 +1153,6 @@ int rrr_http_client_request_send (
 	char *server_to_free = NULL;
 	char *request_header_host_to_free = NULL;
 
-	struct rrr_http_client_request_callback_data callback_data = {0};
-
 	if ((ret = rrr_http_transaction_new (
 			&transaction,
 			data->method,
@@ -1098,13 +1177,6 @@ int rrr_http_client_request_send (
 	}
 #endif
 
-	callback_data.http_client = http_client;
-	callback_data.query_prepare_callback = query_prepare_callback;
-	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
-	callback_data.data = data;
-	callback_data.application_type = RRR_HTTP_APPLICATION_HTTP1;
-	callback_data.transaction = transaction;
-
 	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
@@ -1114,9 +1186,23 @@ int rrr_http_client_request_send (
 	else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
 		transport_code = RRR_HTTP_TRANSPORT_HTTP;
 	}
+	else if (data->transport_force == RRR_HTTP_TRANSPORT_QUIC) {
+		transport_code = RRR_HTTP_TRANSPORT_QUIC;
+	}
+
+	struct rrr_http_client_request_callback_data callback_data = {
+		.http_client = http_client,
+		.query_prepare_callback = query_prepare_callback,
+		.query_prepare_callback_arg = query_prepare_callback_arg,
+		.data = data,
+		.application_type = transport_code == RRR_HTTP_TRANSPORT_QUIC
+			? RRR_HTTP_APPLICATION_HTTP3
+			: RRR_HTTP_APPLICATION_HTTP1,
+		.transaction = transaction
+	};
 
 	if (port_to_use == 0) {
-		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS || transport_code == RRR_HTTP_TRANSPORT_QUIC) {
 			port_to_use = 443;
 		}
 		else {

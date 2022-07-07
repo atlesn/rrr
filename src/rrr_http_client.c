@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -73,6 +73,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
         {0,                            '0',    "http10-force",         "[-0|--http10-force]"},
         {0,                            '2',    "http2-upgrade",        "[-2|--http2-upgrade]"},
+#ifdef RRR_WITH_HTTP3
+        {0,                            '3',    "http3-force",          "[-3|--http3-force]"},
+#endif
         {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -89,8 +92,11 @@ struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
 	struct rrr_event_queue *queue;
 	struct rrr_http_client *http_client;
+
+	enum rrr_http_transport transport_force;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	enum rrr_http_version protocol_version;
+
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
@@ -262,14 +268,44 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	// Force SSL
 	if (cmd_exists(cmd, "ssl-force", 0)) {
-		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+		// Force SSL
+		if (cmd_exists(cmd, "http3-force", 0)) {
+			RRR_MSG_0("Both ssl force and HTTP/3 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		if (cmd_exists(cmd, "plain-force", 0)) {
+			RRR_MSG_0("Both ssl force and plain force was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
 	}
-
-	// Force Plaintext
-	if (cmd_exists(cmd, "plain-force", 0)) {
-		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	else if (cmd_exists(cmd, "plain-force", 0)) {
+		// Force Plaintext
+		if (cmd_exists(cmd, "http3-force", 0)) {
+			RRR_MSG_0("Both plain force and HTTP/3 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	}
+	else if (cmd_exists(cmd, "http3-force", 0)) {
+		// Use HTTP/3
+		if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+			RRR_MSG_0("Both HTTP/3 and upgrade to websocket was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		if (cmd_exists(cmd, "http10-force", 0)) {
+			RRR_MSG_0("Both HTTP/3 and force HTTP/1.0 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_QUIC;
+		data->protocol_version = RRR_HTTP_VERSION_UNSPECIFIED;
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
 	// Force HTTP/1.0
@@ -288,7 +324,9 @@ static int __rrr_http_client_parse_config (
 			&request_data->http_port,
 			cmd,
 			"port",
-			request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS ? 443 : 80
+			data->transport_force == RRR_HTTP_TRANSPORT_HTTPS || data->transport_force == RRR_HTTP_TRANSPORT_QUIC
+				? 443
+				: 80
 	)) != 0) {
 		goto out;
 	}
@@ -768,8 +806,9 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.request_data.upgrade_mode = data.upgrade_mode;
+	data.request_data.transport_force = data.transport_force;
 	data.request_data.protocol_version = data.protocol_version;
+	data.request_data.upgrade_mode = data.upgrade_mode;
 
 	redirect:
 
