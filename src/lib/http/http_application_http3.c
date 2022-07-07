@@ -19,4 +19,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "http_application_http3.h"
+#include "http_application_internals.h"
+
 #include "../http3/http3.h"
+
+static const char rrr_http_application_http3_alpn_protos[] = {
+	     2, 'h', '3'
+};
+
+static void __rrr_http_application_http3_alpn_protos_get (
+		RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS
+) {
+	*target = rrr_http_application_http3_alpn_protos;
+	*length = sizeof(rrr_http_application_http3_alpn_protos);
+}
+
+void rrr_http_application_http3_alpn_protos_get (
+		const char **target,
+		unsigned int *length
+) {
+	__rrr_http_application_http3_alpn_protos_get(target, length);
+}

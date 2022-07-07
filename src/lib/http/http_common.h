@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -71,7 +71,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 enum rrr_http_transport {
 	RRR_HTTP_TRANSPORT_ANY,
 	RRR_HTTP_TRANSPORT_HTTP,
-	RRR_HTTP_TRANSPORT_HTTPS
+	RRR_HTTP_TRANSPORT_HTTPS,
+	RRR_HTTP_TRANSPORT_QUIC
 };
 
 enum rrr_http_method {
@@ -101,7 +102,8 @@ enum rrr_http_upgrade_mode {
 enum rrr_http_application_type {
 	RRR_HTTP_APPLICATION_UNSPECIFIED,
 	RRR_HTTP_APPLICATION_HTTP1,
-	RRR_HTTP_APPLICATION_HTTP2
+	RRR_HTTP_APPLICATION_HTTP2,
+	RRR_HTTP_APPLICATION_HTTP3
 };
 
 enum rrr_http_version {
@@ -134,12 +136,14 @@ struct rrr_http_rules {
 extern const char *rrr_http_transport_str_any;
 extern const char *rrr_http_transport_str_http;
 extern const char *rrr_http_transport_str_https;
+extern const char *rrr_http_transport_str_quic;
 
 #define RRR_HTTP_TRANSPORT_TO_STR(transport)                                             \
     (transport == RRR_HTTP_TRANSPORT_ANY ? rrr_http_transport_str_any :                  \
     (transport == RRR_HTTP_TRANSPORT_HTTP ? rrr_http_transport_str_http :                \
-    (transport == RRR_HTTP_TRANSPORT_HTTPS ? rrr_http_transport_str_https : ("unknown")  \
-    )))
+    (transport == RRR_HTTP_TRANSPORT_HTTPS ? rrr_http_transport_str_https :              \
+    (transport == RRR_HTTP_TRANSPORT_QUIC ? rrr_http_transport_str_quic : ("unknown")    \
+    ))))
 
 extern const char *rrr_http_method_str_get;
 extern const char *rrr_http_method_str_head;
@@ -182,26 +186,28 @@ extern const char *rrr_http_upgrade_mode_str_none;
 extern const char *rrr_http_upgrade_mode_str_websocket;
 extern const char *rrr_http_upgrade_mode_str_http2;
 
-#define RRR_HTTP_UPGRADE_MODE_TO_STR(transport)                                                                                \
-    (transport == RRR_HTTP_UPGRADE_MODE_NONE ? rrr_http_upgrade_mode_str_none :                                                \
-    (transport == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket :                                      \
-    (transport == RRR_HTTP_UPGRADE_MODE_HTTP2 ? rrr_http_upgrade_mode_str_http2 : ("unknown")                                  \
+#define RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)                                                                             \
+    (upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE ? rrr_http_upgrade_mode_str_none :                                             \
+    (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket :                                   \
+    (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 ? rrr_http_upgrade_mode_str_http2 : ("unknown")                               \
     )))
 
 extern const char *rrr_http_application_str_http1;
 extern const char *rrr_http_application_str_http2;
+extern const char *rrr_http_application_str_http3;
 
-#define RRR_HTTP_APPLICATION_TO_STR(transport)                                                                                 \
-    (transport == RRR_HTTP_APPLICATION_HTTP1 ? rrr_http_application_str_http1 :                                                \
-    (transport == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 : ("unknown")                                    \
-    ))
+#define RRR_HTTP_APPLICATION_TO_STR(application)                                                                               \
+    (application == RRR_HTTP_APPLICATION_HTTP1 ? rrr_http_application_str_http1 :                                              \
+    (application == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 :                                              \
+    (application == RRR_HTTP_APPLICATION_HTTP3 ? rrr_http_application_str_http3 : ("unknown")                                  \
+    )))
 
 extern const char *rrr_http_version_str_10;
 extern const char *rrr_http_version_str_11;
 
-#define RRR_HTTP_VERSION_TO_STR(transport)                                                                                     \
-    (transport == RRR_HTTP_VERSION_10 ? rrr_http_version_str_10 :                                                              \
-    (transport == RRR_HTTP_VERSION_11 ? rrr_http_version_str_11 : ("unspecified")                                              \
+#define RRR_HTTP_VERSION_TO_STR(version)                                                                                       \
+    (version == RRR_HTTP_VERSION_10 ? rrr_http_version_str_10 :                                                                \
+    (version == RRR_HTTP_VERSION_11 ? rrr_http_version_str_11 : ("unspecified")                                                \
     ))
 
 typedef uint64_t rrr_http_unique_id;
