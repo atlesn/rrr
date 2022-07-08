@@ -77,6 +77,12 @@ rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 	return handle->handle;
 }
 
+struct rrr_net_transport *rrr_net_transport_ctx_get_transport (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport;
+}
+
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -300,6 +306,14 @@ int rrr_net_transport_ctx_stream_open (
 			stream_data,
 			stream_data_destroy
 	);
+}
+
+int rrr_net_transport_ctx_stream_consume (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t consumed
+) {
+	return handle->transport->methods->stream_consume(handle, stream_id, consumed);
 }
 
 uint64_t rrr_net_transport_ctx_stream_count (

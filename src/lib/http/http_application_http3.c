@@ -33,11 +33,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_ctx.h"
 
+// Enable printf logging in nghttp3 library
+#define RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG 1
+
 struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct nghttp3_conn *conn;
 	int initialized;
-	int need_tick;
 };
 
 static const char rrr_http_application_http3_alpn_protos[] = {
@@ -168,10 +170,19 @@ static int __rrr_http_application_http3_net_transport_cb_get_message (
 static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 		RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS
 ) {
-    	(void)(stream_id);
-    	(void)(is_blocked);
-    	(void)(arg);
-	RRR_BUG("%s\n", __func__);
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	int ret_tmp;
+
+	if ((ret_tmp = (is_blocked ? nghttp3_conn_block_stream : nghttp3_conn_unblock_stream) (
+			http3->conn,
+			stream_id
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	return 0;
 }
 
 static int __rrr_http_application_http3_net_transport_cb_stream_ack (
@@ -319,6 +330,7 @@ static int __rrr_http_application_http3_map_add_nullsafe (
 struct rrr_http_application_http3_send_prepare_callback_data {
 	struct rrr_http_application_http3 *http3;
 	struct rrr_map *headers;
+	struct rrr_net_transport_handle *handle;
 	int64_t stream_id;
 };
 
@@ -407,6 +419,18 @@ static int __rrr_http_application_http3_request_send_final_callback (
 		goto out;
 	}
 
+	rrr_http_transaction_protocol_data_set (
+			transaction,
+			rrr_net_transport_ctx_get_transport(callback_data->handle),
+			rrr_net_transport_ctx_get_handle(callback_data->handle)
+	);
+
+	if ((ret_tmp = nghttp3_conn_set_stream_user_data (http3->conn, callback_data->stream_id, transaction)) != 0) {
+		RRR_MSG_0("Failed to set stream user data in %s: %s\n", nghttp3_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	rrr_free(nv);
 	return ret;
@@ -416,7 +440,6 @@ static void __rrr_http_transport_http3_transport_ctx_notify (
 		struct rrr_http_application_http3 *http3,
 		struct rrr_net_transport_handle *handle
 ) {
-	http3->need_tick = 1;
 	rrr_net_transport_ctx_notify_read(handle);
 }
 
@@ -452,6 +475,7 @@ static int __rrr_http_application_http3_request_send (
 	struct rrr_http_application_http3_send_prepare_callback_data callback_data = {
 		http3,
 		&headers,
+		handle,
 		stream_id
 	};
 
@@ -490,23 +514,29 @@ static int __rrr_http_application_http3_transport_ctx_read_stream_callback (
 
 	int ret = 0;
 
-	ssize_t consumed_tmp;
+	ssize_t consumed;
 
-	if ((consumed_tmp = nghttp3_conn_read_stream (
+	if ((consumed = nghttp3_conn_read_stream (
 			http3->conn,
 			stream_id,
 			(const uint8_t *) buf,
 			buflen,
 			fin
-	)) != 0) {
+	)) < 0) {
 		RRR_MSG_0("Failed while delivering data to nghttp3 in %s: %s\n",
-			__func__, nghttp3_strerror((int) consumed_tmp));
+			__func__, nghttp3_strerror((int) consumed));
+		ret = 1;
 		goto out;
 	}
 
-	*consumed = (size_t) consumed_tmp;
 
-	RRR_DBG_3("http3 %p consumed %llu bytes\n", http3, (unsigned long long) *consumed);
+	if (consumed > 0 && (ret = rrr_net_transport_ctx_stream_consume (
+			handle,
+			stream_id,
+			(size_t) consumed
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -573,11 +603,8 @@ static int __rrr_http_application_http3_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
-	int ret = !http3->initialized || http3->need_tick;
+	int ret = !http3->initialized;
 	printf("Need tick? %i\n", ret);
-
-	http3->need_tick = 0;
-
 	return ret;
 }
 
@@ -599,6 +626,8 @@ static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (
 	(void)(datalen);
 	(void)(conn_user_data);
 	(void)(stream_user_data);
+	RRR_BUG("%s\n", __func__);
+
 	return 0;
 }
 
@@ -625,16 +654,29 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 		void *conn_user_data,
 		void *stream_user_data
 ) {
+    	struct rrr_http_application_http3 *http3 = conn_user_data;
+	struct rrr_http_transaction *transaction = stream_user_data;
+	struct rrr_net_transport *transport = transaction->protocol_ptr;
+	rrr_net_transport_handle transport_handle = transaction->protocol_int;
+
+	(void)(http3);
 	(void)(conn);
-	(void)(stream_id);
-	(void)(data);
-	(void)(datalen);
-	(void)(conn_user_data);
-	(void)(stream_user_data);
 
-	printf("Data: %.*s\n", (int) datalen, data);
+	int ret = 0;
 
-	return 0;
+	printf("Data %lu: %.*s\n", datalen, (int) datalen, data);
+
+	if ((ret = rrr_net_transport_handle_stream_consume (
+			transport,
+			transport_handle,
+			stream_id,
+			datalen
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_deferred_consume (
@@ -649,7 +691,7 @@ static int __rrr_http_application_http3_nghttp3_cb_deferred_consume (
 	(void)(consumed);
 	(void)(conn_user_data);
 	(void)(stream_user_data);
-	return 0;
+	RRR_BUG("%s\n", __func__);
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_recv_header (
@@ -776,6 +818,10 @@ static const nghttp3_mem rrr_http_application_http3_nghttp3_mem = {
 	.realloc = __rrr_http_application_http3_cb_realloc
 };
 
+static void __rrr_http_application_http3_vprintf (const char *format, va_list args) {
+	vprintf(format, args);
+}
+
 int rrr_http_application_http3_new (
 		struct rrr_http_application **result,
 		int is_server,
@@ -807,6 +853,12 @@ int rrr_http_application_http3_new (
 		ret = 1;
 		goto out;
 	}
+
+#ifdef RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG
+	nghttp3_set_debug_vprintf_callback(__rrr_http_application_http3_vprintf);
+#else
+	(void)(__rrr_http_application_http3_vprintf);
+#endif
 
 	http3->constants = &rrr_http_application_http3_constants;
 	http3->callbacks = *callbacks;

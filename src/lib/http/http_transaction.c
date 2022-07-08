@@ -122,6 +122,21 @@ void rrr_http_transaction_application_data_set (
 	*application_data = NULL;
 }
 
+void rrr_http_transaction_protocol_data_set (
+		struct rrr_http_transaction *transaction,
+		void *protocol_ptr,
+		int protocol_int
+) {
+	if (transaction->protocol_int != 0) {
+		RRR_BUG("protocol_int was not 0 in %s\n", __func__);
+	}
+	if (transaction->protocol_ptr != NULL) {
+		RRR_BUG("protocol_ptr was not NULL in %s\n", __func__);
+	}
+	transaction->protocol_ptr = protocol_ptr;
+	transaction->protocol_int = protocol_int;
+}
+
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 ) {

@@ -69,6 +69,9 @@ void *rrr_net_transport_ctx_get_application_private_ptr (
 rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 		struct rrr_net_transport_handle *handle
 );
+struct rrr_net_transport *rrr_net_transport_ctx_get_transport (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
 );
@@ -128,6 +131,11 @@ int rrr_net_transport_ctx_stream_open (
 		int flags,
 		void *stream_data,
 		void (*stream_data_destroy)(void *stream_data)
+);
+int rrr_net_transport_ctx_stream_consume (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t consumed
 );
 uint64_t rrr_net_transport_ctx_stream_count (
 		struct rrr_net_transport_handle *handle

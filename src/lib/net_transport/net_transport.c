@@ -1791,6 +1791,17 @@ int rrr_net_transport_handle_stream_open (
 	return rrr_net_transport_ctx_stream_open(result, handle, flags, stream_data, stream_data_destroy);
 }
 
+int rrr_net_transport_handle_stream_consume (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		size_t consumed
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_consume");
+
+	return rrr_net_transport_ctx_stream_consume(handle, stream_id, consumed);
+}
+
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 ) {

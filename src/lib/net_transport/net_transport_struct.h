@@ -163,6 +163,11 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_STREAM_COUNT_ARGS                    \
     struct rrr_net_transport_handle *handle
 
+#define RRR_NET_TRANSPORT_STREAM_CONSUME_ARGS                  \
+    struct rrr_net_transport_handle *handle,                   \
+    int64_t stream_id,                                         \
+    size_t consumed
+
 #define RRR_NET_TRANSPORT_SEND_ARGS                            \
     rrr_biglength *bytes_written,                              \
     struct rrr_net_transport_handle *handle,                   \
@@ -222,6 +227,9 @@ struct rrr_net_transport_methods {
 	// Count number of open streams on stream-oriented transport handle. Note
 	// that only streams which the submodule actually keeps track of is counted.
 	uint64_t (*stream_count)(RRR_NET_TRANSPORT_STREAM_COUNT_ARGS);
+
+	// Must be called 
+	int (*stream_consume)(RRR_NET_TRANSPORT_STREAM_CONSUME_ARGS);
 
 	// Send data on non-stream oriented transport
 	int (*send)(RRR_NET_TRANSPORT_SEND_ARGS);
