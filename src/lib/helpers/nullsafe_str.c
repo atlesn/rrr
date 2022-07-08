@@ -735,31 +735,6 @@ void rrr_nullsafe_str_copyto (
 	*written_size = to_write;
 }
 
-void rrr_nullsafe_str_copyto_offset (
-		rrr_nullsafe_len *written_size,
-		void *target,
-		rrr_nullsafe_len target_size,
-		const struct rrr_nullsafe_str *nullsafe,
-		rrr_nullsafe_len offset
-) {
-	if (nullsafe == NULL || nullsafe->len == 0) {
-		assert(offset == 0);
-		return;
-	}
-
-	assert(offset <= nullsafe->len);
-	assert(target_size > 0);
-
-	size_t bytes_to_copy = nullsafe->len - offset;
-
-	if (bytes_to_copy > target_size) {
-		bytes_to_copy = target_size;
-	}
-
-	memcpy(target, nullsafe->str + offset, bytes_to_copy);
-	*written_size = bytes_to_copy;
-}
-
 int rrr_nullsafe_str_with_str_do (
 		const struct rrr_nullsafe_str *str,
 		int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
@@ -872,8 +847,9 @@ int rrr_nullsafe_str_raw_null_terminated_dump (
 		RRR_PASTE_3(len_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->len;		\
 	}} while (0)
 
-int rrr_nullsafe_str_with_raw_do_const (
+static int __rrr_nullsafe_str_with_raw_do_const (
 		const struct rrr_nullsafe_str *nullsafe_a,
+		rrr_nullsafe_len offset,
 		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
 		void *callback_arg
 ) {
@@ -881,7 +857,34 @@ int rrr_nullsafe_str_with_raw_do_const (
 
 	RRR_NULLSAFE_STR_WITH_STR_DO_STR_AND_LEN_TO_USE_SET(a);
 
+	if (offset > len_to_use_a) {
+		RRR_BUG("Offset out of range in %s: %" PRIrrr_nullsafe_len ">%" PRIrrr_nullsafe_len "\n",
+			__func__, offset, len_to_use_a);
+	}
+
+	if (offset > 0) {
+		str_to_use_a += offset;
+		len_to_use_a -= offset;
+	}
+
 	return callback(str_to_use_a, len_to_use_a, callback_arg);
+}
+
+int rrr_nullsafe_str_with_raw_do_const (
+		const struct rrr_nullsafe_str *nullsafe_a,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+) {
+	return __rrr_nullsafe_str_with_raw_do_const(nullsafe_a, 0, callback, callback_arg);
+}
+
+int rrr_nullsafe_str_with_raw_do_const_offset (
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+) {
+	return __rrr_nullsafe_str_with_raw_do_const(nullsafe, offset, callback, callback_arg);
 }
 
 int rrr_nullsafe_str_with_raw_do_double_const (

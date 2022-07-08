@@ -37,6 +37,7 @@ struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct nghttp3_conn *conn;
 	int initialized;
+	int need_tick;
 };
 
 static const char rrr_http_application_http3_alpn_protos[] = {
@@ -411,6 +412,14 @@ static int __rrr_http_application_http3_request_send_final_callback (
 	return ret;
 }
 
+static void __rrr_http_transport_http3_transport_ctx_notify (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_net_transport_handle *handle
+) {
+	http3->need_tick = 1;
+	rrr_net_transport_ctx_notify_read(handle);
+}
+
 static int __rrr_http_application_http3_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -423,7 +432,8 @@ static int __rrr_http_application_http3_request_send (
 	int64_t stream_id;
 	struct rrr_map headers = {0};
 
-	RRR_DBG_7("http3 request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
+	RRR_DBG_3("http3 %p request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
+			http3,
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
@@ -466,17 +476,72 @@ static int __rrr_http_application_http3_request_send (
 		goto out;
 	}
 
-	rrr_net_transport_ctx_notify_read(handle);
+	__rrr_http_transport_http3_transport_ctx_notify (http3, handle);
 
 	out:
 	rrr_map_clear(&headers);
 	return ret;
 }
 
+static int __rrr_http_application_http3_transport_ctx_read_stream_callback (
+		RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS
+) {
+ 	struct rrr_http_application_http3 *http3 = arg;
+
+	int ret = 0;
+
+	ssize_t consumed_tmp;
+
+	if ((consumed_tmp = nghttp3_conn_read_stream (
+			http3->conn,
+			stream_id,
+			(const uint8_t *) buf,
+			buflen,
+			fin
+	)) != 0) {
+		RRR_MSG_0("Failed while delivering data to nghttp3 in %s: %s\n",
+			__func__, nghttp3_strerror((int) consumed_tmp));
+		goto out;
+	}
+
+	*consumed = (size_t) consumed_tmp;
+
+	RRR_DBG_3("http3 %p consumed %llu bytes\n", http3, (unsigned long long) *consumed);
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_transport_ctx_read_stream (
+		uint64_t *bytes_read,
+    		struct rrr_http_application_http3 *http3,
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	if ((ret = rrr_net_transport_handle_ptr_read_stream (
+			bytes_read,
+			handle,
+			__rrr_http_application_http3_transport_ctx_read_stream_callback,
+			http3
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE);
+}
+
 static int __rrr_http_application_http3_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+
+	(void)(upgraded_app);
+	(void)(read_max_size);
+	(void)(rules);
+
+	*received_bytes = 0;
 
 	int ret = 0;
 
@@ -489,6 +554,17 @@ static int __rrr_http_application_http3_tick (
 		http3->initialized = 1;
 	}
 
+	uint64_t bytes_read = 0;
+	if ((ret =  __rrr_http_application_http3_transport_ctx_read_stream (
+			&bytes_read,
+			http3,
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	*received_bytes = bytes_read;
+
 	out:
 	return ret;
 }
@@ -497,7 +573,12 @@ static int __rrr_http_application_http3_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
-	return !http3->initialized;
+	int ret = !http3->initialized || http3->need_tick;
+	printf("Need tick? %i\n", ret);
+
+	http3->need_tick = 0;
+
+	return ret;
 }
 
 static void __rrr_http_application_http3_polite_close (

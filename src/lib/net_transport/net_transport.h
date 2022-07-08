@@ -127,6 +127,14 @@ struct rrr_socket_graylist;
     void *submodule_private_ptr,                                            \
     void *application_private_ptr
 
+#define RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS                        \
+    size_t *consumed,                                                      \
+    int64_t stream_id,                                                     \
+    const char *buf,                                                       \
+    size_t buflen,                                                         \
+    int fin,                                                               \
+    void *arg
+
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS                           \
@@ -278,6 +286,12 @@ void rrr_net_transport_handle_ptr_application_data_bind (
 void rrr_net_transport_handle_ptr_pre_destroy_function_set (
 		struct rrr_net_transport_handle *handle,
 		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+);
+int rrr_net_transport_handle_ptr_read_stream (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS),
+		void *arg
 );
 int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,

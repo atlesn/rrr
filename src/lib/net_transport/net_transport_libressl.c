@@ -571,8 +571,6 @@ static int __rrr_net_transport_libressl_read_message (
 static int __rrr_net_transport_libressl_read (
 		RRR_NET_TRANSPORT_READ_ARGS
 ) {
-	(void)(stream_id);
-
 	int ret = RRR_NET_TRANSPORT_READ_OK;
 
 	if (buf_size > SSIZE_MAX) {
@@ -702,6 +700,7 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_close,
 	__rrr_net_transport_libressl_read_message,
 	__rrr_net_transport_libressl_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

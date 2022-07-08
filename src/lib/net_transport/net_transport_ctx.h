@@ -134,7 +134,6 @@ uint64_t rrr_net_transport_ctx_stream_count (
 );
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
-		int64_t *stream_id,
 		struct rrr_net_transport_handle *handle,
 		char *buf,
 		size_t buf_size
