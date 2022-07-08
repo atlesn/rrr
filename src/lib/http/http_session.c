@@ -254,7 +254,7 @@ uint64_t rrr_http_session_transport_ctx_active_transaction_count_get_and_maintai
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
-	return rrr_http_application_active_transaction_count_get_and_maintain(session->application);
+	return rrr_http_application_active_transaction_count_get_and_maintain(session->application, handle);
 }
 
 void rrr_http_session_transport_ctx_websocket_response_available_notify (

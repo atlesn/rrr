@@ -23,9 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_application_http3.h"
 #include "http_application_internals.h"
+#include "http_transaction.h"
+#include "http_util.h"
+#include "http_header_fields.h"
 
 #include "../http3/http3.h"
 #include "../allocator.h"
+#include "../map.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_ctx.h"
 
@@ -53,7 +57,7 @@ void rrr_http_application_http3_alpn_protos_get (
 	__rrr_http_application_http3_alpn_protos_get(target, length);
 }
 
-static int __rrr_http_applicaiton_http3_ctrl_streams_bind (
+static int __rrr_http_application_http3_ctrl_streams_bind (
 		struct rrr_http_application_http3 *http3,
 		int64_t stream_id_ctrl,
 		int64_t stream_id_qpack_encode,
@@ -93,7 +97,9 @@ static int __rrr_http_application_http3_initialize (
 	if ((ret = rrr_net_transport_ctx_stream_open (
 			&stream_id_ctrl,
 			handle,
-			RRR_NET_TRANSPORT_STREAM_F_LOCAL
+			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
+			NULL,
+			NULL
 	)) != 0) {
 		goto out;
 	}
@@ -101,7 +107,9 @@ static int __rrr_http_application_http3_initialize (
 	if ((ret = rrr_net_transport_ctx_stream_open (
 			&stream_id_qpack_encode,
 			handle,
-			RRR_NET_TRANSPORT_STREAM_F_LOCAL
+			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
+			NULL,
+			NULL
 	)) != 0) {
 		goto out;
 	}
@@ -109,16 +117,18 @@ static int __rrr_http_application_http3_initialize (
 	if ((ret = rrr_net_transport_ctx_stream_open (
 			&stream_id_qpack_decode,
 			handle,
-			RRR_NET_TRANSPORT_STREAM_F_LOCAL
+			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
+			NULL,
+			NULL
 	)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_applicaiton_http3_ctrl_streams_bind (
+	if ((ret = __rrr_http_application_http3_ctrl_streams_bind (
 			http3,
 			stream_id_ctrl,
 			stream_id_qpack_encode,
-			stream_id_qpack_encode
+			stream_id_qpack_decode
 	)) != 0) {
 		goto out;
 	}
@@ -130,13 +140,28 @@ static int __rrr_http_application_http3_initialize (
 static int __rrr_http_application_http3_net_transport_cb_get_message (
 		RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS
 ) {
-    	(void)(stream_id);
-    	(void)(data_vector);
-    	(void)(data_vector_count);
-    	(void)(fin);
-    	(void)(arg);
+	struct rrr_http_application_http3 *http3 = arg;
 
-	RRR_BUG("%s\n", __func__);
+	int ret = 0;
+
+	ssize_t ret_tmp;
+
+	if ((ret_tmp = nghttp3_conn_writev_stream (
+			http3->conn,
+			stream_id,
+			fin,
+			(nghttp3_vec *) data_vector,
+			*data_vector_count
+	)) < 0) {
+		printf("Failed to get http3 data in %s: %s\n", __func__, nghttp3_strerror((int) ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	*data_vector_count = (size_t) ret_tmp;
+
+	out:
+	return ret;
 }
 
 static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
@@ -151,10 +176,24 @@ static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 static int __rrr_http_application_http3_net_transport_cb_stream_ack (
 		RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS
 ) {
-    	(void)(stream_id);
-    	(void)(bytes);
-    	(void)(arg);
-	RRR_BUG("%s\n", __func__);
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	int ret = 0;
+
+	int ret_tmp;
+
+	if ((ret_tmp = nghttp3_conn_add_ack_offset (
+			http3->conn,
+			stream_id,
+			bytes
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_http_application_http3_stream_open (
@@ -179,25 +218,259 @@ static int __rrr_http_application_http3_stream_open (
 static void  __rrr_http_application_http3_destroy (
 		struct rrr_http_application *application
 ) {
-	rrr_free(application);
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
+
+	nghttp3_conn_del(http3->conn);
+	rrr_free(http3);
 }
 
 uint64_t __rrr_http_application_http3_active_transaction_count_get_and_maintain (
-		struct rrr_http_application *application
+		RRR_HTTP_APPLICATION_TRANSACTION_COUNT_ARGS
 ) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
+
+	(void)(http3);
+
+	uint64_t count = rrr_net_transport_ctx_stream_count(handle);
+
+	// Subtrack three QPACK streams
+	return count < 3 ? 0 : count - 3;
 }
 
 static int __rrr_http_application_http3_request_send_possible (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
 ) {
-	(void)(application);
-	*is_possible = 0;
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
+	*is_possible = http3->initialized;
 	return 0;
+}
+
+static int __rrr_http_application_http3_map_to_nv (
+		nghttp3_nv **result,
+		size_t *result_len,
+		const struct rrr_map *map
+) {
+	*result = NULL;
+	*result_len = 0;
+
+	int ret = 0;
+
+	rrr_length len;
+	nghttp3_nv *nv;
+
+	len = rrr_length_from_slength_bug_const(RRR_MAP_COUNT(map));
+
+	if ((nv = rrr_allocate_zero(sizeof(*nv) * (size_t) len)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	nghttp3_nv *nv_pos = nv;
+	RRR_MAP_ITERATE_BEGIN(map);
+		nv->name = (uint8_t *) node_tag;
+		nv->namelen = strlen(node_tag);
+		nv->value = (uint8_t *) node_value;
+		nv->valuelen = rrr_length_from_slength_bug_const(value_size);
+		nv_pos++;
+	RRR_MAP_ITERATE_END();
+
+	*result = nv;
+	*result_len = (size_t) len;
+
+	out:
+	return ret;
+}
+
+struct rrr_http_application_http3_map_add_nullsafe_callback_data {
+	struct rrr_map *map;
+	const char *tag;
+};
+
+static int __rrr_http_application_http3_map_add_nullsafe_callback (const void *str, rrr_nullsafe_len len, void *arg) {
+	struct rrr_http_application_http3_map_add_nullsafe_callback_data *callback_data = arg;
+	return rrr_map_item_add_new_with_size (
+			callback_data->map,
+			callback_data->tag,
+			str,
+			rrr_length_from_biglength_bug_const(len)
+	);
+
+}
+
+static int __rrr_http_application_http3_map_add_nullsafe (
+		struct rrr_map *map,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	struct rrr_http_application_http3_map_add_nullsafe_callback_data callback_data = {
+		map,
+		name
+	};
+
+	return rrr_nullsafe_str_with_raw_do_const (
+			value,
+			__rrr_http_application_http3_map_add_nullsafe_callback, 
+			&callback_data
+	);
+}
+
+struct rrr_http_application_http3_send_prepare_callback_data {
+	struct rrr_http_application_http3 *http3;
+	struct rrr_map *headers;
+	int64_t stream_id;
+};
+
+static int __rrr_http_application_http3_request_send_preliminary_callback (
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *request,
+		void *arg
+) {
+	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+
+	(void)(upgrade_mode);
+	(void)(protocol_version);
+	(void)(request_part);
+
+	int ret = 0;
+
+	if ((ret = rrr_map_item_add_new (callback_data->headers, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(method))) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_application_http3_map_add_nullsafe (callback_data->headers, ":path", request)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_header_fields_submit_callback (
+		struct rrr_http_header_field *field,
+		void *arg
+) {
+	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
+		RRR_BUG("BUG: Name or value was NULL in %s\n", __func__);
+	}
+	if (RRR_LL_COUNT(&field->fields) > 0) {
+		RRR_BUG("BUG: Subvalues were present in %s, this is not supported\n", __func__);
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
+
+	if ((ret = __rrr_http_application_http3_map_add_nullsafe (callback_data->headers, name, field->value)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_request_send_final_callback (
+		struct rrr_http_transaction *transaction,
+		void *arg
+) {
+	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http3 *http3 = callback_data->http3;
+
+	(void)(transaction);
+
+	int ret = 0;
+
+	int ret_tmp;
+	nghttp3_nv *nv;
+	size_t nv_len;
+
+	if ((ret = __rrr_http_application_http3_map_to_nv (&nv, &nv_len, callback_data->headers)) != 0) {
+		goto out;
+	}
+
+	if ((ret_tmp = nghttp3_conn_submit_request (
+			http3->conn,
+			callback_data->stream_id,
+			nv,
+			nv_len,
+			NULL,
+			NULL
+	)) != 0) {
+		printf("Failed to submit HTTP3 request: %s\n", nghttp3_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	rrr_free(nv);
+	return ret;
 }
 
 static int __rrr_http_application_http3_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
+	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
+
+	*upgraded_app = NULL;
+
+	int ret = 0;
+
+	int64_t stream_id;
+	struct rrr_map headers = {0};
+
+	RRR_DBG_7("http3 request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+			rrr_nullsafe_str_len(transaction->send_body));
+
+	if ((ret = rrr_net_transport_ctx_stream_open (
+			&stream_id,
+			handle,
+			RRR_NET_TRANSPORT_STREAM_F_LOCAL_BIDI,
+			transaction,
+			rrr_http_transaction_decref_if_not_null_void
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_http_transaction_incref(transaction);
+
+	struct rrr_http_application_http3_send_prepare_callback_data callback_data = {
+		http3,
+		&headers,
+		stream_id
+	};
+
+	if ((ret = rrr_map_item_add_new (&headers, ":scheme", "https")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_map_item_add_new (&headers, ":authority", host)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_request_prepare_wrapper (
+			transaction,
+			upgrade_mode,
+			protocol_version,
+			user_agent,
+			__rrr_http_application_http3_request_send_preliminary_callback,
+			__rrr_http_application_http3_header_fields_submit_callback,
+			__rrr_http_application_http3_request_send_final_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_net_transport_ctx_notify_read(handle);
+
+	out:
+	rrr_map_clear(&headers);
+	return ret;
 }
 
 static int __rrr_http_application_http3_tick (
@@ -206,6 +479,8 @@ static int __rrr_http_application_http3_tick (
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
 
 	int ret = 0;
+
+	printf("http3 tick\n");
 
 	if (!http3->initialized) {
 		if ((ret = __rrr_http_application_http3_initialize(http3, handle)) != 0) {
@@ -221,11 +496,14 @@ static int __rrr_http_application_http3_tick (
 static int __rrr_http_application_http3_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+	return !http3->initialized;
 }
 
 static void __rrr_http_application_http3_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
+	RRR_BUG("%s\n", __func__);
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (

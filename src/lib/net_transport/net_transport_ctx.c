@@ -289,13 +289,23 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 int rrr_net_transport_ctx_stream_open (
 		int64_t *result,
 		struct rrr_net_transport_handle *handle,
-		int flags
+		int flags,
+		void *stream_data,
+		void (*stream_data_destroy)(void *stream_data)
 ) {
 	return handle->transport->methods->stream_open (
 			result,
 			handle,
-			flags
+			flags,
+			stream_data,
+			stream_data_destroy
 	);
+}
+
+uint64_t rrr_net_transport_ctx_stream_count (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->stream_count(handle);
 }
 
 int rrr_net_transport_ctx_read (

@@ -70,6 +70,8 @@ struct rrr_net_transport_quic_stream {
 	int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
 	int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
 	void *cb_arg;
+	void *stream_data;
+	void (*stream_data_destroy)(void *stream_data);
 };
 
 struct rrr_net_transport_quic_stream_collection {
@@ -210,6 +212,8 @@ static void __rrr_net_transport_quic_stream_destroy (
 		struct rrr_net_transport_quic_stream *stream
 ) {
 	rrr_nullsafe_str_destroy_if_not_null(&stream->recv_buf.str);
+	if (stream->stream_data_destroy != NULL)
+		stream->stream_data_destroy(stream->stream_data);
 	rrr_free(stream);
 }
 
@@ -241,7 +245,9 @@ static int __rrr_net_transport_quic_stream_new (
 static int __rrr_net_transport_quic_ctx_stream_open (
 		struct rrr_net_transport_quic_ctx *ctx,
 		int64_t stream_id,
-		int flags
+		int flags,
+		void *stream_data,
+		void (*stream_data_destroy)(void *stream_data)
 ) {
 	struct rrr_net_transport_tls *transport = ctx->transport_tls;
 	const char *local = flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ? "local" : "remote";
@@ -271,6 +277,9 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 	)) != 0) {
 		goto out;
 	}
+
+	stream->stream_data = stream_data;
+	stream->stream_data_destroy = stream_data_destroy;
 
 	if ((
 		flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ||
@@ -434,7 +443,9 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_open (
 	if (__rrr_net_transport_quic_ctx_stream_open (
 			ctx,
 			stream_id,
-			ngtcp2_is_bidi_stream(stream_id) ? RRR_NET_TRANSPORT_STREAM_F_BIDI : 0
+			ngtcp2_is_bidi_stream(stream_id) ? RRR_NET_TRANSPORT_STREAM_F_BIDI : 0,
+			NULL,
+			NULL
 	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
@@ -2532,7 +2543,7 @@ static int __rrr_net_transport_quic_stream_open (
 
 	int ret = 0;
 
-	int64_t stream_id = 0;
+	int64_t stream_id = -1;
 
 	assert(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL);
 
@@ -2555,7 +2566,9 @@ static int __rrr_net_transport_quic_stream_open (
 	if ((ret = __rrr_net_transport_quic_ctx_stream_open (
 			ctx,
 			stream_id,
-			flags
+			flags,
+			stream_data,
+			stream_data_destroy
 	)) != 0) {
 		goto out;
 	}
@@ -2569,6 +2582,13 @@ static int __rrr_net_transport_quic_stream_open (
 
 	out:
 	return ret;
+}
+
+static uint64_t __rrr_net_transport_quic_stream_count (
+		RRR_NET_TRANSPORT_STREAM_COUNT_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	return rrr_length_from_slength_bug_const(RRR_LL_COUNT(&handle_data->ctx->streams));
 }
 
 static int __rrr_net_transport_quic_selected_proto_get (
@@ -2686,6 +2706,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_read,
 	__rrr_net_transport_quic_receive,
 	__rrr_net_transport_quic_stream_open,
+	__rrr_net_transport_quic_stream_count,
 	NULL,
 	__rrr_net_transport_quic_poll,
 	__rrr_net_transport_quic_handshake,
