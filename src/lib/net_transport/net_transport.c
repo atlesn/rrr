@@ -1675,11 +1675,13 @@ int rrr_net_transport_handle_stream_open (
 		int64_t *result,
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
-		int flags
+		int flags,
+		void *stream_data,
+		void (*stream_data_destroy)(void *stream_data)
 ) {
 	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_open");
 
-	return rrr_net_transport_ctx_stream_open(result, handle, flags);
+	return rrr_net_transport_ctx_stream_open(result, handle, flags, stream_data, stream_data_destroy);
 }
 
 void rrr_net_transport_common_cleanup (

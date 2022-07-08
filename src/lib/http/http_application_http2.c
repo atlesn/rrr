@@ -68,9 +68,11 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 }
 
 static uint64_t __rrr_http_application_http2_active_transaction_count_get_and_maintain (
-		struct rrr_http_application *app
+		RRR_HTTP_APPLICATION_TRANSACTION_COUNT_ARGS
 ) {
-	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
+
+	(void)(handle);
 
 	return rrr_http2_streams_count_and_maintain(http2->http2_session);
 }

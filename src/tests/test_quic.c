@@ -276,7 +276,9 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				&stream_id,
 				data->client.transport,
 				data->client.transport_handle,
-				RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI
+				RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI,
+				NULL,
+				NULL
 		)) {
 			case RRR_NET_TRANSPORT_READ_BUSY:
 				// OK, try again

@@ -272,7 +272,9 @@ int rrr_net_transport_handle_stream_open (
 		int64_t *result,
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
-		int flags
+		int flags,
+		void *stream_data,
+		void (*stream_data_destroy)(void *stream_data)
 );
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport

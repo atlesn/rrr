@@ -78,9 +78,11 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 }
 
 static uint64_t __rrr_http_application_http1_active_transaction_count_get (
-		struct rrr_http_application *app
+		RRR_HTTP_APPLICATION_TRANSACTION_COUNT_ARGS
 ) {
-	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+
+	(void)(handle);
 
 	return (http1->active_transaction != NULL ? 1 : 0);
 }

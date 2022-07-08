@@ -53,9 +53,10 @@ void rrr_http_application_destroy_if_not_null_void (
 }
 
 uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
-		struct rrr_http_application *app
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle
 ) {
-	return app->constants->active_transaction_count_get_and_maintain(app);
+	return app->constants->active_transaction_count_get_and_maintain(app, handle);
 }
 
 int rrr_http_application_new (

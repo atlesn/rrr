@@ -34,6 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_STREAM_F_BIDI                (1<<1)
 #define RRR_NET_TRANSPORT_STREAM_F_CLOSING             (1<<2)
 #define RRR_NET_TRANSPORT_STREAM_F_BLOCKED             (1<<3)
+#define RRR_NET_TRANSPORT_STREAM_F_LOCAL_BIDI                            \
+    (RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI)
 
 #define RRR_NET_TRANSPORT_READ_OK				RRR_READ_OK
 #define RRR_NET_TRANSPORT_READ_HARD_ERROR		RRR_READ_HARD_ERROR

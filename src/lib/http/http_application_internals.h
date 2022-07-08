@@ -36,6 +36,10 @@ struct rrr_http_rules;
     int *is_possible,                                          \
     struct rrr_http_application *application
 
+#define RRR_HTTP_APPLICATION_TRANSACTION_COUNT_ARGS            \
+    struct rrr_http_application *application,                  \
+    struct rrr_net_transport_handle *handle                    \
+
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS                 \
     struct rrr_http_application **upgraded_app,                \
     struct rrr_http_application *application,                  \
@@ -78,7 +82,7 @@ struct rrr_http_rules;
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
 	void (*destroy)(struct rrr_http_application *);
-	uint64_t (*active_transaction_count_get_and_maintain)(struct rrr_http_application *);
+	uint64_t (*active_transaction_count_get_and_maintain)(RRR_HTTP_APPLICATION_TRANSACTION_COUNT_ARGS);
 	int (*request_send_possible)(RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
