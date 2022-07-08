@@ -125,12 +125,12 @@ struct rrr_event_queue;
     void *submodule_private_ptr,                                            \
     void *application_private_ptr
 
-#define RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS                        \
-    size_t *consumed,                                                      \
-    int64_t stream_id,                                                     \
-    const char *buf,                                                       \
-    size_t buflen,                                                         \
-    int fin,                                                               \
+#define RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS                         \
+    struct rrr_net_transport_handle *handle,                                \
+    int64_t stream_id,                                                      \
+    const char *buf,                                                        \
+    size_t buflen,                                                          \
+    int fin,                                                                \
     void *arg
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -289,6 +289,12 @@ int rrr_net_transport_handle_stream_open (
 		int flags,
 		void *stream_data,
 		void (*stream_data_destroy)(void *stream_data)
+);
+int rrr_net_transport_handle_stream_consume (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		size_t consumed
 );
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport

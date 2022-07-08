@@ -47,8 +47,13 @@ struct rrr_http_transaction {
 
 	rrr_biglength remaining_redirects;
 
+	// Managed data for downstream server/client
 	void *application_data;
 	void (*application_data_destroy)(void *arg);
+
+	// Unmanaged data for HTTP protocol layer
+	void *protocol_ptr;
+	int protocol_int;
 
 	rrr_http_unique_id unique_id;
 
@@ -76,6 +81,11 @@ void rrr_http_transaction_application_data_set (
 		struct rrr_http_transaction *transaction,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
+);
+void rrr_http_transaction_protocol_data_set (
+		struct rrr_http_transaction *transaction,
+		void *protocol_ptr,
+		int protocol_int
 );
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
