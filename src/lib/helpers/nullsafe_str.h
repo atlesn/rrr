@@ -202,13 +202,6 @@ void rrr_nullsafe_str_copyto (
 		rrr_nullsafe_len target_size,
 		const struct rrr_nullsafe_str *nullsafe
 );
-void rrr_nullsafe_str_copyto_offset (
-		rrr_nullsafe_len *written_size,
-		void *target,
-		rrr_nullsafe_len target_size,
-		const struct rrr_nullsafe_str *nullsafe,
-		rrr_nullsafe_len offset
-);
 int rrr_nullsafe_str_with_str_do (
 		const struct rrr_nullsafe_str *str,
 		int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
@@ -225,6 +218,12 @@ int rrr_nullsafe_str_with_raw_do (
 		int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
 		void *callback_arg
 );
+int rrr_nullsafe_str_with_raw_do_offset (
+		struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
+		int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
+		void *callback_arg
+);
 int rrr_nullsafe_str_with_raw_null_terminated_do (
 		const struct rrr_nullsafe_str *nullsafe,
 		int (*callback)(const char *str, void *arg),
@@ -235,6 +234,12 @@ int rrr_nullsafe_str_raw_null_terminated_dump (
 );
 int rrr_nullsafe_str_with_raw_do_const (
 		const struct rrr_nullsafe_str *nullsafe,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+);
+int rrr_nullsafe_str_with_raw_do_const_offset (
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
 		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
 		void *callback_arg
 );

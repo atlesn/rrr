@@ -645,8 +645,6 @@ static int __rrr_net_transport_openssl_read (
 ) {
 	int ret = RRR_NET_TRANSPORT_READ_OK;
 
-	*stream_id = 0;
-
 	if (buf_size > SSIZE_MAX) {
 		RRR_MSG_0("Buffer size too large in __rrr_net_transport_openssl_read\n");
 		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
@@ -772,6 +770,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_ssl_data_close,
 	__rrr_net_transport_openssl_read_message,
 	__rrr_net_transport_openssl_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

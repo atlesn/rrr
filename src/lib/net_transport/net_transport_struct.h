@@ -133,10 +133,15 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_READ_ARGS                            \
     uint64_t *bytes_read,                                      \
-    int64_t *stream_id,                                        \
     struct rrr_net_transport_handle *handle,                   \
     char *buf,                                                 \
     rrr_biglength buf_size
+
+#define RRR_NET_TRANSPORT_READ_STREAM_ARGS                         \
+    uint64_t *bytes_read,                                          \
+    struct rrr_net_transport_handle *handle,                       \
+    int (*callback)(RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS),  \
+    void *callback_arg
 
 #define RRR_NET_TRANSPORT_RECEIVE_ARGS                         \
     struct rrr_net_transport_handle *handle,                   \
@@ -198,9 +203,11 @@ struct rrr_net_transport_methods {
 	// Read message on connection oriented handle
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 
-	// Poll alredy received data on datagram oriented transport handle
-	// or read data on connection oriented handle
+	// Read data on non-stream oriented handle
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
+
+	// Read data on stream oriented handle
+	int (*read_stream)(RRR_NET_TRANSPORT_READ_STREAM_ARGS);
 
 	// Receive data on datagram-oriented transport handle. After the
 	// main (listen ) handle has received data and identified the

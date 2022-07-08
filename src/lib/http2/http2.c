@@ -300,15 +300,21 @@ static ssize_t __rrr_http2_recv_callback (
 	(void)(nghttp2_session);
 	(void)(flags);
 
+	int ret = 0;
+
+	uint64_t bytes_read = 0;
+
 	if (length > SSIZE_MAX) {
 		// Truncate to fit in function return value
 		length = SSIZE_MAX;
 	}
 
-	int64_t stream_id_dummy;
-	uint64_t bytes_read = 0;
-	int ret = 0;
-	if ((ret = rrr_net_transport_ctx_read(&bytes_read, &stream_id_dummy, session->callback_data.handle, (char *) buf, length)) != 0) {
+	if ((ret = rrr_net_transport_ctx_read (
+			&bytes_read,
+			session->callback_data.handle,
+			(char *) buf,
+			length
+	)) != 0) {
 		ret &= ~(RRR_NET_TRANSPORT_SEND_INCOMPLETE);
 		if (ret & RRR_NET_TRANSPORT_READ_READ_EOF) {
 			RRR_DBG_3("http2 EOF while sending\n");

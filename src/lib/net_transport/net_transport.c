@@ -1658,6 +1658,19 @@ int rrr_net_transport_handle_ptr_modify (
 	return ret;
 }
 
+int rrr_net_transport_handle_ptr_read_stream (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS),
+		void *arg
+) {
+	int ret = handle->transport->methods->read_stream(bytes_read, handle, callback, arg);
+
+	handle->bytes_read_total += *bytes_read;
+
+	return ret;
+}
+
 int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle

@@ -99,35 +99,43 @@ static int __rrr_test_quic_handshake_complete_server_callback (RRR_NET_TRANSPORT
 	return 0;
 }
 
+static int __rrr_test_quic_read_stream_callback (RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	TEST_MSG("Stream %" PRIi64 " read %" PRIu64 " bytes\n", stream_id, buflen);
+
+	if (buflen != strlen(data->msg_in) && memcmp(buf, data->msg_in, buflen) != 0) {
+		RRR_MSG_0("Unexpected data in %s\n", __func__);
+		return 1;
+	}
+
+	if (!fin) {
+		RRR_MSG_0("fin missing in %s\n", __func__);
+		return 1;
+	}
+
+	*consumed = buflen;
+
+	return 0;
+}
+
 static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
 	int ret = 0;
 
-	char buf[65535];
-	uint64_t bytes_read = 0;
-	int64_t stream_id = 0;
+	size_t bytes_read = 0;
 
-	if ((ret = rrr_net_transport_ctx_read (
+	if ((ret = rrr_net_transport_handle_ptr_read_stream (
 			&bytes_read,
-			&stream_id,
 			handle,
-			buf,
-			sizeof(buf)
+			__rrr_test_quic_read_stream_callback,
+			data
 	)) != 0) {
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
-			assert(bytes_read == 0 && stream_id == 0);
 			ret = 0;
 			goto out;
 		}
-	}
-
-	TEST_MSG("Stream %" PRIi64 " read %" PRIu64 " bytes\n", stream_id, bytes_read);
-
-	if (bytes_read != strlen(data->msg_in) && memcmp(buf, data->msg_in, bytes_read) != 0) {
-		RRR_MSG_0("Unexpected data in %s\n", __func__);
-		ret = 1;
-		goto out;
 	}
 
 	data->complete_in = 1;

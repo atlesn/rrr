@@ -160,6 +160,14 @@ static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
 	return 0;
 }
 
+static inline void rrr_biglength_sub_bug (rrr_biglength *a, rrr_biglength b) {
+	rrr_biglength r = *a - b;
+	if (r > *a) {
+		RRR_BUG("Bug: Underflow in rrr_biglength_sub_bug input was %" PRIrrrbl " and %" PRIrrrbl "\n", *a, b);
+	}
+	*a = r;
+}
+
 static inline void rrr_length_add_bug (rrr_length *a, rrr_length b) {
 	if (rrr_length_add_err(a, b) != 0) {
 		RRR_BUG("Bugtrap\n");
