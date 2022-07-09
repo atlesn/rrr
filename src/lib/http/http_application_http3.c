@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_application_internals.h"
 #include "http_transaction.h"
 #include "http_util.h"
+#include "http_part.h"
 #include "http_header_fields.h"
 
 #include "../http3/http3.h"
@@ -39,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct nghttp3_conn *conn;
+	int is_server;
 	int initialized;
 };
 
@@ -299,7 +301,13 @@ static int __rrr_http_application_http3_map_to_nv (
 		nv->name = (uint8_t *) node_tag;
 		nv->namelen = strlen(node_tag);
 		nv->value = (uint8_t *) node_value;
-		nv->valuelen = rrr_length_from_slength_bug_const(value_size);
+		nv->valuelen = rrr_length_from_slength_bug_const(value_length);
+
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_a, (const char *) nv->name, nv->namelen);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_b, (const char *) nv->value, nv->valuelen);
+
+		RRR_DBG_3("Push HTTP3 header %s=%s\n", buf_a, buf_b);
+
 		nv_pos++;
 	RRR_MAP_ITERATE_END();
 
@@ -495,11 +503,11 @@ static int __rrr_http_application_http3_request_send (
 		stream_id
 	};
 
-	if ((ret = rrr_map_item_add_new (&headers, ":scheme", "https")) != 0) {
+	if ((ret = rrr_map_item_add_new (&headers, ":authority", host)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_map_item_add_new (&headers, ":authority", host)) != 0) {
+	if ((ret = rrr_map_item_add_new (&headers, ":scheme", "https")) != 0) {
 		goto out;
 	}
 
@@ -678,21 +686,18 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 	(void)(http3);
 	(void)(conn);
 
-	int ret = 0;
-
 	printf("Data %lu: %.*s\n", datalen, (int) datalen, data);
 
-	if ((ret = rrr_net_transport_handle_stream_consume (
+	if (rrr_net_transport_handle_stream_consume (
 			transport,
 			transport_handle,
 			stream_id,
 			datalen
-	)) != 0) {
-		goto out;
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
 	}
 
-	out:
-	return ret;
+	return 0;
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_deferred_consume (
@@ -720,6 +725,9 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 		void *conn_user_data,
 		void *stream_user_data
 ) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+	struct rrr_http_transaction *transaction = stream_user_data;
+
 	(void)(conn);
 	(void)(stream_id);
 	(void)(token);
@@ -727,7 +735,44 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	(void)(value);
 	(void)(flags);
 	(void)(conn_user_data);
-	(void)(stream_user_data);
+
+	struct rrr_http_part *part = http3->is_server
+		? transaction->request_part
+		: transaction->response_part
+	;
+	nghttp3_vec name_vec = nghttp3_rcbuf_get_buf(name);
+	nghttp3_vec value_vec = nghttp3_rcbuf_get_buf(value);
+
+	if (part->parse_complete) {
+		RRR_DBG_3("Unexpected header field received after parsing of part was complete in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	if (name_vec.len > RRR_LENGTH_MAX) {
+		RRR_DBG_3("Name length exceeded maximum in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	if (value_vec.len > RRR_LENGTH_MAX) {
+		RRR_DBG_3("Value length exceeded maximum in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	if (rrr_http_part_header_field_parse_value_raw (
+			part,
+			(const char *) name_vec.base,
+			rrr_length_from_biglength_bug_const(name_vec.len),
+			(const char *) value_vec.base,
+			rrr_length_from_biglength_bug_const(value_vec.len)
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_a, (const char *) name_vec.base, name_vec.len);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_b, (const char *) value_vec.base, value_vec.len);
+
+	RRR_DBG_3("Received HTTP3 header %s=%s\n", buf_a, buf_b);
+
 	return 0;
 }
 
@@ -878,6 +923,7 @@ int rrr_http_application_http3_new (
 
 	http3->constants = &rrr_http_application_http3_constants;
 	http3->callbacks = *callbacks;
+	http3->is_server = is_server;
 
 	*result = (struct rrr_http_application *) http3;
 

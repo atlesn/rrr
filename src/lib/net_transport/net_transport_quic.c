@@ -501,7 +501,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_receive_stream_data (
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
 
-	RRR_DBG_7("net transport quic fd %i h %i stream id %" PRIi64 " recv %llu fin %i\n",
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " recv %llu fin %i\n",
 		ctx->fd, ctx->connected_handle, stream_id, (unsigned long long) buflen, (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0);
 
 	rrr_net_transport_handle_notify_read((struct rrr_net_transport *) ctx->transport_tls, ctx->connected_handle);
@@ -2103,7 +2103,7 @@ static int __rrr_net_transport_quic_write (
 			stream_id = stream_id_tmp;
 
 			if (data_vector_count > 0) {
-				RRR_DBG_7("net transport quic fd %i h %i write stream id %" PRIi64 " received %llu bytes from downstream in %llu vectors fin %i\n",
+				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " received %llu bytes from downstream in %llu vectors fin %i\n",
 						ctx->fd,
 						handle->handle,
 						stream_id,
@@ -2294,7 +2294,7 @@ static int __rrr_net_transport_quic_read_stream (
 		const rrr_nullsafe_len len = rrr_nullsafe_str_len(node->recv_buf.str);
 
 		if (len > 0) {
-			RRR_DBG_7("net transport quic fd %i h %i read stream id %" PRIi64 " deliver %" PRIrrrbl " bytes to downstream fin %i\n",
+			RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " deliver %" PRIrrrbl " bytes to downstream fin %i\n",
 					ctx->fd, ctx->connected_handle, node->stream_id, len, node->recv_buf.fin);
 
 			struct rrr_net_transport_quic_read_stream_nullsafe_callback_data callback_data = {
@@ -2313,9 +2313,6 @@ static int __rrr_net_transport_quic_read_stream (
 				goto out;
 			}
 
-			RRR_DBG_7("net transport quic fd %i h %i read stream id %" PRIi64 " downstream\n",
-					ctx->fd, ctx->connected_handle, node->stream_id);
-
 			rrr_nullsafe_str_clear(node->recv_buf.str);
 
 			// Make downstream call read again in case there is more data
@@ -2327,7 +2324,7 @@ static int __rrr_net_transport_quic_read_stream (
 		}
 
 		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING && len == 0) {
-			RRR_DBG_7("net transport quic fd %i h %i stream id %" PRIi64 " closing now\n",
+			RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
 					ctx->fd, ctx->connected_handle, node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
@@ -2711,7 +2708,7 @@ static int __rrr_net_transport_quic_stream_consume (
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
 
-	RRR_DBG_7("net transport fd %i h %i stream %" PRIi64 " consume %llu bytes\n",
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " consume %llu bytes\n",
 		handle_data->ctx->fd, handle->handle, stream_id, consumed);
 
 	int ret_tmp;

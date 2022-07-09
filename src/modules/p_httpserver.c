@@ -392,7 +392,7 @@ static int httpserver_worker_process_field_callback (
 		RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->http_fields_accept);
 			if (rrr_nullsafe_str_cmpto(field->name, node_tag) == 0) {
 				do_add_field = 1;
-				if (node->value != NULL && node->value_size > 0 && *(node->value) != '\0') {
+				if (node->value != NULL && node->value_length > 0 && *(node->value) != '\0') {
 					// Do name translation
 					if (rrr_nullsafe_str_set(name_to_use, node->value, strlen(node->value)) != 0) {
 						RRR_MSG_0("Could not set name in httpserver_worker_process_field_callback\n");
