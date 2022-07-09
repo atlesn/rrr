@@ -106,6 +106,21 @@ int rrr_http_header_field_new_with_value_nullsafe (
 		const char *name,
 		const struct rrr_nullsafe_str *value
 );
+int rrr_http_header_field_new_with_value_raw (
+		struct rrr_http_header_field **result,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+);
+int rrr_http_header_field_parse_value_raw (
+		struct rrr_http_header_field_collection *target_list,
+		rrr_length *parsed_bytes,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+);
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,
 		rrr_length *parsed_bytes,

@@ -281,6 +281,24 @@ int rrr_http_part_header_field_push_subvalue (
 	return ret;
 }
 
+int rrr_http_part_header_field_parse_value_raw (
+		struct rrr_http_part *part,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+) {
+	int ret = 0;
+
+	rrr_length parsed_bytes;
+	if ((ret = rrr_http_header_field_parse_value_raw(&part->headers, &parsed_bytes, name, name_length, value, value_length)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_fields_iterate_const (
 		const struct rrr_http_part *part,
 		int (*callback)(const struct rrr_http_field *field, void *callback_arg),

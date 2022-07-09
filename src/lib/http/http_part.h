@@ -172,6 +172,13 @@ int rrr_http_part_header_field_push_subvalue (
 		const char *name,
 		const char *value
 );
+int rrr_http_part_header_field_parse_value_raw (
+		struct rrr_http_part *part,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+);
 int rrr_http_part_fields_iterate_const (
 		const struct rrr_http_part *part,
 		int (*callback)(const struct rrr_http_field *field, void *callback_arg),

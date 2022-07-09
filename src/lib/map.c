@@ -45,7 +45,7 @@ void rrr_map_clear (
 static int __rrr_map_item_new (
 		struct rrr_map_item **target,
 		rrr_length tag_size,
-		rrr_length value_size
+		rrr_length value_length
 ) {
 	int ret = 0;
 
@@ -58,7 +58,8 @@ static int __rrr_map_item_new (
 	memset (item, '\0', sizeof(*item));
 
 	item->tag = rrr_allocate_zero(tag_size + 1);
-	item->value = rrr_allocate_zero(value_size);
+	item->value = rrr_allocate_zero(value_length + 1);
+	item->value_length = value_length;
 
 	if (item->tag == NULL || item->value == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
@@ -137,19 +138,20 @@ static int __rrr_map_item_new_with_values (
 	struct rrr_map_item *item_new = NULL;
 
 	// Remember + 1 and minimum size 1
-	rrr_length tag_size = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) + 1 : 1);
-	rrr_length value_size = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) + 1 : 1);
-	rrr_length max_size = (tag_size > value_size ? tag_size : value_size);
+	rrr_length tag_length = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) : 0);
+	rrr_length value_length = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) : 0);
+	rrr_length max_length = (tag_length > value_length ? tag_length : value_length);
 
-	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
+	if ((ret = rrr_map_item_new(&item_new, max_length)) != 0) {
 		goto out;
 	}
 
 	if (tag != NULL) {
-		memcpy(item_new->tag, tag, tag_size);
+		memcpy(item_new->tag, tag, tag_length);
 	}
 	if (value != NULL) {
-		memcpy(item_new->value, value, value_size);
+		memcpy(item_new->value, value, value_length);
+		item_new->value_length = value_length;
 	}
 
 	*result = item_new;
