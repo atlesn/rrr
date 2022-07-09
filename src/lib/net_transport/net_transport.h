@@ -56,6 +56,8 @@ struct rrr_event_queue;
 #define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     int is_blocked,                                            \
+    int is_shutdown_write,                                     \
+    int is_shutdown_read,                                      \
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
