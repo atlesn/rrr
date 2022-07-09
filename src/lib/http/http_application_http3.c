@@ -178,7 +178,23 @@ static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 			http3->conn,
 			stream_id
 	)) != 0) {
-		RRR_MSG_0("Error from nghttp3 in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		RRR_MSG_0("Error from nghttp3 while blocking in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	if (is_shutdown_write && (ret_tmp = nghttp3_conn_shutdown_stream_write (
+			http3->conn,
+			stream_id
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 during write shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	if (is_shutdown_read && (ret_tmp = nghttp3_conn_shutdown_stream_read (
+			http3->conn,
+			stream_id
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 during read shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
 		return 1;
 	}
 

@@ -171,7 +171,10 @@ static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_
 static int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	TEST_MSG("Stream %" PRIi64 " %i blocked\n", stream_id, is_blocked);
+	(void)(is_shutdown_write);
+	(void)(is_shutdown_read);
+
+	TEST_MSG("Stream %" PRIi64 " blocked: %i\n", stream_id, is_blocked);
 
 	data->stream_blocked = is_blocked;
 
