@@ -114,7 +114,10 @@ static int __rrr_test_quic_read_stream_callback (RRR_NET_TRANSPORT_READ_STREAM_C
 		return 1;
 	}
 
-	*consumed = buflen;
+	if (rrr_net_transport_ctx_stream_consume(handle, stream_id, buflen) != 0) {
+		RRR_MSG_0("consume failed in %s\n", __func__);
+		return 1;
+	}
 
 	return 0;
 }
