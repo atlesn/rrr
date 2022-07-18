@@ -298,13 +298,13 @@ static int __rrr_http_application_http3_map_to_nv (
 
 	nghttp3_nv *nv_pos = nv;
 	RRR_MAP_ITERATE_BEGIN(map);
-		nv->name = (uint8_t *) node_tag;
-		nv->namelen = strlen(node_tag);
-		nv->value = (uint8_t *) node_value;
-		nv->valuelen = rrr_length_from_slength_bug_const(value_length);
+		nv_pos->name = (uint8_t *) node_tag;
+		nv_pos->namelen = strlen(node_tag);
+		nv_pos->value = (uint8_t *) node_value;
+		nv_pos->valuelen = rrr_length_from_slength_bug_const(value_length);
 
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_a, (const char *) nv->name, nv->namelen);
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_b, (const char *) nv->value, nv->valuelen);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_a, (const char *) nv_pos->name, nv_pos->namelen);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_b, (const char *) nv_pos->value, nv_pos->valuelen);
 
 		RRR_DBG_3("Push HTTP3 header %s=%s\n", buf_a, buf_b);
 
