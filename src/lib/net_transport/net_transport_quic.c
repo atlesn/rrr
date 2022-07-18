@@ -1104,7 +1104,7 @@ static int __rrr_net_transport_quic_ctx_new_client (
 			tls_data,
 			fd,
 			connection_ids,
-			1, /* Quic version 1 */
+			NGTCP2_PROTO_VER_V1,
 			hostname,
 			addr_remote,
 			addr_remote_len,
