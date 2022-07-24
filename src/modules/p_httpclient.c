@@ -1963,6 +1963,7 @@ static int httpclient_parse_config (
 			config,
 			"http",
 			1,
+			0,
 			RRR_NET_TRANSPORT_BOTH
 	) != 0) {
 		ret = 1;

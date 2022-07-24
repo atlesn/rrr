@@ -1200,6 +1200,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			config,
 			"mqtt",
 			0,
+			0,
 			RRR_NET_TRANSPORT_PLAIN
 	)) != 0) {
 		goto out;

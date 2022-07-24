@@ -51,6 +51,7 @@ int rrr_net_transport_config_parse (
 		struct rrr_instance_config_data *config,
 		const char *prefix,
 		int allow_both_transport_type,
+		int allow_tls_parameters_without_tls,
 		enum rrr_net_transport_type default_transport
 );
 

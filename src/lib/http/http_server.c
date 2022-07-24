@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,6 +44,12 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https != NULL) {
 		rrr_net_transport_destroy(server->transport_https);
+	}
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (server->transport_quic != NULL) {
+		rrr_net_transport_destroy(server->transport_quic);
 	}
 #endif
 
@@ -451,6 +457,7 @@ static int __rrr_http_server_read_callback (
     http_server
 
 struct rrr_http_server_start_alpn_protos_callback_data {
+	const char *name;
 	struct rrr_http_server *server;
 	struct rrr_net_transport **result_transport;
 	const struct rrr_net_transport_config *net_transport_config;
@@ -460,6 +467,7 @@ struct rrr_http_server_start_alpn_protos_callback_data {
 	const uint64_t hard_timeout_ms;
 	const uint64_t ping_timeout_ms;
 	const rrr_length send_chunk_count_limit;
+	int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS);
 };
 
 static int __rrr_http_server_start_alpn_protos_callback (
@@ -473,7 +481,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 	return rrr_net_transport_new (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
-			"HTTP server",
+			callback_data->name,
 			callback_data->net_transport_flags,
 			callback_data->queue,
 			alpn_protos,
@@ -483,7 +491,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 			callback_data->hard_timeout_ms,
 			callback_data->send_chunk_count_limit,
 			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS,
-			NULL,
+			callback_data->stream_open_callback,
 			NULL
 	);
 }
@@ -502,7 +510,7 @@ static int __rrr_http_server_start (
 	int ret = 0;
 
 	if (*result_transport != NULL) {
-		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
+		RRR_BUG("BUG: Double call to %s, pointer already set\n", __func__);
 	}
 
 	const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
@@ -510,6 +518,7 @@ static int __rrr_http_server_start (
 
 	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				"HTTP server TLS",
 				http_server,
 				result_transport,
 				net_transport_config,
@@ -518,19 +527,42 @@ static int __rrr_http_server_start (
 				first_read_timeout_ms,
 				hard_timeout_ms,
 				ping_timeout_ms,
-				send_chunk_count_limit
+				send_chunk_count_limit,
+				NULL
 		};
 
-		ret = rrr_http_application_alpn_protos_with_all_do (
+		ret = rrr_http_application_alpn_protos_with_all_tcp_do (
 				__rrr_http_server_start_alpn_protos_callback,
 				&callback_data
 		);
 	}
+#ifdef RRR_WITH_HTTP3
+	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_QUIC) {
+		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				"HTTP server QUIC",
+				http_server,
+				result_transport,
+				net_transport_config,
+				net_transport_flags,
+				queue,
+				first_read_timeout_ms,
+				hard_timeout_ms,
+				ping_timeout_ms,
+				send_chunk_count_limit,
+				rrr_http_session_net_transport_cb_stream_open
+		};
+
+		ret = rrr_http_application_alpn_protos_with_http3_do (
+				__rrr_http_server_start_alpn_protos_callback,
+				&callback_data
+		);
+	}
+#endif
 	else {
 		ret = rrr_net_transport_new (
 				result_transport,
 				net_transport_config,
-				"HTTP server",
+				"HTTP server plain",
 				net_transport_flags,
 				queue,
 				NULL,
@@ -546,7 +578,7 @@ static int __rrr_http_server_start (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
+		RRR_MSG_0("Could not create HTTP transport in %s return was %i\n", __func__, ret);
 		ret = 1;
 		goto out;
 	}
@@ -629,6 +661,39 @@ int rrr_http_server_start_tls (
 			read_timeout_ms,
 			send_chunk_count_limit,
 			&net_transport_config_tls,
+			net_transport_flags
+	);
+
+	return ret;
+}
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+int rrr_http_server_start_quic (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
+		rrr_length send_chunk_count_limit,
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_config net_transport_config_quic = *net_transport_config_template;
+
+	net_transport_config_quic.transport_type = RRR_NET_TRANSPORT_QUIC;
+
+	ret = __rrr_http_server_start (
+			&server->transport_quic,
+			server,
+			queue,
+			port,
+			first_read_timeout_ms,
+			read_timeout_ms,
+			send_chunk_count_limit,
+			&net_transport_config_quic,
 			net_transport_flags
 	);
 

@@ -51,6 +51,7 @@ struct rrr_event_queue;
     struct rrr_net_transport_vector *data_vector,              \
     size_t *data_vector_count,                                 \
     int *fin,                                                  \
+    int64_t stream_id_suggestion,                              \
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
@@ -120,7 +121,7 @@ struct rrr_event_queue;
     void *read_callback_arg;                                                \
     int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS); \
     void *stream_open_callback_arg;                                         \
-    char application_name[16]
+    char application_name[32]
 
 #define RRR_NET_TRANSPORT_PRE_DESTROY_ARGS                                  \
     struct rrr_net_transport_handle *handle,                                \

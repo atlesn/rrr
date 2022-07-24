@@ -77,6 +77,10 @@ struct httpserver_data {
 	uint16_t port_tls;
 #endif
 
+#if defined(RRR_WITH_HTTP3)
+	uint16_t port_quic;
+#endif
+
 	struct rrr_map http_fields_accept;
 
 	rrr_setting_uint request_max_mb;
@@ -144,11 +148,22 @@ static int httpserver_parse_config (
 ) {
 	int ret = 0;
 
+#if defined(RRR_WITH_HTTP3)
+	if ((ret = rrr_instance_config_read_optional_port_number (
+			&data->port_quic,
+			config,
+			"http_server_port_quic"
+	)) != 0) {
+		goto out;
+	}
+#endif
+
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"http_server",
 			1,
+			data->port_quic > 0,
 			RRR_NET_TRANSPORT_PLAIN
 	) != 0) {
 		ret = 1;
@@ -320,6 +335,26 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 		)) != 0) {
 			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
 					data->port_tls, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (data->port_quic > 0) {
+		if ((ret = rrr_http_server_start_quic (
+				data->http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
+				data->port_quic,
+				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT,
+				&data->net_transport_config,
+				0
+		)) != 0) {
+			RRR_MSG_0("Could not start listening in QUIC mode on port %u in httpserver instance %s\n",
+					data->port_quic, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
 		}

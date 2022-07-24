@@ -584,6 +584,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			config,
 			"influxdb",
 			0,
+			0,
 			RRR_NET_TRANSPORT_PLAIN
 	) != 0) {
 		ret = 1;
