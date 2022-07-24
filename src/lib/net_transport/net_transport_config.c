@@ -55,6 +55,7 @@ int rrr_net_transport_config_parse (
 		struct rrr_instance_config_data *config,
 		const char *prefix,
 		int allow_both_transport_type,
+		int allow_tls_parameters_without_tls,
 		enum rrr_net_transport_type default_transport
 ) {
 	int ret = 0;
@@ -106,8 +107,11 @@ int rrr_net_transport_config_parse (
 		data->transport_type = default_transport;
 	}
 
-	// Note : It's allowed not to specify a certificate
-	if (data->tls_certificate_file != NULL && data->transport_type != RRR_NET_TRANSPORT_TLS && data->transport_type != RRR_NET_TRANSPORT_BOTH) {
+	if ( data->tls_certificate_file != NULL &&
+	     data->transport_type != RRR_NET_TRANSPORT_TLS &&
+	     data->transport_type != RRR_NET_TRANSPORT_BOTH &&
+	     !allow_tls_parameters_without_tls
+	) {
 		RRR_MSG_0("TLS certificate specified in %s_tls_certificate_file but %s_transport_type was not 'tls' for instance %s\n",
 				prefix, prefix, config->name);
 		ret = 1;

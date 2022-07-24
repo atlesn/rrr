@@ -192,6 +192,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 			config,
 			"mqtt_broker",
 			1,
+			0,
 			RRR_NET_TRANSPORT_PLAIN
 	)) != 0) {
 		goto out;

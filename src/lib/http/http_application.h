@@ -151,10 +151,16 @@ int rrr_http_application_transport_ctx_stream_open (
 		int64_t stream_id,
 		int flags
 );
-int rrr_http_application_alpn_protos_with_all_do (
+int rrr_http_application_alpn_protos_with_all_tcp_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
 		void *callback_arg
 );
+#ifdef RRR_WITH_HTTP3
+int rrr_http_application_alpn_protos_with_http3_do (
+		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
+		void *callback_arg
+);
+#endif
 void rrr_http_application_polite_close (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle

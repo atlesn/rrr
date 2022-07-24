@@ -151,7 +151,7 @@ int rrr_http_application_transport_ctx_stream_open (
 	);
 }
 
-int rrr_http_application_alpn_protos_with_all_do (
+int rrr_http_application_alpn_protos_with_all_tcp_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
 		void *callback_arg
 ) {
@@ -164,6 +164,20 @@ int rrr_http_application_alpn_protos_with_all_do (
 
 	return callback(alpn_protos, alpn_protos_length, callback_arg);
 }
+
+#ifdef RRR_WITH_HTTP3
+int rrr_http_application_alpn_protos_with_http3_do (
+		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
+		void *callback_arg
+) {
+	const char *alpn_protos = NULL;
+	unsigned int alpn_protos_length = 0;
+
+	rrr_http_application_http3_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+
+	return callback(alpn_protos, alpn_protos_length, callback_arg);
+}
+#endif
 
 void rrr_http_application_polite_close (
 		struct rrr_http_application *app,

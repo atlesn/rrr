@@ -160,6 +160,10 @@ do_test_socket test_socket.conf
 do_test_socket test_http.conf
 do_test_socket test_http2.conf
 do_test_simple test_http_report_tag.conf
+echo "With HTTP3: $RRR_WITH_HTTP3"
+if test "x$RRR_WITH_HTTP3" != 'xno'; then
+	do_test_socket test_http3.conf
+fi
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf

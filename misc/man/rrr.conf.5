@@ -1844,10 +1844,20 @@ module:
 Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
 
 .It http_server_port_tls=PORT
-Port to use for TLS listening, defaults to 443.
+TCP port to use for TLS listening, defaults to 443.
 
 .It http_server_port_plain=PORT
-Port to use for plaintext listening, defaults to 80.
+TCP port to use for plaintext listening, defaults to 80.
+
+.It http_server_port_quic=PORT
+UDP port to use for QUIC and HTTP/3 listening.
+If the parameter is given, the HTTP header
+.B Alt-Svc
+will be provided to client in all non-QUIC responses.
+The parameter
+.B http_server_transport_type
+does not affect QUIC listening.
+If left unset, QUIC and HTTP/3 will be disabled.
 
 .It http_server_request_max_mb=MEGABYTES
 Maximum size in megabytes for requests. A value of 0 indicates unlimited request size. Defaults to 10.
@@ -1881,7 +1891,7 @@ The following array values will be present in generated messages:
 .It http_method
 Always present.
 .It http_protocol
-Always present with the value 1 or 2.
+Always present with the value 1, 2 or 3.
 .It http_endpoint
 Always present.
 .It http_body
@@ -2037,9 +2047,6 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 .PP
 With default configuration, having no parameters specified, no RRR messages will be generated for received requests.
 .PP
-Note that all incoming request have to use
-.B HTTP/1.1
-as protocol version, any other versions will be rejected.
 
 .SS httpclient (PAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
