@@ -890,8 +890,6 @@ int rrr_http_application_http3_new (
 		int is_server,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
-	(void)(is_server);
-
 	int ret = 0;
 
 	struct rrr_http_application_http3 *http3;
@@ -905,16 +903,21 @@ int rrr_http_application_http3_new (
 
 	nghttp3_settings_default(&settings);
 
-	if (nghttp3_conn_client_new (
-			&http3->conn,
-			&rrr_http_application_http3_nghttp3_callbacks,
-			&settings,
-			&rrr_http_application_http3_nghttp3_mem,
-			http3
-	) != 0) {
-		printf("Failed to create http3 client\n");
-		ret = 1;
-		goto out;
+	if (is_server) {
+		RRR_BUG("Server not implemented in %s\n", __func__);
+	}
+	else {
+		if (nghttp3_conn_client_new (
+				&http3->conn,
+				&rrr_http_application_http3_nghttp3_callbacks,
+				&settings,
+				&rrr_http_application_http3_nghttp3_mem,
+				http3
+		) != 0) {
+			printf("Failed to create http3 client\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 #ifdef RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG

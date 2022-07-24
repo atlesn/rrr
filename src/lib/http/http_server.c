@@ -132,8 +132,12 @@ static void __rrr_http_server_accept_callback (
 
 	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
-	RRR_DBG_3("HTTP accept for %s family %i using fd %i\n",
-			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
+	RRR_DBG_3("HTTP accept for %s family %i using fd %i h %i\n",
+			buf,
+			sockaddr->sa_family,
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle)
+	);
 }
 
 
@@ -156,15 +160,18 @@ static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 );
 
-static int __rrr_http_server_handshake_complete_callback (
-		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
+static int __rrr_http_server_transport_ctx_application_ensure (
+		struct rrr_http_server *http_server,
+		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_server *http_server = arg;
-
 	int ret = 0;
 
 	struct rrr_http_application *application = NULL;
 	char *alpn_selected_proto = NULL;
+
+	if (rrr_net_transport_ctx_handle_has_application_data (handle)) {
+		goto out;
+	}
 
 	if ((ret = rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle)) != 0) {
 		goto out;
@@ -189,13 +196,30 @@ static int __rrr_http_server_handshake_complete_callback (
 		http_server->callbacks.async_response_get_callback_arg,
 	};
 
+	enum rrr_http_application_type type = RRR_HTTP_APPLICATION_HTTP1;
+
+	if (alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0) {
+		type = RRR_HTTP_APPLICATION_HTTP2;
+	}
+	else if (rrr_net_transport_ctx_transport_type_get (handle) == RRR_NET_TRANSPORT_QUIC) {
+		if (alpn_selected_proto == NULL || strcmp(alpn_selected_proto, "h3") != 0) {
+			RRR_DBG_7("HTTP incorrect ALPN protocol '%s' for QUIC fd %i handle %i\n",
+				alpn_selected_proto == NULL ? "(not given)" : alpn_selected_proto,
+				RRR_NET_TRANSPORT_CTX_FD(handle),
+				RRR_NET_TRANSPORT_CTX_HANDLE(handle));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+		type = RRR_HTTP_APPLICATION_HTTP3;
+	}
+
 	if ((ret = rrr_http_application_new (
 			&application,
-			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
+			type,
 			1, // Is server
 			&callbacks
 	)) != 0) {
-		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_handshake_comlete_callback\n");
+		RRR_MSG_0("Could not create HTTP application in %s\n", __func__);
 		goto out;
 	}
 
@@ -207,13 +231,101 @@ static int __rrr_http_server_handshake_complete_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("HTTP handshake complete for fd %i\n",
-			RRR_NET_TRANSPORT_CTX_FD(handle));
-
 	out:
 	RRR_FREE_IF_NOT_NULL(alpn_selected_proto);
 	rrr_http_application_destroy_if_not_null(&application);
 	return ret;
+}
+
+static int __rrr_http_server_handshake_complete_callback (
+		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
+) {
+	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
+
+	if ((ret = __rrr_http_server_transport_ctx_application_ensure (
+			http_server,
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("HTTP handshake complete for fd %i h %i\n",
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle));
+
+	out:
+	return ret;
+}
+
+struct rrr_http_server_stream_open_transport_ctx_callback_data {
+	struct rrr_http_server *http_server;
+	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
+	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
+	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
+	void **cb_arg;
+	struct rrr_net_transport *transport;
+	rrr_net_transport_handle handle;
+	int64_t stream_id;
+	int flags;
+};
+
+static int __rrr_http_server_stream_open_transport_ctx_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_server_stream_open_transport_ctx_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	RRR_DBG_3("HTTP stream open %li fd %i h %i\n",
+			callback_data->stream_id,
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle));
+
+	if ((ret = __rrr_http_server_transport_ctx_application_ensure (
+			callback_data->http_server,
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_server_stream_open_callback (
+		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
+) {
+	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
+
+	struct rrr_http_server_stream_open_transport_ctx_callback_data callback_data = {
+			http_server,
+			cb_get_message,
+			cb_blocked,
+			cb_ack,
+			cb_arg,
+			transport,
+			handle,
+			stream_id,
+			flags
+	};
+
+	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
+			transport,
+			handle,
+			__rrr_http_server_stream_open_transport_ctx_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+	
 }
 
 static int __rrr_http_server_upgrade_verify_callback (
@@ -468,6 +580,7 @@ struct rrr_http_server_start_alpn_protos_callback_data {
 	const uint64_t ping_timeout_ms;
 	const rrr_length send_chunk_count_limit;
 	int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS);
+	void *stream_open_arg;
 };
 
 static int __rrr_http_server_start_alpn_protos_callback (
@@ -492,7 +605,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 			callback_data->send_chunk_count_limit,
 			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS,
 			callback_data->stream_open_callback,
-			NULL
+			callback_data->stream_open_arg
 	);
 }
 
@@ -528,6 +641,7 @@ static int __rrr_http_server_start (
 				hard_timeout_ms,
 				ping_timeout_ms,
 				send_chunk_count_limit,
+				NULL,
 				NULL
 		};
 
@@ -549,7 +663,8 @@ static int __rrr_http_server_start (
 				hard_timeout_ms,
 				ping_timeout_ms,
 				send_chunk_count_limit,
-				rrr_http_session_net_transport_cb_stream_open
+				__rrr_http_server_stream_open_callback,
+				http_server
 		};
 
 		ret = rrr_http_application_alpn_protos_with_http3_do (

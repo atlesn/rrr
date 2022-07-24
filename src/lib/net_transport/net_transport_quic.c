@@ -2197,7 +2197,6 @@ static int __rrr_net_transport_quic_write_no_streams (
 		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
-	printf("Write no streams\n");
 
 	if ((ret = __rrr_net_transport_quic_write (
 			handle,
@@ -2228,8 +2227,6 @@ static int __rrr_net_transport_quic_write_all_streams (
 		) {
 			RRR_LL_ITERATE_NEXT();
 		}
-
-		printf("Write all streams %li\n", node->stream_id);
 
 		if ((ret = __rrr_net_transport_quic_write (
 				handle,

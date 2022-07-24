@@ -101,6 +101,7 @@ struct rrr_event_queue;
 
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
+    enum rrr_net_transport_type transport_type;                             \
     const struct rrr_net_transport_methods *methods;                        \
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
@@ -301,6 +302,9 @@ int rrr_net_transport_handle_stream_consume (
 );
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
+);
+enum rrr_net_transport_type rrr_net_transport_type_get (
+		const struct rrr_net_transport *transport
 );
 void rrr_net_transport_stats_get (
 		rrr_length *listening_count,

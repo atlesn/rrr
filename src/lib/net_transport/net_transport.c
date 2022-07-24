@@ -1724,6 +1724,12 @@ void rrr_net_transport_common_cleanup (
 	);
 }
 
+enum rrr_net_transport_type rrr_net_transport_type_get (
+		const struct rrr_net_transport *transport
+) {
+	return transport->transport_type;
+}
+
 void rrr_net_transport_stats_get (
 		rrr_length *listening_count,
 		rrr_length *connected_count,
@@ -1863,6 +1869,7 @@ static int __rrr_net_transport_new (
 		}
 	}
 
+	new_transport->transport_type = config->transport_type;
 	strncpy(new_transport->application_name, application_name, sizeof(new_transport->application_name));
 	new_transport->application_name[sizeof(new_transport->application_name)-1] = '\0';
 

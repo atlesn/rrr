@@ -403,3 +403,9 @@ int rrr_net_transport_ctx_selected_proto_get (
 ) {
 	return handle->transport->methods->selected_proto_get(proto, handle);
 }
+
+enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
+		const struct rrr_net_transport_handle *handle
+) {
+	return rrr_net_transport_type_get(handle->transport);
+}
