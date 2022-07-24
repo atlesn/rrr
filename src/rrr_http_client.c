@@ -375,7 +375,7 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
+	RRR_DBG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
