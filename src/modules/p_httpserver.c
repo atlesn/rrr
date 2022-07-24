@@ -156,6 +156,7 @@ static int httpserver_parse_config (
 	}
 
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	data->port_tls = RRR_HTTPSERVER_DEFAULT_PORT_TLS;
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_tls",
 		if ((ret = rrr_instance_config_read_optional_port_number (
 				&data->port_tls,
@@ -175,6 +176,7 @@ static int httpserver_parse_config (
 	);
 #endif
 
+	data->port_plain = RRR_HTTPSERVER_DEFAULT_PORT_PLAIN;
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_plain",
 		if ((ret = rrr_instance_config_read_optional_port_number (
 				&data->port_plain,
