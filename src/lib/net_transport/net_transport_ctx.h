@@ -176,5 +176,8 @@ int rrr_net_transport_ctx_selected_proto_get (
 		char **proto,
 		struct rrr_net_transport_handle *handle
 );
+enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
+		const struct rrr_net_transport_handle *handle
+);
 
 #endif /* RRR_WITH_NET_TRANSPORT_CTX_H */

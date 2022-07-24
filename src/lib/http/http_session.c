@@ -150,7 +150,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 	// With keepalive connections, structures are already present in transport handle
 	if (!rrr_net_transport_ctx_handle_has_application_data(handle)) {
 		if ((ret = __rrr_http_session_allocate(&session)) != 0) {
-			RRR_MSG_0("Could not allocate memory in rrr_http_session_transport_ctx_client_new\n");
+			RRR_MSG_0("Could not allocate memory for session in %s\n", __func__);
 			goto out;
 		}
 
@@ -185,7 +185,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		if (user_agent != NULL && *user_agent != '\0') {
 			session->user_agent = rrr_strdup(user_agent);
 			if (session->user_agent == NULL) {
-				RRR_MSG_0("Could not allocate memory in rrr_http_session_new D\n");
+				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
 				ret = 1;
 				goto out;
 			}
@@ -363,52 +363,25 @@ int rrr_http_session_transport_ctx_close_if_open (
 	return 0; // Always return 0
 }
 
-struct rrr_http_session_transport_ctx_stream_open_callback_data {
-	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
-	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
-	void **cb_arg;
-	int64_t stream_id;
-	int flags;
-};
-
-static int __rrr_http_session_transport_ctx_stream_open_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
+int rrr_http_session_transport_ctx_stream_open (
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void **cb_arg,
+		int64_t stream_id,
+		int flags,
+		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
-	struct rrr_http_session_transport_ctx_stream_open_callback_data *callback_data = arg;
 
 	return rrr_http_application_transport_ctx_stream_open (
 			session->application,
 			handle,
-			callback_data->cb_get_message,
-			callback_data->cb_blocked,
-			callback_data->cb_ack,
-			callback_data->cb_arg,
-			callback_data->stream_id,
-			callback_data->flags
-	);
-}
-
-int rrr_http_session_net_transport_cb_stream_open (
-		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
-) {
-	(void)(arg);
-
-	struct rrr_http_session_transport_ctx_stream_open_callback_data callback_data = {
-		cb_get_message,
-		cb_blocked,
-		cb_ack,
-		cb_arg,
-		stream_id,
-		flags
-	};
-
-	return rrr_net_transport_handle_with_transport_ctx_do (
-			transport,
-			handle,
-			__rrr_http_session_transport_ctx_stream_open_callback,
-			&callback_data
+			cb_get_message,
+			cb_blocked,
+			cb_ack,
+			cb_arg,
+			stream_id,
+			flags
 	);
 }
