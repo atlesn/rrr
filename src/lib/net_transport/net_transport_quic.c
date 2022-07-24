@@ -2072,7 +2072,7 @@ static int __rrr_net_transport_quic_write (
 
 			// Note : - Callback MUST set all values when there is no data.
 			//          Defaults are stream_id=-1, data_vector_count=0, fin=0.
-			//        - Callback MAY otherwise change the stream number as applicable.
+			//        - Callback MAY otherwise set any active stream number as applicable.
 
 			int64_t stream_id_tmp = -1;
 
@@ -2081,6 +2081,7 @@ static int __rrr_net_transport_quic_write (
 					(struct rrr_net_transport_vector *) data_vector,
 					&data_vector_count,
 					&fin,
+					stream_id,
 					stream->cb_arg
 			) != 0) {
 				goto out_failure;

@@ -147,6 +147,8 @@ static int __rrr_http_application_http3_net_transport_cb_get_message (
 ) {
 	struct rrr_http_application_http3 *http3 = arg;
 
+	(void)(stream_id_suggestion);
+
 	int ret = 0;
 
 	ssize_t ret_tmp;
