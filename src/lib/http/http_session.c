@@ -352,7 +352,6 @@ int rrr_http_session_transport_ctx_tick_server (
 	);
 }
 
-
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -363,25 +362,52 @@ int rrr_http_session_transport_ctx_close_if_open (
 	return 0; // Always return 0
 }
 
+struct rrr_http_session_stream_open_transport_ctx_callback_data {
+	void **stream_data;
+	void (**stream_data_destroy)(void *stream_data);
+	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
+	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
+	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
+	void **cb_arg;
+	struct rrr_net_transport *transport;
+	rrr_net_transport_handle handle;
+	int64_t stream_id;
+	int flags;
+	void *stream_open_callback_arg_local;
+};
+
 int rrr_http_session_transport_ctx_stream_open (
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
 		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
 		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
 		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
 		void **cb_arg,
+		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
 		int flags,
-		struct rrr_net_transport_handle *handle
+		void *stream_open_callback_arg_local
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
+	RRR_DBG_3("HTTP stream open %li fd %i h %i existing session %p\n",
+			stream_id,
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			session
+	);
+
 	return rrr_http_application_transport_ctx_stream_open (
-			session->application,
-			handle,
+			stream_data,
+			stream_data_destroy,
 			cb_get_message,
 			cb_blocked,
 			cb_ack,
 			cb_arg,
+			session != NULL ? session->application : NULL, /* Application must create session if it does not exist */
+			handle,
 			stream_id,
-			flags
+			flags,
+			stream_open_callback_arg_local
 	);
 }

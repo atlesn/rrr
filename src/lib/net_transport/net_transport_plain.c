@@ -69,6 +69,17 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 	return 0;
 }
 
+static int __rrr_net_transport_plain_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {
+	(void)(submodule_private_ptr);
+
+	return handle->application_pre_destroy != NULL
+		? handle->application_pre_destroy(handle, application_private_ptr)
+		: 0
+	;
+}
+
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
 	rrr_free(plain);
@@ -406,8 +417,10 @@ static const struct rrr_net_transport_methods plain_methods = {
 	NULL,
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
+	__rrr_net_transport_plain_pre_destroy,
 	__rrr_net_transport_plain_read_message,
 	__rrr_net_transport_plain_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

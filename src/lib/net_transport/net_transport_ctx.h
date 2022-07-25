@@ -125,12 +125,15 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_nullsafe_str *nullsafe
 );
-int rrr_net_transport_ctx_stream_open (
+int rrr_net_transport_ctx_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport_handle *handle,
 		int flags,
-		void *stream_data,
-		void (*stream_data_destroy)(void *stream_data)
+		void *stream_open_callback_arg_local
+);
+int rrr_net_transport_ctx_stream_open_remote (
+		int64_t stream_id,
+		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_stream_consume (
 		struct rrr_net_transport_handle *handle,

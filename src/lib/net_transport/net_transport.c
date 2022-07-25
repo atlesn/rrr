@@ -112,6 +112,7 @@ static int __rrr_net_transport_handle_destroy (
 	}
 
 	RRR_FREE_IF_NOT_NULL(handle->match_string);
+	RRR_FREE_IF_NOT_NULL(handle->application_close_reason_string);
 
 	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
@@ -155,21 +156,16 @@ static int __rrr_net_transport_iterate_with_callback (
 			}
 			else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
 				// For nice treatment of remote, for instance send a disconnect packet
-				if (node->iterator_pre_destroy != NULL) {
-					if ((ret = node->iterator_pre_destroy (
-							node,
-							node->submodule_private_ptr,
-							node->application_private_ptr
-					)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-						RRR_MSG_0("Internal error from callback function in %s\n", __func__);
-						goto out;
-					}
-				}
-				else {
-					ret = 0;
+				if ((ret = transport->methods->pre_destroy (
+						node,
+						node->submodule_private_ptr,
+						node->application_private_ptr
+				)) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+					RRR_MSG_0("Internal error from pre destroy function in %s\n", __func__);
+					goto out;
 				}
 
-				// When pre_destroy returns 0 or is not set, go ahead with destruction
+				// When pre_destroy returns 0, go ahead with destruction
 				if (ret == 0) {
 					__rrr_net_transport_handle_destroy(node);
 					RRR_LL_ITERATE_SET_DESTROY();
@@ -900,18 +896,53 @@ void rrr_net_transport_handle_touch (
 	RRR_LL_ITERATE_END();
 }
 
+static void __rrr_net_transport_handle_ptr_close_reason_set (
+		struct rrr_net_transport_handle *handle,
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_reason_string
+) {
+	handle->submodule_close_reason = submodule_close_reason;
+	handle->application_close_reason = application_close_reason;
+
+	RRR_FREE_IF_NOT_NULL(handle->application_close_reason_string);
+	if (application_reason_string != NULL && (handle->application_close_reason_string = rrr_strdup(application_reason_string)) == NULL) {
+		RRR_MSG_0("Warning: Failed to allocate memory for reason string in %s\n", __func__);
+	}
+}
+
 // Close using iterator method which includes calling any pre destroy method
+void rrr_net_transport_handle_ptr_close_with_reason (
+		struct rrr_net_transport_handle *handle,
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
+) {
+	__rrr_net_transport_handle_ptr_close_reason_set (
+			handle,
+			submodule_close_reason,
+			application_close_reason,
+			application_close_reason_string
+	);
+
+	__rrr_net_transport_handle_close(handle);
+}
+
 void rrr_net_transport_handle_close_with_reason (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
-		uint32_t submodule_close_reason,
-		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
 ) {
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
-			node->submodule_close_reason = submodule_close_reason;
-			node->iterator_pre_destroy = pre_destroy;
-			__rrr_net_transport_handle_close(node);
+			rrr_net_transport_handle_ptr_close_with_reason (
+					node,
+					submodule_close_reason,
+					application_close_reason,
+					application_close_reason_string
+			);
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
@@ -1711,11 +1742,11 @@ void rrr_net_transport_handle_ptr_application_data_bind (
 	handle->application_ptr_destroy = application_data_destroy;
 }
 
-void rrr_net_transport_handle_ptr_pre_destroy_function_set (
+void rrr_net_transport_handle_ptr_application_pre_destroy_function_set (
 		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+		int (*application_pre_destroy)(RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS)
 ) {
-	handle->iterator_pre_destroy = pre_destroy;
+	handle->application_pre_destroy = application_pre_destroy;
 }
 
 int rrr_net_transport_handle_ptr_modify (
@@ -1778,17 +1809,16 @@ int rrr_net_transport_handle_check_handshake_complete (
 	return ret;
 }
 
-int rrr_net_transport_handle_stream_open (
+int rrr_net_transport_handle_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		int flags,
-		void *stream_data,
-		void (*stream_data_destroy)(void *stream_data)
+		void *stream_open_callback_arg_local
 ) {
 	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_open");
 
-	return rrr_net_transport_ctx_stream_open(result, handle, flags, stream_data, stream_data_destroy);
+	return rrr_net_transport_ctx_stream_open_local(result, handle, flags, stream_open_callback_arg_local);
 }
 
 int rrr_net_transport_handle_stream_consume (

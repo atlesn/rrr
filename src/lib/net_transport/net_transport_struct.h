@@ -113,8 +113,13 @@ struct rrr_nullsafe_str;
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
     void *final_callback_arg
 
-#define RRR_NET_TRANSPORT_CLOSE_ARGS                           \
+#define RRR_NET_TRANSPORT_CLOSE_ARGS                                       \
     struct rrr_net_transport_handle *handle
+
+#define RRR_NET_TRANSPORT_PRE_DESTROY_ARGS                                 \
+    struct rrr_net_transport_handle *handle,                               \
+    void *submodule_private_ptr,                                           \
+    void *application_private_ptr
 
 #define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS                                     \
     uint64_t *bytes_read,                                                       \
@@ -153,12 +158,15 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_HANDSHAKE_ARGS                       \
     struct rrr_net_transport_handle *handle
 
-#define RRR_NET_TRANSPORT_STREAM_OPEN_ARGS                     \
+#define RRR_NET_TRANSPORT_STREAM_OPEN_LOCAL_ARGS               \
     int64_t *result,                                           \
     struct rrr_net_transport_handle *handle,                   \
     int flags,                                                 \
-    void *stream_data,                                         \
-    void (*stream_data_destroy)(void *stream_data)
+    void *stream_open_callback_arg_local
+
+#define RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS              \
+    int64_t stream_id,                                         \
+    struct rrr_net_transport_handle *handle
 
 #define RRR_NET_TRANSPORT_STREAM_COUNT_ARGS                    \
     struct rrr_net_transport_handle *handle
@@ -205,6 +213,11 @@ struct rrr_net_transport_methods {
 	// Close handle nicely, only call close() from parent mode destroy function
 	int (*close)(RRR_NET_TRANSPORT_CLOSE_ARGS);
 
+	// Called first when we try to destroy. When it returns 0,
+	// we go ahead with destruction and call ptr_destroy. Only
+	// used from within the iterator function.
+	int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS);
+
 	// Read message on connection oriented handle
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 
@@ -219,10 +232,11 @@ struct rrr_net_transport_methods {
 	// corresponding handle, receive is called.
 	int (*receive)(RRR_NET_TRANSPORT_RECEIVE_ARGS);
 
-	// Send data on stream-oriented transport handle. Causes the stream_open
-	// callback given to rrr_net_transport_new to be called from which the
+	// Open a stream used to send and/or receive data on stream-oriented transport handle.
+	// Causes the stream_open callback given to rrr_net_transport_new to be called from which the
 	// application must return data delivery callbacks.
-	int (*stream_open)(RRR_NET_TRANSPORT_STREAM_OPEN_ARGS);
+	int (*stream_open_local)(RRR_NET_TRANSPORT_STREAM_OPEN_LOCAL_ARGS);
+	int (*stream_open_remote)(RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS);
 
 	// Count number of open streams on stream-oriented transport handle. Note
 	// that only streams which the submodule actually keeps track of is counted.
@@ -305,15 +319,15 @@ struct rrr_net_transport_handle {
 	// Transport handshake is complete, application may be called
 	int handshake_complete;
 
-	// Like error code in a close frame
-	uint32_t submodule_close_reason;
+	// Error code in a close frame if supported by transport
+	enum rrr_net_transport_close_reason submodule_close_reason;
+	uint64_t application_close_reason;
+	char *application_close_reason_string;
 
-	// Called first when we try to destroy. When it returns 0,
-	// we go ahead with destruction and call ptr_destroy. Only
-	// used from within the iterator function. Both submodule and
-	// application layer may set this function. Submodule should
-	// override any function set by application layer as needed.
-	int (*iterator_pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS);
+	// Submodule will call any application pre destroy first
+	// untill it returns 0 before proceeding with it's own
+	// pre destroy routines.
+	int (*application_pre_destroy)(RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS);
 };
 
 struct rrr_net_transport_handle_collection {

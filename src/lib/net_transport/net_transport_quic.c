@@ -242,14 +242,39 @@ static int __rrr_net_transport_quic_stream_new (
 	return ret;
 }
 
-static int __rrr_net_transport_quic_ctx_stream_open (
+struct rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback_data {
+	struct rrr_net_transport_quic_ctx *ctx;
+	struct rrr_net_transport_quic_stream *stream;
+	void *stream_open_callback_arg_local;
+};
+
+static int __rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback_data *callback_data = arg;
+
+	return callback_data->ctx->transport_tls->stream_open_callback (
+			&callback_data->stream->stream_data,
+			&callback_data->stream->stream_data_destroy,
+			&callback_data->stream->cb_get_message,
+			&callback_data->stream->cb_blocked,
+			&callback_data->stream->cb_ack,
+			&callback_data->stream->cb_arg,
+			handle,
+			callback_data->stream->stream_id,
+			callback_data->stream->flags,
+			callback_data->ctx->transport_tls->stream_open_callback_arg_global,
+			callback_data->stream_open_callback_arg_local
+	);
+}
+
+static int __rrr_net_transport_quic_ctx_stream_allocate (
 		struct rrr_net_transport_quic_ctx *ctx,
 		int64_t stream_id,
 		int flags,
-		void *stream_data,
-		void (*stream_data_destroy)(void *stream_data)
+		void *stream_open_callback_arg_local
 ) {
-	struct rrr_net_transport_tls *transport = ctx->transport_tls;
 	const char *local = flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ? "local" : "remote";
 	const char *bidi = flags & RRR_NET_TRANSPORT_STREAM_F_BIDI ? "bidi" : "uni";
 
@@ -278,8 +303,11 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 		goto out;
 	}
 
-	stream->stream_data = stream_data;
-	stream->stream_data_destroy = stream_data_destroy;
+	struct rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback_data callback_data = {
+		ctx,
+		stream,
+		stream_open_callback_arg_local
+	};
 
 	if ((
 		flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ||
@@ -288,16 +316,11 @@ static int __rrr_net_transport_quic_ctx_stream_open (
 		flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL ||
 		flags & RRR_NET_TRANSPORT_STREAM_F_BIDI
 	) && (
-		transport->stream_open_callback (
-				&stream->cb_get_message,
-				&stream->cb_blocked,
-				&stream->cb_ack,
-				&stream->cb_arg,
-				(struct rrr_net_transport *) transport,
+		rrr_net_transport_handle_with_transport_ctx_do (
+				(struct rrr_net_transport *) ctx->transport_tls,
 				ctx->connected_handle,
-				stream->stream_id,
-				stream->flags,
-				transport->stream_open_callback_arg
+				__rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback,
+				&callback_data
 		) != 0
 	)) {
 		ret = 1;
@@ -518,11 +541,10 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_open (
 
 	(void)(conn);
 
-	if (__rrr_net_transport_quic_ctx_stream_open (
+	if (__rrr_net_transport_quic_ctx_stream_allocate (
 			ctx,
 			stream_id,
 			ngtcp2_is_bidi_stream(stream_id) ? RRR_NET_TRANSPORT_STREAM_F_BIDI : 0,
-			NULL,
 			NULL
 	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
@@ -1555,91 +1577,19 @@ static int __rrr_net_transport_quic_accept_callback (
 		return ret;
 }
 
-int __rrr_net_transport_quic_pre_destroy (
-		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
-) {
-	struct rrr_net_transport_quic_handle_data *handle_data = submodule_private_ptr;
-	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
-
-	if (!ctx) {
-		goto out;
-	}
-
-	if (!ctx->initial_received) {
-		// Wait for first packet to be handled
-		return RRR_NET_TRANSPORT_READ_READ_EOF;
-	}
-
-	(void)(application_private_ptr);
-
-	const char msg[] = "Connection rejected, try again.";
-	ngtcp2_connection_close_error cerr = {0};
-	ngtcp2_path_storage path_storage;
-	ngtcp2_pkt_info pi = {0};
-	uint8_t pb[1200];
-	uint64_t timestamp = 0;
-
-	ngtcp2_connection_close_error_set_transport_error(&cerr, handle->submodule_close_reason, (const uint8_t *) msg, strlen(msg));
-	ngtcp2_path_storage_zero(&path_storage);
-
-	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
-		RRR_MSG_0("Warning: Failed to produce timestamp in %s\n", __func__);
-		goto out;
-	}
-
-	ssize_t bytes = ngtcp2_conn_write_connection_close (
-			ctx->conn,
-			&path_storage.path,
-			&pi,
-			pb,
-			sizeof(pb),
-			&cerr,
-			timestamp
-	);
-
-	if (bytes == 0 || bytes == NGTCP2_ERR_INVALID_STATE) {
-		// No data to send or ignore error
-		goto out;
-	}
-	else if (bytes < 0) {
-		RRR_MSG_0("Warning: Failed to make connection close packet in %s: %s\n", __func__, ngtcp2_strerror((int) bytes));
-		goto out;
-	}
-
-	{
-		char addrbuf[128];
-		rrr_ip_to_str(addrbuf, sizeof(addrbuf), (const struct sockaddr *) path_storage.path.remote.addr, path_storage.path.remote.addrlen);
-		RRR_DBG_7("net transport quic fd %i h %i tx connection close %lli bytes to %s\n",
-			ctx->fd, handle->handle, (long long int) bytes, addrbuf);
-	}
-
-	if (__rrr_net_transport_quic_send_packet (
-				ctx->fd,
-				(const struct sockaddr *) path_storage.path.remote.addr,
-				path_storage.path.remote.addrlen,
-				(const uint8_t *) pb,
-				(size_t) bytes
-	) != 0) {
-		RRR_MSG_0("Warning: Failed to send connection close packet in %s\n", __func__);
-		goto out;
-	}
-
-	out:
-	// OK now to destroy connection (any errors ignored)
-	return 0;
-}
-
 static void __rrr_net_transport_quic_connection_close (
 		struct rrr_net_transport_handle *listen_handle,
 		rrr_net_transport_handle handle,
-		const uint32_t close_reason
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
 ) {
-	// This will override any pre destroy set by application
 	rrr_net_transport_handle_close_with_reason (
 			listen_handle->transport,
 			handle,
-			close_reason,
-			__rrr_net_transport_quic_pre_destroy
+			submodule_close_reason,
+			application_close_reason,
+			application_close_reason_string
 	);
 }
 
@@ -1949,7 +1899,7 @@ static int __rrr_net_transport_quic_accept (
 
 	int ret_tmp;
 	ngtcp2_pkt_hd pkt;
-	const uint32_t close_reason = NGTCP2_INTERNAL_ERROR;
+	enum rrr_net_transport_close_reason close_reason = RRR_NET_TRANSPORT_CLOSE_REASON_INTERNAL_ERROR;
 
 	if ((ret_tmp = ngtcp2_accept (&pkt, datagram->msg_iov.iov_base, datagram->msg_len)) < 0) {
 		if (ret_tmp == NGTCP2_ERR_RETRY) {
@@ -2023,7 +1973,13 @@ static int __rrr_net_transport_quic_accept (
 
 	goto out;
 	out_close:
-		__rrr_net_transport_quic_connection_close(listen_handle, *new_handle, close_reason);
+		__rrr_net_transport_quic_connection_close (
+				listen_handle,
+				*new_handle,
+				close_reason,
+				0,
+				NULL
+		);
 		ret = 0;
 	out:
 		return ret;
@@ -2645,8 +2601,8 @@ static int __rrr_net_transport_quic_receive (
 	return ret;
 }
 
-static int __rrr_net_transport_quic_stream_open (
-		RRR_NET_TRANSPORT_STREAM_OPEN_ARGS
+static int __rrr_net_transport_quic_stream_open_local (
+		RRR_NET_TRANSPORT_STREAM_OPEN_LOCAL_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
 	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
@@ -2654,8 +2610,6 @@ static int __rrr_net_transport_quic_stream_open (
 	int ret = 0;
 
 	int64_t stream_id = -1;
-
-	assert(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL);
 
 	int ret_tmp;
 	if ((ret_tmp = (flags & RRR_NET_TRANSPORT_STREAM_F_BIDI ? ngtcp2_conn_open_bidi_stream : ngtcp2_conn_open_uni_stream) (
@@ -2673,12 +2627,11 @@ static int __rrr_net_transport_quic_stream_open (
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_quic_ctx_stream_open (
+	if ((ret = __rrr_net_transport_quic_ctx_stream_allocate (
 			ctx,
 			stream_id,
 			flags,
-			stream_data,
-			stream_data_destroy
+			stream_open_callback_arg_local
 	)) != 0) {
 		goto out;
 	}
@@ -2689,6 +2642,20 @@ static int __rrr_net_transport_quic_stream_open (
 	}
 
 	*result = stream_id;
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_quic_stream_open_remote (
+		RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	int ret = 0;
+
+	RRR_BUG("%s", __func__);
 
 	out:
 	return ret;
@@ -2817,6 +2784,130 @@ static int __rrr_net_transport_quic_close (struct rrr_net_transport_handle *hand
 	return 0;
 }
 
+static int __rrr_net_transport_quic_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	int ret_tmp;
+
+	if ( handle->application_pre_destroy != NULL != 0 &&
+	    (ret_tmp = handle->application_pre_destroy(handle, application_private_ptr)) != 0
+	) {
+		// Application not yet ready to destroy
+		return ret_tmp;
+	}
+
+	if (!ctx) {
+		// No context created yet, destroy immediately
+		goto out;
+	}
+
+	if (!ctx->initial_received) {
+		// Wait for first packet to be handled
+		return RRR_NET_TRANSPORT_READ_READ_EOF;
+	}
+
+	static const char close_reason_default[] = "Bye";
+	static const char transport_close_reason_internal_error[] = "Internal error";
+	static const char transport_close_reason_connection_refused[] = "Connection refused";
+	ngtcp2_connection_close_error cerr = {0};
+	ngtcp2_path_storage path_storage;
+	ngtcp2_pkt_info pi = {0};
+	uint8_t pb[1200];
+	uint64_t timestamp = 0;
+
+	switch (handle->submodule_close_reason) {
+		case RRR_NET_TRANSPORT_CLOSE_REASON_NO_ERROR:
+				ngtcp2_connection_close_error_set_transport_error (
+						&cerr,
+						NGTCP2_NO_ERROR,
+						(const uint8_t *) close_reason_default,
+						strlen(close_reason_default)
+				);
+		case RRR_NET_TRANSPORT_CLOSE_REASON_INTERNAL_ERROR:
+				ngtcp2_connection_close_error_set_transport_error (
+						&cerr,
+						NGTCP2_INTERNAL_ERROR,
+						(const uint8_t *) transport_close_reason_internal_error,
+						strlen(transport_close_reason_internal_error)
+				);
+		case RRR_NET_TRANSPORT_CLOSE_REASON_CONNECTION_REFUSED:
+				ngtcp2_connection_close_error_set_transport_error (
+						&cerr,
+						NGTCP2_CONNECTION_REFUSED,
+						(const uint8_t *) transport_close_reason_connection_refused,
+						strlen(transport_close_reason_connection_refused)
+				);
+		case RRR_NET_TRANSPORT_CLOSE_REASON_APPLICATION_ERROR:
+			if (handle->application_close_reason_string != NULL) {
+				ngtcp2_connection_close_error_set_application_error (
+						&cerr,
+						handle->application_close_reason,
+						(const uint8_t *) handle->application_close_reason_string,
+						strlen(handle->application_close_reason_string)
+				);
+			}
+			else {
+				ngtcp2_connection_close_error_set_application_error (
+						&cerr,
+						handle->application_close_reason,
+						(const uint8_t *) close_reason_default,
+						strlen(close_reason_default)
+				);
+			}
+	};
+
+	ngtcp2_path_storage_zero(&path_storage);
+
+	if (rrr_time_get_64_nano(&timestamp, NGTCP2_SECONDS) != 0) {
+		RRR_MSG_0("Warning: Failed to produce timestamp in %s\n", __func__);
+		goto out;
+	}
+
+	ssize_t bytes = ngtcp2_conn_write_connection_close (
+			ctx->conn,
+			&path_storage.path,
+			&pi,
+			pb,
+			sizeof(pb),
+			&cerr,
+			timestamp
+	);
+
+	if (bytes == 0 || bytes == NGTCP2_ERR_INVALID_STATE) {
+		// No data to send or ignore error
+		goto out;
+	}
+	else if (bytes < 0) {
+		RRR_MSG_0("Warning: Failed to make connection close packet in %s: %s\n", __func__, ngtcp2_strerror((int) bytes));
+		goto out;
+	}
+
+	{
+		char addrbuf[128];
+		rrr_ip_to_str(addrbuf, sizeof(addrbuf), (const struct sockaddr *) path_storage.path.remote.addr, path_storage.path.remote.addrlen);
+		RRR_DBG_7("net transport quic fd %i h %i tx connection close %lli bytes to %s\n",
+			ctx->fd, handle->handle, (long long int) bytes, addrbuf);
+	}
+
+	if (__rrr_net_transport_quic_send_packet (
+				ctx->fd,
+				(const struct sockaddr *) path_storage.path.remote.addr,
+				path_storage.path.remote.addrlen,
+				(const uint8_t *) pb,
+				(size_t) bytes
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to send connection close packet in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	// OK now to destroy connection (any errors ignored)
+	return 0;
+}
+
 static void __rrr_net_transport_quic_destroy (
 		RRR_NET_TRANSPORT_DESTROY_ARGS
 ) {
@@ -2834,11 +2925,13 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_decode,
 	__rrr_net_transport_quic_accept,
 	__rrr_net_transport_quic_close,
+	__rrr_net_transport_quic_pre_destroy,
 	NULL,
 	NULL,
 	__rrr_net_transport_quic_read_stream,
 	__rrr_net_transport_quic_receive,
-	__rrr_net_transport_quic_stream_open,
+	__rrr_net_transport_quic_stream_open_local,
+	__rrr_net_transport_quic_stream_open_remote,
 	__rrr_net_transport_quic_stream_count,
 	__rrr_net_transport_quic_stream_consume,
 	NULL,
@@ -2880,7 +2973,7 @@ int rrr_net_transport_quic_new (
 	(*target)->ssl_client_method = TLS_client_method();
 	(*target)->ssl_server_method = TLS_server_method();
 	(*target)->stream_open_callback = stream_open_callback;
-	(*target)->stream_open_callback_arg = stream_open_callback_arg;
+	(*target)->stream_open_callback_arg_global = stream_open_callback_arg;
 
 	return 0;
 }
