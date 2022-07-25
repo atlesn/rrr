@@ -70,14 +70,17 @@ struct rrr_http_rules;
     struct rrr_net_transport_handle *handle
 
 #define RRR_HTTP_APPLICATION_STREAM_OPEN_ARGS                                   \
-    struct rrr_http_application *app,                                           \
-    struct rrr_net_transport_handle *handle,                                    \
+    void (**stream_data),                                                       \
+    void (**stream_data_destroy)(void *stream_data),                            \
     int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
+    struct rrr_http_application *app,                                           \
+    struct rrr_net_transport_handle *handle,                                    \
     int64_t stream_id,                                                          \
-    int flags
+    int flags,                                                                  \
+    void *stream_open_callback_arg_local
 
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;

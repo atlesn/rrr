@@ -130,24 +130,30 @@ int rrr_http_application_transport_ctx_tick (
 }
 
 int rrr_http_application_transport_ctx_stream_open (
-		struct rrr_http_application *app,
-		struct rrr_net_transport_handle *handle,
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
 		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
 		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
 		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
 		void **cb_arg,
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
-		int flags
+		int flags,
+		void *stream_open_callback_arg_local
 ) {
 	return app->constants->stream_open (
-			app,
-			handle,
+			stream_data,
+			stream_data_destroy,
 			cb_get_message,
 			cb_blocked,
 			cb_ack,
 			cb_arg,
+			app,
+			handle,
 			stream_id,
-			flags
+			flags,
+			stream_open_callback_arg_local
 	);
 }
 

@@ -142,14 +142,17 @@ int rrr_http_application_transport_ctx_tick (
 		const struct rrr_http_rules *rules
 );
 int rrr_http_application_transport_ctx_stream_open (
-		struct rrr_http_application *app,
-		struct rrr_net_transport_handle *handle,
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
 		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
 		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
 		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
 		void **cb_arg,
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
-		int flags
+		int flags,
+		void *stream_open_callback_arg_local
 );
 int rrr_http_application_alpn_protos_with_all_tcp_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),

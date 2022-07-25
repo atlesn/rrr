@@ -89,15 +89,17 @@ struct rrr_event_queue;
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS                             \
+    void **stream_data,                                                         \
+    void (**stream_data_destroy)(void *stream_data),                            \
     int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
-    struct rrr_net_transport *transport,                                        \
-    rrr_net_transport_handle handle,                                            \
+    struct rrr_net_transport_handle *handle,                                    \
     int64_t stream_id,                                                          \
     int flags,                                                                  \
-    void *arg
+    void *arg_global,                                                           \
+    void *arg_local
 
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
@@ -121,12 +123,11 @@ struct rrr_event_queue;
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg;                                                \
     int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS); \
-    void *stream_open_callback_arg;                                         \
+    void *stream_open_callback_arg_global;                                  \
     char application_name[32]
 
-#define RRR_NET_TRANSPORT_PRE_DESTROY_ARGS                                  \
+#define RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS                      \
     struct rrr_net_transport_handle *handle,                                \
-    void *submodule_private_ptr,                                            \
     void *application_private_ptr
 
 #define RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS                         \
@@ -185,11 +186,18 @@ void rrr_net_transport_handle_touch (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle
 );
+void rrr_net_transport_handle_ptr_close_with_reason (
+		struct rrr_net_transport_handle *handle,
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
+);
 void rrr_net_transport_handle_close_with_reason (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
-		uint32_t submodule_close_reason,
-		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
 );
 void rrr_net_transport_handle_ptr_close (
 		struct rrr_net_transport_handle *handle
@@ -272,9 +280,9 @@ void rrr_net_transport_handle_ptr_application_data_bind (
 		void *application_data,
 		void (*application_data_destroy)(void *ptr)
 );
-void rrr_net_transport_handle_ptr_pre_destroy_function_set (
+void rrr_net_transport_handle_ptr_application_pre_destroy_function_set (
 		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy)(RRR_NET_TRANSPORT_PRE_DESTROY_ARGS)
+		int (*pre_destroy)(RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS)
 );
 int rrr_net_transport_handle_ptr_read_stream (
 		uint64_t *bytes_read,
@@ -286,13 +294,12 @@ int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 );
-int rrr_net_transport_handle_stream_open (
+int rrr_net_transport_handle_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		int flags,
-		void *stream_data,
-		void (*stream_data_destroy)(void *stream_data)
+		void *stream_open_callback_arg_local
 );
 int rrr_net_transport_handle_stream_consume (
 		struct rrr_net_transport *transport,

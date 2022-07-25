@@ -369,11 +369,9 @@ static int __rrr_mqtt_connection_disconnect_call_event_handler_if_needed (
 }
 
 static int __rrr_mqtt_connection_in_iterator_disconnect (
-		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+		RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS
 ) {
 	struct rrr_mqtt_conn *connection = application_private_ptr;
-
-	(void)(submodule_private_ptr);
 
 	int ret = RRR_MQTT_OK;
 
@@ -551,7 +549,7 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 	}
 
 	rrr_net_transport_handle_ptr_application_data_bind(handle, new_connection, __rrr_mqtt_connection_destroy_void);
-	rrr_net_transport_handle_ptr_pre_destroy_function_set(handle, __rrr_mqtt_connection_in_iterator_disconnect);
+	rrr_net_transport_handle_ptr_application_pre_destroy_function_set(handle, __rrr_mqtt_connection_in_iterator_disconnect);
 
 	new_connection->transport_handle = callback_data->transport_handle = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 

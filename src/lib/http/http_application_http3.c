@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <nghttp3/nghttp3.h>
+#include <assert.h>
 
 #include "http_application_http3.h"
 #include "http_application_internals.h"
@@ -99,31 +100,28 @@ static int __rrr_http_application_http3_initialize (
 	int64_t stream_id_qpack_encode = -1;
 	int64_t stream_id_qpack_decode = -1;
 
-	if ((ret = rrr_net_transport_ctx_stream_open (
+	if ((ret = rrr_net_transport_ctx_stream_open_local (
 			&stream_id_ctrl,
 			handle,
 			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
-			NULL,
 			NULL
 	)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_stream_open (
+	if ((ret = rrr_net_transport_ctx_stream_open_local (
 			&stream_id_qpack_encode,
 			handle,
 			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
-			NULL,
 			NULL
 	)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_stream_open (
+	if ((ret = rrr_net_transport_ctx_stream_open_local (
 			&stream_id_qpack_decode,
 			handle,
 			RRR_NET_TRANSPORT_STREAM_F_LOCAL,
-			NULL,
 			NULL
 	)) != 0) {
 		goto out;
@@ -135,6 +133,32 @@ static int __rrr_http_application_http3_initialize (
 			stream_id_qpack_encode,
 			stream_id_qpack_decode
 	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_stream_bind (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_http_transaction *transaction,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+) {
+	int ret = 0;
+
+	int ret_tmp;
+
+	rrr_http_transaction_protocol_data_set (
+			transaction,
+			rrr_net_transport_ctx_get_transport(handle),
+			rrr_net_transport_ctx_get_handle(handle)
+	);
+
+	if ((ret_tmp = nghttp3_conn_set_stream_user_data (http3->conn, stream_id, transaction)) != 0) {
+		RRR_MSG_0("Failed to set stream user data in %s: %s\n", nghttp3_strerror(ret_tmp));
+		ret = 1;
 		goto out;
 	}
 
@@ -233,18 +257,98 @@ static int __rrr_http_application_http3_stream_open (
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
 
-	(void)(handle);
-	(void)(stream_id);
-	(void)(flags);
+	int ret = 0;
 
-	printf("Stream open %li\n", stream_id);
+	struct rrr_http_transaction *transaction_tmp = NULL;
+
+	printf("Stream open %li in %s is server %i is local %i is bidi %i\n",
+		stream_id,
+		__func__,
+		http3->is_server,
+		(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL) != 0,
+		(flags & RRR_NET_TRANSPORT_STREAM_F_BIDI) != 0);
+
+	if (!(flags & RRR_NET_TRANSPORT_STREAM_F_BIDI) && !(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL)) {
+		RRR_BUG("BUG: Remote unidirectional stream encountered in %s\n", __func__);
+	}
+
+	if (http3->is_server) {
+		if (flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL) {
+			assert(!(flags & RRR_NET_TRANSPORT_STREAM_F_BIDI));
+			*stream_data = NULL;
+			*stream_data_destroy = NULL;
+		}
+		else {
+			assert(stream_open_callback_arg_local == NULL);
+
+			if (rrr_http_transaction_new (
+					&transaction_tmp,
+					0,
+					0,
+					0,
+					http3->callbacks.unique_id_generator_callback,
+					http3->callbacks.unique_id_generator_callback_arg,
+					NULL,
+					NULL
+			) != 0) {
+				RRR_MSG_0("Could not create transaction in %s\n", __func__);
+				return NGHTTP3_ERR_CALLBACK_FAILURE;
+			}
+
+			if ((ret = __rrr_http_application_http3_stream_bind (
+					http3,
+					transaction_tmp,
+					handle,
+					stream_id
+			)) != 0) {
+				RRR_MSG_0("Could not bind stream data in %s\n", __func__);
+				goto out;
+			}
+
+			rrr_http_transaction_incref(transaction_tmp);
+
+			*stream_data = transaction_tmp;
+			*stream_data_destroy = rrr_http_transaction_decref_if_not_null_void;
+		}
+	}
+	else {
+		if ((flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL) != RRR_NET_TRANSPORT_STREAM_F_LOCAL &&
+		    (flags & RRR_NET_TRANSPORT_STREAM_F_BIDI) != RRR_NET_TRANSPORT_STREAM_F_BIDI
+		) {
+			RRR_DBG_3("http3 remote server opened a bidirectional stream, and this client cannot handle this situation. Closing connection.\n");
+			rrr_net_transport_handle_ptr_close_with_reason (
+					handle,
+					RRR_NET_TRANSPORT_CLOSE_REASON_APPLICATION_ERROR,
+					NGHTTP3_H3_STREAM_CREATION_ERROR,
+					"This client cannot handle bidirectional streams opened by the server"
+			);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+
+		struct rrr_http_transaction *transaction = stream_open_callback_arg_local;
+
+		if (transaction != NULL) {
+			assert(flags & RRR_NET_TRANSPORT_STREAM_F_BIDI);
+			*stream_data = transaction;
+			*stream_data_destroy = rrr_http_transaction_decref_if_not_null_void;
+			rrr_http_transaction_incref(transaction);
+		}
+		else {
+			assert(!(flags & RRR_NET_TRANSPORT_STREAM_F_BIDI));
+			*stream_data = NULL;
+			*stream_data_destroy = NULL;
+		}
+	}
 
 	*cb_get_message = __rrr_http_application_http3_net_transport_cb_get_message;
 	*cb_blocked = __rrr_http_application_http3_net_transport_cb_stream_blocked;
 	*cb_ack = __rrr_http_application_http3_net_transport_cb_stream_ack;
 	*cb_arg = http3;
 
-	return 0;
+	out:
+	rrr_http_transaction_decref_if_not_null(transaction_tmp);
+	return ret;
 }
 
 static void  __rrr_http_application_http3_destroy (
@@ -445,15 +549,12 @@ static int __rrr_http_application_http3_request_send_final_callback (
 		goto out;
 	}
 
-	rrr_http_transaction_protocol_data_set (
+	if ((ret = __rrr_http_application_http3_stream_bind (
+			http3,
 			transaction,
-			rrr_net_transport_ctx_get_transport(callback_data->handle),
-			rrr_net_transport_ctx_get_handle(callback_data->handle)
-	);
-
-	if ((ret_tmp = nghttp3_conn_set_stream_user_data (http3->conn, callback_data->stream_id, transaction)) != 0) {
-		RRR_MSG_0("Failed to set stream user data in %s: %s\n", nghttp3_strerror(ret_tmp));
-		ret = 1;
+			callback_data->handle,
+			callback_data->stream_id
+	)) != 0) {
 		goto out;
 	}
 
@@ -486,17 +587,14 @@ static int __rrr_http_application_http3_request_send (
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
-	if ((ret = rrr_net_transport_ctx_stream_open (
+	if ((ret = rrr_net_transport_ctx_stream_open_local (
 			&stream_id,
 			handle,
 			RRR_NET_TRANSPORT_STREAM_F_LOCAL_BIDI,
-			transaction,
-			rrr_http_transaction_decref_if_not_null_void
+			transaction
 	)) != 0) {
 		goto out;
 	}
-
-	rrr_http_transaction_incref(transaction);
 
 	struct rrr_http_application_http3_send_prepare_callback_data callback_data = {
 		http3,
@@ -688,6 +786,10 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 	(void)(http3);
 	(void)(conn);
 
+	if (http3->is_server) {
+		RRR_BUG("Server not implemented in %s\n", __func__);
+	}
+
 	printf("Data %lu: %.*s\n", datalen, (int) datalen, data);
 
 	if (rrr_net_transport_handle_stream_consume (
@@ -737,6 +839,9 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	(void)(value);
 	(void)(flags);
 	(void)(conn_user_data);
+
+	printf("Transaction in %s: %p\n", __func__, transaction);
+	printf("Request part in %s: %p\n", __func__, transaction->request_part);
 
 	struct rrr_http_part *part = http3->is_server
 		? transaction->request_part
@@ -904,7 +1009,17 @@ int rrr_http_application_http3_new (
 	nghttp3_settings_default(&settings);
 
 	if (is_server) {
-		RRR_BUG("Server not implemented in %s\n", __func__);
+		if (nghttp3_conn_server_new (
+				&http3->conn,
+				&rrr_http_application_http3_nghttp3_callbacks,
+				&settings,
+				&rrr_http_application_http3_nghttp3_mem,
+				http3
+		) != 0) {
+			printf("Failed to create http3 client\n");
+			ret = 1;
+			goto out;
+		}
 	}
 	else {
 		if (nghttp3_conn_client_new (

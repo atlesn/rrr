@@ -259,66 +259,33 @@ static int __rrr_http_server_handshake_complete_callback (
 	return ret;
 }
 
-struct rrr_http_server_stream_open_transport_ctx_callback_data {
-	struct rrr_http_server *http_server;
-	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
-	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
-	void **cb_arg;
-	struct rrr_net_transport *transport;
-	rrr_net_transport_handle handle;
-	int64_t stream_id;
-	int flags;
-};
-
-static int __rrr_http_server_stream_open_transport_ctx_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
+static int __rrr_http_server_stream_open_callback (
+		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_stream_open_transport_ctx_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg_global;
+
+	(void)(arg_local);
 
 	int ret = 0;
 
-	RRR_DBG_3("HTTP stream open %li fd %i h %i\n",
-			callback_data->stream_id,
-			RRR_NET_TRANSPORT_CTX_FD(handle),
-			RRR_NET_TRANSPORT_CTX_HANDLE(handle));
-
 	if ((ret = __rrr_http_server_transport_ctx_application_ensure (
-			callback_data->http_server,
+			http_server,
 			handle
 	)) != 0) {
 		goto out;
 	}
 
-	out:
-	return ret;
-}
-
-static int __rrr_http_server_stream_open_callback (
-		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
-) {
-	struct rrr_http_server *http_server = arg;
-
-	int ret = 0;
-
-	struct rrr_http_server_stream_open_transport_ctx_callback_data callback_data = {
-			http_server,
+	if ((ret = rrr_http_session_transport_ctx_stream_open (
+			stream_data,
+			stream_data_destroy,
 			cb_get_message,
 			cb_blocked,
 			cb_ack,
 			cb_arg,
-			transport,
 			handle,
 			stream_id,
-			flags
-	};
-
-	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
-			transport,
-			handle,
-			__rrr_http_server_stream_open_transport_ctx_callback,
-			&callback_data
+			flags,
+			NULL
 	)) != 0) {
 		goto out;
 	}

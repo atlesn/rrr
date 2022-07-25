@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <assert.h>
 #include <stdlib.h>
 
 #include "../log.h"
@@ -292,19 +293,29 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 	return rrr_nullsafe_str_with_raw_do_const(nullsafe, __rrr_net_transport_ctx_send_push_nullsafe_callback, handle);
 }
 
-int rrr_net_transport_ctx_stream_open (
+int rrr_net_transport_ctx_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport_handle *handle,
 		int flags,
-		void *stream_data,
-		void (*stream_data_destroy)(void *stream_data)
+		void *stream_open_callback_arg_local
 ) {
-	return handle->transport->methods->stream_open (
+	assert(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL);
+
+	return handle->transport->methods->stream_open_local (
 			result,
 			handle,
 			flags,
-			stream_data,
-			stream_data_destroy
+			stream_open_callback_arg_local
+	);
+}
+
+int rrr_net_transport_ctx_stream_open_remote (
+		int64_t stream_id,
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->stream_open_remote (
+			stream_id,
+			handle
 	);
 }
 

@@ -479,6 +479,17 @@ static int __rrr_net_transport_libressl_close (
 	return 0;
 }
 
+static int __rrr_net_transport_libressl_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {
+	(void)(submodule_private_ptr);
+
+	return handle->application_pre_destroy != NULL
+		? handle->application_pre_destroy(handle, application_private_ptr)
+		: 0
+	;
+}
+
 static int __rrr_net_transport_libressl_read_raw (
 		char *buf,
 		rrr_biglength *read_bytes,
@@ -698,8 +709,10 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	NULL,
 	__rrr_net_transport_libressl_accept,
 	__rrr_net_transport_libressl_close,
+	__rrr_net_transport_libressl_pre_destroy,
 	__rrr_net_transport_libressl_read_message,
 	__rrr_net_transport_libressl_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

@@ -59,6 +59,17 @@ static int __rrr_net_transport_openssl_ssl_data_close (struct rrr_net_transport_
 	return 0;
 }
 
+static int __rrr_net_transport_openssl_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {
+	(void)(submodule_private_ptr);
+
+	return handle->application_pre_destroy != NULL
+		? handle->application_pre_destroy(handle, application_private_ptr)
+		: 0
+	;
+}
+
 static void __rrr_net_transport_openssl_destroy (
 		RRR_NET_TRANSPORT_DESTROY_ARGS
 ) {
@@ -768,8 +779,10 @@ static const struct rrr_net_transport_methods tls_methods = {
 	NULL,
 	__rrr_net_transport_openssl_accept,
 	__rrr_net_transport_openssl_ssl_data_close,
+	__rrr_net_transport_openssl_pre_destroy,
 	__rrr_net_transport_openssl_read_message,
 	__rrr_net_transport_openssl_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

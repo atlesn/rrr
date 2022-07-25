@@ -209,18 +209,20 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 }
 
 static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS) {
-	struct rrr_test_quic_data *data = arg;
+	struct rrr_test_quic_data *data = arg_global;
 
-	(void)(transport);
+	(void)(stream_data);
+	(void)(stream_data_destroy);
 	(void)(handle);
 	(void)(flags);
+	(void)(arg_local);
 
 	*cb_get_message = __rrr_test_quic_cb_get_message;
 	*cb_blocked = __rrr_test_quic_cb_blocked;
 	*cb_ack = __rrr_test_quic_cb_ack;
-	*cb_arg = arg;
+	*cb_arg = arg_global;
 
-	TEST_MSG("%s stream %" PRIi64 " open local or remote arg %p\n", data->name, stream_id, arg);
+	TEST_MSG("%s stream %" PRIi64 " open local or remote arg %p\n", data->name, stream_id, arg_global);
 
 	return 0;
 }
@@ -300,12 +302,11 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	if (!data->stream_opened) {
 		int64_t stream_id;
-		switch (rrr_net_transport_handle_stream_open (
+		switch (rrr_net_transport_handle_stream_open_local (
 				&stream_id,
 				data->client.transport,
 				data->client.transport_handle,
 				RRR_NET_TRANSPORT_STREAM_F_LOCAL|RRR_NET_TRANSPORT_STREAM_F_BIDI,
-				NULL,
 				NULL
 		)) {
 			case RRR_NET_TRANSPORT_READ_BUSY:
