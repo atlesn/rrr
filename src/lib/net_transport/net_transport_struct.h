@@ -168,6 +168,11 @@ struct rrr_nullsafe_str;
     int64_t stream_id,                                         \
     struct rrr_net_transport_handle *handle
 
+#define RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS                 \
+    void **stream_data,                                        \
+    struct rrr_net_transport_handle *handle,                   \
+    int64_t stream_id
+
 #define RRR_NET_TRANSPORT_STREAM_COUNT_ARGS                    \
     struct rrr_net_transport_handle *handle
 
@@ -237,6 +242,9 @@ struct rrr_net_transport_methods {
 	// application must return data delivery callbacks.
 	int (*stream_open_local)(RRR_NET_TRANSPORT_STREAM_OPEN_LOCAL_ARGS);
 	int (*stream_open_remote)(RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS);
+
+	// Retrieve application stream data
+	int (*stream_data_get)(RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS);
 
 	// Count number of open streams on stream-oriented transport handle. Note
 	// that only streams which the submodule actually keeps track of is counted.

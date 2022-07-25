@@ -43,6 +43,8 @@ struct rrr_http_application_http3 {
 	struct nghttp3_conn *conn;
 	int is_server;
 	int initialized;
+	struct rrr_net_transport *transport;
+	rrr_net_transport_handle handle;
 };
 
 static const char rrr_http_application_http3_alpn_protos[] = {
@@ -136,6 +138,9 @@ static int __rrr_http_application_http3_initialize (
 		goto out;
 	}
 
+	http3->transport = RRR_NET_TRANSPORT_CTX_TRANSPORT(handle);
+	http3->handle = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
+
 	out:
 	return ret;
 }
@@ -143,18 +148,11 @@ static int __rrr_http_application_http3_initialize (
 static int __rrr_http_application_http3_stream_bind (
 		struct rrr_http_application_http3 *http3,
 		struct rrr_http_transaction *transaction,
-		struct rrr_net_transport_handle *handle,
 		int64_t stream_id
 ) {
 	int ret = 0;
 
 	int ret_tmp;
-
-	rrr_http_transaction_protocol_data_set (
-			transaction,
-			rrr_net_transport_ctx_get_transport(handle),
-			rrr_net_transport_ctx_get_handle(handle)
-	);
 
 	if ((ret_tmp = nghttp3_conn_set_stream_user_data (http3->conn, stream_id, transaction)) != 0) {
 		RRR_MSG_0("Failed to set stream user data in %s: %s\n", nghttp3_strerror(ret_tmp));
@@ -295,20 +293,15 @@ static int __rrr_http_application_http3_stream_open (
 				return NGHTTP3_ERR_CALLBACK_FAILURE;
 			}
 
-			if ((ret = __rrr_http_application_http3_stream_bind (
-					http3,
+			rrr_http_transaction_protocol_data_set (
 					transaction_tmp,
-					handle,
-					stream_id
-			)) != 0) {
-				RRR_MSG_0("Could not bind stream data in %s\n", __func__);
-				goto out;
-			}
-
-			rrr_http_transaction_incref(transaction_tmp);
+					rrr_net_transport_ctx_get_transport(handle),
+					rrr_net_transport_ctx_get_handle(handle)
+			);
 
 			*stream_data = transaction_tmp;
 			*stream_data_destroy = rrr_http_transaction_decref_if_not_null_void;
+			rrr_http_transaction_incref(transaction_tmp);
 		}
 	}
 	else {
@@ -549,14 +542,11 @@ static int __rrr_http_application_http3_request_send_final_callback (
 		goto out;
 	}
 
-	if ((ret = __rrr_http_application_http3_stream_bind (
-			http3,
+	rrr_http_transaction_protocol_data_set (
 			transaction,
-			callback_data->handle,
-			callback_data->stream_id
-	)) != 0) {
-		goto out;
-	}
+			rrr_net_transport_ctx_get_transport(callback_data->handle),
+			rrr_net_transport_ctx_get_handle(callback_data->handle)
+	);
 
 	out:
 	rrr_free(nv);
@@ -738,6 +728,54 @@ static void __rrr_http_application_http3_polite_close (
 	RRR_BUG("%s\n", __func__);
 }
 
+static int __rrr_http_application_http3_stream_user_data_ensure (
+		struct rrr_http_transaction **transaction,
+		struct rrr_http_application_http3 *http3,
+		int64_t stream_id,
+		void *user_data
+) {
+	int ret = 0;
+
+	int ret_tmp;
+
+	if (user_data != NULL) {
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_handle_stream_data_get (
+			&user_data,
+			http3->transport,
+			http3->handle,
+			stream_id
+	)) != 0) {
+		goto out;
+	}
+
+	assert(user_data != NULL);
+
+	if ((ret_tmp = nghttp3_conn_set_stream_user_data (
+			http3->conn,
+			stream_id,
+			user_data
+	)) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	*transaction = user_data;
+	return ret;
+}
+
+#define GET_TRANSACTION()                                          \
+    struct rrr_http_transaction *transaction;                      \
+    do {if (__rrr_http_application_http3_stream_user_data_ensure ( \
+        &transaction,                                              \
+        http3,                                                     \
+        stream_id,                                                 \
+        stream_user_data                                           \
+    ) != 0) { return NGHTTP3_ERR_CALLBACK_FAILURE; }} while(0)
+
 static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (
 		nghttp3_conn *conn,
 		int64_t stream_id,
@@ -779,7 +817,9 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 		void *stream_user_data
 ) {
     	struct rrr_http_application_http3 *http3 = conn_user_data;
-	struct rrr_http_transaction *transaction = stream_user_data;
+
+	GET_TRANSACTION();
+
 	struct rrr_net_transport *transport = transaction->protocol_ptr;
 	rrr_net_transport_handle transport_handle = transaction->protocol_int;
 
@@ -830,7 +870,8 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 		void *stream_user_data
 ) {
 	struct rrr_http_application_http3 *http3 = conn_user_data;
-	struct rrr_http_transaction *transaction = stream_user_data;
+
+	GET_TRANSACTION();
 
 	(void)(conn);
 	(void)(stream_id);
@@ -838,10 +879,6 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	(void)(name);
 	(void)(value);
 	(void)(flags);
-	(void)(conn_user_data);
-
-	printf("Transaction in %s: %p\n", __func__, transaction);
-	printf("Request part in %s: %p\n", __func__, transaction->request_part);
 
 	struct rrr_http_part *part = http3->is_server
 		? transaction->request_part

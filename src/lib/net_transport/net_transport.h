@@ -294,6 +294,12 @@ int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 );
+int rrr_net_transport_handle_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id
+);
 int rrr_net_transport_handle_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport *transport,

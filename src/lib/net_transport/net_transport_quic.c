@@ -2661,6 +2661,27 @@ static int __rrr_net_transport_quic_stream_open_remote (
 	return ret;
 }
 
+static int __rrr_net_transport_quic_stream_data_get (
+		RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	*stream_data = NULL;
+
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id == stream_id) {
+			*stream_data = node->stream_data;
+			return 0;
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_MSG_0("net transport quic fd %i h %i stream %" PRIi64 " not found\n",
+		handle_data->ctx->fd, handle->handle, stream_id);
+
+	return 1;
+}
+
 static uint64_t __rrr_net_transport_quic_stream_count (
 		RRR_NET_TRANSPORT_STREAM_COUNT_ARGS
 ) {
@@ -2932,6 +2953,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_receive,
 	__rrr_net_transport_quic_stream_open_local,
 	__rrr_net_transport_quic_stream_open_remote,
+	__rrr_net_transport_quic_stream_data_get,
 	__rrr_net_transport_quic_stream_count,
 	__rrr_net_transport_quic_stream_consume,
 	NULL,
