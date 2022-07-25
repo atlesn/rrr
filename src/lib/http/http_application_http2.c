@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -56,9 +57,9 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
 	if (http2->http2_session != NULL) {
-		uint32_t streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
+		uint64_t streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
 		if (streams > 0) {
-			RRR_DBG_2("HTTP2 destroys application with %" PRIu32 " active transactions\n", streams);
+			RRR_DBG_2("HTTP2 destroys application with %" PRIu64 " active transactions\n", streams);
 		} 
 	}
 
@@ -150,7 +151,7 @@ static int __rrr_http_application_http2_request_send_possible (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
-	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP2_STREAM_MAX);
+	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < rrr_http2_stream_max());
 
 	return 0;
 }
@@ -592,7 +593,7 @@ static int __rrr_http_application_http2_data_source_callback (
 }
 
 static int __rrr_http_application_http2_streams_iterate_callback (
-		int32_t stream_id,
+		int64_t stream_id,
 		void *application_data,
 		void *arg
 ) {
@@ -607,7 +608,13 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
+		assert(stream_id <= INT32_MAX);
+
+		if ((ret = rrr_http_application_http2_response_submit (
+				(struct rrr_http_application *) callback_data->http2,
+				transaction,
+				(int32_t) stream_id
+		)) != 0) {
 			goto out;
 		}
 	}
@@ -647,7 +654,7 @@ static int __rrr_http_application_http2_tick (
 	}
 	else {
 		if (http2->callbacks.async_response_get_callback != NULL) {
-			if ((ret = rrr_http2_transport_ctx_streams_iterate (
+			if ((ret = rrr_http2_streams_iterate (
 					http2->http2_session,
 					__rrr_http_application_http2_streams_iterate_callback,
 					&callback_data

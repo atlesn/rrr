@@ -442,7 +442,7 @@ static inline int rrr_length_from_size_t_err (rrr_length *r, size_t a) {
 static inline rrr_length rrr_length_from_size_t_bug_const (size_t a) {
 	rrr_length tmp;
 	if (rrr_length_from_size_t_err(&tmp, a) != 0) {
-		RRR_BUG("Bugtrap");
+		RRR_BUG("Overflow in %s\n", __func__);
 	}
 	return tmp;
 }
