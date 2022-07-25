@@ -293,6 +293,14 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 	return rrr_nullsafe_str_with_raw_do_const(nullsafe, __rrr_net_transport_ctx_send_push_nullsafe_callback, handle);
 }
 
+int rrr_net_transport_ctx_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+) {
+	return handle->transport->methods->stream_data_get(stream_data, handle, stream_id);
+}
+
 int rrr_net_transport_ctx_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport_handle *handle,

@@ -1809,6 +1809,17 @@ int rrr_net_transport_handle_check_handshake_complete (
 	return ret;
 }
 
+int rrr_net_transport_handle_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_data_get");
+
+	return rrr_net_transport_ctx_stream_data_get(stream_data, handle, stream_id);
+}
+
 int rrr_net_transport_handle_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport *transport,

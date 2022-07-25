@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_CTX_FD(handle) rrr_net_transport_ctx_get_fd(handle)
 #define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_application_private_ptr(handle)
 #define RRR_NET_TRANSPORT_CTX_HANDLE(handle) rrr_net_transport_ctx_get_handle(handle)
+#define RRR_NET_TRANSPORT_CTX_TRANSPORT(handle) rrr_net_transport_ctx_get_transport(handle)
 
 /*
  * The CTX functions operate on the net transport handle object.
@@ -124,6 +125,11 @@ int rrr_net_transport_ctx_send_push_const_urgent (
 int rrr_net_transport_ctx_send_push_nullsafe (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_nullsafe_str *nullsafe
+);
+int rrr_net_transport_ctx_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
 );
 int rrr_net_transport_ctx_stream_open_local (
 		int64_t *result,
