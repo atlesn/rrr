@@ -163,7 +163,11 @@ static int httpserver_parse_config (
 			config,
 			"http_server",
 			1,
+#if defined(RRR_WITH_HTTP3)
 			data->port_quic > 0,
+#else
+			0,
+#endif
 			RRR_NET_TRANSPORT_PLAIN
 	) != 0) {
 		ret = 1;
