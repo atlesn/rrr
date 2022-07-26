@@ -1843,6 +1843,28 @@ int rrr_net_transport_handle_stream_consume (
 	return rrr_net_transport_ctx_stream_consume(handle, stream_id, consumed);
 }
 
+int rrr_net_transport_handle_stream_shutdown_read (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_shutdown_read");
+
+	return rrr_net_transport_ctx_stream_shutdown_read(handle, stream_id, application_error_reason);
+}
+
+int rrr_net_transport_handle_stream_shutdown_write (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_shutdown_write");
+
+	return rrr_net_transport_ctx_stream_shutdown_read(handle, stream_id, application_error_reason);
+}
+
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 ) {

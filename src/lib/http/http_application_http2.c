@@ -329,7 +329,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
+	if (flags & RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
 		if (callback_data->http2->callbacks.failure_callback == NULL) {
 			if (callback_data->http2->callbacks.unique_id_generator_callback == NULL) {
 				// Is client
@@ -355,7 +355,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
-		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
+		if (!(flags & RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
 			// Wait for any data
 			goto out;
 		}
@@ -396,7 +396,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	else {
 		// Is server
 
-		if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE) {
+		if (flags & RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE) {
 			goto out;
 		}
 
@@ -432,8 +432,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
 
-		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
-			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
 				// Possible CONTINUATION frame
 				goto out;
 			}

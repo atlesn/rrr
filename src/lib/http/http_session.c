@@ -383,6 +383,8 @@ int rrr_http_session_transport_ctx_stream_open (
 		void (**stream_data_destroy)(void *stream_data),
 		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
 		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS),
+		int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS),
 		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
 		void **cb_arg,
 		struct rrr_net_transport_handle *handle,
@@ -404,6 +406,8 @@ int rrr_http_session_transport_ctx_stream_open (
 			stream_data_destroy,
 			cb_get_message,
 			cb_blocked,
+			cb_shutdown_read,
+			cb_shutdown_write,
 			cb_ack,
 			cb_arg,
 			session != NULL ? session->application : NULL, /* Application must create session if it does not exist */

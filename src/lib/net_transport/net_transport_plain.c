@@ -427,6 +427,8 @@ static const struct rrr_net_transport_methods plain_methods = {
 	NULL,
 	NULL,
 	NULL,
+	NULL,
+	NULL,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll,
 	__rrr_net_transport_plain_handshake,
