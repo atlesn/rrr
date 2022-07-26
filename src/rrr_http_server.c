@@ -272,7 +272,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	struct rrr_http_server_callbacks callbacks = {
-			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 	};
 
 	if (rrr_http_server_new (
