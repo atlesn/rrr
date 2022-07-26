@@ -45,6 +45,9 @@ struct rrr_thread;
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
     RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
+#define RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS \
+    RRR_HTTP_SESSION_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+
 struct rrr_http_server_callbacks {
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
@@ -58,6 +61,8 @@ struct rrr_http_server_callbacks {
 	void *final_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
 	void *async_response_get_callback_arg;
+	int (*response_postprocess_callback)(RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS);
+	void *response_postprocess_callback_arg;
 };
 
 #endif /* RRR_HTTP_SERVER_COMMON_H */

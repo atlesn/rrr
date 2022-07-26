@@ -278,6 +278,13 @@ static int __rrr_http_application_http1_response_send (
 		goto out;
 	}
 
+	if ((ret = application->callbacks.response_postprocess_callback (
+			transaction,
+			application->callbacks.response_postprocess_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
 			handle
 	};

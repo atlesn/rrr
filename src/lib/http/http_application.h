@@ -75,6 +75,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
     RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
+#define RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS \
+    struct rrr_http_transaction *transaction,                  \
+    void *arg
+
 struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
@@ -98,6 +102,8 @@ struct rrr_http_application_callbacks {
 	void *failure_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
 	void *async_response_get_callback_arg;
+	int (*response_postprocess_callback)(RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS);
+	void *response_postprocess_callback_arg;
 };
 
 void rrr_http_application_destroy_if_not_null (

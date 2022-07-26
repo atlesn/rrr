@@ -168,5 +168,11 @@ int rrr_http_util_decode (
 );
 const char *rrr_http_util_encodings_get (void);
 #endif
+int rrr_http_util_alpn_iterate (
+		const char * const alpn,
+		unsigned int length,
+		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
+		void *callback_arg
+);
 
 #endif /* RRR_HTTP_UTIL_H */

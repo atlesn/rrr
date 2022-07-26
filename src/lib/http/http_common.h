@@ -132,6 +132,7 @@ struct rrr_http_rules {
 		rrr_biglength server_request_max_size;
 		rrr_biglength client_response_max_size;
 	};
+	const char *server_alt_svc_header;
 };
 
 extern const char *rrr_http_transport_str_any;

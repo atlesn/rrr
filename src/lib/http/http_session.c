@@ -170,6 +170,8 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			failure_callback,
 			failure_callback_arg,
 			NULL,
+			NULL,
+			NULL,
 			NULL
 		};
 
