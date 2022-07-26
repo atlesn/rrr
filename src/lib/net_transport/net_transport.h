@@ -57,8 +57,10 @@ struct rrr_event_queue;
 #define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     int is_blocked,                                            \
-    int is_shutdown_write,                                     \
-    int is_shutdown_read,                                      \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS        \
+    int64_t stream_id,                                         \
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
@@ -93,6 +95,8 @@ struct rrr_event_queue;
     void (**stream_data_destroy)(void *stream_data),                            \
     int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
+    int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS),  \
+    int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS), \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
     struct rrr_net_transport_handle *handle,                                    \
@@ -312,6 +316,18 @@ int rrr_net_transport_handle_stream_consume (
 		rrr_net_transport_handle transport_handle,
 		int64_t stream_id,
 		size_t consumed
+);
+int rrr_net_transport_handle_stream_shutdown_read (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+);
+int rrr_net_transport_handle_stream_shutdown_write (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
 );
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport

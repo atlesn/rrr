@@ -74,6 +74,8 @@ struct rrr_http_rules;
     void (**stream_data_destroy)(void *stream_data),                            \
     int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
+    int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS),  \
+    int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS), \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
     struct rrr_http_application *app,                                           \

@@ -293,6 +293,8 @@ static int __rrr_http_server_stream_open_callback (
 			stream_data_destroy,
 			cb_get_message,
 			cb_blocked,
+			cb_shutdown_read,
+			cb_shutdown_write,
 			cb_ack,
 			cb_arg,
 			handle,

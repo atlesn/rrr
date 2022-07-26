@@ -146,25 +146,6 @@ static int __rrr_http_application_http3_initialize (
 	return ret;
 }
 
-static int __rrr_http_application_http3_stream_bind (
-		struct rrr_http_application_http3 *http3,
-		struct rrr_http_transaction *transaction,
-		int64_t stream_id
-) {
-	int ret = 0;
-
-	int ret_tmp;
-
-	if ((ret_tmp = nghttp3_conn_set_stream_user_data (http3->conn, stream_id, transaction)) != 0) {
-		RRR_MSG_0("Failed to set stream user data in %s: %s\n", nghttp3_strerror(ret_tmp));
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_http_application_http3_net_transport_cb_get_message (
 		RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS
 ) {
@@ -209,19 +190,37 @@ static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 		return 1;
 	}
 
-	if (is_shutdown_write && (ret_tmp = nghttp3_conn_shutdown_stream_write (
-			http3->conn,
-			stream_id
-	)) != 0) {
-		RRR_MSG_0("Error from nghttp3 during write shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
-		return 1;
-	}
+	return 0;
+}
 
-	if (is_shutdown_read && (ret_tmp = nghttp3_conn_shutdown_stream_read (
+static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_read (
+		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	int ret_tmp;
+	if ((ret_tmp = nghttp3_conn_shutdown_stream_read (
 			http3->conn,
 			stream_id
 	)) != 0) {
 		RRR_MSG_0("Error from nghttp3 during read shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	return 0;
+}
+
+static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
+		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	int ret_tmp;
+	if ((ret_tmp = nghttp3_conn_shutdown_stream_write (
+			http3->conn,
+			stream_id
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 during write shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
 		return 1;
 	}
 
@@ -337,6 +336,8 @@ static int __rrr_http_application_http3_stream_open (
 
 	*cb_get_message = __rrr_http_application_http3_net_transport_cb_get_message;
 	*cb_blocked = __rrr_http_application_http3_net_transport_cb_stream_blocked;
+	*cb_shutdown_read = __rrr_http_application_http3_net_transport_cb_stream_shutdown_read;
+	*cb_shutdown_write = __rrr_http_application_http3_net_transport_cb_stream_shutdown_write;
 	*cb_ack = __rrr_http_application_http3_net_transport_cb_stream_ack;
 	*cb_arg = http3;
 
@@ -558,6 +559,8 @@ static void __rrr_http_transport_http3_transport_ctx_notify (
 		struct rrr_http_application_http3 *http3,
 		struct rrr_net_transport_handle *handle
 ) {
+	(void)(http3);
+
 	rrr_net_transport_ctx_notify_read(handle);
 }
 
@@ -768,14 +771,24 @@ static int __rrr_http_application_http3_stream_user_data_ensure (
 	return ret;
 }
 
+static int __rrr_http_application_http3_transaction_stream_finalize (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_http_transaction *transaction
+) {
+	// TODO : Use same data read end method as http2, create common function
+	RRR_BUG("%s\n", __func__);
+}
+
 #define GET_TRANSACTION()                                          \
     struct rrr_http_transaction *transaction;                      \
-    do {if (__rrr_http_application_http3_stream_user_data_ensure ( \
+    if (__rrr_http_application_http3_stream_user_data_ensure (     \
         &transaction,                                              \
         http3,                                                     \
         stream_id,                                                 \
         stream_user_data                                           \
-    ) != 0) { return NGHTTP3_ERR_CALLBACK_FAILURE; }} while(0)
+    ) != 0) { return NGHTTP3_ERR_CALLBACK_FAILURE; }               \
+    struct rrr_net_transport *transport = transaction->protocol_ptr;       \
+    rrr_net_transport_handle transport_handle = transaction->protocol_int
 
 static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (
 		nghttp3_conn *conn,
@@ -821,11 +834,18 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 
 	GET_TRANSACTION();
 
-	struct rrr_net_transport *transport = transaction->protocol_ptr;
-	rrr_net_transport_handle transport_handle = transaction->protocol_int;
-
 	(void)(http3);
 	(void)(conn);
+
+	if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+		RRR_DBG_3("Unexpected data received before headers end was set in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+		RRR_DBG_3("Unexpected data received after data end was already set in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
 
 	if (http3->is_server) {
 		RRR_BUG("Server not implemented in %s\n", __func__);
@@ -875,11 +895,10 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	GET_TRANSACTION();
 
 	(void)(conn);
-	(void)(stream_id);
 	(void)(token);
-	(void)(name);
-	(void)(value);
 	(void)(flags);
+	(void)(transport);
+	(void)(transport_handle);
 
 	struct rrr_http_part *part = http3->is_server
 		? transaction->request_part
@@ -887,6 +906,11 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	;
 	nghttp3_vec name_vec = nghttp3_rcbuf_get_buf(name);
 	nghttp3_vec value_vec = nghttp3_rcbuf_get_buf(value);
+
+	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+		RRR_DBG_3("Unexpected header field received after headers end was already set in %s\n", __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
 
 	if (part->parse_complete) {
 		RRR_DBG_3("Unexpected header field received after parsing of part was complete in %s\n", __func__);
@@ -917,6 +941,41 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_header (
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(buf_b, (const char *) value_vec.base, value_vec.len);
 
 	RRR_DBG_3("Received HTTP3 header %s=%s\n", buf_a, buf_b);
+
+	return 0;
+}
+
+static int __rrr_http_application_http3_nghttp3_cb_end_headers (
+		nghttp3_conn *conn,
+		int64_t stream_id,
+		int fin,
+		void *conn_user_data,
+		void *stream_user_data
+) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+
+	GET_TRANSACTION();
+
+	(void)(conn);
+
+	RRR_DBG_3("HTTP3 end headers\n");
+
+	if (rrr_net_transport_handle_stream_shutdown_read (
+			transport,
+			transport_handle,
+			stream_id,
+			0
+	)) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END);
+
+	if (fin) {
+		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
+
+		return __rrr_http_application_http3_transaction_stream_finalize (http3, transaction);
+	}
 
 	return 0;
 }
@@ -1007,7 +1066,7 @@ static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
 	__rrr_http_application_http3_nghttp3_cb_deferred_consume,
 	NULL, /* begin_headers */
 	__rrr_http_application_http3_nghttp3_cb_recv_header,
-	NULL, /* end_headers */
+	__rrr_http_application_http3_nghttp3_cb_end_headers,
 	NULL, /* begin_trailers */
 	NULL, /* recv_trailer */
 	NULL, /* end_trailers */

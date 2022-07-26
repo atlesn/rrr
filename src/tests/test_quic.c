@@ -174,12 +174,25 @@ static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_
 static int __rrr_test_quic_cb_blocked (RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS) {
 	struct rrr_test_quic_data *data = arg;
 
-	(void)(is_shutdown_write);
-	(void)(is_shutdown_read);
-
 	TEST_MSG("%s stream %" PRIi64 " blocked: %i\n", data->name, stream_id, is_blocked);
 
 	data->stream_blocked = is_blocked;
+
+	return 0;
+}
+
+static int __rrr_test_quic_cb_stream_shutdown_read (RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	TEST_MSG("%s stream %" PRIi64 " shutdown read\n", data->name, stream_id);
+
+	return 0;
+}
+
+static int __rrr_test_quic_cb_stream_shutdown_write (RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS) {
+	struct rrr_test_quic_data *data = arg;
+
+	TEST_MSG("%s stream %" PRIi64 " shutdown write\n", data->name, stream_id);
 
 	return 0;
 }
@@ -219,6 +232,8 @@ static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_C
 
 	*cb_get_message = __rrr_test_quic_cb_get_message;
 	*cb_blocked = __rrr_test_quic_cb_blocked;
+	*cb_shutdown_read = __rrr_test_quic_cb_stream_shutdown_read;
+	*cb_shutdown_write = __rrr_test_quic_cb_stream_shutdown_write;
 	*cb_ack = __rrr_test_quic_cb_ack;
 	*cb_arg = arg_global;
 

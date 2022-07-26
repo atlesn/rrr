@@ -68,6 +68,8 @@ struct rrr_net_transport_quic_stream {
 	struct rrr_net_transport_quic_recv_buf recv_buf;
 	int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
 	int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
+	int (*cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS);
+	int (*cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS);
 	int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
 	void *cb_arg;
 	void *stream_data;
@@ -259,6 +261,8 @@ static int __rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback (
 			&callback_data->stream->stream_data_destroy,
 			&callback_data->stream->cb_get_message,
 			&callback_data->stream->cb_blocked,
+			&callback_data->stream->cb_shutdown_read,
+			&callback_data->stream->cb_shutdown_write,
 			&callback_data->stream->cb_ack,
 			&callback_data->stream->cb_arg,
 			handle,
@@ -388,39 +392,40 @@ static int __rrr_net_transport_quic_stream_block (
 		struct rrr_net_transport_quic_stream *node,
 		int blocked
 ) {
-	if (blocked)
-		node->flags |= RRR_NET_TRANSPORT_STREAM_F_BLOCKED;
-	else
-		node->flags &= ~(RRR_NET_TRANSPORT_STREAM_F_BLOCKED);
+	int flags_new = node->flags;
 
-	return node->cb_blocked != NULL
-		? node->cb_blocked(node->stream_id, blocked, 0, 0, node->cb_arg)
-		: 0
-	;
+	if (blocked)
+		flags_new |= RRR_NET_TRANSPORT_STREAM_F_BLOCKED;
+	else
+		flags_new &= ~(RRR_NET_TRANSPORT_STREAM_F_BLOCKED);
+
+	if (flags_new == node->flags) {
+		return 0;
+	}
+
+	node->flags = flags_new;
+
+	return node->cb_blocked(node->stream_id, blocked, node->cb_arg);
 }
 
-static int __rrr_net_transport_quic_stream_half_close (
-		struct rrr_net_transport_quic_stream *node,
-		int shutdown_write,
-		int shutdown_read
+static int __rrr_net_transport_quic_stream_shutdown_read (
+		struct rrr_net_transport_quic_stream *node
 ) {
-	// Cannot be unset
-	if (shutdown_write)
-		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
-
-	// Cannot be unset
-	if (shutdown_read)
+	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ)) {
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ;
+		return node->cb_shutdown_read(node->stream_id, node->cb_arg);
+	}
+	return 0;
+}
 
-	return node->cb_blocked != NULL
-		? node->cb_blocked (
-				node->stream_id,
-				(node->flags & RRR_NET_TRANSPORT_STREAM_F_BLOCKED) != 0,
-				shutdown_write,
-				shutdown_read, 
-				node->cb_arg
-		) : 0
-	;
+static int __rrr_net_transport_quic_stream_shutdown_write (
+		struct rrr_net_transport_quic_stream *node
+) {
+	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE)) {
+		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
+		return node->cb_shutdown_write(node->stream_id, node->cb_arg);
+	}
+	return 0;
 }
 
 static int __rrr_net_transport_quic_ctx_stream_block (
@@ -437,16 +442,27 @@ static int __rrr_net_transport_quic_ctx_stream_block (
 	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
 }
 
-static int __rrr_net_transport_quic_ctx_stream_half_close (
+static int __rrr_net_transport_quic_ctx_stream_shutdown_read (
 		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id,
-		int shutdown_write,
-		int shutdown_read
+		int64_t stream_id
 ) {
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
 		if (node->stream_id != stream_id)
 			RRR_LL_ITERATE_NEXT();
-		return __rrr_net_transport_quic_stream_half_close (node, shutdown_write, shutdown_read);
+		return __rrr_net_transport_quic_stream_shutdown_read (node);
+	RRR_LL_ITERATE_END();
+
+	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
+}
+
+static int __rrr_net_transport_quic_ctx_stream_shutdown_write (
+		struct rrr_net_transport_quic_ctx *ctx,
+		int64_t stream_id
+) {
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id != stream_id)
+			RRR_LL_ITERATE_NEXT();
+		return __rrr_net_transport_quic_stream_shutdown_write (node);
 	RRR_LL_ITERATE_END();
 
 	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
@@ -741,16 +757,17 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_reset (
 	(void)(app_error_code);
 	(void)(stream_user_data);
 
-	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " reset final size %" PRIu64 "\n",
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " received reset final size %" PRIu64 "\n",
 		ctx->fd, ctx->connected_handle, stream_id, final_size);
 
-	if (__rrr_net_transport_quic_ctx_stream_half_close (ctx, stream_id, 1, 0) != 0) {
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_read (
+			ctx,
+			stream_id
+	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
 
 	return 0;
-
-	// NGTCP2_ERR_CALLBACK_FAILURE - nghttp3_conn_shutdown_stream_read
 }
 
 static int __rrr_net_transport_quic_ngtcp2_cb_extend_max_stream_data (
@@ -784,7 +801,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending (
 	(void)(app_error_code);
 	(void)(stream_user_data);
 
-	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " stop sending\n",
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " stop sending received\n",
 		ctx->fd, ctx->connected_handle, stream_id);
 
 	// NGTCP2_ERR_CALLBACK_FAILURE - nghttp3_conn_shutdown_stream_read
@@ -2108,7 +2125,7 @@ static int __rrr_net_transport_quic_write (
 					stream_id
 				);
 
-				if (__rrr_net_transport_quic_stream_half_close (stream, 1, 0) != 0) {
+				if (__rrr_net_transport_quic_stream_shutdown_write (stream) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
 					goto out_failure;
 				}
@@ -2636,7 +2653,6 @@ static int __rrr_net_transport_quic_stream_open_local (
 		goto out;
 	}
 
-	// Write any data generated by ngtcp2
 	if ((ret = __rrr_net_transport_quic_write_all_streams (handle)) != 0) {
 		goto out;
 	}
@@ -2705,6 +2721,40 @@ static int __rrr_net_transport_quic_stream_consume (
 		}
 	}
 	ngtcp2_conn_extend_max_offset(handle_data->ctx->conn, consumed);
+
+	return 0;
+}
+
+static int __rrr_net_transport_quic_stream_do_shutdown_read (
+		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown read\n",
+		handle_data->ctx->fd, handle->handle, stream_id);
+
+	int ret_tmp;
+	if ((ret_tmp = ngtcp2_conn_shutdown_stream_read(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
+		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
+		return 1;
+	}
+
+	return 0;
+}
+
+static int __rrr_net_transport_quic_stream_do_shutdown_write (
+		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+
+	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown write\n",
+		handle_data->ctx->fd, handle->handle, stream_id);
+
+	int ret_tmp;
+	if ((ret_tmp = ngtcp2_conn_shutdown_stream_write(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
+		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
+		return 1;
+	}
 
 	return 0;
 }
@@ -2960,6 +3010,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_stream_data_get,
 	__rrr_net_transport_quic_stream_count,
 	__rrr_net_transport_quic_stream_consume,
+	__rrr_net_transport_quic_stream_do_shutdown_read,
+	__rrr_net_transport_quic_stream_do_shutdown_write,
 	NULL,
 	__rrr_net_transport_quic_poll,
 	__rrr_net_transport_quic_handshake,

@@ -335,6 +335,22 @@ int rrr_net_transport_ctx_stream_consume (
 	return handle->transport->methods->stream_consume(handle, stream_id, consumed);
 }
 
+int rrr_net_transport_ctx_stream_shutdown_read (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	return handle->transport->methods->stream_shutdown_read(handle, stream_id, application_error_reason);
+}
+
+int rrr_net_transport_ctx_stream_shutdown_write (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	return handle->transport->methods->stream_shutdown_write(handle, stream_id, application_error_reason);
+}
+
 uint64_t rrr_net_transport_ctx_stream_count (
 		struct rrr_net_transport_handle *handle
 ) {
