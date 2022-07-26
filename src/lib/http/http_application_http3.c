@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 
 #include "http_application_http3.h"
+#include "http_application_http2_http3_common.h"
 #include "http_application_internals.h"
 #include "http_transaction.h"
 #include "http_util.h"
@@ -45,6 +46,7 @@ struct rrr_http_application_http3 {
 	int initialized;
 	struct rrr_net_transport *transport;
 	rrr_net_transport_handle handle;
+	const struct rrr_http_rules *rules;
 };
 
 const char rrr_http_application_http3_alpn_protos[] = {
@@ -687,7 +689,6 @@ static int __rrr_http_application_http3_tick (
 
 	(void)(upgraded_app);
 	(void)(read_max_size);
-	(void)(rules);
 
 	*received_bytes = 0;
 
@@ -701,6 +702,8 @@ static int __rrr_http_application_http3_tick (
 		}
 		http3->initialized = 1;
 	}
+
+	http3->rules = rules;
 
 	uint64_t bytes_read = 0;
 	if ((ret =  __rrr_http_application_http3_transport_ctx_read_stream (
@@ -770,11 +773,66 @@ static int __rrr_http_application_http3_stream_user_data_ensure (
 	*transaction = user_data;
 	return ret;
 }
+/*
+int rrr_http_application_http2_http3_common_stream_read_end (
+		struct rrr_http_application *application,
+		int is_server,
+		struct rrr_net_transport_handle *handle,
+		struct rrr_http_transaction *transaction,
+		int64_t stream_id,
+		const char *stream_error_msg,
+		const struct rrr_http_rules *rules,
+		void *data,
+		rrr_biglength data_size,
+		int (*response_submit_callback)(struct rrr_http_application *app, struct rrr_http_transaction *transaction, int64_t stream_id, void *arg),
+		void *response_submit_callback_arg
+);
 
-static int __rrr_http_application_http3_transaction_stream_finalize (
-		struct rrr_http_application_http3 *http3,
-		struct rrr_http_transaction *transaction
+*/
+
+struct rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback_data {
+		struct rrr_http_application_http3 *http3;
+		struct rrr_http_transaction *transaction;
+		struct rrr_net_transport_handle *handle;
+		int64_t stream_id;
+};
+
+static int __rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback (
+		void *str,
+		rrr_nullsafe_len len,
+		void *arg
 ) {
+	struct rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback_data *callback_data = arg;
+
+	return rrr_http_application_http2_http3_common_stream_read_end (
+			(struct rrr_http_application *) callback_data->http3,
+			callback_data->http3->is_server,
+			callback_data->handle,
+			callback_data->transaction,
+			callback_data->stream_id,
+			NULL,
+			callback_data->http3->rules,
+			str,
+			len,
+			NULL,
+			NULL
+	);
+}
+
+static int __rrr_http_application_http3_transaction_stream_read_end (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_http_transaction *transaction,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+) {
+	assert(http3->rules != NULL); /* Must be set in tick function */
+
+	return rrr_nullsafe_str_with_raw_do (
+			transaction->read_body,
+			__rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback,
+			&callback_data
+	);
+
 	// TODO : Use same data read end method as http2, create common function
 	RRR_BUG("%s\n", __func__);
 }
@@ -847,11 +905,10 @@ static int __rrr_http_application_http3_nghttp3_cb_recv_data (
 		return NGHTTP3_ERR_CALLBACK_FAILURE;
 	}
 
-	if (http3->is_server) {
-		RRR_BUG("Server not implemented in %s\n", __func__);
+	if (rrr_nullsafe_str_new_or_append_raw(&transaction->read_body, data, datalen) != 0) {
+		RRR_MSG_0("Failed to store %llu bytes of data in %s\n", (unsigned long long) datalen, __func__);
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
 	}
-
-	printf("Data %lu: %.*s\n", datalen, (int) datalen, data);
 
 	if (rrr_net_transport_handle_stream_consume (
 			transport,
@@ -971,10 +1028,13 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 
 	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END);
 
+	if (transaction->read_body != NULL)
+		rrr_nullsafe_str_clear(transaction->read_body);
+
 	if (fin) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
 
-		return __rrr_http_application_http3_transaction_stream_finalize (http3, transaction);
+		return __rrr_http_application_http3_transaction_stream_read_end (http3, transaction);
 	}
 
 	return 0;

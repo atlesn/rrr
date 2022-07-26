@@ -170,6 +170,7 @@ void rrr_http_transaction_decref_if_not_null (
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
+	rrr_nullsafe_str_destroy_if_not_null(&transaction->read_body);
 	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_body);
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
