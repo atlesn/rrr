@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_HTTP_APPLICATION_HTTP3_H
 #define RRR_HTTP_APPLICATION_HTTP3_H
-		
+
 struct rrr_http_application;
 struct rrr_http_application_callbacks;
 

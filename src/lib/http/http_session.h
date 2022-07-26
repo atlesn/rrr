@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
+#define RRR_HTTP_SESSION_RESPONSE_POSTPROCESS_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS           \
     struct rrr_net_transport_handle *handle,                   \
     const struct rrr_http_part *request_part,                  \

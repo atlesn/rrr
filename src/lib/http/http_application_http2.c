@@ -926,6 +926,15 @@ int rrr_http_application_http2_response_submit (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
+	int ret = 0;
+
+	if ((ret = app->callbacks.response_postprocess_callback (
+			transaction,
+			app->callbacks.response_postprocess_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
 	struct rrr_http_application_http2_send_prepare_callback_data callback_data = {
 			http2,
 			stream_id
@@ -934,13 +943,18 @@ int rrr_http_application_http2_response_submit (
 	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrr_nullsafe_len "\n",
 			transaction->response_part->response_code, rrr_nullsafe_str_len(transaction->send_body));
 
-	return rrr_http_transaction_response_prepare_wrapper (
+	if ((ret = rrr_http_transaction_response_prepare_wrapper (
 			transaction,
 			__rrr_http_application_http2_header_fields_submit_callback,
 			__rrr_http_application_http2_response_submit_response_code_callback,
 			__rrr_http_application_http2_response_submit_final_callback,
 			&callback_data
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_http_application_http2_response_to_upgrade_submit (

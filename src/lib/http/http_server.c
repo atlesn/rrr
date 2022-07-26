@@ -119,9 +119,18 @@ int rrr_http_server_new (
         server->rules.name = set;                              \
     }                                                          \
 
+#define RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_STRING(name)       \
+    void RRR_PASTE(rrr_http_server_set_,name) (                \
+            struct rrr_http_server *server,                    \
+            const char *set                                    \
+    ) {                                                        \
+        server->rules.name = set;                              \
+    }                                                          \
+
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(server_request_max_size);
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_STRING(server_alt_svc_header);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
@@ -194,6 +203,8 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 		NULL,
 		http_server->callbacks.async_response_get_callback,
 		http_server->callbacks.async_response_get_callback_arg,
+		http_server->callbacks.response_postprocess_callback,
+		http_server->callbacks.response_postprocess_callback_arg
 	};
 
 	enum rrr_http_application_type type = RRR_HTTP_APPLICATION_HTTP1;
@@ -202,7 +213,8 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 		type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 	else if (rrr_net_transport_ctx_transport_type_get (handle) == RRR_NET_TRANSPORT_QUIC) {
-		if (alpn_selected_proto == NULL || strcmp(alpn_selected_proto, "h3") != 0) {
+		// Check only first two bytes of string (matches h3-29 etc.)
+		if (alpn_selected_proto == NULL || strncmp(alpn_selected_proto, "h3", 2) != 0) {
 			RRR_DBG_7("HTTP incorrect ALPN protocol '%s' for QUIC fd %i handle %i\n",
 				alpn_selected_proto == NULL ? "(not given)" : alpn_selected_proto,
 				RRR_NET_TRANSPORT_CTX_FD(handle),

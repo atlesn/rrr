@@ -277,6 +277,13 @@ int rrr_http_transaction_request_content_type_directive_set (
 	return rrr_http_part_header_field_push_subvalue(transaction->request_part, "content-type", name, value);
 }
 
+int rrr_http_transaction_response_alt_svc_set (
+		struct rrr_http_transaction *transaction,
+		const char *alt_svc
+) {
+	return rrr_http_part_header_field_push_and_replace(transaction->response_part, "alt-svc", alt_svc);
+}
+
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
 		struct rrr_http_transaction *transaction

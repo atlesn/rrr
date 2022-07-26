@@ -274,7 +274,13 @@ static int __rrr_http_application_http1_response_send (
 				? "keep-alive"
 				: "close"
 	)) != 0) {
-		RRR_MSG_0("Failed to push connection header in __rrr_http_application_http1_response_send\n");
+		goto out;
+	}
+
+	if ((ret = application->callbacks.response_postprocess_callback (
+			transaction,
+			application->callbacks.response_postprocess_callback_arg
+	)) != 0) {
 		goto out;
 	}
 

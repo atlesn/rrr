@@ -47,8 +47,9 @@ struct rrr_http_application_http3 {
 	rrr_net_transport_handle handle;
 };
 
-static const char rrr_http_application_http3_alpn_protos[] = {
-	     2, 'h', '3'
+const char rrr_http_application_http3_alpn_protos[] = {
+	     2, 'h', '3',
+	     5, 'h', '3', '-', '3', '2'
 };
 
 static void __rrr_http_application_http3_alpn_protos_get (

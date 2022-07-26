@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <strings.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -1391,3 +1392,35 @@ const char *rrr_http_util_encodings_get (void) {
 	return "gzip";
 }
 #endif
+
+int rrr_http_util_alpn_iterate (
+		const char * const alpn,
+		unsigned int length,
+		int (*callback)(unsigned int i, const char *alpn, unsigned char alpn_length, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	unsigned int i = 0;
+
+	const char *pos = alpn;
+	const char * const end = alpn + length;
+
+	while (pos < end) {
+		unsigned char length = (unsigned char) *pos;
+		pos++;
+		assert(pos + length <= end);
+
+		if ((ret = callback(i, pos, length, callback_arg)) != 0) {
+			goto out;
+		}
+
+		pos += length;
+		i++;
+	}
+
+	assert(pos == end);
+
+	out:
+	return ret;
+}

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #include "../lib/log.h"
 #include "../lib/banner.h"
@@ -40,6 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
 #include "../lib/http/http_util.h"
+#if RRR_WITH_HTTP3
+#include "../lib/http/http_application_http3.h"
+#endif
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/stats/stats_instance.h"
@@ -47,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip_defines.h"
 #include "../lib/util/gnu.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/helpers/nullsafe_str.h"
@@ -106,6 +111,7 @@ struct httpserver_data {
 
 	struct rrr_map websocket_topic_filters;
 
+	struct rrr_string_builder alt_svc_header;
 	char *allow_origin_header;
 	char *cache_control_header;
 
@@ -121,6 +127,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	rrr_string_builder_clear(&data->alt_svc_header);
 	rrr_fifo_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
@@ -142,6 +149,50 @@ static int httpserver_data_init (
 	return 0;
 }
 
+#if defined(RRR_WITH_HTTP3)
+static int httpserver_make_alt_svc_header_callback (
+		unsigned int i,
+		const char *alpn,
+		unsigned char length,
+		void *arg
+) {
+	struct httpserver_data *data = arg;
+
+	int ret = 0;
+
+	if (i > 0 && (ret = rrr_string_builder_append_raw(&data->alt_svc_header, ",", 1)) != 0) {
+		goto out;
+	}
+	if ((ret = rrr_string_builder_append_raw(&data->alt_svc_header, alpn, length)) != 0) {
+		goto out;
+	}
+	if ((ret = rrr_string_builder_append_format(&data->alt_svc_header, "=\":%u\"; ma=3600", data->port_quic)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int httpserver_make_alt_svc_header (
+		struct httpserver_data *data
+) {
+	assert(rrr_string_builder_length(&data->alt_svc_header) == 0);
+
+	const char *alpn;
+	unsigned int length;
+
+	rrr_http_application_http3_alpn_protos_get (&alpn, &length);
+
+	return rrr_http_util_alpn_iterate (
+			alpn,
+			length,
+			httpserver_make_alt_svc_header_callback,
+			data
+	);
+}
+#endif
+
 static int httpserver_parse_config (
 		struct httpserver_data *data,
 		struct rrr_instance_config_data *config
@@ -154,6 +205,10 @@ static int httpserver_parse_config (
 			config,
 			"http_server_port_quic"
 	)) != 0) {
+		goto out;
+	}
+
+	if (data->port_quic > 0 && (ret = httpserver_make_alt_svc_header(data)) != 0) {
 		goto out;
 	}
 #endif
@@ -1163,6 +1218,32 @@ static int httpserver_async_response_get_callback (
 	return httpserver_async_response_get_and_process (data, response_data, transaction);
 }
 
+static int httpserver_response_postprocess_callback (
+		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+) {
+#if RRR_WITH_HTTP3
+	struct httpserver_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (rrr_string_builder_length(&callback_data->httpserver_data->alt_svc_header) == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_response_alt_svc_set(transaction, rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header))) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+#else
+	(void)(transaction);
+	(void)(arg);
+
+	return 0;
+#endif
+}
+
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
@@ -1861,6 +1942,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		httpserver_receive_callback,
 		&callback_data,
 		httpserver_async_response_get_callback,
+		&callback_data,
+		httpserver_response_postprocess_callback,
 		&callback_data
 	};
 
