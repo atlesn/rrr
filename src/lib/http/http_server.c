@@ -271,6 +271,7 @@ static int __rrr_http_server_handshake_complete_callback (
 	return ret;
 }
 
+#ifdef RRR_WITH_HTTP3
 static int __rrr_http_server_stream_open_callback (
 		RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS
 ) {
@@ -306,6 +307,7 @@ static int __rrr_http_server_stream_open_callback (
 	return ret;
 	
 }
+#endif
 
 static int __rrr_http_server_upgrade_verify_callback (
 		RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
