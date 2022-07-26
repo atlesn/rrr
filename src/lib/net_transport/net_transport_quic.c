@@ -2841,26 +2841,29 @@ static int __rrr_net_transport_quic_pre_destroy (
 
 	switch (handle->submodule_close_reason) {
 		case RRR_NET_TRANSPORT_CLOSE_REASON_NO_ERROR:
-				ngtcp2_connection_close_error_set_transport_error (
-						&cerr,
-						NGTCP2_NO_ERROR,
-						(const uint8_t *) close_reason_default,
-						strlen(close_reason_default)
-				);
+			ngtcp2_connection_close_error_set_transport_error (
+					&cerr,
+					NGTCP2_NO_ERROR,
+					(const uint8_t *) close_reason_default,
+					strlen(close_reason_default)
+			);
+			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_INTERNAL_ERROR:
-				ngtcp2_connection_close_error_set_transport_error (
-						&cerr,
-						NGTCP2_INTERNAL_ERROR,
-						(const uint8_t *) transport_close_reason_internal_error,
-						strlen(transport_close_reason_internal_error)
-				);
+			ngtcp2_connection_close_error_set_transport_error (
+					&cerr,
+					NGTCP2_INTERNAL_ERROR,
+					(const uint8_t *) transport_close_reason_internal_error,
+					strlen(transport_close_reason_internal_error)
+			);
+			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_CONNECTION_REFUSED:
-				ngtcp2_connection_close_error_set_transport_error (
-						&cerr,
-						NGTCP2_CONNECTION_REFUSED,
-						(const uint8_t *) transport_close_reason_connection_refused,
-						strlen(transport_close_reason_connection_refused)
-				);
+			ngtcp2_connection_close_error_set_transport_error (
+					&cerr,
+					NGTCP2_CONNECTION_REFUSED,
+					(const uint8_t *) transport_close_reason_connection_refused,
+					strlen(transport_close_reason_connection_refused)
+			);
+			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_APPLICATION_ERROR:
 			if (handle->application_close_reason_string != NULL) {
 				ngtcp2_connection_close_error_set_application_error (
@@ -2878,6 +2881,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 						strlen(close_reason_default)
 				);
 			}
+			break;
 	};
 
 	ngtcp2_path_storage_zero(&path_storage);
