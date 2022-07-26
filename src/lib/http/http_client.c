@@ -944,6 +944,7 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
+#ifdef RRR_WITH_HTTP3
 struct rrr_http_client_transport_ctx_stream_open_callback_data {
         void **stream_data;
 	void (**stream_data_destroy)(void *stream_data);
@@ -974,6 +975,7 @@ static int __rrr_http_client_net_transport_cb_stream_open (
 			arg_local
 	);
 }
+#endif
 
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		struct rrr_http_client *http_client,
