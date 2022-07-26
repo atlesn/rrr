@@ -259,10 +259,10 @@ static int __rrr_http2_on_stream_close_callback (
 	}
 
 	if (session->callback_data.callback != NULL) {
-		int flags = RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE;
+		int flags = RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE;
 
 		if (error_code != NGHTTP2_NO_ERROR) {
-			flags |= RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR;
+			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR;
 		}
 
 		if (session->callback_data.callback (
@@ -330,11 +330,11 @@ static int __rrr_http2_on_frame_recv_callback (
 		int flags = 0;
 
 		if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
-			flags |= RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END;
+			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END;
 		}
 
 		if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
-			flags |= RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END;
+			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END;
 		}
 
 		if (session->callback_data.callback (

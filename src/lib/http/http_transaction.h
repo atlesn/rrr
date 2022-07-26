@@ -39,6 +39,7 @@ struct rrr_http_transaction {
 
 	enum rrr_http_body_format request_body_format;
 
+	struct rrr_nullsafe_str *read_body;
 	struct rrr_nullsafe_str *send_body;
 	rrr_biglength send_body_pos;
 

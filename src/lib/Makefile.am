@@ -99,7 +99,7 @@ http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
        http/http_common.c http/http_query_builder.c http/http_client_config.c \
        http/http_server.c http/http_header_fields.c \
        http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
-       http/http_application.c http/http_application_http1.c \
+       http/http_application.c http/http_application_http1.c http/http_application_http2_http3_common.c \
        http/http_redirect.c http/http_stream.c
 
 websocket = websocket/websocket.c
