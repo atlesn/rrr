@@ -37,7 +37,7 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 		int64_t stream_id,
 		const char *stream_error_msg,
 		const struct rrr_http_rules *rules,
-		void *data,
+		const void *data,
 		rrr_biglength data_size,
 		int (*response_submit_callback)(struct rrr_http_application *app, struct rrr_http_transaction *transaction, int64_t stream_id, void *arg),
 		void *response_submit_callback_arg

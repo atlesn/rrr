@@ -366,6 +366,8 @@ uint64_t __rrr_http_application_http3_active_transaction_count_get_and_maintain 
 
 	uint64_t count = rrr_net_transport_ctx_stream_count(handle);
 
+	printf("Count %lu\b", count);
+
 	// Subtrack three QPACK streams
 	return count < 3 ? 0 : count - 3;
 }
@@ -437,6 +439,13 @@ static int __rrr_http_application_http3_map_add_nullsafe_callback (const void *s
 
 }
 
+struct rrr_http_application_http3_request_send_prepare_callback_data {
+	struct rrr_http_application_http3 *http3;
+	struct rrr_map *headers;
+	struct rrr_net_transport_handle *handle;
+	int64_t stream_id;
+};
+
 static int __rrr_http_application_http3_map_add_nullsafe (
 		struct rrr_map *map,
 		const char *name,
@@ -454,13 +463,6 @@ static int __rrr_http_application_http3_map_add_nullsafe (
 	);
 }
 
-struct rrr_http_application_http3_send_prepare_callback_data {
-	struct rrr_http_application_http3 *http3;
-	struct rrr_map *headers;
-	struct rrr_net_transport_handle *handle;
-	int64_t stream_id;
-};
-
 static int __rrr_http_application_http3_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
@@ -469,7 +471,7 @@ static int __rrr_http_application_http3_request_send_preliminary_callback (
 		const struct rrr_nullsafe_str *request,
 		void *arg
 ) {
-	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 
 	(void)(upgrade_mode);
 	(void)(protocol_version);
@@ -493,7 +495,7 @@ static int __rrr_http_application_http3_header_fields_submit_callback (
 		struct rrr_http_header_field *field,
 		void *arg
 ) {
-	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -518,7 +520,7 @@ static int __rrr_http_application_http3_request_send_final_callback (
 		struct rrr_http_transaction *transaction,
 		void *arg
 ) {
-	struct rrr_http_application_http3_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http3 *http3 = callback_data->http3;
 
 	(void)(transaction);
@@ -557,15 +559,6 @@ static int __rrr_http_application_http3_request_send_final_callback (
 	return ret;
 }
 
-static void __rrr_http_transport_http3_transport_ctx_notify (
-		struct rrr_http_application_http3 *http3,
-		struct rrr_net_transport_handle *handle
-) {
-	(void)(http3);
-
-	rrr_net_transport_ctx_notify_read(handle);
-}
-
 static int __rrr_http_application_http3_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -578,8 +571,7 @@ static int __rrr_http_application_http3_request_send (
 	int64_t stream_id;
 	struct rrr_map headers = {0};
 
-	RRR_DBG_3("http3 %p request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
-			http3,
+	RRR_DBG_3("HTTP3 request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
@@ -592,7 +584,7 @@ static int __rrr_http_application_http3_request_send (
 		goto out;
 	}
 
-	struct rrr_http_application_http3_send_prepare_callback_data callback_data = {
+	struct rrr_http_application_http3_request_send_prepare_callback_data callback_data = {
 		http3,
 		&headers,
 		handle,
@@ -620,7 +612,7 @@ static int __rrr_http_application_http3_request_send (
 		goto out;
 	}
 
-	__rrr_http_transport_http3_transport_ctx_notify (http3, handle);
+	rrr_net_transport_ctx_notify_read(handle);
 
 	out:
 	rrr_map_clear(&headers);
@@ -682,53 +674,6 @@ static int __rrr_http_application_http3_transport_ctx_read_stream (
 	return ret & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE);
 }
 
-static int __rrr_http_application_http3_tick (
-		RRR_HTTP_APPLICATION_TICK_ARGS
-) {
-    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
-
-	(void)(upgraded_app);
-	(void)(read_max_size);
-
-	*received_bytes = 0;
-
-	int ret = 0;
-
-	printf("http3 tick\n");
-
-	if (!http3->initialized) {
-		if ((ret = __rrr_http_application_http3_initialize(http3, handle)) != 0) {
-			goto out;
-		}
-		http3->initialized = 1;
-	}
-
-	http3->rules = rules;
-
-	uint64_t bytes_read = 0;
-	if ((ret =  __rrr_http_application_http3_transport_ctx_read_stream (
-			&bytes_read,
-			http3,
-			handle
-	)) != 0) {
-		goto out;
-	}
-
-	*received_bytes = bytes_read;
-
-	out:
-	return ret;
-}
-
-static int __rrr_http_application_http3_need_tick (
-		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
-) {
-    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
-	int ret = !http3->initialized;
-	printf("Need tick? %i\n", ret);
-	return ret;
-}
-
 static void __rrr_http_application_http3_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
@@ -773,69 +718,6 @@ static int __rrr_http_application_http3_stream_user_data_ensure (
 	*transaction = user_data;
 	return ret;
 }
-/*
-int rrr_http_application_http2_http3_common_stream_read_end (
-		struct rrr_http_application *application,
-		int is_server,
-		struct rrr_net_transport_handle *handle,
-		struct rrr_http_transaction *transaction,
-		int64_t stream_id,
-		const char *stream_error_msg,
-		const struct rrr_http_rules *rules,
-		void *data,
-		rrr_biglength data_size,
-		int (*response_submit_callback)(struct rrr_http_application *app, struct rrr_http_transaction *transaction, int64_t stream_id, void *arg),
-		void *response_submit_callback_arg
-);
-
-*/
-
-struct rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback_data {
-		struct rrr_http_application_http3 *http3;
-		struct rrr_http_transaction *transaction;
-		struct rrr_net_transport_handle *handle;
-		int64_t stream_id;
-};
-
-static int __rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback (
-		void *str,
-		rrr_nullsafe_len len,
-		void *arg
-) {
-	struct rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback_data *callback_data = arg;
-
-	return rrr_http_application_http2_http3_common_stream_read_end (
-			(struct rrr_http_application *) callback_data->http3,
-			callback_data->http3->is_server,
-			callback_data->handle,
-			callback_data->transaction,
-			callback_data->stream_id,
-			NULL,
-			callback_data->http3->rules,
-			str,
-			len,
-			NULL,
-			NULL
-	);
-}
-
-static int __rrr_http_application_http3_transaction_stream_read_end (
-		struct rrr_http_application_http3 *http3,
-		struct rrr_http_transaction *transaction,
-		struct rrr_net_transport_handle *handle,
-		int64_t stream_id
-) {
-	assert(http3->rules != NULL); /* Must be set in tick function */
-
-	return rrr_nullsafe_str_with_raw_do (
-			transaction->read_body,
-			__rrr_http_application_http3_transaction_stream_read_end_nullsafe_callback,
-			&callback_data
-	);
-
-	// TODO : Use same data read end method as http2, create common function
-	RRR_BUG("%s\n", __func__);
-}
 
 #define GET_TRANSACTION()                                          \
     struct rrr_http_transaction *transaction;                      \
@@ -847,6 +729,260 @@ static int __rrr_http_application_http3_transaction_stream_read_end (
     ) != 0) { return NGHTTP3_ERR_CALLBACK_FAILURE; }               \
     struct rrr_net_transport *transport = transaction->protocol_ptr;       \
     rrr_net_transport_handle transport_handle = transaction->protocol_int
+
+struct rrr_http_application_http3_response_submit_callback_data {
+	struct rrr_http_application_http3 *http3;
+	struct rrr_map *headers;
+	int64_t stream_id;
+};
+
+static int __rrr_http_application_http3_response_submit_response_code_callback (
+		unsigned int response_code,
+		enum rrr_http_version protocol_version,
+		void *arg
+) {
+	struct rrr_http_application_http3_response_submit_callback_data *callback_data = arg;
+
+	(void)(protocol_version);
+
+	int ret = 0;
+
+	if (response_code > 999) {
+		RRR_BUG("BUG: Invalid response code %u to %s\n", response_code, __func__);
+	}
+
+	char tmp[8];
+	sprintf(tmp, "%u", response_code);
+
+	if ((ret = rrr_map_item_add_new (callback_data->headers, ":status", tmp)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int __rrr_http_application_http3_read_data_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	nghttp3_vec *vec = arg;
+
+	if (len > SIZE_MAX) {
+		RRR_MSG_0("Data length %" PRIrrr_nullsafe_len " exceeds maximum of %llu in %s\n",
+			len, (unsigned long long) SIZE_MAX, __func__);
+		return 1;
+	}
+
+	vec->base = (uint8_t *) str; // Cast away const OK
+	vec->len = rrr_size_from_biglength_bug_const(len);
+
+	return 0;
+}
+
+nghttp3_ssize __rrr_http_application_http3_read_data_callback (
+		nghttp3_conn *conn,
+		int64_t stream_id,
+		nghttp3_vec *vec,
+		size_t veccnt,
+		uint32_t *pflags,
+		void *conn_user_data,
+		void *stream_user_data
+) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+
+	(void)(conn);
+	(void)(veccnt);
+
+	GET_TRANSACTION();
+
+	(void)(transport);
+	(void)(transport_handle);
+
+	*pflags = NGHTTP3_DATA_FLAG_EOF;
+
+	int ret_tmp;
+
+	if (rrr_nullsafe_str_len(transaction->send_body) == 0) {
+		return 0;
+	}
+
+	assert(veccnt > 0);
+
+	if ((ret_tmp = rrr_nullsafe_str_with_raw_do_const (
+			transaction->send_body,
+			__rrr_http_application_http3_read_data_nullsafe_callback,
+			vec
+	)) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
+	return 1;
+}
+
+static int __rrr_http_application_http3_response_submit_final_callback (
+		struct rrr_http_transaction *transaction,
+		void *arg
+) {
+	struct rrr_http_application_http3_response_submit_callback_data *callback_data = arg;
+
+	(void)(transaction);
+
+	int ret = 0;
+
+	int ret_tmp;
+	nghttp3_nv *nv;
+	size_t nv_len;
+
+	static const struct nghttp3_data_reader data_reader = {
+		__rrr_http_application_http3_read_data_callback
+	};
+
+	if ((ret = __rrr_http_application_http3_map_to_nv (&nv, &nv_len, callback_data->headers)) != 0) {
+		goto out;
+	}
+
+	if ((ret_tmp = nghttp3_conn_submit_response (
+			callback_data->http3->conn,
+			callback_data->stream_id,
+			nv,
+			nv_len,
+			&data_reader
+	)) != 0) {
+		printf("Failed to submit HTTP3 response: %s\n", nghttp3_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	rrr_free(nv);
+	return ret;
+}
+
+static int __rrr_http_application_http3_response_submit (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_http_transaction *transaction,
+		int64_t stream_id
+) {
+	int ret = 0;
+
+	struct rrr_map headers = {0};
+
+	if ((ret = http3->callbacks.response_postprocess_callback (
+			transaction,
+			http3->callbacks.response_postprocess_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	struct rrr_http_application_http3_response_submit_callback_data callback_data = {
+			http3,
+			&headers,
+			stream_id
+	};
+
+	RRR_DBG_3("HTTP3 response submit status %i send data length %" PRIrrr_nullsafe_len "\n",
+			transaction->response_part->response_code,
+			rrr_nullsafe_str_len(transaction->send_body));
+
+	if ((ret = rrr_http_transaction_response_prepare_wrapper (
+			transaction,
+			__rrr_http_application_http3_header_fields_submit_callback,
+			__rrr_http_application_http3_response_submit_response_code_callback,
+			__rrr_http_application_http3_response_submit_final_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_map_clear(&headers);
+	return ret;
+}
+
+static int __rrr_http_application_http3_stream_read_end_respone_submit_callback (
+		struct rrr_http_application *application,
+		struct rrr_http_transaction *transaction,
+		int64_t stream_id,
+		void *arg
+) {
+	(void)(arg);
+
+	return __rrr_http_application_http3_response_submit (
+			(struct rrr_http_application_http3 *) application,
+			transaction,
+			stream_id
+	);
+}
+
+struct rrr_http_application_http3_stream_read_end_callback_data {
+		struct rrr_http_application_http3 *http3;
+		struct rrr_http_transaction *transaction;
+		struct rrr_net_transport_handle *handle;
+		int64_t stream_id;
+};
+
+static int __rrr_http_application_http3_stream_read_end_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct rrr_http_application_http3_stream_read_end_callback_data *callback_data = arg;
+
+	assert(callback_data->http3->rules != NULL); /* Must be set in tick function */
+
+	return rrr_http_application_http2_http3_common_stream_read_end (
+			(struct rrr_http_application *) callback_data->http3,
+			callback_data->http3->is_server,
+			callback_data->handle,
+			callback_data->transaction,
+			callback_data->stream_id,
+			NULL,
+			callback_data->http3->rules,
+			str,
+			len,
+			__rrr_http_application_http3_stream_read_end_respone_submit_callback,
+			NULL
+	);
+}
+
+static int __rrr_http_application_http3_stream_read_end_transport_ctx_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_application_http3_stream_read_end_callback_data *callback_data = arg;
+
+	callback_data->handle = handle;
+
+	return rrr_nullsafe_str_with_raw_do_const (
+			callback_data->transaction->read_body,
+			__rrr_http_application_http3_stream_read_end_nullsafe_callback,
+			callback_data
+	);
+}
+
+static int __rrr_http_application_http3_stream_read_end (
+		struct rrr_http_application_http3 *http3,
+		struct rrr_http_transaction *transaction,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle handle,
+		int64_t stream_id
+) {
+	struct rrr_http_application_http3_stream_read_end_callback_data callback_data = {
+		http3,
+		transaction,
+		NULL,
+		stream_id
+	};
+
+	return rrr_net_transport_handle_with_transport_ctx_do (
+			transport,
+			handle,
+			__rrr_http_application_http3_stream_read_end_transport_ctx_callback,
+			&callback_data
+	);
+}
 
 static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (
 		nghttp3_conn *conn,
@@ -1034,7 +1170,13 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 	if (fin) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
 
-		return __rrr_http_application_http3_transaction_stream_read_end (http3, transaction);
+		return __rrr_http_application_http3_stream_read_end (
+				http3,
+				transaction,
+				transport,
+				transport_handle,
+				stream_id
+		);
 	}
 
 	return 0;
@@ -1105,6 +1247,109 @@ static void *__rrr_http_application_http3_cb_calloc (size_t nmemb, size_t size, 
 static void *__rrr_http_application_http3_cb_realloc (void *ptr, size_t size, void *user_data) {
 	(void)(user_data);
 	return rrr_reallocate(ptr, size);
+}
+
+struct rrr_http_application_http3_tick_get_async_response_stream_callback_data {
+	struct rrr_http_application_http3 *http3;
+	unsigned int response_needed_count;
+};
+
+static int __rrr_http_application_http3_tick_get_async_response_stream_callback (
+		int64_t stream_id,
+		void *stream_data,
+		void *arg
+) {
+	struct rrr_http_transaction *transaction = stream_data;
+	struct rrr_http_application_http3_tick_get_async_response_stream_callback_data *callback_data = arg;
+	struct rrr_http_application_http3 *http3 = callback_data->http3;
+
+	int ret = 0;
+
+	printf("Iterate stream %li transaction %p need response %i\n",
+		stream_id, transaction, transaction != NULL ? transaction->need_response : 0);
+
+	if (transaction == NULL || !transaction->need_response) {
+		goto out;
+	}
+
+	callback_data->response_needed_count++;
+
+	if ((ret = http3->callbacks.async_response_get_callback(transaction, http3->callbacks.async_response_get_callback_arg)) != 0) {
+		ret &= ~(RRR_HTTP_NO_RESULT);
+		goto out;
+	}
+
+	if ((ret = __rrr_http_application_http3_response_submit (
+			http3,
+			transaction,
+			stream_id
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_tick (
+		RRR_HTTP_APPLICATION_TICK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+
+	(void)(upgraded_app);
+	(void)(read_max_size);
+
+	*received_bytes = 0;
+
+	int ret = 0;
+
+	if (!http3->initialized) {
+		if ((ret = __rrr_http_application_http3_initialize(http3, handle)) != 0) {
+			goto out;
+		}
+		http3->initialized = 1;
+	}
+
+	http3->rules = rules;
+
+	{
+		struct rrr_http_application_http3_tick_get_async_response_stream_callback_data callback_data = {
+			http3,
+			0
+		};
+		if ((ret = rrr_net_transport_ctx_streams_iterate (
+				handle,
+				__rrr_http_application_http3_tick_get_async_response_stream_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+		if (callback_data.response_needed_count > 0) {
+			printf("Notify read due to responses needed\n");
+			rrr_net_transport_ctx_notify_read(handle);
+		}
+	}
+
+	uint64_t bytes_read = 0;
+	if ((ret =  __rrr_http_application_http3_transport_ctx_read_stream (
+			&bytes_read,
+			http3,
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	*received_bytes = bytes_read;
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http3_need_tick (
+		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+	return !http3->initialized;
 }
 
 static const struct rrr_http_application_constants rrr_http_application_http3_constants = {

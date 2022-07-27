@@ -186,6 +186,11 @@ struct rrr_nullsafe_str;
     int64_t stream_id,                                         \
     uint64_t application_error_reason
 
+#define RRR_NET_TRANSPORT_STREAMS_ITERATE_ARGS                        \
+    struct rrr_net_transport_handle *handle,                          \
+    int (*callback)(int64_t stream_id, void *stream_data, void *arg), \
+    void *arg
+
 #define RRR_NET_TRANSPORT_SEND_ARGS                            \
     rrr_biglength *bytes_written,                              \
     struct rrr_net_transport_handle *handle,                   \
@@ -261,6 +266,9 @@ struct rrr_net_transport_methods {
 	// Stop stream reading or writing
 	int (*stream_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_ARGS);
 	int (*stream_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_ARGS);
+
+	// Iterate streams
+	int (*streams_iterate)(RRR_NET_TRANSPORT_STREAMS_ITERATE_ARGS);
 
 	// Send data on non-stream oriented transport
 	int (*send)(RRR_NET_TRANSPORT_SEND_ARGS);

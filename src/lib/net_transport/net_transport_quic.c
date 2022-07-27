@@ -2759,6 +2759,24 @@ static int __rrr_net_transport_quic_stream_do_shutdown_write (
 	return 0;
 }
 
+static int __rrr_net_transport_quic_streams_iterate (
+		RRR_NET_TRANSPORT_STREAMS_ITERATE_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if ((ret = callback(node->stream_id, node->stream_data, arg)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static int __rrr_net_transport_quic_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
@@ -3012,6 +3030,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_stream_consume,
 	__rrr_net_transport_quic_stream_do_shutdown_read,
 	__rrr_net_transport_quic_stream_do_shutdown_write,
+	__rrr_net_transport_quic_streams_iterate,
 	NULL,
 	__rrr_net_transport_quic_poll,
 	__rrr_net_transport_quic_handshake,

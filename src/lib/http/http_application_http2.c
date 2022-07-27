@@ -363,9 +363,16 @@ static int __rrr_http_application_http2_data_receive_callback (
 				RRR_MSG_0("Could not create transaction in %s\n", __func__);
 				goto out;
 			}
-			if ((ret = rrr_http2_session_stream_application_data_set(callback_data->http2->http2_session, stream_id, transaction_to_destroy, rrr_http_transaction_decref_if_not_null_void)) != 0) {
+
+			if ((ret = rrr_http2_session_stream_application_data_set (
+					callback_data->http2->http2_session,
+					stream_id,
+					transaction_to_destroy,
+					rrr_http_transaction_decref_if_not_null_void
+			)) != 0) {
 				goto out;
 			}
+
 			// Don't set to NULL, will be decrefed at function out
 			rrr_http_transaction_incref(transaction_to_destroy);
 			transaction = transaction_to_destroy;

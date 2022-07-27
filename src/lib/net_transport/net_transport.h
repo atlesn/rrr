@@ -344,6 +344,12 @@ int rrr_net_transport_handle_stream_shutdown_write (
 		int64_t stream_id,
 		uint64_t application_error_reason
 );
+int rrr_net_transport_handle_streams_iterate (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int (*callback)(int64_t stream_id, void *stream_data, void *arg),
+		void *arg
+);
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 );
