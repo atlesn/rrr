@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_net_transport_handle *handle,                   \
     struct rrr_http_transaction *transaction,                  \
     const char *data_ptr,                                      \
-    rrr_biglength overshoot_bytes,                                   \
+    rrr_biglength overshoot_bytes,                             \
     enum rrr_http_application_type next_application_type
 
 #define RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS  \

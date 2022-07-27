@@ -156,6 +156,11 @@ int rrr_net_transport_ctx_stream_shutdown_write (
 		int64_t stream_id,
 		uint64_t application_error_reason
 );
+int rrr_net_transport_ctx_streams_iterate (
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(int64_t stream_id, void *stream_data, void *arg),
+		void *arg
+);
 uint64_t rrr_net_transport_ctx_stream_count (
 		struct rrr_net_transport_handle *handle
 );
