@@ -173,6 +173,10 @@ struct rrr_nullsafe_str;
     struct rrr_net_transport_handle *handle,                   \
     int64_t stream_id
 
+#define RRR_NET_TRANSPORT_STREAM_DATA_CLEAR_ARGS               \
+    struct rrr_net_transport_handle *handle,                   \
+    int64_t stream_id
+
 #define RRR_NET_TRANSPORT_STREAM_COUNT_ARGS                    \
     struct rrr_net_transport_handle *handle
 
@@ -255,6 +259,9 @@ struct rrr_net_transport_methods {
 
 	// Retrieve application stream data
 	int (*stream_data_get)(RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS);
+
+	// Clear application stream data
+	int (*stream_data_clear)(RRR_NET_TRANSPORT_STREAM_DATA_CLEAR_ARGS);
 
 	// Count number of open streams on stream-oriented transport handle. Note
 	// that only streams which the submodule actually keeps track of is counted.

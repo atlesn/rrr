@@ -304,6 +304,11 @@ int rrr_net_transport_handle_stream_data_get (
 		rrr_net_transport_handle transport_handle,
 		int64_t stream_id
 );
+int rrr_net_transport_handle_stream_data_clear (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id
+);
 int rrr_net_transport_handle_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport *transport,

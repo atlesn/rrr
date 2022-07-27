@@ -131,6 +131,10 @@ int rrr_net_transport_ctx_stream_data_get (
 		struct rrr_net_transport_handle *handle,
 		int64_t stream_id
 );
+int rrr_net_transport_ctx_stream_data_clear (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+);
 int rrr_net_transport_ctx_stream_open_local (
 		int64_t *result,
 		struct rrr_net_transport_handle *handle,

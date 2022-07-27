@@ -423,6 +423,7 @@ static int __rrr_net_transport_quic_stream_shutdown_write (
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE)) {
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
+		printf("Call CB shutdown write\n");
 		return node->cb_shutdown_write(node->stream_id, node->cb_arg);
 	}
 	return 0;
@@ -2692,8 +2693,30 @@ static int __rrr_net_transport_quic_stream_data_get (
 		}
 	RRR_LL_ITERATE_END();
 
-	RRR_MSG_0("net transport quic fd %i h %i stream %" PRIi64 " not found\n",
-		handle_data->ctx->fd, handle->handle, stream_id);
+	RRR_MSG_0("net transport quic fd %i h %i stream %" PRIi64 " not found int %s\n",
+		handle_data->ctx->fd, handle->handle, stream_id, __func__);
+
+	return 1;
+}
+
+static int __rrr_net_transport_quic_stream_data_clear (
+		RRR_NET_TRANSPORT_STREAM_DATA_CLEAR_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id == stream_id) {
+			if (node->stream_data != NULL && node->stream_data_destroy != NULL) {
+				node->stream_data_destroy(node->stream_data);
+			}
+			node->stream_data = NULL;
+			return 0;
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_MSG_0("net transport quic fd %i h %i stream %" PRIi64 " not found in %s\n",
+		handle_data->ctx->fd, handle->handle, stream_id, __func__);
 
 	return 1;
 }
@@ -3026,6 +3049,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_stream_open_local,
 	__rrr_net_transport_quic_stream_open_remote,
 	__rrr_net_transport_quic_stream_data_get,
+	__rrr_net_transport_quic_stream_data_clear,
 	__rrr_net_transport_quic_stream_count,
 	__rrr_net_transport_quic_stream_consume,
 	__rrr_net_transport_quic_stream_do_shutdown_read,

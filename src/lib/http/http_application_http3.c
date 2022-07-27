@@ -226,6 +226,25 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
 		return 1;
 	}
 
+	void *stream_data = NULL;
+	if (rrr_net_transport_handle_stream_data_get (
+			&stream_data,
+			http3->transport,
+			http3->handle,
+			stream_id
+	) == 0 && stream_data != NULL) {
+		struct rrr_http_transaction *transaction = stream_data;
+		if (http3->is_server || (!http3->is_server && transaction->response_part->parse_complete)) {
+			return rrr_net_transport_handle_stream_data_clear (
+					http3->transport,
+					http3->handle,
+					stream_id
+			);
+		}
+
+		return 0;
+	}
+
 	return 0;
 }
 
@@ -235,6 +254,8 @@ static int __rrr_http_application_http3_net_transport_cb_stream_ack (
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
 	int ret = 0;
+
+	printf("ACK from net transport stream %li bytes %lu\n", stream_id, bytes);
 
 	int ret_tmp;
 
@@ -984,19 +1005,25 @@ static int __rrr_http_application_http3_stream_read_end (
 	);
 }
 
-static int __rrr_http_application_http3_nghttp3_cb_acked_stream_data (
+static int __rrr_http_application_http3_nghttp3_cb_stream_acked_data (
 		nghttp3_conn *conn,
 		int64_t stream_id,
-		uint64_t datalen,
+                uint64_t datalen,
 		void *conn_user_data,
 		void *stream_user_data
 ) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+
 	(void)(conn);
-	(void)(stream_id);
-	(void)(datalen);
-	(void)(conn_user_data);
-	(void)(stream_user_data);
-	RRR_BUG("%s\n", __func__);
+
+	GET_TRANSACTION();
+
+	(void)(transport);
+	(void)(transport_handle);
+
+	printf("ACK data %lu\n", datalen);
+
+	transaction->send_body_pos += datalen;
 
 	return 0;
 }
@@ -1013,6 +1040,9 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_close (
 	(void)(app_error_code);
 	(void)(conn_user_data);
 	(void)(stream_user_data);
+
+	printf("HTTP3 close %li\n", stream_id);
+
 	return 0;
 }
 
@@ -1365,7 +1395,7 @@ static const struct rrr_http_application_constants rrr_http_application_http3_co
 };
 
 static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
-	__rrr_http_application_http3_nghttp3_cb_acked_stream_data,
+	__rrr_http_application_http3_nghttp3_cb_stream_acked_data,
 	__rrr_http_application_http3_nghttp3_cb_stream_close,
 	__rrr_http_application_http3_nghttp3_cb_recv_data,
 	__rrr_http_application_http3_nghttp3_cb_deferred_consume,
