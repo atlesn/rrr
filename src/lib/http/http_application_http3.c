@@ -816,6 +816,8 @@ uint64_t __rrr_http_application_http3_active_transaction_count_get_and_maintain 
 
 	uint64_t count = rrr_net_transport_ctx_stream_count(handle);
 
+	printf("Count %lu\n", count);
+
 	// Subtrack QPACK streams
 	return count < 6 ? 0 : count - 6;
 }

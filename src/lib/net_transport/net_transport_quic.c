@@ -64,6 +64,7 @@ struct rrr_net_transport_quic_recv_buf {
 struct rrr_net_transport_quic_stream {
 	RRR_LL_NODE(struct rrr_net_transport_quic_stream);
 	int64_t stream_id;
+	unsigned int app_error_code;
 	int flags;
 	struct rrr_net_transport_quic_recv_buf recv_buf;
 	int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
@@ -352,11 +353,7 @@ static int __rrr_net_transport_quic_ctx_stream_close (
 			// Stream must be closed by read loop after all data
 			// is delivered to application.
 			node->flags |= RRR_NET_TRANSPORT_STREAM_F_CLOSING;
-
-			if (node->cb_close(stream_id, app_error_code, node->cb_arg)) {
-				return 1;
-			}
-
+			node->app_error_code = app_error_code;
 			return 0;
 		}
 	RRR_LL_ITERATE_END();
@@ -2304,6 +2301,11 @@ static int __rrr_net_transport_quic_read_stream (
 		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING && len == 0) {
 			RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
 					ctx->fd, ctx->connected_handle, node->stream_id);
+
+			if (node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) {
+				return 1;
+			}
+
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
