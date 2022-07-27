@@ -105,7 +105,6 @@ struct rrr_http_client_data {
 	rrr_http_unique_id unique_id_counter;
 
 	int redirect_pending;
-	int done;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_stdin;
@@ -372,9 +371,6 @@ static int __rrr_http_client_final_callback (
 					transaction->response_part->response_code,
 					rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
 			);
-		}
-		else {
-			http_client_data->done = 1;
 		}
 	}
 
@@ -675,7 +671,7 @@ int rrr_signal_handler(int s, void *arg) {
 static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
-	if (!main_running || data->done) {
+	if (!main_running) {
 		return RRR_EVENT_EXIT;
 	}
 
