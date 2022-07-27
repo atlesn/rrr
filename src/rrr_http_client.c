@@ -672,11 +672,13 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
 	if (!main_running) {
+		RRR_DBG_1("Signal received, exiting.\n");
 		return RRR_EVENT_EXIT;
 	}
 
 	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
 		if (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) {
+			RRR_DBG_1("No more transactions, exiting.\n");
 			return RRR_EVENT_EXIT;
 		}
 	}
