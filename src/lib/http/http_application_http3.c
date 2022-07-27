@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport_ctx.h"
 
 // Enable printf logging in nghttp3 library
-#define RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG 1
+//#define RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG 1
 
 struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
@@ -78,13 +78,13 @@ static int __rrr_http_application_http3_ctrl_streams_bind (
 	int ret_tmp;
 
 	if ((ret_tmp = nghttp3_conn_bind_control_stream(http3->conn, stream_id_ctrl)) != 0) {
-		printf("Failed to bind control stream in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		RRR_MSG_0("Failed to bind control stream in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret_tmp = nghttp3_conn_bind_qpack_streams(http3->conn, stream_id_qpack_encode, stream_id_qpack_decode)) != 0) {
-		printf("Failed to bind qpack streams %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		RRR_MSG_0("Failed to bind qpack streams %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
 		ret = 1;
 		goto out;
 	}
@@ -400,7 +400,7 @@ static int __rrr_http_application_http3_response_submit_final_callback (
 			nv_len,
 			&data_reader
 	)) != 0) {
-		printf("Failed to submit HTTP3 response: %s\n", nghttp3_strerror(ret_tmp));
+		RRR_MSG_0("Failed to submit HTTP3 response: %s\n", nghttp3_strerror(ret_tmp));
 		ret = 1;
 		goto out;
 	}
@@ -597,7 +597,7 @@ static int __rrr_http_application_http3_net_transport_cb_get_message (
 			(nghttp3_vec *) data_vector,
 			*data_vector_count
 	)) < 0) {
-		printf("Failed to get http3 data in %s: %s\n", __func__, nghttp3_strerror((int) ret_tmp));
+		RRR_MSG_0("Failed to get http3 data in %s: %s\n", __func__, nghttp3_strerror((int) ret_tmp));
 		ret = 1;
 		goto out;
 	}
@@ -685,8 +685,6 @@ static int __rrr_http_application_http3_net_transport_cb_stream_ack (
 
 	int ret = 0;
 
-	printf("ACK from net transport stream %li bytes %lu\n", stream_id, bytes);
-
 	int ret_tmp;
 
 	if ((ret_tmp = nghttp3_conn_add_ack_offset (
@@ -712,7 +710,7 @@ static int __rrr_http_application_http3_stream_open (
 
 	struct rrr_http_transaction *transaction_tmp = NULL;
 
-	printf("Stream open %li in %s is server %i is local %i is bidi %i\n",
+	RRR_DBG_3("HTTP3 stream open %li in %s is server %i is local %i is bidi %i\n",
 		stream_id,
 		__func__,
 		http3->is_server,
@@ -885,7 +883,7 @@ static int __rrr_http_application_http3_request_send_final_callback (
 			NULL,
 			NULL
 	)) != 0) {
-		printf("Failed to submit HTTP3 request: %s\n", nghttp3_strerror(ret_tmp));
+		RRR_MSG_0("Failed to submit HTTP3 request: %s\n", nghttp3_strerror(ret_tmp));
 		ret = 1;
 		goto out;
 	}
@@ -1037,8 +1035,6 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_acked_data (
 	(void)(transport);
 	(void)(transport_handle);
 
-	printf("ACK data %lu\n", datalen);
-
 	transaction->send_body_pos += datalen;
 
 	return 0;
@@ -1060,11 +1056,9 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_close (
 	(void)(transport);
 	(void)(transport_handle);
 
-	printf("HTTP3 close %li reason %" PRIu64 "\n", stream_id, app_error_code);
+	RRR_DBG_3("HTTP3 close %li reason %" PRIu64 "\n", stream_id, app_error_code);
 
-	printf("Flags A %i\n", transaction->stream_flags);
 	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE);
-	printf("Flags B %i\n", transaction->stream_flags);
 
 	if (app_error_code != 0) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR);
@@ -1161,7 +1155,9 @@ static int __rrr_http_application_http3_nghttp3_cb_begin_headers (
 	(void)(conn);
 	(void)(conn_user_data);
 	(void)(stream_user_data);
-	printf("HTTP3 begin headers %li\n", stream_id);
+
+	RRR_DBG_3("HTTP3 begin headers %li\n", stream_id);
+
 	return 0;
 }
 
@@ -1301,7 +1297,7 @@ static int __rrr_http_application_http3_nghttp3_cb_reset_stream (
 	(void)(conn_user_data);
 	(void)(stream_user_data);
 
-	printf("Reset stream %li\n", stream_id);
+	RRR_DBG_3("HTTP3 reset stream %li\n", stream_id);
 
 	return 0;
 }
@@ -1316,7 +1312,7 @@ static int __rrr_http_application_http3_nghttp3_cb_end_stream (
 	(void)(conn_user_data);
 	(void)(stream_user_data);
 
-	printf("End stream %li\n", stream_id);
+	RRR_DBG_3("HTTP3 end stream %li\n", stream_id);
 
 	return 0;
 }
@@ -1414,7 +1410,7 @@ static int __rrr_http_application_http3_tick (
 			goto out;
 		}
 		if (callback_data.response_needed_count > 0) {
-			printf("Notify read due to responses needed\n");
+			RRR_DBG_3("HTTP3 notify read due to responses needed\n");
 			rrr_net_transport_ctx_notify_read(handle);
 		}
 	}
@@ -1507,7 +1503,7 @@ int rrr_http_application_http3_new (
 				&rrr_http_application_http3_nghttp3_mem,
 				http3
 		) != 0) {
-			printf("Failed to create http3 client\n");
+			RRR_MSG_0("Failed to create http3 client in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -1520,7 +1516,7 @@ int rrr_http_application_http3_new (
 				&rrr_http_application_http3_nghttp3_mem,
 				http3
 		) != 0) {
-			printf("Failed to create http3 client\n");
+			RRR_MSG_0("Failed to create http3 client in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
