@@ -818,10 +818,8 @@ uint64_t __rrr_http_application_http3_active_transaction_count_get_and_maintain 
 
 	uint64_t count = rrr_net_transport_ctx_stream_count(handle);
 
-	printf("Count %lu\n", count);
-
-	// Subtrack three QPACK streams
-	return count < 3 ? 0 : count - 3;
+	// Subtrack QPACK streams
+	return count < 6 ? 0 : count - 6;
 }
 
 static int __rrr_http_application_http3_request_send_possible (
@@ -1358,9 +1356,6 @@ static int __rrr_http_application_http3_tick_get_async_response_stream_callback 
 	struct rrr_http_application_http3 *http3 = callback_data->http3;
 
 	int ret = 0;
-
-	printf("Iterate stream %li transaction %p need response %i\n",
-		stream_id, transaction, transaction != NULL ? transaction->need_response : 0);
 
 	if (transaction == NULL || !transaction->need_response) {
 		goto out;
