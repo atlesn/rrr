@@ -431,7 +431,6 @@ static int __rrr_net_transport_quic_stream_shutdown_write (
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE)) {
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
-		printf("Call CB shutdown write\n");
 		return node->cb_shutdown_write(node->stream_id, node->cb_arg);
 	}
 	return 0;
@@ -504,7 +503,6 @@ static void __rrr_net_transport_quic_handle_data_destroy (
 
 static int __rrr_net_transport_quic_ngtcp2_cb_client_initial (ngtcp2_conn *conn, void *user_data) {
 	int ret = ngtcp2_crypto_client_initial_cb(conn, user_data);
-	//printf("Initial %i\n", ret);
 	return ret;
 }
 
