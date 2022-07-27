@@ -295,6 +295,7 @@ static int __rrr_http_server_stream_open_callback (
 			cb_blocked,
 			cb_shutdown_read,
 			cb_shutdown_write,
+			cb_close,
 			cb_ack,
 			cb_arg,
 			handle,

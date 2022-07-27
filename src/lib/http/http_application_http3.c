@@ -196,7 +196,7 @@ static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 }
 
 static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_read (
-		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
@@ -213,7 +213,7 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_read (
 }
 
 static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
-		RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
@@ -226,6 +226,25 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
 		return 1;
 	}
 
+	return 0;
+}
+
+static int __rrr_http_application_http3_net_transport_cb_stream_close (
+		RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	int ret_tmp;
+	if ((ret_tmp = nghttp3_conn_close_stream (
+			http3->conn,
+			stream_id,
+			application_error_reason
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 during stream close in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	// Free up memory immediately instead of waiting until next tick
 	void *stream_data = NULL;
 	if (rrr_net_transport_handle_stream_data_get (
 			&stream_data,
@@ -233,8 +252,7 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
 			http3->handle,
 			stream_id
 	) == 0 && stream_data != NULL) {
-		struct rrr_http_transaction *transaction = stream_data;
-		if (http3->is_server || (!http3->is_server && transaction->response_part->parse_complete)) {
+		if (http3->is_server) {
 			return rrr_net_transport_handle_stream_data_clear (
 					http3->transport,
 					http3->handle,
@@ -361,6 +379,7 @@ static int __rrr_http_application_http3_stream_open (
 	*cb_blocked = __rrr_http_application_http3_net_transport_cb_stream_blocked;
 	*cb_shutdown_read = __rrr_http_application_http3_net_transport_cb_stream_shutdown_read;
 	*cb_shutdown_write = __rrr_http_application_http3_net_transport_cb_stream_shutdown_write;
+	*cb_close = __rrr_http_application_http3_net_transport_cb_stream_close;
 	*cb_ack = __rrr_http_application_http3_net_transport_cb_stream_ack;
 	*cb_arg = http3;
 
