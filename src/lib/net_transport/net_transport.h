@@ -59,8 +59,13 @@ struct rrr_event_queue;
     int is_blocked,                                            \
     void *arg
 
-#define RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS        \
+#define RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS                 \
     int64_t stream_id,                                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
+    int64_t stream_id,                                         \
+    uint64_t application_error_reason,                         \
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
@@ -95,8 +100,9 @@ struct rrr_event_queue;
     void (**stream_data_destroy)(void *stream_data),                            \
     int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
     int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
-    int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS),  \
-    int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS), \
+    int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),           \
+    int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),          \
+    int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),             \
     int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
     void **cb_arg,                                                              \
     struct rrr_net_transport_handle *handle,                                    \

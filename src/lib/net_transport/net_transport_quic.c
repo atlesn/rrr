@@ -68,8 +68,9 @@ struct rrr_net_transport_quic_stream {
 	struct rrr_net_transport_quic_recv_buf recv_buf;
 	int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
 	int (*cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (*cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS);
-	int (*cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_SHUTDOWN_CALLBACK_ARGS);
+	int (*cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS);
+	int (*cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS);
+	int (*cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS);
 	int (*cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
 	void *cb_arg;
 	void *stream_data;
@@ -263,6 +264,7 @@ static int __rrr_net_transport_quic_ctx_stream_allocate_transport_ctx_callback (
 			&callback_data->stream->cb_blocked,
 			&callback_data->stream->cb_shutdown_read,
 			&callback_data->stream->cb_shutdown_write,
+			&callback_data->stream->cb_close,
 			&callback_data->stream->cb_ack,
 			&callback_data->stream->cb_arg,
 			handle,
@@ -340,16 +342,22 @@ static int __rrr_net_transport_quic_ctx_stream_allocate (
 		return ret;
 }
 
-static void __rrr_net_transport_quic_ctx_stream_close (
+static int __rrr_net_transport_quic_ctx_stream_close (
 		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id
+		int64_t stream_id,
+		uint64_t app_error_code
 ) {
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
 		if (node->stream_id == stream_id) {
 			// Stream must be closed by read loop after all data
 			// is delivered to application.
 			node->flags |= RRR_NET_TRANSPORT_STREAM_F_CLOSING;
-			return;
+
+			if (node->cb_close(stream_id, app_error_code, node->cb_arg)) {
+				return 1;
+			}
+
+			return 0;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -586,7 +594,6 @@ static int __rrr_net_transport_quic_ngtcp2_cb_acked_stream_data_offset (
 	RRR_DBG_7("net transport quic fd %i h %i remote ACK stream %" PRIi64 " offset %" PRIu64 " length %" PRIu64 "\n",
 		ctx->fd, ctx->connected_handle, stream_id, offset, datalen);
 
-	// nghttp3_conn_add_ack_offset(m stream_id, datalen);
 	// NGTCP2_ERR_CALLBACK_FAILURE / ngtcp2_conection_close_error_set_application_error
 	return 0;
 }
@@ -602,17 +609,18 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_close (
 	struct rrr_net_transport_quic_ctx *ctx = user_data;
 
 	(void)(conn);
-	(void)(app_error_code);
 	(void)(stream_user_data);
 
 	if (!(flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET)) {
-		// app_error_close = NGHTTP3_H3_NO_ERROR;
+		app_error_code = 0;
 	}
 
 	RRR_DBG_7("net transport quic fd %i h %i close stream %" PRIi64 " (after data is delivered to application)\n",
 		ctx->fd, ctx->connected_handle, stream_id);
 
-	__rrr_net_transport_quic_ctx_stream_close(ctx, stream_id);
+	if (__rrr_net_transport_quic_ctx_stream_close(ctx, stream_id, app_error_code) != 0) {
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
 
 	return 0;
 }
