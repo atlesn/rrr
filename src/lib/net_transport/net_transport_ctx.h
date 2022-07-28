@@ -61,6 +61,9 @@ void rrr_net_transport_ctx_touch (
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_ctx_notify_tick (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_get_fd (
 		struct rrr_net_transport_handle *handle
 );

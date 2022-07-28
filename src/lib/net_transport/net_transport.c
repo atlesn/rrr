@@ -676,6 +676,31 @@ static void __rrr_net_transport_event_read (
 	CHECK_READ_WRITE_RETURN();
 }
 
+static void __rrr_net_transport_event_tick (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+
+	int ret_tmp = 0;
+
+	CHECK_CLOSE_NOW();
+
+	assert(handle->handshake_complete);
+
+	EVENT_REMOVE(handle->event_tick_notify);
+
+	ret_tmp = handle->transport->read_callback (
+			handle,
+			handle->transport->read_callback_arg
+	);
+
+	CHECK_READ_WRITE_RETURN();
+}
+
 static int __rrr_net_transport_event_write_send_chunk_callback (
 		rrr_biglength *written_bytes,
 		const struct sockaddr *addr,
@@ -1344,12 +1369,21 @@ static int __rrr_net_transport_handle_event_setup (
 		EVENT_ADD(handle->event_read);
 	}
 
-	// READ NOTIFY
+	// READ AND TICK NOTIFY
 	if (flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&handle->event_read_notify,
 				&handle->events,
 				__rrr_net_transport_event_read,
+				handle,
+				1 * 1000 // 1 ms
+		)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_event_collection_push_periodic (
+				&handle->event_tick_notify,
+				&handle->events,
+				__rrr_net_transport_event_tick,
 				handle,
 				1 * 1000 // 1 ms
 		)) != 0) {
@@ -1561,6 +1595,17 @@ int rrr_net_transport_handle_notify_read (
 	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_notify_read");
 
 	rrr_net_transport_ctx_notify_read(handle);
+
+	return 0;
+}
+
+int rrr_net_transport_handle_notify_tick (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_notify_tick");
+
+	rrr_net_transport_ctx_notify_tick(handle);
 
 	return 0;
 }
@@ -1778,7 +1823,7 @@ int rrr_net_transport_handle_stream_shutdown_write (
 ) {
 	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_shutdown_write");
 
-	return rrr_net_transport_ctx_stream_shutdown_read(handle, stream_id, application_error_reason);
+	return rrr_net_transport_ctx_stream_shutdown_write(handle, stream_id, application_error_reason);
 }
 
 int rrr_net_transport_handle_streams_iterate (

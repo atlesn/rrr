@@ -126,7 +126,7 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	else {
 		// Is client
 
-		if (!(rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE))) {
+		if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
 			// Wait for any data
 			printf("Is client read end wait for data transaction  %p\n", transaction);
 			goto out;
