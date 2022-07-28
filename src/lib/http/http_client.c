@@ -617,10 +617,12 @@ static int __rrr_http_client_redirect_callback (
 static int __rrr_http_client_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_client *http_client = arg
-;
+	struct rrr_http_client *http_client = arg;
+
 	int ret = 0;
 	int ret_done = 0;
+
+	printf("Read %s\n", __func__);
 
 	rrr_biglength received_bytes_dummy = 0;
 

@@ -631,6 +631,8 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_read (
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
+	RRR_DBG_3("HTTP3 shutdown read for stream %li from net transport\n", stream_id);
+
 	int ret_tmp;
 	if ((ret_tmp = nghttp3_conn_shutdown_stream_read (
 			http3->conn,
@@ -647,6 +649,8 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
 		RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
+
+	RRR_DBG_3("HTTP3 shutdown write for stream %li from net transport\n", stream_id);
 
 	int ret_tmp;
 	if ((ret_tmp = nghttp3_conn_shutdown_stream_write (
@@ -815,8 +819,6 @@ uint64_t __rrr_http_application_http3_active_transaction_count_get_and_maintain 
 	(void)(http3);
 
 	uint64_t count = rrr_net_transport_ctx_stream_count(handle);
-
-	printf("Count %lu\n", count);
 
 	// Subtrack QPACK streams
 	return count < 6 ? 0 : count - 6;
@@ -1241,7 +1243,7 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 
 	(void)(conn);
 
-	RRR_DBG_3("HTTP3 end headers fin %i\n", fin);
+	RRR_DBG_3("HTTP3 headers complete on stream %li\n", stream_id);
 
 	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END);
 
@@ -1251,22 +1253,26 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 	if (fin) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
 
+		RRR_DBG_3("HTTP3 issue shutdown read on stream %li, reading complete after headers.\n", stream_id);
+
 		if (rrr_net_transport_handle_stream_shutdown_read (
 				transport,
 				transport_handle,
 				stream_id,
 				0
-		)) {
+		) != 0) {
 			return NGHTTP3_ERR_CALLBACK_FAILURE;
 		}
 
-		return __rrr_http_application_http3_stream_read_end (
+		if (__rrr_http_application_http3_stream_read_end (
 				http3,
 				transaction,
 				transport,
 				transport_handle,
 				stream_id
-		);
+		) != 0) {
+			return NGHTTP3_ERR_CALLBACK_FAILURE;
+		}
 	}
 
 	return 0;
@@ -1279,11 +1285,25 @@ static int __rrr_http_application_http3_nghttp3_cb_stop_sending (
 		void *conn_user_data,
 		void *stream_user_data
 ) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+
+	/* nghttp3 no longer wishes to receive data, stop reading */
+
+	GET_TRANSACTION();
+
 	(void)(conn);
-	(void)(stream_id);
-	(void)(app_error_code);
-	(void)(conn_user_data);
-	(void)(stream_user_data);
+
+	RRR_DBG_3("HTTP3 issue shutdown read on stream %li\n", stream_id);
+
+	if (rrr_net_transport_handle_stream_shutdown_read (
+			transport,
+			transport_handle,
+			stream_id,
+			app_error_code
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
 	return 0;
 }
 
@@ -1294,12 +1314,24 @@ static int __rrr_http_application_http3_nghttp3_cb_reset_stream (
 		void *conn_user_data,
 		void *stream_user_data
 ) {
-	(void)(conn);
-	(void)(app_error_code);
-	(void)(conn_user_data);
-	(void)(stream_user_data);
+	struct rrr_http_application_http3 *http3 = conn_user_data;
 
-	RRR_DBG_3("HTTP3 reset stream %li\n", stream_id);
+	/* nghttp3 wishes to issue stream reset */
+
+	GET_TRANSACTION();
+
+	(void)(conn);
+
+	RRR_DBG_3("HTTP3 issue reset on stream %li\n", stream_id);
+
+	if (rrr_net_transport_handle_stream_shutdown_write (
+			transport,
+			transport_handle,
+			stream_id,
+			app_error_code
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
 
 	return 0;
 }
@@ -1310,11 +1342,15 @@ static int __rrr_http_application_http3_nghttp3_cb_end_stream (
 		void *conn_user_data,
 		void *stream_user_data
 ) {
-	(void)(conn);
-	(void)(conn_user_data);
-	(void)(stream_user_data);
+	struct rrr_http_application_http3 *http3 = conn_user_data;
 
-	RRR_DBG_3("HTTP3 end stream %li\n", stream_id);
+	GET_TRANSACTION();
+
+	(void)(conn);
+	(void)(transport);
+	(void)(transport_handle);
+
+	RRR_DBG_3("HTTP3 end stream %li, reading complete.\n", stream_id);
 
 	return 0;
 }
@@ -1365,6 +1401,8 @@ static int __rrr_http_application_http3_tick_get_async_response_stream_callback 
 		ret &= ~(RRR_HTTP_NO_RESULT);
 		goto out;
 	}
+
+	transaction->need_response = 0;
 
 	if ((ret = __rrr_http_application_http3_response_submit (
 			http3,

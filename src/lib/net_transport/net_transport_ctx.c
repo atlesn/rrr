@@ -60,6 +60,14 @@ void rrr_net_transport_ctx_notify_read (
 	}
 }
 
+void rrr_net_transport_ctx_notify_tick (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_tick_notify)) {
+		EVENT_ADD(handle->event_tick_notify);
+	}
+}
+
 int rrr_net_transport_ctx_get_fd (
 		struct rrr_net_transport_handle *handle
 ) {

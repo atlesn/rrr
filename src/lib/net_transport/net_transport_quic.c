@@ -64,7 +64,7 @@ struct rrr_net_transport_quic_recv_buf {
 struct rrr_net_transport_quic_stream {
 	RRR_LL_NODE(struct rrr_net_transport_quic_stream);
 	int64_t stream_id;
-	unsigned int app_error_code;
+	uint64_t app_error_code;
 	int flags;
 	struct rrr_net_transport_quic_recv_buf recv_buf;
 	int (*cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
@@ -343,24 +343,6 @@ static int __rrr_net_transport_quic_ctx_stream_allocate (
 		return ret;
 }
 
-static int __rrr_net_transport_quic_ctx_stream_close (
-		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id,
-		uint64_t app_error_code
-) {
-	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
-		if (node->stream_id == stream_id) {
-			// Stream must be closed by read loop after all data
-			// is delivered to application.
-			node->flags |= RRR_NET_TRANSPORT_STREAM_F_CLOSING;
-			node->app_error_code = app_error_code;
-			return 0;
-		}
-	RRR_LL_ITERATE_END();
-
-	RRR_BUG("Stream %" PRIi64 " not found in %s\n", stream_id, __func__);
-}
-
 static int __rrr_net_transport_quic_ctx_stream_recv (
 		struct rrr_net_transport_quic_ctx *ctx,
 		int64_t stream_id,
@@ -414,23 +396,81 @@ static int __rrr_net_transport_quic_stream_block (
 }
 
 static int __rrr_net_transport_quic_stream_shutdown_read (
-		struct rrr_net_transport_quic_stream *node
+		struct rrr_net_transport_quic_stream *node,
+		int call_application_cb
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ)) {
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ;
-		return node->cb_shutdown_read(node->stream_id, node->cb_arg);
+		return call_application_cb ? node->cb_shutdown_read(node->stream_id, node->cb_arg) : 0;
 	}
 	return 0;
 }
 
+static int __rrr_net_transport_quic_ctx_stream_shutdown_read (
+		struct rrr_net_transport_quic_ctx *ctx,
+		int64_t stream_id,
+		int call_application_cb
+) {
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id != stream_id)
+			RRR_LL_ITERATE_NEXT();
+		return __rrr_net_transport_quic_stream_shutdown_read (node, call_application_cb);
+	RRR_LL_ITERATE_END();
+
+	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
+}
+
 static int __rrr_net_transport_quic_stream_shutdown_write (
-		struct rrr_net_transport_quic_stream *node
+		struct rrr_net_transport_quic_stream *node,
+		int call_application_cb
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE)) {
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
-		return node->cb_shutdown_write(node->stream_id, node->cb_arg);
+		return call_application_cb ? node->cb_shutdown_write(node->stream_id, node->cb_arg) : 0;
 	}
 	return 0;
+}
+
+static int __rrr_net_transport_quic_ctx_stream_shutdown_write (
+		struct rrr_net_transport_quic_ctx *ctx,
+		int64_t stream_id,
+		int call_application_cb
+) {
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id != stream_id)
+			RRR_LL_ITERATE_NEXT();
+		return __rrr_net_transport_quic_stream_shutdown_write (node, call_application_cb);
+	RRR_LL_ITERATE_END();
+
+	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
+}
+
+static int __rrr_net_transport_quic_stream_set_closing (
+		struct rrr_net_transport_quic_stream *node,
+		uint64_t app_error_code
+) {
+	// Stream must be closed by read loop after all data
+	// is delivered to application.
+	node->flags |= RRR_NET_TRANSPORT_STREAM_F_CLOSING;
+	node->app_error_code = app_error_code;
+
+	return 0;
+}
+
+static int __rrr_net_transport_quic_ctx_stream_set_closing (
+		struct rrr_net_transport_quic_ctx *ctx,
+		int64_t stream_id,
+		uint64_t app_error_code
+) {
+	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
+		if (node->stream_id == stream_id) {
+			if (node->stream_id != stream_id)
+				RRR_LL_ITERATE_NEXT();
+			return __rrr_net_transport_quic_stream_set_closing (node, app_error_code);
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_BUG("Stream %" PRIi64 " not found in %s\n", stream_id, __func__);
 }
 
 static int __rrr_net_transport_quic_ctx_stream_block (
@@ -442,32 +482,6 @@ static int __rrr_net_transport_quic_ctx_stream_block (
 		if (node->stream_id != stream_id)
 			RRR_LL_ITERATE_NEXT();
 		return __rrr_net_transport_quic_stream_block (node, blocked);
-	RRR_LL_ITERATE_END();
-
-	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
-}
-
-static int __rrr_net_transport_quic_ctx_stream_shutdown_read (
-		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id
-) {
-	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
-		if (node->stream_id != stream_id)
-			RRR_LL_ITERATE_NEXT();
-		return __rrr_net_transport_quic_stream_shutdown_read (node);
-	RRR_LL_ITERATE_END();
-
-	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
-}
-
-static int __rrr_net_transport_quic_ctx_stream_shutdown_write (
-		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id
-) {
-	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
-		if (node->stream_id != stream_id)
-			RRR_LL_ITERATE_NEXT();
-		return __rrr_net_transport_quic_stream_shutdown_write (node);
 	RRR_LL_ITERATE_END();
 
 	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
@@ -547,7 +561,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_receive_stream_data (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " recv %llu fin %i\n",
 		ctx->fd, ctx->connected_handle, stream_id, (unsigned long long) buflen, (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0);
 
-	rrr_net_transport_handle_notify_read((struct rrr_net_transport *) ctx->transport_tls, ctx->connected_handle);
+	rrr_net_transport_handle_notify_tick((struct rrr_net_transport *) ctx->transport_tls, ctx->connected_handle);
 
 	return 0;
 }
@@ -613,7 +627,11 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_close (
 	RRR_DBG_7("net transport quic fd %i h %i close stream %" PRIi64 " (after data is delivered to application)\n",
 		ctx->fd, ctx->connected_handle, stream_id);
 
-	if (__rrr_net_transport_quic_ctx_stream_close(ctx, stream_id, app_error_code) != 0) {
+	if (__rrr_net_transport_quic_ctx_stream_set_closing (
+			ctx,
+			stream_id,
+			app_error_code
+	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
 
@@ -766,7 +784,8 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_reset (
 
 	if (__rrr_net_transport_quic_ctx_stream_shutdown_read (
 			ctx,
-			stream_id
+			stream_id,
+			1 /* Do call application callback */
 	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
@@ -808,7 +827,13 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " stop sending received\n",
 		ctx->fd, ctx->connected_handle, stream_id);
 
-	// NGTCP2_ERR_CALLBACK_FAILURE - nghttp3_conn_shutdown_stream_read
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_read (
+			ctx,
+			stream_id,
+			1 /* Do call application callback */
+	) != 0) {
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
 
 	return 0;
 }
@@ -2111,7 +2136,7 @@ static int __rrr_net_transport_quic_write (
 
 		if (bytes_to_buf < 0) {
 			if (bytes_to_buf == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
-				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " blocked\n",
+				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " blocked while writing\n",
 					ctx->fd,
 					ctx->connected_handle,
 					stream_id
@@ -2123,13 +2148,16 @@ static int __rrr_net_transport_quic_write (
 				}
 			}
 			else if (bytes_to_buf == NGTCP2_ERR_STREAM_SHUT_WR) {
-				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " shutdown write\n",
+				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " shutdown write while writing\n",
 					ctx->fd,
 					ctx->connected_handle,
 					stream_id
 				);
 
-				if (__rrr_net_transport_quic_stream_shutdown_write (stream) != 0) {
+				if (__rrr_net_transport_quic_stream_shutdown_write (
+						stream,
+						1 /* Do call application callback */
+				) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
 					goto out_failure;
 				}
@@ -2290,8 +2318,8 @@ static int __rrr_net_transport_quic_read_stream (
 
 			rrr_nullsafe_str_clear(node->recv_buf.str);
 
-			// Make downstream call read again in case there is more data
-			rrr_net_transport_ctx_notify_read(handle);
+			// Make downstream call tick again in case there is more data
+			rrr_net_transport_ctx_notify_tick(handle);
 
 			*bytes_read += len;
 
@@ -2581,12 +2609,12 @@ static int __rrr_net_transport_quic_receive (
 			timestamp
 	)) != 0) {
 		if (ret_tmp == NGTCP2_ERR_DRAINING) {
-			RRR_MSG_0("net transport quic fd %i h %i connection closed while reading (now in draining state)\n",
+			RRR_DBG_7("net transport quic fd %i h %i connection closed while reading (now in draining state)\n",
 				ctx->fd, ctx->connected_handle);
 			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
 		}
 		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
-			RRR_MSG_0("net transport quic fd %i h %i crypto error while reading\n",
+			RRR_DBG_7("net transport quic fd %i h %i crypto error while reading\n",
 				ctx->fd, ctx->connected_handle);
 			ngtcp2_connection_close_error_set_transport_error_tls_alert (
 					&ctx->last_error,
@@ -2597,7 +2625,7 @@ static int __rrr_net_transport_quic_receive (
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
 		else {
-			RRR_MSG_0("net transport quic fd %i h %i transport error while reading packet: %s\n",
+			RRR_DBG_7("net transport quic fd %i h %i transport error while reading packet: %s\n",
 				ctx->fd, ctx->connected_handle, ngtcp2_strerror(ret_tmp));
 			ngtcp2_connection_close_error_set_transport_error_liberr (
 					&ctx->last_error,
@@ -2614,7 +2642,7 @@ static int __rrr_net_transport_quic_receive (
 		// Don't write anything, wait for connection close to be sent
 		RRR_DBG_7("net transport quic fd %i h %i close now set after reading before writing\n",
 			ctx->fd, ctx->connected_handle);
-		rrr_net_transport_ctx_notify_read (handle);
+		rrr_net_transport_ctx_notify_tick (handle);
 		goto out;
 	}
 
@@ -2764,6 +2792,14 @@ static int __rrr_net_transport_quic_stream_do_shutdown_read (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown read\n",
 		handle_data->ctx->fd, handle->handle, stream_id);
 
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_read (
+			handle_data->ctx,
+			stream_id,
+			0 /* Do not call application callback */
+	) != 0) {
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
+
 	int ret_tmp;
 	if ((ret_tmp = ngtcp2_conn_shutdown_stream_read(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
 		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
@@ -2781,6 +2817,15 @@ static int __rrr_net_transport_quic_stream_do_shutdown_write (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown write\n",
 		handle_data->ctx->fd, handle->handle, stream_id);
 
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_write (
+			handle_data->ctx,
+			stream_id,
+			0 /* Do not call application callback */
+	) != 0) {
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
+
+	printf("Ngtcp2 shutdown write\n");
 	int ret_tmp;
 	if ((ret_tmp = ngtcp2_conn_shutdown_stream_write(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
 		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
@@ -2912,7 +2957,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 
 	int ret_tmp;
 
-	if ( handle->application_pre_destroy != NULL != 0 &&
+	if (handle->application_pre_destroy != NULL &&
 	    (ret_tmp = handle->application_pre_destroy(handle, application_private_ptr)) != 0
 	) {
 		// Application not yet ready to destroy

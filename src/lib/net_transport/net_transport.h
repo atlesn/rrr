@@ -273,6 +273,10 @@ int rrr_net_transport_handle_notify_read (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 );
+int rrr_net_transport_handle_notify_tick (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+);
 int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
