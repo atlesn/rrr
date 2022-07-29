@@ -514,11 +514,11 @@ static int __rrr_http_server_read_callback (
 
 	int again_max = 5;
 
-	rrr_biglength received_bytes_dummy = 0;
+	rrr_biglength received_bytes = 0;
 
 	again:
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
-			&received_bytes_dummy,
+			&received_bytes,
 			handle,
 			http_server->rules.server_request_max_size,
 			&http_server->rules
@@ -539,6 +539,8 @@ static int __rrr_http_server_read_callback (
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
 	rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
+
+	ret = received_bytes == 0 ? RRR_NET_TRANSPORT_READ_INCOMPLETE : RRR_NET_TRANSPORT_READ_OK;
 
 	out:
 	return ret;
