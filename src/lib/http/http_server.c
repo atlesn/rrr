@@ -534,7 +534,7 @@ static int __rrr_http_server_read_callback (
 		if (again_max--) {
 			goto again;
 		}
-		rrr_net_transport_ctx_notify_read(handle);
+		rrr_net_transport_ctx_notify_tick(handle);
 	}
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
