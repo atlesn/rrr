@@ -451,6 +451,8 @@ static int __rrr_net_transport_receive (
 			handle->handle
 	);
 
+	rrr_net_transport_ctx_touch(handle);
+
 	return rrr_net_transport_ctx_receive(handle, datagram);
 }
 
@@ -647,7 +649,6 @@ static void __rrr_net_transport_event_decode_client (
 		goto err;
 	}
 
-	// Decode return 0, reset hard timeout
 	rrr_net_transport_ctx_touch (handle);
 
 	if (!handle->handshake_complete) {
@@ -1162,16 +1163,16 @@ static void __rrr_net_transport_event_accept (
 	}
 }
 
-struct rrr_net_transport_decode_receive_callback_data {
+struct rrr_net_transport_decode_server_receive_callback_data {
 	const struct rrr_net_transport_handle *listen_handle;
 	const struct rrr_socket_datagram *datagram;
 };
 		
-static int __rrr_net_transport_decode_receive_callback (
+static int __rrr_net_transport_decode_server_receive_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_net_transport_decode_receive_callback_data *callback_data = arg;
+	struct rrr_net_transport_decode_server_receive_callback_data *callback_data = arg;
 	return __rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 }
 
@@ -1204,7 +1205,7 @@ static int __rrr_net_transport_decode_server (
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 
-	struct rrr_net_transport_decode_receive_callback_data callback_data = {
+	struct rrr_net_transport_decode_server_receive_callback_data callback_data = {
 		listen_handle,
 		&datagram
 	};
@@ -1213,7 +1214,7 @@ static int __rrr_net_transport_decode_server (
 		if ((ret = __rrr_net_transport_iterate_by_handle_ptr_and_do (
 				listen_handle->transport,
 				handle,
-				__rrr_net_transport_decode_receive_callback,
+				__rrr_net_transport_decode_server_receive_callback,
 				&callback_data
 		)) != 0) {
 			goto out;
@@ -1242,7 +1243,7 @@ static int __rrr_net_transport_decode_server (
 		if ((ret = __rrr_net_transport_iterate_by_handle_and_do (
 				listen_handle->transport,
 				new_handle,
-				__rrr_net_transport_decode_receive_callback,
+				__rrr_net_transport_decode_server_receive_callback,
 				&callback_data
 		)) != 0) {
 			goto out;
