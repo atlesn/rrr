@@ -47,7 +47,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 
 #define RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH 18
-#define RRR_NET_TRANSPORT_QUIC_KEEPALIVE_S 10
 #define RRR_NET_TRANSPORT_QUIC_CIPHERS \
     "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
 #define RRR_NET_TRANSPORT_QUIC_GROUPS \
@@ -573,7 +572,13 @@ static int __rrr_net_transport_quic_ngtcp2_cb_handshake_complete (ngtcp2_conn *c
 
 	RRR_DBG_7("net transport quic fd %i h %i handshake complete\n", ctx->fd, ctx->connected_handle);
 
-	ngtcp2_conn_set_keep_alive_timeout(conn, (ngtcp2_duration) RRR_NET_TRANSPORT_QUIC_KEEPALIVE_S * 1000 * 1000 * 1000);
+	// Ensure timer has expired every time read is called due to soft timeout (divide soft time by 3)
+	const ngtcp2_duration soft_timeout = ctx->transport_tls->soft_read_timeout_ms * NGTCP2_MILLISECONDS;
+	const ngtcp2_duration keepalive = soft_timeout  / 3;
+
+	assert(keepalive > 0);
+
+	ngtcp2_conn_set_keep_alive_timeout(conn, keepalive);
 
 	// Add any token ngtcp2_crypto_generate_regular_token, ngtcp2_conn_submit_new_token here
 	// NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN
@@ -984,6 +989,7 @@ static int __rrr_net_transport_quic_ctx_new (
 	transport_params.initial_max_data = 1024 * 1024;
 	transport_params.initial_max_streams_bidi = 100;
 	transport_params.initial_max_streams_uni = 3;
+	transport_params.max_idle_timeout = transport_tls->hard_read_timeout_ms * NGTCP2_MILLISECONDS;
 
 	if (rrr_time_get_64_nano(&settings.initial_ts, NGTCP2_SECONDS) != 0) {
 		goto out_free;
