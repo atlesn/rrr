@@ -1025,9 +1025,9 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				http_client->events,
 				alpn_protos,
 				alpn_protos_length,
-				0,
-				0,
-				http_client->idle_timeout_ms,
+				http_client->idle_timeout_ms / 4, /* First read timeout */
+				http_client->idle_timeout_ms / 2, /* Soft timeout */
+				http_client->idle_timeout_ms,     /* Hard timeout */
 				http_client->send_chunk_count_limit,
 				NULL,
 				NULL,
