@@ -620,7 +620,6 @@ static int __rrr_http_client_read_callback (
 	struct rrr_http_client *http_client = arg;
 
 	int ret = 0;
-	int ret_done = 0;
 
 	rrr_biglength received_bytes_dummy = 0;
 
@@ -633,12 +632,7 @@ static int __rrr_http_client_read_callback (
 			handle,
 			http_client->rules.client_response_max_size
 	)) != 0) {
-		if (ret == RRR_HTTP_DONE) {
-			ret_done = RRR_HTTP_DONE;
-		}
-		else {
-			goto out;
-		}
+		goto out;
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
@@ -658,11 +652,11 @@ static int __rrr_http_client_read_callback (
 		if (again_max--) {
 			goto again;
 		}
-		rrr_net_transport_ctx_notify_read(handle);
+		rrr_net_transport_ctx_notify_tick(handle);
 	}
 
 	out:
-	return ret != 0 ? ret : ret_done;
+	return ret;
 }
 
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
@@ -819,7 +813,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		rrr_net_transport_ctx_notify_read(handle);
+		rrr_net_transport_ctx_notify_tick(handle);
 	}
 
 	goto out;
