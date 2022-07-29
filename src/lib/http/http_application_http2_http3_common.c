@@ -45,7 +45,6 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	int ret = 0;
 
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED)) {
-		printf("Data already delivered\n");
 		// Data or error already delivered to callback
 		goto out;
 	}
