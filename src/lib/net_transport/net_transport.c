@@ -726,7 +726,9 @@ static void __rrr_net_transport_event_tick (
 
 	CHECK_CLOSE_NOW();
 
-	assert(handle->handshake_complete);
+	if (!handle->handshake_complete) {
+		return;
+	}
 
 	EVENT_REMOVE(handle->event_tick_notify);
 

@@ -259,17 +259,18 @@ static int __rrr_http2_on_stream_close_callback (
 	}
 
 	if (session->callback_data.callback != NULL) {
-		int flags = RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE;
+		stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END;
+		stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE;
 
 		if (error_code != NGHTTP2_NO_ERROR) {
-			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR;
+			stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR;
 		}
 
 		if (session->callback_data.callback (
 				session,
 				&stream->headers,
 				stream_id,
-				flags,
+				stream->flags,
 				error_code != NGHTTP2_NO_ERROR ? nghttp2_http2_strerror(error_code) : NULL,
 				stream->data,
 				stream->data_wpos,
@@ -327,21 +328,19 @@ static int __rrr_http2_on_frame_recv_callback (
 	}
 
 	if ((frame->hd.flags & (NGHTTP2_FLAG_END_HEADERS|NGHTTP2_FLAG_END_STREAM)) && session->callback_data.callback != NULL) {
-		int flags = 0;
-
 		if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
-			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END;
+			stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END;
 		}
 
 		if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
-			flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END;
+			stream->flags |= RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END;
 		}
 
 		if (session->callback_data.callback (
 				session,
 				&stream->headers,
 				frame->hd.stream_id,
-				flags,
+				stream->flags,
 				NULL, // No error message
 				stream->data,
 				stream->data_wpos,

@@ -378,13 +378,13 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction = transaction_to_destroy;
 		}
 
-		rrr_http_transaction_stream_flags_add(transaction, flags);
-
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 	}
 	else {
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 	}
+
+	rrr_http_transaction_stream_flags_add(transaction, flags);
 
 	if ((ret = rrr_http_application_http2_http3_common_stream_read_end (
 			(struct rrr_http_application *) callback_data->http2,

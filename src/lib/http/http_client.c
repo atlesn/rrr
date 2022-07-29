@@ -622,8 +622,6 @@ static int __rrr_http_client_read_callback (
 	int ret = 0;
 	int ret_done = 0;
 
-	printf("Read %s\n", __func__);
-
 	rrr_biglength received_bytes_dummy = 0;
 
 	int again_max = 5;

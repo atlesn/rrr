@@ -36,6 +36,7 @@ struct rrr_http_stream {
 	size_t data_size;
 	size_t data_wpos;
 	void *application_data;
+	int flags;
 
 	// Submit data frame on next before_frame_send_callback
 	int data_submission_requested;
