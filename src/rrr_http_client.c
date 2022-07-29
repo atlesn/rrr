@@ -57,6 +57,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/util/arguments.h"
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S 10
+#define RRR_HTTP_CLIENT_IDLE_TIMEOUT_S 10
+#define RRR_HTTP_CLIENT_IDLE_TIMEOUT_KEEPALIVE_S 60
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
@@ -64,6 +66,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "server",               "{-s|--server[=]HTTP SERVER}"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                 "[-p|--port[=]HTTP PORT]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "endpoint",             "[-e|--endpoint[=]HTTP ENDPOINT]"},
+        {0,                            'k',    "keepalive",            "[-k|--keepalive]"},
         {0,                            'w',    "websocket-upgrade",    "[-w|--websocket-upgrade]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT |
@@ -100,6 +103,7 @@ struct rrr_http_client_data {
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
+	int keepalive;
 	int no_output;
 	struct rrr_net_transport_config net_transport_config;
 	rrr_http_unique_id unique_id_counter;
@@ -249,6 +253,11 @@ static int __rrr_http_client_parse_config (
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
+	}
+
+	// Keepalive
+	if (cmd_exists(cmd, "keepalive", 0)) {
+		data->keepalive = 1;
 	}
 
 	// Disable output
@@ -676,11 +685,12 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
-		if (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) {
-			RRR_DBG_1("No more transactions, exiting.\n");
-			return RRR_EVENT_EXIT;
-		}
+	if ( ( rrr_http_client_active_transaction_count_get(data->http_client) == 0) &&
+	     (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) &&
+	     (!data->keepalive)
+	) {
+		RRR_DBG_1("No more transactions, exiting.\n");
+		return RRR_EVENT_EXIT;
 	}
 
 	rrr_allocator_maintenance_nostats();
@@ -799,7 +809,9 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_http_client_new (
 			&data.http_client,
 			data.queue,
-			5000,   // 5s idle timeout
+			data.keepalive
+				? RRR_HTTP_CLIENT_IDLE_TIMEOUT_KEEPALIVE_S * 1000
+				: RRR_HTTP_CLIENT_IDLE_TIMEOUT_S * 1000,
 			0,      // No send chunk limit
 			&callbacks
 	) != 0) {

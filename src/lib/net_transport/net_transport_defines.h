@@ -55,11 +55,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH	RRR_READ_COMPLETE_METHOD_TARGET_LENGTH
 #define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE		RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ
 
-/* Debug return values from read callback in read event. Used 
- * to check that an application is able to produce all different
- * return values. */
-#define RRR_NET_TRANSPORT_READ_RET_DEBUG 1
-
 enum rrr_net_transport_type {
 	RRR_NET_TRANSPORT_BOTH,
 	RRR_NET_TRANSPORT_PLAIN,

@@ -85,19 +85,6 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 static int __rrr_net_transport_handle_destroy (
 		struct rrr_net_transport_handle *handle
 ) {
-#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
-	RRR_DBG_7("net transport fd %i h %i [%s] destroy handle. Read return values encountered: ok %u incomplete %u soft %u hard %u eof %u\n",
-			handle->submodule_fd,
-			handle->handle,
-			handle->transport->application_name,
-			handle->read_ret_debug_ok,
-			handle->read_ret_debug_incomplete,
-			handle->read_ret_debug_soft_error,
-			handle->read_ret_debug_hard_error,
-			handle->read_ret_debug_eof
-	);
-#endif
-
 	// Delete events first as libevent might produce warnings if
 	// this is performed after FD is closed
 	rrr_event_collection_clear(&handle->events);
@@ -630,17 +617,7 @@ static void __rrr_net_transport_event_read (
 	ssize_t bytes = 0;
 	char buf;
 
-//	Noisy
-//	RRR_DBG_7("net transport fd %i h %i [%s] read event handshake complete %i\n",
-//		handle->submodule_fd, handle->handle, handle->transport->application_name, handle->handshake_complete);
-
 	CHECK_CLOSE_NOW();
-
-	if (handle->submodule_fd > 0 && handle->transport->methods->decode != NULL) {
-		if ((ret_tmp = __rrr_net_transport_decode_client(handle)) != 0) {
-			goto err;
-		}
-	}
 
 	if (!handle->handshake_complete) {
 		return;
@@ -653,9 +630,7 @@ static void __rrr_net_transport_event_read (
 			handle,
 			handle->transport->read_callback_arg
 	)) == 0 || flags & EV_READ) {
-		// Touch (prevent hard timeout) if:
-		// - We are in timeout event and something by chance was read (callback returns 0)
-		// - We are in read event (data was present on the socket)
+		// Reset hard timeout
 		rrr_net_transport_ctx_touch (handle);
 
 		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
@@ -689,27 +664,42 @@ static void __rrr_net_transport_event_read (
 		}
 	}
 
-	err:
+	CHECK_READ_WRITE_RETURN();
+}
 
-#ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
-	switch (ret_tmp) {
-		case RRR_READ_OK:
-			handle->read_ret_debug_ok++;
-			break;
-		case RRR_READ_INCOMPLETE:
-			handle->read_ret_debug_incomplete++;
-			break;
-		case RRR_READ_SOFT_ERROR:
-			handle->read_ret_debug_soft_error++;
-			break;
-		case RRR_READ_HARD_ERROR:
-			handle->read_ret_debug_hard_error++;
-			break;
-		case RRR_READ_EOF:
-			handle->read_ret_debug_eof++;
-			break;
-	};
-#endif
+static void __rrr_net_transport_event_decode_client (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+
+	int ret_tmp = 0;
+
+	CHECK_CLOSE_NOW();
+
+	if ((ret_tmp = __rrr_net_transport_decode_client(handle)) != 0) {
+		goto err;
+	}
+
+	// Decode return 0, reset hard timeout
+	rrr_net_transport_ctx_touch (handle);
+
+	if (!handle->handshake_complete) {
+		return;
+	}
+
+	EVENT_REMOVE(handle->event_first_read_timeout);
+	EVENT_REMOVE(handle->event_read_notify);
+
+	ret_tmp = handle->transport->read_callback (
+			handle,
+			handle->transport->read_callback_arg
+	);
+
+	err:
 
 	CHECK_READ_WRITE_RETURN();
 }
@@ -814,15 +804,15 @@ static void __rrr_net_transport_handle_event_clear (
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ  (1<<0)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD        (1<<1)
 #define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ           (1<<2)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER         (1<<3)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT         (1<<4)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE               (1<<5)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL           (1<<6)
-#define RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE           (1<<7)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER  (1<<3)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT  (1<<4)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT         (1<<5)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE               (1<<6)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL           (1<<7)
+#define RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE           (1<<8)
 
 static int __rrr_net_transport_handle_event_setup (
-		struct rrr_net_transport_handle *handle,
-		int flags
+		struct rrr_net_transport_handle *handle
 );
 
 static int __rrr_net_transport_connect (
@@ -869,13 +859,15 @@ static int __rrr_net_transport_connect (
 	handle->connected_addr_len = socklen;
 
 	if (transport->event_queue != NULL) {
+		handle->event_flags = 
+			(handle->transport->methods->decode != NULL ? RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT : RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ) |
+			RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
+			RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
+			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
+			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ;
+
 		if ((ret = __rrr_net_transport_handle_event_setup (
-			handle,
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
+			handle
 		)) != 0) {
 			goto out;
 		}
@@ -1159,13 +1151,15 @@ static int __rrr_net_transport_accept_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET();
 
+	handle->event_flags =
+		RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
+		RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
+		RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
+		RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
+		RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ;
+
 	if ((ret = __rrr_net_transport_handle_event_setup (
-		handle,
-			RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
-			RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
-			RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE |
-			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
-			RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
+		handle
 	)) != 0) {
 		goto out;
 	}
@@ -1321,14 +1315,15 @@ static void __rrr_net_transport_event_decode_server (
 }
 
 static int __rrr_net_transport_handle_event_setup (
-		struct rrr_net_transport_handle *handle,
-		int flags
+		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
 
+	assert(handle->event_flags != 0);
+
 	// FIRST READ TIMEOUT
 
-	if ( flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ &&
+	if ( handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ &&
 	     handle->transport->first_read_timeout_ms > 0
 	) {
 		if ((ret = rrr_event_collection_push_periodic (
@@ -1346,7 +1341,7 @@ static int __rrr_net_transport_handle_event_setup (
 
 	// HARD TIMEOUT
 
-	if ( flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD &&
+	if ( handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD &&
 	     handle->transport->hard_read_timeout_ms > 0
 	) {
 		if ((ret = rrr_event_collection_push_periodic (
@@ -1363,8 +1358,8 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// READ
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ) {
-		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)));
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ) {
+		assert(!(handle->event_flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
@@ -1379,8 +1374,8 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// READ (decode packet and look up or create connection)
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER) {
-		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)));
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER) {
+		assert(!(handle->event_flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
@@ -1394,9 +1389,25 @@ static int __rrr_net_transport_handle_event_setup (
 		EVENT_ADD(handle->event_read);
 	}
 
+	// READ (decode packet and hand over to client)
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT) {
+		assert(!(handle->event_flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ)));
+		if ((ret = rrr_event_collection_push_read (
+				&handle->event_read,
+				&handle->events,
+				handle->submodule_fd,
+				__rrr_net_transport_event_decode_client,
+				handle,
+				0
+		)) != 0) {
+			goto out;
+		}
+		EVENT_ADD(handle->event_read);
+	}
+
 	// READ (accept connections)
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT) {
-		assert(!(flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER)));
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT) {
+		assert(!(handle->event_flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER)));
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_read,
 				&handle->events,
@@ -1411,7 +1422,7 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// READ AND TICK NOTIFY
-	if (flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)) {
+	if (handle->event_flags & (RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_CLIENT|RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT)) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&handle->event_read_notify,
 				&handle->events,
@@ -1433,8 +1444,8 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// WRITE
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE) {
-		assert(!(flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL));
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE) {
+		assert(!(handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL));
 		if ((ret = rrr_event_collection_push_write (
 				&handle->event_write,
 				&handle->events,
@@ -1448,8 +1459,8 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// WRITE (write for all connections)
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL) {
-		assert(!(flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE));
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL) {
+		assert(!(handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE));
 		if ((ret = rrr_event_collection_push_write (
 				&handle->event_write,
 				&handle->events,
@@ -1463,7 +1474,7 @@ static int __rrr_net_transport_handle_event_setup (
 	}
 
 	// HANDSHAKE
-	if (flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE) { 
+	if (handle->event_flags & RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE) { 
 		if ((ret = rrr_event_collection_push_read (
 				&handle->event_handshake,
 				&handle->events,
@@ -1492,11 +1503,13 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET();
 
+	handle->event_flags = handle->transport->methods->decode != NULL
+		? RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER | RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL
+		: RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT
+	;
+
 	if ((ret = __rrr_net_transport_handle_event_setup (
-			handle,
-			handle->transport->methods->decode != NULL
-				? RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_DECODE_SERVER | RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE_ALL
-				: RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_ACCEPT
+			handle
 	)) != 0) {
 		goto out;
 	}
@@ -1761,12 +1774,10 @@ int rrr_net_transport_handle_migrate (
 
 	if (transport->event_queue != NULL) {
 		__rrr_net_transport_handle_event_clear(handle);
+
+		handle->event_flags &= ~(RRR_NET_TRANSPORT_EVENT_SETUP_F_HANDSHAKE);
 		if ((ret = __rrr_net_transport_handle_event_setup (
-			handle,
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_READ_READ |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_WRITE |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_HARD |
-				RRR_NET_TRANSPORT_EVENT_SETUP_F_TIMEOUT_FIRST_READ
+				handle
 		)) != 0) {
 			goto out;
 		}
