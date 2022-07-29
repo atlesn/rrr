@@ -621,14 +621,14 @@ static int __rrr_http_client_read_callback (
 
 	int ret = 0;
 
-	rrr_biglength received_bytes_dummy = 0;
+	rrr_biglength received_bytes = 0;
 
 	int again_max = 5;
 
 	again:
 
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
-			&received_bytes_dummy,
+			&received_bytes,
 			handle,
 			http_client->rules.client_response_max_size
 	)) != 0) {
@@ -654,6 +654,8 @@ static int __rrr_http_client_read_callback (
 		}
 		rrr_net_transport_ctx_notify_tick(handle);
 	}
+
+	ret = received_bytes == 0 ? RRR_NET_TRANSPORT_READ_INCOMPLETE : RRR_NET_TRANSPORT_READ_OK;
 
 	out:
 	return ret;

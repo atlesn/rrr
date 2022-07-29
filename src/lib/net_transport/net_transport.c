@@ -492,6 +492,7 @@ static int __rrr_net_transport_decode_client (
 	}
 
 	if (datagram.msg_len == 0 || connection_ids.dst.length == 0) {
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
 

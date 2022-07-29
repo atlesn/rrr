@@ -47,7 +47,6 @@ void rrr_net_transport_ctx_connection_id_remove (
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 ) {
-	printf("Touch\n");
 	if (handle->transport->hard_read_timeout_ms > 0) {
 		EVENT_ADD(handle->event_hard_read_timeout);
 	}
