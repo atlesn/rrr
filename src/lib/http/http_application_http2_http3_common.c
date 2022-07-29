@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_part_parse.h"
 
+#include <assert.h>
+
 int rrr_http_application_http2_http3_common_stream_read_end (
 		struct rrr_http_application *application,
 		int is_server,
@@ -42,7 +44,15 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 ) {
 	int ret = 0;
 
+	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED)) {
+		printf("Data already delivered\n");
+		// Data or error already delivered to callback
+		goto out;
+	}
+
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR)) {
+		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED);
+
 		if (application->callbacks.failure_callback_arg == NULL) {
 			if (is_server) {
 				RRR_DBG_3("HTTP stream error from client: %s\n", stream_error_msg != NULL ? stream_error_msg : "(unknown error)");
@@ -63,38 +73,34 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 		goto out;
 	}
 
+	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE|RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED)) {
+		printf("Data stream closing and data delivered\n");
+		// Stream is closing and data is delivered
+		goto out;
+	}
+
+	if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+		printf("Wait for data\n");
+		// Wait for any DATA frames and END DATA
+		goto out;
+	}
+
+	assert (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END));
+
 	if (is_server) {
 		// Is server
-		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
-			goto out;
-		}
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
 
-		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
-			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
-				// Possible CONTINUATION frame
-				goto out;
-			}
-			if (method == NULL) {
-				RRR_DBG_3("http field :method missing in request\n");
-				goto out_send_response_bad_request;
-			}
-
-			if (path == NULL) {
-				RRR_DBG_3("http field :path missing in request\n");
-				goto out_send_response_bad_request;
-			}
-		}
-		else {
-			// Wait for any DATA frames and END DATA
-			goto out;
+		if (method == NULL) {
+			RRR_DBG_3("http field :method missing in request\n");
+			goto out_send_response_bad_request;
 		}
 
-		if (transaction->request_part->parse_complete) {
-			// Looks like we received data on the stream when we did not expect it, ignore the data
-			goto out;
+		if (path == NULL) {
+			RRR_DBG_3("http field :path missing in request\n");
+			goto out_send_response_bad_request;
 		}
 
 		// Set data which is otherwise set by the parser in HTTP/1.1
@@ -125,12 +131,6 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	}
 	else {
 		// Is client
-
-		if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
-			// Wait for any data
-			printf("Is client read end wait for data transaction  %p\n", transaction);
-			goto out;
-		}
 
 		const struct rrr_http_header_field *status = rrr_http_part_header_field_get(transaction->response_part, ":status");
 		if (status == NULL) {
@@ -165,6 +165,8 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 			goto out;
 		}
 	}
+
+	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED);
 
 	if ((ret = application->callbacks.callback (
 			handle,

@@ -1068,6 +1068,18 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_close (
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR);
 	}
 
+	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END|RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
+
+	if (__rrr_http_application_http3_stream_read_end (
+			http3,
+			transaction,
+			transport,
+			transport_handle,
+			stream_id
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
+
 	if (http3->is_server) {
 		// Free up memory immediately instead of waiting until next tick
 		return rrr_net_transport_handle_stream_data_clear (
@@ -1075,19 +1087,6 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_close (
 				http3->handle,
 				stream_id
 		);
-	}
-	else {
-		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_HEADERS_END) ||
-		    rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR)
-		) {
-			return __rrr_http_application_http3_stream_read_end (
-					http3,
-					transaction,
-					http3->transport,
-					http3->handle,
-					stream_id
-			);
-		}
 	}
 
 	return 0;
@@ -1264,7 +1263,7 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 			return NGHTTP3_ERR_CALLBACK_FAILURE;
 		}
 
-		if (__rrr_http_application_http3_stream_read_end (
+/*		if (__rrr_http_application_http3_stream_read_end (
 				http3,
 				transaction,
 				transport,
@@ -1272,7 +1271,7 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 				stream_id
 		) != 0) {
 			return NGHTTP3_ERR_CALLBACK_FAILURE;
-		}
+		}*/
 	}
 
 	return 0;
@@ -1347,10 +1346,20 @@ static int __rrr_http_application_http3_nghttp3_cb_end_stream (
 	GET_TRANSACTION();
 
 	(void)(conn);
-	(void)(transport);
-	(void)(transport_handle);
 
 	RRR_DBG_3("HTTP3 end stream %li, reading complete.\n", stream_id);
+
+	rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
+
+	if (__rrr_http_application_http3_stream_read_end (
+			http3,
+			transaction,
+			transport,
+			transport_handle,
+			stream_id
+	) != 0) {
+		return NGHTTP3_ERR_CALLBACK_FAILURE;
+	}
 
 	return 0;
 }
