@@ -308,6 +308,7 @@ struct rrr_net_transport_handle {
 	// Used for datagram type communication
 	struct rrr_net_transport_connection_id_collection cids;
 
+	int event_flags;
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;
 	rrr_event_handle event_read;

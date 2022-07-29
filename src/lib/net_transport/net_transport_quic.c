@@ -2926,6 +2926,7 @@ static int __rrr_net_transport_quic_handshake (
 		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	printf("Handshake fd %i h %i\n", handle->submodule_fd, handle->handle);
 	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
 
 	int ret = 0;
