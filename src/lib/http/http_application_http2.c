@@ -808,7 +808,7 @@ int rrr_http_application_http2_response_submit (
 
 	int ret = 0;
 
-	if ((ret = app->callbacks.response_postprocess_callback (
+	if (app->callbacks.response_postprocess_callback != NULL && (ret = app->callbacks.response_postprocess_callback (
 			transaction,
 			app->callbacks.response_postprocess_callback_arg
 	)) != 0) {

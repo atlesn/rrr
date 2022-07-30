@@ -445,7 +445,7 @@ static int __rrr_http_application_http3_response_submit (
 
 	struct rrr_map headers = {0};
 
-	if ((ret = http3->callbacks.response_postprocess_callback (
+	if (http3->callbacks.response_postprocess_callback != NULL && (ret = http3->callbacks.response_postprocess_callback (
 			transaction,
 			http3->callbacks.response_postprocess_callback_arg
 	)) != 0) {
