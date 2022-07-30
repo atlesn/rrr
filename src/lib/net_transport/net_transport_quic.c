@@ -105,6 +105,7 @@ struct rrr_net_transport_quic_ctx {
 
 	int initial_received;
 	int await_path_validation;
+	int need_tick;
 
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
@@ -396,13 +397,9 @@ static int __rrr_net_transport_quic_stream_block (
 
 static int __rrr_net_transport_quic_stream_transport_ctx_shutdown_read (
 		struct rrr_net_transport_quic_stream *node,
-		struct rrr_net_transport_handle *handle,
 		int call_application_cb
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ)) {
-		// Make sure stream gets destroyed quickly if its now being closed
-		rrr_net_transport_ctx_notify_tick(handle);
-
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_READ;
 
 		return call_application_cb ? node->cb_shutdown_read(node->stream_id, node->cb_arg) : 0;
@@ -410,69 +407,25 @@ static int __rrr_net_transport_quic_stream_transport_ctx_shutdown_read (
 	return 0;
 }
 
-static int __rrr_net_transport_quic_ctx_transport_ctx_stream_shutdown_read (
+static int __rrr_net_transport_quic_ctx_stream_shutdown_read (
 		struct rrr_net_transport_quic_ctx *ctx,
-		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
 		int call_application_cb
 ) {
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
 		if (node->stream_id != stream_id)
 			RRR_LL_ITERATE_NEXT();
-		return __rrr_net_transport_quic_stream_transport_ctx_shutdown_read (node, handle, call_application_cb);
+		return __rrr_net_transport_quic_stream_transport_ctx_shutdown_read (node, call_application_cb);
 	RRR_LL_ITERATE_END();
 
 	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
 }
 
-struct rrr_net_transport_quic_ctx_stream_shutdown_read_callback_data {
-		struct rrr_net_transport_quic_ctx *ctx;
-		int64_t stream_id;
-		int call_application_cb;
-};
-			
-static int __rrr_net_transport_quic_ctx_stream_shutdown_read_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	struct rrr_net_transport_quic_ctx_stream_shutdown_read_callback_data *callback_data = arg;
-
-	return __rrr_net_transport_quic_ctx_transport_ctx_stream_shutdown_read (
-			callback_data->ctx,
-			handle,
-			callback_data->stream_id,
-			callback_data->call_application_cb
-	);
-}
-
-static int __rrr_net_transport_quic_ctx_stream_shutdown_read (
-		struct rrr_net_transport_quic_ctx *ctx,
-		int64_t stream_id,
-		int call_application_cb
-) {
-	struct rrr_net_transport_quic_ctx_stream_shutdown_read_callback_data callback_data = {
-		ctx,
-		stream_id,
-		call_application_cb
-	};
-
-	return rrr_net_transport_handle_with_transport_ctx_do (
-			(struct rrr_net_transport *) ctx->transport_tls,
-			ctx->connected_handle,
-			__rrr_net_transport_quic_ctx_stream_shutdown_read_callback,
-			&callback_data
-	);
-}
-
-static int __rrr_net_transport_quic_stream_transport_ctx_shutdown_write (
+static int __rrr_net_transport_quic_stream_shutdown_write (
 		struct rrr_net_transport_quic_stream *node,
-		struct rrr_net_transport_handle *handle,
 		int call_application_cb
 ) {
 	if (!(node->flags & RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE)) {
-		// Make sure stream gets destroyed quickly if its now being closed
-		rrr_net_transport_ctx_notify_tick(handle);
-
 		node->flags |= RRR_NET_TRANSPORT_STREAM_F_SHUTDOWN_WRITE;
 
 		return call_application_cb ? node->cb_shutdown_write(node->stream_id, node->cb_arg) : 0;
@@ -480,16 +433,15 @@ static int __rrr_net_transport_quic_stream_transport_ctx_shutdown_write (
 	return 0;
 }
 
-static int __rrr_net_transport_quic_ctx_transport_ctx_stream_shutdown_write (
+static int __rrr_net_transport_quic_ctx_stream_shutdown_write (
 		struct rrr_net_transport_quic_ctx *ctx,
-		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
 		int call_application_cb
 ) {
 	RRR_LL_ITERATE_BEGIN(&ctx->streams, struct rrr_net_transport_quic_stream);
 		if (node->stream_id != stream_id)
 			RRR_LL_ITERATE_NEXT();
-		return __rrr_net_transport_quic_stream_transport_ctx_shutdown_write (node, handle, call_application_cb);
+		return __rrr_net_transport_quic_stream_shutdown_write (node, call_application_cb);
 	RRR_LL_ITERATE_END();
 
 	RRR_BUG("Stream id %" PRIi64 " not found in %s\n", (int64_t) stream_id, __func__);
@@ -617,7 +569,8 @@ static int __rrr_net_transport_quic_ngtcp2_cb_receive_stream_data (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " recv %llu fin %i\n",
 		ctx->fd, ctx->connected_handle, stream_id, (unsigned long long) buflen, (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0);
 
-	rrr_net_transport_handle_notify_tick((struct rrr_net_transport *) ctx->transport_tls, ctx->connected_handle);
+	// Call read function
+	ctx->need_tick = 1;
 
 	return 0;
 }
@@ -690,6 +643,10 @@ static int __rrr_net_transport_quic_ngtcp2_cb_stream_close (
 	) != 0) {
 		return NGTCP2_ERR_CALLBACK_FAILURE;
 	}
+
+	// Iterate streams in read function to deliver any
+	// remaining data and then close the stream.
+	ctx->need_tick = 1;
 
 	return 0;
 }
@@ -2211,9 +2168,8 @@ static int __rrr_net_transport_quic_write (
 					stream_id
 				);
 
-				if (__rrr_net_transport_quic_stream_transport_ctx_shutdown_write (
+				if (__rrr_net_transport_quic_stream_shutdown_write (
 						stream,
-						handle,
 						1 /* Do call application callback */
 				) != 0) {
 					// ngtcp2_connection_close_error_set_application_error();
@@ -2371,28 +2327,34 @@ static int __rrr_net_transport_quic_read_stream (
 					__rrr_net_transport_quic_read_stream_nullsafe_callback,
 					&callback_data
 			)) != 0) {
+				printf("Read strean %i\n", ret);
 				goto out;
 			}
 
 			rrr_nullsafe_str_clear(node->recv_buf.str);
 
 			// Make downstream call tick again in case there is more data
-			rrr_net_transport_ctx_notify_tick(handle);
+			ctx->need_tick = 1;
 
 			*bytes_read += len;
-
-			goto out;
 		}
 
-		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING && len == 0) {
-			RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
-					ctx->fd, ctx->connected_handle, node->stream_id);
+		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING) {
+			if (len == 0) {
+				// Close when all data is surely delivered
+				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
+						ctx->fd, ctx->connected_handle, node->stream_id);
 
-			if (node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) {
-				return 1;
+				if (node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) {
+					return 1;
+				}
+
+				RRR_LL_ITERATE_SET_DESTROY();
 			}
-
-			RRR_LL_ITERATE_SET_DESTROY();
+			else {
+				// Check for closing again without delay
+				ctx->need_tick = 1;
+			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
 
@@ -2748,7 +2710,6 @@ static int __rrr_net_transport_quic_receive (
 		// Don't write anything, wait for connection close to be sent
 		RRR_DBG_7("net transport quic fd %i h %i close now set after reading before writing\n",
 			ctx->fd, ctx->connected_handle);
-		rrr_net_transport_ctx_notify_tick (handle);
 		goto out;
 	}
 
@@ -2756,6 +2717,11 @@ static int __rrr_net_transport_quic_receive (
 	if ((ret = __rrr_net_transport_quic_write_no_streams (handle)) != 0) {
 		goto out;
 	}
+
+	if (ctx->need_tick) {
+		rrr_net_transport_ctx_notify_tick(handle);
+		ctx->need_tick = 0;
+	} 
 
 	out:
 	*next_expiry_nano = next_expiry_nano_tmp;
@@ -2899,9 +2865,8 @@ static int __rrr_net_transport_quic_stream_do_shutdown_read (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown read\n",
 		handle_data->ctx->fd, handle->handle, stream_id);
 
-	if (__rrr_net_transport_quic_ctx_transport_ctx_stream_shutdown_read (
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_read (
 			handle_data->ctx,
-			handle,
 			stream_id,
 			0 /* Do not call application callback */
 	) != 0) {
@@ -2925,9 +2890,8 @@ static int __rrr_net_transport_quic_stream_do_shutdown_write (
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " do shutdown write\n",
 		handle_data->ctx->fd, handle->handle, stream_id);
 
-	if (__rrr_net_transport_quic_ctx_transport_ctx_stream_shutdown_write (
+	if (__rrr_net_transport_quic_ctx_stream_shutdown_write (
 			handle_data->ctx,
-			handle,
 			stream_id,
 			0 /* Do not call application callback */
 	) != 0) {
