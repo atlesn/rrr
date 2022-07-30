@@ -402,11 +402,14 @@ static int __rrr_http_server_receive_callback (
 				ip_buf,
 				method_buf,
 				uri_buf,
-				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2
-					? "HTTP/2"
-					: (transaction->request_part->parsed_version == RRR_HTTP_VERSION_10
-						? "HTTP/1.0"
-						: "HTTP/1.1"
+				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP3
+					? "HTTP/3"
+					: (transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2
+						? "HTTP/2"
+						: (transaction->request_part->parsed_version == RRR_HTTP_VERSION_10
+							? "HTTP/1.0"
+							: "HTTP/1.1"
+						)
 					)
 				)
 		);
