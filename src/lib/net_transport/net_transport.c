@@ -443,12 +443,59 @@ static int __rrr_net_transport_handle_send_nonblock (
 	out:
 	return ret;
 }
+		
+static void __rrr_net_transport_handle_set_expiry (
+		struct rrr_net_transport_handle *handle,
+		uint64_t next_expiry_nano
+) {
+	if (next_expiry_nano == 0) {
+		return;
+	}
+
+	uint64_t expiry_us = (next_expiry_nano / 1000) - rrr_time_get_64();
+	if (expiry_us > handle->transport->soft_read_timeout_ms * 1000) {
+		expiry_us = handle->transport->soft_read_timeout_ms;
+	}
+	else if (expiry_us < 1000) {
+		expiry_us = 1000;
+	}
+
+	RRR_DBG_7("net transport fd %i h %i [%s] next timeout in %" PRIu64 " us\n",
+			handle->submodule_fd, handle->handle, handle->transport->application_name, expiry_us);
+
+	EVENT_INTERVAL_SET(handle->event_read, expiry_us);
+	EVENT_ADD(handle->event_read);
+}
+
+static int __rrr_net_transport_handle_expiry (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	uint64_t next_expiry_nano = 0;
+
+	RRR_DBG_7("net transport fd %i h %i [%s] timeout event\n",
+			handle->submodule_fd, handle->handle, handle->transport->application_name);
+
+	if ((ret = handle->transport->methods->expiry (&next_expiry_nano, handle)) != 0) {
+		goto out;
+	}
+
+	__rrr_net_transport_handle_set_expiry(handle, next_expiry_nano);
+
+	out:
+	return ret;
+}
 
 static int __rrr_net_transport_receive (
 		const struct rrr_net_transport_handle *listen_handle,
 		const struct rrr_socket_datagram *datagram,
 		struct rrr_net_transport_handle *handle
 ) {
+	int ret = 0;
+
+	uint64_t next_expiry_nano = 0;
+
 	RRR_DBG_7("net transport fd %i [%s] deliver datagram of size %llu to handle %i\n",
 			listen_handle->submodule_fd,
 			listen_handle->transport->application_name,
@@ -458,10 +505,17 @@ static int __rrr_net_transport_receive (
 
 	rrr_net_transport_ctx_touch(handle);
 
-	return rrr_net_transport_ctx_receive(handle, datagram);
+	if ((ret = rrr_net_transport_ctx_receive(&next_expiry_nano, handle, datagram)) != 0) {
+		goto out;
+	}
+
+	__rrr_net_transport_handle_set_expiry(handle, next_expiry_nano);
+
+	out:
+	return ret;
 }
 
-static int __rrr_net_transport_decode_client (
+static int __rrr_net_transport_handle_decode_client (
 		struct rrr_net_transport_handle *handle
 ) {
 	int ret = RRR_NET_TRANSPORT_READ_OK;
@@ -621,6 +675,12 @@ static void __rrr_net_transport_event_read (
 
 	CHECK_CLOSE_NOW();
 
+	if (flags & EV_TIMEOUT && handle->transport->methods->expiry != NULL) {
+		if ((ret_tmp = __rrr_net_transport_handle_expiry (handle)) != 0) {
+			goto err;
+		}
+	}
+
 	if (!handle->handshake_complete) {
 		return;
 	}
@@ -666,6 +726,7 @@ static void __rrr_net_transport_event_read (
 		}
 	}
 
+	err:
 	CHECK_READ_WRITE_RETURN();
 }
 
@@ -682,11 +743,18 @@ static void __rrr_net_transport_event_decode_client (
 
 	CHECK_CLOSE_NOW();
 
-	if ((ret_tmp = __rrr_net_transport_decode_client(handle)) != 0) {
-		goto err;
+	if (flags & EV_TIMEOUT && handle->transport->methods->expiry != NULL) {
+		if ((ret_tmp = __rrr_net_transport_handle_expiry (handle)) != 0) {
+			goto err;
+		}
 	}
+	else {
+		if ((ret_tmp = __rrr_net_transport_handle_decode_client(handle)) != 0) {
+			goto err;
+		}
 
-	rrr_net_transport_ctx_touch (handle);
+		rrr_net_transport_ctx_touch (handle);
+	}
 
 	if (!handle->handshake_complete) {
 		return;
@@ -1201,23 +1269,23 @@ static void __rrr_net_transport_event_accept (
 	}
 }
 
-struct rrr_net_transport_decode_server_receive_callback_data {
+struct rrr_net_transport_handle_decode_server_receive_callback_data {
 	const struct rrr_net_transport_handle *listen_handle;
 	const struct rrr_socket_datagram *datagram;
 };
 		
-static int __rrr_net_transport_decode_server_receive_callback (
+static int __rrr_net_transport_handle_decode_server_receive_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_net_transport_decode_server_receive_callback_data *callback_data = arg;
+	struct rrr_net_transport_handle_decode_server_receive_callback_data *callback_data = arg;
 
 	EVENT_REMOVE(handle->event_first_read_timeout);
 
 	return __rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 }
 
-static int __rrr_net_transport_decode_server (
+static int __rrr_net_transport_handle_decode_server (
 		struct rrr_net_transport_handle *listen_handle
 ) {
 	int ret = RRR_NET_TRANSPORT_READ_OK;
@@ -1246,7 +1314,7 @@ static int __rrr_net_transport_decode_server (
 	// call accept to create a new handle. Accept may or may not create a new handle,
 	// and if no handle is created, no further processing of the datagram occurs.
 
-	struct rrr_net_transport_decode_server_receive_callback_data callback_data = {
+	struct rrr_net_transport_handle_decode_server_receive_callback_data callback_data = {
 		listen_handle,
 		&datagram
 	};
@@ -1255,7 +1323,7 @@ static int __rrr_net_transport_decode_server (
 		if ((ret = __rrr_net_transport_iterate_by_handle_ptr_and_do (
 				listen_handle->transport,
 				handle,
-				__rrr_net_transport_decode_server_receive_callback,
+				__rrr_net_transport_handle_decode_server_receive_callback,
 				&callback_data
 		)) != 0) {
 			goto out;
@@ -1284,7 +1352,7 @@ static int __rrr_net_transport_decode_server (
 		if ((ret = __rrr_net_transport_iterate_by_handle_and_do (
 				listen_handle->transport,
 				new_handle,
-				__rrr_net_transport_decode_server_receive_callback,
+				__rrr_net_transport_handle_decode_server_receive_callback,
 				&callback_data
 		)) != 0) {
 			goto out;
@@ -1312,7 +1380,7 @@ static void __rrr_net_transport_event_decode_server (
 	(void)(fd);
 	(void)(flags);
 
-	if (__rrr_net_transport_decode_server (listen_handle) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+	if (__rrr_net_transport_handle_decode_server (listen_handle) == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
 		// Unhandled error
 		rrr_event_dispatch_break(listen_handle->transport->event_queue);
 	}

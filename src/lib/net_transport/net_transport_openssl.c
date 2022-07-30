@@ -780,6 +780,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	NULL,
 	__rrr_net_transport_openssl_bind_and_listen,
 	NULL,
+	NULL,
 	__rrr_net_transport_openssl_accept,
 	__rrr_net_transport_openssl_ssl_data_close,
 	__rrr_net_transport_openssl_pre_destroy,

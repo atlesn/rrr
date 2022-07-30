@@ -52,7 +52,7 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR)) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED);
 
-		if (application->callbacks.failure_callback_arg == NULL) {
+		if (application->callbacks.callback_arg == NULL) {
 			if (is_server) {
 				RRR_DBG_3("HTTP stream error from client: %s\n", stream_error_msg != NULL ? stream_error_msg : "(unknown error)");
 			}
@@ -66,7 +66,7 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 				handle,
 				transaction,
 				stream_error_msg,
-				application->callbacks.failure_callback_arg
+				application->callbacks.callback_arg
 		);
 
 		goto out;

@@ -178,6 +178,7 @@ int rrr_net_transport_ctx_read (
 		size_t buf_size
 );
 int rrr_net_transport_ctx_receive (
+		uint64_t *next_expiry_nano,
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_socket_datagram *datagram
 );

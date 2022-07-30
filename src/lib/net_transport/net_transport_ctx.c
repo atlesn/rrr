@@ -394,10 +394,11 @@ int rrr_net_transport_ctx_read (
 }
 
 int rrr_net_transport_ctx_receive (
+		uint64_t *next_expiry_nano,
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_socket_datagram *datagram
 ) {
-	int ret = handle->transport->methods->receive(handle, datagram);
+	int ret = handle->transport->methods->receive(next_expiry_nano, handle, datagram);
 
 	handle->bytes_read_total += datagram->msg_len;
 

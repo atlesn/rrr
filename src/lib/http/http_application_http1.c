@@ -280,7 +280,7 @@ static int __rrr_http_application_http1_response_send (
 
 	if (application->callbacks.response_postprocess_callback != NULL && (ret = application->callbacks.response_postprocess_callback (
 			transaction,
-			application->callbacks.response_postprocess_callback_arg
+			application->callbacks.callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -477,7 +477,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
 					transaction->response_part->parsed_application_type,
-					receive_data->http1->callbacks.websocket_callback_arg
+					receive_data->http1->callbacks.callback_arg
 			))) {
 				goto out;
 			}
@@ -647,7 +647,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			do_websocket,
 			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
-			receive_data->http1->callbacks.upgrade_verify_callback_arg
+			receive_data->http1->callbacks.callback_arg
 	) != 0)) {
 		goto out;
 	}
@@ -667,7 +667,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			data_to_use,
 			read_session->rx_overshoot_size,
 			transaction->response_part->parsed_application_type,
-			receive_data->http1->callbacks.websocket_callback_arg
+			receive_data->http1->callbacks.callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
 		goto out;
 	}
@@ -744,7 +744,7 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 			&upgrade_ok,
 			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_HTTP2,
-			receive_data->http1->callbacks.upgrade_verify_callback_arg
+			receive_data->http1->callbacks.callback_arg
 	) != 0)) {
 		goto out;
 	}
@@ -1098,7 +1098,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 					0,
 					0,
 					receive_data->http1->callbacks.unique_id_generator_callback,
-					receive_data->http1->callbacks.unique_id_generator_callback_arg,
+					receive_data->http1->callbacks.callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
@@ -1307,9 +1307,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 		rrr_length ping_interval_s,
 		rrr_length timeout_s,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -1317,7 +1316,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 			http1,
 			handle,
 			frame_callback,
-			frame_callback_arg
+			callback_arg
 	};
 
 	if (rrr_websocket_check_timeout(&http1->ws_state, timeout_s) != 0) {
@@ -1335,7 +1334,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 			&http1->ws_state,
 			http1->last_unique_id,
 			callback,
-			get_response_callback_arg
+			callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -1613,15 +1612,14 @@ static int __rrr_http_application_http1_tick (
 				10,
 				15,
 				http1->callbacks.get_response_callback,
-				http1->callbacks.get_response_callback_arg,
 				http1->callbacks.frame_callback,
-				http1->callbacks.frame_callback_arg
+				http1->callbacks.callback_arg
 		);
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
 			if ((ret = rrr_net_transport_ctx_check_alive(handle)) == 0) {
-				if ((ret = http1->callbacks.async_response_get_callback(http1->active_transaction, http1->callbacks.async_response_get_callback_arg)) == RRR_HTTP_OK) {
+				if ((ret = http1->callbacks.async_response_get_callback(http1->active_transaction, http1->callbacks.callback_arg)) == RRR_HTTP_OK) {
 					ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
 
 					__rrr_http_application_http1_transaction_clear(http1);

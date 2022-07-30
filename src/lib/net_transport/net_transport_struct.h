@@ -94,6 +94,10 @@ struct rrr_nullsafe_str;
     size_t buf_size,                                                       \
     struct rrr_net_transport_handle *listen_handle
 
+#define RRR_NET_TRANSPORT_EXPIRY_ARGS                                      \
+    uint64_t *next_expiry_nano,                                            \
+    struct rrr_net_transport_handle *handle
+
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
     struct rrr_net_transport *transport,                                   \
     rrr_net_transport_handle transport_handle,                             \
@@ -149,6 +153,7 @@ struct rrr_nullsafe_str;
     void *callback_arg
 
 #define RRR_NET_TRANSPORT_RECEIVE_ARGS                         \
+    uint64_t *next_expiry_nano,                                \
     struct rrr_net_transport_handle *handle,                   \
     const struct rrr_socket_datagram *datagram
 
@@ -224,6 +229,9 @@ struct rrr_net_transport_methods {
 
 	// Decode datagram and get identifiers for datagram oriented transports
 	int (*decode)(RRR_NET_TRANSPORT_DECODE_ARGS);
+
+	// Handle timer event for datagram oriented transports
+	int (*expiry)(RRR_NET_TRANSPORT_EXPIRY_ARGS);
 
 	// Create handle on datagram oriented transport or accept
 	// connection + create handle on connection oriented transport

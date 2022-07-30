@@ -707,6 +707,7 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	NULL,
 	__rrr_net_transport_libressl_bind_and_listen,
 	NULL,
+	NULL,
 	__rrr_net_transport_libressl_accept,
 	__rrr_net_transport_libressl_close,
 	__rrr_net_transport_libressl_pre_destroy,

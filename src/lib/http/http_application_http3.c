@@ -447,7 +447,7 @@ static int __rrr_http_application_http3_response_submit (
 
 	if (http3->callbacks.response_postprocess_callback != NULL && (ret = http3->callbacks.response_postprocess_callback (
 			transaction,
-			http3->callbacks.response_postprocess_callback_arg
+			http3->callbacks.callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -740,7 +740,7 @@ static int __rrr_http_application_http3_stream_open (
 					0,
 					0,
 					http3->callbacks.unique_id_generator_callback,
-					http3->callbacks.unique_id_generator_callback_arg,
+					http3->callbacks.callback_arg,
 					NULL,
 					NULL
 			) != 0) {
@@ -1389,7 +1389,7 @@ static int __rrr_http_application_http3_tick_get_async_response_stream_callback 
 
 	callback_data->response_needed_count++;
 
-	if ((ret = http3->callbacks.async_response_get_callback(transaction, http3->callbacks.async_response_get_callback_arg)) != 0) {
+	if ((ret = http3->callbacks.async_response_get_callback(transaction, http3->callbacks.callback_arg)) != 0) {
 		ret &= ~(RRR_HTTP_NO_RESULT);
 		goto out;
 	}

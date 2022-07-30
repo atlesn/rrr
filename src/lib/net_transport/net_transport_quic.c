@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 struct rrr_net_transport_quic_recv_buf {
 	struct rrr_nullsafe_str *str;
@@ -2402,6 +2402,45 @@ static int __rrr_net_transport_quic_read_stream (
 	return ret;
 }
 
+static int __rrr_net_transport_quic_expiry (
+		RRR_NET_TRANSPORT_EXPIRY_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+
+	int ret = 0;
+
+	ngtcp2_tstamp ts;
+
+	if ((ret = rrr_time_get_64_nano (&ts, NGTCP2_SECONDS)) != 0) {
+		goto out;
+	}
+
+	int ret_tmp;
+	if ((ret_tmp = ngtcp2_conn_handle_expiry (ctx->conn, ts)) != 0) {
+		if (ret_tmp == NGTCP2_ERR_IDLE_CLOSE) {
+			RRR_DBG_7("net transport quic fd %i h %i connection idle during expiry handling\n",
+				ctx->fd, ctx->connected_handle);
+			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
+			goto out;
+		}
+		RRR_MSG_0("Error while handling QUIC expiry packet: %s\n", ngtcp2_strerror(ret_tmp));
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret = __rrr_net_transport_quic_write_no_streams (
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	*next_expiry_nano = ngtcp2_conn_get_expiry(ctx->conn);
+
+	out:
+	return ret;
+}
+
 static int __rrr_net_transport_quic_process_migration (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -2602,6 +2641,13 @@ static int __rrr_net_transport_quic_receive (
 
 	int ret = 0;
 
+	uint64_t next_expiry_nano_tmp = 0;
+
+	if ((ret = rrr_time_get_64_nano(&next_expiry_nano_tmp, NGTCP2_SECONDS)) != 0) {
+		goto out;
+	}
+	next_expiry_nano_tmp += ctx->transport_tls->soft_read_timeout_ms * NGTCP2_MILLISECONDS;
+
 	if (ctx->connected_handle == 0) {
 		ctx->initial_received = 1;
 		__rrr_net_transport_quic_ctx_post_connect_patch(ctx, handle->handle);
@@ -2696,6 +2742,8 @@ static int __rrr_net_transport_quic_receive (
 		goto out;
 	}
 
+	next_expiry_nano_tmp = ngtcp2_conn_get_expiry(ctx->conn);
+
 	if (handle->close_now) {
 		// Don't write anything, wait for connection close to be sent
 		RRR_DBG_7("net transport quic fd %i h %i close now set after reading before writing\n",
@@ -2710,6 +2758,7 @@ static int __rrr_net_transport_quic_receive (
 	}
 
 	out:
+	*next_expiry_nano = next_expiry_nano_tmp;
 	return ret;
 }
 
@@ -2932,7 +2981,6 @@ static int __rrr_net_transport_quic_handshake (
 		RRR_NET_TRANSPORT_HANDSHAKE_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
-	printf("Handshake fd %i h %i\n", handle->submodule_fd, handle->handle);
 	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
 
 	int ret = 0;
@@ -3152,6 +3200,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_migrate,
 	__rrr_net_transport_quic_bind_and_listen,
 	__rrr_net_transport_quic_decode,
+	__rrr_net_transport_quic_expiry,
 	__rrr_net_transport_quic_accept,
 	__rrr_net_transport_quic_close,
 	__rrr_net_transport_quic_pre_destroy,
