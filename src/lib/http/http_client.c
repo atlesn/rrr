@@ -504,7 +504,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	ret = http_client->callbacks.final_callback (
 			transaction,
 			data_use,
-			http_client->callbacks.final_callback_arg
+			http_client->callbacks.callback_arg
 	);
 
 	out:
@@ -524,7 +524,7 @@ static int __rrr_http_client_request_failure_callback (
 		? http_client->callbacks.failure_callback (
 				transaction,
 				error_msg,
-				http_client->callbacks.failure_callback_arg
+				http_client->callbacks.callback_arg
 		)
 		: 0
 	;
@@ -633,7 +633,7 @@ static int __rrr_http_client_read_callback (
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
 			http_client->callbacks.redirect_callback,
-			http_client->callbacks.redirect_callback_arg
+			http_client->callbacks.callback_arg
 	};
 
 	if ((ret = rrr_http_redirect_collection_iterate (
@@ -696,9 +696,9 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			__rrr_http_client_request_failure_callback,
 			callback_data->http_client,
 			callback_data->http_client->callbacks.get_response_callback,
-			callback_data->http_client->callbacks.get_response_callback_arg,
+			callback_data->http_client->callbacks.callback_arg,
 			callback_data->http_client->callbacks.frame_callback,
-			callback_data->http_client->callbacks.frame_callback_arg
+			callback_data->http_client->callbacks.callback_arg
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
 		goto out;
@@ -725,7 +725,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 				&endpoint_to_free,
 				&query_to_free,
 				callback_data->transaction,
-				callback_data->query_prepare_callback_arg)
+				callback_data->callback_arg)
 		) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
 				RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_request_send_callback\n");
@@ -1122,11 +1122,9 @@ int rrr_http_client_request_send (
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
-		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
-		void *connection_prepare_callback_arg,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg,
+		void *callback_arg,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 ) {
@@ -1142,7 +1140,7 @@ int rrr_http_client_request_send (
 			data->body_format,
 			remaining_redirects,
 			http_client->callbacks.unique_id_generator_callback,
-			http_client->callbacks.unique_id_generator_callback_arg,
+			http_client->callbacks.callback_arg,
 			application_data,
 			application_data_destroy
 	)) != 0) {
@@ -1176,7 +1174,7 @@ int rrr_http_client_request_send (
 	struct rrr_http_client_request_callback_data callback_data = {
 		.http_client = http_client,
 		.query_prepare_callback = query_prepare_callback,
-		.query_prepare_callback_arg = query_prepare_callback_arg,
+		.callback_arg = callback_arg,
 		.data = data,
 		.application_type = transport_code == RRR_HTTP_TRANSPORT_QUIC
 			? RRR_HTTP_APPLICATION_HTTP3
@@ -1196,7 +1194,7 @@ int rrr_http_client_request_send (
 	const char *server_to_use = data->server;
 
 	if (connection_prepare_callback != NULL) {
-		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, connection_prepare_callback_arg)) != 0) {
+		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, callback_arg)) != 0) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
 				RRR_DBG_3("Note: HTTP query aborted by soft error from connection prepare callback\n");
 				goto out;
@@ -1247,7 +1245,7 @@ int rrr_http_client_request_send (
 
 	if (method_prepare_callback != NULL) {
 		enum rrr_http_method chosen_method = data->method;
-		if ((ret = method_prepare_callback(&chosen_method, transaction, method_prepare_callback_arg)) != 0) {
+		if ((ret = method_prepare_callback(&chosen_method, transaction, callback_arg)) != 0) {
 			if (ret != RRR_HTTP_NO_RESULT) {
 				goto out;
 			}
