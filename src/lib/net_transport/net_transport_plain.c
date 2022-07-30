@@ -415,6 +415,7 @@ static const struct rrr_net_transport_methods plain_methods = {
 	NULL,
 	__rrr_net_transport_plain_bind_and_listen,
 	NULL,
+	NULL,
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_pre_destroy,

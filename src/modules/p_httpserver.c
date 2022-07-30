@@ -1888,17 +1888,11 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	struct rrr_http_server_callbacks callbacks = {
 		httpserver_unique_id_generator_callback,
-		&callback_data,
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		httpserver_receive_callback,
-		&callback_data,
 		httpserver_async_response_get_callback,
-		&callback_data,
 		httpserver_response_postprocess_callback,
 		&callback_data
 	};

@@ -530,6 +530,46 @@ static int __rrr_http_client_request_failure_callback (
 	;
 }
 
+static int __rrr_http_client_websocket_get_response_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	return http_client->callbacks.get_response_callback != NULL
+		? http_client->callbacks.get_response_callback (
+				application_topic,
+				data,
+				data_len,
+				is_binary,
+				unique_id,
+				http_client->callbacks.callback_arg
+		)
+		: 0
+	;
+}
+
+static int __rrr_http_client_websocket_frame_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	return http_client->callbacks.frame_callback != NULL
+		? http_client->callbacks.frame_callback (
+				application_topic,
+				handle,
+				payload,
+				is_binary,
+				unique_id,
+				http_client->callbacks.callback_arg
+		)
+		: 0
+	;
+}
+
 static int __rrr_http_client_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -690,15 +730,11 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			handle,
 			callback_data->data->user_agent,
 			__rrr_http_client_websocket_handshake_callback,
-			NULL,
 			__rrr_http_client_receive_http_part_callback,
-			callback_data->http_client,
 			__rrr_http_client_request_failure_callback,
-			callback_data->http_client,
-			callback_data->http_client->callbacks.get_response_callback,
-			callback_data->http_client->callbacks.callback_arg,
-			callback_data->http_client->callbacks.frame_callback,
-			callback_data->http_client->callbacks.callback_arg
+			__rrr_http_client_websocket_get_response_callback,
+			__rrr_http_client_websocket_frame_callback,
+			callback_data->http_client
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
 		goto out;

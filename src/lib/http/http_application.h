@@ -87,23 +87,15 @@ struct rrr_http_rules;
 
 struct rrr_http_application_callbacks {
 	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
 	int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS);
-	void *upgrade_verify_callback_arg;
 	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
-	void *websocket_callback_arg;
 	int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
-	void *get_response_callback_arg;
 	int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS);
-	void *frame_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
-	void *callback_arg;
 	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
-	void *failure_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
-	void *async_response_get_callback_arg;
 	int (*response_postprocess_callback)(RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS);
-	void *response_postprocess_callback_arg;
+	void *callback_arg;
 };
 
 void rrr_http_application_destroy_if_not_null (

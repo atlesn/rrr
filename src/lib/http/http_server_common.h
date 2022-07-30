@@ -50,19 +50,13 @@ struct rrr_thread;
 
 struct rrr_http_server_callbacks {
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
 	int (*websocket_handshake_callback)(RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
-	void *websocket_handshake_callback_arg;
 	int (*websocket_frame_callback)(RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS);
-	void *websocket_frame_callback_arg;
 	int (*websocket_get_response_callback)(RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS);
-	void *websocket_get_response_callback_arg;
 	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
-	void *async_response_get_callback_arg;
 	int (*response_postprocess_callback)(RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS);
-	void *response_postprocess_callback_arg;
+	void *callback_arg;
 };
 
 #endif /* RRR_HTTP_SERVER_COMMON_H */

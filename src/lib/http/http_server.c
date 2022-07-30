@@ -165,6 +165,15 @@ static int __rrr_http_server_websocket_get_response_callback (
 static int __rrr_http_server_websocket_frame_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 );
+static int __rrr_http_server_unique_id_generator_callback (
+		RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+);
+static int __rrr_http_server_async_response_get_callback (
+		RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS
+);
+static int __rrr_http_server_response_postprocess_callback (
+		RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+);
 static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 );
@@ -187,24 +196,16 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 	}
 
 	const struct rrr_http_application_callbacks callbacks = {
-		http_server->callbacks.unique_id_generator_callback,
-		http_server->callbacks.unique_id_generator_callback_arg,
+		__rrr_http_server_unique_id_generator_callback,
 		__rrr_http_server_upgrade_verify_callback,
-		http_server,
 		__rrr_http_server_websocket_handshake_callback,
-		http_server,
 		__rrr_http_server_websocket_get_response_callback,
-		http_server,
 		__rrr_http_server_websocket_frame_callback,
-		http_server,
 		__rrr_http_server_receive_callback,
-		http_server,
 		NULL,
-		NULL,
-		http_server->callbacks.async_response_get_callback,
-		http_server->callbacks.async_response_get_callback_arg,
-		http_server->callbacks.response_postprocess_callback,
-		http_server->callbacks.response_postprocess_callback_arg
+		__rrr_http_server_async_response_get_callback,
+		__rrr_http_server_response_postprocess_callback,
+		http_server
 	};
 
 	enum rrr_http_application_type type = RRR_HTTP_APPLICATION_HTTP1;
@@ -348,7 +349,7 @@ static int __rrr_http_server_websocket_handshake_callback (
 			data_ptr,
 			overshoot_bytes,
 			next_application_type,
-			http_server->callbacks.final_callback_arg
+			http_server->callbacks.callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -434,7 +435,7 @@ static int __rrr_http_server_receive_callback (
 				data_ptr,
 				overshoot_bytes,
 				next_application_type,
-				http_server->callbacks.final_callback_arg
+				http_server->callbacks.callback_arg
 		)) == RRR_HTTP_NO_RESULT) {
 			// Return value propagates
 			goto out;
@@ -477,7 +478,7 @@ static int __rrr_http_server_websocket_get_response_callback (
 				data_len,
 				is_binary,
 				unique_id,
-				http_server->callbacks.websocket_get_response_callback_arg
+				http_server->callbacks.callback_arg
 		);
 	}
 
@@ -498,7 +499,58 @@ static int __rrr_http_server_websocket_frame_callback (
 				payload,
 				is_binary,
 				unique_id,
-				http_server->callbacks.websocket_handshake_callback_arg
+				http_server->callbacks.callback_arg
+		);
+	}
+
+	return ret;
+}
+
+static int __rrr_http_server_unique_id_generator_callback (
+		RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
+
+	if (http_server->callbacks.unique_id_generator_callback) {
+		ret = http_server->callbacks.unique_id_generator_callback (
+				unique_id,
+				http_server->callbacks.callback_arg
+		);
+	}
+
+	return ret;
+}
+
+static int __rrr_http_server_async_response_get_callback (
+		RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS
+) {
+	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
+
+	if (http_server->callbacks.async_response_get_callback) {
+		ret = http_server->callbacks.async_response_get_callback (
+				transaction,
+				http_server->callbacks.callback_arg
+		);
+	}
+
+	return ret;
+}
+
+static int __rrr_http_server_response_postprocess_callback (
+		RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+) {
+	struct rrr_http_server *http_server = arg;
+
+	int ret = 0;
+
+	if (http_server->callbacks.response_postprocess_callback) {
+		ret = http_server->callbacks.response_postprocess_callback (
+				transaction,
+				http_server->callbacks.callback_arg
 		);
 	}
 

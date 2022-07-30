@@ -215,15 +215,11 @@ static void influxdb_send_data_callback (
 			handle,
 			RRR_HTTP_CLIENT_USER_AGENT,
 			NULL,
-			NULL,
 			influxdb_receive_http_response,
-			&response_callback_data,
 			NULL, /* Failure callback, not implemented in InfluxDB) */
 			NULL,
 			NULL,
-			NULL,
-			NULL,
-			NULL
+			&response_callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

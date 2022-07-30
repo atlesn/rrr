@@ -356,7 +356,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 					0,
 					0,
 					callback_data->http2->callbacks.unique_id_generator_callback,
-					callback_data->http2->callbacks.unique_id_generator_callback_arg,
+					callback_data->http2->callbacks.callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
@@ -483,7 +483,7 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 	int ret = 0;
 
 	if (transaction && transaction->need_response) {
-		if ((ret = callback_data->http2->callbacks.async_response_get_callback(transaction, callback_data->http2->callbacks.async_response_get_callback_arg)) != 0) {
+		if ((ret = callback_data->http2->callbacks.async_response_get_callback(transaction, callback_data->http2->callbacks.callback_arg)) != 0) {
 			ret &= ~(RRR_HTTP_NO_RESULT);
 			goto out;
 		}
@@ -521,7 +521,7 @@ static int __rrr_http_application_http2_tick (
 	};
 
 	if (http2->transaction_incomplete_upgrade != NULL) {
-		if ((ret = http2->callbacks.async_response_get_callback(http2->transaction_incomplete_upgrade, http2->callbacks.async_response_get_callback_arg)) == 0) {
+		if ((ret = http2->callbacks.async_response_get_callback(http2->transaction_incomplete_upgrade, http2->callbacks.callback_arg)) == 0) {
 			ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
 
 			rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
@@ -810,7 +810,7 @@ int rrr_http_application_http2_response_submit (
 
 	if (app->callbacks.response_postprocess_callback != NULL && (ret = app->callbacks.response_postprocess_callback (
 			transaction,
-			app->callbacks.response_postprocess_callback_arg
+			app->callbacks.callback_arg
 	)) != 0) {
 		goto out;
 	}

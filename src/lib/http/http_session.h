@@ -107,15 +107,11 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
 		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *callback_arg
 );
 int rrr_http_session_transport_ctx_request_send_possible (
 		int *is_possible,
