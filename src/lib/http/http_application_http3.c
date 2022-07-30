@@ -1241,6 +1241,8 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 	GET_TRANSACTION();
 
 	(void)(conn);
+	(void)(transport);
+	(void)(transport_handle);
 
 	RRR_DBG_3("HTTP3 headers complete on stream %li\n", stream_id);
 
@@ -1252,26 +1254,7 @@ static int __rrr_http_application_http3_nghttp3_cb_end_headers (
 	if (fin) {
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END);
 
-		RRR_DBG_3("HTTP3 issue shutdown read on stream %li, reading complete after headers.\n", stream_id);
-
-		if (rrr_net_transport_handle_stream_shutdown_read (
-				transport,
-				transport_handle,
-				stream_id,
-				0
-		) != 0) {
-			return NGHTTP3_ERR_CALLBACK_FAILURE;
-		}
-
-/*		if (__rrr_http_application_http3_stream_read_end (
-				http3,
-				transaction,
-				transport,
-				transport_handle,
-				stream_id
-		) != 0) {
-			return NGHTTP3_ERR_CALLBACK_FAILURE;
-		}*/
+		RRR_DBG_3("HTTP3 reading complete after headers on stream %li.\n", stream_id);
 	}
 
 	return 0;
