@@ -1173,6 +1173,9 @@ static int __rrr_net_transport_decode_server_receive_callback (
 		void *arg
 ) {
 	struct rrr_net_transport_decode_server_receive_callback_data *callback_data = arg;
+
+	EVENT_REMOVE(handle->event_first_read_timeout);
+
 	return __rrr_net_transport_receive(callback_data->listen_handle, callback_data->datagram, handle);
 }
 

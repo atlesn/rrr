@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_array;
 struct rrr_nullsafe_str;
+struct rrr_string_builder;
 
 struct rrr_http_uri_flags {
 	uint8_t is_http;
@@ -174,5 +175,12 @@ int rrr_http_util_alpn_iterate (
 		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
 		void *callback_arg
 );
+
+#ifdef RRR_WITH_HTTP3
+int rrr_http_util_make_alt_svc_header (
+		struct rrr_string_builder *target,
+		uint16_t quic_port
+);
+#endif /* RRR_WITH_HTTP3 */
 
 #endif /* RRR_HTTP_UTIL_H */

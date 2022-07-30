@@ -149,50 +149,6 @@ static int httpserver_data_init (
 	return 0;
 }
 
-#if defined(RRR_WITH_HTTP3)
-static int httpserver_make_alt_svc_header_callback (
-		unsigned int i,
-		const char *alpn,
-		unsigned char length,
-		void *arg
-) {
-	struct httpserver_data *data = arg;
-
-	int ret = 0;
-
-	if (i > 0 && (ret = rrr_string_builder_append_raw(&data->alt_svc_header, ",", 1)) != 0) {
-		goto out;
-	}
-	if ((ret = rrr_string_builder_append_raw(&data->alt_svc_header, alpn, length)) != 0) {
-		goto out;
-	}
-	if ((ret = rrr_string_builder_append_format(&data->alt_svc_header, "=\":%u\"; ma=3600", data->port_quic)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-static int httpserver_make_alt_svc_header (
-		struct httpserver_data *data
-) {
-	assert(rrr_string_builder_length(&data->alt_svc_header) == 0);
-
-	const char *alpn;
-	unsigned int length;
-
-	rrr_http_application_http3_alpn_protos_get (&alpn, &length);
-
-	return rrr_http_util_alpn_iterate (
-			alpn,
-			length,
-			httpserver_make_alt_svc_header_callback,
-			data
-	);
-}
-#endif
-
 static int httpserver_parse_config (
 		struct httpserver_data *data,
 		struct rrr_instance_config_data *config
@@ -208,7 +164,7 @@ static int httpserver_parse_config (
 		goto out;
 	}
 
-	if (data->port_quic > 0 && (ret = httpserver_make_alt_svc_header(data)) != 0) {
+	if (data->port_quic > 0 && (ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_quic)) != 0) {
 		goto out;
 	}
 #endif
