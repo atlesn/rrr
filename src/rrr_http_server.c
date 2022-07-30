@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,6 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
+#include "lib/http/http_transaction.h"
+#include "lib/http/http_util.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/version.h"
@@ -45,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/event/event.h"
 #include "lib/util/macro_utils.h"
 #include "lib/util/rrr_time.h"
+#include "lib/helpers/string_builder.h"
 
 #define RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS  3000
 #define RRR_HTTP_SERVER_IDLE_TIMEOUT_MS        RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS * 2
@@ -232,6 +235,49 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	return ret;
 }
 
+static int __rrr_http_server_response_postprocess_callback (
+		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+) {
+#if RRR_WITH_HTTP3
+	struct rrr_http_server_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_string_builder alt_svc_header = {0};
+
+	if (data->quic_port == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_util_make_alt_svc_header (
+			&alt_svc_header,
+			data->quic_port
+	)) != 0) {
+		goto out;
+	}
+
+	if (rrr_string_builder_length(&alt_svc_header) == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_response_alt_svc_set(
+			transaction,
+			rrr_string_builder_buf(&alt_svc_header)
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_string_builder_clear(&alt_svc_header);
+	return ret;
+#else
+	(void)(transaction);
+	(void)(arg);
+
+	return 0;
+#endif
+}
+
 static int main_running = 1;
 int rrr_http_server_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
@@ -294,7 +340,9 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	struct rrr_http_server_callbacks callbacks = {
-			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+			__rrr_http_server_response_postprocess_callback,
+			&data
 	};
 
 	if (rrr_http_server_new (
