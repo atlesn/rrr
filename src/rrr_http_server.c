@@ -57,6 +57,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
         {0,                            'P',    "plain-disable",         "[-P|--plain-disable]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "ssl-port",              "[-s|--ssl-port[=]HTTPS PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "quic-port",             "[-q|--quic-port[=]QUIC PORT]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "certificate",           "[-c|--certificate[=]PEM SSL CERTIFICATE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'k',    "key",                   "[-k|--key[=]PEM SSL PRIVATE KEY]"},
         {0,                            'N',    "no-cert-verify",        "[-N|--no-cert-verify]"},
@@ -75,6 +76,7 @@ struct rrr_http_server_data {
 	char *certificate_file;
 	char *private_key_file;
 	uint16_t https_port;
+	uint16_t quic_port;
 	int ssl_no_cert_verify;
 	int plain_disable;
 #endif
@@ -170,15 +172,35 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 			goto out;
 		}
 	}
-	if (port_tmp == 0) {
-		port_tmp = 443;
-	}
 	if (port_tmp > 65535) {
-		RRR_MSG_0("HTTPS out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		RRR_MSG_0("SSL port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
 		ret = 1;
 		goto out;
 	}
 	data->https_port = (uint16_t) port_tmp;
+#endif
+#ifdef RRR_WITH_HTTP3
+	// QUIC port
+	port = cmd_get_value(cmd, "quic-port", 0);
+	port_tmp = 0;
+	if (cmd_get_value (cmd, "quic-port", 1) != NULL) {
+		RRR_MSG_0("Error: Only one 'quic-port' argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+	if (port != NULL) {
+		if (cmd_convert_uint64_10(port, &port_tmp)) {
+			RRR_MSG_0("Could not understand argument 'quic-port', must be and unsigned integer\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	if (port_tmp > 65535) {
+		RRR_MSG_0("QUIC port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		ret = 1;
+		goto out;
+	}
+	data->quic_port = (uint16_t) port_tmp;
 #endif
 
 	// HTTP port
@@ -305,7 +327,7 @@ int main (int argc, const char **argv, const char **env) {
 #endif
 
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	if (data.certificate_file != NULL && data.private_key_file != NULL) {
+	if (data.https_port > 0) {
 		// DO NOT run config cleanup for this, memory managed elsewhere
 		struct rrr_net_transport_config net_transport_config_tls = {
 				data.certificate_file,
@@ -337,7 +359,50 @@ int main (int argc, const char **argv, const char **env) {
 		}
 		transport_count++;
 	}
+#endif
 
+#if defined(RRR_WITH_HTTP3)
+	if (data.quic_port > 0) {
+		// DO NOT run config cleanup for this, memory managed elsewhere
+		struct rrr_net_transport_config net_transport_config_tls = {
+				data.certificate_file,
+				data.private_key_file,
+				NULL,
+				NULL,
+				NULL,
+				RRR_NET_TRANSPORT_QUIC
+		};
+
+		int flags = 0;
+
+		if (data.ssl_no_cert_verify) {
+			flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+		}
+
+		if (rrr_http_server_start_quic (
+				http_server,
+				events,
+				data.quic_port,
+				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT,
+				&net_transport_config_tls,
+				flags
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		transport_count++;
+	}
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (transport_count == 0) {
+		RRR_MSG_0("Neither HTTP, HTTPS nor QUIC is active, check arguments.\n");
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+#elif defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (transport_count == 0) {
 		RRR_MSG_0("Neither HTTP or HTTPS are active, check arguments.\n");
 		ret = EXIT_FAILURE;
