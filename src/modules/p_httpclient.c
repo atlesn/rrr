@@ -1618,9 +1618,7 @@ static int httpclient_request_send (
 			&data->net_transport_config,
 			remaining_redirects,
 			httpclient_session_method_prepare_callback,
-			&prepare_callback_data,
 			httpclient_connection_prepare_callback,
-			&prepare_callback_data,
 			httpclient_session_query_prepare_callback,
 			&prepare_callback_data,
 			(void **) &transaction_data,
@@ -2433,13 +2431,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	struct rrr_http_client_callbacks callbacks = {
 		httpclient_final_callback,
-		data,
 		httpclient_failure_callback,
-		data,
 		httpclient_redirect_callback,
-		data,
-		NULL,
-		NULL,
 		NULL,
 		NULL,
 		httpclient_unique_id_generator,

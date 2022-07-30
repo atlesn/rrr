@@ -456,8 +456,6 @@ static int __rrr_http_client_request_send_loop (
 				NULL,
 				NULL,
 				NULL,
-				NULL,
-				NULL,
 				NULL
 		)) == 0 || ret != RRR_HTTP_BUSY) {
 			goto out;
@@ -759,15 +757,10 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,
-			&data,
 			__rrr_http_client_failure_callback,
-			&data,
 			__rrr_http_client_redirect_callback,
-			&data,
 			__rrr_http_client_send_websocket_frame_callback,
-			&data,
 			__rrr_http_client_receive_websocket_frame_callback,
-			&data,
 			__rrr_http_client_unique_id_generator_callback,
 			&data
 	};
