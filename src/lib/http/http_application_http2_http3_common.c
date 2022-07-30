@@ -172,7 +172,7 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 			transaction,
 			data,
 			0,
-			RRR_HTTP_APPLICATION_HTTP2,
+			application->constants->type,
 			application->callbacks.callback_arg
 	)) != 0) {
 		if (is_server) {
