@@ -736,6 +736,44 @@ static int __rrr_net_transport_openssl_handshake (
 		}
 		if (ret_tmp < 0) {
 			RRR_MSG_0("Fatal error during handshake (possible certificate expiration): %i\n", SSL_get_error(ssl, ret_tmp));
+			switch (SSL_get_error(ssl, ret_tmp)) {
+				case SSL_ERROR_NONE:
+					RRR_BUG("Invalid return value SSL_ERROR_NONE in %s\n", __func__);
+					break;
+				case SSL_ERROR_ZERO_RETURN:
+					RRR_MSG_0("SSL_ERROR_ZERO_RETURN while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_READ:
+					RRR_MSG_0("SSL_ERROR_WANT_READ while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_WRITE:
+					RRR_MSG_0("SSL_ERROR_WANT_WRITE while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_CONNECT:
+					RRR_MSG_0("SSL_ERROR_WANT_CONNECT while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_ACCEPT:
+					RRR_MSG_0("SSL_ERROR_WANT_ACCEPT while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_X509_LOOKUP:
+					RRR_MSG_0("SSL_ERROR_WANT_X509_LOOKUP while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_ASYNC:
+					RRR_MSG_0("SSL_ERROR_WANT_ASYNC while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_WANT_ASYNC_JOB:
+					RRR_MSG_0("SSL_ERROR_WANT_ASYNC_JOB while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_SYSCALL:
+					RRR_MSG_0("SSL_ERROR_SYSCALL while handshaking in OpenSSL\n");
+					break;
+				case SSL_ERROR_SSL:
+					RRR_SSL_ERR("Handshake failure");
+					break;
+				default:
+					RRR_MSG_0("Unknown error during handshake: %i\n", SSL_get_error(ssl, ret_tmp));
+					break;
+			};
 		}
 		else {
 			RRR_SSL_ERR("Handshake failure");

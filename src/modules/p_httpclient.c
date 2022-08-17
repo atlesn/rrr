@@ -145,7 +145,7 @@ struct httpclient_data {
 
 	char *http_header_accept;
 
-	rrr_setting_uint message_timeout_us;
+	rrr_setting_uint message_queue_timeout_us;
 	rrr_setting_uint message_ttl_us;
 	rrr_setting_uint message_low_pri_timeout_factor;
 
@@ -712,7 +712,8 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 
 	*msg = NULL;
 
-	entry->send_time = rrr_time_get_64();
+	// Important : Set queue_time for correct timeout behavior
+	entry->queue_time = rrr_time_get_64();
 
 	rrr_msg_holder_incref(entry);
 
@@ -1815,8 +1816,8 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
 	}
 
-	// Important : Set send_time for correct timeout behavior
-	entry->send_time = rrr_time_get_64();
+	// Important : Set queue_time for correct timeout behavior
+	entry->queue_time = rrr_time_get_64();
 
 	rrr_msg_holder_private_data_clear(entry);
 	rrr_msg_holder_incref_while_locked(entry);
@@ -1890,8 +1891,8 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);
 	data->message_ttl_us *= 1000 * 1000;
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
-	data->message_timeout_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_queue_timeout_us, 0);
+	data->message_queue_timeout_us *= 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_silent_put_error_limit_s", silent_put_error_limit_us, 0);
 	data->silent_put_error_limit_us *= 1000 * 1000;
 
