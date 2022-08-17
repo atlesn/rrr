@@ -1,4 +1,4 @@
-.Dd 2022-07-24
+.Dd 2022-08-17
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1871,12 +1871,15 @@ PUT messages which are stored in the message DB will be retried at the next mess
 Defaults to 'no' which means that connecting will be retried until a timeout is reached or indefinitely.
 
 .It http_message_timeout_ms=MILLISECONDS
-Timeout for deferred messages, defaults to 0 which means no timeout.
-Messages being defered to fhe message DB (see
+When a message has been in the send queue for more than the specified amount of milliseconds without any response from the server, it is dropped.
+Messages which has been handed over to a message DB (see
 .Xr http_msgdb_socket
-) will not get affected by this parameter, as the timer is reset every time they are read back from the DB.
+), will be added back to the queue at a later time and the timer will be reset for these.
+
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
 If the timeout is set too high or is not set, messages may accumulate in memory.
+
+Defaults to 0 which means that messages in the send queue will not time out.
 
 .It http_ttl_seconds=SECONDS
 When the time timestamp of a message in the send queue becomes older than the specified amount of seconds, it is dropped.
