@@ -253,6 +253,7 @@ AS_IF([test "x$enable_openssl" = xyes], [
 # Only version >=1.1 supported
 #	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+	AC_CHECK_LIB(ssl, SSL_get1_peer_certificate, [AC_DEFINE([RRR_HAVE_GET1_PEER_CERTIFICATE], [1], [Have get peer certificate with and without reference incrementing])], [])
 	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
