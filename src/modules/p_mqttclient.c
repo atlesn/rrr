@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -431,7 +431,7 @@ static int mqttclient_publish_add_payload (
 					found_tags, RRR_MAP_COUNT(&data->publish_values_from_array_list), INSTANCE_D_NAME(data->thread_data));
 		}
 	}
-	else if (MSG_DATA_LENGTH(reading) > 0) {
+	else if (MSG_DATA_LENGTH(reading) > 0 && !MSG_IS_ARRAY(reading)) {
 		if ((ret = mqttclient_message_data_to_payload(&payload, &payload_size, reading)) != 0) {
 			RRR_MSG_0("Error while creating payload from message data in %s of MQTT client instance %s\n",
 					__func__, INSTANCE_D_NAME(data->thread_data));
