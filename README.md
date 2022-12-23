@@ -144,7 +144,7 @@ The RRR source tree contains packages for Debian-based systems, RedHat-based sys
 
 See the *COMPILE* section below for further information.
 
-#### Pre-compiled package for Debian Bullseye amd64/armhf using APT
+#### Pre-compiled package for Debian Bullseye i386/amd64/armhf using APT
 
 	$ su -
 	# apt install curl gnupg
@@ -154,7 +154,6 @@ See the *COMPILE* section below for further information.
 	# apt install rrr
 
 To use Debian Buster, replace "bullseye.list" with "buster.list".
-The i386 platform is available for Buster.
 
 #### Pre-compiled package for Ubuntu Jammy Jellyfish amd64 using APT
 

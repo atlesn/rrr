@@ -34,8 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 
-struct rrr_event_queue *queue;
-
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
         .numbers.session_expiry                      = 0,
         .numbers.receive_maximum                     = 0,

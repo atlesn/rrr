@@ -1,1 +1,13 @@
-# DO NOT DELETE THIS FILE
+[Unit]
+Description=Read Route Record 1.25-1
+
+[Service]
+ExecStart=/usr/bin/rrr -s -e /etc/rrr.conf /etc/rrr.conf.d/
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=2s
+User=rrr
+Group=rrr
+
+[Install]
+WantedBy=multi-user.target

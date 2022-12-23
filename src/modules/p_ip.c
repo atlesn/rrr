@@ -1083,9 +1083,6 @@ static int ip_push_raw (
 	if (send_size == 0) {
 		goto out;
 	}
-	if (send_size <= 0) {
-		RRR_BUG("BUG: Send size was < 0 in ip_send_raw\n");
-	}
 
 	// Configuration validation should produce an error if do_force_target is set
 	// but no target_port/target_host

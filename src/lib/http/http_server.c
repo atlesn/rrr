@@ -542,9 +542,6 @@ static int __rrr_http_server_start (
 		goto out;
 	}
 
-	if (queue != NULL) {
-	}
-
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
 			*result_transport,
 			port,

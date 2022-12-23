@@ -1,8 +1,29 @@
-rrr (1.25-1bookworm1) bookworm; urgency=medium
+rrr (1.26-1bookworm1) bookworm; urgency=medium
 
   * Bookworm release
 
- -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 21:16:53 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 23 Dec 2022 10:55:18 +0100
+
+rrr (1.26-1) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Improvements:
+    * Clarified inconsitency of manual with respect to configuration
+      paramter mqtt_publish_rrr_message
+    * Never send raw array data from mqttclient
+
+  * Fixes:
+    * Handling of websocket topic filters in httpserver
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Jun 2022 10:55:09 +0200
+
+rrr (1.25-2) bullseye; urgency=medium
+
+  * Under the hood:
+    * Fix misc. code quality issues
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 26 Jun 2022 12:05:57 +0200
 
 rrr (1.25-1) bullseye; urgency=medium
 
