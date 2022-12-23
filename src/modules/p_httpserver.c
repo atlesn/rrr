@@ -1461,6 +1461,7 @@ static int httpserver_websocket_handshake_callback (
 		goto out_bad_request;
 	}
 
+	// Match only endpoint part
 	char *questionmark = strchr(topic_begin, '?');
 	if (questionmark) {
 		*questionmark = '\0';
@@ -1474,19 +1475,27 @@ static int httpserver_websocket_handshake_callback (
 
 	int topic_ok = 0;
 	RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->websocket_topic_filters);
-		if (rrr_mqtt_topic_match_str(topic_begin, node_tag)) {
+		if ((ret = rrr_mqtt_topic_match_str(node_tag, topic_begin)) != RRR_MQTT_TOKEN_MATCH) {
+			if (ret == RRR_MQTT_TOKEN_MISMATCH) {
+				RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
+						INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+						topic_begin,
+						node_tag);
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Error while matching topic in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
 			RRR_DBG_3("httpserver %s websocket topic '%s' matched with topic filter '%s'\n",
 					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
 					topic_begin,
 					node_tag);
 			topic_ok = 1;
 			break;
-		}
-		else {
-			RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
-					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
-					topic_begin,
-					node_tag);
 		}
 	RRR_MAP_ITERATE_END();
 
@@ -1534,6 +1543,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 
 	struct rrr_msg_msg *msg = entry->message;
 
+#if RRR_MSG_SIZE_MAX > RRR_LENGTH_MAX
 	if (MSG_DATA_LENGTH(msg) > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%" PRIu64 "\n",
 				unique_id,
@@ -1543,7 +1553,11 @@ static int httpserver_websocket_get_response_callback_extract_data (
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out_unlock;
 	}
-	else if (MSG_DATA_LENGTH(msg) == 0) {
+	else
+#else
+	(void)(unique_id);
+#endif
+	if (MSG_DATA_LENGTH(msg) == 0) {
 		if ((response_data = rrr_strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;

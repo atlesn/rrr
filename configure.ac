@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.25-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.25-1", [Full version])
+AC_INIT([Read Route Record],[1.26-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.26-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 25, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 26, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -253,6 +253,7 @@ AS_IF([test "x$enable_openssl" = xyes], [
 # Only version >=1.1 supported
 #	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+	AC_CHECK_LIB(ssl, SSL_get1_peer_certificate, [AC_DEFINE([RRR_HAVE_GET1_PEER_CERTIFICATE], [1], [Have get peer certificate with and without reference incrementing])], [])
 	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")

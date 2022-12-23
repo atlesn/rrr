@@ -199,7 +199,7 @@ static inline int rrr_length_inc_err (rrr_length *a) {
 }
 
 static inline void rrr_length_mul_bug (rrr_length *a, rrr_length b) {
-	rrr_biglength r = *a * b;
+	rrr_biglength r = *a * (rrr_biglength) b;
 	if (r > RRR_LENGTH_MAX) {
 		RRR_BUG("Overflow in rrr_length_mul_bug\n");
 	}
