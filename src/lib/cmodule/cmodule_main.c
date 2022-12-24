@@ -42,7 +42,7 @@ static void __rrr_cmodule_main_worker_kill (
 ) {
 	pid_t pid = 0;
 
-	RRR_DBG_1("Terminate worker fork %s, pid is %i\n",
+	RRR_DBG_1("Parent terminate worker fork %s, pid is %i\n",
 			worker->name, worker->pid);
 
 	// Make sure locking/unlocking is correct
@@ -60,13 +60,13 @@ static void __rrr_cmodule_main_worker_kill (
 	// Don't wrap these inside lock
 	// Just do our ting disregarding return values
 
-	RRR_DBG_1("Sending SIGUSR1 to worker fork %s pid %i, then sleeping for 100ms\n",
+	RRR_DBG_1("Parent sending SIGUSR1 to worker fork %s pid %i, then sleeping for 100ms\n",
 			worker->name, pid);
 	kill(pid, SIGUSR1);
 
 	rrr_posix_usleep(150000); // 150 ms
 
-	RRR_DBG_1("Sending SIGKILL to worker fork %s pid %i\n",
+	RRR_DBG_1("Parent sending SIGKILL to worker fork %s pid %i\n",
 			worker->name, pid);
 
 	kill(pid, SIGKILL);
@@ -89,7 +89,12 @@ static void __rrr_cmodule_worker_kill_and_cleanup (
 	// OK to call kill etc. despite fork not being started
 	__rrr_cmodule_main_worker_kill(worker);
 
+	RRR_DBG_1("Parent destroying event queue for worker fork %s pid %i\n",
+			worker->name, worker->pid);
 	rrr_event_queue_destroy(worker->event_queue_worker);
+
+	RRR_DBG_1("Parent destroying worker and shared memory for worker fork %s pid %i\n",
+			worker->name, worker->pid);
 	rrr_cmodule_worker_cleanup(worker);
 }
 
