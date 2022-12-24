@@ -92,9 +92,6 @@ struct ip_data {
 
 	struct rrr_socket_graylist tcp_graylist;
 
-	struct rrr_read_session_collection read_sessions_udp;
-	struct rrr_read_session_collection read_sessions_tcp;
-
 	struct rrr_array_tree *definitions;
 
 	int do_strip_array_separators;
@@ -119,14 +116,14 @@ struct ip_data {
 	rrr_setting_uint message_ttl_us;
 	rrr_setting_uint message_max_size;
 
-	unsigned int source_udp_port;
-	unsigned int source_tcp_port;
+	uint16_t source_udp_port;
+	uint16_t source_tcp_port;
 
-	ssize_t default_topic_length;
 	char *default_topic;
+	uint16_t default_topic_length;
 
 	char *target_host;
-	unsigned int target_port;
+	uint16_t target_port;
 	char *target_host_and_port;
 	int target_protocol;
 
@@ -134,6 +131,8 @@ struct ip_data {
 
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
+
+	uint64_t entry_send_index_pos;
 };
 
 static void ip_data_cleanup(void *arg) {
@@ -150,8 +149,6 @@ static void ip_data_cleanup(void *arg) {
 	if (data->definitions != NULL) {
 		rrr_array_tree_destroy(data->definitions);
 	}
-	rrr_read_session_collection_clear(&data->read_sessions_udp);
-	rrr_read_session_collection_clear(&data->read_sessions_tcp);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
@@ -202,9 +199,7 @@ static void ip_private_data_destroy (void *private_data) {
 static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	rrr_setting_uint tmp_uint;
-
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_udp_port");
+	ret = rrr_instance_config_read_port_number (&data->source_udp_port, config, "ip_udp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_0("Could not parse ip_udp_port for instance %s\n", config->name);
@@ -220,9 +215,8 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			goto out;
 		}
 	}
-	data->source_udp_port = tmp_uint;
 
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_tcp_port");
+	ret = rrr_instance_config_read_port_number (&data->source_tcp_port, config, "ip_tcp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_0("Could not parse ip_tcp_port for instance %s\n", config->name);
@@ -238,9 +232,8 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			goto out;
 		}
 	}
-	data->source_tcp_port = tmp_uint;
 
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_target_port");
+	ret = rrr_instance_config_read_port_number (&data->target_port, config, "ip_target_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_0("Could not parse ip_remote_port for instance %s\n", config->name);
@@ -256,7 +249,6 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			goto out;
 		}
 	}
-	data->target_port = tmp_uint;
 
 	// Reset any NOT_FOUND
 	ret = 0;
@@ -333,10 +325,13 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
-
-	if (data->default_topic != NULL) {
-		data->default_topic_length = strlen(data->default_topic);
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->default_topic,
+			&data->default_topic_length,
+			config,
+			"ip_default_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
@@ -536,6 +531,8 @@ struct ip_read_array_callback_data {
 	struct ip_data *data;
 	struct rrr_array *array_final;
 	struct rrr_read_session *read_session;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
 	struct rrr_msg_holder_collection new_entries;
 };
 
@@ -546,7 +543,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 
 	int ret = 0;
 
-	int protocol = 0;
+	uint8_t protocol = 0;
 
 	switch (callback_data->read_session->socket_options) {
 		case SOCK_DGRAM:
@@ -565,8 +562,8 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			entry,
 			NULL,
 			0,
-			(const struct sockaddr *) &callback_data->read_session->src_addr,
-			callback_data->read_session->src_addr_len,
+			callback_data->addr,
+			callback_data->addr_len,
 			protocol
 	);
 
@@ -587,7 +584,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 			rrr_array_strip_type(callback_data->array_final, &rrr_type_definition_sep);
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&message_new,
 				callback_data->array_final,
 				rrr_time_get_64(),
@@ -614,10 +611,7 @@ static int ip_array_callback_broker (struct rrr_msg_holder *entry, void *arg) {
 }
 
 static int ip_array_callback (
-		struct rrr_read_session *read_session,
-		struct rrr_array *array_final,
-		void *private_data,
-		void *arg
+		RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS
 ) {
 	struct ip_data *data = arg;
 
@@ -629,6 +623,8 @@ static int ip_array_callback (
 			data,
 			array_final,
 			read_session,
+			addr,
+			addr_len,
 			{0}
 	};
 
@@ -664,11 +660,16 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
+	// Used for sorting (preserve order)
+	if ((entry->send_index = ++(ip_data->entry_send_index_pos)) == 0) {
+		RRR_MSG_0("Warning: Entry index counter wrapped in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+	}
 
 	// Used for timeout checks
 	entry->send_time = rrr_time_get_64();
+
+	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
@@ -687,7 +688,7 @@ static int ip_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	EVENT_ACTIVATE(ip_data->event_send_buffer_iterate);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback);
 }
 
 struct ip_resolve_suggestion_callback_data {
@@ -699,7 +700,7 @@ struct ip_resolve_suggestion_callback_data {
 
 static int ip_resolve_suggestion_callback (
 		const char *host,
-		unsigned int port,
+		uint16_t port,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void *arg
@@ -760,7 +761,7 @@ static int ip_resolve_suggestion_callback (
 struct ip_resolve_callback_data {
 	struct ip_data *ip_data;
 	const char *host;
-	unsigned int port;
+	uint16_t port;
 };
 
 static int ip_resolve_callback (
@@ -861,7 +862,7 @@ static void ip_msg_holder_decref_void (void *arg) {
 struct ip_resolve_push_sendto_callback_data {
 	struct ip_data *ip_data;
 	const void *send_data;
-	ssize_t send_size;
+	rrr_biglength send_size;
 	struct rrr_msg_holder *entry_orig;
 };
 
@@ -871,7 +872,7 @@ static int ip_resolve_push_sendto_callback_test_fd (
 		const char *dbg_ip,
 		const char *dbg_family,
 		const char *host,
-		unsigned int port,
+		uint16_t port,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
@@ -880,7 +881,7 @@ static int ip_resolve_push_sendto_callback_test_fd (
 	const char *dummy_data = "";
 
 	// Test send to validate address
-	if ((ret = sendto(fd, dummy_data, 0, 0, addr, addr_len)) != 0) {
+	if ((ret = (int) sendto(fd, dummy_data, 0, 0, addr, addr_len)) != 0) {
 		RRR_DBG_7("ip instance %s resolve %s:%u => %s (sendto %s) failed: %s\n",
 				INSTANCE_D_NAME(ip_data->thread_data),
 				host,
@@ -899,7 +900,7 @@ static int ip_resolve_push_sendto_callback_test_fd (
 
 static int ip_resolve_push_sendto_callback (
 		const char *host,
-		unsigned int port,
+		uint16_t port,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void *arg
@@ -960,7 +961,7 @@ static int ip_resolve_push_sendto_callback (
 			buf
 	);
 
-	int send_chunk_count = 0;
+	rrr_length send_chunk_count = 0;
 	if ((ret = rrr_socket_client_collection_sendto_push_const (
 			&send_chunk_count,
 			callback_data->ip_data->collection_udp,
@@ -995,7 +996,7 @@ static int ip_push_raw_default_target (
 		struct ip_data *ip_data,
 		struct rrr_msg_holder *entry_orig,
 		const void *send_data,
-		ssize_t send_size
+		rrr_biglength send_size
 ) {
 	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 
@@ -1016,7 +1017,7 @@ static int ip_push_raw_default_target (
 			ip_data->target_port
 		};
 
-		int send_chunk_count = 0;
+		rrr_length send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
 				&send_chunk_count,
 				ip_data->collection_tcp,
@@ -1086,7 +1087,7 @@ static int ip_push_raw (
 		struct rrr_msg_holder *entry_orig,
 		int protocol,
 		const void *send_data,
-		ssize_t send_size
+		rrr_biglength send_size
 ) {
 	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 
@@ -1124,7 +1125,7 @@ static int ip_push_raw (
 			RRR_DBG_3("ip instance %s send using address from entry TCP (%s)\n", INSTANCE_D_NAME(thread_data), buf);
 		}
 
-		int send_chunk_count = 0;
+		rrr_length send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 				&send_chunk_count,
 				ip_data->collection_tcp,
@@ -1174,7 +1175,7 @@ static int ip_push_raw (
 			send_fd = (ip_data->udp_send_fd_ip6 > 0 ? ip_data->udp_send_fd_ip6 : ip_data->udp_send_fd_ip4);
 		}
 
-		int send_chunk_count = 0;
+		rrr_length send_chunk_count = 0;
 		ret = rrr_socket_client_collection_sendto_push_const (
 				&send_chunk_count,
 				ip_data->collection_udp,
@@ -1224,7 +1225,7 @@ static int ip_push_message (
 
 	// Just a pointer to data managed elsewhere, not freed
 	const void *send_data = NULL;
-	ssize_t send_size = 0;
+	rrr_biglength send_size = 0;
 	
 	struct rrr_array array_tmp = {0};
 	struct rrr_msg_msg *message = entry->message;
@@ -1233,22 +1234,22 @@ static int ip_push_message (
 	// freed after this function.
 	if (ip_data->do_send_rrr_msg_msg != 0) {
 		if (entry->data_length < (long int) sizeof(*message) - 1) {
-			RRR_MSG_0("ip instance %s had send_rrr_msg_msg set but received a message which was too short (%li<%li), dropping it\n",
-					INSTANCE_D_NAME(thread_data), entry->data_length, (long int) sizeof(*message));
+			RRR_MSG_0("ip instance %s had send_rrr_msg_msg set but received a message which was too short (%llu<%llu), dropping it\n",
+					INSTANCE_D_NAME(thread_data), (long long unsigned) entry->data_length, (long long unsigned) sizeof(*message));
 			goto out;
 		}
 
-		ssize_t final_size = entry->data_length;
+		rrr_length final_size = rrr_length_from_biglength_bug_const(entry->data_length);
 
 		// Check for message already in network order (second send attempt)
 		if (entry->endian_indicator != 0) {
-			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
+			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %" PRIrrrl "\n",
 					INSTANCE_D_NAME(thread_data), rrr_be64toh(message->timestamp), final_size);
 		}
 		else {
 			entry->data_length = final_size = MSG_TOTAL_SIZE(message);
 
-			RRR_DBG_3 ("ip instance %s sends packet with rrr message timestamp from %" PRIu64 " size %li\n",
+			RRR_DBG_3 ("ip instance %s sends packet with rrr message timestamp from %" PRIu64 " size %" PRIrrrl "\n",
 					INSTANCE_D_NAME(thread_data), message->timestamp, final_size);
 
 			rrr_msg_msg_prepare_for_network(message);
@@ -1273,14 +1274,14 @@ static int ip_push_message (
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
 		uint16_t array_version_dummy;
-		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 
 		RRR_FREE_IF_NOT_NULL(tmp_data);
-		ssize_t target_size = 0;
+		rrr_biglength target_size = 0;
 		int found_tags = 0;
 		struct rrr_map *tag_map = (tag_count > 0 ? &ip_data->array_send_tags : NULL);
 		if (rrr_array_selected_tags_export (
@@ -1295,13 +1296,23 @@ static int ip_push_message (
 			goto out;
 		}
 
+		if (target_size > SSIZE_MAX) {
+			RRR_MSG_0("Array message export size too long in ip instance %s\n (%llu > %lli)\n",
+				INSTANCE_D_NAME(thread_data),
+				(unsigned long long) target_size,
+				(long long int) SSIZE_MAX
+			);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+
 		if (tag_count != 0 && found_tags != tag_count) {
 			RRR_MSG_0("Array message to send in ip instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
 					INSTANCE_D_NAME(thread_data), tag_count - found_tags);
 			goto out;
 		}
 
-		RRR_DBG_3 ("ip instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %li\n",
+		RRR_DBG_3 ("ip instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp, found_tags, target_size);
 
 		send_data = tmp_data;
@@ -1322,7 +1333,7 @@ static int ip_push_message (
 			goto out;
 		}
 
-		RRR_DBG_3 ("ip instance %s sends packet with raw data from message with timestamp from %" PRIu64 " %li bytes\n",
+		RRR_DBG_3 ("ip instance %s sends packet with raw data from message with timestamp from %" PRIu64 " %" PRIrrrbl " bytes\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp, send_size);
 	}
 
@@ -1362,13 +1373,21 @@ static void ip_timeout_check (
 	}
 }
 
+static int ip_entry_index_compare (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	// Send index must be set in poll callback function
+	return (a->send_index > b->send_index) - (a->send_index < b->send_index);
+}
+
 static int ip_send_loop (
 		struct ip_data *ip_data
 ) {
 	int ret = 0;
 
 	if (ip_data->do_preserve_order) {
-		rrr_msg_holder_collection_sort(&ip_data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+		rrr_msg_holder_collection_sort(&ip_data->send_buffer, 1 /* Do lock */, ip_entry_index_compare);
 	}
 
 	int timeout_count = 0;
@@ -1434,9 +1453,12 @@ static int ip_send_loop (
 
 			if (action == IP_ACTION_RETURN) {
 				if (node->endian_indicator != 0) {
-					if (rrr_msg_head_to_host_and_verify(node->message, node->data_length) != 0 ||
+					if (rrr_msg_head_to_host_and_verify (
+							node->message,
+							rrr_length_from_biglength_bug_const(node->data_length)
+					) != 0 || (
 						rrr_msg_msg_to_host_and_verify(node->message, node->data_length) != 0
-					) {
+					)) {
 						RRR_BUG("BUG: Message endian reversion failed in ip_send_loop\n");
 					}
 					node->endian_indicator = 0;
@@ -1657,8 +1679,8 @@ static void ip_entry_timeout_update (
 static void ip_chunk_send_smart_timeout_callback (
 		int *do_remove,
 		const void *data,
-		ssize_t data_size,
-		ssize_t data_pos,
+		rrr_biglength data_size,
+		rrr_biglength data_pos,
 		void *chunk_private_data,
 		void *callback_arg
 ) {
@@ -1677,8 +1699,8 @@ static void ip_chunk_send_smart_timeout_callback (
 static void ip_chunk_send_fail_notify_callback (
 		int was_sent,
 		const void *data,
-		ssize_t data_size,
-		ssize_t data_pos,
+		rrr_biglength data_size,
+		rrr_biglength data_pos,
 		void *chunk_private_data,
 		void *callback_arg
 ) {
@@ -1787,8 +1809,8 @@ static void ip_event_send_buffer (
 static void ip_send_chunk_periodic_callback (
 		int *do_remove,
 		const void *data,
-		ssize_t data_size,
-		ssize_t data_pos,
+		rrr_biglength data_size,
+		rrr_biglength data_pos,
 		void *chunk_private_data,
 		void *callback_arg
 ) {
@@ -1837,7 +1859,7 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	ip_data->messages_count_read = 0;
 	ip_data->messages_count_polled = 0;
 
-	int delivery_entry_count = 0;
+	unsigned int delivery_entry_count = 0;
 	int delivery_ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (

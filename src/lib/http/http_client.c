@@ -52,7 +52,7 @@ struct rrr_http_client {
 	struct rrr_event_queue *events;
 
 	uint64_t idle_timeout_ms;
-	int send_chunk_count_limit;
+	rrr_length send_chunk_count_limit;
 
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
@@ -66,7 +66,7 @@ int rrr_http_client_new (
 		struct rrr_http_client **target,
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_http_client_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -127,7 +127,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 	uint64_t result_accumulator = 0;
 
 	if (http_client->transport_keepalive_plain != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_plain,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_active_transaction_count_get_callback,
@@ -136,7 +136,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 	}
 
 	if (http_client->transport_keepalive_tls != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_tls,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_active_transaction_count_get_callback,
@@ -144,7 +144,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 		);
 	}
 
-	return result_accumulator + RRR_LL_COUNT(&http_client->redirects);;
+	return result_accumulator + (unsigned long) RRR_LL_COUNT(&http_client->redirects);;
 }
 
 static int __rrr_http_client_websocket_response_available_notify_callback (
@@ -160,7 +160,7 @@ void rrr_http_client_websocket_response_available_notify (
 		struct rrr_http_client *http_client
 ) {
 	if (http_client->transport_keepalive_plain != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_plain,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_websocket_response_available_notify_callback,
@@ -169,7 +169,7 @@ void rrr_http_client_websocket_response_available_notify (
 	}
 
 	if (http_client->transport_keepalive_tls != NULL) {
-		rrr_net_transport_iterate_with_callback (
+		rrr_net_transport_iterate_by_mode_and_do (
 				http_client->transport_keepalive_tls,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 				__rrr_http_client_websocket_response_available_notify_callback,
@@ -295,8 +295,8 @@ int rrr_http_client_request_data_reset_from_config (
 		RRR_BUG("BUG: Concurrent connection parameter out of range in rrr_http_client_request_data_reset_from_config\n");
 	}
 
-	data->http_port = config->server_port;
-	data->concurrent_connections = config->concurrent_connections;
+	data->http_port = rrr_u16_from_biglength_bug_const(config->server_port);
+	data->concurrent_connections = rrr_u16_from_biglength_bug_const(config->concurrent_connections);
 
 	out:
 	return ret;
@@ -374,7 +374,17 @@ static int __rrr_http_client_chunks_iterate_callback (
 	(void)(chunk_total);
 	(void)(chunk_idx);
 
-	return rrr_nullsafe_str_append_raw(chunks_merged, data_start, chunk_data_size);
+	if (chunk_data_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Chunk too large in HTTP client (%" PRIrrrbl ">%llu)\n",
+			chunk_data_size, (unsigned long long) RRR_LENGTH_MAX);
+		return RRR_HTTP_SOFT_ERROR;
+	}
+
+	return rrr_nullsafe_str_append_raw (
+			chunks_merged,
+			data_start,
+			rrr_length_from_biglength_bug_const(chunk_data_size)
+	);
 }
 
 static int __rrr_http_client_receive_http_part_callback (
@@ -444,6 +454,23 @@ static int __rrr_http_client_receive_http_part_callback (
 	out:
 	rrr_nullsafe_str_destroy_if_not_null(&chunks_merged);
 	return ret;
+}
+
+static int __rrr_http_client_request_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	(void)(handle);
+
+	return http_client->callbacks.failure_callback != NULL
+		? http_client->callbacks.failure_callback (
+				transaction,
+				error_msg,
+				http_client->callbacks.failure_callback_arg
+		)
+		: 0
+	;
 }
 
 static int __rrr_http_client_websocket_handshake_callback (
@@ -529,12 +556,14 @@ static int __rrr_http_client_redirect_callback (
 static int __rrr_http_client_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_client *http_client = arg;
-
+	struct rrr_http_client *http_client = arg
+;
 	int ret = 0;
 	int ret_done = 0;
 
-	ssize_t received_bytes_dummy = 0;
+	rrr_biglength received_bytes_dummy = 0;
+
+	int again_max = 5;
 
 	again:
 
@@ -545,6 +574,8 @@ static int __rrr_http_client_read_callback (
 			__rrr_http_client_websocket_handshake_callback,
 			NULL,
 			__rrr_http_client_receive_http_part_callback,
+			http_client,
+			__rrr_http_client_request_failure_callback,
 			http_client,
 			http_client->callbacks.get_response_callback,
 			http_client->callbacks.get_response_callback_arg,
@@ -573,8 +604,10 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		// This usually only happens at most one time
-		goto again;
+		if (again_max--) {
+			goto again;
+		}
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:
@@ -713,7 +746,9 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			upgrade_mode,
 			protocol_version
 	)) != 0) {
-		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		if (ret != RRR_HTTP_BUSY) {
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		}
 		goto out;
 	}
 
@@ -752,7 +787,7 @@ uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
 		const uint16_t port,
 		const uint16_t index
 ) {
-	return (port << 16 ) | index;
+	return (uint64_t) ((port << 16 ) | index);
 }
 
 static int __rrr_http_client_request_send_intermediate_connect (
@@ -767,7 +802,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	do {
 		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
 	
-		int keepalive_handle = rrr_net_transport_handle_get_by_match (
+		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
 				match_data
@@ -848,25 +883,6 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
-static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-		struct rrr_http_client *http_client,
-		struct rrr_net_transport *transport
-) {
-	return rrr_net_transport_event_setup (
-			transport,
-			0,
-			0,
-			http_client->idle_timeout_ms,
-			http_client->send_chunk_count_limit,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			__rrr_http_client_read_callback,
-			http_client
-	);
-}
-
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -898,17 +914,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				tls_flags,
 				http_client->events,
 				alpn_protos,
-				alpn_protos_length
+				alpn_protos_length,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_tls
-		)) != 0) {
 			goto out;
 		}
 	}
@@ -933,17 +952,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				0,
 				http_client->events,
 				NULL,
-				0
+				0,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_plain
-		)) != 0) {
 			goto out;
 		}
 	}

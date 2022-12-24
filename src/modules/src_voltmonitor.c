@@ -67,13 +67,14 @@ struct voltmonitor_data {
 	struct usb_device *usb_device;
 #endif
 
-	float usb_calibration;
-	int usb_channel;
+	rrr_setting_double usb_calibration;
+	rrr_setting_uint usb_channel;
 
 	int do_inject_only;
 	int do_spawn_test_measurements;
 
 	char *msg_topic;
+	uint16_t msg_topic_len;
 
 	pthread_mutex_t cleanup_lock;
 };
@@ -309,94 +310,43 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 }
 #endif
 
-int data_init(struct voltmonitor_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int data_init(struct voltmonitor_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
 	return 0;
 }
 
-void data_cleanup(void *arg) {
+static void data_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
-int convert_float(const char *value, float *result) {
-	char *err;
-	*result = strtof(value, &err);
-
-	if (err[0] != '\0') {
-		return 1;
-	}
-
-	return 0;
-}
-
-int convert_integer_10(const char *value, int *result) {
-	char *err;
-	*result = strtol(value, &err, 10);
-
-	if (err[0] != '\0') {
-		return 1;
-	}
-
-	return 0;
-}
-
-int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data *config) {
+static int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	char *vm_calibration = NULL;
-	char *vm_channel = NULL;
-
-	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->msg_topic, config, "vm_message_topic")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in vm_message_topic for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->msg_topic,
+			&data->msg_topic_len,
+			config,
+			"vm_message_topic"
+	)) != 0) {
+		goto out;
 	}
 
-	rrr_instance_config_get_string_noconvert_silent (&vm_calibration, config, "vm_calibration");
-	rrr_instance_config_get_string_noconvert_silent (&vm_channel, config, "vm_channel");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE("vm_calibration", usb_calibration, 1.124);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("vm_channel", usb_channel, 1);
 
-	float calibration = 1.124;
-	int channel = 1;
-
-	if (vm_calibration != NULL) {
-		if (convert_float(vm_calibration, &calibration) != 0) {
-			RRR_MSG_0 ("Syntax error in vm_calibration parameter, could not understand the number '%s'\n", vm_calibration);
-			ret = 1;
-			goto out;
-		}
+	if (data->usb_channel != 1 && data->usb_channel != 2) {
+		RRR_MSG_0 ("Parameter vm_channel must be 1 or 2 in in voltmonitor instance %s\n", config->name);
+		ret = 1;
+		goto out;
 	}
-	if (vm_channel != NULL) {
-		if (convert_integer_10(vm_channel, &channel) != 0) {
-			RRR_MSG_0 ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
-			ret = 1;
-			goto out;
-		}
-		if (channel != 1 && channel != 2) {
-			RRR_MSG_0 ("vm_channel must be 1 or 2\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->usb_calibration = calibration;
-	data->usb_channel = channel;
 
 	// Undocumented parameters, used in test suite
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
 
 	out:
-
-	if (vm_calibration != NULL) {
-		rrr_free(vm_calibration);
-	}
-	if (vm_channel!= NULL) {
-		rrr_free(vm_channel);
-	}
 
 	return ret;
 }
@@ -414,12 +364,12 @@ static int voltmonitor_spawn_message_callback (struct rrr_msg_holder *entry, voi
 
 	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_array_new_message_from_collection (
+	if (rrr_array_new_message_from_array (
 			&message,
 			callback_data->array_tmp,
 			callback_data->time_now,
 			callback_data->data->msg_topic,
-			(callback_data->data->msg_topic != NULL ? strlen(callback_data->data->msg_topic) : 0)
+			(callback_data->data->msg_topic != NULL ? callback_data->data->msg_topic_len : 0)
 	) != 0) {
 		RRR_MSG_0("Could not create message in volmonitor_spawn_message of voltmonitor instance %s\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data));
@@ -438,26 +388,20 @@ static int voltmonitor_spawn_message_callback (struct rrr_msg_holder *entry, voi
 	return ret;
 }
 
-static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t value) {
+static int voltmonitor_spawn_message (struct voltmonitor_data *data, int value) {
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
 
-	uint64_t time_now = rrr_time_get_64();
+	const uint64_t time_now = rrr_time_get_64();
 
-	if (rrr_array_push_value_u64_with_tag(&array_tmp, "measurement", value) != 0) {
-		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
-		ret = 1;
-		goto out;
-	}
-	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
-		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
-		ret = 1;
-		goto out;
-	}
-	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
-		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
-		ret = 1;
+	ret |= rrr_array_push_value_i64_with_tag(&array_tmp, "measurement", value);
+	ret |= rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_now);
+	ret |= rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_now);
+
+	if (ret != 0) {
+		RRR_MSG_0("Error while pushing values to array in volmonitor_spawn_message of voltmonitor instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
@@ -495,7 +439,7 @@ static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
 	return ret;
 }
 
-int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_holder *entry) {
+static int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_holder *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
 	struct rrr_msg_msg *message = entry->message;
@@ -509,19 +453,24 @@ int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_holder
 	}
 
 	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
 		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
 	}
 
-	uint64_t value = 0;
-	if (rrr_array_get_value_unsigned_64_by_tag(&value, &array_tmp, "measurement", 0)) {
+	int64_t value = 0;
+	if (rrr_array_get_value_signed_64_by_tag(&value, &array_tmp, "measurement", 0)) {
 		RRR_BUG("Could not get value from array in voltmonitor inject\n");
 	}
 
-	RRR_DBG_1("voltmonitor instance %s inject value %" PRIu64 "\n",
+	if (value < INT_MIN || value > INT_MAX) {
+		RRR_BUG("Bug: voltmonitor instance %s inject value %" PRIi64 " overflow or underflow\n",
+				INSTANCE_D_NAME(thread_data), value);
+	}
+
+	RRR_DBG_1("voltmonitor instance %s inject value %" PRIi64 "\n",
 			INSTANCE_D_NAME(thread_data), value);
 
-	if (voltmonitor_spawn_message(data, value) != 0) {
+	if (voltmonitor_spawn_message(data, (int) value) != 0) {
 		RRR_BUG("Error while spawning message in voltmonitor inject\n");
 	}
 

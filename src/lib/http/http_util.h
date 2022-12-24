@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len) \
 	char name[256]; rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok(name, sizeof(name), str, len)
 
+struct rrr_array;
 struct rrr_nullsafe_str;
 
 struct rrr_http_uri_flags {
@@ -45,7 +46,7 @@ struct rrr_http_uri_flags {
 struct rrr_http_uri {
 	char *protocol;
 	char *host;
-	unsigned int port;
+	uint16_t port;
 	char *endpoint;
 };
 
@@ -142,5 +143,13 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 const char *rrr_http_util_iana_response_phrase_from_status_code (
 		unsigned int status_code
 );
+#ifdef RRR_WITH_JSONC
+int rrr_http_util_json_to_arrays (
+		const char *data,
+		rrr_length data_size,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
+);
+#endif
 
 #endif /* RRR_HTTP_UTIL_H */

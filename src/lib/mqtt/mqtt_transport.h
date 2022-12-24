@@ -35,7 +35,7 @@ struct rrr_net_transport_config;
 struct rrr_mqtt_p;
 
 struct rrr_mqtt_transport {
-	ssize_t max;
+	unsigned int max;
 	uint64_t close_wait_time_usec;
 
 	struct rrr_net_transport *transports[RRR_MQTT_TRANSPORT_MAX];
@@ -76,23 +76,13 @@ int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
 		const struct rrr_net_transport_config *net_transport_config
 );
-int rrr_mqtt_transport_client_count_get (
+rrr_length rrr_mqtt_transport_client_count_get (
 		struct rrr_mqtt_transport *transport
-);
-int rrr_mqtt_transport_accept (
-		int *new_transport_handle,
-		struct rrr_mqtt_transport *transport,
-		void (*new_connection_callback)(
-				struct rrr_net_transport_handle *handle,
-				const struct sockaddr *sockaddr,
-				socklen_t socklen,
-				void *rrr_mqtt_transport_accept_and_connect_callback_data
-		)
 );
 int rrr_mqtt_transport_connect (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*new_connection_callback)(
 				struct rrr_net_transport_handle *handle,

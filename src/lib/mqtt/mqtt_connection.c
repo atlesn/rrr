@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../ip/ip.h"
 #include "../ip/ip_accept_data.h"
-#include "../buffer.h"
+#include "../fifo.h"
 #include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
@@ -70,6 +70,16 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
 
 #define CALL_EVENT_HANDLER_NO_REPEAT(event)	\
 		__rrr_mqtt_connection_call_event_handler(connection, event, 1, NULL)
+
+#define RRR_MQTT_CONN_TIMEOUTS_CHECK()                         \
+        short keepalive_reached = 0;                           \
+        short keepalive_exceeded = 0;                          \
+        __rrr_mqtt_conn_timeouts_check (&keepalive_reached, &keepalive_exceeded, connection)
+
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason)   \
+        if ((connection)->disconnect_reason_v5_ == 0) {        \
+            (connection)->disconnect_reason_v5_ = reason;      \
+        }                                                      \
 
 int rrr_mqtt_conn_set_client_id (
 		struct rrr_mqtt_conn *connection,
@@ -232,7 +242,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	RRR_DBG_2("Destroying connection %p, final destruction\n", connection);
 
-	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
+	rrr_fifo_clear(&connection->receive_buffer.buffer);
 
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 
@@ -270,11 +280,11 @@ static int __rrr_mqtt_conn_new (
 
 	memset (res, '\0', sizeof(*res));
 
-	if ((ret = rrr_fifo_buffer_init_custom_free(&res->receive_queue.buffer,	rrr_mqtt_p_standardized_decref)) != 0) {
-		RRR_MSG_0("Could not initialize buffers in __rrr_mqtt_connection_new\n");
-		ret = RRR_MQTT_INTERNAL_ERROR;
-		goto out_free;
-	}
+	rrr_fifo_init_custom_refcount (
+			&res->receive_buffer.buffer,
+			rrr_mqtt_p_standardized_incref,
+			rrr_mqtt_p_standardized_decref
+	);
 
 	res->connect_time = res->last_read_time = res->last_write_time = rrr_time_get_64();
 	res->close_wait_time_usec = close_wait_time_usec;
@@ -305,11 +315,35 @@ static int __rrr_mqtt_conn_new (
 
 	goto out;
 
-	out_free:
-		rrr_free(res);
-
+//	out_free:
+//		rrr_free(res);
 	out:
 		return ret;
+}
+
+static void __rrr_mqtt_conn_timeouts_check (
+		short *keepalive_reached,
+		short *keepalive_exceeded,
+		struct rrr_mqtt_conn *connection
+) {
+	*keepalive_reached = 0;
+	*keepalive_exceeded = 0;
+
+	uint64_t limit_ping = connection->keep_alive;
+	uint64_t limit = (uint64_t) ((double) connection->keep_alive * 1.5);
+
+	limit_ping *= 1000000;
+	limit *= 1000000;
+
+	if (connection->last_read_time + limit < rrr_time_get_64()) {
+		*keepalive_exceeded = 1;
+	}
+
+	if ( connection->last_read_time + limit_ping < rrr_time_get_64() ||
+	     connection->last_write_time + limit_ping < rrr_time_get_64()
+	) {
+		*keepalive_reached = 1;
+	}
 }
 
 static int __rrr_mqtt_connection_disconnect_call_event_handler_if_needed (
@@ -344,8 +378,6 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 
 	int ret = RRR_MQTT_OK;
 
-//	printf("in iteratore disconnect state: %u\n", connection->state_flags);
-
 	// The session system must be informed (through broker/client event handlers) before close_wait expires
 	// in case the client re-connects before close_wait has finished. This prevents the new connection
 	// from experiencing the session being destroyed shortly after connecting.
@@ -357,10 +389,26 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	// will transition to CLOSE_WAIT. If a disconnect packet is already received or sent otherwise
 	// by non-error means, state is already CLOSE_WAIT here. For severe errors with V3.1 we do not
 	// send the packet, these errors will set a disconnect reason >= 0x80.
-	if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
+
+	RRR_MQTT_CONN_TIMEOUTS_CHECK();
+
+	if (keepalive_exceeded || connection->disconnect_reason_v5_ == RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT) {
+		RRR_DBG_1("Destroying connection %p client ID '%s', keep alive was exceeded. Reason is otherwise set to %u.\n",
+				connection,
+				(connection->client_id != NULL ? connection->client_id : "(empty)"),
+				connection->disconnect_reason_v5_
+		);
+
+		// Must destroy connection immediately without DISCONNECT packet. There is a reason defined
+		// in v5, but the same standard also instructs to close the connection without
+		// sending any DISCONNECT.
+
+		goto out;
+	}
+	else if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
 		if (connection->disconnect_reason_v5_ >= 0x80) {
 			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(connection->disconnect_reason_v5_);
-			RRR_MSG_0("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
+			RRR_DBG_1("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
 					connection->disconnect_reason_v5_,
 					(reason != NULL ? reason->description : "unknown error"),
 					(connection->client_id != NULL ? connection->client_id : "")
@@ -385,34 +433,38 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		}
 	}
 
-	if (connection->close_wait_time_usec > 0) {
-		uint64_t time_now = rrr_time_get_64();
-		if (connection->close_wait_start == 0) {
-			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
-					connection,
-					(connection->client_id != NULL ? connection->client_id : "(empty)"),
-					connection->disconnect_reason_v5_
-			);
+	if (connection->close_wait_time_usec == 0) {
+		goto out;
+	}
 
-			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
-				__rrr_mqtt_connection_close (connection);
-			}
+	uint64_t time_now = rrr_time_get_64();
+	if (connection->close_wait_start == 0) {
+		connection->close_wait_start = time_now;
+		RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
+				connection,
+				(connection->client_id != NULL ? connection->client_id : "(empty)"),
+				connection->disconnect_reason_v5_
+		);
+
+		if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
+			__rrr_mqtt_connection_close (connection);
 		}
-		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
+	}
+	if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
-					(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
-			// We can basically return anything apart from 1 to stop net transport from destroying connection.
-			// When we return 0, connection is destroyed.
-			ret = RRR_LL_DIDNT_DESTROY;
-			goto out;
-		}
-		RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
-				connection, connection->disconnect_reason_v5_);
+				(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
+		// We can basically return anything apart from 1 to stop net transport from destroying connection.
+		// When we return 0, connection is destroyed.
+		ret = RRR_LL_DIDNT_DESTROY;
+		goto out;
 	}
 
 	out:
-	return ret;
+		if (ret == RRR_MQTT_OK) {
+			RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
+					connection, connection->disconnect_reason_v5_);
+		}
+		return ret;
 }
 
 int rrr_mqtt_conn_set_data_from_connect_and_connack (
@@ -530,20 +582,17 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 	int ret = RRR_MQTT_OK;
 
 	if (connection->keep_alive > 0) {
-		uint64_t limit_ping = (double) connection->keep_alive;
-		uint64_t limit = (double) connection->keep_alive * 1.5;
+		RRR_MQTT_CONN_TIMEOUTS_CHECK();
 
-		limit_ping *= 1000000;
-		limit *= 1000000;
-		if (connection->last_read_time + limit < rrr_time_get_64()) {
+		if (keepalive_exceeded) {
 			RRR_DBG_1("Keep-alive exceeded for connection\n");
+			RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT);
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
-		else if (exceeded_keep_alive_callback != NULL &&
-				(connection->last_read_time + limit_ping < rrr_time_get_64() ||
-				connection->last_write_time + limit_ping < rrr_time_get_64()) &&
-				(ret = exceeded_keep_alive_callback(handle, callback_arg)) != RRR_MQTT_OK
+		else if ((keepalive_reached) &&
+		         (exceeded_keep_alive_callback) != NULL &&
+                         (ret = exceeded_keep_alive_callback(handle, callback_arg)) != RRR_MQTT_OK
 		) {
 			RRR_MSG_0("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
 			goto out;
@@ -666,11 +715,6 @@ struct rrr_mqtt_conn_read_callback_data {
 	void *handler_callback_arg;
 };
 
-#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason) 	\
-		if ((connection)->disconnect_reason_v5_ == 0) {						\
-			(connection)->disconnect_reason_v5_ = reason;					\
-		}
-
 static int __rrr_mqtt_conn_read_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -747,7 +791,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 				&connection->parse_session.packet->payload,
 				&read_session->rx_buf_ptr, // Set to NULL if success
 				read_session->rx_buf_ptr + connection->parse_session.payload_pos,
-				read_session->rx_buf_wpos - connection->parse_session.payload_pos
+				rrr_length_from_biglength_sub_bug_const (read_session->rx_buf_wpos, connection->parse_session.payload_pos)
 		);
 
 		RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
@@ -791,7 +835,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
-		int read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
@@ -827,8 +871,8 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
 				ret = RRR_SOCKET_READ_INCOMPLETE;
 			}
-			else if (ret != RRR_SOCKET_READ_INCOMPLETE && connection->disconnect_reason_v5_ == 0) {
-				connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
+				RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR);
 			}
 			goto out;
 		}
@@ -841,7 +885,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 static int __rrr_mqtt_conn_iterator_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t data_size
+		rrr_length data_size
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -860,7 +904,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_push (
 static int __rrr_mqtt_conn_iterator_ctx_send_push_urgent (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t data_size
+		rrr_length data_size
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -878,12 +922,12 @@ static int __rrr_mqtt_conn_iterator_ctx_send_push_urgent (
 
 int __rrr_mqtt_connection_create_variable_int (
 		uint8_t *target,
-		ssize_t *length,
-		uint32_t value
+		rrr_length *length,
+		rrr_biglength value
 ) {
 	*length = 1;
 
-	if (value > 0xfffffff) {
+	if (value > 0xfffffff) { // Seven f's
 		RRR_MSG_0("Integer value too large in __rrr_mqtt_connection_create_variable_int\n");
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
@@ -910,11 +954,10 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
-	int ret_destroy = 0;
 
 	struct rrr_mqtt_p_payload *payload = NULL;
 	char *network_data = NULL;
-	ssize_t network_size = 0;
+	rrr_length network_size = 0;
 	void *send_data = NULL;
 
 	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection) && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
@@ -977,8 +1020,8 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 
 	struct rrr_mqtt_p_header header = {0};
-	ssize_t variable_int_length = 0;
-	ssize_t payload_length = 0;
+	rrr_length variable_int_length = 0;
+	rrr_length payload_length = 0;
 	payload = packet->payload;
 	if (payload != NULL) {
 		payload_length = packet->payload->length;
@@ -987,16 +1030,16 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	if ((ret = __rrr_mqtt_connection_create_variable_int (
 			header.length,
 			&variable_int_length,
-			packet->assembled_data_size + payload_length
+			rrr_length_add_bug_const(packet->assembled_data_size, payload_length)
 	)) != 0) {
 		RRR_MSG_0("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
-	header.type = RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
+	header.type = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
 
-	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
+	rrr_biglength total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
 
-	RRR_DBG_3("Sending packet %p of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li, id: %u, urgent: %i\n",
+	RRR_DBG_3("Sending packet %p of type %s flen: 1, vlen: %" PRIrrrl ", alen: %" PRIrrrl ", plen: %" PRIrrrl ", total: %" PRIrrrbl ", id: %u, urgent: %i\n",
 			packet,
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			variable_int_length,
@@ -1009,7 +1052,12 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	__rrr_mqtt_connection_update_last_write_time(connection);
 
-	const size_t send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
+	const rrr_biglength send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
+	if (send_size > RRR_LENGTH_MAX) {
+		RRR_BUG("Bug: Send size overflow in rrr_mqtt_conn_iterator_ctx_send_packet (%llu>%llu)\n",
+			(unsigned long long) send_size, (unsigned long long) RRR_LENGTH_MAX);
+	}
+
 	if ((send_data = rrr_allocate(send_size)) == NULL) {
 		RRR_MSG_0("Failed to allocate send data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		ret = 1;
@@ -1039,13 +1087,13 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	int (*send_method)(
 			struct rrr_net_transport_handle *handle,
 			void **data,
-			ssize_t data_size
+			rrr_length data_size
 	) = (urgent
 		? __rrr_mqtt_conn_iterator_ctx_send_push_urgent
 		: __rrr_mqtt_conn_iterator_ctx_send_push
 	);
 
-	if ((ret = send_method (handle, &send_data, send_size)) != 0) {
+	if ((ret = send_method (handle, &send_data, (rrr_length) send_size)) != 0) {
 		RRR_MSG_0("Error while pushing data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
@@ -1069,7 +1117,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	out:
 	RRR_FREE_IF_NOT_NULL(send_data);
 	RRR_FREE_IF_NOT_NULL(network_data);
-	return ret | ret_destroy;
+	return ret;
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet (

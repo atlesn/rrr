@@ -1,4 +1,4 @@
-.Dd 2021-04-07
+.Dd 2021-08-21
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -353,6 +353,9 @@ Sends records and requests to an HTTP server.
 .It incrementer (PA)
 Keeps track of unique IDs and appends them to topics of messages.
 
+.It cacher (PA)
+Intermediate message on disk storage for continuity across restarts.
+
 .It msgdb (N)
 Filesystem storage engine for RRR messages (message DB).
 
@@ -389,24 +392,38 @@ module:
 .PP
 .Bl -tag -width -indent
 .It dummy_no_generation={yes|no}
-No messages are generated, defaults to yes. 
+No messages are generated, defaults to yes.
+
 .It dummy_no_sleeping={yes|no}
 Don't sleep between creating messages, but create as many messages as the reader can handle, limited by automatic ratelimiting. Defaults to no.
+
 .It dummy_no_ratelimit={yes|no}
 If set to yes, automatic ratelimiting will be disabled even if
 .B dummy_no_sleeping
 is set to yes. Defaults to no.
+
 .It dummy_sleep_interval_us=MICROSECONDS
 The interval to sleep between each generated message. Cannot be set to 0, defaults to 50000 (50 ms). The sleep time is an approximate value. This parameter is ignored if
 .B dummy_no_sleeping
 is set to yes.
+
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will never stop.
+
 .It dummy_random_payload_max_size={BYTES}
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
+Cannot be set together with
+.B dummy_array_tag.
+
 .It dummy_topic={TOPIC}
 Set an MQTT topic in generated messages.
+
+.It dummy_array_tag={TAG}
+If set, array messages will be created containing a single value of type vain with the specifed tag.
+Cannot be set together with
+.B dummy_random_payload_max_size.
 .El
+
 .SS raw (DA)
 This module reads messages from senders and drops them possibly after collection information from them.
 .PP
@@ -480,16 +497,15 @@ If set to yes, complete RRR messages encoded for network will be sent.
 If set to no or left unset, messages with arrays will have their array packed and sent, and messages with other data will simply have their contents sent as is.
 
 .It ip_preserve_order={yes|no}
-Attempt to send messages in order according to their timestamp.
-Messages to a particular destination will be sent in order according to their creation timestamp.
-If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+Attempt to always send messages in order according to when they first arrived in the IP module.
+If messages time out before they are sent, order is guaranteed for the remaining messages in the queue.
 To ensure order in all situations, the parameter
 .B ip_persistent_timeout_ms
 should not be zero and
 .B ip_send_multiple_per_connection
 should be 'yes'.
-This will impact performance when destinations are unreachable.
-Defaults no no.
+Order preservation can impact performance when destinations are unreachable due to sorting.
+Defaults to no which means that order is not guaranteed when there are connection problems and retries.
 
 .It ip_send_multiple_per_connection={yes|no}
 If set to no, TCP connections are forced to be closed after a single message has been sent. Defaults to 'yes'.
@@ -610,6 +626,15 @@ converted values is generated for every received RRR message. Non-RRR array mess
 dropped.
 .PP
 .Bl -tag -width -indent
+.It mangler_topic=MQTT-TOPIC
+If set, the specified topic is set on all outgoing messages.
+If left unset, any topic from the original messages is used.
+
+.It mangler_clear_tags=TAG[,TAG...]
+Values in input arrays which match one of the specified tags are deleted.
+The deletion is performed prior to any conversion.
+Optional parameter.
+
 .It mangler_conversions={h2str|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob}[,...]
 A comma separated list of conversion methods which provides a conversion recipe.
 For every value of input arrays, all conversions are applied from left to right.
@@ -641,6 +666,8 @@ they will be exported without quotes.
 Refer to the
 .B CONVERSION METHODS
 section for descriptions of all conversions and type compatibility.
+
+If this parameter is not set, no conversion is performed.
 
 .It mangler_non_array_passthrough={yes|no}
 If set to 'yes', non RRR-array messages are passed through to readers. Defaults to 'no' which will cause
@@ -998,7 +1025,7 @@ Pushes a 64-bit integer. If the given number is unsigned, it will be stored as u
 .It $message->push_tag_fixp(tag, fixed_pointer)
 Pushes an RRR fixed pointer type. If a string is given, string notation like
 .B /^(10#|16#|)-?\\d+\\.\\d+$/
-is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given is stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
+is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given will be stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
 
 .It $message->push_tag(tag, value)
 Push a value or on array of values. The type will be identified automatically. Array values are passed by using a reference like 
@@ -1305,15 +1332,75 @@ If array parsing fails according to definition, keep skipping one byte forward i
 Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
 .SS httpserver (PAI)
-This module accepts connections from HTTP clients, extracts POST or GET data fields and puts it into RRR array messages
-for other modules to use. The query string from the URI is parsed in both GET and POST requests. Duplicate field names are allowed.
-.PP
+This module accepts connections from HTTP clients, extracts data fields and saves them into RRR array messages for other modules to use.
+The query string from the URI is parsed in all request types. Duplicate field names are allowed.
+
 .B DO NOT USE
 this HTTP server openly on the Internet. It has
 .B NO PROTECTION MECHANISMS
 against DoS attacks, flooding etc. There is also
 .B NO AUTHENTICATION.
 Use a server like Apache to run a public server.
+
+The following request methods are supported which may or may not have a body according to standards:
+
+.Bl -dash -offset indent -compact
+.It
+GET
+.It
+OPTIONS
+.It
+POST
+.It
+PUT
+.It
+HEAD
+.It
+DELETE
+.El
+
+Generated  messages will have the topic
+.B httpserver/request/uuu
+set, where
+.B uuu
+is a unique unsigned decimal number which increase by 1 for every received request.
+Messages will not be generated for the 
+.B OPTIONS
+method, only default 204 responses will be sent to these requests.
+
+For PUT and POST request which have a body, value fields will be extracted from bodies with the following content types:
+
+.Bl -dash -offset indent -compact
+.It
+multipart/form-data
+.It
+application/x-www-form-urlencoded
+.It
+application/json
+.El
+
+If other formats is to be parsed,
+.B http_server_receive_full_request
+can be used and the body can then be parsed by a script in the python3 or perl5 modules.
+
+Structural fields set due to
+.B http_server_receive_full_request
+, fields from the URI and field from PUT/POST data will all be added to the same array in a pre-defined order.
+Duplicate value field names are allowed.
+
+.Bl -enum -offset indent -compact
+.It
+Structural fields
+.It
+Fields from request URI
+.It
+Fields from PUT/POST data
+.El
+
+When receiving JSON data, one RRR array message will be generated for every JSON object containing bare associative values regardless of nesting.
+In each of the messages, an additional value named
+.B http_request_partials
+describing the total number of messages for this request is placed at the beginning of the array followed by the structural fields and any fields from the URI before fields from the JSON object.
 .PP
 This module does not respond with any data by default.
 If a request was successfully processed, a
@@ -1326,27 +1413,6 @@ response may be returned.
 If a response is expected to be generated by another module, a
 .B 504 Gateway Timeout
 response will be generated if the response timeout is reached.
-.PP
-With default configuration, no RRR messages are generated by
-.B httpserver,
-and any received (and valid) request gets a
-.B 204 No Content
-response.
-.PP
-.Bl -tag -width -indent
-.It RRR array message with fields
-Any configured fields from GET, POST or query string in the endpoint are put into an RRR array message.
-If full request receive is active, fields generated here will be put into the same message. Array messages will have the topic
-.B httpserver/request/uuu
-set, where
-.B uuu
-is a unique ID. Configured fields are not retrieved for requests with the
-.B OPTIONS
-method. 
-.El
-.PP
-The IDs are unsigned desimal numbers which increase by 1 for every received request, also if they do not cause any RRR
-messages to be generated. 
 .PP
 The following configuration parameters are available in the
 .B httpserver
@@ -1374,24 +1440,39 @@ Accept any field names from incoming requests. May not be used with
 .B http_server_fields_accept. 
 Defaults to 'no'.
 
+.It http_server_no_body_parse={yes|no}
+Disable any parsing and field extraction of the request body regardless of its content type.
+Defaults to 'no'.
+
 .It http_server_allow_empty_messages={yes|no}
-Create RRR messages for incoming request even if no field names would be added to the message. Defaults to 'no'.
+Allow messages with no array values to be generated. This option also affects
+.B http_server_receive_full_request.
+If set to no or left unset, messages will not be generated unless they would contain at least one value.
 
 .It http_server_receive_full_request={yes|no}
-Get HTTP data from the request and add it to an RRR array message along with any fields from POST and GET. 
-The fields
-.B http_method, http_protocol, http_endpoint, http_body, http_content_transfer_encoding
-and
-.B http_content_type
-will be added. The latter two values will only be added if present in request header, and the body only if the request body has non-zero length.
-These fields are always added regardless of other options, except from the
+Get HTTP data from the request and add it to an RRR array message along with any fields. 
+The following array values will be present in generated messages:
+.sp
+.Bl -tag -width -indent
+.It http_method
+Always present.
+.It http_protocol
+Always present with the value 1 or 2.
+.It http_endpoint
+Always present.
+.It http_body
+Added if a body of non-zero length is present.
+.It http_content_transfer_encoding
+Added if present in the header.
+.It http_content_type
+Added if present in the header.
+.El
+.sp
+Note that if
 .B http_server_allow_empty_messages
-option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
-The generated RRR message will have a topic of
-.B httpserver/request/uuu
-where uuu is a unique ID for one HTTP connection.
-.B http_protocol
-is either 1 or 2. Defaults to no. 
+is active, no messages without body will be generated.
+
+If set to on or left unset, only fields from the HTTP request will be present in generated messages.
 
 .It http_server_get_response_from_senders={yes|no}
 If this option is set to 'yes', a sender of
@@ -1399,7 +1480,7 @@ If this option is set to 'yes', a sender of
 is expected to generate HTTP responses. Imples
 .B http_server_receive_full_request=yes.
 
-A module which receives the RRR message containing the response may generate a response structured in an RRR array message with the following fields of which all are optinal:
+A module which receives the RRR message containing the response may generate a response structured in an RRR array message with the following fields of which all are optional:
 .sp
 .Bl -tag -width -indent
 .It http_response_code
@@ -1452,6 +1533,11 @@ header with the given string in all response headers.
 The header is mainly used by web browsers, look online for documentation on what it does.
 Using the header, in particualar setting it to * (which means to allow all origins), may have
 .B security implications.
+
+.It http_server_cache_control_header=STRING
+If defined, httpserver will send a
+.B Cache-Control
+header with the given string in all response headers.
 
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
@@ -1566,6 +1652,11 @@ mode is set, messages which does not contain a body (specified in the tag named 
 ) will trigger an error as they are processed.
 Messages with a body are otherwise not affected by this parameter.
 Defaults to 'urlencoded'.
+
+.It http_taint_tag=ARRAY TAG
+The specified tag of vain type will be added to generated response messages of array type.
+In addition, any received messages from senders in which this tag is present will be ignored.
+If left unset, no taint tag will be used.
 
 \(bu If
 .B get
@@ -1736,6 +1827,13 @@ Defaults to 0 which means that TTL check is not performed.
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
 
+.It http_accept=STRING
+If specified, an Accept: header field will be sent with all requests containing the given value. If
+.B http_accept=application/json
+is specified,
+.B Accept: application/json
+will be sent to the server. Note that it is not possible to specifiy a value with newlines.
+
 .It http_receive_part_data={yes|no}
 .It http_receive_json_data={yes|no}
 Any combination of yes and no is allowed for the receive options. By default, no messages are generated by
@@ -1752,6 +1850,45 @@ Httpclient will attempt to parse any received data as JSON, regardless of what c
 Should the parsing fail, no error messages are printed unless debuglevel 2 is set.  
 
 If the original message which caused the query had a topic set, this topic will be present in generated messages. 
+
+.It http_receive_structured={yes|no}
+If set to yes, generated messages will be RRR array messages. The following fields will be available in the messages:
+
+.Bl -tag -width -indent
+.It http_response_code
+The HTTP response code.
+.sp
+.It http_content_type
+The content type from the HTTP header, or empty string if not present.
+.sp
+.It http_body
+The raw response body, or empty string if not present.
+.El
+
+The
+.B http_body
+tag will not be present for JSON messages.
+Also, if the JSON data in the response contains any of the above fields, both will be present in the message
+with the HTTP-response fields being placed first.
+
+.It http_receive_ignore_error_part_data={yes|no}
+If set to no, attempts will be made to create messages from the part data of any responses from the server, even
+if they are error responses (HTTP response code is less than 200 or more than 299).
+If set to yes or left unset, no messages will be generated from error responses.
+
+.It http_receive_404_as_empty_part={yes|no}
+If set to yes and a 404 NOT FOUND response is received, an empty RRR data message will be created.
+
+If set to no or left unset, no such messages are created upon 404 responses.
+
+This parameter is not affected by
+.B http_receive_ignore_error_part_data
+and does not affect any other parameters.
+
+.It http_low_priority_put={yes|no}
+If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
+can improve performance in certain applications if stores are slow.
+If set to no or left unset, PUT messages will be treated as other messages.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
@@ -1773,14 +1910,7 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 The message DB saves messages on the file system for persistence across program restarts.
 Clients may connect to the message DB using a UNIX socket and perform REST-like (REpresentional State Transfer) queries to save and retrieve messages.
 
-Messages are stored in a file hirarchy based on their topics, and due to this, there are restrictions on valid topics:
-
-.Bl -width 
-.It - Topics with dots ('.', '..' etc.) might get rejected as they have special meaning for the filesystem
-.It - Topics cannot end with a slash /
-.It - While a message 'a/b' is stored, a message 'a' cannot be stored because 'a' is now a directroy (and vice versa)
-.It - Empty topics cannot be used
-.El
+Messages are stored with their filename being the SHA-256 hash of their topic. Messages with empty topics cannot be stored.
 
 Using the socket is the only way to communicate with the message DB, it cannot read from other modules nor can it be read from.
 
@@ -1881,6 +2011,70 @@ If IDn2 < IDl, then IDn = IDn2 + m
 \(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
 .br
 \(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
+
+.SS cacher (PA)
+The
+.B cacher
+uses a message database to store messages on disk.
+Messages received are stored into the database, and it is possible to have messages read back
+by passing in request messages.
+
+.Bl -tag -width -indent
+.It cacher_msgdb_socket=PATH
+An instance of
+.B msgdb (N)
+must be running and listening on this socket.
+All messages received will be sent to the specified message database for storage, unless the messages
+are request messages. Only one message per unique topic will be stored. Mandatory parameter.
+
+.It cacher_request_tag=TAG
+If the specified tag exists in a message, the message will be treated as a request message.
+The topic of the message is used to search in the message database, and if a message exists with the same topic, this
+message is passed to the output buffer.
+Optional parameter.
+
+.It cacher_forward_requests={yes|no}
+If set to yes, messages which are treated as requests are passed to the output buffer.
+Defaults to no.
+See also
+.B cacher_memory_consume_requests.
+
+.It cacher_forward_data={yes|no}
+If set to yes, messages which are not treated as requests (thus are to be stored) are passed to the output buffer.
+Defaults to no.
+
+.It cacher_forward_other={yes|no}
+If set to yes, messages without topic are forwarded.
+If set to no or left unset, messages without a topic are dropped and an error message is produced.
+
+.It cacher_memory_consume_requests={yes|no}
+If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the
+.B cacher_forward_requests
+parameter.
+If set to no or left unset, the parameter
+.B cacher_forward_requests
+will control whether the request is forwarded or not.
+
+.It cacher_empty_is_delete={yes|no}
+If set to yes, an empty message which otherwise would be stored will instead cause deletion of any previously stored message with mathcing topic.
+If set to no, empty messages will be stored.
+
+.It cacher_no_update={yes|no}
+If set to yes, no writes will be performed and all messages which are not requests will be treated as 'other'.
+Defaults to no.
+
+.It cacher_ttl_seconds=SECONDS
+Any messages received from other modules with an age older than the set value is silently dropped.
+In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.
+Defaults to 0 which means that TTL check is not performed.
+
+.It cacher_memory_ttl_seconds=SECONDS
+Messages which are to be stored in the message database will also be stored in the memory cache and deleted after this specified TTL expires.
+When a request message is received and a matching message is found in the memory cache, the cached message will be passed to the output buffer and the message database will not be consulted.
+The memory cache is checked for TTL when potential matches are found or every 5 minutes.
+If set to 0 or left unset, memory cache is not used.
+
+.El
 
 .SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5.
@@ -2437,8 +2631,14 @@ or
 .B influxdb_fixed_fields .
 .SS voltmonitor (SA)
 Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
-and the measurement itself as an unsigned 64-bit integer with the tag
+and the measurement itself.
+
+The measurement will be stored as a signed 64-bit integer with the tag
 .B measurement.
+The time of the measurment in microseconds will be stored (duplicated) in
+.B timestamp_from
+and
+.B timestamp_to.
 .PP
 .Bl -tag -width -indent
 .It vm_calibration=FLOAT

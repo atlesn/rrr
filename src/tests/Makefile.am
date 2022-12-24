@@ -12,7 +12,7 @@ if RRR_WITH_JSONC
 test_jsonc = test_json.c
 endif
 
-noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
+noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 test_LDFLAGS = ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
 test_LDADD = -ldl -lpthread -lm -L../lib/.libs -lrrr ${jsonc_libadd}
@@ -26,6 +26,8 @@ test_SOURCES = test.c \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
+	test_allocator.c \
+	test_mmap_channel.c \
 	test_increment.c
 test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE -DPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
@@ -49,4 +51,7 @@ sha1_sha_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
 sha1_shatest_SOURCES = sha1/shatest.c
 sha1_shatest_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
 
-TESTS = test.sh test_passwd.sh sha1/shatest
+sha256_shatest_SOURCES = sha256/shatest.c
+sha256_shatest_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
+
+TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest

@@ -519,8 +519,7 @@ static int __rrr_thread_wait_for_state_initialized (
 		if (state == RRR_THREAD_STATE_RUNNING_FORKED) {
 			RRR_BUG("BUG: Thread %p name %s started prior to receiving signal\n", thread, thread->name);
 		}
-		else if ( state == RRR_THREAD_STATE_NEW ||
-		          state == RRR_THREAD_STATE_INITIALIZED ||
+		else if ( state == RRR_THREAD_STATE_INITIALIZED ||
 		          state == RRR_THREAD_STATE_STOPPED
 		) {
 			was_ok = 1;

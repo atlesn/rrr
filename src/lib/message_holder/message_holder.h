@@ -23,7 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_HOLDER_H
 
 #include <sys/socket.h>
-#include <stdint.h>
+
+#include "../rrr_types.h"
 
 struct rrr_msg_holder;
 
@@ -50,6 +51,9 @@ void rrr_msg_holder_private_data_set (
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_incref_while_locked_void (
+		void *entry
+);
 void rrr_msg_holder_incref (
 		struct rrr_msg_holder *entry
 );
@@ -67,10 +71,10 @@ void rrr_msg_holder_decref_void (
 );
 int rrr_msg_holder_new (
 		struct rrr_msg_holder **result,
-		ssize_t data_length,
+		rrr_biglength data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		void *message
 );
 int rrr_msg_holder_clone_no_data (
@@ -80,15 +84,15 @@ int rrr_msg_holder_clone_no_data (
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length
+		rrr_biglength message_data_length
 );
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 );
 int rrr_msg_holder_address_matches (
 		const struct rrr_msg_holder *a,

@@ -19,8 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <inttypes.h>
-#include <stdio.h>
+#include "../rrr_types.h"
 
 #ifndef RRR_MQTT_PAYLOAD_BUF_H
 #define RRR_MQTT_PAYLOAD_BUF_H
@@ -34,32 +33,32 @@ struct rrr_mqtt_payload_buf_session {
 	char *buf;
 	char *wpos;
 	char *wpos_max;
-	ssize_t buf_size;
+	rrr_length buf_size;
 };
 
 int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session);
 void rrr_mqtt_payload_buf_destroy (struct rrr_mqtt_payload_buf_session *session);
 void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session);
-int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, ssize_t size);
-ssize_t rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_session *session);
+int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, rrr_length size);
+rrr_length rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_session *session);
 char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *session);
 int rrr_mqtt_payload_buf_put_raw (
 		struct rrr_mqtt_payload_buf_session *session,
 		const void *data,
-		ssize_t size
+		rrr_length size
 );
 int rrr_mqtt_payload_buf_put_raw_at_offset (
 		struct rrr_mqtt_payload_buf_session *session,
 		const void *data,
-		ssize_t size,
-		ssize_t offset
+		rrr_length size,
+		rrr_length offset
 );
 int rrr_mqtt_payload_buf_put_variable_int (
 		struct rrr_mqtt_payload_buf_session *session,
 		uint32_t value
 );
-static inline ssize_t rrr_mqtt_payload_buf_get_written_size (struct rrr_mqtt_payload_buf_session *session) {
-	return session->wpos - session->buf;
+static inline rrr_length rrr_mqtt_payload_buf_get_written_size (struct rrr_mqtt_payload_buf_session *session) {
+	return rrr_length_from_ptr_sub_bug_const (session->wpos, session->buf);
 }
 
 #endif /* RRR_MQTT_PAYLOAD_BUF_H */

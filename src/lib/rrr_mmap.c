@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "log.h"
 #include "rrr_mmap.h"
@@ -59,51 +60,101 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
-//#define RRR_MMAP_SENTINEL_DEBUG
+// Enable printf debugging (very verbose)
+// #define RRR_MMAP_ALLOCATION_DEBUG 1
+
+// Enable lock debugging
+// #define RRR_MMAP_LOCK_DEBUG 1
+
+// Dump mmaps upon allocation failure (should be enabled)
+#define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
+
+#define RRR_MMAP_SENTINEL_DEBUG
 
 #ifdef RRR_MMAP_SENTINEL_DEBUG
-static const uint64_t rrr_mmap_sentinel_template = 0xa0a0a0a00a0a0a0a;
+static const rrr_biglength rrr_mmap_sentinel_template = 0xa0a0a0a00a0a0a0a;
 #endif
 
-struct rrr_mmap_heap_block_index {
-	uint64_t block_used_map;
-	uint64_t block_sizes[64];
+struct rrr_mmap {
+	struct rrr_mmap_collection *collection;
+
+	rrr_shm_handle shm_heap;
+	void *mmap_heap;
+
+	int maintenance_cleanup_strikes;
+	rrr_biglength allocation_count;
+	uint8_t flags;
+	rrr_mmap_handle heap_size;
+	rrr_mmap_handle prev_allocation_failure_req_size;
+	rrr_mmap_handle  prev_allocation_index_pos;
 };
 
+struct rrr_mmap_collection {
+	size_t mmap_count;
+	unsigned int version;
+
+	pthread_mutex_t index_lock;
+
+	rrr_biglength allocation_limit;
+
+	struct rrr_shm_collection_master *shm_master;
+	struct rrr_shm_collection_slave *shm_slave;
+	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
+};
+
+struct rrr_mmap_heap_block_index {
+	rrr_biglength block_used_map;
+	rrr_biglength block_sizes[64];
+};
+
+#ifdef RRR_MMAP_LOCK_DEBUG
+#define LOCK(collection) \
+	do {int ret_tmp = pthread_mutex_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); printf("wrlocked %p pid %i\n", collection, getpid())
+#define UNLOCK(collection) \
+	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); } printf("unlocked %p pid %i\n", collection, getpid()); } while(0)
+#define INIT(collection, is_pshared) \
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0) | RRR_POSIX_MUTEX_IS_ERRORCHECK)
+#define DESTROY(collection) \
+	pthread_mutex_destroy(&collection->index_lock)
+#else
+#define LOCK(collection) \
+	pthread_mutex_lock(&collection->index_lock);
+#define UNLOCK(collection) \
+	pthread_mutex_unlock(&collection->index_lock);
+#define INIT(collection, is_pshared) \
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))
+#define DESTROY(collection) \
+	pthread_mutex_destroy(&collection->index_lock)
+#endif
+
+void *__rrr_mmap_resolve (
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave,
+		size_t pos
+) {
+	return (shm_slave != NULL
+		? rrr_shm_resolve(shm_slave, mmap->shm_heap) + pos
+		: mmap->mmap_heap + pos
+	);
+}
+
+#define DEFINE_HEAP() \
+	void *heap = __rrr_mmap_resolve(mmap, shm_slave, 0)
+
 static void __rrr_mmap_free (
-		struct rrr_mmap *mmap
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_mmap_handle handle
 ) {
 	int blocks = 0;
 	int iterations = 0;
 
-	if (mmap->to_free_list_count == 0) {
-		return;
-	}
+	DEFINE_HEAP();
 
-	size_t to_free_list_sorted_count = 0;
-	uintptr_t last_value = 0;
-	uintptr_t to_free_list_sorted[RRR_MMAP_TO_FREE_LIST_MAX];
-	for (size_t i = 0; i < mmap->to_free_list_count; i++) {
-		uintptr_t min_value = 0;
-		for (size_t i = 0; i < mmap->to_free_list_count; i++) {
-			if (mmap->to_free_list[i] > last_value && (min_value == 0 || mmap->to_free_list[i] < min_value)) {
-				min_value = mmap->to_free_list[i];
-			}
-		}
-		last_value = min_value;
-		to_free_list_sorted[i] = min_value;
-		to_free_list_sorted_count++;
-	}
-
-	if (to_free_list_sorted_count != mmap->to_free_list_count) {
-		RRR_BUG("BUG: Pointer sorting error in __rrr_mmap_free, possibly duplicate pointers in free list\n");
-	}
-
-	size_t to_free_list_sorted_pos = 0;
-	uint64_t block_pos = 0;
+	rrr_mmap_handle block_pos = 0;
 
 	while (block_pos < mmap->heap_size) {
-		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
+		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (heap + block_pos);
 
 		block_pos += sizeof(struct rrr_mmap_heap_block_index);
 		if (block_pos > mmap->heap_size) {
@@ -112,8 +163,8 @@ static void __rrr_mmap_free (
 
 		blocks++;
 
-		for (uint64_t j = 0; j < 64; j++) {
-			uint64_t used_mask = (uint64_t) 1 << j;
+		for (rrr_biglength j = 0; j < 64; j++) {
+			rrr_biglength used_mask = (rrr_biglength) 1 << j;
 
 			iterations++;
 
@@ -122,18 +173,13 @@ static void __rrr_mmap_free (
 				continue;
 			}
 
-			const uintptr_t ptr = (uintptr_t) mmap->heap + block_pos;
-
-			if (to_free_list_sorted[to_free_list_sorted_pos] == ptr) {
+			if (handle == block_pos) {
 				if ((index->block_used_map & used_mask) == 0) {
-					RRR_BUG("BUG: Double free of %p in rrr_mmap_free\n", ptr);
+					RRR_BUG("BUG: Double free of pos %" PRIrrrbl " ptr %p in __rrr_mmap_free\n", block_pos, heap + block_pos);
 				}
 
 				index->block_used_map &= ~(used_mask);
-
-				if (++to_free_list_sorted_pos == to_free_list_sorted_count) {
-					goto out;
-				}
+				goto out;
 			}
 
 			block_pos += index->block_sizes[j];
@@ -143,49 +189,32 @@ static void __rrr_mmap_free (
 		}
 	}
 
+	RRR_BUG("BUG: Invalid free of in rrr_mmap_free, %llu not found\n", (long long unsigned int) handle);
+
 	out:
 
-	if (to_free_list_sorted_pos != to_free_list_sorted_count) {
-		RRR_BUG("BUG: Invalid free of in rrr_mmap_free, one or more positions not found %lu<>%lu\n",
-				to_free_list_sorted_pos, to_free_list_sorted_count);
-	}
-
-	mmap->prev_allocation_failure_req_size = 0;
-	mmap->to_free_list_count = 0;
-}
-
-void rrr_mmap_free (
-		struct rrr_mmap *mmap,
-		void *ptr
-) {
-	pthread_mutex_lock(&mmap->lock);
-
-	mmap->to_free_list[mmap->to_free_list_count++] = (uintptr_t) ptr;
-
-	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
-		__rrr_mmap_free(mmap);
-	}
-
-	pthread_mutex_unlock(&mmap->lock);
-
 	mmap->prev_allocation_failure_req_size = 0;
 }
 
+// Use to debug, but is not an exposed function
 void rrr_mmap_dump_indexes (
-		struct rrr_mmap *mmap
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave
 ) {
-	pthread_mutex_lock(&mmap->lock);
-	uint64_t block_pos = 0;
-	uint64_t total_free_bytes = 0;
+	rrr_mmap_handle block_pos = 0;
+	rrr_biglength total_free_bytes = 0;
+
+	DEFINE_HEAP();
+
 	while (block_pos < mmap->heap_size) {
-		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
+		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (heap + block_pos);
 
 		block_pos += sizeof(struct rrr_mmap_heap_block_index);
 
-		uint64_t free_bytes_in_block = 0;
+		rrr_biglength free_bytes_in_block = 0;
 
-		for (uint64_t j = 0; j < 64; j++) {
-			uint64_t used_mask = (uint64_t) 1 << j;
+		for (rrr_biglength j = 0; j < 64; j++) {
+			rrr_biglength used_mask = (rrr_biglength) 1 << j;
 
 			if (index->block_used_map & used_mask) {
 				if (index->block_sizes[j] == 0) {
@@ -210,13 +239,12 @@ void rrr_mmap_dump_indexes (
 			total_free_bytes += free_bytes_in_block;
 		}
 
-		printf (" - %" PRIu64 " free\n", free_bytes_in_block);
+		printf (" - %" PRIrrrbl " free\n", free_bytes_in_block);
 	}
-	printf ("Total free: %" PRIu64 "\n", total_free_bytes);
-	pthread_mutex_unlock(&mmap->lock);
+	printf ("Total free: %" PRIrrrbl "\n", total_free_bytes);
 }
 
-void __dump_bin (uint64_t n) {
+void __dump_bin (rrr_biglength n) {
 	for (int i = 0; i < 64; i++) {
 		printf ("%i", ((n & 1) == 1) ? 1 : 0);
 		n >>= 1;
@@ -224,9 +252,11 @@ void __dump_bin (uint64_t n) {
 	printf ("\n");
 }
 
-void *rrr_mmap_allocate (
+static void *__rrr_mmap_allocate_with_handles (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
 		struct rrr_mmap *mmap,
-		uint64_t req_size
+		rrr_biglength req_size
 ) {
 	if (req_size == 0) {
 		RRR_BUG("request size was 0 in rrr_mmap_allocate\n");
@@ -235,19 +265,24 @@ void *rrr_mmap_allocate (
 	req_size += sizeof(rrr_mmap_sentinel_template);
 #endif
 
-	uint64_t req_size_padded = req_size - (req_size % RRR_MMAP_HEAP_CHUNK_MIN_SIZE) +
+	rrr_biglength req_size_padded = req_size - (req_size % RRR_MMAP_HEAP_CHUNK_MIN_SIZE) +
 			RRR_MMAP_HEAP_CHUNK_MIN_SIZE;
 
 	void *result = NULL;
 
-	pthread_mutex_lock(&mmap->lock);
+	struct rrr_shm_collection_slave *shm_slave = mmap->collection->shm_slave;
+	DEFINE_HEAP();
 
 	if (mmap->prev_allocation_failure_req_size != 0 && mmap->prev_allocation_failure_req_size <= req_size) {
 		goto out_unlock;
 	}
 
+	if (req_size > mmap->heap_size - sizeof(struct rrr_mmap_heap_block_index)) {
+		goto out_unlock;
+	}
+
 	int retry_count = 0;
-	uint64_t block_pos = mmap->prev_allocation_index_pos;
+	rrr_mmap_handle block_pos = mmap->prev_allocation_index_pos;
 
 	if (block_pos > 0) {
 		retry_count = 1;
@@ -256,7 +291,7 @@ void *rrr_mmap_allocate (
 	retry:
 
 	while (block_pos < mmap->heap_size) {
-		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
+		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (heap + block_pos);
 
 		mmap->prev_allocation_index_pos = block_pos;
 
@@ -268,13 +303,13 @@ void *rrr_mmap_allocate (
 			goto out_unlock;
 		}
 
-		uint64_t merge_j = 0;
-		uint64_t merge_block_pos = 0;
-		uint64_t consecutive_unused_count = 0;
-		uint64_t consecutive_unused_size = 0;
+		rrr_biglength merge_j = 0;
+		rrr_biglength merge_block_pos = 0;
+		rrr_biglength consecutive_unused_count = 0;
+		rrr_biglength consecutive_unused_size = 0;
 
-		for (uint64_t j = 0; j < 64; j++) {
-			uint64_t used_mask = (uint64_t) 1 << j;
+		for (rrr_biglength j = 0; j < 64; j++) {
+			rrr_biglength used_mask = (rrr_biglength) 1 << j;
 
 			if (index->block_sizes[j] == 0) {
 				if ((index->block_used_map & used_mask) == used_mask) {
@@ -290,16 +325,16 @@ void *rrr_mmap_allocate (
 				}
 				index->block_sizes[j] = req_size_padded;
 				index->block_used_map |= used_mask;
-				result = mmap->heap + block_pos;
+				result = heap + block_pos;
 #ifdef RRR_MMAP_SENTINEL_DEBUG
-				*((uint64_t*)(mmap->heap + block_pos + req_size_padded - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
+				*((rrr_biglength*)(heap + block_pos + req_size_padded - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
 #endif
 				goto out_unlock;
 			}
 			else {
 #ifdef RRR_MMAP_SENTINEL_DEBUG
-				if (*((uint64_t*)(mmap->heap + block_pos + index->block_sizes[j] - sizeof(rrr_mmap_sentinel_template))) != rrr_mmap_sentinel_template) {
-					RRR_BUG("Sentinel overwritten at end of block at position %" PRIu64 "\n", block_pos);
+				if (*((rrr_biglength*)(heap + block_pos + index->block_sizes[j] - sizeof(rrr_mmap_sentinel_template))) != rrr_mmap_sentinel_template) {
+					RRR_BUG("Sentinel overwritten at end of block at position %" PRIrrrbl "\n", block_pos);
 				}
 #endif
 
@@ -314,17 +349,17 @@ void *rrr_mmap_allocate (
 					if (index->block_sizes[j] >= req_size_padded) {
 						// Re-use previously allocated and freed block
 						index->block_used_map |= used_mask;
-						result = mmap->heap + block_pos;
+						result = heap + block_pos;
 						goto out_unlock;
 					}
 					else if (consecutive_unused_size >= req_size_padded) {
 						// Merge blocks if multiple after each other are free
-						for (uint64_t k = merge_j; k <= j; k++) {
-							index->block_used_map |= (uint64_t) 1 << k;
+						for (rrr_biglength k = merge_j; k <= j; k++) {
+							index->block_used_map |= (rrr_biglength) 1 << k;
 							index->block_sizes[k] = 0;
 						}
 						index->block_sizes[merge_j] = consecutive_unused_size;
-						result = mmap->heap + merge_block_pos;
+						result = heap + merge_block_pos;
 
 						goto out_unlock;
 					}
@@ -354,26 +389,28 @@ void *rrr_mmap_allocate (
 	}
 	else {
 		mmap->allocation_count++;
-	}
 
-	pthread_mutex_unlock(&mmap->lock);
+		*shm_handle = mmap->shm_heap;
+		*mmap_handle = (uintptr_t) result - (uintptr_t) heap;
+	}
 
 	return result;
 }
 
 static int __rrr_mmap_is_empty (
-		uint64_t *allocation_count,
-		struct rrr_mmap *mmap
+		rrr_biglength *allocation_count,
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave
 ) {
 	int ret = 1;
 
-	pthread_mutex_lock(&mmap->lock);
+	DEFINE_HEAP();
 
 	*allocation_count = mmap->allocation_count;
 
-	uint64_t block_pos = 0;
+	rrr_mmap_handle block_pos = 0;
 	while (block_pos < mmap->heap_size) {
-		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
+		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (heap + block_pos);
 
 		block_pos += sizeof(struct rrr_mmap_heap_block_index);
 
@@ -382,8 +419,8 @@ static int __rrr_mmap_is_empty (
 		}
 
 		if (index->block_used_map != 0) {
-			for (uint64_t j = 0; j < 64; j++) {
-				uint64_t used_mask = (uint64_t) 1 << j;
+			for (rrr_biglength j = 0; j < 64; j++) {
+				rrr_biglength used_mask = (rrr_biglength) 1 << j;
 				if ((index->block_used_map & used_mask) && index->block_sizes[j] != 0) {
 					ret = 0;
 					goto out_unlock;
@@ -391,66 +428,23 @@ static int __rrr_mmap_is_empty (
 			}
 		}
 
-		for (uint64_t j = 0; j < 64; j++) {
+		for (rrr_biglength j = 0; j < 64; j++) {
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in __rrr_mmap_is_empty block size %lu\n", index->block_sizes[j]);
+				RRR_BUG("BUG: Heap index corruption in __rrr_mmap_is_empty block size %" PRIrrrbl "\n", index->block_sizes[j]);
 			}
 		}
 	}
 
 	out_unlock:
 
-	pthread_mutex_unlock(&mmap->lock);
-
-	return ret;
-}
-
-static void *__rrr_mmap (size_t size, int is_shared) {
-	void *ptr = rrr_posix_mmap(size, is_shared);
-
-	if (ptr != NULL) {
-		memset(ptr, '\0', size);
-	}
-
-	return ptr;
-}
-
-int rrr_mmap_heap_reallocate (
-		struct rrr_mmap *mmap,
-		uint64_t heap_size
-) {
-	int ret = 0;
-
-	pthread_mutex_lock(&mmap->lock);
-
-	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
-
-	if (heap_size_padded < mmap->heap_size) {
-		RRR_BUG("BUG: Attempted to decrease heap size in rrr_mmap_new_heap_size\n");
-	}
-
-	void *new_heap = __rrr_mmap(heap_size_padded, mmap->is_shared);
-	if (new_heap == NULL) {
-		RRR_MSG_0("Could not re-allocate in rrr_mmap_new_heap_size\n");
-		ret = 1;
-		goto out_unlock;
-	}
-
-	memcpy(new_heap, mmap->heap, mmap->heap_size);
-	munmap(mmap->heap, mmap->heap_size);
-	mmap->heap = new_heap;
-	mmap->heap_size = heap_size_padded;
-
-	out_unlock:
-	pthread_mutex_unlock(&mmap->lock);
 	return ret;
 }
 
 static int __rrr_mmap_init (
 		struct rrr_mmap *result,
-		uint64_t heap_size,
-		int is_shared
+		struct rrr_mmap_collection *collection,
+		rrr_biglength heap_size
 ) {
 	int ret = 0;
 
@@ -461,270 +455,629 @@ static int __rrr_mmap_init (
 	heap_size += sizeof(rrr_mmap_sentinel_template);
 #endif
 
-	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
+	rrr_biglength heap_size_padded = heap_size + (4096 - (heap_size % 4096));
 
-	if ((ret = rrr_posix_mutex_init(&result->lock, (is_shared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_mmap_init (%i)\n", ret);
-		ret = 1;
-		goto out_munmap_heap;
-	}
-
-	if ((result->heap = __rrr_mmap(heap_size_padded, is_shared)) == NULL) {
-		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_init: %s\n", rrr_strerror(errno));
+#if UINT64_MAX > SIZE_MAX
+	if (heap_size_padded > SIZE_MAX) {
+		RRR_MSG_0("Heap size overflow while initializing mmap\n");
 		ret = 1;
 		goto out;
+	}
+#endif
 
+	if (collection->shm_master) {
+		if ((ret = rrr_shm_collection_master_allocate (
+				&result->shm_heap,
+				collection->shm_master,
+				rrr_size_from_biglength_bug_const(heap_size_padded)
+		)) != 0) {
+			RRR_MSG_0("Could not allocate SHM memory in __rrr_mmap_init\n");
+			goto out;
+		}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+		printf("Init %p shm %lu\n", result, result->shm_heap);
+#endif
+	}
+	else {
+		if ((result->mmap_heap = rrr_posix_mmap (
+				rrr_size_from_biglength_bug_const(heap_size_padded),
+				0 /* not pshared */
+		)) == NULL) {
+			RRR_MSG_0("Could not allocate MMAP memory in __rrr_mmap_init\n");
+			ret = 1;
+			goto out;
+		}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+		printf("Init %p mmap %p\n", result, result->mmap_heap);
+#endif
 	}
 
-	result->is_shared = is_shared;
 	result->heap_size = heap_size_padded;
+	result->collection = collection;
 
 	goto out;
 
-	out_munmap_heap:
-		munmap(result->heap, heap_size);
+//	out_free_heap:
+//	if (result->shm_heap) {
+//			rrr_shm_collection_master_free(collection->shm_master, result->shm_heap);
+//		}
+//		else {
+//			munmap(result->mmap_heap, heap_size_padded);
+//		}
 	out:
 		return ret;
 }
 
-int rrr_mmap_new (
-		struct rrr_mmap **target,
-		uint64_t heap_size,
-		int is_shared
-) {
-	int ret = 0;
-
-	*target = NULL;
-
-	struct rrr_mmap *result = NULL;
-
-	if ((result = __rrr_mmap(sizeof(*result), is_shared)) == NULL) {
-		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = __rrr_mmap_init (result, heap_size, is_shared)) != 0) {
-		goto out_munmap_main;
-	}
-
-	*target = result;
-	result = NULL;
-
-	goto out;
-
-	out_munmap_main:
-		munmap(result, sizeof(*result));
-	out:
-		return ret;
-}
-
-void __rrr_mmap_cleanup (
+static void __rrr_mmap_cleanup (
 		struct rrr_mmap *mmap
 ) {
-	pthread_mutex_destroy(&mmap->lock);
-	munmap(mmap->heap, mmap->heap_size);
+	if (mmap->shm_heap) {
+		rrr_shm_collection_master_free(mmap->collection->shm_master, mmap->shm_heap);
+	}
+	else {
+		munmap(mmap->mmap_heap, (size_t) mmap->heap_size);
+	}
 	memset(mmap, '\0', sizeof(*mmap));
 }
 
-void rrr_mmap_destroy (
+static void __rrr_mmap_collection_mmap_cleanup (
+		struct rrr_mmap_collection *collection,
 		struct rrr_mmap *mmap
 ) {
-	pthread_mutex_destroy(&mmap->lock);
-	munmap(mmap->heap, mmap->heap_size);
-	munmap(mmap, sizeof(*mmap));
+	__rrr_mmap_cleanup (mmap);
+	collection->mmap_count--;
+	collection->version++;
 }
 
 #define RRR_MMAP_ITERATE_BEGIN() \
 	do { for (size_t i = 0; i < RRR_MMAP_COLLECTION_MAX; i++) { \
-		struct rrr_mmap *node = &collection->mmaps[i] \
+		struct rrr_mmap *mmap = &collection->mmaps[i] \
 
 #define RRR_MMAP_ITERATE_END() \
 	}} while(0)
 
-static void __rrr_mmap_collection_minmax_update (
-		struct rrr_mmap_collection *collection
+void *rrr_mmap_collection_resolve (
+		struct rrr_mmap_collection *collection,
+		rrr_shm_handle shm_handle,
+		rrr_mmap_handle mmap_handle
 ) {
-	size_t pos = 0;
+	if (collection->shm_master == NULL) {
+		RRR_BUG("BUG: rrr_mmap_collection_resolve called on non-pshared mmap collection\n");
+	}
+
+	LOCK(collection);
+	void *ret = rrr_shm_resolve (
+			collection->shm_slave,
+			shm_handle
+	);
+	UNLOCK(collection);
+
+	if (ret == NULL) {
+		RRR_BUG("BUG: Unknown handle %llu in rrr_mmap_collection_resolve\n",
+				(long long unsigned int) shm_handle);
+	}
+
+	return ret + mmap_handle;
+}
+
+static void __rrr_mmap_collection_minmax_update_if_needed (
+		struct rrr_mmap_collection_private_data *private_data
+) {
+	struct rrr_mmap_collection *collection = private_data->collection;
+	if (private_data->version == collection->version) {
+		goto out;
+	}
+
+	// Check version again
+	if (private_data->version == collection->version) {
+		goto out;
+	}
+
+	private_data->version = collection->version;
+
+	size_t wpos = 0;
 	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL) {
-			collection->minmax[pos].heap_min = (uintptr_t) node->heap;
-			collection->minmax[pos].heap_max = (uintptr_t) node->heap + node->heap_size;
-			collection->minmax[pos].mmap_idx = i;
-			pos++;
+		if (mmap->heap_size != 0) {
+			struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+			DEFINE_HEAP();
+			private_data->minmax[wpos].heap_min = (uintptr_t) heap;
+			private_data->minmax[wpos].heap_max = (uintptr_t) (heap + mmap->heap_size);
+			private_data->minmax[wpos].mmap_idx = i;
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Make minmax %lu %p minmax pos %lu - %p<=x<%p shm %lu heap %p\n",
+				i, mmap, wpos, heap, heap + mmap->heap_size, mmap->shm_heap, heap);
+#endif
+			wpos++;
 		}
-		if (pos == collection->mmap_count) {
+		if (wpos == collection->mmap_count) {
 			break;
 		}
 	RRR_MMAP_ITERATE_END();
+
+	// Keep wrlock
+
+	out:
+		return;
 }
 
 static int __rrr_mmap_collection_minmax_search (
 		size_t *pos,
-		struct rrr_mmap_collection *collection,
+		struct rrr_mmap_collection_private_data *private_data,
 		uintptr_t ptr
 ) {
-	for (size_t j = 0; j < collection->mmap_count; j++) {
-		if (ptr >= collection->minmax[j].heap_min && ptr < collection->minmax[j].heap_max) {
-			*pos = collection->minmax[j].mmap_idx;
+	__rrr_mmap_collection_minmax_update_if_needed(private_data);
+
+	for (size_t j = 0; j < private_data->collection->mmap_count; j++) {
+		if (ptr >= private_data->minmax[j].heap_min && ptr < private_data->minmax[j].heap_max) {
+			*pos = private_data->minmax[j].mmap_idx;
 			return 1;
 		}
 	}
 	return 0;
 }
 
+void rrr_mmap_collection_fork_unregister (
+		struct rrr_mmap_collection *collection
+) {
+	LOCK(collection);
+	rrr_shm_collection_master_fork_unregister(collection->shm_master);
+	UNLOCK(collection);
+}
+
 void rrr_mmap_collections_maintenance (
 		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collections,
-		size_t collection_count,
-		pthread_rwlock_t *index_lock
+		size_t collection_count
 ) {
 	memset(stats, '\0', sizeof(*stats));
 
-	pthread_rwlock_rdlock(index_lock);
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
-		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL) {
-				pthread_mutex_lock(&node->lock);
-				__rrr_mmap_free(node);
-				pthread_mutex_unlock(&node->lock);
-			}
-		RRR_MMAP_ITERATE_END();
-	}
-	pthread_rwlock_unlock(index_lock);
 
-	pthread_rwlock_wrlock(index_lock);
-	for (size_t i = 0; i < collection_count; i++) {
-		struct rrr_mmap_collection *collection = &collections[i];
+		LOCK(collection);
+
+		if (collection->mmap_count == 0) {
+			goto next;
+		}
+
+		rrr_biglength allocation_count_total = 0;
+		unsigned int allocation_count_total_entries = 0;
+
 		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap == NULL) {
+			if (mmap->heap_size == 0) {
 				continue;
 			}
 
-			stats->mmap_total_heap_size += node->heap_size;
+			stats->mmap_total_heap_size += mmap->heap_size;
 			stats->mmap_total_count++;
 
-			uint64_t allocation_count;
-			if (__rrr_mmap_is_empty(&allocation_count, node)) {
-				if (++node->maintenance_cleanup_strikes >= RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
-					 __rrr_mmap_cleanup (node);
-					collection->mmap_count--;
-					__rrr_mmap_collection_minmax_update(collection);
+			rrr_biglength allocation_count;
+			if (__rrr_mmap_is_empty(&allocation_count, mmap, collection->shm_slave)) {
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+				printf("Cleanup %p strike %i shm %lu\n", mmap, mmap->maintenance_cleanup_strikes, mmap->shm_heap);
+				rrr_mmap_dump_indexes(mmap, collection->shm_slave);
+#endif
+				if (++mmap->maintenance_cleanup_strikes >= RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
+					__rrr_mmap_collection_mmap_cleanup(collection, mmap);
 					continue;
 				}
 				stats->mmap_total_empty_count++;
 			}
 			else {
-				if (allocation_count > RRR_MMAP_COLLECTION_ALLOCATION_MAX) {
+				if (allocation_count > collection->allocation_limit) {
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+					printf("Bad %p\n", mmap);
+					rrr_mmap_dump_indexes(mmap, collection->shm_slave);
+#endif
 					stats->mmap_total_bad_count++;
-					node->flags |= RRR_MMAP_COLLECTION_FLAG_BAD;
-					node->maintenance_cleanup_strikes = RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES;
+					mmap->flags |= RRR_MMAP_COLLECTION_FLAG_BAD;
+					mmap->maintenance_cleanup_strikes = RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES;
 				}
 				else {
-					node->maintenance_cleanup_strikes = 0;
+					mmap->maintenance_cleanup_strikes = 0;
 				}
 			}
+
+			allocation_count_total += allocation_count;
+			allocation_count_total_entries++;
 		RRR_MMAP_ITERATE_END();
+
+		if (allocation_count_total_entries > 0) {
+			// New limit will be used next round
+			collection->allocation_limit = allocation_count_total / allocation_count_total_entries;
+
+			if (collection->allocation_limit < RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MIN) {
+				collection->allocation_limit = RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MIN;
+			}
+			if (collection->allocation_limit > RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MAX) {
+				collection->allocation_limit = RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MAX;
+			}
+		}
+
+		next:
+		UNLOCK(collection);
 	}
-	pthread_rwlock_unlock(index_lock);
 }
 
-void rrr_mmap_collections_clear (
-		struct rrr_mmap_collection *collections,
-		size_t collection_count,
-		pthread_rwlock_t *index_lock
+void __rrr_mmap_collection_cleanup (
+		struct rrr_mmap_collection *collection
 ) {
 	int count = 0;
 
-	struct rrr_mmap_stats stats_dummy;
-	rrr_mmap_collections_maintenance(&stats_dummy, collections, collection_count, index_lock);
+	LOCK(collection);
+	RRR_MMAP_ITERATE_BEGIN();
+		if (mmap->heap_size != 0) {
+			__rrr_mmap_collection_mmap_cleanup(collection, mmap);
+			count++;
+		}
+	RRR_MMAP_ITERATE_END();
 
-	pthread_rwlock_wrlock(index_lock);
+	if (collection->shm_slave) {
+		rrr_shm_collection_slave_destroy(collection->shm_slave);
+	}
+
+	if (collection->shm_master) {
+		rrr_shm_collection_master_destroy(collection->shm_master);
+	}
+
+	UNLOCK(collection);
+
+	DESTROY(collection);
+
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+	printf("MMAPs left upon cleanup: %i\n", count);
+#endif
+}
+
+void rrr_mmap_collections_destroy (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count
+) {
+	struct rrr_mmap_stats stats_dummy;
+	rrr_mmap_collections_maintenance(&stats_dummy, collections, collection_count);
+
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
+		__rrr_mmap_collection_cleanup(collection);
+	}
+
+	munmap (collections, sizeof(*collections) * collection_count);
+}
+
+static int __rrr_mmap_collection_init (
+		struct rrr_mmap_collection *target,
+		int is_pshared,
+		const char *creator
+) {
+	int ret = 0;
+
+	memset(target, '\0', sizeof(*target));
+	if (INIT(target, is_pshared) != 0) {
+		RRR_MSG_0("Could not initialize lock in __rrr_mmap_collection_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (is_pshared) {
+		// Note : Allocated using shared memory. After fork(), all processes
+		//        still use the same shm master.
+		if ((ret = rrr_shm_collection_master_new(&target->shm_master, creator)) != 0) {
+			RRR_MSG_0("Could create SHM master in __rrr_mmap_collection_init\n");
+			goto out_destroy_lock;
+		}
+
+		// Note : The slave is never pshared. Upon fork(), new children
+		//        will have their own copy.
+		if ((ret = rrr_shm_collection_slave_new(&target->shm_slave, target->shm_master)) != 0) {
+			RRR_MSG_0("Could create SHM slave in __rrr_mmap_collection_init\n");
+			goto out_destroy_shm_master;
+		}
+	}
+
+	goto out;
+	out_destroy_shm_master:
+		rrr_shm_collection_master_destroy(target->shm_master);
+	out_destroy_lock:
+		DESTROY(target);
+	out:
+	return ret;
+}
+
+int rrr_mmap_collections_new (
+		struct rrr_mmap_collection **result,
+		size_t collection_count,
+		int is_pshared,
+		const char *creator
+) {
+	int ret = 0;
+
+	struct rrr_mmap_collection *collections = NULL;
+
+	collections = rrr_posix_mmap (sizeof(*collections) * collection_count, is_pshared);
+
+	if (collections == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_mmap_collections_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	size_t i_cleanup_max = 0;
+
+	for (size_t i = 0; i < collection_count; i++) {
+		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator)) != 0) {
+			goto out_free;
+		}
+		i_cleanup_max = i;
+	}
+
+	*result = collections;
+
+	goto out;
+	out_free:
+		for (size_t i = 0; i < i_cleanup_max; i++) {
+			__rrr_mmap_collection_cleanup(&collections[i]);
+		}
+		munmap (collections, sizeof(*collections) * collection_count);
+	out:
+		return ret;
+}
+
+void rrr_mmap_collection_private_datas_init (
+		struct rrr_mmap_collection_private_data *private_datas,
+		struct rrr_mmap_collection *collections,
+		size_t collection_count
+) {
+	for (size_t i = 0; i < collection_count; i++) {
+		struct rrr_mmap_collection *collection = &collections[i];
+		struct rrr_mmap_collection_private_data *private_data = &private_datas[i];
+
+		memset(private_data, '\0', sizeof(*private_data));
+		private_data->version = collection->version - 1;
+		private_data->collection = collection;
+	}
+}
+
+static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		rrr_biglength bytes,
+		short do_allow_bad
+) {
+	void *result = NULL;
+
+	if (collection->mmap_count > 0) {
 		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL) {
-				__rrr_mmap_cleanup (node);
-				collection->mmap_count--;
-				count++;
+			if (mmap->heap_size == 0) {
+				continue;
+			}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Old try %p heap allow bad %i is bad %i\n", mmap, do_allow_bad, mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD);
+#endif
+			if ( (do_allow_bad || (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0) &&
+			     (result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, bytes)) != NULL
+			) {
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+				struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+				DEFINE_HEAP();
+				printf("Allocate %lu %p = %p shm %lu heap %p size %" PRIrrrbl "\n", i, mmap, result, mmap->shm_heap, heap, bytes);
+#endif
+				break;
 			}
 		RRR_MMAP_ITERATE_END();
 	}
-	pthread_rwlock_unlock(index_lock);
 
-//	printf("MMAPs left upon cleanup: %i\n", count);
+	return result;
+}
+
+static void *__rrr_mmap_collection_allocate_with_handles_try_new_mmap (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
+) {
+	void *result = NULL;
+
+	RRR_MMAP_ITERATE_BEGIN();
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+		printf("Init try %p heap\n", mmap);
+#endif
+		rrr_biglength allocation_count_dummy;
+		// Force empty mmaps to be re-allocated in case we need them to be larger
+		if (mmap->heap_size > 0 && __rrr_mmap_is_empty(&allocation_count_dummy, mmap, collection->shm_slave)) {
+			__rrr_mmap_collection_mmap_cleanup(collection, mmap);
+		}
+
+		if (mmap->heap_size == 0) {
+			if (__rrr_mmap_init (mmap, collection, bytes > min_mmap_size ? bytes : min_mmap_size) != 0) {
+				break;
+			}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("- OK shm %lu or mmap %p\n", mmap->shm_heap, mmap->mmap_heap);
+#endif
+			collection->mmap_count++;
+			collection->version++;
+			result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, bytes);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+			DEFINE_HEAP();
+			printf("Allocate %lu %p = %p shm %lu heap %p size %" PRIrrrbl "\n", i, mmap, result, mmap->shm_heap, heap, bytes);
+#endif
+			break;
+		}
+	RRR_MMAP_ITERATE_END();
+
+	return result;
+}
+
+static void *__rrr_mmap_collection_allocate_with_handles (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
+) {
+	void *result = NULL;
+
+	LOCK(collection);
+
+	/*
+	 * 1. Fill up any existing mmap which is not marked as bad
+	 * 2. If none found, try to allocate new mmap
+	 * 3. If unable, try to allocate from bad mmaps
+	 */
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_old_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			0 /* Don't allow bad */
+	)) != NULL) {
+		goto out;
+	}
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_new_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			min_mmap_size
+	)) != NULL) {
+		goto out;
+	}
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_old_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			1 /* Allow bad */
+	)) != NULL) {
+		goto out;
+	}
+
+#ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
+	if (result == NULL) {
+		struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+		RRR_MSG_0("Allocation failure of %" PRIrrrbl " bytes in __rrr_mmap_collection_allocate_with_handles. Dumping mmaps for this group:\n",
+				bytes);
+		RRR_MMAP_ITERATE_BEGIN();
+			DEFINE_HEAP();
+			if (heap == NULL) {
+				RRR_MSG_0("== MMAP %llu NO HEAP\n", (long long unsigned int) i);
+			}
+			else {
+				RRR_MSG_0("== MMAP %llu%s\n", (long long unsigned int) i, mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD ? " BAD" : "");
+				rrr_mmap_dump_indexes(mmap, shm_slave);
+			}
+		RRR_MMAP_ITERATE_END();
+	}
+#endif
+
+	out:
+	UNLOCK(collection);
+	return result;
+}
+
+void *rrr_mmap_collection_allocate_with_handles (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
+) {
+	if (collection->shm_master == NULL) {
+		RRR_BUG("BUG: rrr_mmap_collection_allocate_with_handles called on non-pshared mmap collection\n");
+	}
+
+	return __rrr_mmap_collection_allocate_with_handles (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			min_mmap_size
+	);
 }
 
 void *rrr_mmap_collection_allocate (
 		struct rrr_mmap_collection *collection,
-		uint64_t bytes,
-		uint64_t min_mmap_size,
-		pthread_rwlock_t *index_lock,
-		int is_shared
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
 ) {
-	void *result = NULL;
+	rrr_shm_handle shm_handle_dummy;
+	rrr_mmap_handle mmap_handle_dummy;
 
-	pthread_rwlock_rdlock(index_lock);
-	RRR_MMAP_ITERATE_BEGIN();
-		if (  node->heap != NULL &&
-		     (node->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0 &&
-		     (result = rrr_mmap_allocate(node, bytes)) != NULL
-		) {
-			break;
-		}
-	RRR_MMAP_ITERATE_END();
-	pthread_rwlock_unlock(index_lock);
+	return __rrr_mmap_collection_allocate_with_handles (
+			&shm_handle_dummy,
+			&mmap_handle_dummy,
+			collection,
+			bytes,
+			min_mmap_size
+	);
+}
 
-	if (result) {
-		goto out;
-	}
+void *rrr_mmap_collections_allocate (
+		struct rrr_mmap_collection *collections,
+		size_t index,
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
+) {
+	rrr_shm_handle shm_handle_dummy;
+	rrr_mmap_handle mmap_handle_dummy;
 
-	pthread_rwlock_wrlock(index_lock);
-	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap == NULL) {
-			if (__rrr_mmap_init (node, bytes > min_mmap_size ? bytes : min_mmap_size, is_shared) != 0) {
-				break;
-			}
-			collection->mmap_count++;
-			__rrr_mmap_collection_minmax_update(collection);
-			result = rrr_mmap_allocate(node, bytes);
-			break;
-		}
-	RRR_MMAP_ITERATE_END();
-	pthread_rwlock_unlock(index_lock);
-
-	out:
-	return result;
+	return __rrr_mmap_collection_allocate_with_handles (
+			&shm_handle_dummy,
+			&mmap_handle_dummy,
+			&collections[index],
+			bytes,
+			min_mmap_size
+	);
 }
 
 int rrr_mmap_collections_free (
-		struct rrr_mmap_collection *collections,
+		struct rrr_mmap_collection_private_data *private_datas,
 		size_t collection_count,
-		pthread_rwlock_t *index_lock,
 		void *ptr
 ) {
 	int ret = 1; // Error
 
-	pthread_rwlock_rdlock(index_lock);
-
 	for (size_t j = 0; j < collection_count; j++) {
-		if (collections[j].mmap_count == 0) {
-			continue;
+		struct rrr_mmap_collection *collection = private_datas[j].collection;
+
+		LOCK(collection);
+
+		if (collection->mmap_count == 0) {
+			goto next;
 		}
 
 		size_t pos = 0;
 		if (__rrr_mmap_collection_minmax_search (
 				&pos,
-				&collections[j],
+				&private_datas[j],
 				(uintptr_t) ptr
 		) == 1) {
-			rrr_mmap_free(&collections[j].mmaps[pos], ptr);
+			struct rrr_mmap *mmap = &collection->mmaps[pos];
+			struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+
+			DEFINE_HEAP();
+
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Free %lu %p = %p shm %lu heap %p\n", pos, mmap, ptr, mmap->shm_heap, heap);
+#endif
+
+			__rrr_mmap_free(mmap, shm_slave, (uintptr_t) ptr - (uintptr_t) heap);
+	
 			ret = 0;
 		}
-	}
 
-	pthread_rwlock_unlock(index_lock);
+		next:
+		UNLOCK(collection);
+		if (ret == 0) {
+			break;
+		}
+	}
 
 	return ret;
 

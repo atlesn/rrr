@@ -3,6 +3,7 @@
 #include <perl.h>
 #include <XSUB.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "../../../../../lib/perl5/perl5_xsub.h"
 
@@ -12,13 +13,13 @@ PROTOTYPES: ENABLE
 int
 rrr_perl5_debug_msg(debug,level,string)
 	HV *debug
-	int level
+	U8 level
 	const char *string
 
 int
 rrr_perl5_debug_dbg(debug,level,string)
 	HV *debug
-	int level
+	U8 level
 	const char *string
 
 int

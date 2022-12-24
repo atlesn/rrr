@@ -25,9 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_application.h"
 
+#include "../rrr_types.h"
+
 struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
+struct rrr_http_rules;
 
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS        \
     int *is_possible,                                          \
@@ -47,11 +50,12 @@ struct rrr_http_transaction;
     struct rrr_http_application *app
 
 #define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
-    ssize_t *received_bytes,                                                                     \
+    rrr_biglength *received_bytes,                                                               \
     struct rrr_http_application **upgraded_app,                                                  \
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \
-    ssize_t read_max_size,                                                                       \
+    rrr_biglength read_max_size,                                                                 \
+    const struct rrr_http_rules *rules,                                                          \
     int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS), \
     void *unique_id_generator_callback_arg,                                                      \
     int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),           \
@@ -64,6 +68,8 @@ struct rrr_http_transaction;
     void *frame_callback_arg,                                                                    \
     int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),                                 \
     void *callback_arg,                                                                          \
+    int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),                         \
+    void *failure_callback_arg,                                                                  \
     int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),   \
     void *async_response_get_callback_arg
 

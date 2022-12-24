@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PERL5_XSUB_H
 
 #include <sys/types.h>
+#include <stdint.h>
 
 struct AV;
 struct SV;
@@ -52,8 +53,8 @@ AV *rrr_perl5_message_get_tag_names (HV *hv);
 AV *rrr_perl5_message_get_tag_counts (HV *hv);
 SV *rrr_perl5_settings_get (HV *settings, const char *key);
 int rrr_perl5_settings_set (HV *settings, const char *key, const char *value);
-int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string);
-int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string);
+int rrr_perl5_debug_msg (HV *debug, uint8_t debuglevel, const char *string);
+int rrr_perl5_debug_dbg (HV *debug, uint8_t debuglevel, const char *string);
 int rrr_perl5_debug_err (HV *debug, const char *string);
 
 #endif /* RRR_PERL5_XSUB_H */

@@ -38,16 +38,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/string_builder.h"
 #include "../lib/map.h"
 #include "../lib/type.h"
 #include "../lib/type_conversion.h"
+#include "../lib/helpers/string_builder.h"
 
 struct mangler_data {
 	struct rrr_instance_runtime_data *thread_data;
 
+	struct rrr_map clear_tags_map;
+
 	struct rrr_map conversions_map;
 	struct rrr_type_conversion_collection *conversions;
+
+	char *topic;
+	uint16_t topic_length;
 
 	int do_non_array_passthrough;
 	int do_convert_tolerant_blobs;
@@ -61,6 +66,8 @@ static void mangler_data_init(struct mangler_data *data, struct rrr_instance_run
 
 static void mangler_data_cleanup(void *arg) {
 	struct mangler_data *data = arg;
+	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_MAP_CLEAR(&data->clear_tags_map);
 	RRR_MAP_CLEAR(&data->conversions_map);
 	if (data->conversions != NULL) {
 		rrr_type_conversion_collection_destroy(data->conversions);
@@ -130,8 +137,14 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
+	if (RRR_LL_COUNT(&data->conversions_map) == 0 && RRR_LL_COUNT(&data->clear_tags_map) == 0) {
+		RRR_DBG_3("mangler instance %s passthrough of array message, no conversions defined\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_set_topic;
+	}
+
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection (
+	if ((ret = rrr_array_message_append_to_array (
 			&array_version_dummy,
 			&array_from_message,
 			(const struct rrr_msg_msg *) entry->message
@@ -141,36 +154,51 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
+	RRR_MAP_ITERATE_BEGIN_CONST(&data->clear_tags_map);
+		unsigned int cleared_count = 0;
+		rrr_array_clear_by_tag_checked(&cleared_count, &array_from_message, node_tag);
+		if (cleared_count > 0){
+			RRR_DBG_3("mangler instance %s CLEAR tag '%s' (%u values)\n",
+					INSTANCE_D_NAME(data->thread_data), node_tag, cleared_count);
+		}
+	RRR_MAP_ITERATE_END();
+
 	const int convert_flags =
 			RRR_TYPE_CONVERT_F_ON_ERROR_TRY_NEXT |
 			(data->do_convert_tolerant_blobs ? 0 : RRR_TYPE_CONVERT_F_STRICT_BLOBS) |
 			(data->do_convert_tolerant_strings ? 0 : RRR_TYPE_CONVERT_F_STRICT_STRINGS);
 
-	int i = 0;
-	RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
-		RRR_DBG_3("Mangler instance %s CONVERT idx %i type %s\n",
-				INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
-		if ((ret = mangler_process_value (
-				&array_new,
-				data,
-				node,
-				convert_flags
-		)) != 0) {
-			RRR_MSG_0("mangler instance %s dropping message following error %i\n",
-					INSTANCE_D_NAME(thread_data), ret);
-			// Let only hard error propagate
-			ret &= ~(1);
-			goto out_drop;
-		}
-		i++;
-	RRR_LL_ITERATE_END();
+	if (RRR_LL_COUNT(&data->conversions_map) > 0) {
+		int i = 0;
+		RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
+			RRR_DBG_3("mangler instance %s CONVERT idx %i type %s\n",
+					INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
+			if ((ret = mangler_process_value (
+					&array_new,
+					data,
+					node,
+					convert_flags
+			)) != 0) {
+				RRR_MSG_0("mangler instance %s dropping message following error %i\n",
+						INSTANCE_D_NAME(thread_data), ret);
+				// Let only hard error propagate
+				ret &= ~(1);
+				goto out_drop;
+			}
+			i++;
+		RRR_LL_ITERATE_END();
+	}
 
-	if ((ret = rrr_array_new_message_from_collection (
+	if ((ret = rrr_array_new_message_from_array (
 			&message_new,
 			&array_new,
 			rrr_time_get_64(),
-			MSG_TOPIC_PTR((const struct rrr_msg_msg *) entry->message),
-			MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
+			data->topic != NULL
+				? data->topic
+				: MSG_TOPIC_PTR((const struct rrr_msg_msg *) entry->message),
+			data->topic != NULL
+				? data->topic_length
+				: MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
 	)) != 0) {
 		RRR_MSG_0("Failed to create array message in mangler_poll_callback\n");
 		goto out_drop;
@@ -180,29 +208,46 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_msg_holder_set_data_unlocked(entry, message_new, MSG_TOTAL_SIZE(message_new));
 	message_new = NULL;
 
+	goto out_write;
+	out_set_topic:
+		if (data->topic != NULL) {
+			if ((ret = rrr_msg_msg_topic_set((struct rrr_msg_msg **) &entry->message, data->topic, data->topic_length)) != 0) {
+				RRR_MSG_0("Failed to set message of topic in mangler_poll_callback\n");
+				goto out_drop;
+			}
+			entry->data_length = MSG_TOTAL_SIZE((const struct rrr_msg_msg *) entry->message);
+		}
 	out_write:
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry,
-			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-	);
-
+		ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				INSTANCE_D_BROKER_ARGS(thread_data),
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
+		);
 	out_drop:
-	rrr_array_clear(&array_new);
-	rrr_array_clear(&array_from_message);
-	rrr_msg_holder_unlock(entry);
-	return ret;
+		rrr_array_clear(&array_new);
+		rrr_array_clear(&array_from_message);
+		rrr_msg_holder_unlock(entry);
+		return ret;
 }
 
 static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	return rrr_poll_do_poll_delete (amount, thread_data, mangler_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, mangler_poll_callback);
 }
 
 static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
+
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_length,
+			config,
+			"mangler_topic"
+	)) != 0) {
+		goto out;
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_non_array_passthrough", do_non_array_passthrough, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_convert_tolerant_blobs", do_convert_tolerant_blobs, 0);
@@ -211,6 +256,14 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->conversions_map, config, "mangler_conversions")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
+					config->name);
+			goto out;
+		}
+	}
+
+	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->clear_tags_map, config, "mangler_clear_tags")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Failed to parse parameter 'mangler_clear_tags' of mangler instance %s\n",
 					config->name);
 			goto out;
 		}

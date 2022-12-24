@@ -33,13 +33,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
+#include "lib/rrr_shm.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
-#include "lib/configuration.h"
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
@@ -137,7 +137,7 @@ static int main_stats_post_text_message (struct stats_data *stats_data, const ch
 			flags,
 			path,
 			text,
-			strlen(text) + 1
+			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
 	) != 0) {
 		RRR_BUG("Could not initialize main statistics message\n");
 	}
@@ -162,7 +162,7 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 			flags,
 			path,
 			text,
-			strlen(text) + 1
+			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
 	) != 0) {
 		RRR_BUG("Could not initialize main statistics message\n");
 	}
@@ -188,7 +188,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	if (snprintf (
 			msg_text,
 			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
-			"RRR running with %u instances",
+			"RRR running with %i instances",
 			rrr_instance_collection_count(instances)
 	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
 		RRR_BUG("Statistics message too long in main\n");
@@ -236,7 +236,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 struct main_loop_event_callback_data {
 	struct rrr_thread_collection **collection;
 	struct rrr_instance_collection *instances;
-	struct rrr_config *config;
+	struct rrr_instance_config_collection *config;
 	struct cmd_data *cmd;
 	struct stats_data *stats_data;
 	struct rrr_message_broker *message_broker;
@@ -309,7 +309,7 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/heap_size", mmap_stats.mmap_total_heap_size, 0);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -372,7 +372,7 @@ static int main_loop (
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_event_queue *queue = NULL;
 
-	struct rrr_config *config = NULL;
+	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 
@@ -383,17 +383,17 @@ static int main_loop (
 		goto out;
 	}
 
-	if (rrr_config_parse_file(&config, config_file) != 0) {
+	if (rrr_instance_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out_destroy_events;
 	}
 
 	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
-			config->module_count, config_file);
+			rrr_instance_config_collection_count(config), config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
-		if (config != NULL && rrr_config_dump(config) != 0) {
+		if (config != NULL && rrr_instance_config_dump(config) != 0) {
 			ret = EXIT_FAILURE;
 			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
@@ -401,7 +401,7 @@ static int main_loop (
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-	if (rrr_instance_create_from_config(&instances, config, module_library_paths) != 0) {
+	if (rrr_instances_create_from_config(&instances, config, module_library_paths) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
 	}
@@ -469,11 +469,10 @@ static int main_loop (
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
-		rrr_config_destroy(config);
+		rrr_instance_config_collection_destroy(config);
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:
-		rrr_allocator_cleanup();
 		return ret;
 }
 
@@ -545,7 +544,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 	int ret = 0;
 
 	const char *config_string;
-	int config_i = 0;
+	cmd_arg_count config_i = 0;
 	while ((config_string = cmd_get_value(cmd, "config", config_i)) != NULL) {
 		if (*config_string == '\0') {
 			break;
@@ -630,8 +629,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	int ret = EXIT_SUCCESS;
 
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_final;
+	}
 	if (rrr_log_init() != 0) {
-		goto out;
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -687,7 +691,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	if (RRR_MAP_COUNT(&config_file_map) == 0) {
 		RRR_MSG_0("No configuration files were found\n");
-		ret = 1;
+		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
 
@@ -791,7 +795,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+		rrr_shm_holders_cleanup();
+	out_final:
 		return ret;
 }

@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
 #include "lib/array.h"
-#include "lib/string_builder.h"
+#include "lib/helpers/string_builder.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/messages/msg.h"
@@ -140,7 +140,7 @@ static int __rrr_msg_msg_callback (
 		}
 
 		uint16_t array_version = 0;
-		if ((ret = rrr_array_message_append_to_collection(&array_version, &array_tmp, msg)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&array_version, &array_tmp, msg)) != 0) {
 			goto out;
 		}
 
@@ -295,7 +295,7 @@ static int __rrr_msg_read (
 	int ret = 0;
 
 	char *file_data = NULL;
-	ssize_t file_size = 0;
+	rrr_biglength file_size = 0;
 
 	RRR_MSG_1("== Filename: %s\n", file);
 
@@ -323,7 +323,7 @@ static int __rrr_msg_read (
 
 	struct rrr_msg *msg = (struct rrr_msg *) file_data;
 
-	if ((ret = __rrr_msg_to_host_and_dump(data, msg, file_size)) != 0) {
+	if ((ret = __rrr_msg_to_host_and_dump(data, msg, rrr_length_from_biglength_bug_const (file_size))) != 0) {
 		RRR_MSG_0("Failed to read message from file '%s'\n", file);
 		goto out;
 	}
@@ -380,7 +380,7 @@ static int __rrr_msg_selftest (
 			goto out;
 		}
 
-		if ((ret = rrr_array_new_message_from_collection (
+		if ((ret = rrr_array_new_message_from_array (
 				&msg_msg,
 				&array_tmp,
 				rrr_time_get_64(),
@@ -458,9 +458,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 
 	rrr_strerror_init();
@@ -513,7 +517,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -3,7 +3,6 @@ var/lib/rrr/.placeholder
 usr/bin/*
 usr/lib/*/perl5/*
 usr/share/man/*
-usr/lib/tmpfiles.d/rrr.conf
 usr/lib/rrr/cmodules/*
 usr/lib/rrr/python3.la
 usr/lib/rrr/python3.so
@@ -45,3 +44,9 @@ usr/lib/rrr/voltmonitor.la
 usr/lib/rrr/voltmonitor.so
 usr/lib/rrr/file.la
 usr/lib/rrr/file.so
+usr/lib/rrr/cacher.la
+usr/lib/rrr/cacher.so
+usr/lib/rrr/exploder.la
+usr/lib/rrr/exploder.so
+usr/lib/rrr/mangler.la
+usr/lib/rrr/mangler.so

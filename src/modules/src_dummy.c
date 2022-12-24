@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/message_broker.h"
 #include "../lib/random.h"
+#include "../lib/array.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip.h"
@@ -56,13 +57,16 @@ struct dummy_data {
 	rrr_setting_uint sleep_interval_us;
 
 	char *topic;
-	size_t topic_len; // Optimization, don't calculate length for every message
+	uint16_t topic_len; // Optimization, don't calculate length for every message
+
+	char *array_tag;
+	struct rrr_array array_template;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_write_entry;
 
-	int generated_count;
-	int generated_count_to_stats;
+	unsigned int generated_count;
+	unsigned int generated_count_to_stats;
 	rrr_setting_uint generated_count_total;
 
 	uint64_t last_periodic_time;
@@ -70,7 +74,7 @@ struct dummy_data {
 	uint64_t write_duration_total_us;
 };
 
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("dummy instance %s: writing data from inject function\n",
 			INSTANCE_D_NAME(thread_data));
 
@@ -91,7 +95,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return ret;
 }
 
-int data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int dummy_data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -100,13 +104,15 @@ int data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_
 	return 0;
 }
 
-void data_cleanup(void *arg) {
+static void dummy_data_cleanup(void *arg) {
 	struct dummy_data *data = (struct dummy_data *) arg;
 	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_FREE_IF_NOT_NULL(data->array_tag);
+	rrr_array_clear(&data->array_template);
 	rrr_event_collection_clear(&data->events);
 }
 
-int parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
+static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
@@ -115,10 +121,33 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_max_generated", max_generated, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, 0); // Set to 0 to indicate sleep controlled by event framework
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_array_tag", array_tag);
 
-	if (data->topic != NULL) {
-		data->topic_len = strlen(data->topic);
+	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
+		RRR_MSG_0("Parameter 'dummy_random_payload_max_size' exceeds maximum of %" PRIu32 "in dummy instance %s\n",
+			(uint32_t) UINT32_MAX,
+			config->name
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if ((rrr_biglength) data->sleep_interval_us > INT_MAX) {
+		RRR_MSG_0("Parameter 'dummy_sleep_interval_us' exceeds maximum of %i in dummy instance %s\n",
+			INT_MAX,
+			config->name
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_len,
+			config,
+			"dummy_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
@@ -130,6 +159,13 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_no_sleeping") && RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us")) {
 		RRR_MSG_0("Parameters dummy_sleep_interval_us and dummy_no_sleeping was both set in dummy instance %s, this is an invalid confiuguration.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_random_payload_size_max") && RRR_INSTANCE_CONFIG_EXISTS("dummy_array_tag")) {
+		RRR_MSG_0("Parameters dummy_random_payload_size_max and dummy_array_tag was both set in dummy instance %s, this is an invalid confiuguration.\n",
 				config->name);
 		ret = 1;
 		goto out;
@@ -152,25 +188,39 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 
 //	printf("Dummy new %" PRIu64 "\n", time);
 
-	size_t payload_size = 0;
-	if (data->random_payload_max_size > 0) {
-		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
-	}
-
-	if (rrr_msg_msg_new_empty (
+	if (RRR_LL_COUNT(&data->array_template) > 0) {
+		if ((ret = rrr_array_new_message_from_array(
 			&reading,
-			MSG_TYPE_MSG,
-			MSG_CLASS_DATA,
-			time,
-			data->topic_len,
-			payload_size
-	) != 0) {
-		ret = 1;
-		goto out;
+			&data->array_template,
+			rrr_time_get_64(),
+			data->topic,
+			(rrr_u16) data->topic_len
+		)) != 0) {
+			goto out;
+		}
 	}
+	else {
+		rrr_biglength payload_size = 0;
+		if (data->random_payload_max_size > 0) {
+			if ((payload_size = ((rrr_biglength) rrr_rand()) % data->random_payload_max_size) > UINT32_MAX) {
+				RRR_BUG("BUG: Payload size exceeds maximum in dummy_write_message_callback, config parses should check for this\n");
+			}
+		}
 
-	if (data->topic != NULL && *(data->topic) != '\0') {
-		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len);
+		if ((ret = rrr_msg_msg_new_empty (
+				&reading,
+				MSG_TYPE_MSG,
+				MSG_CLASS_DATA,
+				time,
+				(rrr_u16) data->topic_len,
+				(rrr_u32) payload_size
+		)) != 0) {
+			goto out;
+		}
+
+		if (data->topic != NULL && *(data->topic) != '\0') {
+			memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len);
+		}
 	}
 
 	entry->message = reading;
@@ -202,7 +252,8 @@ static void dummy_event_write_entry (
 		uint64_t average_time_us = data->write_duration_total_us / data->generated_count_total;
 
 		if (average_time_us <= data->sleep_interval_us) {
-			rrr_posix_usleep(data->sleep_interval_us);
+			// Config parser must check integer sizes
+			rrr_posix_usleep(rrr_size_from_biglength_bug_const(data->sleep_interval_us));
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;
@@ -264,18 +315,18 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
+	if (dummy_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(dummy_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (dummy_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
@@ -294,6 +345,14 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	}
 
 	if (data->no_generation == 0) {
+		if (data->array_tag != NULL && *(data->array_tag) != '\0') {
+			if (rrr_array_push_value_vain_with_tag(&data->array_template, data->array_tag) != 0) {
+				RRR_MSG_0("Failed to push vain value to template array in dummy instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out_cleanup;
+			}
+		}
+
 		uint64_t sleep_time = DUMMY_DEFAULT_SLEEP_INTERVAL_US;
 
 		if (data->sleep_interval_us > DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
@@ -346,7 +405,7 @@ static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
 	NULL,
-	inject,
+	dummy_inject,
 	NULL
 };
 

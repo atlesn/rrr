@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "http_common.h"
-#include "../string_builder.h"
+#include "../type.h"
 
 struct rrr_http_part;
 struct rrr_http_header_field;
@@ -40,7 +40,7 @@ struct rrr_http_transaction {
 	enum rrr_http_body_format request_body_format;
 
 	struct rrr_nullsafe_str *send_body;
-	rrr_length send_body_pos;
+	rrr_biglength send_body_pos;
 
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
@@ -53,6 +53,8 @@ struct rrr_http_transaction {
 	rrr_http_unique_id unique_id;
 
 	int need_response;
+
+	int stream_flags;
 
 	uint64_t creation_time;
 };
@@ -94,7 +96,7 @@ int rrr_http_transaction_query_field_add (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type,
 		const struct rrr_type_value *value_orig
 );
@@ -138,7 +140,7 @@ int rrr_http_transaction_send_body_set_allocated (
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(int response_code, enum rrr_http_version protocol_version, void *arg),
+		int (*response_code_callback)(unsigned response_code, enum rrr_http_version protocol_version, void *arg),
 		int (*final_callback)(
 				struct rrr_http_part *request_part,
 				struct rrr_http_part *response_part,
@@ -164,5 +166,19 @@ int rrr_http_transaction_request_prepare_wrapper (
 		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
 		void *callback_arg
 );
+
+static inline void rrr_http_transaction_stream_flags_add (
+		struct rrr_http_transaction *transaction,
+		int flags
+) {
+	transaction->stream_flags |= flags;
+}
+
+static inline int rrr_http_transaction_stream_flags_has (
+		struct rrr_http_transaction *transaction,
+		int flags
+) {
+	return ((transaction->stream_flags & flags) == flags);
+}
 
 #endif /* RRR_HTTP_TRANSACTION_H */

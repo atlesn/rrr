@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../util/posix.h"
 
 #include "message_holder.h"
 #include "message_holder_util.h"
@@ -33,10 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 ) {
 	int ret = 0;
 
@@ -45,7 +46,13 @@ int rrr_msg_holder_util_new_with_empty_message (
 
 	// XXX : Callers treat this function as message_data_length is an absolute value
 
-	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
+	rrr_biglength message_size = sizeof(*message) - 1 + message_data_length;
+
+	if (message_size < message_data_length) {
+		RRR_MSG_0("Overflow in while creating message holder with empty message\n");
+		ret = 1;
+		goto out;
+	}
 
 	message = rrr_allocate(message_size);
 	if (message == NULL) {
@@ -67,7 +74,7 @@ int rrr_msg_holder_util_new_with_empty_message (
 	}
 
 	rrr_msg_holder_lock(entry);
-	memset(message, '\0', message_size);
+	rrr_memset(message, '\0', message_size);
 	rrr_msg_holder_unlock(entry);
 
 	message = NULL;
@@ -84,11 +91,7 @@ int rrr_msg_holder_util_clone_no_locking (
 		const struct rrr_msg_holder *source
 ) {
 	// Note : Do calculation correctly, not incorrect
-	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
-
-	if (message_data_length < 0) {
-		RRR_BUG("Message too small in rrr_msg_msg_holder_clone_no_locking\n");
-	}
+	rrr_biglength message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
 
 	int ret = rrr_msg_holder_util_new_with_empty_message (
 			result,
@@ -102,7 +105,31 @@ int rrr_msg_holder_util_clone_no_locking (
 		rrr_msg_holder_lock(*result);
 		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
-		memcpy((*result)->message, source->message, source->data_length);
+		rrr_memcpy((*result)->message, source->message, source->data_length);
+		rrr_msg_holder_unlock(*result);
+	}
+
+	return ret;
+}
+
+int rrr_msg_holder_util_clone_no_locking_no_metadata (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+) {
+	// Note : Do calculation correctly, not incorrect
+	rrr_biglength message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
+
+	int ret = rrr_msg_holder_util_new_with_empty_message (
+			result,
+			message_data_length,
+			NULL,
+			0,
+			0
+	);
+
+	if (ret == 0) {
+		rrr_msg_holder_lock(*result);
+		rrr_memcpy((*result)->message, source->message, source->data_length);
 		rrr_msg_holder_unlock(*result);
 	}
 

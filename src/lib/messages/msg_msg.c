@@ -32,11 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_msg.h"
 #include "../allocator.h"
 #include "../rrr_types.h"
-#include "../string_builder.h"
 #include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
+#include "../util/posix.h"
+#include "../helpers/string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../mqtt/mqtt_topic.h"
 
@@ -69,20 +70,27 @@ int rrr_msg_msg_new_empty (
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 ) {
-	ssize_t total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
 	// -1 because the char which points to the data holds 1 byte
+	rrr_biglength total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
+
+	if (total_size > UINT32_MAX) {
+		RRR_MSG_0("Could not allocate message, too big (%llu>%llu)\n",
+			(unsigned long long) total_size, (unsigned long long) UINT32_MAX);
+		return 1;
+	}
+
 	struct rrr_msg_msg *result = rrr_allocate_group(total_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
 		return 1;
 	}
 
-	memset(result, '\0', total_size);
+	rrr_memset(result, '\0', total_size);
 
 	rrr_msg_populate_head (
 			(struct rrr_msg *) result,
 			RRR_MSG_TYPE_MESSAGE,
-			total_size,
+			(rrr_u32) total_size,
 			0
 	);
 
@@ -139,10 +147,17 @@ struct rrr_msg_msg_new_with_data_nullsafe_callback_data {
 
 static int __rrr_msg_msg_new_with_data_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_msg_msg_new_with_data_nullsafe_callback_data *callback_data = arg;
+
+	if (len > UINT32_MAX) {
+		RRR_MSG_0("Length overflow in __rrr_msg_msg_new_with_data_nullsafe_callback (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (long long unsigned) UINT32_MAX);
+		return 1;
+	}
+
 	return rrr_msg_msg_new_with_data (
 			callback_data->final_result,
 			callback_data->type,
@@ -151,7 +166,7 @@ static int __rrr_msg_msg_new_with_data_nullsafe_callback (
 			callback_data->topic,
 			callback_data->topic_length,
 			str,
-			len
+			(rrr_u32) len
 	);
 }
 
@@ -312,22 +327,26 @@ void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message) {
 
 struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
 		const struct rrr_msg_msg *message,
-		ssize_t topic_length,
-		ssize_t data_length
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 ) {
-	ssize_t new_total_size = (sizeof (struct rrr_msg_msg) - 1 + topic_length + data_length);
+	rrr_biglength new_total_size = (sizeof (struct rrr_msg_msg) - 1 + topic_length + (rrr_biglength) data_length);
 
-	struct rrr_msg_msg *ret = rrr_allocate_group(new_total_size, RRR_ALLOCATOR_GROUP_MSG);
+	if (new_total_size > (rrr_biglength) UINT32_MAX) {
+		RRR_BUG("BUG: Overflow in input parameters tp rrr_msg_msg_duplicate_no_data_with_size\n");
+	}
+
+	struct rrr_msg_msg *ret = rrr_allocate_group((size_t) new_total_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 
-	memset(ret, '\0', new_total_size);
+	rrr_memset(ret, '\0', new_total_size);
 	memcpy(ret, message, sizeof(*ret) - 2);
 
 	ret->topic_length = topic_length;
-	ret->msg_size = new_total_size;
+	ret->msg_size = (rrr_u32) new_total_size;
 
 	return ret;
 }
@@ -347,7 +366,7 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate (
 struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
 		struct rrr_msg_msg *message
 ) {
-	ssize_t new_size = sizeof(struct rrr_msg_msg) - 1 + MSG_TOPIC_LENGTH(message);
+	rrr_u32 new_size = sizeof(struct rrr_msg_msg) - 1 + MSG_TOPIC_LENGTH(message);
 	struct rrr_msg_msg *ret = rrr_allocate_group(new_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
@@ -361,9 +380,14 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
 int rrr_msg_msg_topic_set (
 		struct rrr_msg_msg **message,
 		const char *topic,
-		ssize_t topic_len
+		rrr_u16 topic_len
 ) {
-	struct rrr_msg_msg *ret = rrr_msg_msg_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
+	struct rrr_msg_msg *ret = rrr_msg_msg_duplicate_no_data_with_size (
+			*message,
+			topic_len,
+			MSG_DATA_LENGTH(*message)
+	);
+
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_set_topic\n");
 		return 1;
@@ -378,11 +402,14 @@ int rrr_msg_msg_topic_set (
 	return 0;
 }
 
-int rrr_msg_msg_topic_get (
+int rrr_msg_msg_topic_and_length_get (
 		char **result,
+		uint16_t *result_length,
 		const struct rrr_msg_msg *message
 ) {
-	if ((*result = rrr_allocate(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
+	*result = 0;
+
+	if ((*result = rrr_allocate((rrr_biglength) MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_topic_get\n");
 		return 1;
 	}
@@ -392,8 +419,17 @@ int rrr_msg_msg_topic_get (
 	}
 
 	*((*result) + MSG_TOPIC_LENGTH(message)) = '\0';
+	*result_length = MSG_TOPIC_LENGTH(message);
 
 	return 0;
+}
+
+int rrr_msg_msg_topic_get (
+		char **result,
+		const struct rrr_msg_msg *message
+) {
+	uint16_t result_length_dummy = 0;
+	return rrr_msg_msg_topic_and_length_get(result, &result_length_dummy, message);
 }
 
 int rrr_msg_msg_topic_equals (
@@ -455,18 +491,6 @@ int rrr_msg_msg_topic_match (
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_mqtt_topic_token_destroy(entry_first_token);
 	return ret;
-}
-
-int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {
-	// Assume network order if crc32 is set
-	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
-
-	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
-}
-
-int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b) {
-	return rrr_msg_msg_timestamp_compare(message_a, message_b);
 }
 
 int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl) {

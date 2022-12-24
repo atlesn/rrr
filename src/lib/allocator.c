@@ -53,43 +53,66 @@ The RRR Allocator (RRRA)
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_mmap_stats.h"
+#include "rrr_shm_struct.h"
 
 /* Size for new MMAPs. A collection contains multiple MMAPs. */
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
-static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
-static struct rrr_mmap_collection rrr_allocator_collections[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
+static struct rrr_mmap_collection *rrr_allocator_collections = NULL;
+static struct rrr_mmap_collection_private_data rrr_allocator_private_datas[RRR_ALLOCATOR_GROUP_MAX + 1];
 
-static void *__rrr_allocate (size_t bytes, int group_num) {
-	void *ptr = rrr_mmap_collection_allocate (
-			&rrr_allocator_collections[group_num],
+static void *__rrr_allocate_failure (rrr_biglength size) {
+	RRR_MSG_0("Cannot allocate memory, too many bytes requested (%llu)\n",
+		(unsigned long long) size);
+	return NULL;
+}
+
+#define VERIFY_SIZE(b)                                            \
+	do {if (sizeof(b) > sizeof(size_t) && b > SIZE_MAX) {     \
+		return __rrr_allocate_failure(b);                 \
+	}} while (0)
+
+static void *__rrr_allocate (size_t bytes, size_t group_num) {
+
+	void *ptr = rrr_mmap_collections_allocate (
+			rrr_allocator_collections,
+			group_num,
 			bytes,
 			bytes > RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 				? bytes
-				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-			&index_lock,
-			0 // Not shared
+				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 	);
 
 	return ptr;
 }
 
 /* Allocate memory from OS allocator */
-void *rrr_allocate (size_t bytes) {
-	return malloc(bytes);
+void *rrr_allocate (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	return malloc((size_t) bytes);
+}
+
+/* Allocate zeroed memory from OS allocator */
+void *rrr_allocate_zero (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	void *ret = malloc((size_t) bytes);
+	if (ret) {
+		memset(ret, '\0', (size_t) bytes);
+	}
+	return ret;
 }
 
 /* Allocate memory from group allocator */
-void *rrr_allocate_group (size_t bytes, int group) {
-	return __rrr_allocate(bytes, group);
+void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
+	VERIFY_SIZE(bytes);
+	return __rrr_allocate((size_t) bytes, group);
 }
 
 /* Frees both allocations done by OS allocator and group allocator */
 void rrr_free (void *ptr) {
 	if (rrr_mmap_collections_free (
-			rrr_allocator_collections,
+			rrr_allocator_private_datas,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&index_lock,
 			ptr
 	) == 0) {
 		return;
@@ -99,25 +122,20 @@ void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, int group_num) {
+static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group_num) {
 	void *ptr_new = NULL;
 
 	if (bytes_new > 0) {
-		ptr_new = rrr_mmap_collection_allocate (
-				&rrr_allocator_collections[group_num],
+		ptr_new = rrr_mmap_collections_allocate (
+				rrr_allocator_collections,
+				group_num,
 				bytes_new,
-				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-				&index_lock,
-				0 // Not shared
+				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 		);
-
-		if (ptr_new == NULL) {
-			return NULL;
-		}
 	}
 
-	if (ptr_old != NULL) {
-		memcpy(ptr_new, ptr_old, bytes_old);
+	if (ptr_old != NULL && ptr_new != NULL) {
+		memcpy(ptr_new, ptr_old, bytes_new > bytes_old ? bytes_old : bytes_new);
 		rrr_free(ptr_old);
 	}
 
@@ -125,19 +143,27 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 }
 
 /* Caller must ensure that old allocation is done by OS allocator */
-void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
+void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
 	(void)(bytes_old);
-	return realloc(ptr_old, bytes_new);
+	VERIFY_SIZE(bytes_new);
+	return realloc(ptr_old, (size_t) bytes_new);
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {
-	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, group);
+void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
+	VERIFY_SIZE(bytes_old);
+	VERIFY_SIZE(bytes_new);
+	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
 }
 
 /* Duplicate string using OS allocator */
 char *rrr_strdup (const char *str) {
 	size_t size = strlen(str) + 1;
+
+	if (size == 0) {
+		RRR_MSG_0("Overflow in rrr_strdup\n");
+		return NULL;
+	}	
 
 	char *result = rrr_allocate(size);
 
@@ -150,13 +176,30 @@ char *rrr_strdup (const char *str) {
 	return result;
 }
 
+int rrr_allocator_init (void) {
+	if (rrr_mmap_collections_new (
+			&rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			0 /* Not pshared */,
+			"allocator"
+	) != 0) {
+		return 1;
+	}
+	rrr_mmap_collection_private_datas_init (
+			rrr_allocator_private_datas,
+			rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1
+	);
+	return 0;
+}
+
 /* Free all mmaps, caller must ensure that users are no longer active */
 void rrr_allocator_cleanup (void) {
-	rrr_mmap_collections_clear (
+	rrr_mmap_collections_destroy (
 			rrr_allocator_collections,
-			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&index_lock
+			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
+	rrr_allocator_collections = NULL;
 }
 
 /* Free unused mmaps */
@@ -164,8 +207,7 @@ void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 	rrr_mmap_collections_maintenance (
 			stats,
 			rrr_allocator_collections,
-			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&index_lock
+			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
 }
 
@@ -179,12 +221,14 @@ void rrr_allocator_maintenance_nostats (void) {
 #include <stdlib.h>
 #include <string.h>
 
-void *rrr_allocate (size_t bytes) {
-	return malloc(bytes);
+void *rrr_allocate (rrr_biglength bytes) {
+	VERIFY_SIZE(bytes);
+	return malloc((size_t) bytes);
 }
 
-void *rrr_allocate_group (size_t bytes, int group) {
+void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
 	(void)(group);
+	VERIFY_SIZE(bytes);
 	return rrr_allocate(bytes);
 }
 
@@ -192,18 +236,26 @@ void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
+void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
 	(void)(bytes_old);
+	VERIFY_SIZE(bytes_new);
 	return realloc(ptr_old, bytes_new);
 }
 
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {
+void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
 	(void)(group);
+	VERIFY_SIZE(bytes_new);
+	VERIFY_SIZE(bytes_old);
 	return rrr_reallocate(ptr_old, bytes_old, bytes_new);
 }
 
 char *rrr_strdup (const char *str) {
 	return strdup(str);
+}
+
+int rrr_allocator_init (void) {
+	// Nothing to do
+	return 0;
 }
 
 void rrr_allocator_cleanup (void) {

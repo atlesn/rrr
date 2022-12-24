@@ -44,7 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip.h"
 #include "../lib/stats/stats_instance.h"
@@ -59,10 +58,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct mqtt_broker_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_fifo_buffer local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
-	rrr_setting_uint server_port_plain;
-	rrr_setting_uint server_port_tls;
+	uint16_t server_port_plain;
+	uint16_t server_port_tls;
 	rrr_setting_uint max_keep_alive;
 	rrr_setting_uint retry_interval;
 	rrr_setting_uint close_wait_time;
@@ -82,7 +80,6 @@ struct mqtt_broker_data {
 
 static void mqttbroker_data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
-	rrr_fifo_buffer_clear(&data->local_buffer);
 	RRR_FREE_IF_NOT_NULL(data->password_file);
 	RRR_FREE_IF_NOT_NULL(data->acl_file);
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
@@ -95,30 +92,38 @@ static int mqttbroker_data_init (
 		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
-	int ret = 0;
 
 	data->thread_data = thread_data;
 
-	ret |= rrr_fifo_buffer_init(&data->local_buffer);
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not initialize fifo buffer in mqtt broker data_init\n");
-		goto out;
-	}
-
-	out:
-	if (ret != 0) {
-		mqttbroker_data_cleanup(data);
-	}
-
-	return ret;
+	return 0;
 }
 
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_TLS);
+	if ((ret = rrr_instance_config_read_optional_port_number (
+			&data->server_port_plain,
+			config,
+			"mqtt_broker_port"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		goto out;
+	}
+	if ((ret = rrr_instance_config_read_optional_port_number (
+			&data->server_port_tls,
+			config,
+			"mqtt_broker_port_tls"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		goto out;
+	}
+
+	if (data->server_port_plain == 0) {
+		data->server_port_plain = RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+	}
+	if (data->server_port_tls == 0) {
+		data->server_port_tls = RRR_MQTT_DEFAULT_SERVER_PORT_TLS;
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
 	if (data->max_keep_alive > 0xffff) {
@@ -334,7 +339,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			&data->mqtt_broker_data,
 			&init_data,
 			INSTANCE_D_EVENTS(thread_data),
-			data->max_keep_alive,
+			(uint16_t) data->max_keep_alive,
 			data->password_file,
 			data->permission_name,
 			&data->acl,
@@ -353,7 +358,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
 	if (data->do_transport_plain) {
-		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %" PRIrrrbl "\n",
+		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_plain);
 
 		// We're not allowed to pass in TLS parameters when starting plain mode,
@@ -379,7 +384,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 
 	if (data->do_transport_tls) {
-		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %" PRIrrrbl "\n",
+		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_tls);
 
 		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;

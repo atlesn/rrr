@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/buffer.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
@@ -76,7 +75,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 		if (MSG_IS_ARRAY(reading)) {
 			uint16_t array_version_dummy;
-			if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, reading) != 0) {
+			if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, reading) != 0) {
 				RRR_MSG_0("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
@@ -109,7 +108,7 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback);
 }
 
 static int raw_event_periodic (void *arg) {

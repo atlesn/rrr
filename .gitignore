@@ -49,6 +49,7 @@ input_data
 
 # http://www.gnu.org/software/automake
 
+compile_commands.json
 confdefs.h
 /conftest
 /conftest.err

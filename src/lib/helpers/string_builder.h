@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_STRING_BUILDER_H
 #define RRR_STRING_BUILDER_H
 
-#include "type.h"
+#include "../type.h"
 
 struct rrr_string_builder {
 	rrr_biglength size;
@@ -43,9 +43,6 @@ struct rrr_string_builder {
   ret = 1;                                                                             \
   goto out;                                                                            \
         }} while(0)
-
-#define RRR_STRING_BUILDER_UNCHECKED_APPEND(string_builder,str)                        \
-    rrr_string_builder_unchecked_append(string_builder,str)
 
 void rrr_string_builder_unchecked_append (
 		struct rrr_string_builder *string_builder,
@@ -81,6 +78,9 @@ void rrr_string_builder_destroy_void (
 int rrr_string_builder_reserve (
 		struct rrr_string_builder *string_builder,
 		rrr_biglength bytes
+);
+void rrr_string_builder_truncate (
+		struct rrr_string_builder *string_builder
 );
 int rrr_string_builder_append_from (
 		struct rrr_string_builder *target,

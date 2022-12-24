@@ -29,24 +29,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "allocator.h"
 #include "util/gnu.h"
 #include "util/macro_utils.h"
+#include "util/posix.h"
 
 void rrr_string_builder_unchecked_append (
 		struct rrr_string_builder *string_builder,
 		const char *str
 ) {
-	rrr_biglength length = strlen(str);
-	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
-	string_builder->wpos += length;
-	if (string_builder->wpos + 1 > string_builder->size) {
-		RRR_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
-	}
+	const rrr_biglength length = strlen(str);
+
+	rrr_biglength size = length;
+	rrr_biglength_add_bug (&size, 1);
+
+	rrr_biglength new_wpos = string_builder->wpos;
+	rrr_biglength_add_bug(&new_wpos, length);
+
+	rrr_memcpy(string_builder->buf + string_builder->wpos, str, size);
+
+	string_builder->wpos = new_wpos;
 }
 
 static void __rrr_string_builder_unchecked_append_raw (
 		struct rrr_string_builder *string_builder,
-		const char *buf, rrr_biglength buf_size
+		const char *buf,
+		rrr_biglength buf_size
 ) {
-	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
+	rrr_memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
 	string_builder->wpos += buf_size;
 	string_builder->buf[string_builder->wpos] = '\0';
 }
@@ -129,7 +136,12 @@ int rrr_string_builder_reserve (
 		rrr_biglength bytes
 ) {
 	if (string_builder->wpos + bytes + 1 > string_builder->size || string_builder->buf == NULL) {
-		rrr_biglength new_size = bytes + 1 + string_builder->size + 1024;
+		const rrr_biglength new_size_a = bytes + 1 + 1024;
+		const rrr_biglength new_size = new_size_a + string_builder->size;
+		if (new_size_a < bytes || new_size < new_size_a) {
+			RRR_MSG_0("Overflow in rrr_string_builder_reserve\n");
+			return 1;
+		}
 		char *new_buf = rrr_reallocate(string_builder->buf, string_builder->size, new_size);
 		if (new_buf == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_string_builder_reserve\n");
@@ -142,6 +154,15 @@ int rrr_string_builder_reserve (
 	return 0;
 }
 
+void rrr_string_builder_truncate (
+		struct rrr_string_builder *string_builder
+) {
+	if (string_builder->buf == NULL) {
+		return;
+	}
+	*(string_builder->buf) = '\0';
+	string_builder->wpos = 0;
+}
 
 int rrr_string_builder_append_from (
 		struct rrr_string_builder *target,
@@ -191,7 +212,7 @@ int rrr_string_builder_append (
 		return 1;
 	}
 
-	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
+	rrr_memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
 	string_builder->wpos += length;
 
 	return 0;
@@ -220,7 +241,7 @@ int rrr_string_builder_append_format (
 		goto out;
 	}
 
-	memcpy(string_builder->buf + string_builder->wpos, tmp, length + 1);
+	rrr_memcpy(string_builder->buf + string_builder->wpos, tmp, length + 1);
 	string_builder->wpos += length;
 
 	out:

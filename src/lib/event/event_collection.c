@@ -50,6 +50,12 @@ void rrr_event_collection_clear (
 	memset(collection, '\0', sizeof(*collection));
 }
 
+void rrr_event_collection_clear_void (
+		void *arg
+) {
+	rrr_event_collection_clear(arg);
+}
+
 static int __rrr_event_collection_push (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,

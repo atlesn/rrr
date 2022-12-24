@@ -70,8 +70,8 @@ int rrr_msg_msg_to_host_and_verify (struct rrr_msg_msg *message, rrr_biglength e
 void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message);
 struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
 		const struct rrr_msg_msg *message,
-		ssize_t topic_length,
-		ssize_t data_length
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 );
 struct rrr_msg_msg *rrr_msg_msg_duplicate (
 		const struct rrr_msg_msg *message
@@ -82,7 +82,12 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
 int rrr_msg_msg_topic_set (
 		struct rrr_msg_msg **message,
 		const char *topic,
-		ssize_t topic_len
+		rrr_u16 topic_len
+);
+int rrr_msg_msg_topic_and_length_get (
+		char **result,
+		uint16_t *result_length,
+		const struct rrr_msg_msg *message
 );
 int rrr_msg_msg_topic_get (
 		char **result,
@@ -97,8 +102,6 @@ int rrr_msg_msg_topic_match (
 		const struct rrr_msg_msg *message,
 		const struct rrr_mqtt_topic_token *filter_first_token
 );
-int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b);
-int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b);
 int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl);
 
 #endif /* RRR_MESSAGES_H */
