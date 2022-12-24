@@ -340,7 +340,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {":path",                  RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"accept",                 RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-language",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
-        {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
+        {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
 	{"access-control-request-headers",
 	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"cache-control",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
@@ -350,6 +350,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS |
 	                           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_single_unsigned_value},
         {"content-type",           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_content_type_value},
+        {"content-encoding",       RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
 	                           RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME, NULL},
@@ -460,6 +461,31 @@ const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_va
 		}
 	RRR_LL_ITERATE_END();
 	return NULL;
+}
+
+int rrr_http_header_field_collection_has_subvalue (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *name_subvalue_lowercase
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+
+			const struct rrr_http_header_field *field = node;
+			RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+				if (rrr_nullsafe_str_cmpto_case(node->name, name_subvalue_lowercase) == 0) {
+					return 1;
+				}
+			RRR_LL_ITERATE_END();
+		}
+	RRR_LL_ITERATE_END();
+
+	return 0;
 }
 
 int rrr_http_header_field_new_raw (
@@ -1122,7 +1148,7 @@ int rrr_http_header_field_parse_name_and_value (
 		const char *start_orig,
 		const char *end
 ) {
-	if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {
+	if ((unsigned long long) (end - start_orig) > (unsigned long long) RRR_LENGTH_MAX) {
 		RRR_MSG_0("HTTP header too long to be parsed (%llu>%llu)\n",
 			(unsigned long long) (end - start_orig),
 			(unsigned long long) RRR_LENGTH_MAX

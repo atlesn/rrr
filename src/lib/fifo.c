@@ -374,6 +374,8 @@ static void __rrr_fifo_write_update_pointers (
 ) {
 	struct rrr_fifo_entry *pos = buffer->gptr_first;
 
+	entry->order = order;
+
 	if (pos == NULL) {
 		buffer->gptr_first = entry;
 		buffer->gptr_last = entry;

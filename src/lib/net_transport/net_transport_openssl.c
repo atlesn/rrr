@@ -962,8 +962,11 @@ static int __rrr_net_transport_openssl_handshake (
 
 	if (!SSL_is_server(ssl)) {
 		// TODO : Hostname verification
-
+#ifdef RRR_HAVE_GET1_PEER_CERTIFICATE
+		X509 *cert = SSL_get1_peer_certificate(ssl);
+#else
 		X509 *cert = SSL_get_peer_certificate(ssl);
+#endif
 		if (cert != NULL) {
 			X509_free(cert);
 		}

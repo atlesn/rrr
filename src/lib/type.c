@@ -1590,9 +1590,7 @@ int rrr_type_new_h (
 		goto out;
 	}
 
-	if (stored_length > 0) {
-		memset((*target)->data, '\0', (long unsigned int) stored_length);
-	}
+	memset((*target)->data, '\0', (long unsigned int) stored_length);
 
 	out:
 	return ret;

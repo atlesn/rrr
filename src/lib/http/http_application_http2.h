@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 
 struct rrr_http_application;
+struct rrr_http_application_callbacks;
 
 void rrr_http_application_http2_alpn_protos_get (
 		const char **target,
@@ -35,14 +36,16 @@ int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
 		void **initial_receive_data,
-		rrr_length initial_receive_data_len
+		rrr_length initial_receive_data_len,
+		const struct rrr_http_application_callbacks *callbacks
 );
 int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_application **target,
 		void **initial_receive_data,
 		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
-		int is_server
+		int is_server,
+		const struct rrr_http_application_callbacks *callbacks
 );
 int rrr_http_application_http2_response_submit (
 		struct rrr_http_application *app,

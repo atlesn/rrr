@@ -1,4 +1,4 @@
-.Dd 2022-03-29
+.Dd 2022-12-22
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1523,7 +1523,15 @@ If set to 'no' or left unset,
 .B httpserver
 will generate default responses.
 
-.It http_serve_response_timeout=MILLISECONDS
+.It http_server_test_page_default_response={yes|no}
+Send a simple test HTML page with the RRR logo whenever an empty default response otherwise would have been sent. Defaults to 'no'.
+
+.It http_server_favicon_not_found_response={yes|no}
+Always respond with 404 NOT FOUND to requests with
+.B /favicon.ico
+endpoint. If set to 'no' or left unset, these requests are treated as any other.
+
+.It http_server_response_timeout=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
 response.
@@ -2359,9 +2367,25 @@ is prepended to the topic RRR messages. No trailing or leading slashes are added
 Messages without a topic are dropped if set to yes. Defaults to no.
 
 .It mqtt_publish_rrr_message={yes|no}
-If set to yes, the client will send full RRR messages.
-If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
-type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
+If set to 'yes', the client will send full RRR messages. This may be used with
+.B mqtt_receive_rrr_message
+being set to 'yes' in the configuration of the client which subscribes to the messages.
+If set to 'no' or left unset, one of the following data compositions are used given in order of precedence:
+
+.Bl -tag -width -indent
+.It Array data
+If
+.B mqtt_publish_array_values
+is set, data formatted according to this parameter is published.
+
+.It Raw data
+If the data field of the RRR-message has a size greater than one, and it is not an array message, this raw data
+is sent. This method should be used for passing simple text messages or other data.
+
+.It Descriptive string
+A string showing the type, class and timestamp of the RRR-message is put into the resulting PUBLISH message.
+
+.El
 
 .It mqtt_retain_tag={tag}
 If set and an incoming array message has the tag present, the resulting PUBLISH message will have the retain flag set.

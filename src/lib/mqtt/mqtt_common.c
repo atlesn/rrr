@@ -34,8 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 
-struct rrr_event_queue *queue;
-
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
         .numbers.session_expiry                      = 0,
         .numbers.receive_maximum                     = 0,
@@ -82,11 +80,6 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->client_name);
 	data->handler_properties = NULL;
-}
-
-void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
-	// Nothing to do at the moment
-	(void)(data);
 }
 
 struct clear_sesion_from_connections_callback_data {
@@ -829,10 +822,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_p *ack = NULL;
 	uint8_t reason_v5 = 0;
 
-	// If we send an ACK without giving the PUBLISH to session framework first, this
-	// must be set to 1
-	int allow_missing_originating_packet = 0;
-
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish) != 0 && RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 		RRR_MSG_0("Recevied PUBLISH with DUP 1 and QoS 0, this is a protocol error\n");
 		ret = RRR_MQTT_SOFT_ERROR;
@@ -841,8 +830,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	// Parser may set reason on the publish (in case of invalid data) which we check here
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		allow_missing_originating_packet = 1;
-
 		// If QoS is 0, we cannot send error reply and must close connection
 		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
@@ -877,7 +864,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 	};
 	if (reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		allow_missing_originating_packet = 1;
 		goto out_generate_ack;
 	}
 
@@ -951,7 +937,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					mqtt_data->sessions,
 					&connection->session,
 					ack,
-					allow_missing_originating_packet,
 					__rrr_mqtt_common_send_now_callback,
 					handle
 			),
@@ -1098,7 +1083,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 					mqtt_data->sessions,
 					&connection->session,
 					next_ack,
-					0,
 					__rrr_mqtt_common_send_now_callback,
 					handle
 			),
@@ -1179,7 +1163,7 @@ static int __rrr_mqtt_common_handle_packet_callback (
 	}
 
 	RRR_DBG_3 ("Handling packet of type %s id %u dup %u\n",
-			RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet), packet->dup);
+			RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(packet));
 
 	if ((ret = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, handle, packet)) != 0) {
 		if (ret == RRR_MQTT_INTERNAL_ERROR) {

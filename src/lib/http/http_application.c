@@ -58,14 +58,15 @@ uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 int rrr_http_application_new (
 		struct rrr_http_application **target,
 		enum rrr_http_application_type type,
-		int is_server
+		int is_server,
+		const struct rrr_http_application_callbacks *callbacks
 ) {
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
-		return rrr_http_application_http1_new(target);
+		return rrr_http_application_http1_new(target, callbacks);
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
-		return rrr_http_application_http2_new(target, is_server, NULL, 0);
+		return rrr_http_application_http2_new(target, is_server, NULL, 0, callbacks);
 	}
 #else
 	(void)(is_server);
@@ -106,23 +107,7 @@ int rrr_http_application_transport_ctx_tick (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_max_size,
-		const struct rrr_http_rules *rules,
-		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
-		void *upgrade_verify_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
-		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
-		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
-		void *async_response_get_callback_arg
+		const struct rrr_http_rules *rules
 ) {
 	return app->constants->tick (
 			received_bytes,
@@ -130,23 +115,7 @@ int rrr_http_application_transport_ctx_tick (
 			app,
 			handle,
 			read_max_size,
-			rules,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
-			upgrade_verify_callback,
-			upgrade_verify_callback_arg,
-			websocket_callback,
-			websocket_callback_arg,
-			get_response_callback,
-			get_response_callback_arg,
-			frame_callback,
-			frame_callback_arg,
-			callback,
-			callback_arg,
-			failure_callback,
-			failure_callback_arg,
-			async_response_get_callback,
-			async_response_get_callback_arg
+			rules
 	);
 }
 

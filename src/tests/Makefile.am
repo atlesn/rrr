@@ -12,6 +12,10 @@ if RRR_WITH_JSONC
 test_jsonc = test_json.c
 endif
 
+if RRR_WITH_ZLIB
+test_zlib = test_zlib.c
+endif
+
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 ldflags = ${JEMALLOC_LIBS} -L../lib -lrrr
@@ -24,6 +28,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_condition.c \
 	${test_jsonc} \
+	${test_zlib} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
@@ -36,7 +41,7 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
 test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
-test_LDADD = -ldl -lpthread -lm -L../lib/.libs ${jsonc_libadd}
+test_LDADD = -ldl -lpthread -lm -L../lib/.libs
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
