@@ -77,7 +77,7 @@ int rrr_mqtt_transport_new (
 	struct rrr_mqtt_transport *transport = rrr_allocate(sizeof(*transport));
 
 	if (transport == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_transport_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -118,9 +118,9 @@ static void __rrr_mqtt_transport_accept_callback (
             transport->queue,                                         \
             NULL,                                                     \
             0,                                                        \
-            2 * 2000,   /* First read timeout 2s */                   \
-            1 * 1000,   /* Soft timeout 1 s, maintenance interval */  \
-            0xffff * 2, /* Hard timeout */                            \
+            RRR_MQTT_COMMON_FIRST_READ_TIMEOUT_S * 1000,              \
+            RRR_MQTT_COMMON_TICK_INTERVAL_S * 1000,                   \
+            RRR_MQTT_COMMON_HARD_TIMEOUT_S * 1000,                    \
             RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT,           \
             __rrr_mqtt_transport_accept_callback,                     \
             transport,                                                \
@@ -131,12 +131,13 @@ static void __rrr_mqtt_transport_accept_callback (
 
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
-		const struct rrr_net_transport_config *net_transport_config
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *application_name
 ) {
 	int ret = 0;
 
 	if (transport->transport_count == RRR_MQTT_TRANSPORT_MAX) {
-		RRR_MSG_0("Too many transports in rrr_mqtt_transport_start\n");
+		RRR_MSG_0("Too many transports in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -147,10 +148,11 @@ int rrr_mqtt_transport_start (
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				net_transport_config,
+				application_name,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
-			RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
+			RRR_MSG_0("Could not initialize TLS network type in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -160,15 +162,16 @@ int rrr_mqtt_transport_start (
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				&net_transport_config_plain,
+				application_name,
 				0,
 				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
-			RRR_MSG_0("Could not initialize plain network type in rrr_mqtt_transport_start_plain\n");
+			RRR_MSG_0("Could not initialize plain network type in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		RRR_BUG("BUG: Unknown transport type %i to rrr_mqtt_transport_start\n", net_transport_config->transport_type);
+		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type, __func__);
 	}
 
 	transport->transports[transport->transport_count++] = tmp;
@@ -225,13 +228,13 @@ int rrr_mqtt_transport_connect (
 	};
 
 	if (transport->transport_count > 1) {
-		RRR_DBG_1("Note: More than one transport found in rrr_mqtt_transport_connect, using the first one.\n");
+		RRR_DBG_1("Note: More than one transport found in %s, using the first one.\n", __func__);
 	}
 
 	struct rrr_net_transport *net_transport = transport->transports[0];
 
 	if (net_transport == NULL) {
-		RRR_BUG("BUG: No transports started in rrr_mqtt_transport_connect\n");
+		RRR_BUG("BUG: No transports started in %s\n", __func__);
 	}
 
 	if ((ret = rrr_net_transport_connect (
@@ -275,7 +278,7 @@ int rrr_mqtt_transport_iterate (
 				callback_arg
 		);
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-			RRR_MSG_0("Internal error in rrr_mqtt_transport_iterate\n");
+			RRR_MSG_0("Internal error in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -287,10 +290,10 @@ int rrr_mqtt_transport_iterate (
 }
 
 struct with_iterator_ctx_do_custom_callback_data {
+		short *handle_found;
 		int transport_handle;
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg);
 		void *callback_arg;
-		int connection_found;
 };
 
 static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
@@ -302,7 +305,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
 	struct with_iterator_ctx_do_custom_callback_data *callback_data = callback_arg;
 
 	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->transport_handle) {
-		callback_data->connection_found = 1;
+		*callback_data->handle_found = 1;
 		ret = callback_data->callback(handle, callback_data->callback_arg);
 	}
 
@@ -310,6 +313,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
 }
 
 int rrr_mqtt_transport_with_iterator_ctx_do_custom (
+		short *handle_found,
 		struct rrr_mqtt_transport *transport,
 		int transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
@@ -317,29 +321,30 @@ int rrr_mqtt_transport_with_iterator_ctx_do_custom (
 ) {
 	int ret = RRR_MQTT_OK;
 
-	struct with_iterator_ctx_do_custom_callback_data callback_data = {
-			transport_handle,
-			callback,
-			callback_arg,
-			0
-	};
+	*handle_found = 0;
 
 	if (transport->transport_count != 1) {
-		RRR_BUG("BUG: Number of transports was not exactly 1 in rrr_mqtt_transport_with_iterator_ctx_do_custom\n");
+		// Cannot ensure unique handle across multiple transports
+		RRR_BUG("BUG: Number of transports was not exactly 1 in %s\n", __func__);
 	}
 
-	ret = rrr_mqtt_transport_iterate (
+	struct with_iterator_ctx_do_custom_callback_data callback_data = {
+			handle_found,
+			transport_handle,
+			callback,
+			callback_arg
+	};
+
+	if ((ret = rrr_mqtt_transport_iterate (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_mqtt_transport_with_iterator_ctx_do_custom_callback,
 			&callback_data
-	);
-
-	if (callback_data.connection_found != 1) {
-		RRR_MSG_0("Connection not found in rrr_mqtt_transport_with_iterator_ctx_do_custom\n");
-		ret = RRR_MQTT_SOFT_ERROR;
+	)) != 0) {
+		goto out;
 	}
 
+	out:
 	return ret;
 }
 

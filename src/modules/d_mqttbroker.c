@@ -244,7 +244,8 @@ static void mqttbroker_update_stats (struct mqtt_broker_data *data, struct rrr_s
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_disconnected", 0, broker_stats.total_connections_closed);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, broker_stats.session_stats.total_publish_received);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, broker_stats.session_stats.total_publish_not_forwarded);
-	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, broker_stats.session_stats.total_publish_forwarded);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded_in", 0, broker_stats.session_stats.total_publish_forwarded_in);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded_out", 0, broker_stats.session_stats.total_publish_forwarded_out);
 
 	// This will always be zero for the broker, nothing is delivered locally. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_delivered", 0, broker_stats.session_stats.total_publish_delivered);
@@ -345,7 +346,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			&data->acl,
 			data->do_require_authentication,
 			data->do_disconnect_on_v31_publish_deny,
-			rrr_mqtt_session_collection_ram_new,
+			rrr_mqtt_session_collection_ram_new_broker,
 			NULL
 	) != 0) {
 		RRR_MSG_0("Could not create new mqtt broker\n");
@@ -353,7 +354,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 
 	pthread_cleanup_push(rrr_mqtt_broker_destroy_void, data->mqtt_broker_data);
-	pthread_cleanup_push(rrr_mqtt_broker_notify_pthread_cancel_void, data->mqtt_broker_data);
 
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
@@ -416,7 +416,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	rrr_posix_usleep(500000); // 500 ms
 
 	out_destroy_broker:
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 
 	out_message:

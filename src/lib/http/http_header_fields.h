@@ -73,6 +73,24 @@ void rrr_http_header_field_destroy (
 void rrr_http_header_field_collection_clear (
 		struct rrr_http_header_field_collection *collection
 );
+const struct rrr_http_header_field *rrr_http_header_field_collection_get (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+);
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_raw (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+);
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_value_case (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *value_anycase
+);
+int rrr_http_header_field_collection_has_subvalue (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *name_subvalue_lowercase
+);
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
@@ -82,6 +100,11 @@ int rrr_http_header_field_new_with_value (
 		struct rrr_http_header_field **result,
 		const char *name,
 		const char *value
+);
+int rrr_http_header_field_new_with_value_nullsafe (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const struct rrr_nullsafe_str *value
 );
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,

@@ -14,8 +14,8 @@ fi
 
 
 TEST="./test -e test_env.conf $1 $2 $3 $4"
-TEST_SOCKET=.rrr_test.sock
-TEST_DATA_FILE=.test_data.tmp
+TEST_SOCKET=/tmp/rrr-test.sock
+TEST_DATA_FILE=/tmp/rrr-test-data.tmp
 TEST_DATA_GENERATOR=./make_test_data
 TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
 
@@ -26,10 +26,10 @@ SEND_IP=./send_ip
 SEND_IP_PORT=2222
 
 SEND_FIFO=./send_fifo
-SEND_FIFO_FILENAME=/tmp/rrr_test_fifo.sock
+SEND_FIFO_FILENAME=/tmp/rrr-test-fifo.sock
 
 SEND_WEBSOCKET="../rrr_http_client"
-SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /x -w"
+SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /test/x -w"
 
 fail () {
 	echo "Test $1 failed" 1>&2
@@ -143,6 +143,7 @@ do_test_simple test_incrementer.conf
 do_test_simple test_cacher_1.conf 
 do_test_simple test_cacher_2.conf 
 do_test_simple test_cacher_3.conf 
+do_test_simple test_cacher_4.conf 
 
 rm -rf /tmp/rrr-test-msgdb* || exit 1
 # End message DB tests
@@ -163,6 +164,7 @@ do_test_socket test_cmodule.conf
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then
 	do_test_socket test_perl5.conf
+	do_test_simple test_mqtt_commands.conf
 fi
 
 echo "With python3: $RRR_WITH_PYTHON3"

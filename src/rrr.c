@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#ifdef RRR_WITH_JEMALLOC
+#	include <jemalloc/jemalloc.h>
+#endif
 
 #include "main.h"
 #include "lib/rrr_config.h"
@@ -102,6 +105,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "config",                "{CONFIGURATION FILE OR DIRECTORY}"},
 		{0,                            'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "start-interval",        "[-t|--start-interval]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
@@ -701,6 +705,20 @@ int main (int argc, const char *argv[], const char *env[]) {
 	int config_i = 0;
 	RRR_MAP_ITERATE_BEGIN(&config_file_map);
 	 	 // We fork one child for every specified config file
+
+		if (config_i > 0 && rrr_config_global.start_interval > 0) {
+			RRR_DBG_1("Delaying next fork by %lu milliseconds per arguments.\n",
+				(long unsigned int) rrr_config_global.start_interval);
+
+			const size_t delay_us = (unsigned long int) rrr_config_global.start_interval / 10 * 1000;
+			for (int i = 0; i < 10; i++) {
+				if (rrr_posix_usleep(delay_us) != 0) {
+					RRR_DBG_1("Delayed startup aborted\n");
+					RRR_LL_ITERATE_LAST();
+					main_running = 0;
+				}
+			}
+		}
 
 		const char *config_string = node->tag;
 

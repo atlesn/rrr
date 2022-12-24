@@ -22,6 +22,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_READ_CONSTANTS_H
 #define RRR_READ_CONSTANTS_H
 
+// ---- Read Flags - Avoid collision with rrr_socket_constants.h
+
+#define RRR_READ_MESSAGE_FLUSH_OVERSHOOT     (1<<15)
+
+// ---- Standardized return values 
+
 // These return values are standardized throughout RRR. Anyone who
 // distinguishes between HARD and SOFT errors should use these values,
 // possibly wrapped in private more appropriate names for the particular
@@ -64,6 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Not done yet, possibly call me again later
 #define RRR_READ_INCOMPLETE		4
+#define RRR_READ_BUSY		        4
 
 // End of file, nothing more to read, etc.
 #define RRR_READ_EOF			8
@@ -74,8 +81,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Read has been ratelimited
 #define RRR_READ_RATELIMIT		32
-
-
 
 // When adding more, be sure about your powers of 2. Note that if you add more, others
 // might start using them.

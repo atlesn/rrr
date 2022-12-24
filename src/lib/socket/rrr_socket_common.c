@@ -65,6 +65,7 @@ int rrr_socket_common_receive_array_tree (
 		rrr_biglength ratelimit_max_bytes,
 		rrr_length message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
+		void (*error_callback)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
 		void *arg
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data_array = {
@@ -93,6 +94,8 @@ int rrr_socket_common_receive_array_tree (
 			ratelimit_max_bytes,
 			rrr_read_common_get_session_target_length_from_array_tree,
 			&callback_data_array,
+			error_callback,
+			arg,
 			__rrr_socket_common_receive_array_tree_callback,
 			&callback_data
 	);
@@ -122,7 +125,9 @@ int rrr_socket_common_receive_array_tree (
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
-		struct rrr_socket_common_in_flight_counter *in_flight
+		struct rrr_socket_common_in_flight_counter *in_flight,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
@@ -137,7 +142,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				message,
-				msg_size
+				msg_size,
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;
@@ -152,7 +159,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				message,
-				sizeof(struct rrr_msg_addr)
+				sizeof(struct rrr_msg_addr),
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;
@@ -164,7 +173,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		if ((ret = rrr_socket_send_blocking (
 				fd,
 				msg,
-				sizeof(*msg)
+				sizeof(*msg),
+				wait_callback,
+				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
 			goto out;
