@@ -133,6 +133,11 @@ int rrr_array_get_value_signed_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+);
 void rrr_array_strip_type (
 		struct rrr_array *array,
 		const struct rrr_type_definition *definition
@@ -177,6 +182,10 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 		const char *tag
 );
 const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+		const struct rrr_array *definition,
+		const char *tag
+);
+int rrr_array_has_tag (
 		const struct rrr_array *definition,
 		const char *tag
 );

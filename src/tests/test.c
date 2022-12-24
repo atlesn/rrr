@@ -43,10 +43,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test_condition.h"
 #include "test_usleep.h"
+#include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
 #include "test_inet.h"
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
+#endif
+#ifdef RRR_WITH_ZLIB
+#	include "test_zlib.h"
 #endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
@@ -147,6 +151,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("rrr_posix_msleep_signal_safe") {
+		ret_tmp = rrr_test_msleep_signal_safe();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("fixed point type") {
 		ret_tmp = rrr_test_fixp();
 	} TEST_RESULT(ret_tmp == 0);
@@ -162,6 +172,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 #ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_ZLIB
+	TEST_BEGIN("zlib compression and decompression") {
+		ret_tmp = rrr_test_zlib();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

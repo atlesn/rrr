@@ -113,12 +113,8 @@ void rrr_msg_stats_pack_and_flip (
 	rrr_length path_size = rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(source->path)));
 	rrr_length path_and_data_size = path_size + source->data_size;
 
-	if (path_size > RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 || path_size > 0xffff) {
-		RRR_BUG("BUG: path size exceeds maximum in rrr_msg_stats_pack_and_flip\n");
-	}
-	if (path_and_data_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE + RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1) {
-		RRR_BUG("BUG: path + data too long in rrr_msg_stats_pack_and_flip\n");
-	}
+	RRR_ASSERT(RRR_LENGTH_MAX > RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1,rrr_length_cannot_hold_stats_message_path);
+	RRR_ASSERT(RRR_LENGTH_MAX > RRR_STATS_MESSAGE_DATA_MAX_SIZE,rrr_length_cannot_hold_stats_message_data);
 
 	*total_size = sizeof(*target) - sizeof(target->path_and_data) + path_and_data_size;
 

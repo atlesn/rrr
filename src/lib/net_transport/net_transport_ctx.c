@@ -39,7 +39,9 @@ void rrr_net_transport_ctx_touch (
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 ) {
-	EVENT_ACTIVATE(handle->event_read);
+	if (!EVENT_PENDING(handle->event_read_notify)) {
+		EVENT_ADD(handle->event_read_notify);
+	}
 }
 
 int rrr_net_transport_ctx_get_fd (
@@ -84,7 +86,6 @@ int rrr_net_transport_ctx_check_alive (
 
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
-		rrr_length read_attempts,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
@@ -92,6 +93,8 @@ int rrr_net_transport_ctx_read_message (
 		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
+		void (*get_target_size_error)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
+		void *get_target_size_error_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
@@ -103,7 +106,6 @@ int rrr_net_transport_ctx_read_message (
 	int ret = handle->transport->methods->read_message (
 			&bytes_read,
 			handle,
-			read_attempts,
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,
@@ -111,6 +113,8 @@ int rrr_net_transport_ctx_read_message (
 			ratelimit_max_bytes,
 			get_target_size,
 			get_target_size_arg,
+			get_target_size_error,
+			get_target_size_error_arg,
 			complete_callback,
 			complete_callback_arg
 	);
@@ -149,8 +153,9 @@ static int __rrr_net_transport_ctx_send_push_postcheck (
 		rrr_length send_chunk_count
 ) {
 	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
-		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
+		RRR_MSG_0("net transport fd %i [%s] send chunk count exceeded specified limit (%i/%i), soft error.\n",
 				handle->submodule_fd,
+				handle->transport->application_name,
 				send_chunk_count,
 				handle->transport->send_chunk_count_limit
 		);
@@ -192,8 +197,8 @@ void rrr_net_transport_ctx_close_when_send_complete_set (
 ) {
 	if (!handle->close_when_send_complete) {
 		handle->close_when_send_complete = 1;
-		RRR_DBG_7("net transport fd %i close when send complete activated\n",
-				handle->submodule_fd);
+		RRR_DBG_7("net transport fd %i [%s] close when send complete activated\n",
+				handle->submodule_fd, handle->transport->application_name);
 
 		EVENT_ADD(handle->event_write);
 	}

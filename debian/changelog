@@ -1,3 +1,137 @@
+rrr (1.26-1) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Improvements:
+    * Clarified inconsitency of manual with respect to configuration
+      paramter mqtt_publish_rrr_message
+    * Never send raw array data from mqttclient
+
+  * Fixes:
+    * Handling of websocket topic filters in httpserver
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Jun 2022 10:55:09 +0200
+
+rrr (1.25-2) bullseye; urgency=medium
+
+  * Under the hood:
+    * Fix misc. code quality issues
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 26 Jun 2022 12:05:57 +0200
+
+rrr (1.25-1) bullseye; urgency=medium
+
+  * Changes:
+    * Argument '-f|--force', force read of unsupported array message version,
+      is removed from rrr_msg utility.
+
+  * Features:
+    * Add configurable delay between forks during startup
+    * New rrr_sub binary which can read RRR messages in the payload of MQTT
+      messages.
+    * Support gzip compression in HTTP server and client
+    * Default test page in HTTP server
+    * Option in HTTP server to produce 404 responses to /favicon.ico requets
+
+  * Improvements:
+    * Show IP address of remote host in error message when array data parsing
+      fails in IP module
+    * Extract boundary directive from content-type fields of type
+      multipart/form-data in httpserver
+    * New configuration parameter in httpclient to set content-type boundary
+      directive in incoming messages.
+    * If conversion from str to PyUnicode fails in python3 for array values,
+      fallback to PyByteArray with a warning
+    * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
+    * More aggressive cleanup of larger allocations in mmap channel to reduce
+      persistent memory usage in some situations.
+
+  * Fixes:
+    * Misc. features in python RRR array handling API not working correctly,
+      in particular handling of multibyte character sets
+    * cmodule test failed if it found the dummy module on the filesystem with
+      non-compatible version.
+
+  * Under the hood:
+    * Cleanups in net transport framework
+
+  * Other:
+    * Remove obsolete configuration parameter ip_persistent_connections
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:19:19 +0200
+
+rrr (1.23-2) bullseye; urgency=medium
+
+  * Features:
+    * Option in httpclient to silence error messages for PUT queries for a
+      specified amount of time
+    * New topic_filter_invert option
+    * Support message expiry interval in v5 in MQTT broker
+    * Set retain flag and expiry interval in MQTT client
+    * Set will messages in MQTT client
+    * Control subscriptions in MQTT client by sending in command messages
+    * Control the tidy interval of the cacher module per configuration
+      parameter
+
+  * Improvements:
+    * Files in message database stored in a tree structure based on their hash
+      filename for performance.
+    * Asynchrounous operation in message DB for better performance with very large DBs
+    * Tidy and revive intervals in cacher is calculated from the last
+      completion of each of these processes.
+
+  * Fixes:
+    * Prevent HTTP client from getting killed of if there are a lot of
+      connection errors
+    * Deadlock in mmap channel due to incorrect use of lock() instead of trylock()
+    * Lockup in cmodules in high traffic situations
+    * Sometimes temporary lockup in HTTP-server if there is not immediate downstream
+      response to an h2c upgrade.
+    * Poor hard timeout management in MQTT broker causing low-traffic clients to be kicked
+    * Fix buffer overflow in httpclient when wide characters were given to an
+      urlencoder function.
+    * Fix random crashes in message DB when zero length files were found.
+
+  * Under the hood:
+    * Cleanups in MQTT framework
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 29 Mar 2022 09:26:52 +0200
+
+rrr (1.21-1) bullseye; urgency=medium
+
+  * Changes:
+    * Automatic restart of RRR deamon upon failure
+    * Use JEmalloc instead of internal allocator
+
+  * Features:
+    * Option in cacher to revive messages older than a specified age
+    * Control maximum response size in httpclient
+    * Control maximum request size in httpserver
+    * Control content-type for raw requests in httpclient
+    * Control which readers that will receive the different kinds of messages from cacher
+
+  * Improvements:
+    * Performance for larger messages in misc. modules
+
+  * Fixes:
+    * Busy-waiting on thread state change causing long startup times
+    * Cacher getting killed off on large writes to message DB
+    * Large messages sometimes failing to be sent due to incorrect
+      return values in some send functions
+    * Send allow-origin header in OPTIONS responses to satisfy preflight checks
+    * Validate message header checksum in rrr_msg tool
+    * Manual page for rrr_msg tool
+    * Crash in rrr_msg as it tried to read from directories
+    * Problems with compiler -pie flags on some platforms
+    * Sed-replacement causing configure script not to work on non-GNU systems
+    * Slowness when multiple mmap_channel instances were destroying block locks simultaneously
+
+  * Under the hood:
+    * Common Message DB functions for httpclient and cacher
+    * Use robust locking in process shared locks (mmap channel and shm frameworks)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Nov 2021 08:25:29 +0100
+
 rrr (1.19-1) bullseye; urgency=medium
 
   * Features:

@@ -26,61 +26,38 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../event/event_collection.h"
 
+#define RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS \
+    struct rrr_msg_msg **msg, short positive_ack, short negative_ack, void *arg
+
 struct rrr_msgdb_client_conn {
 	int fd;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_event_collection events;
+	int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS);
+	void *delivery_callback_arg;
 };
 
 struct rrr_msg_msg;
 struct rrr_event_queue;
 
-int rrr_msgdb_client_await_ack (
-		int *positive_ack,
-		struct rrr_msgdb_client_conn *conn
-);
-int rrr_msgdb_client_await_ack_with_wait_callback (
-		int *positive_ack,
+int rrr_msgdb_client_await (
 		struct rrr_msgdb_client_conn *conn,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-);
-int rrr_msgdb_client_await_msg (
-		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn
-);
-int rrr_msgdb_client_await_msg_with_wait_callback (
-		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
 );
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
 		const struct rrr_msg_msg *msg
 );
 int rrr_msgdb_client_cmd_idx (
-		struct rrr_array *target_paths,
-		struct rrr_msgdb_client_conn *conn
-);
-int rrr_msgdb_client_cmd_idx_with_wait_callback (
-		struct rrr_array *target_paths,
 		struct rrr_msgdb_client_conn *conn,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		uint32_t min_age_s
 );
 int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
 		uint32_t max_age_s
 );
-int rrr_msgdb_client_cmd_tidy_with_wait_callback (
-		struct rrr_msgdb_client_conn *conn,
-		uint32_t max_age_s,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
-);
 int rrr_msgdb_client_cmd_get (
-		struct rrr_msg_msg **target,
 		struct rrr_msgdb_client_conn *conn,
 		const char *topic
 );
@@ -91,7 +68,9 @@ int rrr_msgdb_client_cmd_del (
 int rrr_msgdb_client_open (
 		struct rrr_msgdb_client_conn *conn,
 		const char *path,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
 );
 int rrr_msgdb_client_open_simple (
 		struct rrr_msgdb_client_conn *conn,
@@ -108,7 +87,9 @@ int rrr_msgdb_client_conn_ensure_with_callback (
 		const char *socket,
 		struct rrr_event_queue *queue,
 		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*delivery_callback)(RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS),
+		void *delivery_callback_arg
 );
 
 #endif /* RRR_MSGDB_CLIENT_H */

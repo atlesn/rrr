@@ -1,3 +1,5 @@
+if RRR_WITH_SYSTEMD
+
 systemd_unitdir = @RRR_SYSTEMD_UNIT_DIR@
 systemd_tmpfilesdir = @RRR_TMPFILES_DIR@
 
@@ -23,3 +25,5 @@ clean-local:
 
 distclean-local:
 	rm -f make-service.sh make-tmpfiles.sh || true
+
+endif

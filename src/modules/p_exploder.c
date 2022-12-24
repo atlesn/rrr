@@ -140,9 +140,10 @@ static int exploder_process_value (
 		entry_new->data_length = MSG_TOTAL_SIZE(msg_new);
 	}
 
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry_new,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -227,9 +228,10 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out_write:
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
@@ -255,15 +257,7 @@ static int exploder_parse_config (struct exploder_data *data, struct rrr_instanc
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_timestamp", do_preserve_timestamp, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_topic", do_preserve_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_topic_append_tag", do_topic_append_tag, 0);
-
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"exploder_topic"
-	)) != 0) {
-		goto out;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("exploder_topic", topic, topic_len);
 
 	out:
 	return ret;

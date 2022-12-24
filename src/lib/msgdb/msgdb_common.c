@@ -100,6 +100,15 @@ int rrr_msgdb_common_ctrl_msg_send_tidy (
 	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_TIDY, max_age_s, send_callback, callback_arg);
 }
 
+int rrr_msgdb_common_ctrl_msg_send_idx (
+		int fd,
+		uint32_t min_age_s,
+		int (*send_callback)(int fd, void **data, rrr_length data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_IDX, min_age_s, send_callback, callback_arg);
+}
+
 int rrr_msgdb_common_msg_send (
 		int fd,
 		const struct rrr_msg_msg *msg,

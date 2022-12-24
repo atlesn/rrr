@@ -199,11 +199,20 @@ static inline int rrr_length_inc_err (rrr_length *a) {
 }
 
 static inline void rrr_length_mul_bug (rrr_length *a, rrr_length b) {
-	rrr_biglength r = *a * b;
+	rrr_biglength r = *a * (rrr_biglength) b;
 	if (r > RRR_LENGTH_MAX) {
 		RRR_BUG("Overflow in rrr_length_mul_bug\n");
 	}
 	*a = (rrr_length) r;
+}
+
+static inline int rrr_biglength_mul_err (rrr_biglength *a, rrr_biglength b) {
+	rrr_biglength r = *a * b;
+	if (*a != 0 && r / *a != b) {
+		return 1;
+	}
+	*a = r;
+	return 0;
 }
 
 static inline void rrr_biglength_from_ssize_sub_bug (rrr_biglength *a, ssize_t b) {

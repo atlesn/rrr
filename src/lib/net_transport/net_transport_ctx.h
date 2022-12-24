@@ -69,7 +69,6 @@ int rrr_net_transport_ctx_check_alive (
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
-		rrr_length read_attempts,
 		rrr_biglength read_step_initial,
 		rrr_biglength read_step_max_size,
 		rrr_biglength read_max_size,
@@ -77,6 +76,8 @@ int rrr_net_transport_ctx_read_message (
 		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
+		void (*get_target_size_error)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
+		void *get_target_size_error_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 );

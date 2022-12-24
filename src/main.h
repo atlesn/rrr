@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_ENV_DEBUGLEVEL				"RRR_DEBUGLEVEL"
 #define RRR_ENV_DEBUGLEVEL_ON_EXIT		"RRR_DEBUGLEVEL_ON_EXIT"
+#define RRR_ENV_START_INTERVAL		"RRR_START_INTERVAL"
 #define RRR_ENV_NO_WATCHDOG_TIMERS		"RRR_NO_WATCHDOG_TIMERS"
 #define RRR_ENV_NO_THREAD_RESTART		"RRR_NO_THREAD_RESTART"
 #define RRR_ENV_LOGLEVEL_TRANSLATION	"RRR_LOGLEVEL_TRANSLATION"

@@ -594,6 +594,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	void *callback_arg;
 	int (*check_cancel_callback)(void *arg);
 	void *check_cancel_callback_arg;
+	const rrr_msg_holder_nexthops *nexthops;
 };
 
 struct rrr_message_broker_message_holder_double_pointer {
@@ -612,6 +613,7 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 		int *write_drop,
 		int *write_again,
 		struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg
 ) {
@@ -621,6 +623,10 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 	*write_again = 0;
 
 	entry->buffer_time = rrr_time_get_64();
+
+	if (nexthops != NULL) {
+		rrr_msg_holder_nexthops_set(entry, nexthops);
+	}
 
 	if ((ret = callback(entry, callback_arg)) != 0) {
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
@@ -661,6 +667,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 			do_drop,
 			do_again,
 			entry,
+			callback_data->nexthops,
 			callback_data->callback,
 			callback_data->callback_arg
 	)) != 0) {
@@ -719,6 +726,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 			&write_drop,
 			&write_again,
 			entry,
+			callback_data->nexthops,
 			callback_data->callback,
 			callback_data->callback_arg
 	)) != 0) {
@@ -726,10 +734,9 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		goto out;
 	}
 
-	if (callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
-		if (write_again) {
-			ret |= RRR_FIFO_PROTECTED_WRITE_AGAIN;
-		}
+	// Return value from check cancel must not propagate to FIFO buffer
+	if (write_again && callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
+		ret |= RRR_FIFO_PROTECTED_WRITE_AGAIN;
 	}
 
 	if (write_drop) {
@@ -822,6 +829,7 @@ int rrr_message_broker_write_entry (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		uint8_t protocol,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -839,7 +847,8 @@ int rrr_message_broker_write_entry (
 			callback,
 			callback_arg,
 			check_cancel_callback,
-			check_cancel_callback_arg
+			check_cancel_callback_arg,
+			nexthops
 	};
 
 	if (costumer->slot != NULL) {
@@ -883,22 +892,33 @@ int rrr_message_broker_write_entry (
 	return ret;
 }
 
+struct rrr_message_broker_clone_and_write_entry_callback_data {
+	const struct rrr_msg_holder *source;
+	const rrr_msg_holder_nexthops *nexthops;
+};
+
 static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
-	const struct rrr_msg_holder *source = arg;
+	struct rrr_message_broker_clone_and_write_entry_callback_data *callback_data = arg;
 
 	int ret = 0;
 
 	struct rrr_msg_holder *target = NULL;
 
-	if (rrr_msg_holder_util_clone_no_locking(&target, source) != 0) {
-		RRR_MSG_0("Could not clone ip buffer entry in __rrr_message_broker_write_clone_and_write_entry_callback\n");
+	if (rrr_msg_holder_util_clone_no_locking(&target, callback_data->source) != 0) {
+		RRR_MSG_0("Could not clone ip buffer entry in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	rrr_msg_holder_lock(target);
 	target->buffer_time = rrr_time_get_64();
+	ret = rrr_msg_holder_nexthops_set(target, callback_data->nexthops);
 	rrr_msg_holder_unlock(target);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to set nexthops in %s\n", __func__);
+		goto out;
+	}
 
 	*data = (char *) target;
 	*size = sizeof(*target);
@@ -907,42 +927,63 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECT
 	target = NULL;
 
 	out:
+	if (target != NULL) {
+		rrr_msg_holder_decref(target);
+	}
 	return ret;
 }
+
+struct rrr_message_broker_clone_and_write_entry_slot_callback_data {
+	const rrr_msg_holder_nexthops *nexthops;
+};
 				
 static void __rrr_message_broker_clone_and_write_entry_slot_callback (
 		struct rrr_msg_holder *entry,
 		void *arg
 ) {
-	(void)(arg);
+	struct rrr_message_broker_clone_and_write_entry_slot_callback_data *callback_data = arg;
+
 	rrr_msg_holder_lock(entry);
 	entry->buffer_time = rrr_time_get_64();
+	if (rrr_msg_holder_nexthops_set(entry, callback_data->nexthops) != 0) {
+		RRR_BUG("Unhandleable error: Failed to set nexthops in %s\n", __func__);
+	}
 	rrr_msg_holder_unlock(entry);
 }
 
-int rrr_message_broker_clone_and_write_entry_no_unlock (
+int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker_costumer *costumer,
-		const struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *nexthops
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	if (costumer->slot != NULL) {
+		struct rrr_message_broker_clone_and_write_entry_slot_callback_data callback_data = {
+			nexthops
+		};
+
 		if ((ret = rrr_msg_holder_slot_write_clone (
 				costumer->slot,
 				entry,
 				NULL,
 				NULL,
 				__rrr_message_broker_clone_and_write_entry_slot_callback,
-				NULL
+				&callback_data
 		)) != 0) {
 			goto out;
 		}
 	}
 	else {
+		struct rrr_message_broker_clone_and_write_entry_callback_data callback_data = {
+			entry,
+			nexthops
+		};
+
 		if (rrr_fifo_protected_write (
 				&costumer->main_queue,
 				__rrr_message_broker_clone_and_write_entry_callback,
-				(void *) entry
+				&callback_data
 		) != 0) {
 			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry_no_unlock\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
@@ -961,21 +1002,6 @@ int rrr_message_broker_clone_and_write_entry_no_unlock (
 	return ret;
 }
 
-// Note : Used by inject functions. entry is not properly const
-//        as we will call unlock() on function out. entry
-//        must be handed to us in locked state
-int rrr_message_broker_clone_and_write_entry (
-		struct rrr_message_broker_costumer *costumer,
-		const struct rrr_msg_holder *entry
-) {
-	int ret = rrr_message_broker_clone_and_write_entry_no_unlock (costumer, entry);
-
-	// Cast away const OK
-	rrr_msg_holder_unlock((struct rrr_msg_holder *) entry);
-
-	return ret;
-}
-
 static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
 	struct rrr_msg_holder *entry = arg;
 
@@ -990,10 +1016,11 @@ static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_PROTECTED_W
 
 // Only to be used when we already are inside a read callback and the
 // entry we passed in is guaranteed to have been allocated and modified
-// exclusively in message broker context. Entry must be locked before calling.
-int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+// exclusively in message broker context.
+int rrr_message_broker_incref_and_write_entry_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
@@ -1001,7 +1028,13 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 
 	rrr_msg_holder_lock(entry);
 	entry->buffer_time = rrr_time_get_64();
+	ret = rrr_msg_holder_nexthops_set(entry, nexthops);
 	rrr_msg_holder_unlock(entry);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to set nexthops in %s\n", __func__);
+		goto out;
+	}
 
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_write_incref (
@@ -1049,19 +1082,19 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_PROTEC
 }
 
 // This function removes entries one by one from the given collection. All refcounts passed in
-// must equal exactly 1. No entries may be locked prior to calling this function. If this function
-// fails, entries might still reside inside the collection which have not yet been added to the
-// buffer. The caller owns these. Read about 'unsafe' above.
+// must equal exactly 1. If this function ails, entries might still reside inside the collection
+// which have not yet been added to the buffer. The caller owns these. Read about 'unsafe' above.
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder_collection *collection,
+		const rrr_msg_holder_nexthops *nexthops,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	if (RRR_LL_COUNT(collection) == 0) {
-		goto out_final;
+		goto out;
 	}
 
 	int written_entries = RRR_LL_COUNT(collection);
@@ -1069,7 +1102,12 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 		node->buffer_time = rrr_time_get_64();
+		ret = rrr_msg_holder_nexthops_set(node, nexthops);
 		rrr_msg_holder_unlock(node);
+		if (ret != 0) {
+			RRR_MSG_0("Failed to set nexthops in %s\n", __func__);
+			goto out;
+		}
 	RRR_LL_ITERATE_END();
 
 	if (costumer->slot != NULL) {
@@ -1100,7 +1138,7 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		}
 	}
 
-	out_final:
+	out:
 	return ret;
 }
 
@@ -1241,6 +1279,7 @@ static void __rrr_message_broker_get_source_buffer (
 
 static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_PROTECTED_READ_CALLBACK_ARGS) {
 	struct rrr_message_broker_costumer *costumer = arg;
+	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
 
 	(void)(size);
 
@@ -1248,12 +1287,19 @@ static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_PROTECTED_
 
 	// Split buffer lock must be held by caller
 
+	rrr_msg_holder_lock(entry);
+
 	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+		struct rrr_message_broker_clone_and_write_entry_callback_data callback_data = {
+			entry,
+			&entry->nexthops
+		};
+
 		// Use delayed write in case there are other threads reading from their buffer
 		if ((ret = rrr_fifo_protected_write_delayed (
 				&node->queue,
 				__rrr_message_broker_clone_and_write_entry_callback,
-				(void *) data
+				&callback_data
 		)) != 0) {
 			RRR_MSG_0("Error while writing to buffer in __rrr_message_broker_split_buffers_fill_callback\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
@@ -1262,6 +1308,7 @@ static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_PROTECTED_
 	RRR_LL_ITERATE_END();
 
 	out:
+	rrr_msg_holder_unlock(entry);
 	return ret | RRR_FIFO_PROTECTED_SEARCH_FREE;
 }
 

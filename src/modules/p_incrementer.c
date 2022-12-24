@@ -80,7 +80,25 @@ static void incrementer_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	rrr_map_clear(&data->db_initial_ids);
 	rrr_map_clear(&data->db_used_ids);
+
 }
+
+struct incrementer_msgdb_delivery_callback_data {
+	short positive_ack;
+	short negative_ack;
+	struct rrr_msg_msg *msg;
+};
+
+static int incrementer_msgdb_delivery_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS) {
+	struct incrementer_msgdb_delivery_callback_data *callback_data = arg;
+
+	callback_data->positive_ack = positive_ack;
+	callback_data->negative_ack = negative_ack;
+	callback_data->msg = *msg;
+	*msg = NULL;
+
+	return 0;
+};
 
 struct incrementer_get_id_from_msgdb_callback_data {
 	unsigned long long int *result;
@@ -96,17 +114,26 @@ static int incrementer_get_id_from_msgdb_callback (
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
-	struct rrr_msg_msg *msg_tmp = NULL;
+
+	struct incrementer_msgdb_delivery_callback_data delivery_callback_data = {0};
 
 	*(callback_data->result) = 0;
 
-	if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->tag))) {
+	if ((ret = rrr_msgdb_client_cmd_get(conn, callback_data->tag)) != 0) {
 		goto out;
 	}
 
-	if (msg_tmp != NULL) {
+	if ((ret = rrr_msgdb_client_await (
+			conn,
+			incrementer_msgdb_delivery_callback,
+			&delivery_callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if (delivery_callback_data.msg != NULL) {
 		uint16_t version_dummy;
-		if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_tmp, msg_tmp)) != 0) {
+		if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_tmp, delivery_callback_data.msg)) != 0) {
 			RRR_MSG_0("Failed to extract array from message from message DB in incrementer_get_id_from_msgdb_callback\n");
 			goto out;
 		}
@@ -121,7 +148,7 @@ static int incrementer_get_id_from_msgdb_callback (
 
 	out:
 	rrr_array_clear(&array_tmp);
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	RRR_FREE_IF_NOT_NULL(delivery_callback_data.msg);
 	return ret;
 }
 
@@ -142,7 +169,9 @@ static int incrementer_get_id_from_msgdb (
 			data->msgdb_socket,
 			INSTANCE_D_EVENTS(data->thread_data),
 			incrementer_get_id_from_msgdb_callback,
-			&callback_data
+			&callback_data,
+			NULL,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Failed to get message from  message DB in incrementer_get_id_from_msgdb\n");
 		goto out;
@@ -204,6 +233,8 @@ static int incrementer_update_id_msgdb_callback (
 
 	int ret = 0;
 
+	struct incrementer_msgdb_delivery_callback_data delivery_callback_data = {0};
+
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
@@ -212,8 +243,12 @@ static int incrementer_update_id_msgdb_callback (
 		goto out;
 	}
 
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
+	short positive_ack = 0;
+	if ((ret = rrr_msgdb_client_await (
+			conn,
+			incrementer_msgdb_delivery_callback,
+			&delivery_callback_data
+	)) != 0 || delivery_callback_data.positive_ack == 0) {
 		RRR_DBG_7("Failed to send message to msgdb in incrementer_update_id_msgdb_callback, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
 		ret = 1; // Ensure failure is returned upon negative ACK
@@ -221,6 +256,7 @@ static int incrementer_update_id_msgdb_callback (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(delivery_callback_data.msg);
 	return ret;
 }
 
@@ -266,7 +302,9 @@ static int incrementer_update_id_callback (
 			callback_data->data->msgdb_socket,
 			INSTANCE_D_EVENTS(callback_data->data->thread_data),
 			incrementer_update_id_msgdb_callback,
-			msg_tmp
+			msg_tmp,
+			NULL,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Failed to send message to message DB in incrementer_update_id_callback\n");
 		goto out;
@@ -397,9 +435,10 @@ static int incrementer_process_subject (
 			(rrr_time_get_64() - time_start) / 1000
 	);
 
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data), 
 			entry,
+			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Failed to write entry in incrementer_process_subject of instance %s\n",
@@ -500,9 +539,10 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg *) entry->message)->timestamp);
 
 		// Unknown message, forward to output
-		if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 				INSTANCE_D_BROKER_ARGS(data->thread_data),
 				entry,
+				NULL,
 				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 		)) != 0) {
 			goto out;

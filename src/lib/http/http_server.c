@@ -36,8 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
-#define RRR_HTTP_SERVER_READ_MAX 1 * 1024 * 1024 // 1 MB
-
 void rrr_http_server_destroy (struct rrr_http_server *server) {
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
@@ -104,18 +102,27 @@ int rrr_http_server_new (
             struct rrr_http_server *server,                    \
             int set                                            \
     ) {                                                        \
-        server->rules.RRR_PASTE(do_,name) = (set != 0);              \
+        server->rules.RRR_PASTE(do_,name) = (set != 0);        \
+    }                                                          \
+
+#define RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(name)    \
+    void RRR_PASTE(rrr_http_server_set_,name) (                \
+            struct rrr_http_server *server,                    \
+            rrr_biglength set                                  \
+    ) {                                                        \
+        server->rules.name = set;                              \
     }                                                          \
 
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
+RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(server_request_max_size);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
-	(void)(callback_data);
+	(void)(http_server);
 
 	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
@@ -123,29 +130,70 @@ static void __rrr_http_server_accept_callback (
 			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
 }
 
+
+static int __rrr_http_server_upgrade_verify_callback (
+		RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_handshake_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
+);
+static int __rrr_http_server_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_get_response_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
+);
+static int __rrr_http_server_websocket_frame_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+);
+static int __rrr_http_server_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+);
+
 static void __rrr_http_server_handshake_complete_callback (
 		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
-
-	(void)(callback_data);
+	struct rrr_http_server *http_server = arg;
 
 	struct rrr_http_application *application = NULL;
 
 	const char *alpn_selected_proto = NULL;
 	rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle);
 
+	const struct rrr_http_application_callbacks callbacks = {
+		http_server->callbacks.unique_id_generator_callback,
+		http_server->callbacks.unique_id_generator_callback_arg,
+		__rrr_http_server_upgrade_verify_callback,
+		http_server,
+		__rrr_http_server_websocket_handshake_callback,
+		http_server,
+		__rrr_http_server_websocket_get_response_callback,
+		http_server,
+		__rrr_http_server_websocket_frame_callback,
+		http_server,
+		__rrr_http_server_receive_callback,
+		http_server,
+		NULL,
+		NULL,
+		http_server->callbacks.async_response_get_callback,
+		http_server->callbacks.async_response_get_callback_arg,
+	};
+
 	if (rrr_http_application_new (
 			&application,
 			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
-			1 // Is server
+			1, // Is server
+			&callbacks
 	) != 0) {
 		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_handshake_comlete_callback\n");
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_server_new (&application, handle) != 0) {
-		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_callback\n");
+	if (rrr_http_session_transport_ctx_server_new (
+			&application,
+			handle
+	) != 0) {
+		RRR_MSG_0("Could not create HTTP session in %s\n", __func__);
 		goto out;
 	}
 
@@ -365,22 +413,8 @@ static int __rrr_http_server_read_callback (
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes_dummy,
 			handle,
-			RRR_HTTP_SERVER_READ_MAX,
-			&http_server->rules,
-			http_server->callbacks.unique_id_generator_callback,
-			http_server->callbacks.unique_id_generator_callback_arg,
-			__rrr_http_server_upgrade_verify_callback,
-			http_server,
-			__rrr_http_server_websocket_handshake_callback,
-			http_server,
-			__rrr_http_server_receive_callback,
-			http_server,
-			http_server->callbacks.async_response_get_callback,
-			http_server->callbacks.async_response_get_callback_arg,
-			__rrr_http_server_websocket_get_response_callback,
-			http_server,
-			__rrr_http_server_websocket_frame_callback,
-			http_server
+			http_server->rules.server_request_max_size,
+			&http_server->rules
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
 			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
@@ -434,6 +468,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 	return rrr_net_transport_new (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
+			"HTTP server",
 			callback_data->net_transport_flags,
 			callback_data->queue,
 			alpn_protos,
@@ -488,6 +523,7 @@ static int __rrr_http_server_start (
 		ret = rrr_net_transport_new (
 				result_transport,
 				net_transport_config,
+				"HTTP server",
 				net_transport_flags,
 				queue,
 				NULL,
@@ -504,9 +540,6 @@ static int __rrr_http_server_start (
 		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
 		ret = 1;
 		goto out;
-	}
-
-	if (queue != NULL) {
 	}
 
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (

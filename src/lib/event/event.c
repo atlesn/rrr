@@ -120,30 +120,6 @@ static void __rrr_event_periodic (
 	}
 }
 
-static void __rrr_event_set_pause (
-		struct rrr_event_queue *queue,
-		int do_pause
-) {
-	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		if (queue->functions[i].signal_event) {
-			if (do_pause) {
-				event_del(queue->functions[i].signal_event);
-			}
-			else {
-				event_add(queue->functions[i].signal_event, NULL);
-			}
-		}
-	}
-
-	if ((queue->is_paused = do_pause) != 0) {
-		struct timeval tv = { 0, 50 }; // 50 us
-		event_add(queue->unpause_event, &tv);
-	}
-
-	RRR_DBG_9_PRINTF("EQ DISP %p pause is %i\n",
-		queue, queue->is_paused);
-}
-
 static void __rrr_event_unpause (
 		evutil_socket_t fd,
 		short flags,
@@ -154,13 +130,17 @@ static void __rrr_event_unpause (
 	(void)(fd);
 	(void)(flags);
 
-	__rrr_event_set_pause(queue, 0);
+	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		if (queue->functions[i].is_paused) {
+			event_add(queue->functions[i].signal_event, NULL);
+		}
+	}
 }
 
 static void __rrr_event_signal_event (
-	evutil_socket_t fd,
-	short flags,
-	void *arg
+		evutil_socket_t fd,
+		short flags,
+		void *arg
 ) {
  	struct rrr_event_function *function = arg;
 	struct rrr_event_queue *queue = function->queue;
@@ -171,15 +151,37 @@ static void __rrr_event_signal_event (
  	int ret = 0;
 	uint64_t count = 0;
 
-	if (queue->callback_pause) {
-		queue->callback_pause(&queue->is_paused, queue->is_paused, queue->callback_pause_arg);
+	unsigned short is_paused_new = function->is_paused;
+
+	if (function->callback_pause) {
+		function->callback_pause(&is_paused_new, function->is_paused, function->callback_pause_arg);
 	}
 
-	if (queue->is_paused) {
-		__rrr_event_set_pause(queue, 1);
+	if (!is_paused_new && function->is_paused) {
+		RRR_DBG_9_PRINTF("EQ DISP %p function %u unpaused\n",
+				queue, function->index);
+
+		function->is_paused = 0;
+	}
+	else if (is_paused_new) {
+		if (!function->is_paused) {
+			RRR_DBG_9_PRINTF("EQ DISP %p function %u paused\n",
+				queue, function->index);
+
+			function->is_paused = 1;
+		}
+
+		event_del(function->signal_event);
+
+		if (!event_pending(queue->unpause_event, EV_TIMEOUT, NULL)) {
+			struct timeval tv = { 0, 50 }; // 50 us
+			event_add(queue->unpause_event, &tv);
+		}
+
 		goto out;
 	}
-	else if (queue->deferred_amount[function->index] > 0) {
+
+	if (queue->deferred_amount[function->index] > 0) {
 		count = queue->deferred_amount[function->index];
 		queue->deferred_amount[function->index] = 0;
 	}
@@ -257,11 +259,12 @@ static void __rrr_event_signal_event (
 
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
+		uint8_t code,
+		void (*callback)(RRR_EVENT_FUNCTION_PAUSE_ARGS),
 		void *callback_arg
 ) {
-	queue->callback_pause = callback;
-	queue->callback_pause_arg = callback_arg;
+	queue->functions[code].callback_pause = callback;
+	queue->functions[code].callback_pause_arg = callback_arg;
 }
 
 int rrr_event_dispatch_once (
@@ -349,7 +352,7 @@ int rrr_event_pass (
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
 		if (ret == RRR_SOCKET_NOT_READY) {
-			if (retry_callback != NULL && (ret = retry_callback(retry_callback_arg) != 0)) {
+			if (retry_callback != NULL && ((ret = retry_callback(retry_callback_arg)) != 0)) {
 				goto out;
 			}
 			goto retry;

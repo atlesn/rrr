@@ -151,6 +151,11 @@ int rrr_http_part_header_field_push (
 		const char *name,
 		const char *value
 );
+int rrr_http_part_header_field_push_nullsafe (
+		struct rrr_http_part *part,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+);
 int rrr_http_part_header_field_push_if_not_exists (
 		struct rrr_http_part *part,
 		const char *name,
@@ -158,6 +163,12 @@ int rrr_http_part_header_field_push_if_not_exists (
 );
 int rrr_http_part_header_field_push_and_replace (
 		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+);
+int rrr_http_part_header_field_push_subvalue (
+		struct rrr_http_part *part,
+		const char *field,
 		const char *name,
 		const char *value
 );
