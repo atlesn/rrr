@@ -26,9 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "mqtt_property.h"
+#include "mqtt_usercount.h"
 #include "../fifo.h"
 #include "../log.h"
-#include "../util/linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -103,6 +103,7 @@ struct rrr_mqtt_parse_session;
 struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_subscription_collection;
 struct rrr_mqtt_topic_token;
+struct rrr_nullsafe_str;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION                                 \
 		const struct rrr_mqtt_p_type_properties *type_properties,   \
@@ -154,25 +155,6 @@ struct rrr_mqtt_p_reason {
 	const char *description;
 };
 
-#define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER  \
-    int users;                                   \
-	void (*destroy)(void *arg)
-
-struct rrr_mqtt_p_standarized_usercount {
-	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;
-};
-
-struct rrr_mqtt_p_payload {
-	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;
-
-	// Pointer to full packet, used only by free()
-	char *packet_data;
-
-	// Pointer to where payload starts
-	const char *payload_start;
-	rrr_length length;
-};
-
 // Assembled data is either generated when sending a newly created packet,
 // or it is saved when reading from network (if the packet type parser requires it).
 
@@ -183,27 +165,20 @@ struct rrr_mqtt_p_payload {
 // memory might however also be managed elsewhere for locally created packets. Packets
 // may share the same payload data.
 
-// Packets have parameters for being a linked list node. This must however be managed
-// locally, and the parameters are disregarded by the packet framework. In normal
-// operations, packets are stored in FIFO buffers in which these parameters are not used.
-
-// Keep values used during iteration together at the top
+// Keep most often used values at the top
 
 #define RRR_MQTT_P_PACKET_HEADER                               \
-    RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;                   \
+    RRR_MQTT_P_USERCOUNT_FIELDS;                               \
     uint8_t type_flags;                                        \
     uint8_t is_outbound;                                       \
     uint16_t packet_identifier;                                \
     uint64_t last_attempt;                                     \
     uint64_t planned_expiry_time;                              \
     uint8_t reason_v5;                                         \
-    uint8_t dup;                                               \
-    RRR_LL_NODE(struct rrr_mqtt_p);                            \
     const struct rrr_mqtt_p_reason *reason;                    \
     int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \
     void *release_packet_id_arg1;                              \
     void *release_packet_id_arg2;                              \
-    uint64_t create_time;                                      \
     char *_assembled_data;                                     \
     rrr_length assembled_data_size;                            \
     rrr_length received_size;                                  \
@@ -269,49 +244,6 @@ struct rrr_mqtt_p {
         );                                                     \
     }} while (0)                                               \
 
-static inline void rrr_mqtt_p_standardized_incref (void *arg) {
-	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	if (p->users == 0) {
-		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
-	}
-// Noisy
-//	RRR_DBG_3("INCREF %p users %i\n", p, (p)->users);
-	p->users++;
-}
-
-static inline void rrr_mqtt_p_standardized_decref (void *arg) {
-	if (arg == NULL) {
-		return;
-	}
-	struct rrr_mqtt_p_standarized_usercount *p = arg;
-// Noisy
-//	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
-	--(p)->users;
-	if ((p)->users < 0) {
-		RRR_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
-	}
-	if (p->users == 0) {
-		p->destroy(p);
-	}
-}
-
-static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
-	int ret = 0;
-	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	ret = p->users;
-	return ret;
-}
-
-#define RRR_MQTT_P_INCREF(p)	\
-	rrr_mqtt_p_standardized_incref(p)
-
-#define RRR_MQTT_P_DECREF(p)	\
-	rrr_mqtt_p_standardized_decref(p)
-
-#define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
-	if ((p) != NULL)						\
-		RRR_MQTT_P_DECREF(p)
-
 struct rrr_mqtt_p_connect {
 	RRR_MQTT_P_PACKET_HEADER;
 
@@ -324,8 +256,7 @@ struct rrr_mqtt_p_connect {
 	struct rrr_mqtt_property_collection will_properties;
 
 	char *will_topic;
-	char *will_message;
-	uint16_t will_message_size;
+	struct rrr_nullsafe_str *will_message;
 
 	char *username;
 	char *password;
@@ -339,6 +270,11 @@ struct rrr_mqtt_p_connect {
 #define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p)         (((1<<6) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)        (((1<<7) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
+#define RRR_MQTT_P_CONNECT_SET_FLAG_CLEAN_START(p)      (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<1))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL(p)             (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<2))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL_QOS(p,qos) \
+	((struct rrr_mqtt_p_connect *) p)->connect_flags = (((struct rrr_mqtt_p_connect *) p)->connect_flags & ~((1<<4)|(1<<3))) | ((uint8_t) ((qos & 3) << 3))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_WILL_RETAIN(p)      (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<5))
 #define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p)         (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
 #define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)        (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
 
@@ -395,8 +331,11 @@ struct rrr_mqtt_p_publish {
 
 	struct rrr_mqtt_property_collection properties;
 
-	uint8_t payload_format_indicator;
+	uint64_t create_time;
 	uint32_t message_expiry_interval;
+	uint8_t message_expiry_interval_properties_updated;
+
+	uint8_t payload_format_indicator;
 	uint16_t topic_alias;
 	struct rrr_mqtt_property_collection subscription_ids;
 
@@ -540,21 +479,6 @@ static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_prope
 
 #define RRR_MQTT_P_GET_TYPE_NAME_RAW(id) \
 		(rrr_mqtt_p_get_type_properties(id)->name)
-
-int rrr_mqtt_p_payload_set_data (
-		struct rrr_mqtt_p_payload *target,
-		const char *data,
-		rrr_length size
-);
-int rrr_mqtt_p_payload_new (
-		struct rrr_mqtt_p_payload **target
-);
-int rrr_mqtt_p_payload_new_with_allocated_payload (
-		struct rrr_mqtt_p_payload **target,
-		char **packet_start,
-		const char *payload_start,
-		rrr_length payload_length
-);
 
 static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (
 		uint8_t id,

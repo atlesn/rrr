@@ -231,56 +231,15 @@ int rrr_instance_load_and_save (
 	return 0;
 }
 
-struct add_instance_data {
-	struct rrr_instance_collection *instances;
-	struct rrr_instance_friend_collection *collection;
-};
-
-static int __rrr_add_instance_callback(const char *value, void *_data) {
-	struct add_instance_data *data = _data;
-
-	int ret = 0;
-
-	struct rrr_instance *instance = rrr_instance_find(data->instances, value);
-
-	if (instance == NULL) {
-		RRR_MSG_0("Could not find instance '%s'\n", value);
-		ret = 1;
-		goto out;
-	}
-
-	RRR_DBG_1("Added %s\n", INSTANCE_M_NAME(instance));
-
-	rrr_instance_friend_collection_append(data->collection, instance);
-
-	out:
-	return ret;
-}
-
 static int __rrr_instance_parse_topic_filter (
 		struct rrr_instance *data
 ) {
-	int ret = 0;
-
-	struct rrr_instance_config_data *config = data->config;
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("topic_filter", topic_filter);
-
-	if (data->topic_filter != NULL) {
-		if (rrr_mqtt_topic_filter_validate_name(data->topic_filter) != 0) {
-			RRR_MSG_0("Invalid topic_filter setting found for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (rrr_mqtt_topic_tokenize(&data->topic_first_token, data->topic_filter) != 0) {
-			RRR_MSG_0("Error while tokenizing topic filter in __rrr_instance_parse_topic_filter\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
+	return rrr_instance_config_parse_optional_topic_filter (
+			&data->topic_first_token,
+			&data->topic_filter,
+			data->config,
+			"topic_filter"
+	);
 }
 
 static int __rrr_instance_parse_misc (
@@ -294,6 +253,7 @@ static int __rrr_instance_parse_misc (
 		int do_enable_buffer;
 		int do_enable_backstop;
 		int do_duplicate;
+		int do_topic_filter_invert;
 	} data_tmp;
 
 	struct data *data = &data_tmp;
@@ -315,6 +275,10 @@ static int __rrr_instance_parse_misc (
 	if (data->do_duplicate) {
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DUPLICATE;
 	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("topic_filter_invert", do_topic_filter_invert, 0);
+	if (data->do_topic_filter_invert) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT;
+	}
 
 	out:
 	return ret;
@@ -331,18 +295,14 @@ static int __rrr_instance_add_wait_for_instances (
 			instance->module_data->module_name
 	);
 
-	struct add_instance_data add_data = {0};
-
-	add_data.collection = &instance->wait_for;
-	add_data.instances = instances;
-
-	struct rrr_instance_config_data *instance_config = instance->config;
-
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
-			instance_config->settings, "wait_for",
-			&__rrr_add_instance_callback, &add_data
-	))!= 0) {
-		RRR_MSG_0("Error while adding wait for for instance %s\n", instance->module_data->instance_name);
+	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+			&instance->wait_for,
+			instances,
+			instance->config,
+			"wait_for"
+	)) != 0) {
+		RRR_MSG_0("Error while adding wait for for instance %s\n",
+			INSTANCE_M_NAME(instance));
 		goto out;
 	}
 
@@ -361,18 +321,14 @@ static int __rrr_instance_add_senders (
 			INSTANCE_M_MODULE_NAME(instance)
 	);
 
-	struct rrr_instance_config_data *instance_config = instance->config;
-
-	struct add_instance_data add_data = {0};
-	add_data.instances = instances;
-	add_data.collection = &instance->senders;
-
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
-			instance_config->settings, "senders",
-			&__rrr_add_instance_callback, &add_data
-	))!= 0) {
+	if ((ret = rrr_instance_config_friend_collection_populate_from_config (
+			&instance->senders,
+			instances,
+			instance->config,
+			"senders"
+	)) != 0) {
 		RRR_MSG_0("Error while adding senders for instance %s\n",
-				INSTANCE_M_NAME(instance)
+			INSTANCE_M_NAME(instance)
 		);
 		goto out;
 	}
@@ -447,6 +403,16 @@ static int __rrr_instance_add_senders (
 
 	out:
 	return ret;
+}
+
+int rrr_instance_has_sender (
+		const struct rrr_instance *instance,
+		const struct rrr_instance *sender
+) {
+	return rrr_instance_friend_collection_check_exists (
+			&instance->senders,
+			sender
+	);
 }
 
 void rrr_instance_collection_clear (

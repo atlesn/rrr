@@ -534,7 +534,7 @@ int rrr_python3_array_iterate (
 		PyObject *node = PyList_GET_ITEM(data->list, i);
 		struct rrr_python3_array_value_data *value = (struct rrr_python3_array_value_data *) node;
 		if ((ret = callback(value->tag, value->list, value->type_orig, callback_arg)) != 0) {
-			RRR_MSG_0("Error from callback in rrr_python3_array_iterate\n");
+			RRR_MSG_0("Error from callback in %s at array position %lli\n", __func__, (long long int) i);
 			goto out;
 		}
 		node = NULL;
@@ -718,6 +718,9 @@ static PyObject *rrr_python3_array_f_remove (PyObject *self, PyObject *tag) {
 		Py_DECREF(node);
 		PyList_SET_ITEM(data->list, i, NULL);
 	}
+
+	Py_DECREF(data->list);
+	data->list = new_list;
 
 	Py_RETURN_TRUE;
 }

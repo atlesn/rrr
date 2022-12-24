@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../socket/rrr_socket_send_chunk.h"
 
-struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
@@ -85,7 +84,8 @@ struct rrr_event_queue;
     void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
     void *handshake_complete_callback_arg;                                  \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
-    void *read_callback_arg
+    void *read_callback_arg;                                                \
+    char application_name[16]
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -180,6 +180,7 @@ void rrr_net_transport_stats_get (
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
+		const char *application_name,
 		int flags,
 		struct rrr_event_queue *queue,
 		const char *alpn_protos,
@@ -198,6 +199,7 @@ int rrr_net_transport_new (
 int rrr_net_transport_new_simple (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
+		const char *application_name,
 		int flags,
 		struct rrr_event_queue *queue
 );

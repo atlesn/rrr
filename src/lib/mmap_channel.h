@@ -52,6 +52,7 @@ struct rrr_mmap_channel;
 struct rrr_event_queue;
 
 int rrr_mmap_channel_count (
+		int *count,
 		struct rrr_mmap_channel *target
 );
 int rrr_mmap_channel_write_using_callback (
@@ -94,7 +95,7 @@ int rrr_mmap_channel_new (
 		const char *name
 );
 void rrr_mmap_channel_get_counters_and_reset (
-		unsigned long long int *read_starvation_counter,
+		unsigned long long int *count,
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
 );

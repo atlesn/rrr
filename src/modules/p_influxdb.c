@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/allocator.h"
 #include "../lib/array.h"
@@ -205,10 +206,24 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
+	struct response_callback_data response_callback_data = {
+		data, 0
+	};
+
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			RRR_HTTP_APPLICATION_HTTP1,
 			handle,
-			RRR_HTTP_CLIENT_USER_AGENT
+			RRR_HTTP_CLIENT_USER_AGENT,
+			NULL,
+			NULL,
+			influxdb_receive_http_response,
+			&response_callback_data,
+			NULL, /* Failure callback, not implemented in InfluxDB) */
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -329,27 +344,13 @@ static void influxdb_send_data_callback (
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
-	struct response_callback_data response_callback_data = {
-			data, 0
-	};
-
 	rrr_biglength received_bytes = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
 				handle,
-				0, // No max read size
-				NULL,
-				NULL,
-				influxdb_receive_http_response,
-				&response_callback_data,
-				NULL, /* Failure callback, not implemented in InfluxDB) */
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL
+				0 // No max read size
 		)) != 0 && ret != RRR_READ_INCOMPLETE) {
 			RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
 					INSTANCE_D_NAME(data->thread_data));
@@ -528,11 +529,7 @@ static int influxdb_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
 }
 		
-static void influxdb_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void influxdb_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct influxdb_data *data = thread_data->private_data;
 
@@ -625,6 +622,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	if (rrr_net_transport_new_simple (
 			&transport,
 			&influxdb_data->net_transport_config,
+			"influxDB",
 			0,
 			INSTANCE_D_EVENTS(thread_data)
 	) != 0) {
@@ -642,6 +640,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			influxdb_pause_check,
 			thread_data
 	);

@@ -231,15 +231,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_prefix", prefix);
-
-	if ((ret = rrr_instance_config_parse_topic_and_length (
-			&data->topic,
-			&data->topic_len,
-			config,
-			"file_topic"
-	)) != 0) {
-		goto out;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("file_topic", topic, topic_len);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_directory", directory);
 	if (data->directory == NULL) {
@@ -622,6 +614,7 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_array_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->file_data->thread_data)
@@ -860,6 +853,7 @@ static int file_read_all_to_message_complete_callback (
 			NULL,
 			0,
 			0,
+			NULL,
 			file_read_all_to_message_write_callback,
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
@@ -930,6 +924,7 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				0, // No ratelimit max bytes
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				file_read_array_callback,
+				NULL,
 				&read_callback_data
 		)) != 0) {
 			if (ret == RRR_READ_INCOMPLETE) {
@@ -961,6 +956,8 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				file_read_all_to_message_get_target_size_callback,
+				NULL,
+				NULL,
 				NULL,
 				file_read_all_to_message_complete_callback,
 				&read_callback_data

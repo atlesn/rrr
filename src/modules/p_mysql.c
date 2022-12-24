@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
@@ -606,9 +607,10 @@ static void mysql_process_entry (
 		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
-		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		if (rrr_message_broker_incref_and_write_entry_unsafe (
 				INSTANCE_D_BROKER_ARGS(data->thread_data),
 				entry,
+				NULL,
 				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 		) != 0) {
 			RRR_MSG_0("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
@@ -732,11 +734,7 @@ static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return ret;
 }
 		
-static void mysql_pause_check (
-		int *do_pause,
-		int is_paused,
-		void *callback_arg
-) {
+static void mysql_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -978,6 +976,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			mysql_pause_check,
 			thread_data
 	);

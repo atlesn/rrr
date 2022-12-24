@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_tls_common.h"
 #include "net_transport_struct.h"
 #include "net_transport.h"
+#include "net_transport_common.h"
 
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
@@ -518,42 +519,40 @@ static int __rrr_net_transport_libressl_read_message (
 		handle,
 		get_target_size,
 		get_target_size_arg,
+		get_target_size_error,
+		get_target_size_error_arg,
 		complete_callback,
 		complete_callback_arg
 	};
 
-	rrr_slength read_attempts_signed = read_attempts;
-	while (--read_attempts_signed >= 0) {
-		uint64_t bytes_read_tmp = 0;
-		ret = rrr_read_message_using_callbacks (
-				&bytes_read_tmp,
-				read_step_initial,
-				read_step_max_size,
-				read_max_size,
-				RRR_LL_FIRST(&handle->read_sessions),
-				ratelimit_interval_us,
-				ratelimit_max_bytes,
-				rrr_net_transport_tls_common_read_get_target_size,
-				rrr_net_transport_tls_common_read_complete_callback,
-				__rrr_net_transport_libressl_read_read,
-				rrr_net_transport_tls_common_read_get_read_session_with_overshoot,
-				rrr_net_transport_tls_common_read_get_read_session,
-				rrr_net_transport_tls_common_read_remove_read_session,
-				NULL,
-				&read_callback_data
-		);
-		*bytes_read += bytes_read_tmp;
+	uint64_t bytes_read_tmp = 0;
+	ret = rrr_read_message_using_callbacks (
+			&bytes_read_tmp,
+			read_step_initial,
+			read_step_max_size,
+			read_max_size,
+			RRR_READ_MESSAGE_FLUSH_OVERSHOOT,
+			RRR_LL_FIRST(&handle->read_sessions),
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
+			rrr_net_transport_common_read_get_target_size,
+			rrr_net_transport_common_read_get_target_size_error_callback,
+			rrr_net_transport_common_read_complete_callback,
+			__rrr_net_transport_libressl_read_read,
+			rrr_net_transport_tls_common_read_get_read_session_with_overshoot,
+			rrr_net_transport_tls_common_read_get_read_session,
+			rrr_net_transport_tls_common_read_remove_read_session,
+			NULL,
+			&read_callback_data
+	);
+	*bytes_read += bytes_read_tmp;
 
-		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
-			continue;
-		}
-		else if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
-			break;
-		}
-		else {
-			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_libressl_read_message\n", ret);
-			goto out;
-		}
+	if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT || ret = RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+		// OK, no message printed
+	}
+	else {
+		RRR_MSG_0("Error %i while reading from remote in %s\n", ret, __func__);
+		goto out;
 	}
 
 	out:

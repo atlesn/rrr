@@ -49,12 +49,15 @@ int rrr_socket_common_receive_array_tree (
 		rrr_biglength ratelimit_max_bytes,
 		rrr_length message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
+		void (*error_callback)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
 		void *arg
 );
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
-		struct rrr_socket_common_in_flight_counter *in_flight
+		struct rrr_socket_common_in_flight_counter *in_flight,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 );
 
 #endif /* RRR_SOCKET_COMMON_H */

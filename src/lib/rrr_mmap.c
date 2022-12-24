@@ -63,9 +63,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Enable printf debugging (very verbose)
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
-// Enable lock debugging
-// #define RRR_MMAP_LOCK_DEBUG 1
-
 // Dump mmaps upon allocation failure (should be enabled)
 #define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 
@@ -107,25 +104,14 @@ struct rrr_mmap_heap_block_index {
 	rrr_biglength block_sizes[64];
 };
 
-#ifdef RRR_MMAP_LOCK_DEBUG
 #define LOCK(collection) \
-	do {int ret_tmp = pthread_mutex_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); printf("wrlocked %p pid %i\n", collection, getpid())
+	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled lock error %s in %s, cannot continue.\n", rrr_strerror(ret_tmp), __func__);
 #define UNLOCK(collection) \
-	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); } printf("unlocked %p pid %i\n", collection, getpid()); } while(0)
+	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled unlock error %s in %s, cannot continue\n", rrr_strerror(ret_tmp), __func__); }} while(0)
 #define INIT(collection, is_pshared) \
-	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0) | RRR_POSIX_MUTEX_IS_ERRORCHECK)
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ROBUST : 0))
 #define DESTROY(collection) \
-	pthread_mutex_destroy(&collection->index_lock)
-#else
-#define LOCK(collection) \
-	pthread_mutex_lock(&collection->index_lock);
-#define UNLOCK(collection) \
-	pthread_mutex_unlock(&collection->index_lock);
-#define INIT(collection, is_pshared) \
-	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))
-#define DESTROY(collection) \
-	pthread_mutex_destroy(&collection->index_lock)
-#endif
+	rrr_posix_mutex_robust_destroy(&collection->index_lock)
 
 void *__rrr_mmap_resolve (
 		struct rrr_mmap *mmap,
@@ -175,7 +161,7 @@ static void __rrr_mmap_free (
 
 			if (handle == block_pos) {
 				if ((index->block_used_map & used_mask) == 0) {
-					RRR_BUG("BUG: Double free of pos %" PRIrrrbl " ptr %p in __rrr_mmap_free\n", block_pos, heap + block_pos);
+					RRR_BUG("BUG: Double free of pos %" PRIrrrbl " ptr %p in %s\n", block_pos, heap + block_pos, __func__);
 				}
 
 				index->block_used_map &= ~(used_mask);
@@ -184,12 +170,12 @@ static void __rrr_mmap_free (
 
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in rrr_mmap_free\n");
+				RRR_BUG("BUG: Heap index corruption in %s\n", __func__);
 			}
 		}
 	}
 
-	RRR_BUG("BUG: Invalid free of in rrr_mmap_free, %llu not found\n", (long long unsigned int) handle);
+	RRR_BUG("BUG: Invalid free in %s, %llu not found\n", __func__, (long long unsigned int) handle);
 
 	out:
 
@@ -259,7 +245,7 @@ static void *__rrr_mmap_allocate_with_handles (
 		rrr_biglength req_size
 ) {
 	if (req_size == 0) {
-		RRR_BUG("request size was 0 in rrr_mmap_allocate\n");
+		RRR_BUG("request size was 0 in %s\n", __func__);
 	}
 #ifdef RRR_MMAP_SENTINEL_DEBUG
 	req_size += sizeof(rrr_mmap_sentinel_template);
@@ -334,7 +320,7 @@ static void *__rrr_mmap_allocate_with_handles (
 			else {
 #ifdef RRR_MMAP_SENTINEL_DEBUG
 				if (*((rrr_biglength*)(heap + block_pos + index->block_sizes[j] - sizeof(rrr_mmap_sentinel_template))) != rrr_mmap_sentinel_template) {
-					RRR_BUG("Sentinel overwritten at end of block at position %" PRIrrrbl "\n", block_pos);
+					RRR_BUG("BUG: Sentinel overwritten at end of block at position %" PRIrrrbl "in %s\n", block_pos, __func__);
 				}
 #endif
 
@@ -372,7 +358,7 @@ static void *__rrr_mmap_allocate_with_handles (
 
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in rrr_mmap_alloc\n");
+				RRR_BUG("BUG: Heap index corruption in %s\n", __func__);
 			}
 		}
 	}
@@ -431,7 +417,7 @@ static int __rrr_mmap_is_empty (
 		for (rrr_biglength j = 0; j < 64; j++) {
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in __rrr_mmap_is_empty block size %" PRIrrrbl "\n", index->block_sizes[j]);
+				RRR_BUG("BUG: Heap index corruption in %s block size %" PRIrrrbl "\n", __func__, index->block_sizes[j]);
 			}
 		}
 	}
@@ -471,7 +457,7 @@ static int __rrr_mmap_init (
 				collection->shm_master,
 				rrr_size_from_biglength_bug_const(heap_size_padded)
 		)) != 0) {
-			RRR_MSG_0("Could not allocate SHM memory in __rrr_mmap_init\n");
+			RRR_MSG_0("Could not allocate SHM memory in %s\n", __func__);
 			goto out;
 		}
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
@@ -483,7 +469,7 @@ static int __rrr_mmap_init (
 				rrr_size_from_biglength_bug_const(heap_size_padded),
 				0 /* not pshared */
 		)) == NULL) {
-			RRR_MSG_0("Could not allocate MMAP memory in __rrr_mmap_init\n");
+			RRR_MSG_0("Could not allocate MMAP memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -541,20 +527,22 @@ void *rrr_mmap_collection_resolve (
 		rrr_shm_handle shm_handle,
 		rrr_mmap_handle mmap_handle
 ) {
+	void *ret;
+
 	if (collection->shm_master == NULL) {
-		RRR_BUG("BUG: rrr_mmap_collection_resolve called on non-pshared mmap collection\n");
+		RRR_BUG("BUG: %s called on non-pshared mmap collection\n", __func__);
 	}
 
 	LOCK(collection);
-	void *ret = rrr_shm_resolve (
+	ret = rrr_shm_resolve (
 			collection->shm_slave,
 			shm_handle
 	);
 	UNLOCK(collection);
 
 	if (ret == NULL) {
-		RRR_BUG("BUG: Unknown handle %llu in rrr_mmap_collection_resolve\n",
-				(long long unsigned int) shm_handle);
+		RRR_BUG("BUG: Unknown handle %llu in %s\n",
+				(long long unsigned int) shm_handle, __func__);
 	}
 
 	return ret + mmap_handle;
@@ -753,7 +741,7 @@ static int __rrr_mmap_collection_init (
 
 	memset(target, '\0', sizeof(*target));
 	if (INIT(target, is_pshared) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_mmap_collection_init\n");
+		RRR_MSG_0("Could not initialize lock in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -762,14 +750,14 @@ static int __rrr_mmap_collection_init (
 		// Note : Allocated using shared memory. After fork(), all processes
 		//        still use the same shm master.
 		if ((ret = rrr_shm_collection_master_new(&target->shm_master, creator)) != 0) {
-			RRR_MSG_0("Could create SHM master in __rrr_mmap_collection_init\n");
+			RRR_MSG_0("Could create SHM master in %s\n", __func__);
 			goto out_destroy_lock;
 		}
 
 		// Note : The slave is never pshared. Upon fork(), new children
 		//        will have their own copy.
 		if ((ret = rrr_shm_collection_slave_new(&target->shm_slave, target->shm_master)) != 0) {
-			RRR_MSG_0("Could create SHM slave in __rrr_mmap_collection_init\n");
+			RRR_MSG_0("Could create SHM slave in %s\n", __func__);
 			goto out_destroy_shm_master;
 		}
 	}
@@ -796,7 +784,7 @@ int rrr_mmap_collections_new (
 	collections = rrr_posix_mmap (sizeof(*collections) * collection_count, is_pshared);
 
 	if (collections == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mmap_collections_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -961,8 +949,8 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 #ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 	if (result == NULL) {
 		struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
-		RRR_MSG_0("Allocation failure of %" PRIrrrbl " bytes in __rrr_mmap_collection_allocate_with_handles. Dumping mmaps for this group:\n",
-				bytes);
+		RRR_MSG_0("Allocation failure of %" PRIrrrbl " bytes in %s. Dumping mmaps for this group:\n",
+				bytes, __func__);
 		RRR_MMAP_ITERATE_BEGIN();
 			DEFINE_HEAP();
 			if (heap == NULL) {
@@ -989,7 +977,7 @@ void *rrr_mmap_collection_allocate_with_handles (
 		rrr_biglength min_mmap_size
 ) {
 	if (collection->shm_master == NULL) {
-		RRR_BUG("BUG: rrr_mmap_collection_allocate_with_handles called on non-pshared mmap collection\n");
+		RRR_BUG("BUG: %s called on non-pshared mmap collection\n", __func__);
 	}
 
 	return __rrr_mmap_collection_allocate_with_handles (

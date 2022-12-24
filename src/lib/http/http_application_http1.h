@@ -24,8 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_common.h"
 
+struct rrr_http_application;
+struct rrr_http_application_callbacks;
+
 int rrr_http_application_http1_new (
-		struct rrr_http_application **target
+		struct rrr_http_application **target,
+		const struct rrr_http_application_callbacks *callbacks
 );
 
 #endif /* RRR_HTTP_APPLICATION_HTTP1_H */

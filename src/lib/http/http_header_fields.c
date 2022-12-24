@@ -340,7 +340,9 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {":path",                  RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"accept",                 RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"accept-language",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
-        {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
+        {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
+	{"access-control-request-headers",
+	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"cache-control",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"connection",             RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
         {"upgrade",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -348,6 +350,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS |
 	                           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_single_unsigned_value},
         {"content-type",           RRR_HTTP_HEADER_FIELD_TRIM,              __rrr_http_header_parse_content_type_value},
+        {"content-encoding",       RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
 	                           RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME, NULL},
@@ -410,6 +413,79 @@ void rrr_http_header_field_collection_clear (
 		struct rrr_http_header_field_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_http_header_field, rrr_http_header_field_destroy(node));
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_raw (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_value_case (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *value_anycase
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
+				return node;
+			}
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+int rrr_http_header_field_collection_has_subvalue (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		const char *name_subvalue_lowercase
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+
+			const struct rrr_http_header_field *field = node;
+			RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+				if (rrr_nullsafe_str_cmpto_case(node->name, name_subvalue_lowercase) == 0) {
+					return 1;
+				}
+			RRR_LL_ITERATE_END();
+		}
+	RRR_LL_ITERATE_END();
+
+	return 0;
 }
 
 int rrr_http_header_field_new_raw (
@@ -489,6 +565,34 @@ int rrr_http_header_field_new_with_value (
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, rrr_length_from_size_t_bug_const (strlen(value)))) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
+		goto out_destroy;
+	}
+
+	*result = field;
+
+	goto out;
+	out_destroy:
+		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
+}
+
+int rrr_http_header_field_new_with_value_nullsafe (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new_raw(&field, name, rrr_length_from_size_t_bug_const (strlen(name)))) != 0) {
+		RRR_MSG_0("Could not create header field in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace(&field->value, value)) != 0) {
+		RRR_MSG_0("Could not allocate memory for value in %s\n", __func__);
 		goto out_destroy;
 	}
 
@@ -1044,7 +1148,7 @@ int rrr_http_header_field_parse_name_and_value (
 		const char *start_orig,
 		const char *end
 ) {
-	if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {
+	if ((unsigned long long) (end - start_orig) > (unsigned long long) RRR_LENGTH_MAX) {
 		RRR_MSG_0("HTTP header too long to be parsed (%llu>%llu)\n",
 			(unsigned long long) (end - start_orig),
 			(unsigned long long) RRR_LENGTH_MAX

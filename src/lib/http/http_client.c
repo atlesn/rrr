@@ -54,6 +54,8 @@ struct rrr_http_client {
 	uint64_t idle_timeout_ms;
 	rrr_length send_chunk_count_limit;
 
+	struct rrr_http_rules rules;
+
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
 
@@ -106,6 +108,13 @@ void rrr_http_client_destroy (
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
 	rrr_free(client);
+}
+
+void rrr_http_client_set_response_max_size (
+		struct rrr_http_client *client,
+		rrr_biglength set
+) {
+	client->rules.client_response_max_size = set;
 }
 
 static int __rrr_http_client_active_transaction_count_get_callback (
@@ -399,11 +408,18 @@ static int __rrr_http_client_receive_http_part_callback (
 	int ret = RRR_HTTP_OK;
 
 	struct rrr_http_part *response_part = transaction->response_part;
-	struct rrr_nullsafe_str *chunks_merged = NULL;
+	struct rrr_nullsafe_str *data_chunks_merged = NULL;
+	struct rrr_nullsafe_str *data_decoded = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&chunks_merged, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_chunks_merged, NULL, 0)) != 0) {
 		goto out;
 	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_decoded, NULL, 0)) != 0) {
+		goto out;
+	}
+
+	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
 	// Moved-codes. Maybe this parsing is too persmissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
@@ -439,20 +455,36 @@ static int __rrr_http_client_receive_http_part_callback (
 			response_part,
 			data_ptr,
 			__rrr_http_client_chunks_iterate_callback,
-			chunks_merged
+			data_chunks_merged
 	) != 0)) {
-		RRR_MSG_0("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
+		RRR_MSG_0("Error while iterating chunks in response in %s\n", __func__);
 		goto out;
 	}
 
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+	const struct rrr_http_header_field *encoding = rrr_http_part_header_field_get(response_part, "content-encoding");
+	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value)) {
+		if ((ret = rrr_http_util_decode (
+				data_decoded,
+				data_use,
+				encoding->value
+		) != 0)) {
+			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			goto out;
+		}
+		data_use = data_decoded;
+	}
+#endif
+
 	ret = http_client->callbacks.final_callback (
 			transaction,
-			chunks_merged,
+			data_use,
 			http_client->callbacks.final_callback_arg
 	);
 
 	out:
-	rrr_nullsafe_str_destroy_if_not_null(&chunks_merged);
+	rrr_nullsafe_str_destroy_if_not_null(&data_chunks_merged);
+	rrr_nullsafe_str_destroy_if_not_null(&data_decoded);
 	return ret;
 }
 
@@ -570,17 +602,7 @@ static int __rrr_http_client_read_callback (
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
 			handle,
-			10 * 1024 * 1024, // 10 MB
-			__rrr_http_client_websocket_handshake_callback,
-			NULL,
-			__rrr_http_client_receive_http_part_callback,
-			http_client,
-			__rrr_http_client_request_failure_callback,
-			http_client,
-			http_client->callbacks.get_response_callback,
-			http_client->callbacks.get_response_callback_arg,
-			http_client->callbacks.frame_callback,
-			http_client->callbacks.frame_callback_arg
+			http_client->rules.client_response_max_size
 	)) != 0) {
 		if (ret == RRR_HTTP_DONE) {
 			ret_done = RRR_HTTP_DONE;
@@ -645,7 +667,17 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application_type,
 			handle,
-			callback_data->data->user_agent
+			callback_data->data->user_agent,
+			__rrr_http_client_websocket_handshake_callback,
+			NULL,
+			__rrr_http_client_receive_http_part_callback,
+			callback_data->http_client,
+			__rrr_http_client_request_failure_callback,
+			callback_data->http_client,
+			callback_data->http_client->callbacks.get_response_callback,
+			callback_data->http_client->callbacks.get_response_callback_arg,
+			callback_data->http_client->callbacks.frame_callback,
+			callback_data->http_client->callbacks.frame_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
 		goto out;
@@ -911,6 +943,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_tls,
 				&net_transport_config_tmp,
+				"HTTP client",
 				tls_flags,
 				http_client->events,
 				alpn_protos,
@@ -949,6 +982,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		if (rrr_net_transport_new (
 				&http_client->transport_keepalive_plain,
 				&net_transport_config_tmp,
+				"HTTP client",
 				0,
 				http_client->events,
 				NULL,
@@ -1012,6 +1046,17 @@ int rrr_http_client_request_send (
 		goto out;
 	}
 
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+	if ((ret = rrr_http_transaction_request_accept_encoding_set (
+			transaction,
+			rrr_http_util_encodings_get()
+	)) != 0) {
+		RRR_MSG_0("Failed to push accept encofing header in %s\n", __func__);
+		goto out;
+	}
+#endif
+
+	callback_data.http_client = http_client;
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
 	callback_data.data = data;

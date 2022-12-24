@@ -31,7 +31,8 @@ int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
 		struct rrr_event_queue *queue,
 		const char *directory,
-		const char *socket
+		const char *socket,
+		unsigned int directory_levels
 );
 void rrr_msgdb_server_destroy (
 		struct rrr_msgdb_server *server

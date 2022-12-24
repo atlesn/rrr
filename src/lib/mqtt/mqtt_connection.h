@@ -62,22 +62,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             return RRR_MQTT_SOFT_ERROR;                                                                                   \
         }} while (0)
 
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason)   \
+        if ((connection)->disconnect_reason_v5_ == 0) {                   \
+            (connection)->disconnect_reason_v5_ = reason;                 \
+        }
+
 struct rrr_mqtt_session;
 struct rrr_net_transport_handle;
-
-// Most of these will properties are not used by the broker, we only need the struct to
-// parse the properties when we receive them. When creating the will publish
-// message, all properties are copied directly from the will properties field
-// in CONNECT. The broker only use the will_delay_interval value.
-struct rrr_mqtt_conn_will_properties {
-	uint32_t will_delay_interval;
-	uint8_t payload_format_indicator;
-	uint32_t message_expiry_interval;
-	const struct rrr_mqtt_property *content_type;
-	const struct rrr_mqtt_property *response_topic;
-	const struct rrr_mqtt_property *correlation_data;
-	struct rrr_mqtt_property_collection user_properties;
-};
 
 struct rrr_mqtt_conn {
 	int transport_handle;
@@ -110,9 +101,6 @@ struct rrr_mqtt_conn {
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
 
-	struct rrr_mqtt_p_publish *will_publish;
-	struct rrr_mqtt_conn_will_properties will_properties;
-
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
 	union {
@@ -120,9 +108,6 @@ struct rrr_mqtt_conn {
 		struct sockaddr_in6 remote_in6;
 	};
 };
-
-#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(c, reason_v5) \
-	(c)->disconnect_reason_v5_ = reason_v5
 
 #define RRR_MQTT_CONN_STATE_CONNECT_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
@@ -155,6 +140,9 @@ struct rrr_mqtt_conn {
 #define RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
 
+#define RRR_MQTT_CONN_STATE_IS_CLOSE_WAIT(c) \
+	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
+
 #define RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(c) \
 	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSED|RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
 
@@ -181,11 +169,6 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		struct rrr_mqtt_session *session,
 		const char *username
 );
-int rrr_mqtt_conn_set_will_data_from_connect (
-		uint8_t *reason_v5,
-		struct rrr_mqtt_conn *connection,
-		const struct rrr_mqtt_p_connect *connect
-);
 int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		struct rrr_net_transport_handle *handle,
 		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
@@ -200,12 +183,12 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 int rrr_mqtt_conn_iterator_ctx_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *close_wait,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
 		rrr_biglength read_step_max_size,
-		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
 				struct rrr_mqtt_p *packet,
@@ -223,6 +206,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
+);
+int rrr_mqtt_conn_iterator_ctx_set_disconnect_reason (
+		struct rrr_net_transport_handle *handle,
+		uint8_t reason_v5
 );
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_net_transport_handle *handle

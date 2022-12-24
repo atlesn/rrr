@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
 
+#ifdef RRR_WITH_ZLIB
+#include "../zlib/rrr_zlib.h"
+#endif
+
 #ifdef RRR_WITH_JSONC
 #include "../json/json.h"
 #endif
@@ -291,16 +295,20 @@ int rrr_http_util_urlencoded_string_decode (
 	return rrr_nullsafe_str_with_raw_do(str, __rrr_http_util_decode_urlencoded_string_callback, NULL);
 }
 
+struct rrr_http_util_uri_encode_foreach_byte_callback_data {
+	char *wpos;
+};
+
 int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
-	char **wpos = arg;
+	struct rrr_http_util_uri_encode_foreach_byte_callback_data *callback_data = arg;
 
 	if (__rrr_http_util_is_alphanumeric((unsigned char) byte) || __rrr_http_util_is_uri_unreserved_rfc2396((unsigned char) byte)) {
-		**wpos = byte;
-		(*wpos)++;
+		*(callback_data->wpos) = byte;
+		callback_data->wpos++;
 	}
 	else {
-		sprintf((*wpos), "%s%02x", "%", byte);
-		(*wpos) += 3;
+		sprintf(callback_data->wpos, "%s%02X", "%", (unsigned char) byte);
+		callback_data->wpos += 3;
 	}
 
 	return 0;
@@ -335,22 +343,18 @@ int rrr_http_util_uri_encode (
 	}
 
 	if (result_max_length > 0) {
-		char *wpos = result;
-		char *wpos_max = result + result_max_length;
+		struct rrr_http_util_uri_encode_foreach_byte_callback_data callback_data = {
+			result
+		};
 
-		// NOTE : Pass double pointer to wpos
-		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &wpos)) != 0) {
+		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &callback_data)) != 0) {
 			goto out;
-		}
-
-		if (wpos > wpos_max) {
-			RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 		}
 
 		rrr_nullsafe_str_set_allocated (
 				*target,
 				(void **) &result,
-				rrr_length_from_ptr_sub_bug_const(wpos, result)
+				rrr_length_from_ptr_sub_bug_const(callback_data.wpos, result)
 		);
 	}
 
@@ -1324,3 +1328,66 @@ int rrr_http_util_json_to_arrays (
 ) {
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
+
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+int rrr_http_util_encode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const char *encoding
+) {
+	int ret = 0;
+
+	/* Only one single gzip encoding is supported, and parsing 
+	 * of multiple encodings is not performed. */
+
+#ifdef RRR_WITH_ZLIB
+	if (strcmp(encoding, "gzip") == 0) {
+		if ((ret = rrr_zlib_gzip_compress_nullsafe (
+				output,
+				input
+		)) != 0) {
+			RRR_MSG_0("Compression failed in %s\n", __func__);
+		}
+		goto out;
+	}
+#endif
+
+	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding);
+
+	out:
+	return ret;
+}
+
+int rrr_http_util_decode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const struct rrr_nullsafe_str *encoding
+) {
+	int ret = 0;
+
+	/* Only one single gzip encoding is supported, and parsing 
+	 * of multiple encodings is not performed. */
+
+#ifdef RRR_WITH_ZLIB
+	if (rrr_nullsafe_str_cmpto_case(encoding, "gzip") == 0) {
+		if ((ret = rrr_zlib_gzip_decompress_nullsafe (
+				output,
+				input
+		)) != 0) {
+			RRR_MSG_0("Decompression failed in %s\n", __func__);
+		}
+		goto out;
+	}
+#endif
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(encoding_str,encoding);
+	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding_str);
+
+	out:
+	return ret;
+}
+
+const char *rrr_http_util_encodings_get (void) {
+	return "gzip";
+}
+#endif
