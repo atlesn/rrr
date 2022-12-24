@@ -522,6 +522,10 @@ void rrr_mmap_channel_destroy (
 	pthread_mutex_lock(&rrr_mmap_channel_destroy_lock);
 
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
+		if ((i + 1) % 64 == 0) {
+			RRR_MMAP_DBG("mmap channel %p %s destroyed slot %i/%i\n",
+				target, target->name, i, RRR_MMAP_CHANNEL_SLOTS);
+		}
 		if (target->blocks[i].ptr_shm_or_mmap_writer != NULL) {
 			if (++msg_count == 1) {
 				RRR_MSG_1("Note: Pointer was still present in block while destroying MMAP channel, fork might not have exited yet or has been killed before cleanup.\n");
