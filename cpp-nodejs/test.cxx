@@ -1,3 +1,5 @@
+#include <iostream>
+#include "test.hxx"
 #include <libplatform/libplatform.h>
 #include <v8.h>
 #include <v8-platform.h>
@@ -6,22 +8,26 @@ const char script[] = "function(){ return true; }";
 
 class RRRJS {
 	private:
-	v8::Isolate::CreateParams create_params;
-	v8::Isolate *isolate = v8::Isolate::New(create_params);
+	std::unique_ptr<v8::Platform> platform;
+	v8::Isolate::CreateParams isolate_create_params;
+	v8::Isolate *isolate;
 
 	public:
-	RRRJS(const char *program_name) {
+	RRRJS(const char *program_name) :
+		platform(v8::platform::NewDefaultPlatform())
+	{
 		v8::V8::InitializeICUDefaultLocation(program_name);
 		v8::V8::InitializeExternalStartupData(program_name);
-		std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
 		v8::V8::InitializePlatform(platform.get());
 		v8::V8::Initialize();
-		this->create_params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
-		this->isolate = v8::Isolate::New(this->create_params);
+
+		isolate_create_params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+		isolate = v8::Isolate::New(isolate_create_params);
 	}
 	~RRRJS() {
-		this->isolate->Dispose();
-		delete this->create_params.array_buffer_allocator;
+		isolate->Dispose();
+		delete isolate_create_params.array_buffer_allocator;
+
 		v8::V8::Dispose();
 	}
 };

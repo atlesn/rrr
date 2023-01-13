@@ -63,11 +63,27 @@ AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit binding
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
+AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS/V8 bindings])],[enable_node=no],[enable_node=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
+
+AC_MSG_CHECKING([for C++ usage])
+if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
+	AC_MSG_RESULT([yes])
+	AC_PROG_CXX
+	AX_CXX_COMPILE_STDCXX_17
+	AC_DEFINE([RRR_WITH_CXX], [1], [Enable C++])
+	AC_LANG_PUSH([C++])
+	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
+	AC_LANG_POP([C++])
+	enable_cxx=yes
+else
+	AC_MSG_RESULT([no])
+	enable_cxx=no
+fi
 
 AC_MSG_CHECKING([for RRR GNU Debug])
 AS_IF([test "x$enable_gnu_debug" = xno], [
@@ -116,6 +132,7 @@ AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
+AM_CONDITIONAL([RRR_WITH_NODE], [test "x$enable_node" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -318,6 +335,85 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 ])
 
 AC_SUBST([JEMALLOC_LIBS])
+
+AC_DEFUN([NODECOMPILE], [
+	$CXX -o conftest $NODE_CXXFLAGS $NODE_LDFLAGS $NODE_LIBS conftest.cpp && ./conftest
+	if test "$?" = 0; then
+		AC_MSG_RESULT([ok])
+	else
+		AC_MSG_ERROR([not ok])
+	fi
+])
+
+AC_MSG_CHECKING([for node usage])
+AS_IF([test "x$enable_node" != xno], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NODE], [1], [Enable NodeJS/V8])
+	AC_LANG_PUSH([C++])
+	# AC_CHECK_HEADERS does not work for C++ headers with .h suffix, it
+	# only starts C-compiler.
+	AC_MSG_CHECKING([for node include directory])
+	node_include_dir=""
+	for dir in /usr/include/node /usr/local/include/node; do
+		if test -d $dir; then
+			node_include_dir=$dir
+			break
+		fi
+	done
+	if test "x$node_include_dir" != x; then
+		AC_MSG_RESULT([$node_include_dir])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	NODE_CXXFLAGS=-I$node_include_dir
+	NODE_LDFLAGS=
+	NODE_LIBS=-lnode
+
+	AC_MSG_CHECKING([for libplatform/libplatform.h])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <node/libplatform/libplatform.h>
+			int main (int argc, char **argv) {
+				return 0;
+			}
+		]])
+	])
+	NODECOMPILE
+
+	AC_MSG_CHECKING([for node/v8.h])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <node/v8.h>
+			int main (int argc, char **argv) {
+				return 0;
+			}
+		]])
+	])
+	NODECOMPILE
+
+	AC_MSG_CHECKING([V8 compilation and linking])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <libplatform/libplatform.h>
+			#include <node/v8.h>
+			#include <node/v8-platform.h>
+			int main (int argc, char **argv) {
+				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				return 0;
+			}
+		]])
+	])
+	NODECOMPILE
+
+	AC_LANG_POP([C++])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_SUBST([NODE_CXXFLAGS])
+AC_SUBST([NODE_LDFLAGS])
+AC_SUBST([NODE_LIBS])
 
 # Make sure Perl-test does not include any libraries
 LIBS=""
@@ -823,6 +919,7 @@ LIBS=""
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
+AM_COND_IF([RRR_WITH_NODE], [AC_CONFIG_FILES([cpp-nodejs/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
