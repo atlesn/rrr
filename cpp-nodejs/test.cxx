@@ -41,7 +41,7 @@ namespace RRR::JS {
 		abort();
 	}
 
-	SCOPE::SCOPE(ENV &env) :
+	Isolate::Isolate(ENV &env) :
 		isolate(env.isolate),
 		isolate_scope(isolate),
 		handle_scope(isolate)
@@ -58,18 +58,18 @@ namespace RRR::JS {
 	{
 	}
 
-	UTF8::UTF8(ENV &env, Value &value) :
-		utf8(env, value)
+	UTF8::UTF8(CTX &ctx, Value &value) :
+		utf8(ctx, value)
 	{
 	}
 
-	UTF8::UTF8(ENV &env, Value &&value) :
-		utf8(env, value)
+	UTF8::UTF8(CTX &ctx, Value &&value) :
+		utf8(ctx, value)
 	{
 	}
 
-	UTF8::UTF8(ENV &env, v8::Local<v8::String> &str) :
-		utf8(env, str)
+	UTF8::UTF8(CTX &ctx, v8::Local<v8::String> &str) :
+		utf8(ctx, str)
 	{
 	}
 
@@ -82,15 +82,15 @@ namespace RRR::JS {
 		return *utf8;
 	}
 
-	String::String(ENV &env, const char *str) :
-		str(v8::String::NewFromUtf8(env, str, v8::NewStringType::kNormal).ToLocalChecked()),
-		utf8(env, this->str)
+	String::String(CTX &ctx, const char *str) :
+		str(v8::String::NewFromUtf8(ctx, str, v8::NewStringType::kNormal).ToLocalChecked()),
+		utf8(ctx, this->str)
 	{
 	}
 
-	String::String(ENV &env, v8::Local<v8::String> &&str) :
+	String::String(CTX &ctx, v8::Local<v8::String> &&str) :
 		str(str),
-		utf8(env, str)
+		utf8(ctx, str)
 	{
 	}
 
@@ -113,13 +113,24 @@ namespace RRR::JS {
 		return str.IsEmpty() ? empty : *utf8;
 	}
 
-	E::E(ENV &env, const char *str) :
-			str(env, str)
+	E::E(CTX &ctx, std::string &&str) :
+			str(ctx, str.c_str())
 	{
 	}
 
 	const char * E::operator * () {
 		return *str;
+	}
+
+	Function::Function(v8::Local<v8::Function> &&function) :
+		function(function)
+	{
+	}
+
+	void Function::run(CTX &ctx) {
+		auto scope = Scope(ctx);
+		auto result = function->Call(ctx, ctx, 0, nullptr);
+		// Ignore result
 	}
 
 	namespace Console {
@@ -143,27 +154,26 @@ namespace RRR::JS {
 	} // namespace Console
 
 	CTX::CTX(ENV &env) :
-		ctx(v8::Context::New(env, nullptr)),
-		ctx_scope(ctx)
+		ctx(v8::Context::New(env, nullptr))
 	{
 		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
 
 		{
-			auto result = console->Set(ctx, String(env, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
+			auto result = console->Set(ctx, String(*this, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
-				throw E(env, "Failed to intitialize globals\n");
+				throw E(*this, "Failed to intitialize globals\n");
 			}
 		}
 		{
-			auto result = console->Set(ctx, String(env, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
+			auto result = console->Set(ctx, String(*this, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
-				throw E(env, "Failed to intitialize globals\n");
+				throw E(*this, "Failed to intitialize globals\n");
 			}
 		}
 		{
-			auto result = ctx->Global()->Set(ctx, String(env, "console"), console);
+			auto result = ctx->Global()->Set(ctx, String(*this, "console"), console);
 			if (!result.FromMaybe(false)) {
-				throw E(env, "Failed to intitialize globals\n");
+				throw E(*this, "Failed to intitialize globals\n");
 			}
 		}
 	}
@@ -172,13 +182,70 @@ namespace RRR::JS {
 		return ctx;
 	}
 
-	Script::Script(ENV &env, CTX &ctx, String &&str) :
-		script(v8::Script::Compile(ctx, str).ToLocalChecked())
-	{
+	CTX::operator v8::Local<v8::Value> () {
+		return ctx->Global();
 	}
 
-	Value Script::run(ENV &env, CTX &ctx) {
-		return script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(env, ""));
+	CTX::operator v8::Isolate *() {
+		return ctx->GetIsolate();
+	}
+
+	Function CTX::get_function(const char *name) {
+		v8::MaybeLocal<v8::Value> value = ctx->Global()->Get(ctx, String(*this, name));
+		if (value.IsEmpty()) {
+			std::string msg("Error while finding function '" + std::string(name) + "'");
+			throw E(*this, msg.c_str());
+		}
+		if (value.ToLocalChecked()->IsUndefined()) {
+			std::string msg("Function '" + std::string(name) + "' not found");
+			throw E(*this, msg.c_str());
+		}
+		if (!value.ToLocalChecked()->IsFunction()) {
+			std::string msg("Name '" + std::string(name) + "' was not a function");
+			throw E(*this, msg.c_str());
+		}
+		return Function(value.ToLocalChecked().As<v8::Function>());
+	}
+
+	void CTX::run_function(TryCatch &trycatch, const char *name) {
+		auto &ctx = *this;
+		auto function = get_function(name);
+		function.run(ctx);
+		if (trycatch.ok(ctx, [ctx, name](const char *msg) mutable {
+			throw E(ctx, (std::string("Exception while running function '") + name + "': " + msg + "\n").c_str());
+		})) {
+			// OK
+		}
+	}
+
+	Scope::Scope(CTX &ctx) :
+		ctx(ctx)
+	{
+		ctx.ctx->Enter();
+	}
+
+	Scope::~Scope() {
+		ctx.ctx->Exit();
+	}
+
+	Script::Script(CTX &ctx, TryCatch &trycatch, String &&str) :
+		script(v8::Script::Compile(ctx, str).ToLocalChecked())
+	{
+		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
+			throw E(ctx, std::string("Failed to compile script: ") + msg);
+		})) {
+			// OK
+		}
+	}
+
+	void Script::run(CTX &ctx, TryCatch &trycatch) {
+		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
+		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
+			throw E(ctx, std::string("Exception while running script: ") + std::string(msg));
+		})) {
+			// OK
+		}
+		// Ignore result
 	}
 } // namespace RRR::JS
 
@@ -214,24 +281,18 @@ int main(int argc, const char **argv) {
 	in[size_total] = '\0';
 
 	try {
-		auto scope = SCOPE(env);
+		auto isolate = Isolate(env);
 		auto ctx = CTX(env);
-		auto trycatch = TryCatch(env);
-		auto script = Script(env, ctx, String(env, in));
-		if (trycatch.ok(env, [](const char *msg) -> void {
-			printf("Failed to compile script: %s\n", msg);
-		})) {
-			auto result = script.run(env, ctx);
-			if (trycatch.ok(env, [](const char *msg) -> void {
-				printf("Failed run script: %s\n", msg);
-			})) {
-				auto result_utf8 = UTF8(env, result);
-				// printf("Result: %s\n", *result_utf8);
-			}
-		}
+		auto scope = Scope(ctx);
+		auto trycatch = TryCatch(ctx);
+		auto script = Script(ctx, trycatch, String(ctx, in));
+
+		script.run(ctx, trycatch);
+		ctx.run_function(trycatch, "process");
 	}
 	catch (E &e) {
-		printf("Initialization failed: %s\n", *e);
+		printf("%s\n", *e);
+		ret = EXIT_FAILURE;
 	}
 
 	out:

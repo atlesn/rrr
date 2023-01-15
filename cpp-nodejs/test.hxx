@@ -1,13 +1,18 @@
 #pragma once
 
+#include "v8-callbacks.h"
 #include "v8-function-callback.h"
 #include "v8-isolate.h"
 #include <memory>
 #include <v8.h>
 
 namespace RRR::JS {
+	class CTX;
+	class Scope;
+	class TryCatch;
+
 	class ENV {
-		friend class SCOPE;
+		friend class Isolate;
 
 		private:
 		std::unique_ptr<v8::Platform> platform;
@@ -21,14 +26,14 @@ namespace RRR::JS {
 		static void fatal_error(const char *where, const char *what);
 	};
 
-	class SCOPE {
+	class Isolate {
 		private:
 		v8::Isolate *isolate;
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
 
 		public:
-		SCOPE(ENV &env);
+		Isolate(ENV &env);
 	};
 
 	class Value : public v8::Local<v8::Value> {
@@ -42,9 +47,9 @@ namespace RRR::JS {
 		v8::String::Utf8Value utf8;
 
 		public:
-		UTF8(ENV &env, Value &value);
-		UTF8(ENV &env, Value &&value);
-		UTF8(ENV &env, v8::Local<v8::String> &str);
+		UTF8(CTX &ctx, Value &value);
+		UTF8(CTX &ctx, Value &&value);
+		UTF8(CTX &ctx, v8::Local<v8::String> &str);
 		UTF8(v8::Isolate *isolate, v8::Local<v8::String> &str);
 		const char * operator *();
 	};
@@ -55,8 +60,8 @@ namespace RRR::JS {
 		UTF8 utf8;
 
 		public:
-		String(ENV &env, const char *str);
-		String(ENV &env, v8::Local<v8::String> &&str);
+		String(CTX &ctx, const char *str);
+		String(CTX &ctx, v8::Local<v8::String> &&str);
 		String(v8::Isolate *isolate, v8::Local<v8::String> &&str);
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
@@ -68,18 +73,46 @@ namespace RRR::JS {
 		String str;
 
 		public:
-		E(ENV &env, const char *);
+		E(CTX &ctx, std::string &&str);
 		const char * operator *();
 	};
 
+	class Function {
+		friend class CTX;
+
+		private:
+		v8::Local<v8::Function> function;
+
+		protected:
+		Function(v8::Local<v8::Function> &&function);
+
+		public:
+		void run(CTX &ctx);
+	};
+
 	class CTX {
+		friend class Scope;
+
 		private:
 		v8::Local<v8::Context> ctx;
-		v8::Context::Scope ctx_scope;
 
 		public:
 		CTX(ENV &env);
 		operator v8::Local<v8::Context>();
+		operator v8::Local<v8::Value>();
+		operator v8::Isolate *();
+		Function get_function(const char *name);
+		void run_function(TryCatch &trycatch, const char *name);
+	};
+
+	class Scope {
+		friend class CTX;
+
+		private:
+		CTX ctx;
+		public:
+		Scope(CTX &ctx);
+		~Scope();
 	};
 
 	class TryCatch {
@@ -87,14 +120,14 @@ namespace RRR::JS {
 		v8::TryCatch trycatch;
 
 		public:
-		TryCatch(ENV &env) :
-			trycatch(v8::TryCatch(env))
+		TryCatch(CTX &ctx) :
+			trycatch(v8::TryCatch(ctx))
 		{
 		}
 
-		template <class A> bool ok(ENV &env, A err) {
+		template <class A> bool ok(CTX &ctx, A err) {
 			if (trycatch.HasCaught()) {
-				auto msg = String(env, trycatch.Message()->Get());
+				auto msg = String(ctx, trycatch.Message()->Get());
 				err(*msg);
 				return false;
 			}
@@ -115,7 +148,7 @@ namespace RRR::JS {
 		v8::Local<v8::Script> script;
 
 		public:
-		Script(ENV &env, CTX &ctx, String &&str);
-		Value run(ENV &env, CTX &ctx);
+		Script(CTX &ctx, TryCatch &trycatch, String &&str);
+		void run(CTX &ctx, TryCatch &trycatch);
 	};
 }
