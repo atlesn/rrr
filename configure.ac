@@ -112,7 +112,8 @@ AC_MSG_CHECKING([for C++ usage])
 if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
 	AC_MSG_RESULT([yes])
 	AC_PROG_CXX
-	AX_CXX_COMPILE_STDCXX_17
+	# Dont't use. Sometimes adds gnu17 standard.
+	# AX_CXX_COMPILE_STDCXX_17
 	AC_DEFINE([RRR_WITH_CXX], [1], [Enable C++])
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
@@ -348,11 +349,16 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([NODECOMPILE], [
-	$CXX -o conftest $NODE_CXXFLAGS $NODE_LDFLAGS $NODE_LIBS conftest.cpp && ./conftest
+	flags="$AM_CXXFLAGS $NODE_CXXFLAGS $NODE_TEST_CXXFLAGS $AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS $NODE_TEST_LIBS"
+	$CXX -o conftest $flags conftest.cpp && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([ok])
 	else
-		AC_MSG_ERROR([not ok])
+		echo "Not ok"
+		echo "== Dumping failed program ==" 1>&2
+		cat conftest.cpp 1>&2
+		echo "== Dumping end ==" 2>&2
+		AC_MSG_ERROR([Failed: $CXX -o conftest $flags conftest.cpp && ./conftest])
 	fi
 ])
 
@@ -377,38 +383,17 @@ AS_IF([test "x$enable_node" != xno], [
 		AC_MSG_ERROR("not found")
 	fi
 
-	NODE_CXXFLAGS=-I$node_include_dir
-	NODE_LDFLAGS=
-	NODE_LIBS=-lnode
-
-	AC_MSG_CHECKING([for libplatform/libplatform.h])
-	AC_LANG_CONFTEST([
-		AC_LANG_SOURCE([[
-			#include <node/libplatform/libplatform.h>
-			int main (int argc, char **argv) {
-				return 0;
-			}
-		]])
-	])
-	NODECOMPILE
-
-	AC_MSG_CHECKING([for node/v8.h])
-	AC_LANG_CONFTEST([
-		AC_LANG_SOURCE([[
-			#include <node/v8.h>
-			int main (int argc, char **argv) {
-				return 0;
-			}
-		]])
-	])
-	NODECOMPILE
+	NODE_CXXFLAGS="-I$node_include_dir"
+	NODE_TEST_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_LDFLAGS=""
+	NODE_LIBS="-lnode"
+	# NODE_TEST_LIBS=-lstdc++
 
 	AC_MSG_CHECKING([V8 compilation and linking])
 	AC_LANG_CONFTEST([
 		AC_LANG_SOURCE([[
+			#include <v8.h>
 			#include <libplatform/libplatform.h>
-			#include <node/v8.h>
-			#include <node/v8-platform.h>
 			int main (int argc, char **argv) {
 				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
 				return 0;
