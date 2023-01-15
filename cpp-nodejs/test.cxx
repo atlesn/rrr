@@ -2,17 +2,15 @@
 #include "v8-callbacks.h"
 #include "v8-exception.h"
 #include "v8-primitive.h"
+#include "v8-template.h"
+
 #include <v8.h>
 #include <libplatform/libplatform.h>
-//#include <v8-platform.h>
+#include <stdio.h>
 
 const char script[] = "function(){ return true; }";
 
 namespace RRR::JS {
-	void ENV::fatal_error(const char *where, const char *what) {
-		printf("Fatal error from V8: %s %s\n", where, what);
-	}
-
 	ENV::ENV(const char *program_name) :
 		platform(v8::platform::NewDefaultPlatform())
 	{
@@ -37,6 +35,11 @@ namespace RRR::JS {
 		return isolate;
 	}
 
+	void ENV::fatal_error(const char *where, const char *what) {
+		printf("Fatal error from V8. This is a bug. : %s %s\n", where, what);
+		abort();
+	}
+
 	SCOPE::SCOPE(ENV &env) :
 		isolate(env.isolate),
 		isolate_scope(isolate),
@@ -44,18 +47,18 @@ namespace RRR::JS {
 	{
 	}
 
-	CTX::CTX(ENV &env) :
-		ctx(v8::Context::New(env)),
-		ctx_scope(ctx)
+	Value::Value(v8::Local<v8::Value> &&value) :
+		v8::Local<v8::Value>(value)
 	{
 	}
 
-	CTX::operator v8::Local<v8::Context> () {
-		return ctx;
+	Value::Value(v8::Local<v8::String> &&value) :
+		v8::Local<v8::Value>(value)
+	{
 	}
 
-	Value::Value(v8::Local<v8::Value> &&value) :
-		v8::Local<v8::Value>(value)
+	UTF8::UTF8(ENV &env, Value &value) :
+		utf8(env, value)
 	{
 	}
 
@@ -66,6 +69,11 @@ namespace RRR::JS {
 
 	UTF8::UTF8(ENV &env, v8::Local<v8::String> &str) :
 		utf8(env, str)
+	{
+	}
+
+	UTF8::UTF8(v8::Isolate *isolate, v8::Local<v8::String> &str) :
+		utf8(isolate, str)
 	{
 	}
 
@@ -85,7 +93,17 @@ namespace RRR::JS {
 	{
 	}
 
+	String::String(v8::Isolate *isolate, v8::Local<v8::String> &&str) :
+		str(str),
+		utf8(isolate, str)
+	{
+	}
+
 	String::operator v8::Local<v8::String> () {
+		return str;
+	}
+
+	String::operator v8::Local<v8::Value> () {
 		return str;
 	}
 
@@ -94,13 +112,72 @@ namespace RRR::JS {
 		return str.IsEmpty() ? empty : *utf8;
 	}
 
-	Script::Script(CTX &ctx, String &&str) :
+	E::E(ENV &env, const char *str) :
+			str(env, str)
+	{
+	}
+
+	const char * E::operator * () {
+		return *str;
+	}
+
+	namespace Console {
+		void flog(FILE *target, const v8::FunctionCallbackInfo<v8::Value> &args) {
+			auto isolate = args.GetIsolate();
+			auto ctx = args.GetIsolate()->GetCurrentContext();
+			for (int i = 0; i < args.Length(); i++) {
+				auto value = String(isolate, args[i]->ToString(ctx).ToLocalChecked());
+				fprintf(target, "%s\n", *value);
+			}
+			args.GetReturnValue().Set(true);
+		}
+
+		void log(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			flog(stdout, args);
+		}
+
+		void error(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			flog(stderr, args);
+		}
+	} // namespace Console
+
+	CTX::CTX(ENV &env) :
+		ctx(v8::Context::New(env, nullptr)),
+		ctx_scope(ctx)
+	{
+		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
+
+		{
+			auto result = console->Set(ctx, String(env, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E(env, "Failed to intitialize globals\n");
+			}
+		}
+		{
+			auto result = console->Set(ctx, String(env, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E(env, "Failed to intitialize globals\n");
+			}
+		}
+		{
+			auto result = ctx->Global()->Set(ctx, String(env, "console"), console);
+			if (!result.FromMaybe(false)) {
+				throw E(env, "Failed to intitialize globals\n");
+			}
+		}
+	}
+
+	CTX::operator v8::Local<v8::Context> () {
+		return ctx;
+	}
+
+	Script::Script(ENV &env, CTX &ctx, String &&str) :
 		script(v8::Script::Compile(ctx, str).ToLocalChecked())
 	{
 	}
 
-	Value Script::run(CTX &ctx) {
-		return script->Run(ctx).ToLocalChecked();
+	Value Script::run(ENV &env, CTX &ctx) {
+		return script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(env, ""));
 	}
 } // namespace RRR::JS
 
@@ -109,17 +186,25 @@ int main(int argc, const char **argv) {
 
 	ENV env(*argv);
 
-	{
+	try {
 		auto scope = SCOPE(env);
 		auto ctx = CTX(env);
 		auto trycatch = TryCatch(env);
-		auto script = Script(ctx, String(env, "'Hello, World ' + (1+2)"));
+		auto script = Script(env, ctx, String(env, "'Hello, World ' + (1+2);'abcd';console.log('gggg');"));
 		if (trycatch.ok(env, [](const char *msg) -> void {
 			printf("Failed to compile script: %s\n", msg);
 		})) {
-			auto result = UTF8(env, script.run(ctx));
-			printf("Result: %s\n", *result);
+			auto result = script.run(env, ctx);
+			if (trycatch.ok(env, [](const char *msg) -> void {
+				printf("Failed run script: %s\n", msg);
+			})) {
+				auto result_utf8 = UTF8(env, result);
+				// printf("Result: %s\n", *result_utf8);
+			}
 		}
+	}
+	catch (E &e) {
+		printf("Initialization failed: %s\n", *e);
 	}
 
 	return 0;
