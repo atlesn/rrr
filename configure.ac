@@ -386,7 +386,7 @@ AS_IF([test "x$enable_node" != xno], [
 	NODE_CXXFLAGS="-I$node_include_dir"
 	NODE_TEST_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
 	NODE_LDFLAGS=""
-	NODE_LIBS="-lnode"
+	NODE_LIBS="-lstdc++ -lnode"
 	# NODE_TEST_LIBS=-lstdc++
 
 	AC_MSG_CHECKING([V8 compilation and linking])
