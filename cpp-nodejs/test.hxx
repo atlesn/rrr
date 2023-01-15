@@ -103,6 +103,7 @@ namespace RRR::JS {
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
 		Function get_function(const char *name);
+		void run_function(TryCatch &trycatch, Function &function, const char *name, int argc, Value argv[]);
 		void run_function(TryCatch &trycatch, const char *name, int argc, Value argv[]);
 	};
 

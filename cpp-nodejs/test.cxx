@@ -9,8 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const char script[] = "function(){ return true; }";
-
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
 		platform(v8::platform::NewDefaultPlatform())
@@ -219,14 +217,19 @@ namespace RRR::JS {
 		return Function(value.ToLocalChecked().As<v8::Function>());
 	}
 
-	void CTX::run_function(TryCatch &trycatch, const char *name, int argc = 0, Value argv[] = nullptr) {
+	void CTX::run_function(TryCatch &trycatch, Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
-		get_function(name).run(ctx, argc, argv);
+		function.run(ctx, argc, argv);
 		if (trycatch.ok(ctx, [ctx, name](const char *msg) mutable {
 			throw E(ctx, (std::string("Exception while running function '") + name + "': " + msg + "\n").c_str());
 		})) {
 			// OK
 		}
+	}
+
+	void CTX::run_function(TryCatch &trycatch, const char *name, int argc = 0, Value argv[] = nullptr) {
+		auto function = get_function(name);
+		run_function(trycatch, function, name, argc, argv);
 	}
 
 	Scope::Scope(CTX &ctx) :
