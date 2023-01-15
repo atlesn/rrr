@@ -1,4 +1,25 @@
-#include "test.hxx"
+/*
+
+Read Route Record
+
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+#include "js.hxx"
 #include "v8-callbacks.h"
 #include "v8-exception.h"
 #include "v8-primitive.h"
@@ -263,57 +284,3 @@ namespace RRR::JS {
 	}
 } // namespace RRR::JS
 
-int main(int argc, const char **argv) {
-	using namespace RRR::JS;
-
-	int ret = EXIT_SUCCESS;
-
-	ENV env(*argv);
-
-	size_t size = 0;
-	size_t size_total = 0;
-	char tmp[4096];
-	char *in = NULL;
-
-	while ((size = fread (tmp, 1, 4096, stdin)) > 0) {
-		in = reinterpret_cast<char *>(realloc(in, size_total + size + 1));
-		if (in == NULL) {
-			fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-		memcpy(in + size_total, tmp, size);
-		size_total += size;
-	}
-
-	if (in == NULL) {
-		fprintf(stderr, "No input read\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	in[size_total] = '\0';
-
-	try {
-		auto isolate = Isolate(env);
-		auto ctx = CTX(env);
-		auto scope = Scope(ctx);
-		auto trycatch = TryCatch(ctx);
-		auto script = Script(ctx, trycatch, String(ctx, in));
-	
-		Value arg = String(ctx, "arg");
-
-		script.run(ctx, trycatch);
-		ctx.run_function(trycatch, "process", 1, &arg);
-	}
-	catch (E &e) {
-		fprintf(stderr, "%s\n", *e);
-		ret = EXIT_FAILURE;
-	}
-
-	out:
-	if (in != NULL) {
-		free(in);
-	}
-	return ret;
-}

@@ -14,7 +14,7 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
-AC_CONFIG_SUBDIRS([src/blockdevlogger])
+#AC_CONFIG_SUBDIRS([])
 
 INET_CHECKS()
 
@@ -70,21 +70,6 @@ AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debug
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
-AC_MSG_CHECKING([for C++ usage])
-if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
-	AC_MSG_RESULT([yes])
-	AC_PROG_CXX
-	AX_CXX_COMPILE_STDCXX_17
-	AC_DEFINE([RRR_WITH_CXX], [1], [Enable C++])
-	AC_LANG_PUSH([C++])
-	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
-	AC_LANG_POP([C++])
-	enable_cxx=yes
-else
-	AC_MSG_RESULT([no])
-	enable_cxx=no
-fi
-
 AC_MSG_CHECKING([for RRR GNU Debug])
 AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([RRR GNU Debug disabled])
@@ -112,11 +97,37 @@ AS_IF([ test -f ".development" ], [
 	AC_MSG_RESULT([none])
 ])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_WARNINGS -D_XOPEN_SOURCE=700"
+CFLAGS_COMMON="$CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
+AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
+
+AC_MSG_CHECKING([for AM_CFLAGS])
+AC_MSG_RESULT([$AM_CFLAGS])
+CFLAGS=""
 
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
+
+AC_MSG_CHECKING([for C++ usage])
+if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
+	AC_MSG_RESULT([yes])
+	AC_PROG_CXX
+	AX_CXX_COMPILE_STDCXX_17
+	AC_DEFINE([RRR_WITH_CXX], [1], [Enable C++])
+	AC_LANG_PUSH([C++])
+	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
+	AC_LANG_POP([C++])
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_COMMON -O3"
+	AC_MSG_CHECKING([for AM_CXXFLAGS])
+	AC_MSG_RESULT([$AM_CXXFLAGS])
+	CXXFLAGS=""
+	enable_cxx=yes
+else
+	AC_MSG_RESULT([no])
+	enable_cxx=no
+fi
+
+AC_SUBST(AM_CXXFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
 
@@ -919,7 +930,6 @@ LIBS=""
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
-AM_COND_IF([RRR_WITH_NODE], [AC_CONFIG_FILES([cpp-nodejs/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
