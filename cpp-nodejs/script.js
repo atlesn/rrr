@@ -4,6 +4,6 @@ function add(a, b) {
 
 console.log(add(1, 2), "\n");
 
-function process() {
-	console.log(5, "\n");
+function process(arg = "default") {
+	console.log(5, " argument " + arg + "\n");
 }

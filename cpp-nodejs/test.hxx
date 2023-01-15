@@ -66,6 +66,7 @@ namespace RRR::JS {
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
 		const char * operator *();
+		operator Value();
 	};
 
 	class E {
@@ -87,7 +88,7 @@ namespace RRR::JS {
 		Function(v8::Local<v8::Function> &&function);
 
 		public:
-		void run(CTX &ctx);
+		void run(CTX &ctx, int argc, Value argv[]);
 	};
 
 	class CTX {
@@ -102,7 +103,7 @@ namespace RRR::JS {
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
 		Function get_function(const char *name);
-		void run_function(TryCatch &trycatch, const char *name);
+		void run_function(TryCatch &trycatch, const char *name, int argc, Value argv[]);
 	};
 
 	class Scope {

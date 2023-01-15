@@ -100,17 +100,21 @@ namespace RRR::JS {
 	{
 	}
 
-	String::operator v8::Local<v8::String> () {
+	String::operator v8::Local<v8::String>() {
 		return str;
 	}
 
-	String::operator v8::Local<v8::Value> () {
+	String::operator v8::Local<v8::Value>() {
 		return str;
 	}
 
 	const char * String::operator * () {
 		static const char *empty = "";
 		return str.IsEmpty() ? empty : *utf8;
+	}
+
+	String::operator Value () {
+		return Value(str);
 	}
 
 	E::E(CTX &ctx, std::string &&str) :
@@ -127,9 +131,18 @@ namespace RRR::JS {
 	{
 	}
 
-	void Function::run(CTX &ctx) {
+	void Function::run(CTX &ctx, int argc = 0, Value argv[] = nullptr) {
 		auto scope = Scope(ctx);
-		auto result = function->Call(ctx, ctx, 0, nullptr);
+		if (argc > 0) {
+			v8::Local<v8::Value> values[argc];
+			for (int i = 0; i < argc; i++) {
+				values[i] = argv[i];
+			}
+			auto result = function->Call(ctx, ctx, argc, values);
+		}
+		else {
+			auto result = function->Call(ctx, ctx, 0, nullptr);
+		}
 		// Ignore result
 	}
 
@@ -155,9 +168,8 @@ namespace RRR::JS {
 
 	CTX::CTX(ENV &env) :
 		ctx(v8::Context::New(env, nullptr))
-	{
+	{	
 		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
-
 		{
 			auto result = console->Set(ctx, String(*this, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
@@ -207,10 +219,9 @@ namespace RRR::JS {
 		return Function(value.ToLocalChecked().As<v8::Function>());
 	}
 
-	void CTX::run_function(TryCatch &trycatch, const char *name) {
+	void CTX::run_function(TryCatch &trycatch, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
-		auto function = get_function(name);
-		function.run(ctx);
+		get_function(name).run(ctx, argc, argv);
 		if (trycatch.ok(ctx, [ctx, name](const char *msg) mutable {
 			throw E(ctx, (std::string("Exception while running function '") + name + "': " + msg + "\n").c_str());
 		})) {
@@ -286,12 +297,14 @@ int main(int argc, const char **argv) {
 		auto scope = Scope(ctx);
 		auto trycatch = TryCatch(ctx);
 		auto script = Script(ctx, trycatch, String(ctx, in));
+	
+		Value arg = String(ctx, "arg");
 
 		script.run(ctx, trycatch);
-		ctx.run_function(trycatch, "process");
+		ctx.run_function(trycatch, "process", 1, &arg);
 	}
 	catch (E &e) {
-		printf("%s\n", *e);
+		fprintf(stderr, "%s\n", *e);
 		ret = EXIT_FAILURE;
 	}
 
