@@ -7,6 +7,7 @@
 #include <v8.h>
 #include <libplatform/libplatform.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 const char script[] = "function(){ return true; }";
 
@@ -127,7 +128,7 @@ namespace RRR::JS {
 			auto ctx = args.GetIsolate()->GetCurrentContext();
 			for (int i = 0; i < args.Length(); i++) {
 				auto value = String(isolate, args[i]->ToString(ctx).ToLocalChecked());
-				fprintf(target, "%s\n", *value);
+				fprintf(target, "%s", *value);
 			}
 			args.GetReturnValue().Set(true);
 		}
@@ -184,13 +185,39 @@ namespace RRR::JS {
 int main(int argc, const char **argv) {
 	using namespace RRR::JS;
 
+	int ret = EXIT_SUCCESS;
+
 	ENV env(*argv);
+
+	size_t size = 0;
+	size_t size_total = 0;
+	char tmp[4096];
+	char *in = NULL;
+
+	while ((size = fread (tmp, 1, 4096, stdin)) > 0) {
+		in = reinterpret_cast<char *>(realloc(in, size_total + size + 1));
+		if (in == NULL) {
+			fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		memcpy(in + size_total, tmp, size);
+		size_total += size;
+	}
+
+	if (in == NULL) {
+		fprintf(stderr, "No input read\n");
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	in[size_total] = '\0';
 
 	try {
 		auto scope = SCOPE(env);
 		auto ctx = CTX(env);
 		auto trycatch = TryCatch(env);
-		auto script = Script(env, ctx, String(env, "'Hello, World ' + (1+2);'abcd';console.log('gggg');"));
+		auto script = Script(env, ctx, String(env, in));
 		if (trycatch.ok(env, [](const char *msg) -> void {
 			printf("Failed to compile script: %s\n", msg);
 		})) {
@@ -207,5 +234,9 @@ int main(int argc, const char **argv) {
 		printf("Initialization failed: %s\n", *e);
 	}
 
-	return 0;
+	out:
+	if (in != NULL) {
+		free(in);
+	}
+	return ret;
 }
