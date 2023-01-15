@@ -12,6 +12,7 @@ namespace RRR::JS {
 		std::unique_ptr<v8::Platform> platform;
 		v8::Isolate::CreateParams isolate_create_params;
 		v8::Isolate *isolate;
+		static void fatal_error(const char *where, const char *what);
 
 		public:
 		ENV(const char *program_name);
@@ -39,15 +40,6 @@ namespace RRR::JS {
 		operator v8::Local<v8::Context>();
 	};
 
-	class String {
-		private:
-		v8::Local<v8::String> str;
-
-		public:
-		String(ENV &env, const char *str);
-		operator v8::Local<v8::String>();
-	};
-
 	class Value : public v8::Local<v8::Value> {
 		public:
 		Value(v8::Local<v8::Value> &&value);
@@ -59,6 +51,19 @@ namespace RRR::JS {
 
 		public:
 		UTF8(ENV &env, Value &&value);
+		UTF8(ENV &env, v8::Local<v8::String> &str);
+		const char * operator *();
+	};
+
+	class String {
+		private:
+		v8::Local<v8::String> str;
+		UTF8 utf8;
+
+		public:
+		String(ENV &env, const char *str);
+		String(ENV &env, v8::Local<v8::String> &&str);
+		operator v8::Local<v8::String>();
 		const char * operator *();
 	};
 
@@ -69,5 +74,33 @@ namespace RRR::JS {
 		public:
 		Script(CTX &ctx, String &&str);
 		Value run(CTX &ctx);
+	};
+
+	class TryCatch {
+		private:
+		v8::TryCatch trycatch;
+
+		public:
+		TryCatch(ENV &env) :
+			trycatch(v8::TryCatch(env))
+		{
+		}
+
+		template <class C> bool ok(ENV &env, C c) {
+			if (trycatch.HasCaught()) {
+				auto msg = String(env, trycatch.Message()->Get());
+				c(*msg);
+				return false;
+			}
+			else if (trycatch.HasTerminated()) {
+				c("Program terminated");
+				return false;
+			}
+			else if (trycatch.CanContinue()) {
+				return true;
+			}
+			c("Unknown error");
+			return false;
+		}
 	};
 }
