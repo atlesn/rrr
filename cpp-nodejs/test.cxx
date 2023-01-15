@@ -55,13 +55,9 @@ namespace RRR::JS {
 		return str;
 	}
 
-	Value::Value(v8::Local<v8::Value> value) :
-		v8::Local<v8::Value>()
+	Value::Value(v8::Local<v8::Value> &&value) :
+		v8::Local<v8::Value>(value)
 	{
-	}
-
-	UTF8::UTF8(ENV &env, Value &value) :
-		utf8(env, value) {
 	}
 
 	UTF8::UTF8(ENV &env, Value &&value) :
@@ -72,19 +68,12 @@ namespace RRR::JS {
 		return *utf8;
 	}
 
-	Script::Script(CTX &ctx, String &str) :
-		ctx(ctx),
-		script(v8::Script::Compile(ctx, str).ToLocalChecked())
-	{
-	}
-
 	Script::Script(CTX &ctx, String &&str) :
-		ctx(ctx),
 		script(v8::Script::Compile(ctx, str).ToLocalChecked())
 	{
 	}
 
-	Value Script::run() {
+	Value Script::run(CTX &ctx) {
 		return script->Run(ctx).ToLocalChecked();
 	}
 } // namespace RRR::JS
@@ -97,9 +86,8 @@ int main(int argc, const char **argv) {
 	{
 		auto scope = SCOPE(env);
 		auto ctx = CTX(env);
-		auto script = Script(ctx, String(env, "'Hello';"));
-		auto result = UTF8(env, script.run());
-
+		auto script = Script(ctx, String(env, "'Hello, World!'"));
+		auto result = UTF8(env, script.run(ctx));
 		printf("Result: %s\n", *result);
 	}
 

@@ -50,7 +50,7 @@ namespace RRR::JS {
 
 	class Value : public v8::Local<v8::Value> {
 		public:
-		Value(v8::Local<v8::Value> value);
+		Value(v8::Local<v8::Value> &&value);
 	};
 
 	class UTF8 {
@@ -58,19 +58,16 @@ namespace RRR::JS {
 		v8::String::Utf8Value utf8;
 
 		public:
-		UTF8(ENV &env, Value &value);
 		UTF8(ENV &env, Value &&value);
 		const char * operator *();
 	};
 
 	class Script {
 		private:
-		v8::Local<v8::Context> ctx;
 		v8::Local<v8::Script> script;
 
 		public:
-		Script(CTX &ctx, String &str);
 		Script(CTX &ctx, String &&str);
-		Value run();
+		Value run(CTX &ctx);
 	};
 }
