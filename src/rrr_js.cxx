@@ -5,7 +5,7 @@ extern "C" {
 	RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_js");
 };
 
-#include "lib/js/js.hxx"
+#include "lib/js/Js.hxx"
 
 int main(int argc, const char **argv) {
 	using namespace RRR::JS;

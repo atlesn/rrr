@@ -52,7 +52,7 @@ extern "C" {
 }; // extern "C"
 
 #include "../lib/util/Readfile.hxx"
-#include "../lib/js/js.hxx"
+#include "../lib/js/Js.hxx"
 
 extern "C" {
 
