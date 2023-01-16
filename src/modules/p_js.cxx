@@ -51,16 +51,14 @@ extern "C" {
 
 struct js_data {
 	struct rrr_instance_runtime_data *thread_data;
-	char *js_script;
+	char *js_file;
 };
 
-/*
 static void js_data_cleanup(void *arg) {
-	struct js_data *data = (struct js_data *data) arg;
+	struct js_data *data = (struct js_data *) arg;
 
-	RRR_FREE_IF_NOT_NULL(data->js_script);
+	RRR_FREE_IF_NOT_NULL(data->js_file);
 }
-*/
 
 static void js_data_init(struct js_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
@@ -70,10 +68,10 @@ static void js_data_init(struct js_data *data, struct rrr_instance_runtime_data 
 static int js_parse_config (struct js_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("js_script", js_script);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("js_file", js_file);
 
-	if (data->js_script == NULL || *(data->js_script) == '\0') {
-		RRR_MSG_0("js_script configuration parameter missing for js instance %s\n", config->name);
+	if (data->js_file == NULL || *(data->js_file) == '\0') {
+		RRR_MSG_0("js_file configuration parameter missing for js instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -240,6 +238,8 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 
 	js_data_init(data, thread_data);
 
+	pthread_cleanup_push(js_data_cleanup, data);
+
 	struct js_fork_callback_data fork_callback_data = {
 		thread_data
 	};
@@ -259,6 +259,7 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 	RRR_DBG_1 ("js instance %s stopping thread %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data);
 
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
