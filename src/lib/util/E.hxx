@@ -21,25 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-extern "C" {
-#include "../rrr_types.h"
-};
-
 #include <string>
-#include <memory>
-
-#include "Deleter.hxx"
-#include "E.hxx"
 
 namespace RRR::util {
-	class Readfile {
-		private:
-		std::unique_ptr<char, Deleter<char>> data;
-		rrr_biglength size;
-
+	class E {
+		std::string msg;
 		public:
-		Readfile(std::string filename, size_t max_size, bool enoent_ok);
+		E(std::string msg) : msg(msg) {}
+		operator std::string() { return msg; };
 	};
-
 }; // namespace RRR::util
 
