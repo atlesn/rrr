@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <iostream>
 #include <v8.h>
 #include <libplatform/libplatform.h>
 
@@ -143,7 +144,14 @@ namespace RRR::JS {
 	{
 	}
 
+	Function::Function() :
+		function() {
+	}
+
 	void Function::run(CTX &ctx, int argc = 0, Value argv[] = nullptr) {
+		if (empty()) {
+			throw E("Function object was empty");
+		}
 		auto scope = Scope(ctx);
 		if (argc > 0) {
 			v8::Local<v8::Value> values[argc];
@@ -271,8 +279,13 @@ namespace RRR::JS {
 	}
 
 	Script::Script(CTX &ctx, TryCatch &trycatch, std::string &&str) :
-		script(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::String::kNormalString, str.length())).ToLocalChecked())
+		script()
 	{
+		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::String::kNormalString, str.length())));
+		if (script_.IsEmpty()) {
+			throw E("Failed to compile script");
+		}
+		script = script_.ToLocalChecked();
 		compile(ctx, trycatch);
 	}
 

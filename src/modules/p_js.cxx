@@ -87,12 +87,64 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 	return ret;
 }
 
-struct js_run_data {
-	struct js_data *data = nullptr;
+class js_run_data {
+	private:
+	RRR::JS::CTX &ctx;
+	RRR::JS::TryCatch &trycatch;
+	RRR::JS::Function config;
+	RRR::JS::Function source;
+	RRR::JS::Function process;
 
-	int (*config_function)() = nullptr;
-	int (*source_function)() = nullptr;
-	int (*process_function)() = nullptr;
+	public:
+	struct js_data * const data;
+	class E : public RRR::util::E {
+		public:
+		E(std::string msg) : RRR::util::E(msg){}
+	};
+	bool hasConfig() const {
+		return !config.empty();
+	}
+	bool hasSource() const {
+		return !source.empty();
+	}
+	bool hasProcess() const {
+		return !process.empty();
+	}
+	void runConfig() {
+		config.run(ctx, 0, nullptr);
+		trycatch.ok(ctx, [](std::string msg) {
+			throw E(std::string("Failed to run config function: ") + msg);
+		});
+	}
+	void runSource() {
+		source.run(ctx, 0, nullptr);
+		trycatch.ok(ctx, [](std::string msg) {
+			throw E(std::string("Failed to run source function: ") + msg);
+		});
+	}
+	void runProcess() {
+		process.run(ctx, 0, nullptr);
+		trycatch.ok(ctx, [](std::string msg) {
+			throw E(std::string("Failed to run process function: ") + msg);
+		});
+	}
+	js_run_data(struct js_data *data, RRR::JS::CTX &ctx, RRR::JS::TryCatch &trycatch) :
+		ctx(ctx),
+		trycatch(trycatch),
+		data(data)
+	{
+		const struct rrr_cmodule_config_data *cmodule_config_data =
+			rrr_cmodule_helper_config_data_get(data->thread_data);
+		if (cmodule_config_data->config_function != NULL && *cmodule_config_data->config_function != '\0') {
+			config = ctx.get_function(cmodule_config_data->config_function);
+		}
+		if (cmodule_config_data->source_function != NULL && *cmodule_config_data->source_function != '\0') {
+			source = ctx.get_function(cmodule_config_data->source_function);
+		}
+		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
+			process = ctx.get_function(cmodule_config_data->process_function);
+		}
+	}
 };
 
 static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
@@ -103,7 +155,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 
 	using namespace RRR::JS;
 
-	struct js_run_data run_data;
 	ENV env("rrr-js");
 
 	int ret = 0;
@@ -115,14 +166,14 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto trycatch = TryCatch(ctx);
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
-
-		try {
-			auto script = Script(ctx, trycatch, (std::string) file);
+		auto script = Script(ctx, trycatch, (std::string) file);
+		script.run(ctx, trycatch);
+		if (trycatch.ok(ctx, [](std::string &&msg){
+			throw E(std::string("Exception while executing script: ") + msg);
+		})) {
+			// OK
 		}
-		catch (E e) {
-		}
-
-		run_data.data = data;
+		js_run_data run_data(data, ctx, trycatch);
 		//run_data.ctx.worker = worker;
 
 		if ((ret = rrr_cmodule_worker_loop_start (
@@ -165,19 +216,21 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	if (run_data->config_function == NULL) {
+	if (!run_data->hasConfig()) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
 				INSTANCE_D_NAME(run_data->data->thread_data));
 		goto out;
 	}
 
-	if ((ret = 0/*run_data->config_function(nullptr, INSTANCE_D_CONFIG(run_data->data->thread_data))*/) != 0) {
-		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
-				ret, INSTANCE_D_NAME(run_data->data->thread_data));
+	try {
+		run_data->runConfig();
+	}
+	catch (js_run_data::E e) {
+		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
 		ret = 1;
 		goto out;
 	}
-
+	
 	out:
 	return ret;
 }
@@ -196,27 +249,27 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		goto out;
 	}
 
-	if (is_spawn_ctx) {
-		if (run_data->source_function == NULL) {
-			RRR_BUG("BUG: Source function was NULL but we tried to source anyway in %s\n", __func__);
+	try {
+		if (is_spawn_ctx) {
+			if (!run_data->hasSource()) {
+				RRR_BUG("BUG: Source function was NULL but we tried to source anyway in %s\n", __func__);
+			}
+			run_data->runSource();
 		}
-		//ret = run_data->source_function(nullptr, message_copy, message_addr);
-		// Don't goto out here, print error further down
-	}
-	else {
-		if (run_data->process_function == NULL) {
-			RRR_BUG("BUG: Process function was NULL but we tried to source anyway in %s\n", __func__);
+		else {
+			if (!run_data->hasProcess()) {
+				RRR_BUG("BUG: Process function was NULL but we tried to process anyway in %s\n", __func__);
+			}
+			run_data->runProcess();
 		}
-		//ret = run_data->process_function(nullptr, message_copy, message_addr);
-		// Don't goto out here, print error further down
 	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Error %i returned from application in js instance %s. Mode was %s.\n",
-				ret, INSTANCE_D_NAME(run_data->data->thread_data), (is_spawn_ctx ? "sourcing" : "processing"));
+	catch (js_run_data::E e) {
+		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
 		ret = 1;
 		goto out;
 	}
+
+	//ret = run_data->source_function(nullptr, message_copy, message_addr);
 
 	out:
 	return ret;
@@ -230,7 +283,6 @@ static int js_fork (void *arg) {
 	struct js_fork_callback_data *callback_data = (struct js_fork_callback_data *) arg;
 	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
 	struct js_data *data = (struct js_data *) thread_data->private_data;
-	const struct rrr_cmodule_config_data *cmodule_config_data = nullptr;
 
 	int ret = 0;
 
@@ -243,9 +295,6 @@ static int js_fork (void *arg) {
 		ret = 1;
 		goto out;
 	}
-
-	// Contains function names etc.
-	cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
@@ -260,6 +309,7 @@ static int js_fork (void *arg) {
 		ret = 1;
 		goto out;
 	}
+
 	out:
 	return ret;
 }

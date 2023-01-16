@@ -34,8 +34,7 @@ extern "C" {
 namespace RRR::util {
 	class Readfile {
 		private:
-		std::unique_ptr<char, Deleter<char>> data;
-		rrr_biglength size;
+		std::string data;
 
 		public:
 		class E : public RRR::util::E {

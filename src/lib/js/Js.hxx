@@ -106,6 +106,10 @@ namespace RRR::JS {
 		Function(v8::Local<v8::Function> &&function);
 
 		public:
+		Function();
+		bool empty() const {
+			return function.IsEmpty();
+		}
 		void run(CTX &ctx, int argc, Value argv[]);
 	};
 

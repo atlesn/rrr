@@ -26,12 +26,9 @@ extern "C" {
 };
 
 namespace RRR::util {
-	Readfile::Readfile(std::string filename, size_t max_size, bool enoent_ok) :
-	       	data(nullptr, Deleter<char>()),
-		size(0)
-	{
-		char *data_ = nullptr;
-		rrr_biglength size_ = 0;
+	Readfile::Readfile(std::string filename, size_t max_size, bool enoent_ok) {
+		char *data_;
+		rrr_biglength size_;
 
 		int ret = 0;
 
@@ -39,15 +36,12 @@ namespace RRR::util {
 			throw E("Readfile failed");
 		}
 
-		data.reset(data_);
-		size = size_;
+		data = size_ > 0
+			? std::string(data_, rrr_size_from_biglength_bug_const(size_))
+			: std::string();
 	}
 
 	Readfile::operator std::string() {
-		size_t size_;
-		if (rrr_size_from_biglength_err(&size_, size) != 0) {
-			throw E("Size error");
-		}
-		return size_ == 0 ? std::string() : std::string(*data, size_);
+		return data;
 	}
 }; // namespace RRR::util
