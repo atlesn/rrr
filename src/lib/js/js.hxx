@@ -21,10 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "v8-callbacks.h"
-#include "v8-function-callback.h"
-#include "v8-isolate.h"
-#include <memory>
 #include <v8.h>
 
 namespace RRR::JS {

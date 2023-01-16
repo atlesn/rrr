@@ -349,8 +349,8 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([NODECOMPILE], [
-	cxx_flags="$AM_CXXFLAGS $NODE_CXXFLAGS $NODE_TEST_CXXFLAGS -w"
-	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS $NODE_TEST_LIBS"
+	cxx_flags="$AM_CXXFLAGS $NODE_CXXFLAGS -w"
+	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([ok])
@@ -380,11 +380,9 @@ AS_IF([test "x$enable_node" != xno], [
 		AC_MSG_ERROR("not found")
 	fi
 
-	NODE_CXXFLAGS="-I$node_include_dir"
-	NODE_TEST_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_CXXFLAGS="-I$node_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
 	NODE_LDFLAGS=""
 	NODE_LIBS="-lstdc++ -lnode"
-	# NODE_TEST_LIBS=-lstdc++
 
 	AC_MSG_CHECKING([V8 compilation and linking])
 	AC_LANG_CONFTEST([

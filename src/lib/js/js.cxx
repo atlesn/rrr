@@ -20,15 +20,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "js.hxx"
-#include "v8-callbacks.h"
-#include "v8-exception.h"
-#include "v8-primitive.h"
-#include "v8-template.h"
+
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <v8.h>
 #include <libplatform/libplatform.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
