@@ -1223,6 +1223,25 @@ sub process {
 	return 1;
 }
 .fi
+.SS js (PAI)
+The js module makes it possible to process and generate messages in a custom  JavaScript.
+
+The following configuration parameters are available in the
+.B js
+module:
+
+.Bl -tag -width -indent
+.It js_file=FILENAME
+The file containing the JavaScript to run. The script will be run once when the program starts, and global code outside of functions will be executed.
+If multiple workers are used by setting the parameter
+.B cmodule_workers,
+the script will run once for each worker.
+
+.It js_process_function=NAME
+The function to call when a message from another module should be processed.
+
+.El
+.It cmodule_name=NAME
 .SS cmodule (P)
 This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
 written in the RRR source in the directory /src/cmodules/ and then compiled (just compile RRR as usual and

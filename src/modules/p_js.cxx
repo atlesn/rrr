@@ -159,7 +159,7 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	struct rrr_msg_msg *message_copy = rrr_msg_msg_duplicate(message);
 	if (message_copy == NULL) {
-		RRR_MSG_0("Could not allocate message in cmodule_process_callback\n");
+		RRR_MSG_0("Could not allocate message in %s\n");
 		ret = 1;
 		goto out;
 	}
@@ -198,6 +198,7 @@ static int js_fork (void *arg) {
 	struct js_fork_callback_data *callback_data = (struct js_fork_callback_data *) arg;
 	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
 	struct js_data *data = (struct js_data *) thread_data->private_data;
+	const struct rrr_cmodule_config_data *cmodule_config_data = nullptr;
 
 	int ret = 0;
 
@@ -209,6 +210,9 @@ static int js_fork (void *arg) {
 		ret = 1;
 		goto out;
 	}
+
+	// Contains function names etc.
+	cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
