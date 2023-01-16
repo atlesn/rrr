@@ -48,7 +48,6 @@ namespace RRR::util {
 		if (rrr_size_from_biglength_err(&size_, size) != 0) {
 			throw E("Size error");
 		}
-		printf("Data: %s size: %llu\n", *data, size_);
-		return std::string(*data, size_);
+		return size_ == 0 ? std::string() : std::string(*data, size_);
 	}
 }; // namespace RRR::util
