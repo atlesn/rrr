@@ -97,8 +97,9 @@ AS_IF([ test -f ".development" ], [
 	AC_MSG_RESULT([none])
 ])
 
-CFLAGS_COMMON="$CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
-AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
+CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
+CFLAGS_COMMON="$CFLAGS_CODECOV -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
+AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
 
 AC_MSG_CHECKING([for AM_CFLAGS])
@@ -118,7 +119,8 @@ if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CX
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_COMMON -O3"
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3"
+	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])
 	CXXFLAGS=""
@@ -350,7 +352,7 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([NODECOMPILE], [
-	cxx_flags="$AM_CXXFLAGS $NODE_CXXFLAGS -w"
+	cxx_flags="$TEST_CXXFLAGS $NODE_CXXFLAGS -w"
 	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
 	if test "$?" = 0; then
