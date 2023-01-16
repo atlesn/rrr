@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern "C" {
 #include <sys/socket.h>
+#include "../ip/ip_util.h"
 };
 
 namespace RRR::JS {
@@ -31,15 +32,21 @@ namespace RRR::JS {
 	}
 
 	void Message::cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		printf("Get ip");
+		char ip_str[128];
+		v8::Local<v8::Value> data = info.Data();
+		Message *self = reinterpret_cast<Message*>(&data);
+		auto contents = self->ip_addr->GetContents();
+		size_t length = self->ip_addr->ByteLength();
+		rrr_ip_to_str(ip_str, sizeof(ip_str), (const sockaddr *) contents.AllocationBase(), length);
+		printf("STR: %s\n", ip_str);
 	}
 
 	Message::Message(CTX &ctx) :
 		Value((v8::Local<v8::Value>) v8::Object::New(ctx)),
 		ip_addr(v8::ArrayBuffer::New(ctx, sizeof(struct sockaddr_storage))),
 		ip_so_type(v8::String::NewFromUtf8(ctx, "udp")),
-		ip_set(v8::Function::New(ctx, cb_ip_set).ToLocalChecked()),
-		ip_get(v8::Function::New(ctx, cb_ip_get).ToLocalChecked())
+		ip_set(v8::Function::New(ctx, cb_ip_set, *this).ToLocalChecked()),
+		ip_get(v8::Function::New(ctx, cb_ip_get, *this).ToLocalChecked())
 	{
 		v8::Local<v8::Value> value = *this;
 		v8::Local<v8::Object> parent = value->ToObject((v8::Isolate *) ctx);
