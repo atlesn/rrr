@@ -38,7 +38,12 @@ namespace RRR::util {
 		rrr_biglength size;
 
 		public:
+		class E : public RRR::util::E {
+			public:
+			E(std::string str) : RRR::util::E(str) {}
+		};
 		Readfile(std::string filename, size_t max_size, bool enoent_ok);
+		operator std::string();
 	};
 
 }; // namespace RRR::util

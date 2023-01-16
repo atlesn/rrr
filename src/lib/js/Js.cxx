@@ -133,13 +133,9 @@ namespace RRR::JS {
 		return Value(str);
 	}
 
-	E::E(CTX &ctx, std::string &&str) :
-			str(ctx, str.c_str())
+	E::E(std::string &&str) :
+		RRR::util::E(str)
 	{
-	}
-
-	const char * E::operator * () {
-		return *str;
 	}
 
 	Function::Function(v8::Local<v8::Function> &&function) :
@@ -189,19 +185,19 @@ namespace RRR::JS {
 		{
 			auto result = console->Set(ctx, String(*this, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
-				throw E(*this, "Failed to intitialize globals\n");
+				throw E("Failed to intitialize globals\n");
 			}
 		}
 		{
 			auto result = console->Set(ctx, String(*this, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
-				throw E(*this, "Failed to intitialize globals\n");
+				throw E("Failed to intitialize globals\n");
 			}
 		}
 		{
 			auto result = ctx->Global()->Set(ctx, String(*this, "console"), console);
 			if (!result.FromMaybe(false)) {
-				throw E(*this, "Failed to intitialize globals\n");
+				throw E("Failed to intitialize globals\n");
 			}
 		}
 	}
@@ -222,15 +218,15 @@ namespace RRR::JS {
 		v8::MaybeLocal<v8::Value> value = ctx->Global()->Get(ctx, String(*this, name));
 		if (value.IsEmpty()) {
 			std::string msg("Error while finding function '" + std::string(name) + "'");
-			throw E(*this, msg.c_str());
+			throw E(msg.c_str());
 		}
 		if (value.ToLocalChecked()->IsUndefined()) {
 			std::string msg("Function '" + std::string(name) + "' not found");
-			throw E(*this, msg.c_str());
+			throw E(msg.c_str());
 		}
 		if (!value.ToLocalChecked()->IsFunction()) {
 			std::string msg("Name '" + std::string(name) + "' was not a function");
-			throw E(*this, msg.c_str());
+			throw E(msg.c_str());
 		}
 		return Function(value.ToLocalChecked().As<v8::Function>());
 	}
@@ -239,7 +235,7 @@ namespace RRR::JS {
 		auto &ctx = *this;
 		function.run(ctx, argc, argv);
 		if (trycatch.ok(ctx, [ctx, name](const char *msg) mutable {
-			throw E(ctx, (std::string("Exception while running function '") + name + "': " + msg + "\n").c_str());
+			throw E(std::string("Exception while running function '") + name + "': " + msg + "\n");
 		})) {
 			// OK
 		}
@@ -260,20 +256,30 @@ namespace RRR::JS {
 		ctx.ctx->Exit();
 	}
 
-	Script::Script(CTX &ctx, TryCatch &trycatch, String &&str) :
-		script(v8::Script::Compile(ctx, str).ToLocalChecked())
-	{
+	void Script::compile(CTX &ctx, TryCatch &trycatch) {
 		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
-			throw E(ctx, std::string("Failed to compile script: ") + msg);
+			throw E(std::string("Failed to compile script: ") + msg);
 		})) {
 			// OK
 		}
 	}
 
+	Script::Script(CTX &ctx, TryCatch &trycatch, String &&str) :
+		script(v8::Script::Compile(ctx, str).ToLocalChecked())
+	{
+		compile(ctx, trycatch);
+	}
+
+	Script::Script(CTX &ctx, TryCatch &trycatch, std::string &&str) :
+		script(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::String::kNormalString, str.length())).ToLocalChecked())
+	{
+		compile(ctx, trycatch);
+	}
+
 	void Script::run(CTX &ctx, TryCatch &trycatch) {
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
 		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
-			throw E(ctx, std::string("Exception while running script: ") + std::string(msg));
+			throw E(std::string("Exception while running script: ") + std::string(msg));
 		})) {
 			// OK
 		}

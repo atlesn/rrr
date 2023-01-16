@@ -29,6 +29,7 @@ namespace RRR::util {
 		public:
 		E(std::string msg) : msg(msg) {}
 		operator std::string() { return msg; };
+		const char * operator *() { return msg.c_str(); };
 	};
 }; // namespace RRR::util
 

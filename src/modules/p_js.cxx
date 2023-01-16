@@ -108,20 +108,45 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	run_data.data = data;
-	//run_data.ctx.worker = worker;
+	try {
+		auto isolate = Isolate(env);
+		auto ctx = CTX(env);
+		auto scope = Scope(ctx);
+		auto trycatch = TryCatch(ctx);
 
-	if ((ret = rrr_cmodule_worker_loop_start (
-			worker,
-			configuration_callback,
-			(void *) &run_data,
-			process_callback,
-			(void *) &run_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
-	)) != 0) {
-		RRR_MSG_0("Error from worker loop in %s\n", __func__);
-		// Don't goto out, run cleanup functions
+		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
+
+		try {
+			auto script = Script(ctx, trycatch, (std::string) file);
+		}
+		catch (E e) {
+		}
+
+		run_data.data = data;
+		//run_data.ctx.worker = worker;
+
+		if ((ret = rrr_cmodule_worker_loop_start (
+				worker,
+				configuration_callback,
+				(void *) &run_data,
+				process_callback,
+				(void *) &run_data,
+				custom_tick_callback,
+				custom_tick_callback_arg
+		)) != 0) {
+			RRR_MSG_0("Error from worker loop in %s\n", __func__);
+			// Don't goto out, run cleanup functions
+		}
+	}
+	catch (E e) {
+		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
+		ret = 1;
+		goto out;
+	}
+	catch (RRR::util::Readfile::E e) {
+		RRR_MSG_0("Failed while reading script %s: %s\n", data->js_file, *e);
+		ret = 1;
+		goto out;
 	}
 
 /*	if (run_data.ctx.application_ptr != NULL) {
@@ -129,6 +154,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				INSTANCE_D_NAME(data->thread_data));
 	}*/
 
+	out:
 	return ret;
 }
 

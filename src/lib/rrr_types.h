@@ -109,8 +109,13 @@ static inline size_t rrr_size_from_biglength_trunc (rrr_biglength a) {
 	return a;
 }
 
-static inline size_t rrr_size_from_biglength_bug_const (rrr_biglength a) {
-	return a;
+static inline int rrr_size_from_biglength_err (size_t *target, rrr_biglength operand) {
+	*target = (size_t) operand;
+	if (*target != operand) {
+		RRR_MSG_0("Error: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
+		return 1;
+	}
+	return 0;
 }
 
 #endif

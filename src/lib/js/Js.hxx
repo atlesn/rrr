@@ -21,7 +21,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+extern "C" {
+#include "../rrr_types.h"
+};
+
 #include <v8.h>
+#include "../util/E.hxx"
 
 namespace RRR::JS {
 	class CTX;
@@ -86,13 +91,9 @@ namespace RRR::JS {
 		operator Value();
 	};
 
-	class E {
-		private:
-		String str;
-
+	class E : public RRR::util::E {
 		public:
-		E(CTX &ctx, std::string &&str);
-		const char * operator *();
+		E( std::string &&str);
 	};
 
 	class Function {
@@ -165,9 +166,11 @@ namespace RRR::JS {
 	class Script {
 		private:
 		v8::Local<v8::Script> script;
+		void compile(CTX &ctx, TryCatch &trycatch);
 
 		public:
 		Script(CTX &ctx, TryCatch &trycatch, String &&str);
+		Script(CTX &ctx, TryCatch &trycatch, std::string &&str);
 		void run(CTX &ctx, TryCatch &trycatch);
 	};
 }

@@ -21,10 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+extern "C" {
+#include "../allocator.h"
+};
+
 namespace RRR::util {
 	template <typename T> struct Deleter {
 		void operator()(T *p) {
-			free(p);
+			rrr_free(p);
 		}
 	};
 }; // namespace RRR::util
