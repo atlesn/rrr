@@ -59,7 +59,7 @@ int main(int argc, const char **argv) {
 		Value arg = String(ctx, "arg");
 
 		script.run(ctx, trycatch);
-		ctx.run_function(trycatch, "process", 1, &arg);
+		// ctx.run_function(trycatch, "process", 1, &arg);
 	}
 	catch (E &e) {
 		fprintf(stderr, "%s\n", *e);
