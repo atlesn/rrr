@@ -161,6 +161,11 @@ do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf
 
+echo "With node: $RRR_WITH_NODE"
+if test "x$RRR_WITH_NODE" != 'xno'; then
+	do_test_socket test_js.conf
+fi
+
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then
 	do_test_socket test_perl5.conf
