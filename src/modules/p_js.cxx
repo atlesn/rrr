@@ -53,6 +53,7 @@ extern "C" {
 
 #include "../lib/util/Readfile.hxx"
 #include "../lib/js/Js.hxx"
+#include "../lib/js/Message.hxx"
 
 extern "C" {
 
@@ -123,7 +124,8 @@ class js_run_data {
 		});
 	}
 	void runProcess() {
-		process.run(ctx, 0, nullptr);
+		RRR::JS::Message message(ctx);
+		process.run(ctx, 1, &message);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});

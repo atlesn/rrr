@@ -1,4 +1,4 @@
-.Dd 2022-12-22
+.Dd 2023-01-16
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1242,6 +1242,26 @@ The function to call when a message from another module should be processed.
 
 .El
 .It cmodule_name=NAME
+
+The
+.B source
+and
+.B process
+functions both receive an RRR message object whenever called.
+For the
+.B source
+function, this message is empty.
+The message has the following structure:
+.nf
+{
+  ip_addr: new ArrayBuffer(),  // Operating system raw IP address information (struct sockaddr)
+  ip_so_type: "",              // Protocol, set to udp or tcp. May also be empty.
+
+  ip_set: function(ip, port){}              // Helper function to set adddress of ip_addr field
+  ip_get: function(){ return [ip, port]; }  // Helper function to retrieve adddress of ip_addr field
+}
+.fi
+
 .SS cmodule (P)
 This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
 written in the RRR source in the directory /src/cmodules/ and then compiled (just compile RRR as usual and
