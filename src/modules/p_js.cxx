@@ -49,6 +49,13 @@ extern "C" {
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
+}; // extern "C"
+
+#include "../lib/util/Readfile.hxx"
+#include "../lib/js/js.hxx"
+
+extern "C" {
+
 struct js_data {
 	struct rrr_instance_runtime_data *thread_data;
 	char *js_file;
@@ -94,11 +101,12 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	(void)(configuration_callback_arg);
 	(void)(process_callback_arg);
 
-	int ret = 0;
+	using namespace RRR::JS;
 
 	struct js_run_data run_data;
+	ENV env("rrr-js");
 
-	// LOAD JS
+	int ret = 0;
 
 	run_data.data = data;
 	//run_data.ctx.worker = worker;
@@ -204,6 +212,7 @@ static int js_fork (void *arg) {
 		ret = 1;
 		goto out;
 	}
+
 	if (rrr_cmodule_helper_parse_config(thread_data, "js", "function") != 0) {
 		ret = 1;
 		goto out;

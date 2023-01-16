@@ -140,6 +140,7 @@ SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
 
+AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
