@@ -349,16 +349,13 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([NODECOMPILE], [
-	flags="$AM_CXXFLAGS $NODE_CXXFLAGS $NODE_TEST_CXXFLAGS $AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS $NODE_TEST_LIBS"
-	$CXX -o conftest $flags conftest.cpp && ./conftest
+	cxx_flags="$AM_CXXFLAGS $NODE_CXXFLAGS $NODE_TEST_CXXFLAGS -w"
+	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS $NODE_TEST_LIBS"
+	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([ok])
 	else
-		echo "Not ok"
-		echo "== Dumping failed program ==" 1>&2
-		cat conftest.cpp 1>&2
-		echo "== Dumping end ==" 2>&2
-		AC_MSG_ERROR([Failed: $CXX -o conftest $flags conftest.cpp && ./conftest])
+		AC_MSG_ERROR([Failed: $CXX $cxx_Flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])
 	fi
 ])
 
