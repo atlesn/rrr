@@ -99,6 +99,10 @@ namespace RRR::JS {
 		return *utf8;
 	}
 
+	int UTF8::length() {
+		return utf8.length();
+	}
+
 	String::String(v8::Isolate *isolate, const char *str) :
 		str(v8::String::NewFromUtf8(isolate, str, v8::NewStringType::kNormal).ToLocalChecked()),
 		utf8(isolate, this->str)
@@ -130,6 +134,10 @@ namespace RRR::JS {
 
 	bool String::contains(const char *needle) {
 		return strstr(*utf8, needle) != NULL;
+	}
+
+	int String::length() {
+		return utf8.length();
 	}
 
 	U32::U32(v8::Isolate *isolate, uint32_t u) :

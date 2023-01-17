@@ -79,6 +79,7 @@ namespace RRR::JS {
 		UTF8(CTX &ctx, v8::Local<v8::String> &str);
 		UTF8(v8::Isolate *isolate, v8::Local<v8::String> &str);
 		const char * operator *();
+		int length();
 	};
 
 	class String {
@@ -94,6 +95,7 @@ namespace RRR::JS {
 		const char * operator *();
 		operator Value();
 		bool contains(const char *needle);
+		int length();
 	};
 
 	class U32 : public v8::Local<v8::Integer> {

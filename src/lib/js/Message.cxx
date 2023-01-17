@@ -35,6 +35,39 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(buffer);
 	}
 
+	void Message::cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto result = String(isolate, message->ip_so_type.c_str());
+		info.GetReturnValue().Set((v8::Local<v8::String>) result);
+	}
+
+	void Message::cb_ip_so_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+
+		auto string = v8::Local<v8::String>();
+		if (!value->ToString(ctx).ToLocal(&string)) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a string")));
+			return;
+		}
+
+		auto string_ = String(isolate, string);
+		if (string_.length() > 0 && strcmp(*string_, "udp") != 0 && strcmp(*string_, "tcp") != 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not 'udp', 'tcp' nor empty")));
+			return;
+		}
+
+		message->ip_so_type = *string_;
+	}
+
+	void Message::cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change value of ip_addr field")));
+	}
+
 	void Message::cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
@@ -127,7 +160,8 @@ namespace RRR::JS {
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set))
 	{
 		tmpl->SetInternalFieldCount(1);
-		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get);
+		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_ip_addr_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set, v8::Local<v8::Value>());
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
