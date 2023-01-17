@@ -37,9 +37,14 @@ namespace RRR::JS {
 		socklen_t ip_addr_len;
 		std::string ip_so_type;
 
+		template <class T> static Message *self(const T &info) {
+			auto self = info.Holder();
+			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
+			return (Message *) wrap->Value();
+		}
 		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
 
 		protected:
 		Message(CTX &ctx, v8::Local<v8::Object> obj);
@@ -51,6 +56,7 @@ namespace RRR::JS {
 			private:
 			v8::Local<v8::ObjectTemplate> tmpl;
 			v8::Local<v8::FunctionTemplate> tmpl_ip_get;
+			v8::Local<v8::FunctionTemplate> tmpl_ip_set;
 
 			protected:
 			Template(CTX &ctx);

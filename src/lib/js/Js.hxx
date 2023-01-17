@@ -88,11 +88,17 @@ namespace RRR::JS {
 
 		public:
 		String(v8::Isolate *isolate, const char *str);
-		String(v8::Isolate *isolate, v8::Local<v8::String> &&str);
+		String(v8::Isolate *isolate, v8::Local<v8::String> str);
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
 		const char * operator *();
 		operator Value();
+		bool contains(const char *needle);
+	};
+
+	class U32 : public v8::Local<v8::Integer> {
+		public:
+		U32(v8::Isolate *isolate, uint32_t u);
 	};
 
 	class E : public RRR::util::E {

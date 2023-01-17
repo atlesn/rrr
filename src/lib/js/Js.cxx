@@ -105,7 +105,7 @@ namespace RRR::JS {
 	{
 	}
 
-	String::String(v8::Isolate *isolate, v8::Local<v8::String> &&str) :
+	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
 		str(str),
 		utf8(isolate, str)
 	{
@@ -126,6 +126,15 @@ namespace RRR::JS {
 
 	String::operator Value () {
 		return Value(str);
+	}
+
+	bool String::contains(const char *needle) {
+		return strstr(*utf8, needle) != NULL;
+	}
+
+	U32::U32(v8::Isolate *isolate, uint32_t u) :
+		v8::Local<v8::Integer>(v8::Integer::NewFromUnsigned(isolate, u))
+	{
 	}
 
 	E::E(std::string &&str) :
