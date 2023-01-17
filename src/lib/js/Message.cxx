@@ -27,6 +27,7 @@ extern "C" {
 #include <arpa/inet.h>
 #include "../ip/ip_util.h"
 #include "../mqtt/mqtt_topic.h"
+#include "../util/rrr_time.h"
 };
 
 namespace RRR::JS {
@@ -181,8 +182,37 @@ namespace RRR::JS {
 		message->topic = topic_;
 	}
 
-	void Message::cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
-	void Message::cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		info.GetReturnValue().Set(v8::BigInt::NewFromUnsigned(isolate, message->timestamp));
+	}
+
+	void Message::cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto timestamp = v8::Local<v8::BigInt>();
+		if (!value->ToBigInt(ctx).ToLocal(&timestamp)) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a valid timestamp")));
+			return;
+		}
+
+		// Only 63 bit timestamp is supported here, which is OK. RRR
+		// otherwise support positive timestamps but then with 64 bits.
+		bool lossless = false;
+		int64_t timestamp_ = timestamp->Int64Value(&lossless);
+		if (timestamp_ < 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for timestamp was negative")));
+			return;
+		}
+		if (!lossless) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for timestamp was truncated")));
+			return;
+		}
+		message->timestamp = (uint64_t) timestamp_;
+	}
+
 	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
 	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
 	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
@@ -199,11 +229,16 @@ namespace RRR::JS {
 		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw, v8::Local<v8::Value>());
 		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set, v8::Local<v8::Value>());
 		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set, v8::Local<v8::Value>());
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
 		Object(obj),
-		ip_so_type("udp")
+		ip_so_type("udp"),
+		topic(),
+		timestamp(rrr_time_get_64()),
+		type(MSG_TYPE_MSG),
+		class_(MSG_CLASS_DATA)
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;

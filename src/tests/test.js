@@ -5,7 +5,7 @@ function config() {
 function process(message) {
 	let catched = false;
 
-	console.log("Process function");
+	console.log("Process function\n");
 
 	Object.keys(message).forEach((key) => {
 		console.log("Key: " + key + "\n");
@@ -32,7 +32,6 @@ function process(message) {
 	if (message.ip_addr.byteLength == 0) {
 		throw("ip_addr did not a length > 0");
 	}
-
 	console.log("Length of IP: " + message.ip_addr.byteLength + "\n");
 
 	catched = false;
@@ -61,6 +60,7 @@ function process(message) {
 	if (message.ip_so_type !== "udp") {
 		throw("ip_so_type value mismatch\n");
 	}
+	console.log("sotype: " + message.ip_so_type + "\n");
 
 	// Message topic field
 	catched = false;
@@ -78,5 +78,23 @@ function process(message) {
 	if (message.topic !== "a/b/c") {
 		throw("topic value mismatch\n");
 	}
-	console.log("Message topic: " + message.topic + "\n");
+	console.log("Topic: " + message.topic + "\n");
+
+	// Timestamp field
+	catched = false;
+	try {
+		message.timestamp = "%%%";
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("timestamp field accepted invalid value\n");
+	}
+	const timestamp = BigInt(message.timestamp);
+	message.timestamp += BigInt(1);
+	if (message.timestamp - timestamp != 1) {
+		throw("timestamp value mismatch\n");
+	}
+	console.log("Timestamp: " + message.timestamp + "\n");
 }
