@@ -73,11 +73,11 @@ namespace RRR::JS {
 }; // namespace RRR::JS
 
 /*
-{
   ip_addr: new ArrayBuffer(),  // Operating system raw IP address information (struct sockaddr)
   ip_so_type: "",              // Protocol, set to udp or tcp. May also be empty.
-
-  ip_set: function(ip, port){}              // Helper function to set adddress of ip_addr field
-  ip_get: function(){ return [ip, port]; }  // Helper function to retrieve adddress of ip_addr field
-}
+  topic: "",                   // MQTT topic of the message
+  timestamp: 0,                // The timestamp of the message in microseconds
+  data: new ArrayBuffer(),     // The raw data of the message (ignored when arrays are used)
+  type: 1,                     // Message type
+  class: 1                     // Message class
 */

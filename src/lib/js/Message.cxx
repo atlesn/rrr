@@ -190,13 +190,3 @@ namespace RRR::JS {
 		return message;
 	}
 }; // namespace RRR::JS
-
-/*
-{
-  ip_addr: new ArrayBuffer(),  // Operating system raw IP address information (struct sockaddr)
-  ip_so_type: "",              // Protocol, set to udp or tcp. May also be empty.
-
-  ip_set: function(ip, port){}              // Helper function to set adddress of ip_addr field
-  ip_get: function(){ return [ip, port]; }  // Helper function to retrieve adddress of ip_addr field
-}
-*/
