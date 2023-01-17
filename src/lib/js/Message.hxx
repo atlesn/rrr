@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 extern "C" {
+#include <sys/socket.h>
 //#include "../rrr_types.h"
 };
 
@@ -30,18 +31,35 @@ extern "C" {
 #include "Js.hxx"
 
 namespace RRR::JS {
-	class Message : public Value {
+	class Message : public Object {
 		private:
-		v8::Local<v8::ArrayBuffer> ip_addr;
-		v8::Local<v8::String> ip_so_type;
-		v8::Local<v8::Function> ip_set;
-		v8::Local<v8::Function> ip_get;
+		struct sockaddr_storage ip_addr;
+		socklen_t ip_addr_len;
+		std::string ip_so_type;
 
-		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 
+		protected:
+		Message(CTX &ctx, v8::Local<v8::Object> obj);
+
 		public:
-		Message(CTX &ctx);
+		class Template {
+			friend class Message;
+
+			private:
+			v8::Local<v8::ObjectTemplate> tmpl;
+			v8::Local<v8::FunctionTemplate> tmpl_ip_get;
+
+			protected:
+			Template(CTX &ctx);
+
+			public:
+			Message new_instance(CTX &ctx);
+		};
+
+		static Template make_template(CTX &ctx);
 	};
 }; // namespace RRR::JS
 

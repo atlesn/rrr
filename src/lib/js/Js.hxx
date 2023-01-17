@@ -60,8 +60,13 @@ namespace RRR::JS {
 
 	class Value : public v8::Local<v8::Value> {
 		public:
-		Value(v8::Local<v8::Value> &&value);
-		Value(v8::Local<v8::String> &&value);
+		Value(v8::Local<v8::Value> value);
+	//	Value(v8::Local<v8::String> &&value);
+	};
+
+	class Object : public v8::Local<v8::Object> {
+		public:
+		Object(v8::Local<v8::Object> object);
 	};
 
 	class UTF8 {
@@ -82,8 +87,7 @@ namespace RRR::JS {
 		UTF8 utf8;
 
 		public:
-		String(CTX &ctx, const char *str);
-		String(CTX &ctx, v8::Local<v8::String> &&str);
+		String(v8::Isolate *isolate, const char *str);
 		String(v8::Isolate *isolate, v8::Local<v8::String> &&str);
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();

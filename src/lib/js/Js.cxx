@@ -65,13 +65,13 @@ namespace RRR::JS {
 	{
 	}
 
-	Value::Value(v8::Local<v8::Value> &&value) :
+	Value::Value(v8::Local<v8::Value> value) :
 		v8::Local<v8::Value>(value)
 	{
 	}
 
-	Value::Value(v8::Local<v8::String> &&value) :
-		v8::Local<v8::Value>(value)
+	Object::Object(v8::Local<v8::Object> object) :
+		v8::Local<v8::Object>(object)
 	{
 	}
 
@@ -99,15 +99,9 @@ namespace RRR::JS {
 		return *utf8;
 	}
 
-	String::String(CTX &ctx, const char *str) :
-		str(v8::String::NewFromUtf8(ctx, str, v8::NewStringType::kNormal).ToLocalChecked()),
-		utf8(ctx, this->str)
-	{
-	}
-
-	String::String(CTX &ctx, v8::Local<v8::String> &&str) :
-		str(str),
-		utf8(ctx, str)
+	String::String(v8::Isolate *isolate, const char *str) :
+		str(v8::String::NewFromUtf8(isolate, str, v8::NewStringType::kNormal).ToLocalChecked()),
+		utf8(isolate, this->str)
 	{
 	}
 

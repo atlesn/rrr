@@ -27,33 +27,60 @@ extern "C" {
 };
 
 namespace RRR::JS {
-	void Message::cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		printf("Set ip\n");
+	void Message::cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto self = info.Holder();
+		auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
+		auto message = (Message *) wrap->Value();
+		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
+		info.GetReturnValue().Set(buffer);
+	}
+
+	void Message::cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		printf("Set ip %i\n", info.kArgsLength);
 	}
 
 	void Message::cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto self = info.Holder();
+		auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
+		auto message = (Message *) wrap->Value();
 		char ip_str[128];
-		v8::Local<v8::Value> data = info.Data();
-		Message *self = reinterpret_cast<Message*>(&data);
-		auto contents = self->ip_addr->GetContents();
-		size_t length = self->ip_addr->ByteLength();
-		rrr_ip_to_str(ip_str, sizeof(ip_str), (const sockaddr *) contents.AllocationBase(), length);
-		printf("STR: %s\n", ip_str);
+		rrr_ip_to_str(ip_str, sizeof(ip_str), (const sockaddr *) &message->ip_addr, message->ip_addr_len);
+
+		info.GetReturnValue().Set((v8::Local<v8::Value>) String(isolate, ip_str));
 	}
 
-	Message::Message(CTX &ctx) :
-		Value((v8::Local<v8::Value>) v8::Object::New(ctx)),
-		ip_addr(v8::ArrayBuffer::New(ctx, sizeof(struct sockaddr_storage))),
-		ip_so_type(v8::String::NewFromUtf8(ctx, "udp")),
-		ip_set(v8::Function::New(ctx, cb_ip_set, *this).ToLocalChecked()),
-		ip_get(v8::Function::New(ctx, cb_ip_get, *this).ToLocalChecked())
+	Message::Template::Template(CTX &ctx) :
+		tmpl(v8::ObjectTemplate::New(ctx)),
+		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get))
 	{
-		v8::Local<v8::Value> value = *this;
-		v8::Local<v8::Object> parent = value->ToObject((v8::Isolate *) ctx);
-		parent->Set(ctx, String(ctx, "ip_addr"), ip_addr).Check();
+		tmpl->SetInternalFieldCount(1);
+		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get);
+	}
+
+	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
+		Object(obj),
+		ip_so_type("udp")
+	{
+		memset(&ip_addr, 0, sizeof(ip_addr));
+		ip_addr_len = 0;
+		/*parent->Set(ctx, String(ctx, "ip_addr"), ip_addr).Check();
 		parent->Set(ctx, String(ctx, "ip_so_type"), ip_so_type).Check();
 		parent->Set(ctx, String(ctx, "ip_set"), ip_set).Check();
-		parent->Set(ctx, String(ctx, "ip_get"), ip_get).Check();
+		parent->Set(ctx, String(ctx, "ip_get"), ip_get).Check();*/
+	}
+
+	Message::Template Message::make_template(CTX &ctx) {
+		return Template(ctx);
+	}
+
+	Message Message::Template::new_instance(CTX &ctx) {
+		Message message(ctx, tmpl->NewInstance(ctx).ToLocalChecked());
+
+		message->SetInternalField(0, v8::External::New(ctx, &message));
+		message->Set(ctx, String(ctx, "ip_get"), tmpl_ip_get->GetFunction(ctx).ToLocalChecked()).Check();
+
+		return message;
 	}
 }; // namespace RRR::JS
 

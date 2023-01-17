@@ -95,6 +95,7 @@ class js_run_data {
 	RRR::JS::Function config;
 	RRR::JS::Function source;
 	RRR::JS::Function process;
+	RRR::JS::Message::Template msg_tmpl;
 
 	public:
 	struct js_data * const data;
@@ -124,8 +125,9 @@ class js_run_data {
 		});
 	}
 	void runProcess() {
-		RRR::JS::Message message(ctx);
-		process.run(ctx, 1, &message);
+		RRR::JS::Message message(msg_tmpl.new_instance(ctx));
+		RRR::JS::Value arg(message);
+		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
@@ -133,7 +135,8 @@ class js_run_data {
 	js_run_data(struct js_data *data, RRR::JS::CTX &ctx, RRR::JS::TryCatch &trycatch) :
 		ctx(ctx),
 		trycatch(trycatch),
-		data(data)
+		data(data),
+		msg_tmpl(RRR::JS::Message::make_template(ctx))
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
