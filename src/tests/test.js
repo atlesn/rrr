@@ -5,11 +5,14 @@ function config() {
 function process(message) {
 	let catched = false;
 
-	console.log("Process function message " + message.ip_so_type + "\n");
+	console.log("Process function");
 
 	Object.keys(message).forEach((key) => {
 		console.log("Key: " + key + "\n");
 	});
+
+	// Let any exceptions propagate causing test to fail unless
+	// we provoke the exception to be catch and test for that.
 
 	// Test ip_set / ip_get
 	message.ip_set("1.2.3.4", "5");
@@ -59,5 +62,21 @@ function process(message) {
 		throw("ip_so_type value mismatch\n");
 	}
 
-	// Let exceptions propagate causing test to fail
+	// Message topic field
+	catched = false;
+	try {
+		message.topic = "#/#/#";
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("topic field accepted invalid value\n");
+	}
+	message.topic = "";
+	message.topic = "a/b/c";
+	if (message.topic !== "a/b/c") {
+		throw("topic value mismatch\n");
+	}
+	console.log("Message topic: " + message.topic + "\n");
 }

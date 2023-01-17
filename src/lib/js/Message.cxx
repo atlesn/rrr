@@ -26,9 +26,15 @@ extern "C" {
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "../ip/ip_util.h"
+#include "../mqtt/mqtt_topic.h"
 };
 
 namespace RRR::JS {
+	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
+	}
+
 	void Message::cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto message = self(info);
 		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
@@ -61,11 +67,6 @@ namespace RRR::JS {
 		}
 
 		message->ip_so_type = *string_;
-	}
-
-	void Message::cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
-		auto isolate = info.GetIsolate();
-		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change value of ip_addr field")));
 	}
 
 	void Message::cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
@@ -154,14 +155,50 @@ namespace RRR::JS {
 		message->ip_addr_len = tmp_addr_len;
 	}
 
+	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		info.GetReturnValue().Set((v8::Local<v8::Value>) String(isolate, message->topic));
+	}
+
+	void Message::cb_topic_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto topic = v8::Local<v8::Value>();
+		if (!value->ToString(ctx).ToLocal(&topic)) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a string")));
+			return;
+		}
+		auto topic_ = String(isolate, topic->ToString(ctx).ToLocalChecked());
+		if (topic_.length() == 0) {
+			// OK, no topic
+		}
+		else if (rrr_mqtt_topic_validate_name(*topic_) != 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a valid MQTT topic")));
+			return;
+		}
+		message->topic = topic_;
+	}
+
+	void Message::cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
+	void Message::cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
+	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
+	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
+	void Message::cb_class_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+
 	Message::Template::Template(CTX &ctx) :
 		tmpl(v8::ObjectTemplate::New(ctx)),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set))
 	{
 		tmpl->SetInternalFieldCount(1);
-		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_ip_addr_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw, v8::Local<v8::Value>());
 		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set, v8::Local<v8::Value>());
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
@@ -170,10 +207,6 @@ namespace RRR::JS {
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
-		/*parent->Set(ctx, String(ctx, "ip_addr"), ip_addr).Check();
-		parent->Set(ctx, String(ctx, "ip_so_type"), ip_so_type).Check();
-		parent->Set(ctx, String(ctx, "ip_set"), ip_set).Check();
-		parent->Set(ctx, String(ctx, "ip_get"), ip_get).Check();*/
 	}
 
 	Message::Template Message::make_template(CTX &ctx) {

@@ -115,12 +115,23 @@ namespace RRR::JS {
 	{
 	}
 
+	String::String(v8::Isolate *isolate, std::string str) :
+		str(v8::String::NewFromUtf8(isolate, str.c_str(), v8::NewStringType::kNormal).ToLocalChecked()),
+		utf8(isolate, this->str)
+	{
+	}
+
 	String::operator v8::Local<v8::String>() {
 		return str;
 	}
 
 	String::operator v8::Local<v8::Value>() {
 		return str;
+	}
+
+	String::operator std::string() {
+		static const char *empty = "";
+		return std::string(str.IsEmpty() ? empty : *utf8);
 	}
 
 	const char * String::operator * () {

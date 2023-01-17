@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern "C" {
 #include <sys/socket.h>
-//#include "../rrr_types.h"
+#include "../messages/msg_msg_struct.h"
 };
 
 #include <v8.h>
@@ -36,16 +36,30 @@ namespace RRR::JS {
 		struct sockaddr_storage ip_addr;
 		socklen_t ip_addr_len;
 		std::string ip_so_type;
+		std::string topic;
+		uint64_t timestamp;
+		rrr_msg_msg_type type;
+		rrr_msg_msg_class class_;
 
 		template <class T> static Message *self(const T &info) {
 			auto self = info.Holder();
 			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
 			return (Message *) wrap->Value();
 		}
+		static void cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_ip_addr_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_so_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_topic_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_class_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
 

@@ -90,8 +90,10 @@ namespace RRR::JS {
 		public:
 		String(v8::Isolate *isolate, const char *str);
 		String(v8::Isolate *isolate, v8::Local<v8::String> str);
+		String(v8::Isolate *isolate, std::string str);
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
+		operator std::string();
 		const char * operator *();
 		operator Value();
 		bool contains(const char *needle);
