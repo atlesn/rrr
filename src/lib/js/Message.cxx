@@ -22,13 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Message.hxx"
 
 extern "C" {
-#include <assert.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "../ip/ip_util.h"
 #include "../mqtt/mqtt_topic.h"
 #include "../util/rrr_time.h"
 };
+
+#include <cassert>
+#include <type_traits>
 
 namespace RRR::JS {
 	void Message::push_tag_vain(std::string key) {
@@ -155,7 +157,7 @@ namespace RRR::JS {
 			return;
 		}
 
-		assert(sizeof(message->ip_addr) == sizeof(tmp_addr));
+		static_assert(sizeof(message->ip_addr) == sizeof(tmp_addr));
 		memcpy(&message->ip_addr, &tmp_addr, sizeof(tmp_addr));
 		message->ip_addr_len = tmp_addr_len;
 	}
@@ -179,7 +181,7 @@ namespace RRR::JS {
 			key_string.Clear();
 		}
 		else if (!key->ToString(ctx).ToLocal(&key_string)) {
-			isolate->ThrowException(v8::Exception::Error(String(isolate, "key was not a string")));
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "key was not a string")));
 			return;
 		}
 		else if (key_string->Length() == 0) {
@@ -201,7 +203,45 @@ namespace RRR::JS {
 	}
 
 	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {}
-	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+
+	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto tag = v8::Local<v8::String>();
+
+		if ((info.kArgsLength >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
+			return;
+		}
+
+		// Usually, array values only have one element each. Assume this when allocating.
+		std::vector<v8::Local<v8::Value>> result(message->array.count());
+
+		auto tag_string = (std::string) String(isolate, tag);
+		message->array.iterate (
+				[&result, &isolate](rrr_type_be data, bool sign) {
+					static_assert(sizeof(data) == sizeof(int64_t));
+					result.emplace_back(sign
+						? v8::BigInt::New(isolate, *((int64_t *)((void *) &data)))
+						: v8::BigInt::NewFromUnsigned(isolate, data)
+					 );
+				},
+				[&result, &isolate](const uint8_t *data, rrr_length size) {
+				},
+				[&result, &isolate](const struct rrr_msg *data, rrr_length size) {
+				},
+				[&result, &isolate](rrr_fixp fixp) {
+				},
+				[&result, &isolate](const char *data, rrr_length size) {
+				},
+				[&result, &isolate](void) {
+				},
+				[tag_string](std::string tag){
+					return tag_string == tag;
+				}
+		);
+	}
 
 	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();

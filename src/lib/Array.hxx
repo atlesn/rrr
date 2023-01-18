@@ -23,13 +23,107 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern "C" {
 #include "array.h"
+#include "messages/msg.h"
 };
 
 #include <string>
+#include <cassert>
 
 #include "util/E.hxx"
+#include "util/ExtVector.hxx"
 
 namespace RRR {
+	class TypeValue {
+		private:
+		struct rrr_type_value *value;
+
+		template <typename T, typename L> void blob_split(L l) const {
+			const rrr_length element_length = value->total_stored_length / value->element_count;
+			RRR::util::DynExtVector<T>(
+				(T *) value->data,
+				value->total_stored_length,
+				element_length
+			).iterate([l, element_length] (T *data) {
+				l(data, element_length);
+			});
+		}
+
+		template <typename T, typename L> void primitive_split(L l) const {
+			RRR::util::ExtVector<T> (
+				value->data,
+				value->total_stored_length
+			).iterate([l] (T data) {
+				l(data);
+			});
+		}
+
+		template <typename L> void msg_split(L l) const {
+			assert(value->total_stored_length >= sizeof(struct rrr_msg));
+
+			rrr_length count = 0;
+			rrr_length pos = 0;
+			while (pos < value->total_stored_length) {
+				rrr_length target_size = 0;
+				const struct rrr_msg *msg = reinterpret_cast<const struct rrr_msg *>(pos);
+				const rrr_length remaining_size = value->total_stored_length - pos;
+
+				// The integrity of the message should have been
+				// checked during importing
+				assert(rrr_msg_get_target_size_and_check_checksum (
+					&target_size,
+					msg,
+					value->total_stored_length - pos
+				) == 0);
+
+				l(msg, target_size);
+
+				pos += target_size;
+				count++;
+			}
+			assert(pos == value->total_stored_length);
+			assert(count == value->element_count);
+		}
+
+		public:
+		TypeValue(struct rrr_type_value *value) :
+			value(value)
+		{
+		}
+
+		bool is_signed() const {
+			return RRR_TYPE_FLAG_IS_SIGNED(value->flags) != 0;
+		}
+
+		template <
+			typename HOST, typename BLOB, typename MSG, typename FIXP, typename STR, typename VAIN
+		> void iterate (
+			HOST h, BLOB b, MSG m, FIXP f, STR s, VAIN v
+		) const {
+			switch (value->definition->type) {
+				case RRR_TYPE_H:
+					primitive_split<rrr_type_be>(h);
+					break;
+				case RRR_TYPE_MSG:
+					msg_split(m);
+					break;
+				case RRR_TYPE_BLOB:
+					blob_split<const uint8_t>(b);
+					break;
+				case RRR_TYPE_FIXP:
+					primitive_split<rrr_fixp>(h);
+					break;
+				case RRR_TYPE_STR:
+					blob_split<const char>(s);
+					break;
+				case RRR_TYPE_VAIN:
+					v();
+					break;
+				default:
+					RRR_BUG("Unsupported type %u in %s\n", value->definition->type, __func__);
+			};
+		}
+	};
+
 	class Array {
 		private:
 		struct rrr_array array;
@@ -57,5 +151,18 @@ namespace RRR {
 				throw E("Error while pushing vain value");
 			}
 		}
+		template <
+			typename HOST, typename BLOB, typename MSG, typename FIXP, typename STR, typename VAIN, typename C
+		> void iterate (
+			HOST h, BLOB b, MSG m, FIXP f, STR s, VAIN v, C c = [](std::string tag)->bool{return true;}
+		) {
+			RRR_LL_ITERATE_BEGIN(&array, struct rrr_type_value);
+				if (!c(node->tag != NULL ? std::string(node->tag) : std::string())) {
+					continue;
+				}
+				const TypeValue type_value(node);
+				type_value.iterate([h, &type_value](auto data){h(data, type_value.is_signed());}, b, m, f, s, v);
+			RRR_LL_ITERATE_END();
+		}
 	};
-}; // namespace RRR
+};

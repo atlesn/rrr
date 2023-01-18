@@ -44,23 +44,25 @@ static const union type_system_endian {
 
 // Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
-#define RRR_TYPE_MIN		2
-#define RRR_TYPE_LE			2  // Little endian number
-#define RRR_TYPE_BE			3  // Big endian number
-#define RRR_TYPE_H			4  // Host endian number (can be both)
-#define RRR_TYPE_BLOB		5  // Type which holds arbitary data
-#define RRR_TYPE_USTR		6  // Unsigned int given as a string
-#define RRR_TYPE_ISTR		7  // Signed int given as a string
-#define RRR_TYPE_SEP		8  // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
-#define RRR_TYPE_MSG		9  // Type which holds an RRR message
-#define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
-#define RRR_TYPE_STR		11 // Dynamic length string quoted with "
-#define RRR_TYPE_HEX		RRR_TYPE_STR // Alias, used when converting blobs to ascii hex
-#define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
-#define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
-#define RRR_TYPE_ERR		14 // Always produces soft error when being parsed, used to abort branched parsing
-#define RRR_TYPE_VAIN		15 // The useless type, indicates NULL or void. Will parse 0 bytes.
-#define RRR_TYPE_MAX		15
+enum rrr_type_enum {
+	RRR_TYPE_MIN  = 2,
+	RRR_TYPE_LE   = 2,  // Little endian number
+	RRR_TYPE_BE   = 3,  // Big endian number
+	RRR_TYPE_H    = 4,  // Host endian number (can be both)
+	RRR_TYPE_BLOB = 5,  // Type which holds arbitary data
+	RRR_TYPE_USTR = 6,  // Unsigned int given as a string
+	RRR_TYPE_ISTR = 7,  // Signed int given as a string
+	RRR_TYPE_SEP  = 8,  // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
+	RRR_TYPE_MSG  = 9,  // Type which holds an RRR message
+	RRR_TYPE_FIXP = 10, // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
+	RRR_TYPE_STR  = 11, // Dynamic length string quoted with "
+	RRR_TYPE_HEX  = 11, // Alias for RRR_TYPE_STR, used when converting blobs to ascii hex
+	RRR_TYPE_NSEP = 12, // Group of any byte not being a separator byte
+	RRR_TYPE_STX  = 13, // STX or SOH, start of transmission or start of header
+	RRR_TYPE_ERR  = 14, // Always produces soft error when being parsed, used to abort branched parsing
+	RRR_TYPE_VAIN = 15, // The useless type, indicates NULL or void. Will parse 0 bytes.
+	RRR_TYPE_MAX  = 15
+};
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"

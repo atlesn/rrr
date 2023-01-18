@@ -191,4 +191,4 @@ namespace RRR::JS {
 		Script(CTX &ctx, TryCatch &trycatch, std::string &&str);
 		void run(CTX &ctx, TryCatch &trycatch);
 	};
-}
+} // namespace RRR::JS
