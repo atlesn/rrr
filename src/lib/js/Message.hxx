@@ -40,6 +40,7 @@ namespace RRR::JS {
 		uint64_t timestamp;
 		rrr_msg_msg_type type;
 		rrr_msg_msg_class class_;
+		std::vector<char> data;
 
 		template <class T> static Message *self(const T &info) {
 			auto self = info.Holder();

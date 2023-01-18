@@ -213,8 +213,41 @@ namespace RRR::JS {
 		message->timestamp = (uint64_t) timestamp_;
 	}
 
-	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
-	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		info.GetReturnValue().Set(v8::ArrayBuffer::New(isolate, (void *) message->data.data(), message->data.size()));
+	}
+
+	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+
+		if (value->IsNullOrUndefined()) {
+			message->data.clear();
+			return;
+		}
+		if (value->IsArrayBuffer()) {
+			auto contents = v8::ArrayBuffer::Cast(*value)->GetContents();
+			message->data.clear();
+			message->data.reserve(contents.ByteLength());
+			memcpy(message->data.data(), contents.Data(), contents.ByteLength());
+			return;
+		}
+		if (value->IsString()) {
+			String data(isolate, value->ToString(ctx).ToLocalChecked());
+			message->data.clear();
+			message->data.reserve(data.length());
+			memcpy(message->data.data(), *data, data.length());
+			return;
+		}
+
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was not null, undefined, ArrayBuffer or a string")));
+		return;
+	}
+
 	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
 	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
 	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
@@ -230,6 +263,7 @@ namespace RRR::JS {
 		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set, v8::Local<v8::Value>());
 		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set, v8::Local<v8::Value>());
 		tmpl->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "data"), cb_data_get, cb_data_set, v8::Local<v8::Value>());
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
@@ -238,7 +272,8 @@ namespace RRR::JS {
 		topic(),
 		timestamp(rrr_time_get_64()),
 		type(MSG_TYPE_MSG),
-		class_(MSG_CLASS_DATA)
+		class_(MSG_CLASS_DATA),
+		data()
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;

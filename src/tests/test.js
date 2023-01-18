@@ -97,4 +97,44 @@ function process(message) {
 		throw("timestamp value mismatch\n");
 	}
 	console.log("Timestamp: " + message.timestamp + "\n");
+
+	// Data field
+	message.data = undefined;
+	message.data = null;
+	message.data = "aaa";
+	catched = false;
+	try {
+		message.data = 123;
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("data field accepted invalid value\n");
+	}
+	const buffer = new ArrayBuffer(4);
+	const buffer_u8 = new Int8Array(buffer);
+
+	// ABCD
+	buffer_u8[0] = 65;
+	buffer_u8[1] = 66;
+	buffer_u8[2] = 67;
+	buffer_u8[3] = 68;
+
+	message.data = buffer;
+
+	const check_buffer = message.data;
+	const check_buffer_u8 = new Int8Array(buffer);
+
+	if (buffer.length != check_buffer.length) {
+		throw("data length mismatch\n");
+	}
+
+	for (let i = 0; i < check_buffer_u8.length; i++) {
+		if (buffer_u8[i] != check_buffer_u8[i]) {
+			throw("data value mismatch\n");
+		}
+	}
+
+	console.log("Data: " + check_buffer_u8.join(",") + "\n");
 }
