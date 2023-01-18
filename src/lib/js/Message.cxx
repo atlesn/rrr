@@ -31,6 +31,10 @@ extern "C" {
 };
 
 namespace RRR::JS {
+	void Message::push_tag_vain(std::string key) {
+		array.push_value_vain_with_tag(key);
+	}
+
 	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
@@ -155,6 +159,49 @@ namespace RRR::JS {
 		memcpy(&message->ip_addr, &tmp_addr, sizeof(tmp_addr));
 		message->ip_addr_len = tmp_addr_len;
 	}
+
+	void Message::cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+
+	void Message::cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto key = info.kArgsLength >= 1 ? info[0] : v8::Local<v8::Value>();
+		auto value = info.kArgsLength >= 2 ? info[1] : v8::Local<v8::Value>();
+		auto key_string = v8::Local<v8::String>();
+
+		// Process key argument
+		if (key.IsEmpty() || key->IsNullOrUndefined()) {
+			key_string.Clear();
+		}
+		else if (!key->ToString(ctx).ToLocal(&key_string)) {
+			isolate->ThrowException(v8::Exception::Error(String(isolate, "key was not a string")));
+			return;
+		}
+		else if (key_string->Length() == 0) {
+			// OK, no key
+			key_string.Clear();
+		}
+
+		// Process value argument
+		try {
+			if (value.IsEmpty() || value->IsNullOrUndefined()) {
+				message->push_tag_vain(*String(isolate, key_string));
+				return;
+			}
+		}
+		catch (RRR::util::E e) {
+			isolate->ThrowException(v8::Exception::Error(String(isolate, std::string("Error while pushing tag: ") + (std::string) e)));
+			return;
+		}
+	}
+
+	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {}
 
 	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
@@ -293,7 +340,15 @@ namespace RRR::JS {
 	Message::Template::Template(CTX &ctx) :
 		tmpl(v8::ObjectTemplate::New(ctx)),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
-		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set))
+		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set)),
+		tmpl_clear_array(v8::FunctionTemplate::New(ctx, cb_clear_array)),
+		tmpl_push_tag_blob(v8::FunctionTemplate::New(ctx, cb_push_tag_blob)),
+		tmpl_push_tag_str(v8::FunctionTemplate::New(ctx, cb_push_tag_str)),
+		tmpl_push_tag_h(v8::FunctionTemplate::New(ctx, cb_push_tag_h)),
+		tmpl_push_tag_fixp(v8::FunctionTemplate::New(ctx, cb_push_tag_fixp)),
+		tmpl_push_tag(v8::FunctionTemplate::New(ctx, cb_push_tag)),
+		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, cb_clear_tag)),
+		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, cb_get_tag_all))
 	{
 		tmpl->SetInternalFieldCount(1);
 		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw);
@@ -335,7 +390,25 @@ namespace RRR::JS {
 		message->SetInternalField(0, v8::External::New(ctx, &message));
 		message->Set(ctx, String(ctx, "ip_get"), tmpl_ip_get->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "ip_set"), tmpl_ip_set->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "clear_array"), tmpl_clear_array->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "push_tag_blob"), tmpl_push_tag_blob->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "push_tag_str"), tmpl_push_tag_str->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "push_tag_h"), tmpl_push_tag_h->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "push_tag_fixp"), tmpl_push_tag_fixp->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "push_tag"), tmpl_push_tag->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "clear_tag"), tmpl_clear_tag->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "get_tag_all"), tmpl_get_tag_all->GetFunction(ctx).ToLocalChecked()).Check();
 
+/*
+  clear_array:   function(){},                  // Clear all array data
+  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
+  push_tag_str:  function(tag=null, data){},    // Push array value of type string
+  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
+  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
+  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
+  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
+  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
+ * */
 		return message;
 	}
 }; // namespace RRR::JS

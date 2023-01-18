@@ -25,6 +25,10 @@ extern "C" {
 #include "array.h"
 };
 
+#include <string>
+
+#include "util/E.hxx"
+
 namespace RRR {
 	class Array {
 		private:
@@ -32,11 +36,26 @@ namespace RRR {
 		public:
 		Array();
 		~Array();
+		class E : public RRR::util::E {
+			public:
+			E(std::string msg) : RRR::util::E(msg) {}
+		};
+		static void verify_tag(std::string tag) {
+			if (tag.length() > RRR_TYPE_TAG_MAX) {
+				throw E(std::string("Tag length exceeds maximum (") + std::to_string(tag.length()) + ">" + std::to_string(RRR_TYPE_TAG_MAX) + ")");
+			}
+		}
 		struct rrr_array * operator *() {
 			return &array;
 		}
 		int count() {
 			return rrr_array_count(&array);
+		}
+		void push_value_vain_with_tag(std::string tag) {
+			verify_tag(tag);
+			if (rrr_array_push_value_vain_with_tag(&array, tag.c_str()) != 0) {
+				throw E("Error while pushing vain value");
+			}
 		}
 	};
 }; // namespace RRR

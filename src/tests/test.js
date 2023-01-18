@@ -2,6 +2,17 @@ function config() {
 	console.log("Config function\n");
 }
 
+function check_array_buffer(buffer, check_buffer) {
+	if (buffer.length != check_buffer.length) {
+		throw("length mismatch");
+	}
+	for (let i = 0; i < check_buffer.length; i++) {
+		if (buffer[i] != check_buffer[i]) {
+			throw("data mismatch");
+		}
+	}
+}
+
 function process(message) {
 	let catched = false;
 
@@ -125,14 +136,11 @@ function process(message) {
 	const check_buffer = message.data;
 	const check_buffer_u8 = new Int8Array(buffer);
 
-	if (buffer.length != check_buffer.length) {
-		throw("data length mismatch\n");
+	try {
+		check_array_buffer(buffer_u8, check_buffer_u8);
 	}
-
-	for (let i = 0; i < check_buffer_u8.length; i++) {
-		if (buffer_u8[i] != check_buffer_u8[i]) {
-			throw("data value mismatch\n");
-		}
+	catch (e) {
+		throw("data error: " + e + "\n");
 	}
 
 	console.log("Data: " + check_buffer_u8.join(",") + "\n");
@@ -168,5 +176,57 @@ function process(message) {
 	}
 	// TODO : Verify that class changes when array is populated
 	console.log("Class: " + message.class + "\n");
-	
+
+	// Array values
+	message.push_tag();
+	if (message.get_tag_all()[0] !== null) {
+		throw("array data mismatch A\n");
+	}
+
+
+	message.push_tag("tag", "bbb");
+	message.push_tag(null, "ccc");
+	message.push_tag("", "ddd");
+	if (message.get_tag_all("tag")[0] !== "bbb" || message.get_tag_all("")[1] !== "ccc" || message.get_tag_all()[2] !== "ddd") {
+		throw("array data mismatch B\n");
+	}
+	message.clear_array();
+	if (message.get_tag_all("tag")[0] !== undefined) {
+		throw("array data mismatch C\n");
+	}
+	message.clear_array();
+
+	const blob = new ArrayBuffer(3);
+	const blob_u8 = new Int8Array(blob);
+
+	blob_u8[0] = 65;
+	blob_u8[1] = 66;
+	blob_u8[2] = 67;
+
+	message.push_tag("blob", blob);
+	message.push_tag_blob("blob", blob);
+
+	const check_blob_u8_a = new Int8Array(message.get_tag_all("blob")[0]);
+	const check_blob_u8_b = new Int8Array(message.get_tag_all("blob")[1]);
+
+	try {
+		check_array_buffer(blob_u8, check_blob_u8_a);
+		check_array_buffer(blob_u8, check_blob_u8_b);
+	}
+	catch (e) {
+		throw("blob error: " + e + "\n");
+	}
+
+	console.log("Data: " + check_blob_u8_a.join(",") + "\n");
+
+/*
+  clear_array:   function(){},                  // Clear all array data
+  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
+  push_tag_str:  function(tag=null, data){},    // Push array value of type string
+  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
+  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
+  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
+  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
+  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
+ * */
 }

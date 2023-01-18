@@ -1253,7 +1253,9 @@ For the
 function, this message is empty.
 The message has the following structure:
 .nf
+// Data type Message
 {
+  // Message header manipulation
   ip_addr: new ArrayBuffer(),    // Operating system raw IP address information (struct sockaddr)
   ip_so_type: "",                // Protocol, set to udp or tcp. May also be empty.
   topic: "",                     // MQTT topic of the message
@@ -1274,8 +1276,21 @@ The message has the following structure:
 
   // Constants for the class field
   MSG_CLASS_DATA:  1,
-  MSG_CLASS_ARRAY: 11
+  MSG_CLASS_ARRAY: 11,
+
+  // Array data manipulation. When tag argument is not given, value(s) without tag is assumed
+  clear_array:   function(){},                  // Clear all array data
+  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
+  push_tag_str:  function(tag=null, data){},    // Push array value of type string
+  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
+  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
+  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
+  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
+  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
 }
+
+// Data type Value
+
 .fi
 
 .SS cmodule (P)

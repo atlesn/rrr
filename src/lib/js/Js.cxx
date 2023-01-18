@@ -110,8 +110,8 @@ namespace RRR::JS {
 	}
 
 	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
-		str(str),
-		utf8(isolate, str)
+		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "") : str),
+		utf8(isolate, this->str)
 	{
 	}
 

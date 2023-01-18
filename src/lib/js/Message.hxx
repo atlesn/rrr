@@ -24,12 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 extern "C" {
 #include <sys/socket.h>
 #include "../messages/msg_msg_struct.h"
-#include "../Array.hxx"
 };
 
 #include <v8.h>
 
 #include "Js.hxx"
+#include "../Array.hxx"
 
 namespace RRR::JS {
 	class Message : public Object {
@@ -48,6 +48,9 @@ namespace RRR::JS {
 			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
 			return (Message *) wrap->Value();
 		}
+
+		void push_tag_vain(std::string key);
+
 		static void cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
@@ -64,6 +67,14 @@ namespace RRR::JS {
 		static void cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
 
 		protected:
 		Message(CTX &ctx, v8::Local<v8::Object> obj);
@@ -76,6 +87,14 @@ namespace RRR::JS {
 			v8::Local<v8::ObjectTemplate> tmpl;
 			v8::Local<v8::FunctionTemplate> tmpl_ip_get;
 			v8::Local<v8::FunctionTemplate> tmpl_ip_set;
+			v8::Local<v8::FunctionTemplate> tmpl_clear_array;
+			v8::Local<v8::FunctionTemplate> tmpl_push_tag_blob;
+			v8::Local<v8::FunctionTemplate> tmpl_push_tag_str;
+			v8::Local<v8::FunctionTemplate> tmpl_push_tag_h;
+			v8::Local<v8::FunctionTemplate> tmpl_push_tag_fixp;
+			v8::Local<v8::FunctionTemplate> tmpl_push_tag;
+			v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
+			v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 
 			protected:
 			Template(CTX &ctx);
