@@ -1254,16 +1254,27 @@ function, this message is empty.
 The message has the following structure:
 .nf
 {
-  ip_addr: new ArrayBuffer(),  // Operating system raw IP address information (struct sockaddr)
-  ip_so_type: "",              // Protocol, set to udp or tcp. May also be empty.
-  topic: "",                   // MQTT topic of the message
-  timestamp: BigInt(0),        // The timestamp of the message in microseconds
-  data: new ArrayBuffer(),     // The raw data of the message (ignored when arrays are used)
-  type: 1,                     // Message type
-  class: 1                     // Message class
+  ip_addr: new ArrayBuffer(),    // Operating system raw IP address information (struct sockaddr)
+  ip_so_type: "",                // Protocol, set to udp or tcp. May also be empty.
+  topic: "",                     // MQTT topic of the message
+  timestamp: BigInt(0),          // The timestamp of the message in microseconds
+  data: new ArrayBuffer(),       // The raw data of the message (ignored when arrays are used)
+  type: MSG_TYPE_MSG,            // Message type. Alternatives are MSG, TAG, GET, PUT, DEL
+  class: MSG_CLASS_DATA,         // Message class (immutable, automatically set to ARRAY if array is used)
 
-  ip_set: function(ip, port){}              // Helper function to set adddress of ip_addr field
-  ip_get: function(){ return [ip, port]; }  // Helper function to retrieve adddress of ip_addr field
+  ip_set: function(ip, port){},             // Helper function to set adddress of ip_addr field
+  ip_get: function(){ return [ip, port]; }, // Helper function to retrieve adddress of ip_addr field
+
+  // Constants for the type field
+  MSG_TYPE_MSG: 1,
+  MSG_TYPE_TAG: 2,
+  MSG_TYPE_GET: 3,
+  MSG_TYPE_PUT: 4,
+  MSG_TYPE_DEL: 5,
+
+  // Constants for the class field
+  MSG_CLASS_DATA:  1,
+  MSG_CLASS_ARRAY: 11
 }
 .fi
 

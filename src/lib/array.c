@@ -211,7 +211,7 @@ static int __rrr_array_push_value_64_with_tag (
 	}
 
 	rrr_length parsed_bytes = 0;
-	if ((ret = new_value->definition->import (
+	if ((ret = new_value->definition->do_import (
 			new_value,
 			&parsed_bytes,
 			(const char *) &value,
@@ -890,12 +890,12 @@ static int __rrr_array_array_export_callback (const struct rrr_type_value *node,
 
 	struct pack_callback_data *data = arg;
 
-	if (node->definition->export == NULL) {
+	if (node->definition->do_export == NULL) {
 		RRR_BUG("No export function defined for type %u in __rrr_array_array_export_callback\n", node->definition->type);
 	}
 
 	rrr_length written_bytes = 0;
-	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
+	if (node->definition->do_export(data->write_pos, &written_bytes, node) != 0) {
 		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_array_export_callback\n", node->definition->type);
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;

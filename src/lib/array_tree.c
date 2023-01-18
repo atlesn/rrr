@@ -1335,7 +1335,7 @@ int __rrr_array_tree_import_value_callback (
 		goto out;
 	}
 
-	if (new_value->definition->import == NULL) {
+	if (new_value->definition->do_import == NULL) {
 		RRR_BUG("BUG: No convert function found for type %d\n", new_value->definition->type);
 	}
 
@@ -1368,7 +1368,7 @@ int __rrr_array_tree_import_value_callback (
 	}
 
 	rrr_length parsed_bytes = 0;
-	if ((ret = new_value->definition->import (
+	if ((ret = new_value->definition->do_import (
 			new_value,
 			&parsed_bytes,
 			callback_data->pos,

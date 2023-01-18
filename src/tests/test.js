@@ -115,7 +115,6 @@ function process(message) {
 	const buffer = new ArrayBuffer(4);
 	const buffer_u8 = new Int8Array(buffer);
 
-	// ABCD
 	buffer_u8[0] = 65;
 	buffer_u8[1] = 66;
 	buffer_u8[2] = 67;
@@ -137,4 +136,37 @@ function process(message) {
 	}
 
 	console.log("Data: " + check_buffer_u8.join(",") + "\n");
+
+	// Type field
+	catched = false;
+	try {
+		message.type = 0;
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("type field accepted invalid value\n");
+	}
+	message.type = message.MSG_TYPE_MSG;
+	message.type = message.MSG_TYPE_TAG;
+	message.type = message.MSG_TYPE_GET;
+	message.type = message.MSG_TYPE_PUT;
+	message.type = message.MSG_TYPE_DEL;
+	console.log("Type: " + message.type + "\n");
+
+	// Class field
+	catched = false;
+	try {
+		message.class = 1;
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("class field allowed modification\n");
+	}
+	// TODO : Verify that class changes when array is populated
+	console.log("Class: " + message.class + "\n");
+	
 }

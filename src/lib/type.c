@@ -1709,7 +1709,7 @@ int rrr_type_value_allocate_and_export (
 		goto out;
 	}
 
-	if (node->definition->export(buf_tmp, &buf_size, node) != 0) {
+	if (node->definition->do_export(buf_tmp, &buf_size, node) != 0) {
 		RRR_MSG_0("Error while exporting in rrr_type_value_allocate_and_export \n");
 		ret = 1;
 		goto out;
@@ -1774,7 +1774,7 @@ int rrr_type_value_allocate_and_import_raw (
 
 	rrr_length parsed_bytes = 0;
 
-	if (definition->import (
+	if (definition->do_import (
 			value,
 			&parsed_bytes,
 			data_start,

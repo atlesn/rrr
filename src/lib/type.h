@@ -193,9 +193,9 @@ struct rrr_type_definition {
 
 	// These are for importing or exporting to and from raw data
 	// and rrr_array struct
-	int (*import)(RRR_TYPE_IMPORT_ARGS);
+	int (*do_import)(RRR_TYPE_IMPORT_ARGS);
 	int (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
-	int (*export)(RRR_TYPE_EXPORT_ARGS);
+	int (*do_export)(RRR_TYPE_EXPORT_ARGS);
 
 	// These are for converting between work-copy rrr_array struct
 	// and RRR array message, with endian conversions
@@ -289,7 +289,7 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 		const uint8_t type_in
 );
 void rrr_type_value_destroy (
-		struct rrr_type_value *template
+		struct rrr_type_value *template_
 );
 int rrr_type_value_is_tag (
 		const struct rrr_type_value *value,

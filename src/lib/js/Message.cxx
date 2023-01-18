@@ -248,10 +248,47 @@ namespace RRR::JS {
 		return;
 	}
 
-	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
-	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
-	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {}
-	void Message::cb_class_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {}
+	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->type));
+	}
+
+	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto type = v8::Int32::New(isolate, 0);
+		if (!value->ToUint32(ctx).ToLocal(&type)) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for type was not a number")));
+			return;
+		}
+		uint32_t type_ = type->Uint32Value(ctx).ToChecked();
+		switch (type_) {
+			case MSG_TYPE_MSG:
+			case MSG_TYPE_TAG:
+			case MSG_TYPE_GET:
+			case MSG_TYPE_PUT:
+			case MSG_TYPE_DEL:
+				break;
+			default:
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for type was not a valid type")));
+				return;
+		};
+		message->type = (rrr_msg_msg_type) type_;
+	}
+
+	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->array.count() > 0 ? MSG_CLASS_ARRAY : MSG_CLASS_DATA));
+	}
+
+	void Message::cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+		info.GetReturnValue().Set(info.Data());
+	}
 
 	Message::Template::Template(CTX &ctx) :
 		tmpl(v8::ObjectTemplate::New(ctx)),
@@ -259,11 +296,20 @@ namespace RRR::JS {
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set))
 	{
 		tmpl->SetInternalFieldCount(1);
-		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw, v8::Local<v8::Value>());
-		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set, v8::Local<v8::Value>());
-		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set, v8::Local<v8::Value>());
-		tmpl->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set, v8::Local<v8::Value>());
-		tmpl->SetAccessor(String(ctx, "data"), cb_data_get, cb_data_set, v8::Local<v8::Value>());
+		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw);
+		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set);
+		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set);
+		tmpl->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set);
+		tmpl->SetAccessor(String(ctx, "data"), cb_data_get, cb_data_set);
+		tmpl->SetAccessor(String(ctx, "type"), cb_type_get, cb_type_set);
+		tmpl->SetAccessor(String(ctx, "class"), cb_class_get, cb_throw);
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_MSG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_TAG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_GET"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PUT"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_DEL"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
+		tmpl->SetAccessor(String(ctx, "MSG_CLASS_DATA"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
+		tmpl->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
@@ -272,8 +318,8 @@ namespace RRR::JS {
 		topic(),
 		timestamp(rrr_time_get_64()),
 		type(MSG_TYPE_MSG),
-		class_(MSG_CLASS_DATA),
-		data()
+		data(),
+		array()
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;

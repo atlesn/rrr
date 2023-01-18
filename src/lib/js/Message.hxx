@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 extern "C" {
 #include <sys/socket.h>
 #include "../messages/msg_msg_struct.h"
+#include "../Array.hxx"
 };
 
 #include <v8.h>
@@ -39,8 +40,8 @@ namespace RRR::JS {
 		std::string topic;
 		uint64_t timestamp;
 		rrr_msg_msg_type type;
-		rrr_msg_msg_class class_;
 		std::vector<char> data;
+		RRR::Array array;
 
 		template <class T> static Message *self(const T &info) {
 			auto self = info.Holder();
@@ -61,6 +62,7 @@ namespace RRR::JS {
 		static void cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_class_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
+		static void cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
 
