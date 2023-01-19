@@ -33,4 +33,24 @@ namespace RRR {
 	Array::~Array() {
 		rrr_array_clear(&array);
 	}
+	void Array::push_value_vain_with_tag(std::string tag) {
+		verify_tag(tag);
+		if (rrr_array_push_value_vain_with_tag(&array, tag.c_str()) != 0) {
+			throw E("Error while pushing vain value");
+		}
+	}
+
+	void Array::push_value_str_with_tag(std::string tag, std::string value) {
+		verify_tag(tag);
+		if (rrr_array_push_value_str_with_tag_with_size(&array, tag.c_str(), value.c_str(), value.length()) != 0) {
+			throw E("Error while pushing string value");
+		}
+	}
+
+	void Array::push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size) {
+		verify_tag(tag);
+		if (rrr_array_push_value_blob_with_tag_with_size(&array, tag.c_str(), value, size) != 0) {
+			throw E("Error while pushing blob value");
+		}
+	}
 }; // namespace RRR

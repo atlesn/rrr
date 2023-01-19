@@ -109,6 +109,12 @@ namespace RRR::JS {
 	{
 	}
 
+	String::String(v8::Isolate *isolate, const char *data, int size) :
+		str(v8::String::NewFromUtf8(isolate, data, v8::NewStringType::kNormal, size).ToLocalChecked()),
+		utf8(isolate, this->str)
+	{
+	}
+
 	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
 		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "") : str),
 		utf8(isolate, this->str)

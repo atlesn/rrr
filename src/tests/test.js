@@ -178,23 +178,39 @@ function process(message) {
 	console.log("Class: " + message.class + "\n");
 
 	// Array values
-	message.push_tag();
+	message.push_tag();              // [0]
 	if (message.get_tag_all()[0] !== null) {
-		throw("array data mismatch A\n");
+		throw("array data mismatch vain\n");
 	}
 
-
-	message.push_tag("tag", "bbb");
-	message.push_tag(null, "ccc");
-	message.push_tag("", "ddd");
-	if (message.get_tag_all("tag")[0] !== "bbb" || message.get_tag_all("")[1] !== "ccc" || message.get_tag_all()[2] !== "ddd") {
-		throw("array data mismatch B\n");
+	message.push_tag("tag", "bbb");  // [0]
+	message.push_tag(null, "ccc");   // [1]
+	message.push_tag_str("", "ddd"); // [2]
+	if (message.get_tag_all("tag")[0] !== "bbb") {
+		throw("array data mismatch bbb\n");
+	}
+	if (message.get_tag_all("")[1] !== "ccc") {
+		throw("array data mismatch ccc\n");
+	}
+	if (message.get_tag_all()[2] !== "ddd") {
+		throw("array data mismatch ddd\n");
 	}
 	message.clear_array();
 	if (message.get_tag_all("tag")[0] !== undefined) {
-		throw("array data mismatch C\n");
+		throw("array data mismatch undefined\n");
 	}
 	message.clear_array();
+
+	catched = false;
+	try {
+		message.push_tag("blob", new ArrayBuffer());
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("blob allowed 0 byte push\n");
+	}
 
 	const blob = new ArrayBuffer(3);
 	const blob_u8 = new Int8Array(blob);

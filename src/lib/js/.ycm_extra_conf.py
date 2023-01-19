@@ -41,6 +41,7 @@ flags = [
     '-I..',
     '-I/usr/include/node',
     '-std=c++17',
+    '-Wconversion',
 ]
 
 

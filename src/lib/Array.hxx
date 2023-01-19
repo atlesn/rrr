@@ -127,38 +127,47 @@ namespace RRR {
 	class Array {
 		private:
 		struct rrr_array array;
+
 		public:
 		Array();
 		~Array();
+
 		class E : public RRR::util::E {
 			public:
 			E(std::string msg) : RRR::util::E(msg) {}
 		};
+
 		static void verify_tag(std::string tag) {
 			if (tag.length() > RRR_TYPE_TAG_MAX) {
 				throw E(std::string("Tag length exceeds maximum (") + std::to_string(tag.length()) + ">" + std::to_string(RRR_TYPE_TAG_MAX) + ")");
 			}
 		}
+
 		struct rrr_array * operator *() {
 			return &array;
 		}
+
 		int count() {
 			return rrr_array_count(&array);
 		}
-		void push_value_vain_with_tag(std::string tag) {
-			verify_tag(tag);
-			if (rrr_array_push_value_vain_with_tag(&array, tag.c_str()) != 0) {
-				throw E("Error while pushing vain value");
-			}
+
+		void clear() {
+			rrr_array_clear(&array);
 		}
+
+		void push_value_vain_with_tag(std::string tag);
+		void push_value_str_with_tag(std::string tag, std::string value);
+		void push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size);
+
 		template <
 			typename HOST, typename BLOB, typename MSG, typename FIXP, typename STR, typename VAIN, typename C
 		> void iterate (
 			HOST h, BLOB b, MSG m, FIXP f, STR s, VAIN v, C c = [](std::string tag)->bool{return true;}
 		) {
+			printf("Iterate %i elements\n", RRR_LL_COUNT(&array));
 			RRR_LL_ITERATE_BEGIN(&array, struct rrr_type_value);
 				if (!c(node->tag != NULL ? std::string(node->tag) : std::string())) {
-					continue;
+					RRR_LL_ITERATE_NEXT();
 				}
 				const TypeValue type_value(node);
 				type_value.iterate([h, &type_value](auto data){h(data, type_value.is_signed());}, b, m, f, s, v);

@@ -49,7 +49,11 @@ namespace RRR::JS {
 			return (Message *) wrap->Value();
 		}
 
+		void clear_array();
 		void push_tag_vain(std::string key);
+		void push_tag_str(std::string key, std::string value);
+		void push_tag_blob(std::string key, const char *value, rrr_length size);
+		void push_tag_blob(v8::Isolate *isolate, std::string key, v8::ArrayBuffer *blob);
 
 		static void cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);

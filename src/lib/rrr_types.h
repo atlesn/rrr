@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <limits.h>
 
 #include "log.h"
 #include "util/macro_utils.h"
@@ -128,6 +129,15 @@ static inline int rrr_size_from_biglength_err (size_t *target, rrr_biglength ope
 }
 
 #endif
+
+static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
+	if (operand > INT_MAX) {
+		RRR_MSG_0("Error: Overflow in %s, input was %" PRIrrrl "\n", __func__, operand);
+		return 1;
+	}
+	*target = (int) operand;
+	return 0;
+}
 
 static inline void __rrr_types_asserts (void) {
 	RRR_ASSERT(sizeof(size_t) <= sizeof(rrr_biglength),unsafe_platform_size_t_is_too_big);

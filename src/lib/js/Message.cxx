@@ -33,8 +33,37 @@ extern "C" {
 #include <type_traits>
 
 namespace RRR::JS {
+	void Message::clear_array() {
+		array.clear();
+	}
+
 	void Message::push_tag_vain(std::string key) {
 		array.push_value_vain_with_tag(key);
+	}
+
+	void Message::push_tag_str(std::string key, std::string value) {
+		array.push_value_str_with_tag(key, value);
+	}
+
+	void Message::push_tag_blob(std::string key, const char *value, rrr_length size) {
+		array.push_value_blob_with_tag_with_size(key, value, size);
+	}
+
+	void Message::push_tag_blob(v8::Isolate *isolate, std::string key, v8::ArrayBuffer *blob) {
+		if (blob->ByteLength() == 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot push blob of data length 0 to array")));
+			return;
+		}
+		auto contents = blob->GetContents();
+		rrr_length length;
+		if (rrr_length_from_size_t_err(&length, contents.ByteLength()) != 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(
+				isolate, std::string("Blob data length overflow, cannot push to array")
+			)));
+			return;
+		}
+		push_tag_blob(key, (const char *) contents.Data(), length);
+		return;
 	}
 
 	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
@@ -107,11 +136,11 @@ namespace RRR::JS {
 		auto ip = v8::Local<v8::String>();
 		auto port = v8::Local<v8::Uint32>();
 
-		if ((info.kArgsLength >= 1 ? info[0] : String(isolate, "0.0.0.0"))->ToString(ctx).ToLocal(&ip) != true) {
+		if ((info.Length() >= 1 ? info[0] : String(isolate, "0.0.0.0"))->ToString(ctx).ToLocal(&ip) != true) {
 			auto ip_str = String(isolate, ip);
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "IP not a valid string")));
 		}
-		if ((info.kArgsLength >= 2 ? info[1] : U32(isolate, 0))->ToUint32(ctx).ToLocal(&port) != true) {
+		if ((info.Length() >= 2 ? info[1] : U32(isolate, 0))->ToUint32(ctx).ToLocal(&port) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Port not a valid number")));
 			return;
 		}
@@ -140,7 +169,7 @@ namespace RRR::JS {
 				return;
 			}
 			tmp_in6.sin6_family = AF_INET6;
-			tmp_in6.sin6_port = htons(port->Uint32Value(ctx).ToChecked());
+			tmp_in6.sin6_port = htons((uint16_t) port->Uint32Value(ctx).ToChecked());
 		}
 		else if (ip_str.contains(".")) {
 			af_protocol = AF_INET;
@@ -150,7 +179,7 @@ namespace RRR::JS {
 				return;
 			}
 			tmp_in.sin_family = AF_INET;
-			tmp_in.sin_port = htons(port->Uint32Value(ctx).ToChecked());
+			tmp_in.sin_port = htons((uint16_t) port->Uint32Value(ctx).ToChecked());
 		}
 		else {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "IP address not valid (no : or . found)")));
@@ -162,9 +191,50 @@ namespace RRR::JS {
 		message->ip_addr_len = tmp_addr_len;
 	}
 
-	void Message::cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info) {}
-	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {}
-	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto message = self(info);
+		message->clear_array();
+	}
+
+	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto tag = v8::Local<v8::String>();
+
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
+			return;
+		}
+
+		if (info.Length() < 2 || !info[1]->IsArrayBuffer()) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for blob was not given or was not an ArrayBuffer")));
+			return;
+		}
+
+		message->push_tag_blob(isolate, String(isolate, tag), v8::ArrayBuffer::Cast(*info[1]));
+	}
+
+	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto tag = v8::Local<v8::String>();
+		auto value = v8::Local<v8::String>();
+
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
+			return;
+		}
+
+		if ((info.Length() >= 2 ? info[1] : String(isolate, ""))->ToString(ctx).ToLocal(&value) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid value argument")));
+			return;
+		}
+
+		message->push_tag_str(String(isolate, tag), String(isolate, value));
+	}
+
 	void Message::cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info) {}
 	void Message::cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info) {}
 
@@ -172,8 +242,8 @@ namespace RRR::JS {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto key = info.kArgsLength >= 1 ? info[0] : v8::Local<v8::Value>();
-		auto value = info.kArgsLength >= 2 ? info[1] : v8::Local<v8::Value>();
+		auto key = info.Length() >= 1 ? info[0] : v8::Local<v8::Value>();
+		auto value = info.Length() >= 2 ? info[1] : v8::Local<v8::Value>();
 		auto key_string = v8::Local<v8::String>();
 
 		// Process key argument
@@ -191,10 +261,23 @@ namespace RRR::JS {
 
 		// Process value argument
 		try {
+			auto key = String(isolate, key_string);
+			auto value_string = v8::Local<v8::String>();
 			if (value.IsEmpty() || value->IsNullOrUndefined()) {
-				message->push_tag_vain(*String(isolate, key_string));
+				message->push_tag_vain(*key);
 				return;
 			}
+			else if (value->IsArrayBuffer()) {
+				message->push_tag_blob(isolate, key, v8::ArrayBuffer::Cast(*value));
+				return;
+			}
+			else if (value->ToString(ctx).ToLocal(&value_string)) {
+				message->push_tag_str(key, String(isolate, value_string));
+				return;
+			}
+
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Unsupported value type, cannot push to array")));
+			return;
 		}
 		catch (RRR::util::E e) {
 			isolate->ThrowException(v8::Exception::Error(String(isolate, std::string("Error while pushing tag: ") + (std::string) e)));
@@ -210,36 +293,66 @@ namespace RRR::JS {
 		auto message = self(info);
 		auto tag = v8::Local<v8::String>();
 
-		if ((info.kArgsLength >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
 			return;
 		}
 
-		// Usually, array values only have one element each. Assume this when allocating.
-		std::vector<v8::Local<v8::Value>> result(message->array.count());
+		std::vector<v8::Local<v8::Value>> result;
 
 		auto tag_string = (std::string) String(isolate, tag);
 		message->array.iterate (
-				[&result, &isolate](rrr_type_be data, bool sign) {
-					static_assert(sizeof(data) == sizeof(int64_t));
-					result.emplace_back(sign
-						? v8::BigInt::New(isolate, *((int64_t *)((void *) &data)))
-						: v8::BigInt::NewFromUnsigned(isolate, data)
-					 );
-				},
-				[&result, &isolate](const uint8_t *data, rrr_length size) {
-				},
-				[&result, &isolate](const struct rrr_msg *data, rrr_length size) {
-				},
-				[&result, &isolate](rrr_fixp fixp) {
-				},
-				[&result, &isolate](const char *data, rrr_length size) {
-				},
-				[&result, &isolate](void) {
-				},
-				[tag_string](std::string tag){
-					return tag_string == tag;
+			[&result, &isolate](rrr_type_be data, bool sign) {
+				printf("Emplace host\n");
+				static_assert(sizeof(data) == sizeof(int64_t));
+				result.emplace_back(sign
+					? v8::BigInt::New(isolate, *((int64_t *)((void *) &data)))
+					: v8::BigInt::NewFromUnsigned(isolate, data)
+				 );
+			},
+			[&result, &isolate](const uint8_t *data, rrr_length size) {
+				printf("Emplace blob\n");
+				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
+			},
+			[&result, &isolate](const struct rrr_msg *data, rrr_length size) {
+				printf("Emplace msg\n");
+				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
+			},
+			[&result, &isolate](rrr_fixp data) {
+				printf("Emplace fixp\n");
+				static_assert(sizeof(data) == sizeof(int64_t));
+				result.emplace_back(v8::BigInt::New(isolate, data));
+			},
+			[&result, &isolate, &tag_string](const char *data, rrr_length size) {
+				printf("Emplace string\n");
+				int size_int;
+				if (rrr_int_from_length_err(&size_int, size) != 0) {
+					RRR_MSG_0("Warning: String in array message too long for JavaScript(%" PRIrrrl ">%i) in value with key '%s'. Dropping value.\n",
+						size, INT_MAX, tag_string.c_str());
+					return;
 				}
+				result.emplace_back(String(isolate, data, size_int));
+			},
+			[&result, &isolate](void) {
+				printf("Emplace vain\n");
+				result.emplace_back(v8::Null(isolate));
+			},
+			[tag_string](std::string tag){
+				printf("Compare tags '%s'<>'%s'\n", tag_string.c_str(), tag.c_str());
+				return tag_string == tag;
+			}
+		);
+
+		if (result.size() > INT_MAX) {
+			isolate->ThrowException(v8::Exception::TypeError(String(
+				isolate, std::string("Message to JavaScript had too many values (") + std::to_string(result.size()) + ">" + std::to_string(INT_MAX) + "). Cannot access elements.\n"
+			)));
+			return;
+		}
+
+		info.GetReturnValue().Set(result.size() > 0
+			? v8::Array::New(isolate, result.data(), result.size())
+			: v8::Array::New(isolate, 0)
 		);
 	}
 
@@ -326,8 +439,8 @@ namespace RRR::JS {
 		if (value->IsString()) {
 			String data(isolate, value->ToString(ctx).ToLocalChecked());
 			message->data.clear();
-			message->data.reserve(data.length());
-			memcpy(message->data.data(), *data, data.length());
+			message->data.reserve((size_t) data.length());
+			memcpy(message->data.data(), *data, (size_t) data.length());
 			return;
 		}
 
