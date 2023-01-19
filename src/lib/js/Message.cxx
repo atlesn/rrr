@@ -38,6 +38,10 @@ namespace RRR::JS {
 		array.clear();
 	}
 
+	void Message::clear_tag(std::string tag) {
+		array.clear_by_tag(tag);
+	}
+
 	rrr_msg_msg_class Message::get_class() {
 		return array.count() > 0
 			? MSG_CLASS_ARRAY
@@ -418,7 +422,19 @@ namespace RRR::JS {
 		);
 	}
 
-	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto tag = v8::Local<v8::String>();
+
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
+			return;
+		}
+	
+		message->clear_tag(String(isolate, tag));
+	}
 
 	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
@@ -680,12 +696,12 @@ namespace RRR::JS {
 		message->Set(ctx, String(ctx, "ip_get"), tmpl_ip_get->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "ip_set"), tmpl_ip_set->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "clear_array"), tmpl_clear_array->GetFunction(ctx).ToLocalChecked()).Check();
+		message->Set(ctx, String(ctx, "clear_tag"), tmpl_clear_tag->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "push_tag_blob"), tmpl_push_tag_blob->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "push_tag_str"), tmpl_push_tag_str->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "push_tag_h"), tmpl_push_tag_h->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "push_tag_fixp"), tmpl_push_tag_fixp->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "push_tag"), tmpl_push_tag->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "clear_tag"), tmpl_clear_tag->GetFunction(ctx).ToLocalChecked()).Check();
 		message->Set(ctx, String(ctx, "get_tag_all"), tmpl_get_tag_all->GetFunction(ctx).ToLocalChecked()).Check();
 
 /*

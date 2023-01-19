@@ -1280,12 +1280,12 @@ The message has the following structure:
 
   // Array data manipulation. When tag argument is not given, value(s) without tag is assumed
   clear_array:   function(){},                  // Clear all array data
+  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
   push_tag_blob: function(tag=null, data){},    // Push array value of type blob
   push_tag_str:  function(tag=null, data){},    // Push array value of type string
   push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
   push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
   push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
-  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
   get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
 }
 

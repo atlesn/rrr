@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -131,7 +131,7 @@ int rrr_array_clone (
 
 #define SET_AND_VERIFY_TAG_LENGTH()                                                 \
     rrr_length tag_length = 0;                                                      \
-    do {const rrr_biglength tag_length_big = tag != 0 ? strlen(tag) : 0;            \
+    do {const rrr_biglength tag_length_big = tag != NULL ? strlen(tag) : 0;         \
     if (tag_length_big > RRR_TYPE_TAG_MAX) {                                        \
             RRR_MSG_0("Tag was too long when pushing array value (%llu>%llu)\n",    \
             (unsigned long long) tag_length_big,                                    \
@@ -550,13 +550,11 @@ void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_arr
 	*cleared_count = 0;
 
 	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
-		if (node->tag == NULL) {
+		if (!rrr_type_value_is_tag(node, tag)) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		if (strcmp(node->tag, tag) == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			(*cleared_count)++;
-		}
+		RRR_LL_ITERATE_SET_DESTROY();
+		(*cleared_count)++;
 	RRR_LL_ITERATE_END_CHECK_DESTROY(array, 0; rrr_type_value_destroy(node));
 }
 
@@ -630,10 +628,8 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return node;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -645,10 +641,8 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return node;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -660,10 +654,8 @@ int rrr_array_has_tag (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return 1;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return 1;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -737,16 +729,13 @@ static int __rrr_array_array_iterate_chosen_tags (
 			found = 1;
 		}
 		else {
-			if (node->tag != NULL) {
-				const char *tag = node->tag;
-				const rrr_length tag_length = node->tag_length;
-				RRR_MAP_ITERATE_BEGIN_CONST(tags);
-					if (strncmp (tag, node_tag, tag_length) == 0) {
-						found = 1;
-						RRR_LL_ITERATE_LAST();
-					}
-				RRR_MAP_ITERATE_END();
-			}
+			const struct rrr_type_value *value = node;
+			RRR_MAP_ITERATE_BEGIN_CONST(tags);
+				if (rrr_type_value_is_tag(value, node_tag)) {
+					found = 1;
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_MAP_ITERATE_END();
 		}
 
 		if (found == 1) {
@@ -1251,7 +1240,7 @@ static int __rrr_array_message_clone_value_by_tag_callback (
 ) {
 	struct rrr_array_message_clone_value_by_tag_callback_data *callback_data = arg;
 
-	if (value->tag == NULL || strcmp(callback_data->tag, value->tag) != 0) {
+	if (!rrr_type_value_is_tag(value, callback_data->tag)) {
 		return 0;
 	}
 

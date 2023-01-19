@@ -50,6 +50,7 @@ namespace RRR::JS {
 		}
 
 		void clear_array();
+		void clear_tag(std::string tag);
 		rrr_msg_msg_class get_class();
 
 		void push_tag_vain(std::string key);

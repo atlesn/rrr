@@ -301,14 +301,29 @@ function process(message) {
 
 	console.log("fixp: " + message.get_tag_all("fixp").join(",") + "\n");
 
-/*
-  clear_array:   function(){},                  // Clear all array data
-  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
-  push_tag_str:  function(tag=null, data){},    // Push array value of type string
-  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
-  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
-  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
-  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
-  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
- * */
+	message.clear_array();
+	if (message.get_tag_all()[0] !== undefined) {
+		throw("Clear tag error E" + message.get_tag_all()[0]);
+	}
+	message.push_tag();
+	message.push_tag("tag");
+
+	if (message.get_tag_all()[0] !== null) {
+		throw("Clear tag error A");
+	}
+	if (message.get_tag_all("tag")[0] !== null) {
+		throw("Clear tag error B");
+	}
+
+	message.clear_tag();
+	message.clear_tag("tag");
+
+	if (message.get_tag_all()[0] !== undefined) {
+		throw("Clear tag error C" + message.get_tag_all()[0]);
+	}
+	if (message.get_tag_all("tag")[0] !== undefined) {
+		throw("Clear tag error D");
+	}
+
+	console.log("Values cleared\n");
 }

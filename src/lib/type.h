@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TYPE_HEADER
 
 #include <stdint.h>
+#include <string.h>
 
 #include "rrr_types.h"
 #include "util/linked_list.h"
@@ -270,6 +271,33 @@ RRR_TYPE_DECLARE_EXTERN(null);
 #define RRR_TYPE_DEFINITION_VAIN    rrr_type_definition_vain
 #define RRR_TYPE_DEFINITION_NULL   rrr_type_definition_null
 
+static inline int rrr_type_value_is_tag (
+		const struct rrr_type_value *value,
+		const char *tag
+) {
+	// When comparing tags, NULL and empty
+	// strings are equivalent.
+
+	const char *a = value->tag;
+	const char *b = tag;
+
+	int a_empty = a == NULL || *a == '\0';
+	int b_empty = b == NULL || *b == '\0';
+
+	if (a_empty || b_empty) {
+		if (a_empty && b_empty) {
+			return 1;
+		}
+	}
+	else {
+		if (strcmp(a, b) == 0) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 int rrr_type_import_ustr_raw (
 		uint64_t *target,
 		rrr_length *parsed_bytes,
@@ -292,10 +320,6 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 );
 void rrr_type_value_destroy (
 		struct rrr_type_value *template_
-);
-int rrr_type_value_is_tag (
-		const struct rrr_type_value *value,
-		const char *tag
 );
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
