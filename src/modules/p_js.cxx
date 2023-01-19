@@ -170,6 +170,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto scope = Scope(ctx);
 		auto trycatch = TryCatch(ctx);
 
+//		ctx.set_global("Message", v8::FunctionTemplate::New(ctx, Message::constructor).ToLocalChecked())
+
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
 		auto script = Script(ctx, trycatch, (std::string) file);
 		script.run(ctx, trycatch);

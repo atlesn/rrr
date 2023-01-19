@@ -13,10 +13,8 @@ function check_array_buffer(buffer, check_buffer) {
 	}
 }
 
-function process(message) {
-	let catched = false;
-
-	console.log("Process function\n");
+function function_tests() {
+	const message = new Message();
 
 	Object.keys(message).forEach((key) => {
 		console.log("Key: " + key + "\n");
@@ -326,4 +324,12 @@ function process(message) {
 	}
 
 	console.log("Values cleared\n");
+}
+
+function process(message) {
+	let catched = false;
+
+	console.log("Process function\n");
+
+	function_tests();
 }

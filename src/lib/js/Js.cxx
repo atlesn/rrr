@@ -216,7 +216,7 @@ namespace RRR::JS {
 
 	CTX::CTX(ENV &env) :
 		ctx(v8::Context::New(env, nullptr))
-	{	
+	{
 		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
 		{
 			auto result = console->Set(ctx, String(*this, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
@@ -248,6 +248,13 @@ namespace RRR::JS {
 
 	CTX::operator v8::Isolate *() {
 		return ctx->GetIsolate();
+	}
+
+	void CTX::set_global(std::string name, v8::Local<v8::Function> function_tmpl) {
+		auto result = ctx->Global()->Set(ctx, String(*this, name), function_tmpl);
+		if (!result.FromMaybe(false)) {
+			throw E("Failed to intitialize globals\n");
+		}
 	}
 
 	Function CTX::get_function(const char *name) {

@@ -33,6 +33,8 @@ extern "C" {
 
 namespace RRR::JS {
 	class Message : public Object {
+		friend class CTX;
+
 		private:
 		struct sockaddr_storage ip_addr;
 		socklen_t ip_addr_len;
@@ -90,9 +92,10 @@ namespace RRR::JS {
 		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
-	
+
 		protected:
 		Message(CTX &ctx, v8::Local<v8::Object> obj);
+		static void constructor(const v8::FunctionCallbackInfo<v8::Value> &info);
 
 		public:
 		class Template {
