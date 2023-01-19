@@ -174,7 +174,14 @@ function process(message) {
 	if (!catched) {
 		throw("class field allowed modification\n");
 	}
-	// TODO : Verify that class changes when array is populated
+	message.push_tag();
+	if (message.class !== message.MSG_CLASS_ARRAY) {
+		throw("class was not ARRAY as expected\n");
+	}
+	message.clear_array();
+	if (message.class !== message.MSG_CLASS_DATA) {
+		throw("class was not DATA as expected\n");
+	}
 	console.log("Class: " + message.class + "\n");
 
 	// Array values

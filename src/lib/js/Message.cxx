@@ -215,6 +215,13 @@ namespace RRR::JS {
 		message->push_tag_blob(isolate, String(isolate, tag), v8::ArrayBuffer::Cast(*info[1]));
 	}
 
+	rrr_msg_msg_class Message::get_class() {
+		return array.count() > 0
+			? MSG_CLASS_ARRAY
+			: MSG_CLASS_DATA
+		;
+	}
+
 	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
@@ -483,7 +490,7 @@ namespace RRR::JS {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->array.count() > 0 ? MSG_CLASS_ARRAY : MSG_CLASS_DATA));
+		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->get_class()));
 	}
 
 	void Message::cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
