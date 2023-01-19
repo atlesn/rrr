@@ -50,11 +50,19 @@ namespace RRR::JS {
 		}
 
 		void clear_array();
+		rrr_msg_msg_class get_class();
+
 		void push_tag_vain(std::string key);
 		void push_tag_str(std::string key, std::string value);
 		void push_tag_blob(std::string key, const char *value, rrr_length size);
 		void push_tag_blob(v8::Isolate *isolate, std::string key, v8::ArrayBuffer *blob);
-		rrr_msg_msg_class get_class();
+		void push_tag_h(v8::Isolate *isolate, std::string key, int64_t i64);
+		void push_tag_h(v8::Isolate *isolate, std::string key, uint64_t u64);
+		void push_tag_h(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
+		void push_tag_h(v8::Isolate *isolate, std::string key, std::string string);
+		void push_tag_fixp(v8::Isolate *isolate, std::string key, int64_t i64);
+		void push_tag_fixp(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
+		void push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string);
 
 		static void cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
@@ -75,12 +83,13 @@ namespace RRR::JS {
 		static void cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info);
+		template <typename BIGINT, typename STRING> static void cb_push_tag_number(const v8::FunctionCallbackInfo<v8::Value> &info, BIGINT b, STRING s);
 		static void cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
-
+	
 		protected:
 		Message(CTX &ctx, v8::Local<v8::Object> obj);
 

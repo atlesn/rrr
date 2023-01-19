@@ -53,4 +53,37 @@ namespace RRR {
 			throw E("Error while pushing blob value");
 		}
 	}
+
+	void Array::push_value_64_with_tag(std::string tag, uint64_t value) {
+		verify_tag(tag);
+		if (rrr_array_push_value_u64_with_tag(&array, tag.c_str(), value) != 0) {
+			throw E("Error while pushing u64 value");
+		}
+	}
+
+	void Array::push_value_64_with_tag(std::string tag, int64_t value) {
+		verify_tag(tag);
+		if (rrr_array_push_value_i64_with_tag(&array, tag.c_str(), value) != 0) {
+			throw E("Error while pushing i64 value");
+		}
+	}
+
+	void Array::push_value_fixp_with_tag(std::string tag, rrr_fixp value) {
+		verify_tag(tag);
+		if (rrr_array_push_value_fixp_with_tag(&array, tag.c_str(), value) != 0) {
+			throw E("Error while pushing fixp value");
+		}
+	}
+
+	void Array::push_value_fixp_with_tag(std::string tag, std::string string) {
+		verify_tag(tag);
+		rrr_fixp fixp = 0;
+		const char *endptr = nullptr;
+		if (rrr_fixp_str_to_fixp(&fixp, string.c_str(), string.length(), &endptr) != 0 || string.c_str() + string.length() != endptr) {
+			throw E("Error while converting fixp value");
+		}
+		if (rrr_array_push_value_fixp_with_tag(&array, tag.c_str(), fixp) != 0) {
+			throw E("Error while pushing fixp value");
+		}
+	}
 }; // namespace RRR

@@ -31,10 +31,18 @@ extern "C" {
 
 #include <cassert>
 #include <type_traits>
+#include <stdexcept>
 
 namespace RRR::JS {
 	void Message::clear_array() {
 		array.clear();
+	}
+
+	rrr_msg_msg_class Message::get_class() {
+		return array.count() > 0
+			? MSG_CLASS_ARRAY
+			: MSG_CLASS_DATA
+		;
 	}
 
 	void Message::push_tag_vain(std::string key) {
@@ -63,7 +71,65 @@ namespace RRR::JS {
 			return;
 		}
 		push_tag_blob(key, (const char *) contents.Data(), length);
+	}
+
+	void Message::push_tag_h(v8::Isolate *isolate, std::string key, int64_t i64) {
+		array.push_value_64_with_tag(key, i64);
+	}
+
+	void Message::push_tag_h(v8::Isolate *isolate, std::string key, uint64_t u64) {
+		array.push_value_64_with_tag(key, u64);
+	}
+
+	void Message::push_tag_h(v8::Isolate *isolate, std::string key, v8::BigInt *bigint) {
+		bool lossless = false;
+		uint64_t u64 = bigint->Uint64Value(&lossless);
+		if (lossless) {
+			push_tag_h(isolate, String(isolate, key), u64);
+			return;
+		}
+		int64_t i64 = bigint->Int64Value(&lossless);
+		if (lossless) {
+			push_tag_h(isolate, String(isolate, key), i64);
+			return;
+		}
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could not convert BigInt without precision loss")));
 		return;
+	}
+
+	void Message::push_tag_h(v8::Isolate *isolate, std::string key, std::string string) {
+		try {
+			static_assert(sizeof(std::stoll(string)) == sizeof(int64_t));
+			push_tag_h(isolate, String(isolate, key), (int64_t) std::stoll(string));
+		}
+		catch (std::out_of_range e) {
+			try {
+				static_assert(sizeof(std::stoull(string)) == sizeof(uint64_t));
+				push_tag_h(isolate, String(isolate, key), (uint64_t) std::stoull(string));
+			}
+			catch (std::out_of_range e) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
+			}
+		}
+	}
+
+	void Message::push_tag_fixp(v8::Isolate *isolate, std::string key, rrr_fixp fixp) {
+		array.push_value_fixp_with_tag(key, fixp);
+	}
+
+	void Message::push_tag_fixp(v8::Isolate *isolate, std::string key, v8::BigInt *bigint) {
+		bool lossless = false;
+		int64_t i64 = bigint->Int64Value(&lossless);
+		if (lossless) {
+			push_tag_fixp(isolate, String(isolate, key), i64);
+			return;
+		}
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could not convert BigInt without precision loss")));
+		return;
+	}
+
+	void Message::push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string) {
+		array.push_value_fixp_with_tag(key, string);
 	}
 
 	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
@@ -196,6 +262,13 @@ namespace RRR::JS {
 		message->clear_array();
 	}
 
+#define TRY_CATCH_ARRAY(c)                                                 \
+  try { c; }                                                               \
+  catch (RRR::Array::E e) {                                                \
+    isolate->ThrowException(v8::Exception::TypeError(String(isolate, e))); \
+    return;                                                                \
+  }
+
 	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
@@ -212,14 +285,7 @@ namespace RRR::JS {
 			return;
 		}
 
-		message->push_tag_blob(isolate, String(isolate, tag), v8::ArrayBuffer::Cast(*info[1]));
-	}
-
-	rrr_msg_msg_class Message::get_class() {
-		return array.count() > 0
-			? MSG_CLASS_ARRAY
-			: MSG_CLASS_DATA
-		;
+		TRY_CATCH_ARRAY(message->push_tag_blob(isolate, String(isolate, tag), v8::ArrayBuffer::Cast(*info[1])));
 	}
 
 	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {
@@ -239,11 +305,61 @@ namespace RRR::JS {
 			return;
 		}
 
-		message->push_tag_str(String(isolate, tag), String(isolate, value));
+		TRY_CATCH_ARRAY(message->push_tag_str(String(isolate, tag), String(isolate, value)));
 	}
 
-	void Message::cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info) {}
-	void Message::cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info) {}
+	template <typename BIGINT, typename STRING> void Message::cb_push_tag_number(const v8::FunctionCallbackInfo<v8::Value> &info, BIGINT b, STRING s) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto message = self(info);
+		auto tag = v8::Local<v8::String>();
+		auto value = v8::Local<v8::Value>();
+		auto string = v8::Local<v8::String>();
+
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
+			return;
+		}
+
+		if (info.Length() >= 2) {
+			value = info[1];
+		}
+		else {
+			value = v8::Uint32::New(isolate, 0);
+		}
+
+		if (value->IsBigInt()) {
+			TRY_CATCH_ARRAY(b(message, isolate, String(isolate, tag), v8::BigInt::Cast(*value)));
+			return;
+		}
+
+		if (value->ToString(ctx).ToLocal(&string)) {
+			try {
+				TRY_CATCH_ARRAY(s(message, isolate, String(isolate, tag), String(isolate, string)));
+			}
+			catch (std::invalid_argument e) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
+			}
+			return;
+		}
+
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could not convert argument to a number")));
+		return;
+	}
+
+	void Message::cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto l = [](auto message, auto a, auto b, auto c){
+			message->push_tag_h(a, b, c);
+		};
+		Message::cb_push_tag_number(info, l, l);
+	}
+
+	void Message::cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto l = [](auto message, auto a, auto b, auto c){
+			message->push_tag_fixp(a, b, c);
+		};
+		Message::cb_push_tag_number(info, l, l);
+	}
 
 	void Message::cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
@@ -267,7 +383,7 @@ namespace RRR::JS {
 		}
 
 		// Process value argument
-		try {
+		TRY_CATCH_ARRAY (
 			auto key = String(isolate, key_string);
 			auto value_string = v8::Local<v8::String>();
 			if (value.IsEmpty() || value->IsNullOrUndefined()) {
@@ -278,18 +394,28 @@ namespace RRR::JS {
 				message->push_tag_blob(isolate, key, v8::ArrayBuffer::Cast(*value));
 				return;
 			}
+			else if (value->IsBigInt()) {
+				TRY_CATCH_ARRAY(message->push_tag_h(isolate, key, v8::BigInt::Cast(*value)));
+				return;
+			}
 			else if (value->ToString(ctx).ToLocal(&value_string)) {
+				try {
+					TRY_CATCH_ARRAY(message->push_tag_h(isolate, key, String(isolate, value_string)));
+					return;
+				}
+				catch (std::invalid_argument e) {
+					if (value->IsNumber()) {
+						isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
+						return;
+					}
+				}
 				message->push_tag_str(key, String(isolate, value_string));
 				return;
 			}
 
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Unsupported value type, cannot push to array")));
 			return;
-		}
-		catch (RRR::util::E e) {
-			isolate->ThrowException(v8::Exception::Error(String(isolate, std::string("Error while pushing tag: ") + (std::string) e)));
-			return;
-		}
+		);
 	}
 
 	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {}
@@ -310,28 +436,33 @@ namespace RRR::JS {
 		auto tag_string = (std::string) String(isolate, tag);
 		message->array.iterate (
 			[&result, &isolate](rrr_type_be data, bool sign) {
-				printf("Emplace host\n");
 				static_assert(sizeof(data) == sizeof(int64_t));
-				result.emplace_back(sign
-					? v8::BigInt::New(isolate, *((int64_t *)((void *) &data)))
-					: v8::BigInt::NewFromUnsigned(isolate, data)
-				 );
+				if (sign) {
+					const int64_t i64 = *((int64_t *)((void *) &data));
+					result.emplace_back(i64 > INT32_MAX || i64 < INT32_MIN
+						? (v8::Local<v8::Value>) v8::BigInt::New(isolate, i64)
+						: (v8::Local<v8::Value>) v8::Integer::New(isolate, (int32_t) i64)
+					);
+				}
+				else {
+					const uint64_t u64 = *((uint64_t *)((void *) &data));
+					result.emplace_back(u64 > UINT32_MAX
+						? (v8::Local<v8::Value>) v8::BigInt::NewFromUnsigned(isolate, u64)
+						: (v8::Local<v8::Value>) v8::Integer::NewFromUnsigned(isolate, (uint32_t) u64)
+					);
+				}
 			},
 			[&result, &isolate](const uint8_t *data, rrr_length size) {
-				printf("Emplace blob\n");
 				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
 			},
 			[&result, &isolate](const struct rrr_msg *data, rrr_length size) {
-				printf("Emplace msg\n");
 				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
 			},
 			[&result, &isolate](rrr_fixp data) {
-				printf("Emplace fixp\n");
 				static_assert(sizeof(data) == sizeof(int64_t));
 				result.emplace_back(v8::BigInt::New(isolate, data));
 			},
 			[&result, &isolate, &tag_string](const char *data, rrr_length size) {
-				printf("Emplace string\n");
 				int size_int;
 				if (rrr_int_from_length_err(&size_int, size) != 0) {
 					RRR_MSG_0("Warning: String in array message too long for JavaScript(%" PRIrrrl ">%i) in value with key '%s'. Dropping value.\n",
@@ -341,11 +472,9 @@ namespace RRR::JS {
 				result.emplace_back(String(isolate, data, size_int));
 			},
 			[&result, &isolate](void) {
-				printf("Emplace vain\n");
 				result.emplace_back(v8::Null(isolate));
 			},
 			[tag_string](std::string tag){
-				printf("Compare tags '%s'<>'%s'\n", tag_string.c_str(), tag.c_str());
 				return tag_string == tag;
 			}
 		);

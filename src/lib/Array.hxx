@@ -158,13 +158,16 @@ namespace RRR {
 		void push_value_vain_with_tag(std::string tag);
 		void push_value_str_with_tag(std::string tag, std::string value);
 		void push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size);
+		void push_value_64_with_tag(std::string tag, uint64_t value);
+		void push_value_64_with_tag(std::string tag, int64_t value);
+		void push_value_fixp_with_tag(std::string tag, rrr_fixp value);
+		void push_value_fixp_with_tag(std::string tag, std::string string);
 
 		template <
 			typename HOST, typename BLOB, typename MSG, typename FIXP, typename STR, typename VAIN, typename C
 		> void iterate (
 			HOST h, BLOB b, MSG m, FIXP f, STR s, VAIN v, C c = [](std::string tag)->bool{return true;}
 		) {
-			printf("Iterate %i elements\n", RRR_LL_COUNT(&array));
 			RRR_LL_ITERATE_BEGIN(&array, struct rrr_type_value);
 				if (!c(node->tag != NULL ? std::string(node->tag) : std::string())) {
 					RRR_LL_ITERATE_NEXT();

@@ -242,6 +242,65 @@ function process(message) {
 
 	console.log("Data: " + check_blob_u8_a.join(",") + "\n");
 
+	catched = false;
+	try {
+		message.push_tag_h("h", ")(*&^%$#@");
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("h allowed bogus data push\n");
+	}
+
+	message.push_tag("h", 12);
+	message.push_tag_h("h", BigInt(34));
+	message.push_tag("h", BigInt(56));
+	message.push_tag_h("h", 78);
+	message.push_tag_h("h", -9);
+	message.push_tag("h", BigInt(8888888888888888));
+	message.push_tag_h("h", BigInt("9999999999999999"));
+
+	if (message.get_tag_all("h")[0] !== 12) {
+		throw("h data mismatch 12");
+	}
+	if (message.get_tag_all("h")[1] !== 34) {
+		throw("h data mismatch 34");
+	}
+	if (message.get_tag_all("h")[2] !== 56) {
+		throw("h data mismatch 56");
+	}
+	if (message.get_tag_all("h")[3] !== 78) {
+		throw("h data mismatch 78");
+	}
+	if (message.get_tag_all("h")[4] !== -9) {
+		throw("h data mismatch -9");
+	}
+	if (message.get_tag_all("h")[5] !== BigInt(8888888888888888)) {
+		throw("h data mismatch 8888888888888888");
+	}
+	if (message.get_tag_all("h")[6] !== BigInt("9999999999999999")) {
+		throw("h data mismatch 9999999999999999");
+	}
+
+	console.log("H: " + message.get_tag_all("h").join(",") + "\n");
+
+	message.push_tag("fixp", 22);
+	message.push_tag("fixp", "33");
+	message.push_tag("fixp", BigInt(44));
+
+	if (message.get_tag_all("fixp")[0] !== 22) {
+		throw("fixp data mismatch 22");
+	}
+	if (message.get_tag_all("fixp")[1] !== 33) {
+		throw("fixp data mismatch 33");
+	}
+	if (message.get_tag_all("fixp")[2] !== 44) {
+		throw("fixp data mismatch 44");
+	}
+
+	console.log("fixp: " + message.get_tag_all("fixp").join(",") + "\n");
+
 /*
   clear_array:   function(){},                  // Clear all array data
   push_tag_blob: function(tag=null, data){},    // Push array value of type blob
