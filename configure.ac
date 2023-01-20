@@ -119,7 +119,7 @@ if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CX
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3"
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS"
 	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])

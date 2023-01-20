@@ -26,12 +26,15 @@ extern "C" {
 };
 
 #include <v8.h>
+#include <algorithm>
+#include <forward_list>
 #include "../util/E.hxx"
 
 namespace RRR::JS {
 	class CTX;
 	class Scope;
 	class TryCatch;
+	class Isolate;
 
 	class ENV {
 		friend class Isolate;
@@ -48,6 +51,68 @@ namespace RRR::JS {
 		static void fatal_error(const char *where, const char *what);
 	};
 
+	class Persistable {
+		public:
+		virtual ~Persistable() = default;
+	};
+
+	template <class T> class PersistentStorage {
+		private:
+		template <class U> class Persistent {
+			private:
+			v8::Persistent<v8::Object,v8::CopyablePersistentTraits<v8::Object>> persistent;
+			std::shared_ptr<U> t;
+			bool done;
+
+			public:
+			static void gc(const v8::WeakCallbackInfo<void> &info) {
+				auto self = (Persistent<U> *) info.GetParameter();
+				printf("GC called for %p, done\n", self);
+				self->done = true;
+			}
+			Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, U *t) :
+				t(t),
+				persistent(isolate, obj),
+				done(false)
+			{
+				printf("Persistent %p for %p created\n", this, t);
+				persistent.SetWeak<void>(this, gc, v8::WeakCallbackType::kParameter);
+			}
+			~Persistent() {
+				printf("Persistent %p for %p destroy\n", this, t);
+			}
+			bool is_done() const {
+				return done;
+			}
+		};
+
+		v8::Isolate *isolate;
+		std::forward_list<Persistent<T>> persistents;
+		int entries;
+
+		public:
+		PersistentStorage(v8::Isolate *isolate) :
+			isolate(isolate),
+			persistents(),
+			entries(0)
+		{
+		}
+		PersistentStorage(const PersistentStorage &p) = delete;
+		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) {
+			persistents.emplace_front(Persistent(isolate, obj, t));
+			entries++;
+			printf("Push %i entries\n", entries);
+		}
+		void gc() {
+			printf("GC %i entries\n", entries);
+			persistents.remove_if([this](const Persistent<T> &p){
+				if (p.is_done())
+					entries--;
+				return p.is_done();
+			});
+		}
+	};
+
 	class Isolate {
 		private:
 		v8::Isolate *isolate;
@@ -56,6 +121,8 @@ namespace RRR::JS {
 
 		public:
 		Isolate(ENV &env);
+		~Isolate();
+		void gc();
 	};
 
 	class Value : public v8::Local<v8::Value> {
@@ -192,26 +259,6 @@ namespace RRR::JS {
 		Script(CTX &ctx, TryCatch &trycatch, String &&str);
 		Script(CTX &ctx, TryCatch &trycatch, std::string &&str);
 		void run(CTX &ctx, TryCatch &trycatch);
-	};
-
-	template <class T> class Persistent {
-		private:
-		v8::Persistent<v8::Object> persistent;
-		T *t;
-
-		public:
-		static void gc(const v8::WeakCallbackInfo<T> &info) {
-			auto t = info.GetParameter();
-			printf("GC called for %p\n", t);
-			delete t;
-		}
-		Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) :
-			t(t),
-			persistent(isolate, obj)
-		{
-			printf("Persistent created for %p\n", t);
-			persistent.SetWeak(t, gc, v8::WeakCallbackType::kParameter);
-		}
 	};
 
 	template <class A, class B> class Duple {

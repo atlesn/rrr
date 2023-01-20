@@ -650,7 +650,8 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.This());
 	}
 
-	Message::Template::Template(CTX &ctx) :
+	Message::Template::Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+		persistent_storage(persistent_storage),
 		function_tmpl(v8::FunctionTemplate::New(ctx, Message::Template::cb_construct, v8::External::New(ctx, this))),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set)),
@@ -709,20 +710,16 @@ namespace RRR::JS {
 		printf("Destroy message %p\n", this);
 	}
 
-	Message::Template Message::make_function_template(CTX &ctx) {
-		return Template(ctx);
-	}
-
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local(v8::Isolate *isolate) {
 		auto obj = function_tmpl->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
 		auto message = new Message (isolate, obj);
-		auto persistent = Persistent(isolate, obj, message);
+		persistent_storage.push(isolate, obj, message);
 		return Duple(obj, message);
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj) {
 		auto message = new Message (isolate, obj);
-		auto persistent = Persistent(isolate, obj, message);
+		persistent_storage.push(isolate, obj, message);
 		return Duple(obj, message);
 	}
 

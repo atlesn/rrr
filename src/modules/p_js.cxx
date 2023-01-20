@@ -91,7 +91,9 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 class js_run_data {
 	private:
 	RRR::JS::CTX &ctx;
+	RRR::JS::Isolate &isolate;
 	RRR::JS::TryCatch &trycatch;
+	RRR::JS::PersistentStorage<RRR::JS::Persistable> &persistent_storage;
 	RRR::JS::Function config;
 	RRR::JS::Function source;
 	RRR::JS::Function process;
@@ -123,6 +125,8 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
+		isolate.gc();
+		persistent_storage.gc();
 	}
 	void runProcess() {
 		auto message = msg_tmpl.new_local(ctx);
@@ -131,12 +135,22 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
+		isolate.gc();
+		persistent_storage.gc();
 	}
-	js_run_data(struct js_data *data, RRR::JS::CTX &ctx, RRR::JS::TryCatch &trycatch) :
+	js_run_data(
+			struct js_data *data,
+			RRR::JS::Isolate &isolate,
+			RRR::JS::CTX &ctx,
+			RRR::JS::TryCatch &trycatch,
+			RRR::JS::PersistentStorage<RRR::JS::Persistable> &persistent_storage
+	) :
+		isolate(isolate),
 		ctx(ctx),
 		trycatch(trycatch),
+		persistent_storage(persistent_storage),
 		data(data),
-		msg_tmpl(RRR::JS::Message::make_function_template(ctx))
+		msg_tmpl(ctx, persistent_storage)
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -169,8 +183,9 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	try {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env);
-		auto scope = Scope(ctx);
 		auto trycatch = TryCatch(ctx);
+		auto persistent_storage = PersistentStorage<Persistable>(ctx);
+		auto scope = Scope(ctx);
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
 		auto script = Script(ctx, trycatch, (std::string) file);
@@ -180,7 +195,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		})) {
 			// OK
 		}
-		js_run_data run_data(data, ctx, trycatch);
+		js_run_data run_data(data, isolate, ctx, trycatch, persistent_storage);
 		//run_data.ctx.worker = worker;
 
 		if ((ret = rrr_cmodule_worker_loop_start (
@@ -195,6 +210,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
 			// Don't goto out, run cleanup functions
 		}
+
+		printf("Worker loop out\n");
 	}
 	catch (E e) {
 		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
@@ -212,6 +229,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				INSTANCE_D_NAME(data->thread_data));
 	}*/
 
+	printf("Init wrapper out\n");
 	out:
 	return ret;
 }
@@ -248,13 +266,6 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	(void)(worker);
 
 	int ret = 0;
-
-	struct rrr_msg_msg *message_copy = rrr_msg_msg_duplicate(message);
-	if (message_copy == NULL) {
-		RRR_MSG_0("Could not allocate message in %s\n");
-		ret = 1;
-		goto out;
-	}
 
 	try {
 		if (is_spawn_ctx) {

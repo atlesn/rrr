@@ -32,7 +32,7 @@ extern "C" {
 #include "../Array.hxx"
 
 namespace RRR::JS {
-	class Message {
+	class Message : public Persistable {
 		friend class CTX;
 
 		private:
@@ -115,18 +115,16 @@ namespace RRR::JS {
 			v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
 			v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 			static void cb_construct(const v8::FunctionCallbackInfo<v8::Value> &info);
-
-			protected:
-			Template(CTX &ctx);
+			PersistentStorage<Persistable> &persistent_storage;
 
 			public:
+			Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage);
 			Duple<v8::Local<v8::Object>, Message *> new_local(v8::Isolate *isolate);
 			Duple<v8::Local<v8::Object>, Message *> new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj);
 			v8::Local<v8::Function> get_function(CTX &ctx);
 		};
 
 		~Message();
-		static Template make_function_template(CTX &ctx);
 		operator v8::Local<v8::Object>(); 
 	};
 }; // namespace RRR::JS
