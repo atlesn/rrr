@@ -60,9 +60,9 @@ namespace RRR::JS {
 		private:
 		template <class U> class Persistent {
 			private:
-			v8::Persistent<v8::Object,v8::CopyablePersistentTraits<v8::Object>> persistent;
-			std::shared_ptr<U> t;
+			v8::Persistent<v8::Object> persistent;
 			bool done;
+			std::unique_ptr<U> t;
 
 			public:
 			static void gc(const v8::WeakCallbackInfo<void> &info) {
@@ -75,11 +75,12 @@ namespace RRR::JS {
 				persistent(isolate, obj),
 				done(false)
 			{
-				printf("Persistent %p for %p created\n", this, t);
+				printf("Persistent %p for %p created\n", this, this->t.get());
 				persistent.SetWeak<void>(this, gc, v8::WeakCallbackType::kParameter);
 			}
+			Persistent(const Persistent &p) = delete;
 			~Persistent() {
-				printf("Persistent %p for %p destroy\n", this, t);
+				printf("Persistent %p for %p destroy done %i\n", this, t.get(), done);
 			}
 			bool is_done() const {
 				return done;
@@ -87,7 +88,7 @@ namespace RRR::JS {
 		};
 
 		v8::Isolate *isolate;
-		std::forward_list<Persistent<T>> persistents;
+		std::forward_list<std::unique_ptr<Persistent<T>>> persistents;
 		int entries;
 
 		public:
@@ -99,16 +100,16 @@ namespace RRR::JS {
 		}
 		PersistentStorage(const PersistentStorage &p) = delete;
 		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) {
-			persistents.emplace_front(Persistent(isolate, obj, t));
+			persistents.emplace_front(new Persistent(isolate, obj, t));
 			entries++;
 			printf("Push %i entries\n", entries);
 		}
 		void gc() {
 			printf("GC %i entries\n", entries);
-			persistents.remove_if([this](const Persistent<T> &p){
-				if (p.is_done())
+			persistents.remove_if([this](auto &p){
+				if (p->is_done())
 					entries--;
-				return p.is_done();
+				return p->is_done();
 			});
 		}
 	};
