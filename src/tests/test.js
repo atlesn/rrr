@@ -1,5 +1,12 @@
 function config() {
 	console.log("Config function\n");
+
+	const msg_a = new Message();
+	const msg_b = new Message();
+
+	msg_a.topic = "topic A";
+	msg_b.topic = "topic B";
+	console.log(msg_a.topic + "\n");
 }
 
 function check_array_buffer(buffer, check_buffer) {

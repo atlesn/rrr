@@ -642,8 +642,16 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.Data());
 	}
 
+	void Message::Template::cb_construct(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto self = (Message::Template *) v8::External::Cast(*info.Data())->Value();
+		auto message = self->new_persistent(isolate, info.This());
+		info.GetReturnValue().Set(info.This());
+	}
+
 	Message::Template::Template(CTX &ctx) :
-		function_tmpl(v8::FunctionTemplate::New(ctx)),
+		function_tmpl(v8::FunctionTemplate::New(ctx, Message::Template::cb_construct, v8::External::New(ctx, this))),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, cb_clear_array)),
@@ -681,11 +689,9 @@ namespace RRR::JS {
 		instance->SetAccessor(String(ctx, "MSG_CLASS_DATA"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
 		instance->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
 		instance->SetInternalFieldCount(1);
-		function_tmpl->ReadOnlyPrototype();
 	}
 
-	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
-		obj(obj),
+	Message::Message(v8::Isolate *isolate, v8::Local<v8::Object> obj) :
 		ip_so_type("udp"),
 		topic(),
 		timestamp(rrr_time_get_64()),
@@ -693,16 +699,34 @@ namespace RRR::JS {
 		data(),
 		array()
 	{
+		printf("New message %p\n", this);
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
-		obj->SetInternalField(0, v8::External::New(ctx, this));
+		obj->SetInternalField(0, v8::External::New(isolate, this));
+	}
+
+	Message::~Message() {
+		printf("Destroy message %p\n", this);
 	}
 
 	Message::Template Message::make_function_template(CTX &ctx) {
 		return Template(ctx);
 	}
 
-	Message Message::Template::new_instance(CTX &ctx) {
-		return Message (ctx, function_tmpl->GetFunction(ctx).ToLocalChecked()->NewInstance(ctx).ToLocalChecked());
+	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local(v8::Isolate *isolate) {
+		auto obj = function_tmpl->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
+		auto message = new Message (isolate, obj);
+		auto persistent = Persistent(isolate, obj, message);
+		return Duple(obj, message);
+	}
+
+	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj) {
+		auto message = new Message (isolate, obj);
+		auto persistent = Persistent(isolate, obj, message);
+		return Duple(obj, message);
+	}
+
+	v8::Local<v8::Function> Message::Template::get_function(CTX &ctx) {
+		return function_tmpl->GetFunction(ctx).ToLocalChecked();
 	}
 }; // namespace RRR::JS

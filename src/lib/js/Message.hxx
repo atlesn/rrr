@@ -36,7 +36,6 @@ namespace RRR::JS {
 		friend class CTX;
 
 		private:
-		v8::Local<v8::Object> obj;
 		struct sockaddr_storage ip_addr;
 		socklen_t ip_addr_len;
 		std::string ip_so_type;
@@ -94,9 +93,10 @@ namespace RRR::JS {
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
 
+		Message(v8::Isolate *isolate, v8::Local<v8::Object> obj);
+
 		protected:
-		Message(CTX &ctx, v8::Local<v8::Object> obj);
-		static void constructor(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static v8::Local<Message> create(v8::Isolate *isolate, v8::Local<v8::Object> obj);
 
 		public:
 		class Template {
@@ -114,21 +114,19 @@ namespace RRR::JS {
 			v8::Local<v8::FunctionTemplate> tmpl_push_tag;
 			v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
 			v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
+			static void cb_construct(const v8::FunctionCallbackInfo<v8::Value> &info);
 
 			protected:
 			Template(CTX &ctx);
 
 			public:
-			Message new_instance(CTX &ctx);
-			operator v8::Local<v8::FunctionTemplate>() {
-				return function_tmpl;
-			}
+			Duple<v8::Local<v8::Object>, Message *> new_local(v8::Isolate *isolate);
+			Duple<v8::Local<v8::Object>, Message *> new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj);
+			v8::Local<v8::Function> get_function(CTX &ctx);
 		};
 
+		~Message();
 		static Template make_function_template(CTX &ctx);
-
-		operator v8::Local<v8::Value>() {
-			return obj;
-		}
+		operator v8::Local<v8::Object>(); 
 	};
 }; // namespace RRR::JS

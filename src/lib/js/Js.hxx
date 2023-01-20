@@ -134,7 +134,12 @@ namespace RRR::JS {
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
-		void set_global(std::string name, v8::Local<v8::Object> object);
+		template <typename T> void set_global(std::string name, T object) {
+			auto result = ctx->Global()->Set(ctx, String(*this, name), object);
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to set global '" + name + "'\n");
+			}
+		}
 		Function get_function(const char *name);
 		void run_function(TryCatch &trycatch, Function &function, const char *name, int argc, Value argv[]);
 		void run_function(TryCatch &trycatch, const char *name, int argc, Value argv[]);
@@ -187,5 +192,36 @@ namespace RRR::JS {
 		Script(CTX &ctx, TryCatch &trycatch, String &&str);
 		Script(CTX &ctx, TryCatch &trycatch, std::string &&str);
 		void run(CTX &ctx, TryCatch &trycatch);
+	};
+
+	template <class T> class Persistent {
+		private:
+		v8::Persistent<v8::Object> persistent;
+		T *t;
+
+		public:
+		static void gc(const v8::WeakCallbackInfo<T> &info) {
+			auto t = info.GetParameter();
+			printf("GC called for %p\n", t);
+			delete t;
+		}
+		Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) :
+			t(t),
+			persistent(isolate, obj)
+		{
+			printf("Persistent created for %p\n", t);
+			persistent.SetWeak(t, gc, v8::WeakCallbackType::kParameter);
+		}
+	};
+
+	template <class A, class B> class Duple {
+		private:
+		A a;
+		B b;
+
+		public:
+		Duple(A a, B b) : a(a), b(b) {}
+		A first() { return a; }
+		B second() { return b; }
 	};
 } // namespace RRR::JS

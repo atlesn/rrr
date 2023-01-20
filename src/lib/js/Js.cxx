@@ -245,13 +245,6 @@ namespace RRR::JS {
 		return ctx->GetIsolate();
 	}
 
-	void CTX::set_global(std::string name, v8::Local<v8::Object> object) {
-		auto result = ctx->Global()->Set(ctx, String(*this, name), object);
-		if (!result.FromMaybe(false)) {
-			throw E("Failed to set global '" + name + "'\n");
-		}
-	}
-
 	Function CTX::get_function(const char *name) {
 		v8::MaybeLocal<v8::Value> value = ctx->Global()->Get(ctx, String(*this, name));
 		if (value.IsEmpty()) {

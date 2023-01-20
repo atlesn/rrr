@@ -125,8 +125,8 @@ class js_run_data {
 		});
 	}
 	void runProcess() {
-		RRR::JS::Message message(msg_tmpl.new_instance(ctx));
-		RRR::JS::Value arg(message);
+		auto message = msg_tmpl.new_local(ctx);
+		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
@@ -149,6 +149,8 @@ class js_run_data {
 		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
+
+		ctx.set_global("Message", msg_tmpl.get_function(ctx));
 	}
 };
 
@@ -169,8 +171,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto ctx = CTX(env);
 		auto scope = Scope(ctx);
 		auto trycatch = TryCatch(ctx);
-
-//		ctx.set_global("Message", (v8::Local<v8::FunctionTemplate>) Message::make_function_template(ctx));
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
 		auto script = Script(ctx, trycatch, (std::string) file);
@@ -275,8 +275,6 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		ret = 1;
 		goto out;
 	}
-
-	//ret = run_data->source_function(nullptr, message_copy, message_addr);
 
 	out:
 	return ret;
