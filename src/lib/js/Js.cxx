@@ -70,11 +70,6 @@ namespace RRR::JS {
 	{
 	}
 
-	Object::Object(v8::Local<v8::Object> object) :
-		v8::Local<v8::Object>(object)
-	{
-	}
-
 	UTF8::UTF8(CTX &ctx, Value &value) :
 		utf8(ctx, value)
 	{
@@ -250,10 +245,10 @@ namespace RRR::JS {
 		return ctx->GetIsolate();
 	}
 
-	void CTX::set_global(std::string name, v8::Local<v8::Function> function_tmpl) {
-		auto result = ctx->Global()->Set(ctx, String(*this, name), function_tmpl);
+	void CTX::set_global(std::string name, v8::Local<v8::Object> object) {
+		auto result = ctx->Global()->Set(ctx, String(*this, name), object);
 		if (!result.FromMaybe(false)) {
-			throw E("Failed to intitialize globals\n");
+			throw E("Failed to set global '" + name + "'\n");
 		}
 	}
 

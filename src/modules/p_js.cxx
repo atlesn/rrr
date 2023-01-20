@@ -136,7 +136,7 @@ class js_run_data {
 		ctx(ctx),
 		trycatch(trycatch),
 		data(data),
-		msg_tmpl(RRR::JS::Message::make_template(ctx))
+		msg_tmpl(RRR::JS::Message::make_function_template(ctx))
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -170,7 +170,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto scope = Scope(ctx);
 		auto trycatch = TryCatch(ctx);
 
-//		ctx.set_global("Message", v8::FunctionTemplate::New(ctx, Message::constructor).ToLocalChecked())
+//		ctx.set_global("Message", (v8::Local<v8::FunctionTemplate>) Message::make_function_template(ctx));
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
 		auto script = Script(ctx, trycatch, (std::string) file);

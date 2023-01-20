@@ -13,8 +13,8 @@ function check_array_buffer(buffer, check_buffer) {
 	}
 }
 
-function function_tests() {
-	const message = new Message();
+function function_tests(message) {
+//	const message = new Message();
 
 	Object.keys(message).forEach((key) => {
 		console.log("Key: " + key + "\n");
@@ -331,5 +331,5 @@ function process(message) {
 
 	console.log("Process function\n");
 
-	function_tests();
+	function_tests(message);
 }

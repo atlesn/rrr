@@ -32,10 +32,11 @@ extern "C" {
 #include "../Array.hxx"
 
 namespace RRR::JS {
-	class Message : public Object {
+	class Message {
 		friend class CTX;
 
 		private:
+		v8::Local<v8::Object> obj;
 		struct sockaddr_storage ip_addr;
 		socklen_t ip_addr_len;
 		std::string ip_so_type;
@@ -102,7 +103,7 @@ namespace RRR::JS {
 			friend class Message;
 
 			private:
-			v8::Local<v8::ObjectTemplate> tmpl;
+			v8::Local<v8::FunctionTemplate> function_tmpl;
 			v8::Local<v8::FunctionTemplate> tmpl_ip_get;
 			v8::Local<v8::FunctionTemplate> tmpl_ip_set;
 			v8::Local<v8::FunctionTemplate> tmpl_clear_array;
@@ -119,8 +120,15 @@ namespace RRR::JS {
 
 			public:
 			Message new_instance(CTX &ctx);
+			operator v8::Local<v8::FunctionTemplate>() {
+				return function_tmpl;
+			}
 		};
 
-		static Template make_template(CTX &ctx);
+		static Template make_function_template(CTX &ctx);
+
+		operator v8::Local<v8::Value>() {
+			return obj;
+		}
 	};
 }; // namespace RRR::JS

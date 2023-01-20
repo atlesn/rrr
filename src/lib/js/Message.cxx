@@ -643,7 +643,7 @@ namespace RRR::JS {
 	}
 
 	Message::Template::Template(CTX &ctx) :
-		tmpl(v8::ObjectTemplate::New(ctx)),
+		function_tmpl(v8::FunctionTemplate::New(ctx)),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, cb_clear_array)),
@@ -655,25 +655,37 @@ namespace RRR::JS {
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, cb_clear_tag)),
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, cb_get_tag_all))
 	{
-		tmpl->SetInternalFieldCount(1);
-		tmpl->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw);
-		tmpl->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set);
-		tmpl->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set);
-		tmpl->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set);
-		tmpl->SetAccessor(String(ctx, "data"), cb_data_get, cb_data_set);
-		tmpl->SetAccessor(String(ctx, "type"), cb_type_get, cb_type_set);
-		tmpl->SetAccessor(String(ctx, "class"), cb_class_get, cb_throw);
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_MSG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_TAG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_GET"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PUT"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_DEL"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
-		tmpl->SetAccessor(String(ctx, "MSG_CLASS_DATA"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
-		tmpl->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
+		auto instance = function_tmpl->InstanceTemplate();
+		instance->Set(ctx, "ip_get", tmpl_ip_get);
+		instance->Set(ctx, "ip_set", tmpl_ip_set);
+		instance->Set(ctx, "clear_array", tmpl_clear_array);
+		instance->Set(ctx, "clear_tag", tmpl_clear_tag);
+		instance->Set(ctx, "push_tag_blob", tmpl_push_tag_blob);
+		instance->Set(ctx, "push_tag_str", tmpl_push_tag_str);
+		instance->Set(ctx, "push_tag_h", tmpl_push_tag_h);
+		instance->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
+		instance->Set(ctx, "push_tag", tmpl_push_tag);
+		instance->Set(ctx, "get_tag_all", tmpl_get_tag_all);
+		instance->SetAccessor(String(ctx, "ip_addr"), cb_ip_addr_get, cb_throw);
+		instance->SetAccessor(String(ctx, "ip_so_type"), cb_ip_so_type_get, cb_ip_so_type_set);
+		instance->SetAccessor(String(ctx, "topic"), cb_topic_get, cb_topic_set);
+		instance->SetAccessor(String(ctx, "timestamp"), cb_timestamp_get, cb_timestamp_set);
+		instance->SetAccessor(String(ctx, "data"), cb_data_get, cb_data_set);
+		instance->SetAccessor(String(ctx, "type"), cb_type_get, cb_type_set);
+		instance->SetAccessor(String(ctx, "class"), cb_class_get, cb_throw);
+		instance->SetAccessor(String(ctx, "MSG_TYPE_MSG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
+		instance->SetAccessor(String(ctx, "MSG_TYPE_TAG"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
+		instance->SetAccessor(String(ctx, "MSG_TYPE_GET"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
+		instance->SetAccessor(String(ctx, "MSG_TYPE_PUT"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
+		instance->SetAccessor(String(ctx, "MSG_TYPE_DEL"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
+		instance->SetAccessor(String(ctx, "MSG_CLASS_DATA"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
+		instance->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
+		instance->SetInternalFieldCount(1);
+		function_tmpl->ReadOnlyPrototype();
 	}
 
 	Message::Message(CTX &ctx, v8::Local<v8::Object> obj) :
-		Object(obj),
+		obj(obj),
 		ip_so_type("udp"),
 		topic(),
 		timestamp(rrr_time_get_64()),
@@ -683,37 +695,14 @@ namespace RRR::JS {
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
+		obj->SetInternalField(0, v8::External::New(ctx, this));
 	}
 
-	Message::Template Message::make_template(CTX &ctx) {
+	Message::Template Message::make_function_template(CTX &ctx) {
 		return Template(ctx);
 	}
 
 	Message Message::Template::new_instance(CTX &ctx) {
-		Message message(ctx, tmpl->NewInstance(ctx).ToLocalChecked());
-
-		message->SetInternalField(0, v8::External::New(ctx, &message));
-		message->Set(ctx, String(ctx, "ip_get"), tmpl_ip_get->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "ip_set"), tmpl_ip_set->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "clear_array"), tmpl_clear_array->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "clear_tag"), tmpl_clear_tag->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "push_tag_blob"), tmpl_push_tag_blob->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "push_tag_str"), tmpl_push_tag_str->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "push_tag_h"), tmpl_push_tag_h->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "push_tag_fixp"), tmpl_push_tag_fixp->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "push_tag"), tmpl_push_tag->GetFunction(ctx).ToLocalChecked()).Check();
-		message->Set(ctx, String(ctx, "get_tag_all"), tmpl_get_tag_all->GetFunction(ctx).ToLocalChecked()).Check();
-
-/*
-  clear_array:   function(){},                  // Clear all array data
-  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
-  push_tag_str:  function(tag=null, data){},    // Push array value of type string
-  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
-  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
-  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
-  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
-  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
- * */
-		return message;
+		return Message (ctx, function_tmpl->GetFunction(ctx).ToLocalChecked()->NewInstance(ctx).ToLocalChecked());
 	}
 }; // namespace RRR::JS

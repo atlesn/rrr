@@ -64,11 +64,6 @@ namespace RRR::JS {
 	//	Value(v8::Local<v8::String> &&value);
 	};
 
-	class Object : public v8::Local<v8::Object> {
-		public:
-		Object(v8::Local<v8::Object> object);
-	};
-
 	class UTF8 {
 		private:
 		v8::String::Utf8Value utf8;
@@ -139,7 +134,7 @@ namespace RRR::JS {
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
-		void set_global(std::string name, v8::Local<v8::Function> function);
+		void set_global(std::string name, v8::Local<v8::Object> object);
 		Function get_function(const char *name);
 		void run_function(TryCatch &trycatch, Function &function, const char *name, int argc, Value argv[]);
 		void run_function(TryCatch &trycatch, const char *name, int argc, Value argv[]);
