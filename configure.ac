@@ -63,7 +63,8 @@ AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit binding
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
-AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS/V8 bindings])],[enable_node=no],[enable_node=yes])
+AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS bindings])],[enable_node=no],[enable_node=yes])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 bindings (instead of NodeJS)])],[],[enable_v8=no])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -148,6 +149,7 @@ AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
 AM_CONDITIONAL([RRR_WITH_NODE], [test "x$enable_node" != xno])
+AM_CONDITIONAL([RRR_WITH_V8], [test "x$enable_v8" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -351,7 +353,7 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 
 AC_SUBST([JEMALLOC_LIBS])
 
-AC_DEFUN([NODECOMPILE], [
+AC_DEFUN([V8COMPILE], [
 	cxx_flags="$TEST_CXXFLAGS $NODE_CXXFLAGS -w"
 	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
@@ -361,12 +363,71 @@ AC_DEFUN([NODECOMPILE], [
 		AC_MSG_ERROR([Failed: $CXX $cxx_Flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])
 	fi
 ])
+AC_DEFUN([V8TESTS],[
+	AC_MSG_CHECKING([V8 compilation and linking])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <libplatform/libplatform.h>
+			int main (int argc, char **argv) {
+				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE
+])
+
+AC_LANG_PUSH([C++])
+
+AC_MSG_CHECKING([for V8 node usage (overriding NodeJS usage)])
+AS_IF([test "x$enable_v8" != xno],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NODE], [1], [Enable V8])
+	enable_node=no
+	if test "x$with_v8" = xyes; then
+		v8_include_dir_test="/usr/include/v8 /usr/local/include/v8"
+	else
+		v8_include_dir_test="$with_v8/include"
+		v8_lib_dir_test=`ls -d $with_v8/out/*`
+	fi
+
+	AC_MSG_CHECKING([for V8 include directory])
+	for dir in $v8_include_dir_test; do
+		if test -d $dir; then
+			v8_include_dir=$dir
+			break
+		fi
+	done
+	if test "x$v8_include_dir" != x; then
+		AC_MSG_RESULT([$v8_include_dir])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	NODE_CXXFLAGS="-I$v8_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_LDFLAGS=""
+	NODE_LIBS="-lstdc++ -lv8"
+
+	AC_MSG_CHECKING([for custom V8 library directories])
+	if test "x$v8_lib_dir_test" != x; then
+		for dir in $v8_lib_dir_test; do
+			NODE_LDFLAGS="$NODE_LDFLAGS -L$dir"
+		done
+		AC_MSG_RESULT([$NODE_LDFLAGS])
+	else
+		AC_MSG_RESULT([none])
+	fi
+
+	V8TESTS
+],[
+	AC_MSG_RESULT([no])
+])
 
 AC_MSG_CHECKING([for node usage])
 AS_IF([test "x$enable_node" != xno], [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_NODE], [1], [Enable NodeJS/V8])
-	AC_LANG_PUSH([C++])
+	AC_DEFINE([RRR_WITH_NODE], [1], [Enable NodeJS])
 	# AC_CHECK_HEADERS does not work for C++ headers with .h suffix, it
 	# only starts C-compiler.
 	AC_MSG_CHECKING([for node include directory])
@@ -386,21 +447,7 @@ AS_IF([test "x$enable_node" != xno], [
 	NODE_CXXFLAGS="-I$node_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
 	NODE_LDFLAGS=""
 	NODE_LIBS="-lstdc++ -lnode"
-
-	AC_MSG_CHECKING([V8 compilation and linking])
-	AC_LANG_CONFTEST([
-		AC_LANG_SOURCE([[
-			#include <v8.h>
-			#include <libplatform/libplatform.h>
-			int main (int argc, char **argv) {
-				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
-				return 0;
-			}
-		]])
-	])
-	NODECOMPILE
-
-	AC_LANG_POP([C++])
+	V8TESTS
 ], [
 	AC_MSG_RESULT([no])
 ])
@@ -408,6 +455,11 @@ AS_IF([test "x$enable_node" != xno], [
 AC_SUBST([NODE_CXXFLAGS])
 AC_SUBST([NODE_LDFLAGS])
 AC_SUBST([NODE_LIBS])
+
+AS_IF([test "x$NODE_CXXFLAGS" != ""],[
+])
+
+AC_LANG_POP([C++])
 
 # Make sure Perl-test does not include any libraries
 LIBS=""
