@@ -256,9 +256,6 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config_data
 static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	int ret = 0;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	struct perl5_child_data child_data = {0};
 
 	child_data.parent_data = private_arg;
@@ -279,14 +276,12 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 		goto out_sys_term;
 	}
 
+	callbacks->configuration_callback_arg = &child_data;
+	callbacks->process_callback_arg = &child_data;
+
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&child_data,
-			process_callback,
-			&child_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in perl5_init_wrapper_callback\n");
 		// Don't goto out, run cleanup functions

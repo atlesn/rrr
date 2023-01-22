@@ -53,10 +53,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         const struct rrr_msg_addr *msg_addr,                   \
         void *arg
 
+#define RRR_CMODULE_PING_CALLBACK_ARGS                         \
+        struct rrr_cmodule_worker *worker,                     \
+        void *private_arg
+
 #define RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS                \
         struct rrr_cmodule_worker *worker,                     \
         void *private_arg
-                                                               \
+
 #define RRR_CMODULE_PROCESS_CALLBACK_ARGS                      \
         struct rrr_cmodule_worker *worker,                     \
         const struct rrr_msg_msg *message,                     \
@@ -71,12 +75,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS                                         \
         struct rrr_cmodule_worker *worker,                                             \
-        int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),        \
-        void *configuration_callback_arg,                                              \
-        int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),                   \
-        void *process_callback_arg,                                                    \
-	int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),            \
-	void *custom_tick_callback_arg,                                                \
+	struct rrr_cmodule_worker_callbacks *callbacks,                                \
         void *private_arg
 
 struct rrr_msg_msg;

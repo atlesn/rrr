@@ -863,12 +863,7 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	rrr_event_function_set (
 			INSTANCE_D_EVENTS(thread_data),
@@ -884,13 +879,44 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 			INSTANCE_D_EVENTS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	);
+}
+
+int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS),
+		void *ping_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg
+) {
+	struct rrr_cmodule_worker_callbacks callbacks = {
+		ping_callback,
+		ping_callback_arg,
+		configuration_callback,
+		configuration_callback_arg,
+		process_callback,
+		process_callback_arg,
+		NULL,
+		NULL
+	};
+
+	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
+		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+					thread_data,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					&callbacks
+		) != 0) {
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 int rrr_cmodule_helper_worker_forks_start (
@@ -902,23 +928,17 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					configuration_callback,
-					configuration_callback_arg,
-					process_callback,
-					process_callback_arg,
-					NULL,
-					NULL
-		) != 0) {
-			return 1;
-		}
-	}
-	return 0;
+	return rrr_cmodule_helper_worker_forks_start_with_ping_callback(
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			NULL,
+			NULL,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg
+	);
 }
 
 int rrr_cmodule_helper_worker_custom_fork_start (
@@ -931,16 +951,22 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 ) {
 	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
 
+	struct rrr_cmodule_worker_callbacks callbacks = {
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		custom_tick_callback,
+		custom_tick_callback_arg
+	};
+
 	return __rrr_cmodule_main_worker_fork_start_intermediate (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			&callbacks
 	);
 }
 

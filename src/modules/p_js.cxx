@@ -105,6 +105,9 @@ class js_run_data {
 		public:
 		E(std::string msg) : RRR::util::E(msg){}
 	};
+	void gc() {
+		persistent_storage.gc();
+	}
 	bool hasConfig() const {
 		return !config.empty();
 	}
@@ -125,7 +128,6 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
-		persistent_storage.gc();
 	}
 	void runProcess() {
 		auto message = msg_tmpl.new_local(ctx);
@@ -134,7 +136,6 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
-		persistent_storage.gc();
 	}
 	js_run_data(
 			struct js_data *data,
@@ -169,9 +170,6 @@ class js_run_data {
 static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct js_data *data = (struct js_data *) private_arg;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	using namespace RRR::JS;
 
 	ENV env("rrr-js");
@@ -194,16 +192,14 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			// OK
 		}
 		js_run_data run_data(data, isolate, ctx, trycatch, persistent_storage);
-		//run_data.ctx.worker = worker;
+
+		callbacks->ping_callback_arg = (void *) &run_data;
+		callbacks->configuration_callback_arg = (void *) &run_data;
+		callbacks->process_callback_arg = (void *) &run_data;
 
 		if ((ret = rrr_cmodule_worker_loop_start (
 				worker,
-				configuration_callback,
-				(void *) &run_data,
-				process_callback,
-				(void *) &run_data,
-				custom_tick_callback,
-				custom_tick_callback_arg
+				callbacks
 		)) != 0) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
 			// Don't goto out, run cleanup functions
@@ -230,6 +226,16 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	printf("Init wrapper out\n");
 	out:
 	return ret;
+}
+
+static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
+	struct js_run_data *run_data = (struct js_run_data *) private_arg;
+
+	(void)(worker);
+
+	run_data->gc();
+
+	return 0;
 }
 
 static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
@@ -310,14 +316,17 @@ static int js_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_forks_start (
+	// Calback args are set in init wrapper function
+	if (rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 			thread_data,
 			js_init_wrapper_callback,
 			data,
+			js_ping_callback,
+			NULL,
 			js_configuration_callback,
-			NULL, // <-- in the init wrapper, this callback arg is set to child_data
+			NULL,
 			js_process_callback,
-			NULL  // <-- in the init wrapper, this callback is set to child_data
+			NULL
 	) != 0) {
 		RRR_MSG_0("Error while starting cmodule worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
 		ret = 1;
