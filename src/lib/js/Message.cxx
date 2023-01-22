@@ -711,14 +711,9 @@ namespace RRR::JS {
 		data(),
 		array()
 	{
-		printf("New message %p\n", this);
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
 		obj->SetInternalField(0, v8::External::New(isolate, this));
-	}
-
-	Message::~Message() {
-		printf("Destroy message %p\n", this);
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local(v8::Isolate *isolate) {

@@ -125,7 +125,6 @@ namespace RRR::JS {
 			v8::Local<v8::Function> get_function(CTX &ctx);
 		};
 
-		~Message();
 		operator v8::Local<v8::Object>(); 
 	};
 }; // namespace RRR::JS

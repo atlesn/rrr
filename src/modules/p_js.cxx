@@ -99,14 +99,44 @@ class js_run_data {
 	RRR::JS::Function process;
 	RRR::JS::Message::Template msg_tmpl;
 
+	uint64_t prev_status_time = 0;
+	rrr_biglength memory_entries = 0;
+	rrr_biglength memory_size = 0;
+	uint64_t processed = 0;
+	uint64_t processed_total = 0;
+
+	bool need_status() {
+		uint64_t now = rrr_time_get_64();
+		if (now - prev_status_time > 1 * 1000 * 1000) { // 1 Second
+			prev_status_time = now;
+			return true;
+		}
+		return false;
+	}
+
 	public:
 	struct js_data * const data;
 	class E : public RRR::util::E {
 		public:
 		E(std::string msg) : RRR::util::E(msg){}
 	};
+	void status() {
+		if (!need_status()) {
+			return;
+		}
+
+		RRR_DBG_1("JS instance %s processed per second %" PRIu64 " total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
+				INSTANCE_D_NAME(data->thread_data),
+				processed,
+				processed_total,
+				memory_entries,
+				memory_size
+		);
+
+		processed = 0;
+	}
 	void gc() {
-		persistent_storage.gc();
+		persistent_storage.gc(&memory_entries, &memory_size);
 	}
 	bool hasConfig() const {
 		return !config.empty();
@@ -130,6 +160,8 @@ class js_run_data {
 		});
 	}
 	void runProcess() {
+		processed++;
+		processed_total++;
 		auto message = msg_tmpl.new_local(ctx);
 		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
@@ -234,6 +266,7 @@ static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 	(void)(worker);
 
 	run_data->gc();
+	run_data->status();
 
 	return 0;
 }

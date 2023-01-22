@@ -77,6 +77,10 @@ namespace RRR::JS {
 			total_memory = 0;
 			return ret;
 		}
+		// Called for statistics purposes
+		int64_t get_total_memory_stats() const {
+			return total_memory;
+		}
 		virtual ~Persistable() = default;
 	};
 
@@ -97,7 +101,6 @@ namespace RRR::JS {
 			}
 			static void gc(const v8::WeakCallbackInfo<void> &info) {
 				auto self = (Persistent<U> *) info.GetParameter();
-				printf("GC called for %p, done\n", self);
 				self->persistent.Reset();
 				self->done = true;
 			}
@@ -106,13 +109,9 @@ namespace RRR::JS {
 				persistent(isolate, obj),
 				done(false)
 			{
-				printf("Persistent %p for %p created\n", this, this->t.get());
 				persistent.SetWeak<void>(this, gc, v8::WeakCallbackType::kParameter);
 			}
 			Persistent(const Persistent &p) = delete;
-			~Persistent() {
-				printf("Persistent %p for %p destroy done %i\n", this, t.get(), done);
-			}
 			bool is_done() const {
 				return done;
 			}
@@ -120,7 +119,8 @@ namespace RRR::JS {
 
 		v8::Isolate *isolate;
 		std::forward_list<std::unique_ptr<Persistent<T>>> persistents;
-		int entries;
+		int64_t entries;
+		int64_t total_memory;
 
 		public:
 		PersistentStorage(v8::Isolate *isolate) :
@@ -131,16 +131,16 @@ namespace RRR::JS {
 		}
 		PersistentStorage(const PersistentStorage &p) = delete;
 		void report_memory(int64_t memory) {
-			printf("Report memory %li\n", memory);
 			isolate->AdjustAmountOfExternalAllocatedMemory(memory);
+			total_memory += memory;
+			assert(total_memory > 0);
 		}
 		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) {
 			persistents.emplace_front(new Persistent(isolate, obj, t));
 			entries++;
-			printf("Push %i entries\n", entries);
 		}
-		void gc() {
-			printf("GC %i entries\n", entries);
+		void gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
+			rrr_biglength entries_acc = 0;
 			std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
 				int64_t memory = p->get_unreported_memory();
 				if (memory != 0) {
@@ -155,6 +155,8 @@ namespace RRR::JS {
 				}
 				return p->is_done();
 			});
+			*entries_ = (rrr_biglength) entries;
+			*memory_size_ = (rrr_biglength) total_memory;
 		}
 	};
 
