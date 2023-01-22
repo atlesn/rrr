@@ -1392,3 +1392,17 @@ int rrr_array_dump (
 	RRR_FREE_IF_NOT_NULL(tmp);
 	return ret;
 }
+
+rrr_biglength rrr_array_get_allocated_size (
+		const struct rrr_array *definition
+) {
+	rrr_biglength acc = 0;
+
+	acc += sizeof(*definition);
+
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		acc += rrr_type_value_get_allocated_size(node);
+	RRR_LL_ITERATE_END();
+
+	return acc;
+}

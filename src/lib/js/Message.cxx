@@ -34,6 +34,17 @@ extern "C" {
 #include <stdexcept>
 
 namespace RRR::JS {
+	int64_t Message::get_total_memory() {
+		int64_t acc = sizeof(*this);
+
+		acc += ip_so_type.length();
+		acc += topic.length();
+		acc += data.size();
+		acc += array.allocated_size();
+
+		return acc;
+	}
+
 	void Message::clear_array() {
 		array.clear();
 	}

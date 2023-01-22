@@ -51,6 +51,7 @@ namespace RRR::JS {
 			return (Message *) wrap->Value();
 		}
 
+		int64_t get_total_memory() final;
 		void clear_array();
 		void clear_tag(std::string tag);
 		rrr_msg_msg_class get_class();

@@ -28,6 +28,7 @@ extern "C" {
 #include <v8.h>
 #include <algorithm>
 #include <forward_list>
+#include <cassert>
 #include "../util/E.hxx"
 
 namespace RRR::JS {
@@ -52,7 +53,30 @@ namespace RRR::JS {
 	};
 
 	class Persistable {
+		private:
+		int64_t total_memory = 0;
+
+		protected:
+		// Derived classes must implement this and report the current
+		// estimated size of the object so that we can report changes
+		// to V8.
+		virtual int64_t get_total_memory() = 0;
+
 		public:
+		// Called reguralerly by storage
+		int64_t get_unreported_memory() {
+			int64_t total_memory_new = get_total_memory();
+			int64_t diff = total_memory_new - total_memory;
+			total_memory = total_memory_new;
+			return diff;
+		}
+		// Called by storage before object is destroyed
+		int64_t get_total_memory_finalize() {
+			assert(total_memory >= 0);
+			int64_t ret = total_memory;
+			total_memory = 0;
+			return ret;
+		}
 		virtual ~Persistable() = default;
 	};
 
@@ -65,9 +89,16 @@ namespace RRR::JS {
 			std::unique_ptr<U> t;
 
 			public:
+			int64_t get_unreported_memory() {
+				return t->get_unreported_memory();
+			}
+			int64_t get_total_memory_finalize() {
+				return t->get_total_memory_finalize();
+			}
 			static void gc(const v8::WeakCallbackInfo<void> &info) {
 				auto self = (Persistent<U> *) info.GetParameter();
 				printf("GC called for %p, done\n", self);
+				self->persistent.Reset();
 				self->done = true;
 			}
 			Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, U *t) :
@@ -99,6 +130,10 @@ namespace RRR::JS {
 		{
 		}
 		PersistentStorage(const PersistentStorage &p) = delete;
+		void report_memory(int64_t memory) {
+			printf("Report memory %li\n", memory);
+			isolate->AdjustAmountOfExternalAllocatedMemory(memory);
+		}
 		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, T *t) {
 			persistents.emplace_front(new Persistent(isolate, obj, t));
 			entries++;
@@ -106,9 +141,18 @@ namespace RRR::JS {
 		}
 		void gc() {
 			printf("GC %i entries\n", entries);
+			std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
+				int64_t memory = p->get_unreported_memory();
+				if (memory != 0) {
+					report_memory(memory);
+				}
+			});
 			persistents.remove_if([this](auto &p){
-				if (p->is_done())
+				if (p->is_done()) {
 					entries--;
+					// Report negative value as memory is now being freed up
+					report_memory(-p->get_total_memory_finalize());
+				}
 				return p->is_done();
 			});
 		}
@@ -123,7 +167,6 @@ namespace RRR::JS {
 		public:
 		Isolate(ENV &env);
 		~Isolate();
-		void gc();
 	};
 
 	class Value : public v8::Local<v8::Value> {

@@ -33,6 +33,9 @@ namespace RRR {
 	Array::~Array() {
 		rrr_array_clear(&array);
 	}
+	rrr_biglength Array::allocated_size() {
+		return rrr_array_get_allocated_size(&array);
+	}
 	void Array::push_value_vain_with_tag(std::string tag) {
 		verify_tag(tag);
 		if (rrr_array_push_value_vain_with_tag(&array, tag.c_str()) != 0) {

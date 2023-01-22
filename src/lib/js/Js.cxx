@@ -68,13 +68,6 @@ namespace RRR::JS {
 	Isolate::~Isolate() {
 	}
 
-	void Isolate::gc() {
-		printf("Idle notify in\n");
-		while (!isolate->IdleNotificationDeadline(1.0)) {
-			printf("Idle notify loop\n");
-		}
-	}
-
 	Value::Value(v8::Local<v8::Value> value) :
 		v8::Local<v8::Value>(value)
 	{

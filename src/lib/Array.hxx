@@ -143,6 +143,8 @@ namespace RRR {
 			}
 		}
 
+		rrr_biglength allocated_size();
+
 		struct rrr_array * operator *() {
 			return &array;
 		}

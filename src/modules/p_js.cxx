@@ -125,7 +125,6 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
-		isolate.gc();
 		persistent_storage.gc();
 	}
 	void runProcess() {
@@ -135,7 +134,6 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
-		isolate.gc();
 		persistent_storage.gc();
 	}
 	js_run_data(

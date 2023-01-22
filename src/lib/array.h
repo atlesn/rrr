@@ -240,6 +240,9 @@ int rrr_array_message_append_to_array (
 int rrr_array_dump (
 		const struct rrr_array *definition
 );
+rrr_biglength rrr_array_get_allocated_size (
+		const struct rrr_array *definition
+);
 static inline int rrr_array_count(const struct rrr_array *array) {
 	return RRR_LL_COUNT(array);
 }

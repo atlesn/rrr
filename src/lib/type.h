@@ -298,6 +298,16 @@ static inline int rrr_type_value_is_tag (
 	return 0;
 }
 
+static inline rrr_biglength rrr_type_value_get_allocated_size (
+		const struct rrr_type_value *value
+) {
+	rrr_biglength acc = 0;
+	acc += sizeof(*value);
+	acc += value->total_stored_length;
+	acc += value->tag_length;
+	return acc;
+}
+
 int rrr_type_import_ustr_raw (
 		uint64_t *target,
 		rrr_length *parsed_bytes,

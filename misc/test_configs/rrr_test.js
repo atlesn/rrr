@@ -14,4 +14,8 @@ function process(message) {
 	msg_b.topic = "topic B";
 	console.log(msg_a.topic + "\n");
 	console.log(msg_b.topic + "\n");
+
+	const buf = new ArrayBuffer(65536);
+
+	msg_a.push_tag("a", buf);
 }
