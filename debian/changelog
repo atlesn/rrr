@@ -1,4 +1,4 @@
-rrr (1.26-1) bullseye; urgency=medium
+rrr (1.26-2) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -10,7 +10,10 @@ rrr (1.26-1) bullseye; urgency=medium
   * Fixes:
     * Handling of websocket topic filters in httpserver
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Jun 2022 10:55:09 +0200
+  * Features
+    * New module to run JavaScript programs
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
 
 rrr (1.25-2) bullseye; urgency=medium
 
