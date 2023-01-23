@@ -87,10 +87,10 @@ namespace RRR::JS {
 		void push_tag_h(v8::Isolate *isolate, std::string key, uint64_t u64);
 		void push_tag_h(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
 		void push_tag_h(v8::Isolate *isolate, std::string key, std::string string);
-
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, int64_t i64);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string);
+		void push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value);
 
 		protected:
 		static const int INTERNAL_INDEX_THIS     = 0;
@@ -120,6 +120,7 @@ namespace RRR::JS {
 		static void cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_set_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_send(const v8::FunctionCallbackInfo<v8::Value> &info);
@@ -143,6 +144,7 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag_h;
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag_fixp;
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag;
+		v8::Local<v8::FunctionTemplate> tmpl_set_tag;
 		v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
 		v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 		v8::Local<v8::FunctionTemplate> tmpl_send;

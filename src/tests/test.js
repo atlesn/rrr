@@ -205,7 +205,11 @@ function function_tests() {
 		throw("array data mismatch ccc\n");
 	}
 	if (message.get_tag_all()[2] !== "ddd") {
-		throw("array data mismatch ddd\n");
+		throw("array data mismatch ddd 1st\n");
+	}
+	message.set_tag("", message.get_tag_all()[2]);
+	if (message.get_tag_all()[0] !== "ddd") {
+		throw("array data mismatch ddd 2nd\n");
 	}
 	message.clear_array();
 	if (message.get_tag_all("tag")[0] !== undefined) {
@@ -339,12 +343,6 @@ function process(message) {
 	console.log("Process function\n");
 
 	function_tests();
-
-	// Re-set some values to test that types are preserved
-	//message.set_tag("int1", message.get_tag_all("int1")[0]);
-	//message.set_tag("int2", message.get_tag_all("int2")[0]);
-	//message.set_tag("int3", message.get_tag_all("int3")[0]);
-	//message.set_tag("int4", message.get_tag_all("int4")[0]);
 
 	message.send();
 }

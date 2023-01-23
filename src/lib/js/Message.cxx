@@ -118,6 +118,29 @@ namespace RRR::JS {
 		}
 	}
 
+#define TRY_CATCH_ARRAY(c)                                                 \
+  try { c; }                                                               \
+  catch (RRR::Array::E e) {                                                \
+    isolate->ThrowException(v8::Exception::TypeError(String(isolate, e))); \
+    return;                                                                \
+  }
+
+#define GET_KEY_ARG()                                                                              \
+  auto key_string = std::string();                                                                 \
+  do{auto key_v8_string = v8::Local<v8::String>();                                                 \
+  auto key = info.Length() >= 1 ? info[0] : v8::Local<v8::Value>();                                \
+  if (key.IsEmpty() || key->IsNullOrUndefined()) {                                                 \
+  }                                                                                                \
+  else if (!key->ToString(isolate->GetCurrentContext()).ToLocal(&key_v8_string)) {                 \
+    isolate->ThrowException(v8::Exception::TypeError(String(isolate, "key was not a string")));    \
+    return;                                                                                        \
+  }                                                                                                \
+  key_string = String(isolate, key_v8_string);                                                     \
+  }while(0)
+
+#define GET_VALUE_ARG()                                                                            \
+  auto value = info.Length() >= 2 ? info[1] : v8::Local<v8::Value>();
+
 	void Message::send() {
 		struct rrr_msg_addr msg_addr;
 		struct rrr_msg_msg *msg_ptr = nullptr;
@@ -244,6 +267,44 @@ namespace RRR::JS {
 
 	void Message::push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string) {
 		array.push_value_fixp_with_tag(key, string);
+	}
+
+	void Message::push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value) {
+		auto ctx = isolate->GetCurrentContext();
+
+		TRY_CATCH_ARRAY (
+			auto key = String(isolate, key_string);
+			auto value_string = v8::Local<v8::String>();
+			if (value.IsEmpty() || value->IsNullOrUndefined()) {
+				push_tag_vain(key_string);
+				return;
+			}
+			else if (value->IsArrayBuffer()) {
+				push_tag_blob(isolate, key_string, v8::ArrayBuffer::Cast(*value));
+				return;
+			}
+			else if (value->IsBigInt()) {
+				push_tag_h(isolate, key_string, v8::BigInt::Cast(*value));
+				return;
+			}
+			else if (value->ToString(ctx).ToLocal(&value_string)) {
+				try {
+					push_tag_h(isolate, key_string, String(isolate, value_string));
+					return;
+				}
+				catch (std::invalid_argument e) {
+					if (value->IsNumber()) {
+						isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
+						return;
+					}
+				}
+				push_tag_str(key_string, String(isolate, value_string));
+				return;
+			}
+
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Unsupported value type, cannot push to array")));
+			return;
+		);
 	}
 
 	Message::Message(v8::Isolate *isolate, MessageDrop &message_drop) :
@@ -389,80 +450,51 @@ namespace RRR::JS {
 		message->clear_array();
 	}
 
-#define TRY_CATCH_ARRAY(c)                                                 \
-  try { c; }                                                               \
-  catch (RRR::Array::E e) {                                                \
-    isolate->ThrowException(v8::Exception::TypeError(String(isolate, e))); \
-    return;                                                                \
-  }
-
 	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto tag = v8::Local<v8::String>();
-
-		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
-			return;
-		}
+		GET_KEY_ARG();
 
 		if (info.Length() < 2 || !info[1]->IsArrayBuffer()) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for blob was not given or was not an ArrayBuffer")));
 			return;
 		}
 
-		TRY_CATCH_ARRAY(message->push_tag_blob(isolate, String(isolate, tag), v8::ArrayBuffer::Cast(*info[1])));
+		TRY_CATCH_ARRAY(message->push_tag_blob(isolate, key_string, v8::ArrayBuffer::Cast(*info[1])));
 	}
 
 	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto tag = v8::Local<v8::String>();
+		GET_KEY_ARG();
 		auto value = v8::Local<v8::String>();
-
-		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
-			return;
-		}
 
 		if ((info.Length() >= 2 ? info[1] : String(isolate, ""))->ToString(ctx).ToLocal(&value) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid value argument")));
 			return;
 		}
 
-		TRY_CATCH_ARRAY(message->push_tag_str(String(isolate, tag), String(isolate, value)));
+		TRY_CATCH_ARRAY(message->push_tag_str(key_string, String(isolate, value)));
 	}
 
 	template <typename BIGINT, typename STRING> void Message::cb_push_tag_number(const v8::FunctionCallbackInfo<v8::Value> &info, BIGINT b, STRING s) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto tag = v8::Local<v8::String>();
-		auto value = v8::Local<v8::Value>();
-		auto string = v8::Local<v8::String>();
-
-		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
-			return;
-		}
-
-		if (info.Length() >= 2) {
-			value = info[1];
-		}
-		else {
-			value = v8::Uint32::New(isolate, 0);
-		}
+		GET_KEY_ARG();
+		auto value_string = v8::Local<v8::String>();
+		auto value = (info.Length() >= 2 ? info[1] : (v8::Local<v8::Value>) v8::Uint32::New(isolate, 0));
 
 		if (value->IsBigInt()) {
-			TRY_CATCH_ARRAY(b(message, isolate, String(isolate, tag), v8::BigInt::Cast(*value)));
+			TRY_CATCH_ARRAY(b(message, isolate, key_string, v8::BigInt::Cast(*value)));
 			return;
 		}
 
-		if (value->ToString(ctx).ToLocal(&string)) {
+		if (value->ToString(ctx).ToLocal(&value_string)) {
 			try {
-				TRY_CATCH_ARRAY(s(message, isolate, String(isolate, tag), String(isolate, string)));
+				TRY_CATCH_ARRAY(s(message, isolate, key_string, String(isolate, value_string)));
 			}
 			catch (std::invalid_argument e) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
@@ -492,87 +524,39 @@ namespace RRR::JS {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto key = info.Length() >= 1 ? info[0] : v8::Local<v8::Value>();
-		auto value = info.Length() >= 2 ? info[1] : v8::Local<v8::Value>();
-		auto key_string = v8::Local<v8::String>();
+		GET_KEY_ARG();
+		GET_VALUE_ARG();
 
-		// Process key argument
-		if (key.IsEmpty() || key->IsNullOrUndefined()) {
-			key_string.Clear();
-		}
-		else if (!key->ToString(ctx).ToLocal(&key_string)) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "key was not a string")));
-			return;
-		}
-		else if (key_string->Length() == 0) {
-			// OK, no key
-			key_string.Clear();
-		}
+		message->push_tag(isolate, key_string, value);
+	}
 
-		// Process value argument
-		TRY_CATCH_ARRAY (
-			auto key = String(isolate, key_string);
-			auto value_string = v8::Local<v8::String>();
-			if (value.IsEmpty() || value->IsNullOrUndefined()) {
-				message->push_tag_vain(*key);
-				return;
-			}
-			else if (value->IsArrayBuffer()) {
-				message->push_tag_blob(isolate, key, v8::ArrayBuffer::Cast(*value));
-				return;
-			}
-			else if (value->IsBigInt()) {
-				TRY_CATCH_ARRAY(message->push_tag_h(isolate, key, v8::BigInt::Cast(*value)));
-				return;
-			}
-			else if (value->ToString(ctx).ToLocal(&value_string)) {
-				try {
-					TRY_CATCH_ARRAY(message->push_tag_h(isolate, key, String(isolate, value_string)));
-					return;
-				}
-				catch (std::invalid_argument e) {
-					if (value->IsNumber()) {
-						isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not convert number: ") + e.what())));
-						return;
-					}
-				}
-				message->push_tag_str(key, String(isolate, value_string));
-				return;
-			}
+	void Message::cb_set_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		GET_KEY_ARG();
+		GET_VALUE_ARG();
 
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Unsupported value type, cannot push to array")));
-			return;
-		);
+		message->clear_tag(key_string);
+		message->push_tag(isolate, key_string, value);
 	}
 
 	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto tag = v8::Local<v8::String>();
-
-		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
-			return;
-		}
+		GET_KEY_ARG();
 	
-		message->clear_tag(String(isolate, tag));
+		message->clear_tag(key_string);
 	}
 
 	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto tag = v8::Local<v8::String>();
-
-		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&tag) != true) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Invalid tag argument")));
-			return;
-		}
+		GET_KEY_ARG();
 
 		std::vector<v8::Local<v8::Value>> result;
 
-		auto tag_string = (std::string) String(isolate, tag);
 		message->array.iterate (
 			[&result, &isolate](rrr_type_be data, bool sign) {
 				static_assert(sizeof(data) == sizeof(int64_t));
@@ -601,11 +585,11 @@ namespace RRR::JS {
 				static_assert(sizeof(data) == sizeof(int64_t));
 				result.emplace_back(v8::BigInt::New(isolate, data));
 			},
-			[&result, &isolate, &tag_string](const char *data, rrr_length size) {
+			[&result, &isolate, &key_string](const char *data, rrr_length size) {
 				int size_int;
 				if (rrr_int_from_length_err(&size_int, size) != 0) {
 					RRR_MSG_0("Warning: String in array message too long for JavaScript(%" PRIrrrl ">%i) in value with key '%s'. Dropping value.\n",
-						size, INT_MAX, tag_string.c_str());
+						size, INT_MAX, key_string.c_str());
 					return;
 				}
 				result.emplace_back(String(isolate, data, size_int));
@@ -613,8 +597,8 @@ namespace RRR::JS {
 			[&result, &isolate](void) {
 				result.emplace_back(v8::Null(isolate));
 			},
-			[tag_string](std::string tag){
-				return tag_string == tag;
+			[key_string](std::string tag){
+				return key_string == tag;
 			}
 		);
 
@@ -812,6 +796,7 @@ namespace RRR::JS {
 		tmpl_push_tag_h(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_h)),
 		tmpl_push_tag_fixp(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_fixp)),
 		tmpl_push_tag(v8::FunctionTemplate::New(ctx, Message::cb_push_tag)),
+		tmpl_set_tag(v8::FunctionTemplate::New(ctx, Message::cb_set_tag)),
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, Message::cb_clear_tag)),
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, Message::cb_get_tag_all)),
 		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
@@ -826,6 +811,7 @@ namespace RRR::JS {
 		instance->Set(ctx, "push_tag_h", tmpl_push_tag_h);
 		instance->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
 		instance->Set(ctx, "push_tag", tmpl_push_tag);
+		instance->Set(ctx, "set_tag", tmpl_set_tag);
 		instance->Set(ctx, "get_tag_all", tmpl_get_tag_all);
 		instance->Set(ctx, "send", tmpl_send);
 		instance->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);

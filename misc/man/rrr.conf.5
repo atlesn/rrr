@@ -1286,7 +1286,9 @@ The message has the following structure:
   push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
   push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
   push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
-  get_tag_all:   function(tag=null){return [];} // Get array of values with the given tag
+  set_tag:       function(tag=null, data){},    // Clear values with the given tag and push a new array value and identify type automatically
+  get_tag_all:   function(tag=null){return [];},// Get array of values with the given tag
+  send:          function(){}                   // Send the message to the output buffer for other instances to receive
 }
 
 // Data type Value
