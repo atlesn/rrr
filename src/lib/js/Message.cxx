@@ -130,13 +130,15 @@ namespace RRR::JS {
   do{auto key_v8_string = v8::Local<v8::String>();                                                 \
   auto key = info.Length() >= 1 ? info[0] : v8::Local<v8::Value>();                                \
   if (key.IsEmpty() || key->IsNullOrUndefined()) {                                                 \
+    key_string = "";                                                                               \
   }                                                                                                \
   else if (!key->ToString(isolate->GetCurrentContext()).ToLocal(&key_v8_string)) {                 \
     isolate->ThrowException(v8::Exception::TypeError(String(isolate, "key was not a string")));    \
     return;                                                                                        \
   }                                                                                                \
-  key_string = String(isolate, key_v8_string);                                                     \
-  }while(0)
+  else {                                                                                           \
+    key_string = String(isolate, key_v8_string);                                                   \
+  }}while(0)
 
 #define GET_VALUE_ARG()                                                                            \
   auto value = info.Length() >= 2 ? info[1] : v8::Local<v8::Value>();
