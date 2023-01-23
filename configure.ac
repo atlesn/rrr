@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.25-2])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.25-2", [Full version])
-AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 2, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 25, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
+AC_INIT([Read Route Record],[1.26-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.26-1", [Full version])
+AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 26, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -14,7 +14,7 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
-AC_CONFIG_SUBDIRS([src/blockdevlogger])
+#AC_CONFIG_SUBDIRS([])
 
 INET_CHECKS()
 
@@ -63,6 +63,8 @@ AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit binding
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
+AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS bindings])],[enable_node=no],[enable_node=yes])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 bindings (instead of NodeJS)])],[],[enable_v8=no])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -96,11 +98,40 @@ AS_IF([ test -f ".development" ], [
 	AC_MSG_RESULT([none])
 ])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_WARNINGS -D_XOPEN_SOURCE=700"
+CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
+CFLAGS_COMMON="$CFLAGS_CODECOV -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
+AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
+
+AC_MSG_CHECKING([for AM_CFLAGS])
+AC_MSG_RESULT([$AM_CFLAGS])
+CFLAGS=""
 
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
+
+AC_MSG_CHECKING([for C++ usage])
+if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
+	AC_MSG_RESULT([yes])
+	AC_PROG_CXX
+	# Dont't use. Sometimes adds gnu17 standard.
+	# AX_CXX_COMPILE_STDCXX_17
+	AC_DEFINE([RRR_WITH_CXX], [1], [Enable C++])
+	AC_LANG_PUSH([C++])
+	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
+	AC_LANG_POP([C++])
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS"
+	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
+	AC_MSG_CHECKING([for AM_CXXFLAGS])
+	AC_MSG_RESULT([$AM_CXXFLAGS])
+	CXXFLAGS=""
+	enable_cxx=yes
+else
+	AC_MSG_RESULT([no])
+	enable_cxx=no
+fi
+
+AC_SUBST(AM_CXXFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
 
@@ -112,10 +143,13 @@ SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
 
+AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
+AM_CONDITIONAL([RRR_WITH_NODE], [test "x$enable_node" != xno])
+AM_CONDITIONAL([RRR_WITH_V8], [test "x$enable_v8" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -253,6 +287,7 @@ AS_IF([test "x$enable_openssl" = xyes], [
 # Only version >=1.1 supported
 #	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+	AC_CHECK_LIB(ssl, SSL_get1_peer_certificate, [AC_DEFINE([RRR_HAVE_GET1_PEER_CERTIFICATE], [1], [Have get peer certificate with and without reference incrementing])], [])
 	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
@@ -317,6 +352,114 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 ])
 
 AC_SUBST([JEMALLOC_LIBS])
+
+AC_DEFUN([V8COMPILE], [
+	cxx_flags="$TEST_CXXFLAGS $NODE_CXXFLAGS -w"
+	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
+	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
+	if test "$?" = 0; then
+		AC_MSG_RESULT([ok])
+	else
+		AC_MSG_ERROR([Failed: $CXX $cxx_Flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])
+	fi
+])
+AC_DEFUN([V8TESTS],[
+	AC_MSG_CHECKING([V8 compilation and linking])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <libplatform/libplatform.h>
+			int main (int argc, char **argv) {
+				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE
+])
+
+AC_LANG_PUSH([C++])
+
+AC_MSG_CHECKING([for V8 node usage (overriding NodeJS usage)])
+AS_IF([test "x$enable_v8" != xno],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NODE], [1], [Enable V8])
+	enable_node=no
+	if test "x$with_v8" = xyes; then
+		v8_include_dir_test="/usr/include/v8 /usr/local/include/v8"
+	else
+		v8_include_dir_test="$with_v8/include"
+		v8_lib_dir_test=`ls -d $with_v8/out/*`
+	fi
+
+	AC_MSG_CHECKING([for V8 include directory])
+	for dir in $v8_include_dir_test; do
+		if test -d $dir; then
+			v8_include_dir=$dir
+			break
+		fi
+	done
+	if test "x$v8_include_dir" != x; then
+		AC_MSG_RESULT([$v8_include_dir])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	NODE_CXXFLAGS="-I$v8_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_LDFLAGS=""
+	NODE_LIBS="-lstdc++ -lv8"
+
+	AC_MSG_CHECKING([for custom V8 library directories])
+	if test "x$v8_lib_dir_test" != x; then
+		for dir in $v8_lib_dir_test; do
+			NODE_LDFLAGS="$NODE_LDFLAGS -L$dir"
+		done
+		AC_MSG_RESULT([$NODE_LDFLAGS])
+	else
+		AC_MSG_RESULT([none])
+	fi
+
+	V8TESTS
+],[
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for node usage])
+AS_IF([test "x$enable_node" != xno], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NODE], [1], [Enable NodeJS])
+	# AC_CHECK_HEADERS does not work for C++ headers with .h suffix, it
+	# only starts C-compiler.
+	AC_MSG_CHECKING([for node include directory])
+	node_include_dir=""
+	for dir in /usr/include/node /usr/local/include/node; do
+		if test -d $dir; then
+			node_include_dir=$dir
+			break
+		fi
+	done
+	if test "x$node_include_dir" != x; then
+		AC_MSG_RESULT([$node_include_dir])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	NODE_CXXFLAGS="-I$node_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_LDFLAGS=""
+	NODE_LIBS="-lstdc++ -lnode"
+	V8TESTS
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_SUBST([NODE_CXXFLAGS])
+AC_SUBST([NODE_LDFLAGS])
+AC_SUBST([NODE_LIBS])
+
+AS_IF([test "x$NODE_CXXFLAGS" != ""],[
+])
+
+AC_LANG_POP([C++])
 
 # Make sure Perl-test does not include any libraries
 LIBS=""
@@ -430,7 +573,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.10 3.9 3.8 3.7; do
+		for version_tmp in 3.11 3.10 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then

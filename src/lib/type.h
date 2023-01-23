@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TYPE_HEADER
 
 #include <stdint.h>
+#include <string.h>
 
 #include "rrr_types.h"
 #include "util/linked_list.h"
@@ -44,23 +45,25 @@ static const union type_system_endian {
 
 // Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
-#define RRR_TYPE_MIN		2
-#define RRR_TYPE_LE			2  // Little endian number
-#define RRR_TYPE_BE			3  // Big endian number
-#define RRR_TYPE_H			4  // Host endian number (can be both)
-#define RRR_TYPE_BLOB		5  // Type which holds arbitary data
-#define RRR_TYPE_USTR		6  // Unsigned int given as a string
-#define RRR_TYPE_ISTR		7  // Signed int given as a string
-#define RRR_TYPE_SEP		8  // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
-#define RRR_TYPE_MSG		9  // Type which holds an RRR message
-#define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
-#define RRR_TYPE_STR		11 // Dynamic length string quoted with "
-#define RRR_TYPE_HEX		RRR_TYPE_STR // Alias, used when converting blobs to ascii hex
-#define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
-#define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
-#define RRR_TYPE_ERR		14 // Always produces soft error when being parsed, used to abort branched parsing
-#define RRR_TYPE_VAIN		15 // The useless type, indicates NULL or void. Will parse 0 bytes.
-#define RRR_TYPE_MAX		15
+enum rrr_type_enum {
+	RRR_TYPE_MIN  = 2,
+	RRR_TYPE_LE   = 2,  // Little endian number
+	RRR_TYPE_BE   = 3,  // Big endian number
+	RRR_TYPE_H    = 4,  // Host endian number (can be both)
+	RRR_TYPE_BLOB = 5,  // Type which holds arbitary data
+	RRR_TYPE_USTR = 6,  // Unsigned int given as a string
+	RRR_TYPE_ISTR = 7,  // Signed int given as a string
+	RRR_TYPE_SEP  = 8,  // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
+	RRR_TYPE_MSG  = 9,  // Type which holds an RRR message
+	RRR_TYPE_FIXP = 10, // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
+	RRR_TYPE_STR  = 11, // Dynamic length string quoted with "
+	RRR_TYPE_HEX  = 11, // Alias for RRR_TYPE_STR, used when converting blobs to ascii hex
+	RRR_TYPE_NSEP = 12, // Group of any byte not being a separator byte
+	RRR_TYPE_STX  = 13, // STX or SOH, start of transmission or start of header
+	RRR_TYPE_ERR  = 14, // Always produces soft error when being parsed, used to abort branched parsing
+	RRR_TYPE_VAIN = 15, // The useless type, indicates NULL or void. Will parse 0 bytes.
+	RRR_TYPE_MAX  = 15
+};
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -193,9 +196,9 @@ struct rrr_type_definition {
 
 	// These are for importing or exporting to and from raw data
 	// and rrr_array struct
-	int (*import)(RRR_TYPE_IMPORT_ARGS);
+	int (*do_import)(RRR_TYPE_IMPORT_ARGS);
 	int (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
-	int (*export)(RRR_TYPE_EXPORT_ARGS);
+	int (*do_export)(RRR_TYPE_EXPORT_ARGS);
 
 	// These are for converting between work-copy rrr_array struct
 	// and RRR array message, with endian conversions
@@ -268,6 +271,43 @@ RRR_TYPE_DECLARE_EXTERN(null);
 #define RRR_TYPE_DEFINITION_VAIN    rrr_type_definition_vain
 #define RRR_TYPE_DEFINITION_NULL   rrr_type_definition_null
 
+static inline int rrr_type_value_is_tag (
+		const struct rrr_type_value *value,
+		const char *tag
+) {
+	// When comparing tags, NULL and empty
+	// strings are equivalent.
+
+	const char *a = value->tag;
+	const char *b = tag;
+
+	int a_empty = a == NULL || *a == '\0';
+	int b_empty = b == NULL || *b == '\0';
+
+	if (a_empty || b_empty) {
+		if (a_empty && b_empty) {
+			return 1;
+		}
+	}
+	else {
+		if (strcmp(a, b) == 0) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static inline rrr_biglength rrr_type_value_get_allocated_size (
+		const struct rrr_type_value *value
+) {
+	rrr_biglength acc = 0;
+	acc += sizeof(*value);
+	acc += value->total_stored_length;
+	acc += value->tag_length;
+	return acc;
+}
+
 int rrr_type_import_ustr_raw (
 		uint64_t *target,
 		rrr_length *parsed_bytes,
@@ -289,11 +329,7 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 		const uint8_t type_in
 );
 void rrr_type_value_destroy (
-		struct rrr_type_value *template
-);
-int rrr_type_value_is_tag (
-		const struct rrr_type_value *value,
-		const char *tag
+		struct rrr_type_value *template_
 );
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,

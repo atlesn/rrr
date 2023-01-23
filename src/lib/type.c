@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1361,13 +1361,6 @@ void rrr_type_value_destroy (
 	rrr_free(template);
 }
 
-int rrr_type_value_is_tag (
-		const struct rrr_type_value *value,
-		const char *tag
-) {
-	return ((value->tag == NULL && value == NULL) || (value->tag != NULL && strcmp(tag, value->tag) == 0));
-}
-
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,
@@ -1709,7 +1702,7 @@ int rrr_type_value_allocate_and_export (
 		goto out;
 	}
 
-	if (node->definition->export(buf_tmp, &buf_size, node) != 0) {
+	if (node->definition->do_export(buf_tmp, &buf_size, node) != 0) {
 		RRR_MSG_0("Error while exporting in rrr_type_value_allocate_and_export \n");
 		ret = 1;
 		goto out;
@@ -1774,7 +1767,7 @@ int rrr_type_value_allocate_and_import_raw (
 
 	rrr_length parsed_bytes = 0;
 
-	if (definition->import (
+	if (definition->do_import (
 			value,
 			&parsed_bytes,
 			data_start,

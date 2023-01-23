@@ -133,8 +133,6 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 	struct rrr_instance_runtime_data *thread_data = private_arg;
 	struct msgdb_data *data = thread_data->private_data;
 
-	(void)(custom_tick_callback_arg);
-
 	int ret = 0;
 
 	struct rrr_msgdb_server *msgdb = NULL;
@@ -157,14 +155,11 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 		0
 	};
 
+	callbacks->custom_tick_callback_arg = &tick_callback_data;
+
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			&tick_callback_data
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in msgdb_fork_tick_callback\n");
 		goto out;

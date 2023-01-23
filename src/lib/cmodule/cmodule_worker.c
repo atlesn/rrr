@@ -310,6 +310,8 @@ struct rrr_cmodule_worker_event_callback_data {
 	struct rrr_cmodule_worker *worker;
 	int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS);
 	void *custom_tick_callback_arg;
+	int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS);
+	void *ping_callback_arg;
 	struct rrr_cmodule_process_callback_data read_callback_data;
 };
 
@@ -476,6 +478,15 @@ static int __rrr_cmodule_worker_event_periodic (
 			RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
 					worker->name, (long) getpid(), ret_tmp);
 		}
+		if (callback_data->ping_callback != NULL) {
+			if ((ret_tmp = callback_data->ping_callback(worker, callback_data->ping_callback_arg)) != 0)  {
+				if (ret_tmp == RRR_EVENT_EXIT) {
+					return ret_tmp;
+				}
+				RRR_MSG_0("Error from PING callback in worker %s pid %i return was %i\n",
+						worker->name, (long) getpid(), ret_tmp);
+			}
+		}
 		// Always set to 0, maybe this fork should be killed if PONG messages
 		// are not received by parent.
 		worker->ping_received = 0;
@@ -486,14 +497,11 @@ static int __rrr_cmodule_worker_event_periodic (
 
 static int __rrr_cmodule_worker_loop (
 		struct rrr_cmodule_worker *worker,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		const struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret_tmp;
 
-	if (worker->do_spawning == 0 && worker->do_processing == 0 && custom_tick_callback == NULL) {
+	if (worker->do_spawning == 0 && worker->do_processing == 0 && callbacks->custom_tick_callback == NULL) {
 		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
 	}
 
@@ -506,12 +514,14 @@ static int __rrr_cmodule_worker_loop (
 
 	struct rrr_cmodule_worker_event_callback_data callback_data = {
 		worker,
-		custom_tick_callback,
-		custom_tick_callback_arg,
+		callbacks->custom_tick_callback,
+		callbacks->custom_tick_callback_arg,
+		callbacks->ping_callback,
+		callbacks->ping_callback_arg,
 		{
 			worker,
-			process_callback,
-			process_callback_arg,
+			callbacks->process_callback,
+			callbacks->process_callback_arg,
 			0
 		}
 	};
@@ -549,12 +559,7 @@ static int __rrr_cmodule_worker_loop (
 
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback)(RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		const struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -570,8 +575,8 @@ int rrr_cmodule_worker_loop_start (
 	RRR_DBG_5("cmodule worker %s running configure function\n",
 			worker->name);
 
-	if (configuration_callback != NULL) {
-		if ((ret = configuration_callback(worker, configuration_callback_arg)) != 0) {
+	if (callbacks->configuration_callback != NULL) {
+		if ((ret = callbacks->configuration_callback(worker, callbacks->configuration_callback_arg)) != 0) {
 			RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
 			goto out;
 		}
@@ -608,10 +613,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if ((ret = __rrr_cmodule_worker_loop (
 			worker,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_start\n");
 		goto out;
@@ -638,12 +640,7 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions
@@ -663,12 +660,7 @@ int rrr_cmodule_worker_main (
 		const char *log_prefix,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -717,12 +709,7 @@ int rrr_cmodule_worker_main (
 
 	ret = init_wrapper_callback (
 			worker,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg,
+			callbacks,
 			init_wrapper_arg
 	);
 

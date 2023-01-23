@@ -1461,6 +1461,7 @@ static int httpserver_websocket_handshake_callback (
 		goto out_bad_request;
 	}
 
+	// Match only endpoint part
 	char *questionmark = strchr(topic_begin, '?');
 	if (questionmark) {
 		*questionmark = '\0';
@@ -1474,19 +1475,27 @@ static int httpserver_websocket_handshake_callback (
 
 	int topic_ok = 0;
 	RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->websocket_topic_filters);
-		if (rrr_mqtt_topic_match_str(topic_begin, node_tag)) {
+		if ((ret = rrr_mqtt_topic_match_str(node_tag, topic_begin)) != RRR_MQTT_TOKEN_MATCH) {
+			if (ret == RRR_MQTT_TOKEN_MISMATCH) {
+				RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
+						INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+						topic_begin,
+						node_tag);
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Error while matching topic in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
 			RRR_DBG_3("httpserver %s websocket topic '%s' matched with topic filter '%s'\n",
 					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
 					topic_begin,
 					node_tag);
 			topic_ok = 1;
 			break;
-		}
-		else {
-			RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
-					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
-					topic_begin,
-					node_tag);
 		}
 	RRR_MAP_ITERATE_END();
 

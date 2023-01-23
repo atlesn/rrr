@@ -1,3 +1,20 @@
+rrr (1.26-2) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Improvements:
+    * Clarified inconsitency of manual with respect to configuration
+      paramter mqtt_publish_rrr_message
+    * Never send raw array data from mqttclient
+
+  * Fixes:
+    * Handling of websocket topic filters in httpserver
+
+  * Features
+    * New module to run JavaScript programs
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
+
 rrr (1.25-2) bullseye; urgency=medium
 
   * Under the hood:
