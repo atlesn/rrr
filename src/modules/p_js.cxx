@@ -99,7 +99,7 @@ class js_run_data {
 	RRR::JS::Function source;
 	RRR::JS::Function process;
 	RRR::JS::MessageDrop message_drop;
-	RRR::JS::Message::Template msg_tmpl;
+	RRR::JS::MessageFactory msg_tmpl;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
