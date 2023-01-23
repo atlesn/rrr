@@ -67,7 +67,7 @@ rrr_sub_LDFLAGS = ${ldflags} -pie
 
 rrr_js_SOURCES = rrr_js.cxx
 rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS} -fpie
-rrr_js_LDFLAGS = ${ldflags} ${NODE_LDFLAGS} ${NODE_LIBS} -pie
+rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS} -pie
 
 if RRR_WITH_PERL5
 all-local:

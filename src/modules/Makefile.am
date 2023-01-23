@@ -36,7 +36,7 @@ if RRR_WITH_NODE
 js = js.la
 js_la_SOURCES = p_js.cxx
 js_la_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS}
-js_la_LDFLAGS = ${module_ldflags} ${NODE_LDFLAGS} ${NODE_LIBS}
+js_la_LDFLAGS = ${module_ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la \
