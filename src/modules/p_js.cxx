@@ -46,7 +46,6 @@ extern "C" {
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
-#include "../lib/cmodule/cmodule_ext.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
@@ -120,12 +119,12 @@ class js_run_data {
 	static void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
 		js_run_data *run_data = (js_run_data *) callback_arg;
 
-		if (rrr_cmodule_ext_send_message_to_parent (
+		if (rrr_cmodule_worker_send_message_and_address_to_parent (
 				run_data->worker,
 				msg,
 				msg_addr
 		) != 0) {
-			throw E(std::string("Could not send address message on memory map channel in ") + __func__ + " of JS instance " +
+			throw E(std::string("Could not send messages to parent in ") + __func__ + " of JS instance " +
 					INSTANCE_D_NAME(run_data->data->thread_data));
 		}
 	}

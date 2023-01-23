@@ -20,8 +20,8 @@ function check_array_buffer(buffer, check_buffer) {
 	}
 }
 
-function function_tests(message) {
-//	const message = new Message();
+function function_tests() {
+	const message = new Message();
 
 	Object.keys(message).forEach((key) => {
 		console.log("Key: " + key + "\n");
@@ -72,8 +72,8 @@ function function_tests(message) {
 	if (!catched) {
 		throw("ip_so_type accepted invalid value\n");
 	}
-	message.ip_so_type = "udp";
-	if (message.ip_so_type !== "udp") {
+	message.ip_so_type = "UDP";
+	if (message.ip_so_type !== "UDP") {
 		throw("ip_so_type value mismatch\n");
 	}
 	console.log("sotype: " + message.ip_so_type + "\n");
@@ -338,5 +338,13 @@ function process(message) {
 
 	console.log("Process function\n");
 
-	function_tests(message);
+	function_tests();
+
+	// Re-set some values to test that types are preserved
+	//message.set_tag("int1", message.get_tag_all("int1")[0]);
+	//message.set_tag("int2", message.get_tag_all("int2")[0]);
+	//message.set_tag("int3", message.get_tag_all("int3")[0]);
+	//message.set_tag("int4", message.get_tag_all("int4")[0]);
+
+	message.send();
 }

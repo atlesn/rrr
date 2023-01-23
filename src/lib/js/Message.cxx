@@ -31,6 +31,7 @@ extern "C" {
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
 #include "../array.h"
+#include "../allocator.h"
 };
 
 #include <cassert>
@@ -38,6 +39,10 @@ extern "C" {
 #include <stdexcept>
 
 namespace RRR::JS {
+	void MessageDrop::drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
+		callback(msg, msg_addr, callback_arg);
+	}
+
 	int64_t Message::get_total_memory() {
 		int64_t acc = sizeof(*this);
 
@@ -116,7 +121,9 @@ namespace RRR::JS {
 	void Message::send() {
 		struct rrr_msg_addr msg_addr;
 		struct rrr_msg_msg *msg_ptr = nullptr;
-		std::unique_ptr<struct rrr_msg_msg> msg(nullptr);
+		std::unique_ptr<struct rrr_msg_msg, void(*)(struct rrr_msg_msg *)> msg(nullptr, [](auto msg){
+			RRR_FREE_IF_NOT_NULL(msg);
+		});
 
 		// Lengths must be verified in the setters
 		assert(data.size() <= RRR_MSG_DATA_MAX);
@@ -136,8 +143,8 @@ namespace RRR::JS {
 
 		MSG_SET_TYPE(msg, type);
 
+		rrr_msg_addr_init(&msg_addr);
 		if (ip_addr_len > 0) {
-			rrr_msg_addr_init(&msg_addr);
 			msg_addr.protocol = ip_so_type.compare("UDP")
 				? RRR_IP_UDP
 				: ip_so_type.compare("TCP")
@@ -148,6 +155,8 @@ namespace RRR::JS {
 			RRR_MSG_ADDR_SET_ADDR_LEN(&msg_addr, ip_addr_len);
 			memcpy(&msg_addr.addr, &ip_addr, ip_addr_len);
 		}
+
+		message_drop.drop(msg_ptr, &msg_addr);
 	}
 
 	void Message::push_tag_vain(std::string key) {
@@ -818,6 +827,7 @@ namespace RRR::JS {
 		instance->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
 		instance->Set(ctx, "push_tag", tmpl_push_tag);
 		instance->Set(ctx, "get_tag_all", tmpl_get_tag_all);
+		instance->Set(ctx, "send", tmpl_send);
 		instance->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
 		instance->SetAccessor(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
 		instance->SetAccessor(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);

@@ -47,9 +47,7 @@ namespace RRR::JS {
 		{
 		}
 
-		void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
-			callback(msg, msg_addr, callback_arg);
-		}
+		void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr);
 	};
 
 	class Message : public Persistable {
