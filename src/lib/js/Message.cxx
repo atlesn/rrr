@@ -237,6 +237,19 @@ namespace RRR::JS {
 		array.push_value_fixp_with_tag(key, string);
 	}
 
+	Message::Message(v8::Isolate *isolate, MessageDrop &message_drop) :
+		ip_so_type(""),
+		topic(),
+		timestamp(rrr_time_get_64()),
+		type(MSG_TYPE_MSG),
+		data(),
+		array(),
+		message_drop(message_drop)
+	{
+		memset(&ip_addr, 0, sizeof(ip_addr));
+		ip_addr_len = 0;
+	}
+
 	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
@@ -760,17 +773,27 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.Data());
 	}
 
-	void MessageFactory::cb_construct(const v8::FunctionCallbackInfo<v8::Value> &info) {
+	void MessageFactory::cb_construct_base(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		info.GetReturnValue().Set(info.This());
+	}
+
+	void MessageFactory::cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto self = (MessageFactory *) v8::External::Cast(*info.Data())->Value();
-		auto message = self->new_persistent(isolate, info.This());
+		auto message = self->new_internal(isolate, info.This());
+		info.GetReturnValue().Set(info.This());
+	}
+
+	void MessageFactory::cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		info.GetReturnValue().Set(info.This());
 	}
 
 	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop) :
 		persistent_storage(persistent_storage),
-		function_tmpl(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct, v8::External::New(ctx, this))),
+		function_tmpl_base(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_base, v8::External::New(ctx, this))),
+		function_tmpl_internal(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_internal, v8::External::New(ctx, this))),
+		function_tmpl_external(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_external, v8::External::New(ctx, this))),
 		message_drop(message_drop),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, Message::cb_ip_set)),
@@ -784,7 +807,7 @@ namespace RRR::JS {
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, Message::cb_get_tag_all)),
 		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
 	{
-		auto instance = function_tmpl->InstanceTemplate();
+		auto instance = function_tmpl_base->InstanceTemplate();
 		instance->Set(ctx, "ip_get", tmpl_ip_get);
 		instance->Set(ctx, "ip_set", tmpl_ip_set);
 		instance->Set(ctx, "clear_array", tmpl_clear_array);
@@ -809,59 +832,48 @@ namespace RRR::JS {
 		instance->SetAccessor(String(ctx, "MSG_TYPE_DEL"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
 		instance->SetAccessor(String(ctx, "MSG_CLASS_DATA"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
 		instance->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
-		instance->SetInternalFieldCount(3);
+		function_tmpl_base->InstanceTemplate()->SetInternalFieldCount(1);
+		function_tmpl_internal->InstanceTemplate()->SetInternalFieldCount(1);
+		function_tmpl_external->InstanceTemplate()->SetInternalFieldCount(1);
 	}
 
-	Message::Message(v8::Isolate *isolate, MessageDrop &message_drop) :
-		ip_so_type(""),
-		topic(),
-		timestamp(rrr_time_get_64()),
-		type(MSG_TYPE_MSG),
-		data(),
-		array(),
-		message_drop(message_drop)
-	{
-		memset(&ip_addr, 0, sizeof(ip_addr));
-		ip_addr_len = 0;
+	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_internal (
+			v8::Isolate *isolate,
+			v8::Local<v8::Object> obj
+	) {
+		auto ctx = isolate->GetCurrentContext();
+		auto message = std::unique_ptr<Message>(new Message(isolate, message_drop));
+		auto duple = Duple(obj, message.get());
+		auto base = function_tmpl_base->InstanceTemplate()->NewInstance(ctx).ToLocalChecked();
+
+		// The accessor functions seem to receive the base object as This();
+		base->SetInternalField(Message::INTERNAL_INDEX_THIS, v8::External::New(isolate, message.get()));
+
+		// The otheer functions seem to receive the derived object as This();
+		obj->SetInternalField(Message::INTERNAL_INDEX_THIS, v8::External::New(isolate, message.get()));
+
+		obj->SetPrototype(ctx, base).Check();
+
+		persistent_storage.push(isolate, obj, message.release());
+
+		return duple;
 	}
 
-	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_local (
+	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_external (
 			v8::Isolate *isolate,
 			const struct rrr_msg_msg *msg,
 			const struct rrr_msg_addr *msg_addr
 	) {
-		auto obj = function_tmpl->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
+		auto obj = function_tmpl_external->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
+		auto duple = new_internal(isolate, obj);
 
-		// Set message to be picked up later by new_persistent when constructor is called
-		obj->SetInternalField(Message::INTERNAL_INDEX_MSG_MSG, v8::External::New(isolate, (void *) msg));
-		obj->SetInternalField(Message::INTERNAL_INDEX_MSG_ADDR, v8::External::New(isolate, (void *) msg_addr));
+		duple.second()->set_from_msg_msg(msg);
+		duple.second()->set_from_msg_addr(msg_addr);
 
-		return Duple(obj, (Message *) nullptr);
+		return duple;
 	}
 
-	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj) {
-		auto message = new Message (isolate, message_drop);
-
-		auto msg = obj->GetInternalField(Message::INTERNAL_INDEX_MSG_MSG);
-		auto msg_addr = obj->GetInternalField(Message::INTERNAL_INDEX_MSG_ADDR);
-		if (msg->IsExternal()) {
-			printf("Template msg\n");
-			assert(msg_addr->IsExternal());
-			// Template message is present from new_local function
-			message->set_from_msg_msg((const struct rrr_msg_msg *) v8::External::Cast(*msg)->Value());
-			message->set_from_msg_addr((const struct rrr_msg_addr *) v8::External::Cast(*msg_addr)->Value());
-		}
-		else {
-			printf("No tTemplate msg\n");
-		}
-
-		obj->SetInternalField(Message::INTERNAL_INDEX_THIS, v8::External::New(isolate, message));
-		persistent_storage.push(isolate, obj, message);
-
-		return Duple(obj, message);
-	}
-
-	v8::Local<v8::Function> MessageFactory::get_function(CTX &ctx) {
-		return function_tmpl->GetFunction(ctx).ToLocalChecked();
+	v8::Local<v8::Function> MessageFactory::get_internal_function(CTX &ctx) {
+		return function_tmpl_internal->GetFunction(ctx).ToLocalChecked();
 	}
 }; // namespace RRR::JS

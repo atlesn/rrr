@@ -177,7 +177,7 @@ class js_run_data {
 	}
 	void runSource() {
 		auto scope = RRR::JS::Scope(ctx);
-		auto message = msg_tmpl.new_local(ctx);
+		auto message = msg_tmpl.new_external(ctx);
 		RRR::JS::Value arg(message.first());
 		source.run(ctx, 0, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
@@ -188,7 +188,7 @@ class js_run_data {
 		auto scope = RRR::JS::Scope(ctx);
 		processed++;
 		processed_total++;
-		auto message = msg_tmpl.new_local(ctx, msg, msg_addr);
+		auto message = msg_tmpl.new_external(ctx, msg, msg_addr);
 		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
@@ -224,7 +224,7 @@ class js_run_data {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
 
-		ctx.set_global("Message", msg_tmpl.get_function(ctx));
+		ctx.set_global("Message", msg_tmpl.get_internal_function(ctx));
 	}
 };
 
