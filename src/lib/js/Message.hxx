@@ -32,6 +32,26 @@ extern "C" {
 #include "../Array.hxx"
 
 namespace RRR::JS {
+	class MessageDrop {
+		private:
+		void (* const callback) (const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg);
+		void * const callback_arg;
+
+		public:
+		MessageDrop(
+			void (* const callback) (const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg),
+			void * const callback_arg
+		) :
+			callback(callback),
+			callback_arg(callback_arg)
+		{
+		}
+
+		void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
+			callback(msg, msg_addr, callback_arg);
+		}
+	};
+
 	class Message : public Persistable {
 		friend class CTX;
 
@@ -45,9 +65,15 @@ namespace RRR::JS {
 		std::vector<char> data;
 		RRR::Array array;
 
+		MessageDrop &message_drop;
+
+		static const int INTERNAL_INDEX_THIS     = 0;
+		static const int INTERNAL_INDEX_MSG_MSG  = 1;
+		static const int INTERNAL_INDEX_MSG_ADDR = 2;
+
 		template <class T> static Message *self(const T &info) {
 			auto self = info.Holder();
-			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(0));
+			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(INTERNAL_INDEX_THIS));
 			return (Message *) wrap->Value();
 		}
 
@@ -55,6 +81,9 @@ namespace RRR::JS {
 		void clear_array();
 		void clear_tag(std::string tag);
 		rrr_msg_msg_class get_class();
+		void set_from_msg_msg(const struct rrr_msg_msg *msg);
+		void set_from_msg_addr(const struct rrr_msg_addr *msg_addr);
+		void send();
 
 		void push_tag_vain(std::string key);
 		void push_tag_str(std::string key, std::string value);
@@ -64,6 +93,7 @@ namespace RRR::JS {
 		void push_tag_h(v8::Isolate *isolate, std::string key, uint64_t u64);
 		void push_tag_h(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
 		void push_tag_h(v8::Isolate *isolate, std::string key, std::string string);
+
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, int64_t i64);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string);
@@ -93,8 +123,9 @@ namespace RRR::JS {
 		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_send(const v8::FunctionCallbackInfo<v8::Value> &info);
 
-		Message(v8::Isolate *isolate);
+		Message(v8::Isolate *isolate, MessageDrop &MessageDrop);
 
 		public:
 		Message(const Message &message) = delete;
@@ -113,12 +144,16 @@ namespace RRR::JS {
 			v8::Local<v8::FunctionTemplate> tmpl_push_tag;
 			v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
 			v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
+			v8::Local<v8::FunctionTemplate> tmpl_send;
+
 			static void cb_construct(const v8::FunctionCallbackInfo<v8::Value> &info);
+
 			PersistentStorage<Persistable> &persistent_storage;
+			MessageDrop &message_drop;
 
 			public:
-			Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage);
-			Duple<v8::Local<v8::Object>, Message *> new_local(v8::Isolate *isolate);
+			Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop);
+			Duple<v8::Local<v8::Object>, Message *> new_local(v8::Isolate *isolate, const struct rrr_msg_msg *msg = nullptr, const struct rrr_msg_addr *msg_addr = nullptr);
 			Duple<v8::Local<v8::Object>, Message *> new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj);
 			v8::Local<v8::Function> get_function(CTX &ctx);
 		};

@@ -161,6 +161,8 @@ namespace RRR {
 			rrr_array_clear_by_tag(&array, tag.c_str());
 		}
 
+		void to_message (struct rrr_msg_msg **final_message, uint64_t time, const char *topic, rrr_u16 topic_length);
+		void add_from_message(uint16_t *version, const struct rrr_msg_msg *msg);
 		void push_value_vain_with_tag(std::string tag);
 		void push_value_str_with_tag(std::string tag, std::string value);
 		void push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size);

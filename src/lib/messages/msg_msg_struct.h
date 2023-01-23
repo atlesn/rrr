@@ -98,6 +98,7 @@ enum rrr_msg_msg_class {
     rrr_u16 topic_length
 
 #define RRR_MSG_TOPIC_MAX (0xffff)
+#define RRR_MSG_DATA_MAX (0xffffffff)
 
 struct rrr_msg_msg {
 	RRR_MSG_HEAD;

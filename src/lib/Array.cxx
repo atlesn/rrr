@@ -36,6 +36,17 @@ namespace RRR {
 	rrr_biglength Array::allocated_size() {
 		return rrr_array_get_allocated_size(&array);
 	}
+	void Array::to_message (struct rrr_msg_msg **final_message, uint64_t time, const char *topic, rrr_u16 topic_length) {
+		if (rrr_array_new_message_from_array(final_message, &array, time, topic, topic_length)) {
+			throw E("Failed to make message from array");
+		}
+
+	}
+	void Array::add_from_message(uint16_t *version, const struct rrr_msg_msg *msg) {
+		if (rrr_array_message_append_to_array(version, &array, msg) != 0) {
+			throw E(std::string("Failed to append array in ") + __func__);
+		}
+	}
 	void Array::push_value_vain_with_tag(std::string tag) {
 		verify_tag(tag);
 		if (rrr_array_push_value_vain_with_tag(&array, tag.c_str()) != 0) {

@@ -1257,7 +1257,7 @@ The message has the following structure:
 {
   // Message header manipulation
   ip_addr: new ArrayBuffer(),    // Operating system raw IP address information (struct sockaddr)
-  ip_so_type: "",                // Protocol, set to udp or tcp. May also be empty.
+  ip_so_type: "",                // Protocol, set to UDP or TCP. May also be empty.
   topic: "",                     // MQTT topic of the message
   timestamp: BigInt(0),          // The timestamp of the message in microseconds
   data: new ArrayBuffer(),       // The raw data of the message (ignored when arrays are used)

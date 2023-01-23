@@ -25,8 +25,12 @@ extern "C" {
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "../ip/ip_util.h"
+#include "../ip/ip_defines.h"
 #include "../mqtt/mqtt_topic.h"
 #include "../util/rrr_time.h"
+#include "../messages/msg_msg.h"
+#include "../messages/msg_addr.h"
+#include "../array.h"
 };
 
 #include <cassert>
@@ -58,6 +62,92 @@ namespace RRR::JS {
 			? MSG_CLASS_ARRAY
 			: MSG_CLASS_DATA
 		;
+	}
+
+	void Message::set_from_msg_msg(const struct rrr_msg_msg *msg) {
+		array.clear();
+		data.clear();
+		topic = "";
+		timestamp = rrr_time_get_64();
+		type = MSG_TYPE_MSG;
+
+		if (msg == nullptr)
+			return;
+
+		if (MSG_IS_ARRAY(msg)) {
+			uint16_t array_version_dummy;
+			array.add_from_message(&array_version_dummy, msg);
+		}
+		else if (MSG_DATA_LENGTH(msg) > 0) {
+			data.clear();
+			data.reserve((size_t) MSG_DATA_LENGTH(msg));
+			memcpy(data.data(), MSG_DATA_PTR(msg), (size_t) MSG_DATA_LENGTH(msg));
+		}
+
+		topic = MSG_TOPIC_LENGTH(msg) > 0
+			? std::string(MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg))
+			: std::string()
+		;
+		timestamp = msg->timestamp;
+		type = (rrr_msg_msg_type) MSG_TYPE(msg);
+	}
+
+	void Message::set_from_msg_addr(const struct rrr_msg_addr *msg_addr) {
+		ip_so_type = "";
+		ip_addr_len = 0;
+
+		if (msg_addr == nullptr || RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr) == 0)
+			return;
+
+		memcpy(&ip_addr, &msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+		ip_addr_len = (socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr);
+		switch (msg_addr->protocol) {
+			case RRR_IP_UDP:
+				ip_so_type = "UDP";
+				break;
+			case RRR_IP_TCP:
+				ip_so_type = "TCP";
+				break;
+			default:
+				break;
+		}
+	}
+
+	void Message::send() {
+		struct rrr_msg_addr msg_addr;
+		struct rrr_msg_msg *msg_ptr = nullptr;
+		std::unique_ptr<struct rrr_msg_msg> msg(nullptr);
+
+		// Lengths must be verified in the setters
+		assert(data.size() <= RRR_MSG_DATA_MAX);
+		assert(topic.length() <= RRR_MSG_TOPIC_MAX);
+
+		if (get_class() == MSG_CLASS_ARRAY) {
+			array.to_message(&msg_ptr, timestamp, topic.c_str(), (rrr_u16) topic.length());
+		}
+		else if (data.size() > 0) {
+			if (rrr_msg_msg_new_empty(&msg_ptr, MSG_TYPE_MSG, MSG_CLASS_DATA, timestamp, (rrr_u16) topic.length(), (rrr_u32) data.size()) != 0) {
+				throw E(std::string("Could not allocate new message in ") + __func__);
+			}
+			memcpy(MSG_TOPIC_PTR(msg), topic.c_str(), topic.length());
+			memcpy(MSG_DATA_PTR(msg), data.data(), data.size());
+		}
+		msg.reset(msg_ptr);
+
+		MSG_SET_TYPE(msg, type);
+
+		if (ip_addr_len > 0) {
+			rrr_msg_addr_init(&msg_addr);
+			msg_addr.protocol = ip_so_type.compare("UDP")
+				? RRR_IP_UDP
+				: ip_so_type.compare("TCP")
+					? RRR_IP_TCP
+					: RRR_IP_AUTO
+			;
+			assert(ip_addr_len <= sizeof(msg_addr.addr));
+			RRR_MSG_ADDR_SET_ADDR_LEN(&msg_addr, ip_addr_len);
+			memcpy(&msg_addr.addr, &ip_addr, ip_addr_len);
+		}
 	}
 
 	void Message::push_tag_vain(std::string key) {
@@ -178,8 +268,8 @@ namespace RRR::JS {
 		}
 
 		auto string_ = String(isolate, string);
-		if (string_.length() > 0 && strcmp(*string_, "udp") != 0 && strcmp(*string_, "tcp") != 0) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not 'udp', 'tcp' nor empty")));
+		if (string_.length() > 0 && strcmp(*string_, "UDP") != 0 && strcmp(*string_, "TCP") != 0) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not 'UDP', 'TCP' nor empty")));
 			return;
 		}
 
@@ -519,6 +609,11 @@ namespace RRR::JS {
 		);
 	}
 
+	void Message::cb_send(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto message = self(info);
+		message->send();
+	}
+
 	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
@@ -540,6 +635,10 @@ namespace RRR::JS {
 		}
 		else if (rrr_mqtt_topic_validate_name(*topic_) != 0) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a valid MQTT topic")));
+			return;
+		}
+		if (topic_.length() > RRR_MSG_TOPIC_MAX) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for topic exceeds maximum length")));
 			return;
 		}
 		message->topic = topic_;
@@ -594,6 +693,10 @@ namespace RRR::JS {
 		}
 		if (value->IsArrayBuffer()) {
 			auto contents = v8::ArrayBuffer::Cast(*value)->GetContents();
+			if (contents.ByteLength() > RRR_MSG_DATA_MAX) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
+				return;
+			}
 			message->data.clear();
 			message->data.reserve(contents.ByteLength());
 			memcpy(message->data.data(), contents.Data(), contents.ByteLength());
@@ -601,6 +704,10 @@ namespace RRR::JS {
 		}
 		if (value->IsString()) {
 			String data(isolate, value->ToString(ctx).ToLocalChecked());
+			if ((unsigned int) data.length() > RRR_MSG_DATA_MAX) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
+				return;
+			}
 			message->data.clear();
 			message->data.reserve((size_t) data.length());
 			memcpy(message->data.data(), *data, (size_t) data.length());
@@ -661,9 +768,10 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.This());
 	}
 
-	Message::Template::Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+	Message::Template::Template(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop) :
 		persistent_storage(persistent_storage),
 		function_tmpl(v8::FunctionTemplate::New(ctx, Message::Template::cb_construct, v8::External::New(ctx, this))),
+		message_drop(message_drop),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, cb_clear_array)),
@@ -673,7 +781,8 @@ namespace RRR::JS {
 		tmpl_push_tag_fixp(v8::FunctionTemplate::New(ctx, cb_push_tag_fixp)),
 		tmpl_push_tag(v8::FunctionTemplate::New(ctx, cb_push_tag)),
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, cb_clear_tag)),
-		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, cb_get_tag_all))
+		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, cb_get_tag_all)),
+		tmpl_send(v8::FunctionTemplate::New(ctx, cb_send))
 	{
 		auto instance = function_tmpl->InstanceTemplate();
 		instance->Set(ctx, "ip_get", tmpl_ip_get);
@@ -700,32 +809,55 @@ namespace RRR::JS {
 		instance->SetAccessor(String(ctx, "MSG_TYPE_DEL"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
 		instance->SetAccessor(String(ctx, "MSG_CLASS_DATA"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
 		instance->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), cb_constant_get, cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
-		instance->SetInternalFieldCount(1);
+		instance->SetInternalFieldCount(3);
 	}
 
-	Message::Message(v8::Isolate *isolate) :
-		ip_so_type("udp"),
+	Message::Message(v8::Isolate *isolate, MessageDrop &message_drop) :
+		ip_so_type(""),
 		topic(),
 		timestamp(rrr_time_get_64()),
 		type(MSG_TYPE_MSG),
 		data(),
-		array()
+		array(),
+		message_drop(message_drop)
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
 	}
 
-	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local(v8::Isolate *isolate) {
-		//printf("New local\n");
+	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local (
+			v8::Isolate *isolate,
+			const struct rrr_msg_msg *msg,
+			const struct rrr_msg_addr *msg_addr
+	) {
 		auto obj = function_tmpl->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
+
+		// Set message to be picked up later by new_persistent when constructor is called
+		obj->SetInternalField(INTERNAL_INDEX_MSG_MSG, v8::External::New(isolate, (void *) msg));
+		obj->SetInternalField(INTERNAL_INDEX_MSG_ADDR, v8::External::New(isolate, (void *) msg_addr));
+
 		return Duple(obj, (Message *) nullptr);
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj) {
-		//printf("New persistent\n");
-		auto message = new Message (isolate);
-		obj->SetInternalField(0, v8::External::New(isolate, message));
+		auto message = new Message (isolate, message_drop);
+
+		auto msg = obj->GetInternalField(INTERNAL_INDEX_MSG_MSG);
+		auto msg_addr = obj->GetInternalField(INTERNAL_INDEX_MSG_ADDR);
+		if (msg->IsExternal()) {
+			printf("Template msg\n");
+			assert(msg_addr->IsExternal());
+			// Template message is present from new_local function
+			message->set_from_msg_msg((const struct rrr_msg_msg *) v8::External::Cast(*msg)->Value());
+			message->set_from_msg_addr((const struct rrr_msg_addr *) v8::External::Cast(*msg_addr)->Value());
+		}
+		else {
+			printf("No tTemplate msg\n");
+		}
+
+		obj->SetInternalField(INTERNAL_INDEX_THIS, v8::External::New(isolate, message));
 		persistent_storage.push(isolate, obj, message);
+
 		return Duple(obj, message);
 	}
 

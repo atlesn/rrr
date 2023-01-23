@@ -46,6 +46,7 @@ extern "C" {
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
+#include "../lib/cmodule/cmodule_ext.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
@@ -97,6 +98,7 @@ class js_run_data {
 	RRR::JS::Function config;
 	RRR::JS::Function source;
 	RRR::JS::Function process;
+	RRR::JS::MessageDrop message_drop;
 	RRR::JS::Message::Template msg_tmpl;
 
 	int64_t prev_status_time = 0;
@@ -115,12 +117,28 @@ class js_run_data {
 		return false;
 	}
 
+	static void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
+		js_run_data *run_data = (js_run_data *) callback_arg;
+
+		if (rrr_cmodule_ext_send_message_to_parent (
+				run_data->worker,
+				msg,
+				msg_addr
+		) != 0) {
+			throw E(std::string("Could not send address message on memory map channel in ") + __func__ + " of JS instance " +
+					INSTANCE_D_NAME(run_data->data->thread_data));
+		}
+	}
+
 	public:
 	struct js_data * const data;
+	struct rrr_cmodule_worker * const worker;
+
 	class E : public RRR::util::E {
 		public:
 		E(std::string msg) : RRR::util::E(msg){}
 	};
+
 	void status() {
 		int64_t diff;
 		if (!need_status(&diff)) {
@@ -159,16 +177,18 @@ class js_run_data {
 	}
 	void runSource() {
 		auto scope = RRR::JS::Scope(ctx);
-		source.run(ctx, 0, nullptr);
+		auto message = msg_tmpl.new_local(ctx);
+		RRR::JS::Value arg(message.first());
+		source.run(ctx, 0, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
 	}
-	void runProcess() {
+	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
 		auto scope = RRR::JS::Scope(ctx);
 		processed++;
 		processed_total++;
-		auto message = msg_tmpl.new_local(ctx);
+		auto message = msg_tmpl.new_local(ctx, msg, msg_addr);
 		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
@@ -177,6 +197,7 @@ class js_run_data {
 	}
 	js_run_data(
 			struct js_data *data,
+			struct rrr_cmodule_worker *worker,
 			RRR::JS::Isolate &isolate,
 			RRR::JS::CTX &ctx,
 			RRR::JS::TryCatch &trycatch,
@@ -187,7 +208,9 @@ class js_run_data {
 		trycatch(trycatch),
 		persistent_storage(persistent_storage),
 		data(data),
-		msg_tmpl(ctx, persistent_storage)
+		worker(worker),
+		message_drop(drop, this),
+		msg_tmpl(ctx, persistent_storage, message_drop)
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -229,7 +252,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		})) {
 			// OK
 		}
-		js_run_data run_data(data, isolate, ctx, trycatch, persistent_storage);
+		js_run_data run_data(data, worker, isolate, ctx, trycatch, persistent_storage);
 
 		callbacks->ping_callback_arg = (void *) &run_data;
 		callbacks->configuration_callback_arg = (void *) &run_data;
@@ -313,7 +336,7 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			if (!run_data->hasProcess()) {
 				RRR_BUG("BUG: Process function was NULL but we tried to process anyway in %s\n", __func__);
 			}
-			run_data->runProcess();
+			run_data->runProcess(message, message_addr);
 		}
 	}
 	catch (js_run_data::E e) {

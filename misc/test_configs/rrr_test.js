@@ -5,7 +5,7 @@ function config() {
 function process(message) {
 	let catched = false;
 
-//	console.log("Process function\n");
+	console.log("Process function topic " + message.topic + "\n");
 
 	const msg_a = new Message();
 	const msg_b = new Message();
