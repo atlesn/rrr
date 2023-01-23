@@ -99,15 +99,16 @@ class js_run_data {
 	RRR::JS::Function process;
 	RRR::JS::Message::Template msg_tmpl;
 
-	uint64_t prev_status_time = 0;
+	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
 	rrr_biglength memory_size = 0;
 	uint64_t processed = 0;
 	uint64_t processed_total = 0;
 
-	bool need_status() {
-		uint64_t now = rrr_time_get_64();
-		if (now - prev_status_time > 1 * 1000 * 1000) { // 1 Second
+	bool need_status(int64_t *diff) {
+		int64_t now = (int64_t) rrr_time_get_64();
+		*diff = now - prev_status_time;
+		if (*diff > 1 * 1000 * 1000) { // 1 Second
 			prev_status_time = now;
 			return true;
 		}
@@ -121,19 +122,21 @@ class js_run_data {
 		E(std::string msg) : RRR::util::E(msg){}
 	};
 	void status() {
-		if (!need_status()) {
+		int64_t diff;
+		if (!need_status(&diff)) {
 			return;
 		}
 
-		RRR_DBG_1("JS instance %s processed per second %" PRIu64 " total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
+		double per_sec = ((double) processed) / ((double) diff / 1000000);
+		processed = 0;
+
+		RRR_DBG_1("JS instance %s processed per second %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(data->thread_data),
-				processed,
+				per_sec,
 				processed_total,
 				memory_entries,
 				memory_size
 		);
-
-		processed = 0;
 	}
 	void gc() {
 		persistent_storage.gc(&memory_entries, &memory_size);
@@ -148,18 +151,21 @@ class js_run_data {
 		return !process.empty();
 	}
 	void runConfig() {
+		auto scope = RRR::JS::Scope(ctx);
 		config.run(ctx, 0, nullptr);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run config function: ") + msg);
 		});
 	}
 	void runSource() {
+		auto scope = RRR::JS::Scope(ctx);
 		source.run(ctx, 0, nullptr);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
 	}
 	void runProcess() {
+		auto scope = RRR::JS::Scope(ctx);
 		processed++;
 		processed_total++;
 		auto message = msg_tmpl.new_local(ctx);
@@ -234,10 +240,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				callbacks
 		)) != 0) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
-			// Don't goto out, run cleanup functions
+			goto out;
 		}
-
-		printf("Worker loop out\n");
 	}
 	catch (E e) {
 		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
@@ -250,12 +254,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out;
 	}
 
-/*	if (run_data.ctx.application_ptr != NULL) {
-		RRR_MSG_0("Warning: application_ptr in ctx for js instance %s was not NULL upon exit\n",
-				INSTANCE_D_NAME(data->thread_data));
-	}*/
-
-	printf("Init wrapper out\n");
 	out:
 	return ret;
 }

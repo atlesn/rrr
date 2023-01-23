@@ -16,6 +16,5 @@ function process(message) {
 //	console.log(msg_b.topic + "\n");
 
 	const buf = new ArrayBuffer(65536);
-
-	msg_a.push_tag("a", buf);
+	message.push_tag("a", buf);
 }

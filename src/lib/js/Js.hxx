@@ -119,14 +119,13 @@ namespace RRR::JS {
 
 		v8::Isolate *isolate;
 		std::forward_list<std::unique_ptr<Persistent<T>>> persistents;
-		int64_t entries;
-		int64_t total_memory;
+		int64_t entries = 0;
+		int64_t total_memory = 0;
 
 		public:
 		PersistentStorage(v8::Isolate *isolate) :
 			isolate(isolate),
-			persistents(),
-			entries(0)
+			persistents()
 		{
 		}
 		PersistentStorage(const PersistentStorage &p) = delete;
@@ -237,13 +236,13 @@ namespace RRR::JS {
 	};
 
 	class CTX {
-		friend class Scope;
-
 		private:
 		v8::Local<v8::Context> ctx;
 
 		public:
 		CTX(ENV &env);
+		~CTX();
+		CTX(const CTX &) = delete;
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
@@ -259,13 +258,13 @@ namespace RRR::JS {
 	};
 
 	class Scope {
-		friend class CTX;
+		v8::HandleScope handle_scope;
 
-		private:
-		CTX ctx;
 		public:
-		Scope(CTX &ctx);
-		~Scope();
+		Scope(CTX &ctx) :
+			handle_scope(ctx)
+		{
+		}
 	};
 
 	class TryCatch {

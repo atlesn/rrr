@@ -178,7 +178,6 @@ namespace RRR::JS {
 		if (empty()) {
 			throw E("Function object was empty");
 		}
-		auto scope = Scope(ctx);
 		if (argc > 0) {
 			v8::Local<v8::Value> values[argc];
 			for (int i = 0; i < argc; i++) {
@@ -234,6 +233,11 @@ namespace RRR::JS {
 				throw E("Failed to intitialize globals\n");
 			}
 		}
+		ctx->Enter();
+	}
+
+	CTX::~CTX() {
+		ctx->Exit();
 	}
 
 	CTX::operator v8::Local<v8::Context> () {
@@ -268,7 +272,7 @@ namespace RRR::JS {
 	void CTX::run_function(TryCatch &trycatch, Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
 		function.run(ctx, argc, argv);
-		if (trycatch.ok(ctx, [ctx, name](const char *msg) mutable {
+		if (trycatch.ok(ctx, [&ctx, name](const char *msg) mutable {
 			throw E(std::string("Exception while running function '") + name + "': " + msg + "\n");
 		})) {
 			// OK
@@ -280,18 +284,8 @@ namespace RRR::JS {
 		run_function(trycatch, function, name, argc, argv);
 	}
 
-	Scope::Scope(CTX &ctx) :
-		ctx(ctx)
-	{
-		ctx.ctx->Enter();
-	}
-
-	Scope::~Scope() {
-		ctx.ctx->Exit();
-	}
-
 	void Script::compile(CTX &ctx, TryCatch &trycatch) {
-		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
+		if (trycatch.ok(ctx, [&ctx](const char *msg) mutable {
 			throw E(std::string("Failed to compile script: ") + msg);
 		})) {
 			// OK
@@ -317,7 +311,7 @@ namespace RRR::JS {
 
 	void Script::run(CTX &ctx, TryCatch &trycatch) {
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
-		if (trycatch.ok(ctx, [ctx](const char *msg) mutable {
+		if (trycatch.ok(ctx, [&ctx](const char *msg) mutable {
 			throw E(std::string("Exception while running script: ") + std::string(msg));
 		})) {
 			// OK

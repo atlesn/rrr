@@ -94,12 +94,10 @@ namespace RRR::JS {
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info);
 
-		Message(v8::Isolate *isolate, v8::Local<v8::Object> obj);
-
-		protected:
-		static v8::Local<Message> create(v8::Isolate *isolate, v8::Local<v8::Object> obj);
+		Message(v8::Isolate *isolate);
 
 		public:
+		Message(const Message &message) = delete;
 		class Template {
 			friend class Message;
 

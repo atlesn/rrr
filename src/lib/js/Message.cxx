@@ -703,7 +703,7 @@ namespace RRR::JS {
 		instance->SetInternalFieldCount(1);
 	}
 
-	Message::Message(v8::Isolate *isolate, v8::Local<v8::Object> obj) :
+	Message::Message(v8::Isolate *isolate) :
 		ip_so_type("udp"),
 		topic(),
 		timestamp(rrr_time_get_64()),
@@ -713,18 +713,18 @@ namespace RRR::JS {
 	{
 		memset(&ip_addr, 0, sizeof(ip_addr));
 		ip_addr_len = 0;
-		obj->SetInternalField(0, v8::External::New(isolate, this));
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_local(v8::Isolate *isolate) {
+		//printf("New local\n");
 		auto obj = function_tmpl->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
-		auto message = new Message (isolate, obj);
-		persistent_storage.push(isolate, obj, message);
-		return Duple(obj, message);
+		return Duple(obj, (Message *) nullptr);
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> Message::Template::new_persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj) {
-		auto message = new Message (isolate, obj);
+		//printf("New persistent\n");
+		auto message = new Message (isolate);
+		obj->SetInternalField(0, v8::External::New(isolate, message));
 		persistent_storage.push(isolate, obj, message);
 		return Duple(obj, message);
 	}
