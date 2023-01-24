@@ -394,23 +394,6 @@ AC_DEFUN([V8TESTS],[
 	],[
 		# Not found, no action required
 	])
-
-	AC_MSG_CHECKING([V8 String::NewFromUtf8 returns MaybeLocal])
-	AC_LANG_CONFTEST([
-		AC_LANG_SOURCE([[
-			#include <type_traits>
-			#include <v8.h>
-			int main (int argc, char **argv) {
-				static_assert(std::is_same<decltype(v8::String::NewFromUtf8(nullptr, "")), v8::MaybeLocal<v8::String>>::value, "not present");
-				return 0;
-			}
-		]])
-	])
-	V8COMPILE([
-		AC_DEFINE([RRR_HAVE_V8_V12_STRING], [1], [Have V12 String])
-	],[
-		# Not found, no action required
-	])
 ])
 
 AC_LANG_PUSH([C++])
@@ -440,7 +423,7 @@ AS_IF([test "x$enable_v8" != xno],[
 		AC_MSG_ERROR("not found")
 	fi
 
-	NODE_CXXFLAGS="-I$v8_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT"
+	NODE_CXXFLAGS="-I$v8_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
 	NODE_LDFLAGS=""
 	NODE_LIBS="-lstdc++ -lv8"
 

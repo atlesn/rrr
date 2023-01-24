@@ -114,11 +114,7 @@ namespace RRR::JS {
 	}
 
 	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
-#ifdef RRR_HAVE_V8_V12_STRING
-		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "").ToLocalChecked() : str),
-#else
-		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "") : str),
-#endif
+		str(str.IsEmpty() ? ((v8::MaybeLocal<v8::String>) v8::String::NewFromUtf8(isolate, "")).ToLocalChecked() : str),
 		utf8(isolate, this->str)
 	{
 	}
