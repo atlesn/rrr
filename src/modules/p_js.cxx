@@ -178,7 +178,7 @@ class js_run_data {
 		auto scope = RRR::JS::Scope(ctx);
 		auto message = msg_tmpl.new_external(ctx);
 		RRR::JS::Value arg(message.first());
-		source.run(ctx, 0, &arg);
+		source.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
