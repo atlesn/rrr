@@ -170,9 +170,9 @@ namespace RRR::JS {
 
 		rrr_msg_addr_init(&msg_addr);
 		if (ip_addr_len > 0) {
-			msg_addr.protocol = ip_so_type.compare("UDP")
+			msg_addr.protocol = ip_so_type.compare("UDP") == 0
 				? RRR_IP_UDP
-				: ip_so_type.compare("TCP")
+				: ip_so_type.compare("TCP") == 0
 					? RRR_IP_TCP
 					: RRR_IP_AUTO
 			;
