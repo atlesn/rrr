@@ -1,4 +1,4 @@
-rrr (1.26-2) bullseye; urgency=medium
+rrr (1.26-3) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -12,6 +12,8 @@ rrr (1.26-2) bullseye; urgency=medium
 
   * Features
     * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
 

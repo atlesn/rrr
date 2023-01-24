@@ -120,6 +120,8 @@ struct ip_data {
 
 	char *default_topic;
 	uint16_t default_topic_length;
+	char *accept_topic;
+	uint16_t accept_topic_length;
 
 	char *target_host;
 	uint16_t target_port;
@@ -149,6 +151,7 @@ static void ip_data_cleanup(void *arg) {
 		rrr_array_tree_destroy(data->definitions);
 	}
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
+	RRR_FREE_IF_NOT_NULL(data->accept_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
 	RRR_FREE_IF_NOT_NULL(data->timeout_action_str);
@@ -325,6 +328,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_default_topic", default_topic, default_topic_length);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_accept_topic", accept_topic, accept_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_graylist_timeout_ms", graylist_timeout_ms, IP_DEFAULT_GRAYLIST_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
@@ -627,6 +631,8 @@ static int ip_array_callback (
 		goto out;
 	}
 
+	// All entries are allocated within message broker context within
+	// ip_array_callback_broker, hence memory barrier is achieved.
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&callback_data.new_entries,
@@ -638,6 +644,95 @@ static int ip_array_callback (
 
 	out:
 	rrr_msg_holder_collection_clear(&callback_data.new_entries);
+	return ret;
+}
+
+struct ip_accept_callback_data {
+	struct ip_data *data;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
+};
+
+static int ip_accept_callback_broker (struct rrr_msg_holder *entry, void *arg) {
+	struct ip_accept_callback_data *callback_data = arg;
+	struct ip_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			&msg,
+			MSG_TYPE_GET,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			data->accept_topic,
+			data->accept_topic_length,
+			NULL,
+			0
+	)) != 0) {
+		RRR_MSG_0("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_msg_holder_set_unlocked (
+			entry,
+			msg,
+			MSG_TOTAL_SIZE(msg),
+			callback_data->addr,
+			callback_data->addr_len,
+			RRR_IP_TCP
+	);
+	msg = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	rrr_msg_holder_unlock(entry);
+	return ret;
+}
+
+static int ip_accept_callback (
+		RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS
+) {
+	struct ip_data *data = arg;
+
+	(void)(private_data);
+
+	int ret = 0;
+
+	if (data->accept_topic != NULL) {
+		struct ip_accept_callback_data callback_data = {
+			data,
+			addr,
+			addr_len
+		};
+
+		if ((ret = rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				NULL,
+				0,
+				0,
+				NULL,
+				ip_accept_callback_broker,
+				&callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+		)) != 0) {
+			RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+	}
+
+	if (RRR_DEBUGLEVEL_2) {
+		char buf[128];
+		*buf = '\0';
+
+		rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+
+		RRR_DBG_2 ("ip instance %s accepted connection from %s\n",
+				INSTANCE_D_NAME(data->thread_data), buf);
+	}
+
+	out:
 	return ret;
 }
 
@@ -1898,6 +1993,8 @@ static void ip_event_setup (
 			ip_array_callback,
 			data,
 			ip_array_parse_error_callback,
+			data,
+			ip_accept_callback,
 			data
 		);
 	}

@@ -492,6 +492,11 @@ Defaults to 4096.
 .It ip_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
 
+.It ip_accept_topic=TOPIC
+If set, and when a new incoming TCP connection is established, a message is generated.
+The generated message will be an empty data message of type GET.
+If left unset, no messages will be generated until actual data is received.
+
 .It ip_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
@@ -582,6 +587,7 @@ Look for the defined tags in array messages from other modules, and send these c
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
+
 .El
 .PP
 .SS exploder (PA)
