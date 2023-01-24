@@ -315,5 +315,76 @@ namespace RRR::JS {
 		Duple(A a, B b) : a(a), b(b) {}
 		A first() { return a; }
 		B second() { return b; }
+		A* operator->() { return &a; };
 	};
+
+#ifdef RRR_HAVE_V8_BACKINGSTORE
+	class BackingStore {
+		private:
+		std::shared_ptr<v8::BackingStore> store;
+		v8::Local<v8::ArrayBuffer> array;
+
+		BackingStore(v8::Isolate *isolate, const void *data, size_t size) :
+			store(v8::ArrayBuffer::NewBackingStore(isolate, size)),
+			array(v8::ArrayBuffer::New(isolate, store))
+		{
+			memcpy(store->Data(), data, size);
+		}
+
+		BackingStore(v8::Isolate *isolate, v8::Local<v8::ArrayBuffer> array) :
+			store(array->GetBackingStore()),
+			array(array)
+		{
+		}
+		public:
+		static Duple<BackingStore, v8::Local<v8::ArrayBuffer>> create(v8::Isolate *isolate, const void *data, size_t size) {
+			auto store = BackingStore(isolate, data, size);
+			return Duple(store, store.array);
+		}
+		static Duple<BackingStore,v8::Local<v8::ArrayBuffer>> create(v8::Isolate *isolate, v8::Local<v8::ArrayBuffer> array) {
+			auto store = BackingStore(isolate, array);
+			return Duple(store, store.array);
+		}
+		size_t size() {
+			return store->ByteLength();
+		}
+		void *data() {
+			return store->Data();
+		}
+	};
+#else
+	class BackingStore {
+		private:
+		v8::Local<v8::ArrayBuffer> array;
+		v8::Contents contents;
+
+		BackingStore(v8::Isolate *isolate, const void *data, size_t size) :
+			array(v8::ArrayBuffer::New(isolate, data, size)),
+			contents(array.GetContents())
+		{
+		}
+
+		BackingStore(v8::Isolate *isolate, v8::Local<v8::ArrayBuffer> array) :
+			array(array),
+			contents(array.GetContents())
+		{
+		}
+
+		public:
+		static Duple<BackingStore, v8::Local<v8::ArrayBuffer>> create(v8::Isolate *isolate, const void *data, size_t size) {
+			auto store = BackingStore(isolate, data, size);
+			return Duple(store, store.array);
+		}
+		static Duple<BackingStore,v8::Local<v8::ArrayBuffer>> create(v8::Isolate *isolate, v8::Local<v8::ArrayBuffer> array) {
+			auto store = BackingStore(isolate, array);
+			return Duple(store, store.array);
+		}
+		size_t size() {
+			return contents.ByteLength();
+		}
+		void *data() {
+			return contents.Data();
+		}
+	};
+#endif
 } // namespace RRR::JS

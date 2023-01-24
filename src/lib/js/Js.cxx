@@ -114,7 +114,7 @@ namespace RRR::JS {
 	}
 
 	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
-		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "") : str),
+		str(str.IsEmpty() ? v8::String::NewFromUtf8(isolate, "").ToLocalChecked() : str),
 		utf8(isolate, this->str)
 	{
 	}
@@ -301,7 +301,10 @@ namespace RRR::JS {
 	Script::Script(CTX &ctx, TryCatch &trycatch, std::string &&str) :
 		script()
 	{
-		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::String::kNormalString, str.length())));
+		if (str.length() > v8::String::kMaxLength) {
+			throw E("Script data too long");
+		}
+		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked()));
 		if (script_.IsEmpty()) {
 			throw E("Failed to compile script");
 		}

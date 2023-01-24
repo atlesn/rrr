@@ -358,9 +358,11 @@ AC_DEFUN([V8COMPILE], [
 	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
 	if test "$?" = 0; then
-		AC_MSG_RESULT([ok])
+		AC_MSG_RESULT([present])
+		m4_default([$1], [])
 	else
-		AC_MSG_ERROR([Failed: $CXX $cxx_Flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])
+		AC_MSG_RESULT([not present])
+		m4_default([$2], [AC_MSG_ERROR([Failed: $CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])])
 	fi
 ])
 AC_DEFUN([V8TESTS],[
@@ -376,6 +378,19 @@ AC_DEFUN([V8TESTS],[
 		]])
 	])
 	V8COMPILE
+	AC_MSG_CHECKING([V8 has BackingStore])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			int main (int argc, char **argv) {
+				auto size = sizeof(v8::BackingStore);
+				return sizeof(v8::BackingStore) == 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_BACKINGSTORE], [1], [Have BackingStore for ArrayBuffer])
+	])
 ])
 
 AC_LANG_PUSH([C++])

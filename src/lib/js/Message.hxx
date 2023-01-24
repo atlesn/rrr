@@ -82,7 +82,7 @@ namespace RRR::JS {
 		void push_tag_vain(std::string key);
 		void push_tag_str(std::string key, std::string value);
 		void push_tag_blob(std::string key, const char *value, rrr_length size);
-		void push_tag_blob(v8::Isolate *isolate, std::string key, v8::ArrayBuffer *blob);
+		void push_tag_blob(v8::Isolate *isolate, std::string key, v8::Local<v8::ArrayBuffer> blob);
 		void push_tag_h(v8::Isolate *isolate, std::string key, int64_t i64);
 		void push_tag_h(v8::Isolate *isolate, std::string key, uint64_t u64);
 		void push_tag_h(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);

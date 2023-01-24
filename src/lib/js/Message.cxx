@@ -196,20 +196,22 @@ namespace RRR::JS {
 		array.push_value_blob_with_tag_with_size(key, value, size);
 	}
 
-	void Message::push_tag_blob(v8::Isolate *isolate, std::string key, v8::ArrayBuffer *blob) {
+	void Message::push_tag_blob(v8::Isolate *isolate, std::string key, v8::Local<v8::ArrayBuffer> blob) {
 		if (blob->ByteLength() == 0) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot push blob of data length 0 to array")));
 			return;
 		}
-		auto contents = blob->GetContents();
+
+		auto store = BackingStore::create(isolate, blob);
+
 		rrr_length length;
-		if (rrr_length_from_size_t_err(&length, contents.ByteLength()) != 0) {
+		if (rrr_length_from_size_t_err(&length, store->size()) != 0) {
 			isolate->ThrowException(v8::Exception::TypeError(String(
 				isolate, std::string("Blob data length overflow, cannot push to array")
 			)));
 			return;
 		}
-		push_tag_blob(key, (const char *) contents.Data(), length);
+		push_tag_blob(key, (const char *) store->data(), length);
 	}
 
 	void Message::push_tag_h(v8::Isolate *isolate, std::string key, int64_t i64) {
@@ -282,7 +284,7 @@ namespace RRR::JS {
 				return;
 			}
 			else if (value->IsArrayBuffer()) {
-				push_tag_blob(isolate, key_string, v8::ArrayBuffer::Cast(*value));
+				push_tag_blob(isolate, key_string, value.As<v8::ArrayBuffer>());
 				return;
 			}
 			else if (value->IsBigInt()) {
@@ -463,7 +465,7 @@ namespace RRR::JS {
 			return;
 		}
 
-		TRY_CATCH_ARRAY(message->push_tag_blob(isolate, key_string, v8::ArrayBuffer::Cast(*info[1])));
+		TRY_CATCH_ARRAY(message->push_tag_blob(isolate, key_string, info[1].As<v8::ArrayBuffer>()));
 	}
 
 	void Message::cb_push_tag_str(const v8::FunctionCallbackInfo<v8::Value> &info) {
@@ -578,10 +580,22 @@ namespace RRR::JS {
 				}
 			},
 			[&result, &isolate](const uint8_t *data, rrr_length size) {
+#ifdef RRR_HAVE_V8_BACKINGSTORE
+				auto store = v8::ArrayBuffer::NewBackingStore(isolate, size);
+				memcpy(store->Data(), data, size);
+				result.emplace_back(v8::ArrayBuffer::New(isolate, std::shared_ptr<v8::BackingStore>(store.release())));
+#else
 				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
+#endif
 			},
 			[&result, &isolate](const struct rrr_msg *data, rrr_length size) {
+#ifdef RRR_HAVE_V8_BACKINGSTORE
+				auto store = v8::ArrayBuffer::NewBackingStore(isolate, size);
+				memcpy(store->Data(), data, size);
+				result.emplace_back(v8::ArrayBuffer::New(isolate, std::shared_ptr<v8::BackingStore>(store.release())));
+#else
 				result.emplace_back(v8::ArrayBuffer::New(isolate, (void *) data, size));
+#endif
 			},
 			[&result, &isolate](rrr_fixp data) {
 				static_assert(sizeof(data) == sizeof(int64_t));
@@ -687,7 +701,8 @@ namespace RRR::JS {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		info.GetReturnValue().Set(v8::ArrayBuffer::New(isolate, (void *) message->data.data(), message->data.size()));
+		auto store = BackingStore::create(isolate, message->data.data(), message->data.size());
+		info.GetReturnValue().Set(store.second());
 	}
 
 	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
@@ -700,14 +715,14 @@ namespace RRR::JS {
 			return;
 		}
 		if (value->IsArrayBuffer()) {
-			auto contents = v8::ArrayBuffer::Cast(*value)->GetContents();
-			if (contents.ByteLength() > RRR_MSG_DATA_MAX) {
+			auto contents = BackingStore::create(isolate, value.As<v8::ArrayBuffer>());
+			if (contents->size() > RRR_MSG_DATA_MAX) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
 				return;
 			}
 			message->data.clear();
-			message->data.reserve(contents.ByteLength());
-			memcpy(message->data.data(), contents.Data(), contents.ByteLength());
+			message->data.reserve(contents->size());
+			memcpy(message->data.data(), contents->data(), contents->size());
 			return;
 		}
 		if (value->IsString()) {
