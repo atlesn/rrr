@@ -356,7 +356,7 @@ AC_SUBST([JEMALLOC_LIBS])
 AC_DEFUN([V8COMPILE], [
 	cxx_flags="$TEST_CXXFLAGS $NODE_CXXFLAGS -w"
 	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
-	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest
+	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags > /dev/null 2>&1 && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([present])
 		m4_default([$1], [])
@@ -378,6 +378,7 @@ AC_DEFUN([V8TESTS],[
 		]])
 	])
 	V8COMPILE
+
 	AC_MSG_CHECKING([V8 has BackingStore])
 	AC_LANG_CONFTEST([
 		AC_LANG_SOURCE([[
@@ -390,6 +391,25 @@ AC_DEFUN([V8TESTS],[
 	])
 	V8COMPILE([
 		AC_DEFINE([RRR_HAVE_V8_BACKINGSTORE], [1], [Have BackingStore for ArrayBuffer])
+	],[
+		# Not found, no action required
+	])
+
+	AC_MSG_CHECKING([V8 String::NewFromUtf8 returns MaybeLocal])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <type_traits>
+			#include <v8.h>
+			int main (int argc, char **argv) {
+				static_assert(std::is_same<decltype(v8::String::NewFromUtf8(nullptr, "")), v8::MaybeLocal<v8::String>>::value, "not present");
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_V12_STRING], [1], [Have V12 String])
+	],[
+		# Not found, no action required
 	])
 ])
 

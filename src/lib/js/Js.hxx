@@ -356,17 +356,18 @@ namespace RRR::JS {
 	class BackingStore {
 		private:
 		v8::Local<v8::ArrayBuffer> array;
-		v8::Contents contents;
+		v8::ArrayBuffer::Contents contents;
 
 		BackingStore(v8::Isolate *isolate, const void *data, size_t size) :
-			array(v8::ArrayBuffer::New(isolate, data, size)),
-			contents(array.GetContents())
+			array(v8::ArrayBuffer::New(isolate, size)),
+			contents(array->GetContents())
 		{
+			memcpy(contents.Data(), data, size);
 		}
 
 		BackingStore(v8::Isolate *isolate, v8::Local<v8::ArrayBuffer> array) :
 			array(array),
-			contents(array.GetContents())
+			contents(array->GetContents())
 		{
 		}
 
