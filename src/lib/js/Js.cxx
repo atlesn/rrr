@@ -171,7 +171,8 @@ namespace RRR::JS {
 	}
 
 	Function::Function() :
-		function() {
+		function()
+	{
 	}
 
 	void Function::run(CTX &ctx, int argc = 0, Value argv[] = nullptr) {
@@ -284,41 +285,79 @@ namespace RRR::JS {
 		run_function(trycatch, function, name, argc, argv);
 	}
 
-	void Script::compile(CTX &ctx, TryCatch &trycatch) {
-		if (trycatch.ok(ctx, [&ctx](const char *msg) mutable {
-			throw E(std::string("Failed to compile script: ") + msg);
-		})) {
-			// OK
+	std::string TryCatch::make_location_message(CTX &ctx, v8::Local<v8::Message> msg) {
+		std::string str("");
+		int line = 0;
+		int col = 0;
+
+		auto source_line = msg->GetSourceLine(ctx);
+		auto line_number = msg->GetLineNumber(ctx);
+		auto column = msg->GetStartColumn(ctx);
+		auto resource = msg->GetScriptResourceName();
+		auto msg_string = String(ctx, msg->Get());
+
+		if (!line_number.IsNothing()) {
+			line = line_number.ToChecked();
 		}
+		if (!column.IsNothing()) {
+			col = column.ToChecked();
+		}
+
+		str += "In " + script_name + "\n";
+
+		if (!resource->IsNullOrUndefined()) {
+			auto resource_str = String(ctx, resource->ToString((v8::Isolate *) ctx));
+			str += std::string(" resource ") + *resource_str + "\n";
+		}
+
+		str += " line " + std::to_string(line) +
+		       " col " + std::to_string(col) + ": " + std::string(msg_string) + "\n";
+
+		if (!source_line.IsEmpty()) {
+			auto line_str = String(ctx, source_line.ToLocalChecked());
+			auto srcline = std::string(std::to_string(line));
+			str += "\n";
+			str.append(6 - (srcline.length() < 6 ? srcline.length() : 6), ' ');
+			str += srcline + " | " + *line_str + "\n";
+			str.append(col, ' ');
+			str += "        ~^~ Here\n";
+		}
+
+		return str;
 	}
 
-	Script::Script(CTX &ctx, TryCatch &trycatch, String &&str) :
-		script(v8::Script::Compile(ctx, str).ToLocalChecked())
+	TryCatch::TryCatch(CTX &ctx, std::string script_name) :
+		trycatch(v8::TryCatch(ctx)),
+		script_name(script_name)
 	{
-		compile(ctx, trycatch);
+		trycatch.SetCaptureMessage(true);
 	}
 
-	Script::Script(CTX &ctx, TryCatch &trycatch, std::string &&str) :
+	Script::Script(CTX &ctx) :
 		script()
 	{
+	}
+
+	void Script::compile(CTX &ctx, std::string &&str) {
+		assert(!compiled);
 		if (str.length() > v8::String::kMaxLength) {
 			throw E("Script data too long");
 		}
 		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked()));
 		if (script_.IsEmpty()) {
-			throw E("Failed to compile script");
+			return;
 		}
 		script = script_.ToLocalChecked();
-		compile(ctx, trycatch);
+		compiled = true;
 	}
 
-	void Script::run(CTX &ctx, TryCatch &trycatch) {
+	bool Script::is_compiled() {
+		return compiled;
+	}
+
+	void Script::run(CTX &ctx) {
+		assert(compiled);
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
-		if (trycatch.ok(ctx, [&ctx](const char *msg) mutable {
-			throw E(std::string("Exception while running script: ") + std::string(msg));
-		})) {
-			// OK
-		}
 		// Ignore result
 	}
 } // namespace RRR::JS

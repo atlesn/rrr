@@ -239,18 +239,29 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	try {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env);
-		auto trycatch = TryCatch(ctx);
+		auto trycatch = TryCatch(ctx, data->js_file);
 		auto persistent_storage = PersistentStorage<Persistable>(ctx);
 		auto scope = Scope(ctx);
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
-		auto script = Script(ctx, trycatch, (std::string) file);
-		script.run(ctx, trycatch);
-		if (trycatch.ok(ctx, [](std::string &&msg){
-			throw E(std::string("Exception while executing script: ") + msg);
-		})) {
-			// OK
+		auto script = Script(ctx);
+
+		try {
+			script.compile(ctx, (std::string) file);
 		}
+		catch (E e) {
+			throw e;
+		}
+
+		if (!script.is_compiled()) {
+			trycatch.ok(ctx, [](std::string &&msg){
+				throw E(std::string(msg));
+			});
+			throw E("Script was not compiled");
+		}
+
+		script.run(ctx);
+
 		js_run_data run_data(data, worker, isolate, ctx, trycatch, persistent_storage);
 
 		callbacks->ping_callback_arg = (void *) &run_data;

@@ -53,13 +53,20 @@ int main(int argc, const char **argv) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env);
 		auto scope = Scope(ctx);
-		auto trycatch = TryCatch(ctx);
-		auto script = Script(ctx, trycatch, String(ctx, in));
+		auto trycatch = TryCatch(ctx, "-");
+		auto script = Script(ctx);
 	
 		Value arg = String(ctx, "arg");
 
-		script.run(ctx, trycatch);
-		// ctx.run_function(trycatch, "process", 1, &arg);
+		script.compile(ctx, in);
+		if (script.is_compiled()) {
+			script.run(ctx);
+		}
+		if (trycatch.ok(ctx, [](std::string &&msg){
+			throw E(std::string(msg));
+		})) {
+			// OK
+		}
 	}
 	catch (E &e) {
 		fprintf(stderr, "%s\n", *e);

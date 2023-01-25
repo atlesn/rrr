@@ -270,28 +270,37 @@ namespace RRR::JS {
 	class TryCatch {
 		private:
 		v8::TryCatch trycatch;
+		std::string script_name;
+
+		std::string make_location_message(CTX &ctx, v8::Local<v8::Message> msg);
 
 		public:
-		TryCatch(CTX &ctx) :
-			trycatch(v8::TryCatch(ctx))
-		{
-		}
+		TryCatch(CTX &ctx, std::string script_name);
 
 		template <class A> bool ok(CTX &ctx, A err) {
-			if (trycatch.HasCaught()) {
-				auto msg = String(ctx, trycatch.Message()->Get());
-				err(*msg);
-				return false;
+			auto msg = trycatch.Message();
+			auto str = std::string("");
+
+			if (trycatch.HasTerminated()) {
+				str += "Program terminated";
 			}
-			else if (trycatch.HasTerminated()) {
-				err("Program terminated");
-				return false;
+			else if (trycatch.HasCaught()) {
+				str += "Uncaught exception";
 			}
-			else if (trycatch.CanContinue()) {
+			else {
 				return true;
 			}
-			err("Unknown error");
-			return false;
+
+			if (!msg.IsEmpty()) {
+				str += std::string(":\n") + make_location_message(ctx, msg);
+			}
+			else {
+				str += "\n";
+			}
+
+			err(str.c_str());
+
+			return trycatch.CanContinue();
 		}
 	};
 
@@ -299,11 +308,13 @@ namespace RRR::JS {
 		private:
 		v8::Local<v8::Script> script;
 		void compile(CTX &ctx, TryCatch &trycatch);
+		bool compiled = false;
 
 		public:
-		Script(CTX &ctx, TryCatch &trycatch, String &&str);
-		Script(CTX &ctx, TryCatch &trycatch, std::string &&str);
-		void run(CTX &ctx, TryCatch &trycatch);
+		Script(CTX &ctx);
+		void compile(CTX &ctx, std::string &&str);
+		bool is_compiled();
+		void run(CTX &ctx);
 	};
 
 	template <class A, class B> class Duple {
