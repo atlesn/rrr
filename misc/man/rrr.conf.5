@@ -2016,6 +2016,11 @@ This parameter is ignored if
 .B http_version_10
 is set to yes.
 
+.It http_no_http2_upgrade={yes|no}
+If set to yes or left unset, An 'Upgrade: h2c' header, along with associated headers, will be sent with all HTTP/1.1 queries.
+The server will usually either respond by confirming upgrade to HTTP/2 or simply continuing using HTTP/1.1.
+If set to no, no such upgrade header will be sent.
+
 .It http_concurrent_connections=UNSIGNED INTEGER
 Maximum number of concurrent connections to open for each host/port combination. Defaults to 10, minimum value is 1 and maximum value is 65535.
 

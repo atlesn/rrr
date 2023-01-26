@@ -2021,7 +2021,9 @@ static void httpclient_queue_process (
 		}
 
 		// Always set this, also upon redirects
-		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2;
+		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 || data->http_client_config.do_no_http2_upgrade
+			? RRR_HTTP_UPGRADE_MODE_NONE
+			: RRR_HTTP_UPGRADE_MODE_HTTP2;
 
 		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
 				// Delete any message from message db upon TTL timeout

@@ -167,10 +167,7 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 	(void)(method);
 	(void)(upgrade_mode);
 	(void)(protocol_version);
-
-	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_part_header_dump(request_part);
-	}
+	(void)(request_part);
 
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
