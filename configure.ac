@@ -69,6 +69,7 @@ AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build wi
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
+AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.)])],[enable_printf_logging=yes][enable_printf_logging=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for RRR GNU Debug])
@@ -853,6 +854,14 @@ AC_MSG_CHECKING([enabled database testing])
 AS_IF([test "x$enable_database_testing" = xyes], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_ENABLE_DB_TESTING], [1], [Enable database testing in test suite])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([enabled printf logging])
+AS_IF([test "x$enable_printf_logging" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_PRINTF_LOGGING], [1], [Enable printf logging for all log messages])
 ],[
 	AC_MSG_RESULT([no])
 ])
