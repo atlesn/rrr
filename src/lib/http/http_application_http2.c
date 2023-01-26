@@ -89,10 +89,10 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 	int ret = 0;
 
 	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
-		RRR_BUG("BUG: Name or value was NULL in __rrr_http_application_http2_header_fields_submit_callbacks\n");
+		RRR_BUG("BUG: Name or value was NULL in %s\n", __func__);
 	}
 	if (RRR_LL_COUNT(&field->fields) > 0) {
-		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http2_header_fields_submit_callback, this is not supported\n");
+		RRR_BUG("BUG: Subvalues were present in %s, this is not supported\n", __func__);
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
@@ -167,7 +167,10 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 	(void)(method);
 	(void)(upgrade_mode);
 	(void)(protocol_version);
-	(void)(request_part);
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_part_header_dump(request_part);
+	}
 
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
@@ -237,7 +240,7 @@ static int __rrr_http_application_http2_request_send (
 			http1 = NULL;
 
 			if (upgraded_app_dummy != NULL) {
-				RRR_BUG("BUG: Recursive upgrades in __rrr_http_application_http2_request_send\n");
+				RRR_BUG("BUG: Recursive upgrades in %s\n", __func__);
 			}
 
 			goto out;
@@ -405,7 +408,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 					NULL,
 					NULL
 			)) != 0) {
-				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
+				RRR_MSG_0("Could not create transaction in %s\n", __func__);
 				goto out;
 			}
 			if ((ret = rrr_http2_session_stream_application_data_set(callback_data->http2->http2_session, stream_id, transaction_to_destroy, rrr_http_transaction_decref_if_not_null_void)) != 0) {
@@ -717,7 +720,7 @@ static int __rrr_http_application_http2_new (
 	int ret = 0;
 
 	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_http_application_http2_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -793,7 +796,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	// The HTTP2-Settings field will always be in the request part regardless of whether we are server or client
 	const struct rrr_http_header_field *orig_http2_settings = rrr_http_part_header_field_get_raw(transaction->request_part, "http2-settings");
 	if (orig_http2_settings == NULL) {
-		RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_application_http1_response_receive_callback\n");
+		RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in %s\n", __func__);
 	}
 
 	rrr_biglength orig_http2_settings_length = 0;
