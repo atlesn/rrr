@@ -894,7 +894,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_field_collection_dump (&transaction->request_part->fields);
+		rrr_http_transaction_query_fields_dump(transaction);
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
