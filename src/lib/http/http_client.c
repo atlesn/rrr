@@ -463,13 +463,14 @@ static int __rrr_http_client_receive_http_part_callback (
 
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 	const struct rrr_http_header_field *encoding = rrr_http_part_header_field_get(response_part, "content-encoding");
-	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value)) {
+	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value) && rrr_nullsafe_str_len(data_use) > 0) {
 		if ((ret = rrr_http_util_decode (
 				data_decoded,
 				data_use,
 				encoding->value
 		) != 0)) {
 			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 		data_use = data_decoded;
