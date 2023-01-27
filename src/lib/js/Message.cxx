@@ -157,12 +157,16 @@ namespace RRR::JS {
 		if (get_class() == MSG_CLASS_ARRAY) {
 			array.to_message(&msg_ptr, timestamp, topic.c_str(), (rrr_u16) topic.length());
 		}
-		else if (data.size() > 0) {
+		else {
 			if (rrr_msg_msg_new_empty(&msg_ptr, MSG_TYPE_MSG, MSG_CLASS_DATA, timestamp, (rrr_u16) topic.length(), (rrr_u32) data.size()) != 0) {
 				throw E(std::string("Could not allocate new message in ") + __func__);
 			}
-			memcpy(MSG_TOPIC_PTR(msg), topic.c_str(), topic.length());
-			memcpy(MSG_DATA_PTR(msg), data.data(), data.size());
+			if (topic.length() > 0) {
+				memcpy(MSG_TOPIC_PTR(msg), topic.c_str(), topic.length());
+			}
+			if (data.size() > 0) {
+				memcpy(MSG_DATA_PTR(msg), data.data(), data.size());
+			}
 		}
 		msg.reset(msg_ptr);
 
