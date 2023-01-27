@@ -17,4 +17,6 @@ function process(message) {
 
 	const buf = new ArrayBuffer(65536);
 	message.push_tag("a", buf);
+
+	message.send();
 }

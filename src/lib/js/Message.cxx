@@ -162,12 +162,13 @@ namespace RRR::JS {
 				throw E(std::string("Could not allocate new message in ") + __func__);
 			}
 			if (topic.length() > 0) {
-				memcpy(MSG_TOPIC_PTR(msg), topic.c_str(), topic.length());
+				memcpy(MSG_TOPIC_PTR(msg_ptr), topic.c_str(), topic.length());
 			}
 			if (data.size() > 0) {
-				memcpy(MSG_DATA_PTR(msg), data.data(), data.size());
+				memcpy(MSG_DATA_PTR(msg_ptr), data.data(), data.size());
 			}
 		}
+
 		msg.reset(msg_ptr);
 
 		MSG_SET_TYPE(msg, type);
