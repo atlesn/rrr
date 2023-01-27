@@ -193,22 +193,22 @@ namespace RRR::JS {
 	}
 
 	namespace Console {
-		void flog(FILE *target, const v8::FunctionCallbackInfo<v8::Value> &args) {
+		void flog(uint8_t loglevel, const v8::FunctionCallbackInfo<v8::Value> &args) {
 			auto isolate = args.GetIsolate();
 			auto ctx = args.GetIsolate()->GetCurrentContext();
 			for (int i = 0; i < args.Length(); i++) {
 				auto value = String(isolate, args[i]->ToString(ctx).ToLocalChecked());
-				fprintf(target, "%s", *value);
+				RRR_MSG_X(loglevel, "%s", *value);
 			}
 			args.GetReturnValue().Set(true);
 		}
 
 		void log(const v8::FunctionCallbackInfo<v8::Value> &args) {
-			flog(stdout, args);
+			flog(7, args);
 		}
 
 		void error(const v8::FunctionCallbackInfo<v8::Value> &args) {
-			flog(stderr, args);
+			flog(0, args);
 		}
 	} // namespace Console
 
