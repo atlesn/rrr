@@ -1,8 +1,8 @@
-rrr (1.26-3posten7) bullseye; urgency=medium
+rrr (1.26-3posten9) bullseye; urgency=medium
 
   * Non-maintainer upload.
 
- -- LBSdrift <lbsdrift@posten.local>  Tue, 24 Jan 2023 05:25:03 +0100
+ -- LBSdrift <lbsdrift@posten.local>  Thu, 26 Jan 2023 21:36:10 +0100
 
 rrr (1.26-3) bullseye; urgency=medium
 
@@ -22,6 +22,7 @@ rrr (1.26-3) bullseye; urgency=medium
     * New module to run JavaScript programs
     * New parameter in ip module to generate empty messages when new
       TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
 
