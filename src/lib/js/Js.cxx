@@ -306,7 +306,7 @@ namespace RRR::JS {
 		str += "In " + script_name + "\n";
 
 		if (!resource->IsNullOrUndefined()) {
-			auto resource_str = String(ctx, resource->ToString(ctx).ToLocalChecked());
+			auto resource_str = String(ctx, resource->ToString((v8::Local<v8::Context>) ctx).ToLocalChecked());
 			str += std::string(" resource ") + *resource_str + "\n";
 		}
 
