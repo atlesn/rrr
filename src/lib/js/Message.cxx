@@ -783,28 +783,9 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.Data());
 	}
 
-	void MessageFactory::cb_construct_base(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		info.GetReturnValue().Set(info.This());
-	}
-
-	void MessageFactory::cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
-		auto self = (MessageFactory *) v8::External::Cast(*info.Data())->Value();
-		auto message = self->new_internal(isolate, info.This());
-		info.GetReturnValue().Set(info.This());
-	}
-
-	void MessageFactory::cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		info.GetReturnValue().Set(info.This());
-	}
-
 	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop) :
-		persistent_storage(persistent_storage),
-		function_tmpl_base(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_base, v8::External::New(ctx, this))),
-		function_tmpl_internal(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_internal, v8::External::New(ctx, this))),
-		function_tmpl_external(v8::FunctionTemplate::New(ctx, MessageFactory::cb_construct_external, v8::External::New(ctx, this))),
 		message_drop(message_drop),
+		Factory(ctx, persistent_storage),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, Message::cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, Message::cb_clear_array)),
@@ -818,58 +799,37 @@ namespace RRR::JS {
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, Message::cb_get_tag_all)),
 		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
 	{
-		auto instance = function_tmpl_base->InstanceTemplate();
-		instance->Set(ctx, "ip_get", tmpl_ip_get);
-		instance->Set(ctx, "ip_set", tmpl_ip_set);
-		instance->Set(ctx, "clear_array", tmpl_clear_array);
-		instance->Set(ctx, "clear_tag", tmpl_clear_tag);
-		instance->Set(ctx, "push_tag_blob", tmpl_push_tag_blob);
-		instance->Set(ctx, "push_tag_str", tmpl_push_tag_str);
-		instance->Set(ctx, "push_tag_h", tmpl_push_tag_h);
-		instance->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
-		instance->Set(ctx, "push_tag", tmpl_push_tag);
-		instance->Set(ctx, "set_tag", tmpl_set_tag);
-		instance->Set(ctx, "get_tag_all", tmpl_get_tag_all);
-		instance->Set(ctx, "send", tmpl_send);
-		instance->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
-		instance->SetAccessor(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
-		instance->SetAccessor(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);
-		instance->SetAccessor(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);
-		instance->SetAccessor(String(ctx, "data"), Message::cb_data_get, Message::cb_data_set);
-		instance->SetAccessor(String(ctx, "type"), Message::cb_type_get, Message::cb_type_set);
-		instance->SetAccessor(String(ctx, "class"), Message::cb_class_get, Message::cb_throw);
-		instance->SetAccessor(String(ctx, "MSG_TYPE_MSG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
-		instance->SetAccessor(String(ctx, "MSG_TYPE_TAG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
-		instance->SetAccessor(String(ctx, "MSG_TYPE_GET"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
-		instance->SetAccessor(String(ctx, "MSG_TYPE_PUT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
-		instance->SetAccessor(String(ctx, "MSG_TYPE_DEL"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
-		instance->SetAccessor(String(ctx, "MSG_CLASS_DATA"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
-		instance->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
-		function_tmpl_base->InstanceTemplate()->SetInternalFieldCount(1);
-		function_tmpl_internal->InstanceTemplate()->SetInternalFieldCount(1);
-		function_tmpl_external->InstanceTemplate()->SetInternalFieldCount(1);
+		auto tmpl = get_object_template();
+		tmpl->Set(ctx, "ip_get", tmpl_ip_get);
+		tmpl->Set(ctx, "ip_set", tmpl_ip_set);
+		tmpl->Set(ctx, "clear_array", tmpl_clear_array);
+		tmpl->Set(ctx, "clear_tag", tmpl_clear_tag);
+		tmpl->Set(ctx, "push_tag_blob", tmpl_push_tag_blob);
+		tmpl->Set(ctx, "push_tag_str", tmpl_push_tag_str);
+		tmpl->Set(ctx, "push_tag_h", tmpl_push_tag_h);
+		tmpl->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
+		tmpl->Set(ctx, "push_tag", tmpl_push_tag);
+		tmpl->Set(ctx, "set_tag", tmpl_set_tag);
+		tmpl->Set(ctx, "get_tag_all", tmpl_get_tag_all);
+		tmpl->Set(ctx, "send", tmpl_send);
+		tmpl->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
+		tmpl->SetAccessor(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
+		tmpl->SetAccessor(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);
+		tmpl->SetAccessor(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);
+		tmpl->SetAccessor(String(ctx, "data"), Message::cb_data_get, Message::cb_data_set);
+		tmpl->SetAccessor(String(ctx, "type"), Message::cb_type_get, Message::cb_type_set);
+		tmpl->SetAccessor(String(ctx, "class"), Message::cb_class_get, Message::cb_throw);
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_MSG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_TAG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_GET"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PUT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_DEL"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
+		tmpl->SetAccessor(String(ctx, "MSG_CLASS_DATA"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
+		tmpl->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
 	}
 
-	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_internal (
-			v8::Isolate *isolate,
-			v8::Local<v8::Object> obj
-	) {
-		auto ctx = isolate->GetCurrentContext();
-		auto message = std::unique_ptr<Message>(new Message(isolate, message_drop));
-		auto duple = Duple(obj, message.get());
-		auto base = function_tmpl_base->InstanceTemplate()->NewInstance(ctx).ToLocalChecked();
-
-		// The accessor functions seem to receive the base object as This();
-		base->SetInternalField(Message::INTERNAL_INDEX_THIS, v8::External::New(isolate, message.get()));
-
-		// The otheer functions seem to receive the derived object as This();
-		obj->SetInternalField(Message::INTERNAL_INDEX_THIS, v8::External::New(isolate, message.get()));
-
-		obj->SetPrototype(ctx, base).Check();
-
-		persistent_storage.push(isolate, obj, message.release());
-
-		return duple;
+	Message *MessageFactory::new_native(v8::Isolate *isolate) {
+		return new Message(isolate, message_drop);
 	}
 
 	Duple<v8::Local<v8::Object>, Message *> MessageFactory::new_external (
@@ -877,16 +837,11 @@ namespace RRR::JS {
 			const struct rrr_msg_msg *msg,
 			const struct rrr_msg_addr *msg_addr
 	) {
-		auto obj = function_tmpl_external->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
-		auto duple = new_internal(isolate, obj);
+		auto duple = new_internal(isolate, new_external_function(isolate));
 
 		duple.second()->set_from_msg_msg(msg);
 		duple.second()->set_from_msg_addr(msg_addr);
 
 		return duple;
-	}
-
-	v8::Local<v8::Function> MessageFactory::get_internal_function(CTX &ctx) {
-		return function_tmpl_internal->GetFunction(ctx).ToLocalChecked();
 	}
 }; // namespace RRR::JS

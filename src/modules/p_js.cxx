@@ -98,7 +98,7 @@ class js_run_data {
 	RRR::JS::Function source;
 	RRR::JS::Function process;
 	RRR::JS::MessageDrop message_drop;
-	RRR::JS::MessageFactory msg_tmpl;
+	RRR::JS::MessageFactory msg_factory;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
@@ -176,7 +176,7 @@ class js_run_data {
 	}
 	void runSource() {
 		auto scope = RRR::JS::Scope(ctx);
-		auto message = msg_tmpl.new_external(ctx);
+		auto message = msg_factory.new_external(ctx);
 		RRR::JS::Value arg(message.first());
 		source.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
@@ -187,7 +187,7 @@ class js_run_data {
 		auto scope = RRR::JS::Scope(ctx);
 		processed++;
 		processed_total++;
-		auto message = msg_tmpl.new_external(ctx, msg, msg_addr);
+		auto message = msg_factory.new_external(ctx, msg, msg_addr);
 		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
@@ -209,7 +209,7 @@ class js_run_data {
 		data(data),
 		worker(worker),
 		message_drop(drop, this),
-		msg_tmpl(ctx, persistent_storage, message_drop)
+		msg_factory(ctx, persistent_storage, message_drop)
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -223,7 +223,7 @@ class js_run_data {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
 
-		ctx.set_global("Message", msg_tmpl.get_internal_function(ctx));
+		ctx.set_global("Message", msg_factory.get_internal_function(ctx));
 	}
 };
 

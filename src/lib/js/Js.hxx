@@ -399,4 +399,79 @@ namespace RRR::JS {
 		}
 	};
 #endif
+	template <class T> class Factory {
+		private:
+		v8::Local<v8::FunctionTemplate> function_tmpl_base;
+		v8::Local<v8::FunctionTemplate> function_tmpl_internal;
+		v8::Local<v8::FunctionTemplate> function_tmpl_external;
+
+		PersistentStorage<Persistable> &persistent_storage;
+
+		protected:
+		v8::Local<v8::Object> new_external_function(v8::Isolate *isolate) {
+			return function_tmpl_external->GetFunction(isolate->GetCurrentContext()).ToLocalChecked()->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
+		}
+
+		v8::Local<v8::ObjectTemplate> get_object_template() {
+			return function_tmpl_base->InstanceTemplate();
+		}
+
+		static void cb_construct_base(const v8::FunctionCallbackInfo<v8::Value> &info) {
+			info.GetReturnValue().Set(info.This());
+		}
+
+		static void cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info) {
+			auto isolate = info.GetIsolate();
+			auto ctx = info.GetIsolate()->GetCurrentContext();
+			auto self = (Factory *) v8::External::Cast(*info.Data())->Value();
+			self->new_internal(isolate, info.This());
+			info.GetReturnValue().Set(info.This());
+		}
+
+		static void cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info) {
+			info.GetReturnValue().Set(info.This());
+		}
+
+		virtual T* new_native(v8::Isolate *isolate) = 0;
+
+		Duple<v8::Local<v8::Object>, T *> new_internal (
+				v8::Isolate *isolate,
+				v8::Local<v8::Object> obj
+		) {
+			auto ctx = isolate->GetCurrentContext();
+			auto native_obj = std::unique_ptr<T>(new_native(isolate));
+			auto duple = Duple(obj, native_obj.get());
+			auto base = function_tmpl_base->InstanceTemplate()->NewInstance(ctx).ToLocalChecked();
+
+			// The accessor functions seem to receive the base object as This();
+			base->SetInternalField(INTERNAL_INDEX_THIS, v8::External::New(isolate, native_obj.get()));
+
+			// The other functions seem to receive the derived object as This();
+			obj->SetInternalField(INTERNAL_INDEX_THIS, v8::External::New(isolate, native_obj.get()));
+
+			obj->SetPrototype(ctx, base).Check();
+
+			persistent_storage.push(isolate, obj, native_obj.release());
+
+			return duple;
+		}
+
+		public:
+		static const int INTERNAL_INDEX_THIS = 0;
+
+		v8::Local<v8::Function> get_internal_function(CTX &ctx) {
+			return function_tmpl_internal->GetFunction(ctx).ToLocalChecked();
+		}
+
+		Factory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+			persistent_storage(persistent_storage),
+			function_tmpl_base(v8::FunctionTemplate::New(ctx, cb_construct_base, v8::External::New(ctx, this))),
+			function_tmpl_internal(v8::FunctionTemplate::New(ctx, cb_construct_internal, v8::External::New(ctx, this))),
+			function_tmpl_external(v8::FunctionTemplate::New(ctx, cb_construct_external, v8::External::New(ctx, this)))
+		{
+			function_tmpl_base->InstanceTemplate()->SetInternalFieldCount(1);
+			function_tmpl_internal->InstanceTemplate()->SetInternalFieldCount(1);
+			function_tmpl_external->InstanceTemplate()->SetInternalFieldCount(1);
+		}
+	};
 } // namespace RRR::JS
