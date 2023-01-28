@@ -1,12 +1,34 @@
-function config() {
+function config(config) {
 	console.log("Config function\n");
 
+	// Local Message objects
 	const msg_a = new Message();
 	const msg_b = new Message();
 
 	msg_a.topic = "topic A";
 	msg_b.topic = "topic B";
 	console.log(msg_a.topic + "\n");
+
+	// Local Config object
+	let catched = false;
+	try {
+		config_local = new Config();
+	}
+	catch (e) {
+		catched = true;
+	}
+	if (!catched) {
+		throw("local new of Config did not throw error");
+	}
+
+	// Settings
+	if (!config.has("custom_setting")) {
+		throw("has() returned false");
+	}
+
+	if (config.get("custom_setting") !== "XXX") {
+		throw("get() incorrect result");
+	}
 }
 
 function check_array_buffer(buffer, check_buffer) {
@@ -29,6 +51,8 @@ function function_tests() {
 
 	// Let any exceptions propagate causing test to fail unless
 	// we provoke the exception to be catch and test for that.
+
+	let catched = false;
 
 	// Test ip_set / ip_get
 	message.ip_set("1.2.3.4", "5");
@@ -338,8 +362,6 @@ function function_tests() {
 }
 
 function process(message) {
-	let catched = false;
-
 	console.log("Process function\n");
 
 	function_tests();

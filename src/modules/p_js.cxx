@@ -54,6 +54,7 @@ extern "C" {
 #include "../lib/util/Readfile.hxx"
 #include "../lib/js/Js.hxx"
 #include "../lib/js/Message.hxx"
+#include "../lib/js/Config.hxx"
 
 extern "C" {
 
@@ -99,6 +100,7 @@ class js_run_data {
 	RRR::JS::Function process;
 	RRR::JS::MessageDrop message_drop;
 	RRR::JS::MessageFactory msg_factory;
+	RRR::JS::ConfigFactory cfg_factory;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
@@ -167,9 +169,11 @@ class js_run_data {
 	bool hasProcess() const {
 		return !process.empty();
 	}
-	void runConfig() {
+	void runConfig(struct rrr_instance_config_data *instance_config) {
 		auto scope = RRR::JS::Scope(ctx);
-		config.run(ctx, 0, nullptr);
+		auto cfg = cfg_factory.new_external(ctx, instance_config);
+		RRR::JS::Value arg(cfg.first());
+		config.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run config function: ") + msg);
 		});
@@ -209,7 +213,8 @@ class js_run_data {
 		data(data),
 		worker(worker),
 		message_drop(drop, this),
-		msg_factory(ctx, persistent_storage, message_drop)
+		msg_factory(ctx, persistent_storage, message_drop),
+		cfg_factory(ctx, persistent_storage)
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -224,6 +229,7 @@ class js_run_data {
 		}
 
 		ctx.set_global("Message", msg_factory.get_internal_function(ctx));
+		ctx.set_global("Config", cfg_factory.get_internal_function(ctx));
 	}
 };
 
@@ -273,7 +279,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				callbacks
 		)) != 0) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
-			goto out;
+				goto out;
 		}
 	}
 	catch (E e) {
@@ -316,7 +322,7 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	try {
-		run_data->runConfig();
+		run_data->runConfig(INSTANCE_D_CONFIG(run_data->data->thread_data));
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));

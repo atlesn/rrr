@@ -50,7 +50,7 @@ namespace RRR::JS {
 		void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr);
 	};
 
-	class Message : public Persistable {
+	class Message : public Native<Message> {
 		friend class MessageFactory;
 
 		private:
@@ -64,12 +64,6 @@ namespace RRR::JS {
 		RRR::Array array;
 
 		MessageDrop &message_drop;
-
-		template <class T> static Message *self(const T &info) {
-			auto self = info.Holder();
-			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(Factory<Message>::INTERNAL_INDEX_THIS));
-			return (Message *) wrap->Value();
-		}
 
 		int64_t get_total_memory() final;
 		void clear_array();
