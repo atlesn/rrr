@@ -148,8 +148,6 @@ int rrr_cmodule_main_worker_fork_start (
 			worker_queue,
 			cmodule->fork_handler,
 			cmodule->config_data.worker_spawn_interval_us,
-			cmodule->config_data.worker_sleep_time_us,
-			cmodule->config_data.worker_nothing_happened_limit,
 			cmodule->config_data.do_spawning,
 			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error
@@ -267,8 +265,6 @@ int rrr_cmodule_new (
 
 	// Default settings for modules which do not parse config
 	cmodule->config_data.worker_spawn_interval_us = RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS * 1000;
-	cmodule->config_data.worker_sleep_time_us = RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS * 1000;
-	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	// Memory map not allocated until needed

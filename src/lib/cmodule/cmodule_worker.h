@@ -91,8 +91,6 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		rrr_setting_uint spawn_interval_us,
-		rrr_setting_uint sleep_time_us,
-		rrr_setting_uint nothing_happened_limit,
 		int do_spawning,
 		int do_processing,
 		int do_drop_on_error

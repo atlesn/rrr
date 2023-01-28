@@ -824,20 +824,6 @@ int rrr_cmodule_helper_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
 	data->worker_spawn_interval_us *= 1000;
 
-	// Input in ms, multiply by 1000
-	RRR_INSTANCE_CONFIG_STRING_SET("_sleep_time_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
-	data->worker_sleep_time_us *= 1000;
-
-	RRR_INSTANCE_CONFIG_STRING_SET("_nothing_happened_limit");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
-	if (data->worker_nothing_happened_limit < 1) {
-		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
 

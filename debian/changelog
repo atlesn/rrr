@@ -1,10 +1,4 @@
-rrr (1.26-3posten7) bullseye; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Tue, 24 Jan 2023 05:25:03 +0100
-
-rrr (1.26-3) bullseye; urgency=medium
+rrr (1.26-4) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -12,6 +6,8 @@ rrr (1.26-3) bullseye; urgency=medium
     * Clarified inconsitency of manual with respect to configuration
       paramter mqtt_publish_rrr_message
     * Never send raw array data from mqttclient
+    * Remove stale configuration cmodule parameters sleep_time_ms and
+      nothing_happend_limit which had no effect when used.
 
   * Fixes:
     * Handling of websocket topic filters in httpserver

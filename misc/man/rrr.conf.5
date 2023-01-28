@@ -809,8 +809,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It python3_workers=UNSIGNED INTEGER
 .It python3_source_interval_ms=MILLISECONDS
-.It python3_sleep_time_ms=MILLISECONDS
-.It python3_nothing_happend_limit=UNSIGNED INTEGER
 .It python3_log_prefix=PREFIX
 .It python3_drop_on_error={yes|no}
 .El
@@ -936,8 +934,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It perl5_workers=UNSIGNED INTEGER
 .It perl5_source_interval_ms=MILLISECONDS
-.It perl5_sleep_time_ms=MILLISECONDS
-.It perl5_nothing_happend_limit=UNSIGNED INTEGER
 .It perl5_log_prefix=PREFIX
 .It perl5_drop_on_error={yes|no}
 .El
@@ -1265,8 +1261,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It js_workers=UNSIGNED INTEGER
 .It js_source_interval_ms=MILLISECONDS
-.It js_sleep_time_ms=MILLISECONDS
-.It js_nothing_happend_limit=UNSIGNED INTEGER
 .It js_log_prefix=PREFIX
 .It js_drop_on_error={yes|no}
 .El
@@ -1427,8 +1421,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It cmodule_workers=UNSIGNED INTEGER
 .It cmodule_source_interval_ms=MILLISECONDS
-.It cmodule_sleep_time_ms=MILLISECONDS
-.It cmodule_nothing_happend_limit=UNSIGNED INTEGER
 .It cmodule_log_prefix=PREFIX
 .It cmodule_drop_on_error={yes|no}
 .El
@@ -3019,16 +3011,6 @@ each for will source messages according to given parameters. Defaults to 1, maxi
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 
-.It X_sleep_time_ms=MILLISECONDS
-How many milliseconds to sleep if nothing was processed in the worker after multiple processing loops.
-Sleeping is performed to limit CPU usage.
-It is possible to specify 0 which in practice creates a very small wait.
-The worker will sleep once every round until something happens again. Defaults to 50ms.
-
-.It X_nothing_happend_limit=UNSIGNED INTEGER
-How many loops to perform in the worker with nothing being processed before starting to sleep.
-Defaults to 250, must be 1 or greater.
- 
 .It X_log_prefix=PREFIX
 Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
 macros to print messages like the reset of RRR does.
