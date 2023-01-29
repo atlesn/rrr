@@ -37,6 +37,7 @@ extern "C" {
 namespace RRR::JS {
 	template <class T> class Factory {
 		private:
+		std::string name;
 		v8::Local<v8::FunctionTemplate> function_tmpl_base;
 		v8::Local<v8::FunctionTemplate> function_tmpl_internal;
 		v8::Local<v8::FunctionTemplate> function_tmpl_external;
@@ -55,11 +56,12 @@ namespace RRR::JS {
 		static void cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info);
 
+		Factory(std::string name, CTX &ctx, PersistentStorage<Persistable> &persistent_storage);
+
 		public:
 		static const int INTERNAL_INDEX_THIS = 0;
 
-		v8::Local<v8::Function> get_internal_function(v8::Local<v8::Context> ctx);
-		Factory(v8::Isolate *isolate, PersistentStorage<Persistable> &persistent_storage);
+		void register_as_global(CTX &ctx);
 	};
 
 	template <class T> v8::Local<v8::Object> Factory<T>::new_external_function(v8::Isolate *isolate) {
@@ -117,19 +119,20 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.This());
 	}
 
-	template <class T> v8::Local<v8::Function> Factory<T>::get_internal_function(v8::Local<v8::Context> ctx) {
-		return function_tmpl_internal->GetFunction(ctx).ToLocalChecked();
-	}
-
-	template <class T> Factory<T>::Factory(v8::Isolate *isolate, PersistentStorage<Persistable> &persistent_storage) :
+	template <class T> Factory<T>::Factory(std::string name, CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+		name(name),
 		persistent_storage(persistent_storage),
-		function_tmpl_base(v8::FunctionTemplate::New(isolate, cb_construct_base, v8::External::New(isolate, this))),
-		function_tmpl_internal(v8::FunctionTemplate::New(isolate, cb_construct_internal, v8::External::New(isolate, this))),
-		function_tmpl_external(v8::FunctionTemplate::New(isolate, cb_construct_external, v8::External::New(isolate, this)))
+		function_tmpl_base(v8::FunctionTemplate::New(ctx, cb_construct_base, v8::External::New(ctx, this))),
+		function_tmpl_internal(v8::FunctionTemplate::New(ctx, cb_construct_internal, v8::External::New(ctx, this))),
+		function_tmpl_external(v8::FunctionTemplate::New(ctx, cb_construct_external, v8::External::New(ctx, this)))
 	{
 		function_tmpl_base->InstanceTemplate()->SetInternalFieldCount(1);
 		function_tmpl_internal->InstanceTemplate()->SetInternalFieldCount(1);
 		function_tmpl_external->InstanceTemplate()->SetInternalFieldCount(1);
+	}
+
+	template <class T> void Factory<T>::register_as_global(CTX &ctx) {
+		ctx.set_global(name, function_tmpl_internal->GetFunction(ctx).ToLocalChecked());
 	}
 
 	template <class N> class Native : public Persistable {

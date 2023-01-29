@@ -228,8 +228,8 @@ class js_run_data {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
 
-		ctx.set_global("Message", msg_factory.get_internal_function(ctx));
-		ctx.set_global("Config", cfg_factory.get_internal_function(ctx));
+		msg_factory.register_as_global(ctx);
+		cfg_factory.register_as_global(ctx);
 	}
 };
 

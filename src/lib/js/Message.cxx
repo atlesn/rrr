@@ -789,7 +789,7 @@ namespace RRR::JS {
 
 	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop) :
 		message_drop(message_drop),
-		Factory(ctx, persistent_storage),
+		Factory("Message", ctx, persistent_storage),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, Message::cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, Message::cb_clear_array)),
