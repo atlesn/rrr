@@ -162,6 +162,11 @@ class js_run_data {
 	}
 	void gc() {
 		persistent_storage.gc(&memory_entries, &memory_size);
+
+		printf("GC\n");
+		isolate->LowMemoryNotification();
+		while (!isolate->IdleNotificationDeadline(1)) {
+		}
 	}
 	bool hasConfig() const {
 		return !config.empty();

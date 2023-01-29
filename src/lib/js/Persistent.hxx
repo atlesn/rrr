@@ -21,11 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include "v8-callbacks.h"
+#include "v8-persistent-handle.h"
 extern "C" {
 #include "../rrr_types.h"
 };
 
 #include <v8.h>
+#include <map>
 #include <memory>
 #include <algorithm>
 #include <forward_list>
@@ -34,6 +37,7 @@ extern "C" {
 namespace RRR::JS {
 	class PersistentBus;
 	class Persistable;
+	class PersistableHolder;
 
 	/*
 	 * Message passing from Persistables to Sniffers:
@@ -101,12 +105,23 @@ namespace RRR::JS {
 		private:
 		int64_t total_memory = 0;
 		PersistentMessageIntermediate *forwarder = nullptr;
+		PersistableHolder *holder = nullptr;
 
 		protected:
 		// Derived classes must implement this and report the current
 		// estimated size of the object so that we can report changes
 		// to V8.
 		virtual int64_t get_total_memory() = 0;
+
+		// Pass a message
+		void pass(const char *identifier, void *arg);
+
+		// Store an object as persistent. Returns positon to use
+		// when pulling.
+		int push_persistent(v8::Local<v8::Value> value);
+		
+		// Pull a persistent out for temporary use
+		v8::Local<v8::Value> pull_persistent(int i);
 
 		public:
 		// Receive acknowledgement that a message has been processed by
@@ -116,13 +131,21 @@ namespace RRR::JS {
 		// they do not pass messages or do not need acknowledgements.
 		virtual void acknowledge(void *arg) {};
 
+		// Called reguralerly by storage to check if object
+		// may be tagged for destruction. When the function
+		// returnes true, the object may be garbage collected by
+		// V8 once no more references to it exist.
+		virtual bool is_complete() const {
+			return true;
+		}
+
 		// Register message bus
 		void register_bus(PersistentMessageIntermediate *forwarder) {
 			this->forwarder = forwarder;
 		}
-		// Pass a message
-		void pass(const char *identifier, void *arg) {
-			forwarder->pass(identifier, arg);
+		// Register persistent object holder
+		void register_holder(PersistableHolder *holder) {
+			this->holder = holder;
 		}
 		// Called reguralerly by storage
 		int64_t get_unreported_memory() {
@@ -145,36 +168,58 @@ namespace RRR::JS {
 		virtual ~Persistable() = default;
 	};
 
-	class PersistentStorage {
-		private:
-		class Persistent : public PersistentMessageIntermediate {
-			private:
-			v8::Persistent<v8::Object> persistent;
-			bool done;
-			std::shared_ptr<Persistable> t;
-			PersistentBus *bus;
+	class PersistableHolder : public PersistentMessageIntermediate {
+		friend class Persistable;
+		friend class PersistentStorage;
 
-			public:
-			void pass(const char *identifier, void *arg) final {
-				bus->pass(t, identifier, arg);
-			}
-			int64_t get_unreported_memory() {
-				return t->get_unreported_memory();
-			}
-			int64_t get_total_memory_finalize() {
-				return t->get_total_memory_finalize();
-			}
-			bool is_done() const {
-				return done;
-			}
-			static void gc(const v8::WeakCallbackInfo<void> &info);
-			Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus);
-			Persistent(const Persistent &p) = delete;
-		};
+		private:
+		std::map<int,std::unique_ptr<v8::Persistent<v8::Value>>> values;
+		int value_pos = 0;
+		bool done;
+		bool is_weak;
+		std::shared_ptr<Persistable> t;
+		PersistentBus *bus;
+		v8::Isolate *isolate;
+
+		protected:
+		int push_value(v8::Local<v8::Value> value);
+		v8::Local<v8::Value> pull_value(int i);
+		void pass(const char *identifier, void *arg) final {
+			bus->pass(t, identifier, arg);
+		}
+		int64_t get_unreported_memory() {
+			return t->get_unreported_memory();
+		}
+		int64_t get_total_memory_finalize() {
+			return t->get_total_memory_finalize();
+		}
+		bool is_done() const {
+			return done;
+		}
+		void check_complete();
+		static void gc(const v8::WeakCallbackInfo<void> &info);
+		PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus);
+		PersistableHolder(const PersistableHolder &p) = delete;
+	};
+
+	class PersistentStorage {
+		/*
+		 * The memory of a Persistable is owned by a PersistableHolder object. The
+		 * gc() function of the Storage is called reguraley, and the objects
+		 * go through the following states:
+		 * 1. Object is new, memory persists indefinately
+		 * 2. The Persistable returns true from the is_complete function. This
+		 *    results in a SetWeak call instructing V8 GC to clean up once there
+		 *    are noe more references to the object in the program.
+		 * 3. The V8 GC runs sometime in the future, and the gc() callback of the
+		 *    Persistent object is called. This causes the done flag to be set.
+		 * 4. The storage removes the Persistent from its list once it sees that
+		 *    the done flag has been set. All objects are now deallocated.
+		 */
 
 		v8::Isolate *isolate;
 
-		std::forward_list<std::unique_ptr<Persistent>> persistents;
+		std::forward_list<std::unique_ptr<PersistableHolder>> persistents;
 		int64_t entries = 0;
 		int64_t total_memory = 0;
 
@@ -194,7 +239,7 @@ namespace RRR::JS {
 			assert(total_memory > 0);
 		}
 		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
-			persistents.emplace_front(new Persistent(isolate, obj, t, &bus));
+			persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
 			entries++;
 		}
 		void register_sniffer(PersistentSniffer *sniffer) {

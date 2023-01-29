@@ -38,13 +38,13 @@ namespace RRR::JS {
 			if (!(*it).is_alive()) {
 				erase = true;
 			}
-			else if (now > (*it).get_exec_time()) {
+			else if (now >= (*it).get_exec_time()) {
 				(*it).acknowledge();
 				erase = true;
 			}
 			
 			if (erase) {
-				timeout_events.erase(it);
+				it = timeout_events.erase(it);
 			}
 			else {
 				// List is sorted by execution time, and no more timers has expired

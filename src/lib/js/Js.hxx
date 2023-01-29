@@ -59,6 +59,9 @@ namespace RRR::JS {
 		public:
 		Isolate(ENV &env);
 		~Isolate();
+		v8::Isolate *operator-> () {
+			return isolate;
+		}
 	};
 
 	class Value : public v8::Local<v8::Value> {

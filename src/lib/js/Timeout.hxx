@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Js.hxx"
 #include "Factory.hxx"
+#include "v8-local-handle.h"
 
 extern "C" {
 };
@@ -35,9 +36,11 @@ namespace RRR::JS {
 	class Timeout : public Native<Timeout> {
 		friend class TimeoutFactory;
 
-		v8::Local<v8::Context> ctx;
-		v8::Local<v8::Function> function;
-		std::vector<v8::Local<v8::Value>> args;
+		v8::Isolate *isolate;
+
+		int func_pos = 0;
+		std::vector<int> args_pos;
+
 		uint32_t timeout_ms = 0;
 		int64_t timeout_us = 0;
 
@@ -45,28 +48,29 @@ namespace RRR::JS {
 		bool cleared = false;
 
 		protected:
-		Timeout(v8::Local<v8::Context> ctx) :
-			ctx(ctx)
-		{
-		}
+		Timeout(v8::Isolate *isolate);
 		int64_t get_total_memory() final {
-			return sizeof(*this);
+			return sizeof(*this) + 65536;
 		}
-		void acknowledge(void *arg);
+		void acknowledge(void *arg) final;
+		bool is_complete() const final;
 		void set_timeout(uint32_t timeout_ms) {
 			this->timeout_ms = timeout_ms;
 		}
 		void set_function(v8::Local<v8::Function> function) {
-			this->function = function;
+			func_pos = push_persistent(function);
 		}
 		void push_arg(v8::Local<v8::Value> arg) {
-			args.emplace_back(arg);
+			args_pos.emplace_back(push_persistent(arg));
 		}
 		void finalize() {
 			timeout_us = timeout_ms * 1000;
 			pass(EventQueue::MSG_SET_TIMEOUT, &timeout_us);
 		}
 		static void cb_clear(const v8::FunctionCallbackInfo<v8::Value> &info);
+
+		public:
+		~Timeout();
 	};
 
 	class TimeoutFactory : public Factory<Timeout> {

@@ -30,17 +30,41 @@ extern "C" {
 #include <v8.h>
 
 namespace RRR::JS {
+	void gc(const v8::WeakCallbackInfo<void> &info) {
+		printf("GC from timeout\n");
+	}
+
+	Timeout::Timeout(v8::Isolate *isolate) :
+		isolate(isolate)
+	{
+	}
+
+	Timeout::~Timeout() {
+		printf("Timeout destructor\n");
+	}
+
 	void Timeout::acknowledge(void *arg) {
 		if (cleared) {
 			return;
 		}
+		cleared = true;
 
-		int argc = (int) args.size();
+		std::vector<v8::Local<v8::Value>> argv;
+		std::for_each(args_pos.begin(), args_pos.end(), [this, &argv](auto i){
+			argv.emplace_back(pull_persistent(i));
+		});
+		v8::Local<v8::Value> function = pull_persistent(func_pos);
+
+		int argc = (int) argv.size();
 		assert(argc >= 0);
-		auto value = function->Call(ctx, v8::Undefined(ctx->GetIsolate()), argc, argc > 0 ? args.data() : nullptr);
+		auto value = function.As<v8::Function>()->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), argc, argc > 0 ? argv.data() : nullptr);
 		if (value.IsEmpty()) {
 			throw E(std::string("Empty return value from function in ") + __func__);
 		}
+	}
+
+	bool Timeout::is_complete() const {
+		return cleared;
 	}
 
 	void Timeout::cb_clear(const v8::FunctionCallbackInfo<v8::Value> &info) {
@@ -61,6 +85,7 @@ namespace RRR::JS {
 		if (!info[0]->IsFunction()) {
 			throw E(std::string("First argument to Timeout constructor was not a function"));
 		}
+
 		timeout->set_function(info[0].As<v8::Function>());
 
 		if (info.Length() >= 2) {
@@ -83,7 +108,7 @@ namespace RRR::JS {
 	}
 
 	Timeout *TimeoutFactory::new_native(v8::Isolate *isolate) {
-		return new Timeout(isolate->GetCurrentContext());
+		return new Timeout(isolate);
 	}
 
 	TimeoutFactory::TimeoutFactory(CTX &ctx, PersistentStorage &persistent_storage) :

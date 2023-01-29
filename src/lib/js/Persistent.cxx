@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Persistent.hxx"
+#include <utility>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -28,19 +29,53 @@ extern "C" {
 #include <v8.h>
 
 namespace RRR::JS {
-	void PersistentStorage::Persistent::gc(const v8::WeakCallbackInfo<void> &info) {
-		auto self = (Persistent *) info.GetParameter();
-		self->persistent.Reset();
+	void Persistable::pass(const char *identifier, void *arg) {
+		forwarder->pass(identifier, arg);
+	}
+	int Persistable::push_persistent(v8::Local<v8::Value> value) {
+		return holder->push_value(value);
+	}
+
+	v8::Local<v8::Value> Persistable::pull_persistent(int i) {
+		return holder->pull_value(i);
+	}
+
+	int PersistableHolder::push_value(v8::Local<v8::Value> value) {
+		values.emplace(std::pair(value_pos, v8::Persistent<v8::Value>(isolate, value)));
+		return value_pos++;
+	}
+
+	v8::Local<v8::Value> PersistableHolder::pull_value(int i) {
+		return (*values[i]).Get(isolate);
+	}
+
+	void PersistableHolder::check_complete() {
+		if (!is_weak && t->is_complete()) {
+			printf("Setting weak\n");
+			std::for_each(values.begin(), values.end(), [this](auto &pair){
+				(*pair.second).SetWeak();
+			});
+			is_weak = true;
+		}
+	}
+	void PersistableHolder::gc(const v8::WeakCallbackInfo<void> &info) {
+		auto self = (PersistableHolder *) info.GetParameter();
+		std::for_each(self->values.begin(), self->values.end(), [self](auto &pair){
+			printf("Reset\n");
+			(*pair.second).Reset();
+		});
 		self->done = true;
 	}
-	PersistentStorage::Persistent::Persistent(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
+	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
 		t(t),
-		persistent(isolate, obj),
+		isolate(isolate),
+		values(),
 		done(false),
 		bus(bus)
 	{
-		persistent.SetWeak<void>(this, gc, v8::WeakCallbackType::kParameter);
+		push_value(obj);
 		t->register_bus(this);
+		t->register_holder(this);
 	}
 	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
 		rrr_biglength entries_acc = 0;
@@ -49,6 +84,7 @@ namespace RRR::JS {
 			if (memory != 0) {
 				report_memory(memory);
 			}
+			p->check_complete();
 		});
 		persistents.remove_if([this](auto &p){
 			if (p->is_done()) {
@@ -58,6 +94,7 @@ namespace RRR::JS {
 			}
 			return p->is_done();
 		});
+
 		*entries_ = (rrr_biglength) entries;
 		*memory_size_ = (rrr_biglength) total_memory;
 	}
