@@ -61,7 +61,7 @@ namespace RRR::JS {
 		Config *new_native(v8::Isolate *isolate) final;
 
 		public:
-		ConfigFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage);
+		ConfigFactory(CTX &ctx, PersistentStorage &persistent_storage);
 		Duple<v8::Local<v8::Object>, Config *> new_external (
 				v8::Isolate *isolate,
 				struct rrr_instance_config_data *config

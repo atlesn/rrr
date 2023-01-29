@@ -83,7 +83,7 @@ namespace RRR::JS {
 		return new Config();
 	}
 
-	ConfigFactory::ConfigFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+	ConfigFactory::ConfigFactory(CTX &ctx, PersistentStorage &persistent_storage) :
 		Factory("Config", ctx, persistent_storage),
 		tmpl_has(v8::FunctionTemplate::New(ctx, Config::cb_has)),
 		tmpl_get(v8::FunctionTemplate::New(ctx, Config::cb_get))

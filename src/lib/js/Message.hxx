@@ -145,7 +145,7 @@ namespace RRR::JS {
 		Message *new_native(v8::Isolate *isolate) final;
 
 		public:
-		MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop);
+		MessageFactory(CTX &ctx, PersistentStorage &persistent_storage, MessageDrop &message_drop);
 		Duple<v8::Local<v8::Object>, Message *> new_external (
 				v8::Isolate *isolate,
 				const struct rrr_msg_msg *msg_msg = nullptr,

@@ -787,7 +787,7 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.Data());
 	}
 
-	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop) :
+	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage &persistent_storage, MessageDrop &message_drop) :
 		message_drop(message_drop),
 		Factory("Message", ctx, persistent_storage),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_get)),

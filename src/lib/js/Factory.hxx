@@ -42,11 +42,12 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> function_tmpl_internal;
 		v8::Local<v8::FunctionTemplate> function_tmpl_external;
 
-		PersistentStorage<Persistable> &persistent_storage;
+		PersistentStorage &persistent_storage;
 
 		protected:
 		virtual void new_internal_precheck () {}
 		virtual T* new_native(v8::Isolate *isolate) = 0;
+		virtual void construct (T *t, const v8::FunctionCallbackInfo<v8::Value> &info) {};
 
 		v8::Local<v8::Object> new_external_function(v8::Isolate *isolate);
 		v8::Local<v8::ObjectTemplate> get_object_template();
@@ -56,7 +57,7 @@ namespace RRR::JS {
 		static void cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info);
 
-		Factory(std::string name, CTX &ctx, PersistentStorage<Persistable> &persistent_storage);
+		Factory(std::string name, CTX &ctx, PersistentStorage &persistent_storage);
 
 		public:
 		static const int INTERNAL_INDEX_THIS = 0;
@@ -105,13 +106,14 @@ namespace RRR::JS {
 
 		try {
 			self->new_internal_precheck();
+			auto duple = self->new_internal(isolate, info.This());
+			self->construct(duple.second(), info);
 		}
 		catch (E e) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("Could not create object: ") + (std::string) e)));
 			return;
 		}
 
-		self->new_internal(isolate, info.This());
 		info.GetReturnValue().Set(info.This());
 	}
 
@@ -119,7 +121,7 @@ namespace RRR::JS {
 		info.GetReturnValue().Set(info.This());
 	}
 
-	template <class T> Factory<T>::Factory(std::string name, CTX &ctx, PersistentStorage<Persistable> &persistent_storage) :
+	template <class T> Factory<T>::Factory(std::string name, CTX &ctx, PersistentStorage &persistent_storage) :
 		name(name),
 		persistent_storage(persistent_storage),
 		function_tmpl_base(v8::FunctionTemplate::New(ctx, cb_construct_base, v8::External::New(ctx, this))),

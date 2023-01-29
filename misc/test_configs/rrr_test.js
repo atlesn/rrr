@@ -5,6 +5,18 @@ function config() {
 function process(message) {
 //	console.log("Process function topic " + message.topic + "\n");
 
+	let timeout = new Timeout(() => { console.log("My timeout\n"); });
+
+	function a() {
+		console.log("a\n");
+	}
+
+	eval("a()");
+
+//	let timeout = setTimeout(() => {
+//		console.log("Timeout\n");
+//	}, 1000);
+
 	const msg_a = new Message();
 	//const msg_b = new Message();
 
