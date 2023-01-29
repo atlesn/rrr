@@ -21,15 +21,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-extern "C" {
-#include <sys/socket.h>
-#include "../messages/msg_msg_struct.h"
-};
+#include "Factory.hxx"
+#include "Js.hxx"
+#include "../Array.hxx"
 
 #include <v8.h>
 
-#include "Js.hxx"
-#include "../Array.hxx"
+extern "C" {
+#include "../messages/msg_msg_struct.h"
+#include <sys/socket.h>
+};
 
 namespace RRR::JS {
 	class MessageDrop {
@@ -50,7 +51,7 @@ namespace RRR::JS {
 		void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr);
 	};
 
-	class Message : public Persistable {
+	class Message : public Native<Message> {
 		friend class MessageFactory;
 
 		private:
@@ -64,12 +65,6 @@ namespace RRR::JS {
 		RRR::Array array;
 
 		MessageDrop &message_drop;
-
-		template <class T> static Message *self(const T &info) {
-			auto self = info.Holder();
-			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(INTERNAL_INDEX_THIS));
-			return (Message *) wrap->Value();
-		}
 
 		int64_t get_total_memory() final;
 		void clear_array();
@@ -93,7 +88,6 @@ namespace RRR::JS {
 		void push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value);
 
 		protected:
-		static const int INTERNAL_INDEX_THIS     = 0;
 
 		Message(v8::Isolate *isolate, MessageDrop &MessageDrop);
 
@@ -131,11 +125,8 @@ namespace RRR::JS {
 		operator v8::Local<v8::Object>(); 
 	};
 
-	class MessageFactory {
+	class MessageFactory : public Factory<Message> {
 		private:
-		v8::Local<v8::FunctionTemplate> function_tmpl_base;
-		v8::Local<v8::FunctionTemplate> function_tmpl_internal;
-		v8::Local<v8::FunctionTemplate> function_tmpl_external;
 		v8::Local<v8::FunctionTemplate> tmpl_ip_get;
 		v8::Local<v8::FunctionTemplate> tmpl_ip_set;
 		v8::Local<v8::FunctionTemplate> tmpl_clear_array;
@@ -149,24 +140,16 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 		v8::Local<v8::FunctionTemplate> tmpl_send;
 
-		static void cb_construct_base(const v8::FunctionCallbackInfo<v8::Value> &info);
-		static void cb_construct_internal(const v8::FunctionCallbackInfo<v8::Value> &info);
-		static void cb_construct_external(const v8::FunctionCallbackInfo<v8::Value> &info);
-
-		PersistentStorage<Persistable> &persistent_storage;
 		MessageDrop &message_drop;
 
+		Message *new_native(v8::Isolate *isolate) final;
+
 		public:
-		MessageFactory(CTX &ctx, PersistentStorage<Persistable> &persistent_storage, MessageDrop &message_drop);
-		Duple<v8::Local<v8::Object>, Message *> new_internal (
-				v8::Isolate *isolate,
-				v8::Local<v8::Object> obj
-		);
+		MessageFactory(CTX &ctx, PersistentStorage &persistent_storage, MessageDrop &message_drop);
 		Duple<v8::Local<v8::Object>, Message *> new_external (
 				v8::Isolate *isolate,
 				const struct rrr_msg_msg *msg_msg = nullptr,
 				const struct rrr_msg_addr *msg_addr = nullptr
 		);
-		v8::Local<v8::Function> get_internal_function(CTX &ctx);
 	};
 }; // namespace RRR::JS

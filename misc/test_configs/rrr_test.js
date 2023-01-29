@@ -5,6 +5,12 @@ function config() {
 function process(message) {
 //	console.log("Process function topic " + message.topic + "\n");
 
+	let timeout = new Timeout(() => { console.log("My timeout\n"); }, 2000);
+
+//	let timeout = setTimeout(() => {
+//		console.log("Timeout\n");
+//	}, 1000);
+
 	const msg_a = new Message();
 	//const msg_b = new Message();
 
@@ -15,7 +21,7 @@ function process(message) {
 
 //	console.log("Process function topic " + msg_a.topic + "\n");
 
-	const buf = new ArrayBuffer(65536);
+	const buf = new ArrayBuffer(65536 * 16);
 	message.push_tag("a", buf);
 
 	message.send();

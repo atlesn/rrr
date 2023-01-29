@@ -51,9 +51,11 @@ extern "C" {
 
 }; // extern "C"
 
-#include "../lib/util/Readfile.hxx"
-#include "../lib/js/Js.hxx"
 #include "../lib/js/Message.hxx"
+#include "../lib/js/Config.hxx"
+#include "../lib/js/Timeout.hxx"
+#include "../lib/js/Js.hxx"
+#include "../lib/util/Readfile.hxx"
 
 extern "C" {
 
@@ -93,12 +95,15 @@ class js_run_data {
 	RRR::JS::CTX &ctx;
 	RRR::JS::Isolate &isolate;
 	RRR::JS::TryCatch &trycatch;
-	RRR::JS::PersistentStorage<RRR::JS::Persistable> &persistent_storage;
+	RRR::JS::PersistentStorage &persistent_storage;
 	RRR::JS::Function config;
 	RRR::JS::Function source;
 	RRR::JS::Function process;
 	RRR::JS::MessageDrop message_drop;
-	RRR::JS::MessageFactory msg_tmpl;
+	RRR::JS::MessageFactory msg_factory;
+	RRR::JS::ConfigFactory cfg_factory;
+	RRR::JS::TimeoutFactory timeout_factory;
+	RRR::JS::EventQueue event_queue;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
@@ -157,6 +162,11 @@ class js_run_data {
 	}
 	void gc() {
 		persistent_storage.gc(&memory_entries, &memory_size);
+
+		printf("GC\n");
+		isolate->LowMemoryNotification();
+		while (!isolate->IdleNotificationDeadline(1)) {
+		}
 	}
 	bool hasConfig() const {
 		return !config.empty();
@@ -167,32 +177,37 @@ class js_run_data {
 	bool hasProcess() const {
 		return !process.empty();
 	}
-	void runConfig() {
+	void runConfig(struct rrr_instance_config_data *instance_config) {
 		auto scope = RRR::JS::Scope(ctx);
-		config.run(ctx, 0, nullptr);
+		auto cfg = cfg_factory.new_external(ctx, instance_config);
+		RRR::JS::Value arg(cfg.first());
+		config.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run config function: ") + msg);
 		});
+		event_queue.run();
 	}
 	void runSource() {
 		auto scope = RRR::JS::Scope(ctx);
-		auto message = msg_tmpl.new_external(ctx);
+		auto message = msg_factory.new_external(ctx);
 		RRR::JS::Value arg(message.first());
 		source.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
+		event_queue.run();
 	}
 	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
 		auto scope = RRR::JS::Scope(ctx);
 		processed++;
 		processed_total++;
-		auto message = msg_tmpl.new_external(ctx, msg, msg_addr);
+		auto message = msg_factory.new_external(ctx, msg, msg_addr);
 		RRR::JS::Value arg(message.first());
 		process.run(ctx, 1, &arg);
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
+		event_queue.run();
 	}
 	js_run_data(
 			struct js_data *data,
@@ -200,7 +215,7 @@ class js_run_data {
 			RRR::JS::Isolate &isolate,
 			RRR::JS::CTX &ctx,
 			RRR::JS::TryCatch &trycatch,
-			RRR::JS::PersistentStorage<RRR::JS::Persistable> &persistent_storage
+			RRR::JS::PersistentStorage &persistent_storage
 	) :
 		isolate(isolate),
 		ctx(ctx),
@@ -209,7 +224,10 @@ class js_run_data {
 		data(data),
 		worker(worker),
 		message_drop(drop, this),
-		msg_tmpl(ctx, persistent_storage, message_drop)
+		msg_factory(ctx, persistent_storage, message_drop),
+		cfg_factory(ctx, persistent_storage),
+		timeout_factory(ctx, persistent_storage),
+		event_queue(persistent_storage)
 	{
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -223,7 +241,9 @@ class js_run_data {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
 
-		ctx.set_global("Message", msg_tmpl.get_internal_function(ctx));
+		msg_factory.register_as_global(ctx);
+		cfg_factory.register_as_global(ctx);
+		timeout_factory.register_as_global(ctx);
 	}
 };
 
@@ -240,7 +260,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env);
 		auto trycatch = TryCatch(ctx, data->js_file);
-		auto persistent_storage = PersistentStorage<Persistable>(ctx);
+		auto persistent_storage = PersistentStorage(ctx);
 		auto scope = Scope(ctx);
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
@@ -273,7 +293,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				callbacks
 		)) != 0) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
-			goto out;
+				goto out;
 		}
 	}
 	catch (E e) {
@@ -316,7 +336,7 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	try {
-		run_data->runConfig();
+		run_data->runConfig(INSTANCE_D_CONFIG(run_data->data->thread_data));
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));

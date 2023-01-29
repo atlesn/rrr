@@ -1,9 +1,8 @@
-
 /*
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,23 +19,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_CONFIG_DATA_H
-#define RRR_CMODULE_CONFIG_DATA_H
+#pragma once
 
-#include "../settings.h"
+#include "E.hxx"
 
-struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_count;
-
-	int do_spawning;
-	int do_processing;
-	int do_drop_on_error;
-
-	char *config_function;
-	char *process_function;
-	char *source_function;
-	char *log_prefix;
+extern "C" {
+#include "../rrr_strerror.h"
+#include <inttypes.h>
+#include <sys/time.h>
 };
 
-#endif /* RRR_CMODULE_CONFIG_DATA_H */
+namespace RRR::util {
+	static inline int64_t time_get_i64(void) {
+		struct timeval tv;
+
+		if (gettimeofday(&tv, NULL) != 0) {
+			throw E(std::string("Error while getting time in ") + __func__ + ", cannot recover from this: " + rrr_strerror(errno));
+		}
+
+		int64_t tv_sec = tv.tv_sec;
+		int64_t tv_factor = 1000000;
+		int64_t tv_usec = tv.tv_usec;
+
+		return (tv_sec * tv_factor) + (tv_usec);
+	}
+}; // namespace RRR

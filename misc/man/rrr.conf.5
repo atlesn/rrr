@@ -1,4 +1,4 @@
-.Dd 2023-01-16
+.Dd 2023-01-28
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -339,6 +339,9 @@ Processes and generates messages with custom Python3 scripts.
 
 .It perl5 (PAI)
 Processes and generates messages with custom Perl5 scripts.
+
+.It js (PAI)
+Processes and generates messages with custom JavaScript scripts.
 
 .It cmodule (P)
 Processes and generates messages with custom C modules.
@@ -806,8 +809,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It python3_workers=UNSIGNED INTEGER
 .It python3_source_interval_ms=MILLISECONDS
-.It python3_sleep_time_ms=MILLISECONDS
-.It python3_nothing_happend_limit=UNSIGNED INTEGER
 .It python3_log_prefix=PREFIX
 .It python3_drop_on_error={yes|no}
 .El
@@ -905,9 +906,6 @@ module:
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
 
-.It perl5_source_interval_ms=MILLISECONDS
-How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
-
 .It perl5_source_sub=SUBROUTINE NAME
 Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object and modifies
 it to generate a new message. Called at specified interval.
@@ -936,8 +934,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It perl5_workers=UNSIGNED INTEGER
 .It perl5_source_interval_ms=MILLISECONDS
-.It perl5_sleep_time_ms=MILLISECONDS
-.It perl5_nothing_happend_limit=UNSIGNED INTEGER
 .It perl5_log_prefix=PREFIX
 .It perl5_drop_on_error={yes|no}
 .El
@@ -1240,25 +1236,93 @@ module:
 .It js_file=FILENAME
 The file containing the JavaScript to run. The script will be run once when the program starts, and global code outside of functions will be executed.
 If multiple workers are used by setting the parameter
-.B cmodule_workers,
-the script will run once for each worker.
+.B js_workers,
+the script will run once for each worker and global variables will not be accessible between different workers.
+
+.It js_config_function=NAME
+The function to call before sourcing and processing starts.
+
+.It js_source_function=NAME
+The function to call regularely.
 
 .It js_process_function=NAME
 The function to call when a message from another module should be processed.
 
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the JavaScript script might be set as needed.
 .El
-.It cmodule_name=NAME
+
+Refer to the
+.B cmodule
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It js_workers=UNSIGNED INTEGER
+.It js_source_interval_ms=MILLISECONDS
+.It js_log_prefix=PREFIX
+.It js_drop_on_error={yes|no}
+.El
+
+A scripts with all three function types defined may look like this:
+
+.nf
+let my_parameter = undefined;
+
+function config(config) {
+	// Read configuration parameter
+	if (!config.has("my_parameter")) {
+		throw "Configuration parameter 'my_parameter' was not found";
+	}
+	my_parameter = config.get("my_parameter");
+}
+
+function source(message) {
+	// Send a new message from the source function
+	console.log("Sourcing a message\n");
+	message.send();
+}
+
+function process(message) {
+	// Process a message from another module
+	// and add the value previously retrieved
+	// from the configuration file.
+	console.log("Processing a message\n");
+	message.push_tag("my_parameter", my_parameter);
+	message.send();
+}
+.fi
+
+The
+.B config
+function receives a Config object from which configuration parameters can be read.
+Config objects cannot be created using the
+.B new
+operator.
 
 The
 .B source
 and
 .B process
-functions both receive an RRR message object whenever called.
-For the
+functions both receive a Message object whenever called.
+An empty Message object is passed to the
 .B source
-function, this message is empty.
-The message has the following structure:
+function.
+
+Additional Message objects may be created using the
+.B new
+operator.
+
+The Config and Message objects have the following members:
+
 .nf
+// Data type Config
+{
+  has: function(parameter){},   // Returns true if the parameter exists, and false otherwise
+  get: function(parameter){}    // Returns the value of the configuration parameter
+}
+
 // Data type Message
 {
   // Message header manipulation
@@ -1296,9 +1360,16 @@ The message has the following structure:
   get_tag_all:   function(tag=null){return [];},// Get array of values with the given tag
   send:          function(){}                   // Send the message to the output buffer for other instances to receive
 }
+.fi
 
-// Data type Value
+The following special global Objects are available:
 
+.nf
+// Data type Console (accessed through global name console)
+{
+  log(message);    // Log a message using debuglevel 7
+  error(message);  // Log a message using debuglevel 0 (error)
+}
 .fi
 
 .SS cmodule (P)
@@ -1350,8 +1421,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It cmodule_workers=UNSIGNED INTEGER
 .It cmodule_source_interval_ms=MILLISECONDS
-.It cmodule_sleep_time_ms=MILLISECONDS
-.It cmodule_nothing_happend_limit=UNSIGNED INTEGER
 .It cmodule_log_prefix=PREFIX
 .It cmodule_drop_on_error={yes|no}
 .El
@@ -2942,16 +3011,6 @@ each for will source messages according to given parameters. Defaults to 1, maxi
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 
-.It X_sleep_time_ms=MILLISECONDS
-How many milliseconds to sleep if nothing was processed in the worker after multiple processing loops.
-Sleeping is performed to limit CPU usage.
-It is possible to specify 0 which in practice creates a very small wait.
-The worker will sleep once every round until something happens again. Defaults to 50ms.
-
-.It X_nothing_happend_limit=UNSIGNED INTEGER
-How many loops to perform in the worker with nothing being processed before starting to sleep.
-Defaults to 250, must be 1 or greater.
- 
 .It X_log_prefix=PREFIX
 Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
 macros to print messages like the reset of RRR does.

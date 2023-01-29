@@ -39,7 +39,9 @@ flags = [
     '-DHAVE_CONFIG_H',
     '-I.',
     '-I..',
+    '-I../../../',
     '-I/usr/include/node',
+    '-include config.h',
     '-std=c++17',
     '-Wconversion',
 ]

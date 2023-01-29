@@ -37,8 +37,6 @@ struct rrr_cmodule_worker {
 	uint8_t index;
 
 	rrr_setting_uint spawn_interval_us;
-	rrr_setting_uint sleep_time_us;
-	rrr_setting_uint nothing_happened_limit;
 
 	int do_spawning;
 	int do_processing;

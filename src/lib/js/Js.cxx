@@ -24,9 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <cassert>
 #include <iostream>
-#include <v8.h>
 #include <libplatform/libplatform.h>
+#include <v8.h>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
@@ -306,7 +307,7 @@ namespace RRR::JS {
 		str += "In " + script_name + "\n";
 
 		if (!resource->IsNullOrUndefined()) {
-			auto resource_str = String(ctx, resource->ToString((v8::Isolate *) ctx));
+			auto resource_str = String(ctx, resource->ToString((v8::Local<v8::Context>) ctx).ToLocalChecked());
 			str += std::string(" resource ") + *resource_str + "\n";
 		}
 
@@ -314,12 +315,13 @@ namespace RRR::JS {
 		       " col " + std::to_string(col) + ": " + std::string(msg_string) + "\n";
 
 		if (!source_line.IsEmpty()) {
-			auto line_str = String(ctx, source_line.ToLocalChecked());
+			auto line_str = (std::string) String(ctx, source_line.ToLocalChecked());
+			std::replace(line_str.begin(), line_str.end(), '\t', ' ');
 			auto srcline = std::string(std::to_string(line));
 			str += "\n";
 			str.append(6 - (srcline.length() < 6 ? srcline.length() : 6), ' ');
-			str += srcline + " | " + *line_str + "\n";
-			str.append(col, ' ');
+			str += srcline + " | " + line_str + "\n";
+			str.append(rrr_length_from_slength_bug_const(col), ' ');
 			str += "        ~^~ Here\n";
 		}
 
