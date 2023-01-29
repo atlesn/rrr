@@ -19,12 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "Config.hxx"
+#include "../InstanceConfig.hxx"
+#include "BackingStore.hxx"
+#include "Js.hxx"
+
 extern "C" {
 #include "../allocator.h"
 };
 
-#include "Config.hxx"
-#include "../InstanceConfig.hxx"
+#include <v8.h>
 
 namespace RRR::JS {
 	void Config::cb_has(const v8::FunctionCallbackInfo<v8::Value> &info) {

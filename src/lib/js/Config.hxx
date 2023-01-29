@@ -21,12 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include "Factory.hxx"
+#include "Js.hxx"
+
 extern "C" {
 };
 
 #include <v8.h>
-
-#include "Js.hxx"
 
 struct rrr_instance_config_data;
 

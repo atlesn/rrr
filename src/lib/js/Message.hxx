@@ -21,15 +21,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-extern "C" {
-#include <sys/socket.h>
-#include "../messages/msg_msg_struct.h"
-};
+#include "Factory.hxx"
+#include "Js.hxx"
+#include "../Array.hxx"
 
 #include <v8.h>
 
-#include "Js.hxx"
-#include "../Array.hxx"
+extern "C" {
+#include "../messages/msg_msg_struct.h"
+#include <sys/socket.h>
+};
 
 namespace RRR::JS {
 	class MessageDrop {

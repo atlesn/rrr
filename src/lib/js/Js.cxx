@@ -24,9 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <cassert>
 #include <iostream>
-#include <v8.h>
 #include <libplatform/libplatform.h>
+#include <v8.h>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :

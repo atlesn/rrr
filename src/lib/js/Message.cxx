@@ -20,6 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Message.hxx"
+#include "BackingStore.hxx"
+#include "../Array.hxx"
+#include "Js.hxx"
 
 extern "C" {
 #include <sys/socket.h>
@@ -30,9 +33,10 @@ extern "C" {
 #include "../util/rrr_time.h"
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
-#include "../array.h"
 #include "../allocator.h"
 };
+
+#include <v8.h>
 
 #include <cassert>
 #include <type_traits>
