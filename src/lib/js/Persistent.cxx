@@ -118,7 +118,7 @@ namespace RRR::JS {
 	void PersistentStorage::report_memory(int64_t memory) {
 		isolate->AdjustAmountOfExternalAllocatedMemory(memory);
 		total_memory += memory;
-		assert(total_memory > 0);
+		assert(total_memory >= 0);
 	}
 	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
 		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
