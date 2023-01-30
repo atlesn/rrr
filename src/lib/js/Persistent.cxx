@@ -40,8 +40,20 @@ namespace RRR::JS {
 		return holder->pull_value(i);
 	}
 
+	PersistableHolder::DoneState::DoneState() :
+		done(false),
+		persistent(nullptr)
+	{
+	}
+	PersistableHolder::DoneState::DoneState(bool done, v8::Persistent<v8::Value> *persistent) :
+		done(done),
+		persistent(persistent)
+	{
+	}
+
 	int PersistableHolder::push_value(v8::Local<v8::Value> value) {
-		values.emplace(std::pair(value_pos, v8::Persistent<v8::Value>(isolate, value)));
+		values.emplace(std::pair(value_pos, new v8::Persistent<v8::Value>(isolate, value)));
+		values_done.emplace(std::pair(value_pos, DoneState(value_pos, values[value_pos].get())));
 		return value_pos++;
 	}
 
@@ -49,36 +61,73 @@ namespace RRR::JS {
 		return (*values[i]).Get(isolate);
 	}
 
+	void PersistableHolder::pass(const char *identifier, void *arg) {
+		bus->pass(t, identifier, arg);
+	}
+
+	int64_t PersistableHolder::get_unreported_memory() {
+		return t->get_unreported_memory();
+	}
+
+	int64_t PersistableHolder::get_total_memory_finalize() {
+		return t->get_total_memory_finalize();
+	}
+
+	bool PersistableHolder::is_done() const {
+		int done_pos = 0;
+		std::for_each(values_done.begin(), values_done.end(), [&done_pos](auto &pair){
+			if (pair.second.done)
+				done_pos++;
+		});
+		return value_pos == done_pos;
+	}
+
 	void PersistableHolder::check_complete() {
 		if (!is_weak && t->is_complete()) {
-			printf("Setting weak\n");
 			std::for_each(values.begin(), values.end(), [this](auto &pair){
-				(*pair.second).SetWeak();
+				(*pair.second).template SetWeak<void>(&values_done[pair.first], gc, v8::WeakCallbackType::kParameter);
 			});
 			is_weak = true;
 		}
 	}
+
 	void PersistableHolder::gc(const v8::WeakCallbackInfo<void> &info) {
-		auto self = (PersistableHolder *) info.GetParameter();
-		std::for_each(self->values.begin(), self->values.end(), [self](auto &pair){
-			printf("Reset\n");
-			(*pair.second).Reset();
-		});
-		self->done = true;
+		auto done_info = (DoneState *) info.GetParameter();
+		done_info->done = true;
+		done_info->persistent->Reset();
 	}
+
 	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
 		t(t),
 		isolate(isolate),
 		values(),
-		done(false),
-		bus(bus)
+		bus(bus),
+		value_pos(0),
+		is_weak(false)
 	{
 		push_value(obj);
 		t->register_bus(this);
 		t->register_holder(this);
 	}
+	PersistentStorage::PersistentStorage(v8::Isolate *isolate) :
+		isolate(isolate),
+		persistents(),
+		bus()
+	{
+	}
+	void PersistentStorage::report_memory(int64_t memory) {
+		isolate->AdjustAmountOfExternalAllocatedMemory(memory);
+		total_memory += memory;
+		assert(total_memory > 0);
+	}
+	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
+		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
+		entries++;
+	}
+	void PersistentStorage::register_sniffer(PersistentSniffer *sniffer) {
+		bus.push_sniffer(sniffer);
+	}
 	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
-		rrr_biglength entries_acc = 0;
 		std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
 			int64_t memory = p->get_unreported_memory();
 			if (memory != 0) {

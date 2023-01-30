@@ -24,10 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <cassert>
-#include <iostream>
 #include <libplatform/libplatform.h>
 #include <v8.h>
+
+#include <cassert>
+#include <iostream>
+#include <algorithm>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
@@ -55,8 +57,7 @@ namespace RRR::JS {
 	}
 
 	void ENV::fatal_error(const char *where, const char *what) {
-		printf("Fatal error from V8. This is a bug. : %s %s\n", where, what);
-		abort();
+		RRR_BUG("Fatal error from V8. This is a bug. : %s %s\n", where, what);
 	}
 
 	Isolate::Isolate(ENV &env) :

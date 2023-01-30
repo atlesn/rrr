@@ -21,8 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "v8-callbacks.h"
-#include "v8-persistent-handle.h"
+//#include "v8-callbacks.h"
+//#include "v8-persistent-handle.h"
 extern "C" {
 #include "../rrr_types.h"
 };
@@ -173,9 +173,16 @@ namespace RRR::JS {
 		friend class PersistentStorage;
 
 		private:
+		struct DoneState {
+			public:
+			bool done;
+			v8::Persistent<v8::Value> *persistent;
+			DoneState(bool done, v8::Persistent<v8::Value> *persistent);
+			DoneState();
+		};
 		std::map<int,std::unique_ptr<v8::Persistent<v8::Value>>> values;
-		int value_pos = 0;
-		bool done;
+		std::map<int,DoneState> values_done;
+		int value_pos;
 		bool is_weak;
 		std::shared_ptr<Persistable> t;
 		PersistentBus *bus;
@@ -184,18 +191,10 @@ namespace RRR::JS {
 		protected:
 		int push_value(v8::Local<v8::Value> value);
 		v8::Local<v8::Value> pull_value(int i);
-		void pass(const char *identifier, void *arg) final {
-			bus->pass(t, identifier, arg);
-		}
-		int64_t get_unreported_memory() {
-			return t->get_unreported_memory();
-		}
-		int64_t get_total_memory_finalize() {
-			return t->get_total_memory_finalize();
-		}
-		bool is_done() const {
-			return done;
-		}
+		void pass(const char *identifier, void *arg) final;
+		int64_t get_unreported_memory();
+		int64_t get_total_memory_finalize();
+		bool is_done() const;
 		void check_complete();
 		static void gc(const v8::WeakCallbackInfo<void> &info);
 		PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus);
@@ -226,25 +225,11 @@ namespace RRR::JS {
 		PersistentBus bus;
 
 		public:
-		PersistentStorage(v8::Isolate *isolate) :
-			isolate(isolate),
-			persistents(),
-			bus()
-		{
-		}
+		PersistentStorage(v8::Isolate *isolate);
 		PersistentStorage(const PersistentStorage &p) = delete;
-		void report_memory(int64_t memory) {
-			isolate->AdjustAmountOfExternalAllocatedMemory(memory);
-			total_memory += memory;
-			assert(total_memory > 0);
-		}
-		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
-			persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
-			entries++;
-		}
-		void register_sniffer(PersistentSniffer *sniffer) {
-			bus.push_sniffer(sniffer);
-		}
+		void report_memory(int64_t memory);
+		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t);
+		void register_sniffer(PersistentSniffer *sniffer);
 		void gc(rrr_biglength *entries_, rrr_biglength *memory_size_);
 	};
 } // namespace RRR::JS

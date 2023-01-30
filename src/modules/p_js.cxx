@@ -160,10 +160,10 @@ class js_run_data {
 				memory_size
 		);
 	}
-	void gc() {
+	void runGC() {
 		persistent_storage.gc(&memory_entries, &memory_size);
 
-		printf("GC\n");
+		// Calls to make the GCing a little more aggressive
 		isolate->LowMemoryNotification();
 		while (!isolate->IdleNotificationDeadline(1)) {
 		}
@@ -185,7 +185,6 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run config function: ") + msg);
 		});
-		event_queue.run();
 	}
 	void runSource() {
 		auto scope = RRR::JS::Scope(ctx);
@@ -195,19 +194,26 @@ class js_run_data {
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
-		event_queue.run();
 	}
 	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
+		{
+			auto scope = RRR::JS::Scope(ctx);
+			processed++;
+			processed_total++;
+			auto message = msg_factory.new_external(ctx, msg, msg_addr);
+			RRR::JS::Value arg(message.first());
+			process.run(ctx, 1, &arg);
+			trycatch.ok(ctx, [](std::string msg) {
+				throw E(std::string("Failed to run process function: ") + msg);
+			});
+		}
+	}
+	void runEvents() {
 		auto scope = RRR::JS::Scope(ctx);
-		processed++;
-		processed_total++;
-		auto message = msg_factory.new_external(ctx, msg, msg_addr);
-		RRR::JS::Value arg(message.first());
-		process.run(ctx, 1, &arg);
+		event_queue.run();
 		trycatch.ok(ctx, [](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
-		event_queue.run();
 	}
 	js_run_data(
 			struct js_data *data,
@@ -316,8 +322,8 @@ static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 
 	(void)(worker);
 
-	run_data->gc();
 	run_data->status();
+	run_data->runGC();
 
 	return 0;
 }
@@ -368,6 +374,7 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			}
 			run_data->runProcess(message, message_addr);
 		}
+		run_data->runEvents();
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));

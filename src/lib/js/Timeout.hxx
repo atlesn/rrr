@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Js.hxx"
 #include "Factory.hxx"
-#include "v8-local-handle.h"
+//#include "v8-local-handle.h"
 
 extern "C" {
 };
@@ -50,7 +50,7 @@ namespace RRR::JS {
 		protected:
 		Timeout(v8::Isolate *isolate);
 		int64_t get_total_memory() final {
-			return sizeof(*this) + 65536;
+			return (int64_t) (sizeof(*this) + sizeof(int) * args_pos.size());
 		}
 		void acknowledge(void *arg) final;
 		bool is_complete() const final;

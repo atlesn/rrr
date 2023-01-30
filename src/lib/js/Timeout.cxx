@@ -30,17 +30,12 @@ extern "C" {
 #include <v8.h>
 
 namespace RRR::JS {
-	void gc(const v8::WeakCallbackInfo<void> &info) {
-		printf("GC from timeout\n");
-	}
-
 	Timeout::Timeout(v8::Isolate *isolate) :
 		isolate(isolate)
 	{
 	}
 
 	Timeout::~Timeout() {
-		printf("Timeout destructor\n");
 	}
 
 	void Timeout::acknowledge(void *arg) {
