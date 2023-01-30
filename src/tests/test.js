@@ -366,5 +366,29 @@ function process(message) {
 
 	function_tests();
 
-	message.send();
+	// Timeouts
+	let done = {
+		a: false
+	};
+
+	new Timeout(() => {
+		if (!done["a"]) {
+			throw("Incorrect timeout order");
+		}
+		console.log("Sending message\n");
+		message.send();
+	}, 101); // 1ms after other timeout. Should be scheduled last.
+
+	new Timeout((a) => {
+		if (a !== "a") {
+			throw("Value mismatch in timeout a");
+		}
+		done["a"] = true;
+	}, 100, "a");
+
+	let timeout_b = new Timeout((a) => {
+		throw("Timeout b was not cleared");
+	}, 99, "a");
+
+	timeout_b.clear();
 }

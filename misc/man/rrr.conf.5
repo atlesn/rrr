@@ -1370,6 +1370,19 @@ The following special global Objects are available:
   log(message);    // Log a message using debuglevel 7
   error(message);  // Log a message using debuglevel 0 (error)
 }
+
+// Data type Timeout (run a scheduled function once). Syntax is shown. The
+// timeout object need not be stored in a variable unless it might be required
+// to run clear() at a later time. If the timeout is 0 milliseconds, the function
+// will run immediately after the script returns. Any additional arguments will be
+// passed to the function.
+
+// Create a timeout
+const timeout = new Timeout(function, timeout_ms = 0, arg1 = undefined, ...)
+
+// Prevent the timeout from ever running (regret)
+timeout.clear();
+
 .fi
 
 .SS cmodule (P)

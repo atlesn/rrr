@@ -324,6 +324,7 @@ static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 
 	run_data->status();
 	run_data->runGC();
+	run_data->runEvents(); // TODO : Finer control of when timeouts and events run
 
 	return 0;
 }
@@ -374,6 +375,8 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			}
 			run_data->runProcess(message, message_addr);
 		}
+
+		// Run any imminent events
 		run_data->runEvents();
 	}
 	catch (js_run_data::E e) {

@@ -10,7 +10,6 @@ function process(message) {
 	for (let i = 0; i < 1000; i++) {
 //		let message = new Message();
 		let timeout = new Timeout(() => { timeouts++; }, 2000, 1, 2, 3, 4);
-		timeout.clear();
 	}
 
 	console.log("Timeouts: " + timeouts + "\n");
