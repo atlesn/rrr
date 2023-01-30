@@ -29,9 +29,6 @@ extern "C" {
 #include <v8.h>
 
 namespace RRR::JS {
-	void Persistable::pass(const char *identifier, void *arg) {
-		forwarder->pass(identifier, arg);
-	}
 	int Persistable::push_persistent(v8::Local<v8::Value> value) {
 		return holder->push_value(value);
 	}
@@ -45,6 +42,7 @@ namespace RRR::JS {
 		persistent(nullptr)
 	{
 	}
+
 	PersistableHolder::DoneState::DoneState(bool done, v8::Persistent<v8::Value> *persistent) :
 		done(done),
 		persistent(persistent)
@@ -109,24 +107,29 @@ namespace RRR::JS {
 		t->register_bus(this);
 		t->register_holder(this);
 	}
+
 	PersistentStorage::PersistentStorage(v8::Isolate *isolate) :
 		isolate(isolate),
 		persistents(),
 		bus()
 	{
 	}
+
 	void PersistentStorage::report_memory(int64_t memory) {
 		isolate->AdjustAmountOfExternalAllocatedMemory(memory);
 		total_memory += memory;
 		assert(total_memory >= 0);
 	}
+
 	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
 		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
 		entries++;
 	}
+
 	void PersistentStorage::register_sniffer(PersistentSniffer *sniffer) {
 		bus.push_sniffer(sniffer);
 	}
+
 	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
 		std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
 			int64_t memory = p->get_unreported_memory();

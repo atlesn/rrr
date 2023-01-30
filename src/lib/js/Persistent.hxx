@@ -114,12 +114,14 @@ namespace RRR::JS {
 		virtual int64_t get_total_memory() = 0;
 
 		// Pass a message
-		void pass(const char *identifier, void *arg);
+		void pass(const char *identifier, void *arg) {
+			forwarder->pass(identifier, arg);
+		}
 
 		// Store an object as persistent. Returns positon to use
 		// when pulling.
 		int push_persistent(v8::Local<v8::Value> value);
-		
+
 		// Pull a persistent out for temporary use
 		v8::Local<v8::Value> pull_persistent(int i);
 
