@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_shm.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../event/event_functions.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"

@@ -23,21 +23,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern "C" {
 #include "event.h"
+#include "event_collection.h"
 };
 
 #include <string>
 
 namespace RRR::Event {
-	queue_callback(evutil_socket_t fd, short flags, void *arg) {
+	void __handle_callback(evutil_socket_t fd, short flags, void *arg) noexcept {
 		auto base = (HandleBase *) arg;
 	}
 
-	rrr_event_handle Queue::push_periodic(HandleBase *base, uint64_t interval_us) {
+	rrr_event_handle Collection::push_periodic(HandleBase *base, uint64_t interval_us) {
 		rrr_event_handle handle = RRR_EVENT_HANDLE_INITIALIZER;
 		if (rrr_event_collection_push_periodic (
 				&handle,
 				&collection,
-				queue_callback,
+				__handle_callback,
 				base,
 				interval_us
 		)) {
@@ -46,14 +47,14 @@ namespace RRR::Event {
 		return handle;
 	}
 
-	Queue::Queue(struct rrr_event_queue *queue) :
+	Collection::Collection(struct rrr_event_queue *queue) :
 		queue(queue),
 		handles()
 	{
 		rrr_event_collection_init(&collection, queue);
 	}
 
-	Queue::~Queue() {
+	Collection::~Collection() {
 		rrr_event_collection_clear(&collection);
 	}
 }; // namespace RRR::Event

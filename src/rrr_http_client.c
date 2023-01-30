@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_types.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
+#include "lib/event/event_collection_struct.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"

@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <event2/event.h>
 
-struct rrr_event_queue *queue;
-struct rrr_event_handle *handle;
-struct rrr_event_collection *collection;
+struct rrr_event_queue;
+struct rrr_event_handle;
+struct rrr_event_collection;
 
 void rrr_event_collection_init (
 		struct rrr_event_collection *collection,

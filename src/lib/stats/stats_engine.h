@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "stats_message.h"
 
 #define RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS 1000

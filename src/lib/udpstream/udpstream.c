@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "udpstream.h"
 #include "../read.h"
 #include "../random.h"
+#include "../event/event.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../socket/rrr_socket_client.h"

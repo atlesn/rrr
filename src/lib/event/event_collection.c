@@ -90,7 +90,7 @@ static int __rrr_event_collection_push (
 		goto out;
 	}
 
-	if (collection->event_count == RRR_EVENT_COLLECTION_MAX) {
+	if (collection->event_count == RRR_EVENT_COLLECTION_STRUCT_MAX) {
 		RRR_BUG("BUG: No more room in event collection in rrr_event_collection_push\n");
 	}
 

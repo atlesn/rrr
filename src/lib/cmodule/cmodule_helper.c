@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../event/event_functions.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"

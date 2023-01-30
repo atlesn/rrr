@@ -171,8 +171,4 @@ static inline int rrr_event_pending (
 #define EVENT_INTERVAL_SET(e, us) \
     rrr_time_from_usec(&(e.interval), us)
 
-/* Check if e handle is initialized */
-#define EVENT_INITIALIZED(e) \
-    (e.event != NULL)
-
 #endif /* RRR_EVENT_H */

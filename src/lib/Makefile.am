@@ -134,9 +134,11 @@ lib_cxx=librrrcxx.la
 
 util_cxx = util/Readfile.cxx
 
+event_cxx = event/Event.cxx
+
 librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -lrrr ${js_extra_ld}
 librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
-librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx}
+librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}

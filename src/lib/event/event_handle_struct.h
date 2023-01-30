@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_EVENT_HANDLE_STRUCT_H
 #define RRR_EVENT_HANDLE_STRUCT_H
 
-#include <time.h>
+#include <sys/time.h>
 
 typedef void *rrr_event;
 typedef struct rrr_event_handle {
@@ -30,6 +30,10 @@ typedef struct rrr_event_handle {
 	struct timeval interval;
 } rrr_event_handle;
 
-#define RRR_EVENT_HANDLE_INITIALIZER {NULL,{0,0}}
+#define RRR_EVENT_HANDLE_INITIALIZER \
+    {NULL,{0,0}}
+
+#define EVENT_INITIALIZED(e) \
+    (e.event != NULL)
 
 #endif /* RRR_EVENT_HANDLE_STRUCT_H */
