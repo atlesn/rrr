@@ -201,20 +201,36 @@ namespace RRR::JS {
 		PersistableHolder(const PersistableHolder &p) = delete;
 	};
 
+	/*
+	 * Persistable life cycle:
+	 *
+	 * The memory of a Persistable is owned by a PersistableHolder object. The
+	 * gc() of the PersistentStorage, which manages the holders,  is called
+	 * reguraley to activate the GC cascade.
+	 *
+	 * The Persistable may push multiple V8 objects to its PersistableHolder.
+	 * Destruction of the PersistableHolder, thus the Persistable and all V8
+	 * objects, occurs  once all objects have been garbage collected by V8.
+	 *
+	 * The Persistable objects go through the following stats:
+	 *
+	 * 1. Persistable and objects are new, memory persists indefinately
+	 * 2. check_complete() of the PersistableHolder is called
+	 *    reguralerly. This function checks if is_complete() of the Persistable
+	 *    is true, and once it is, SetWeak() is called on all V8 objects
+	 *    held by the PersistableHolder, queueing them for garabage collection.
+	 * 3. V8 GC runs, and once weak callback of all objects has run, is_done()
+	 *    of the PersistableHolder returns true. This causes storage to
+	 *    destroy the PersistableHolder and held objects.
+	 *
+	 * Notes:
+	 * -  is_complete() of the Persistable, unless the default definition of the
+	 *    Persistable is overridden by the derived class, returns true
+	 *    immediately. This will start the GC cascade once no more references
+	 *    to the objects contained by the PersistableHolder exist in the script.
+	 */
+
 	class PersistentStorage {
-		/*
-		 * The memory of a Persistable is owned by a PersistableHolder object. The
-		 * gc() function of the Storage is called reguraley, and the objects
-		 * go through the following states:
-		 * 1. Object is new, memory persists indefinately
-		 * 2. The Persistable returns true from the is_complete function. This
-		 *    results in a SetWeak call instructing V8 GC to clean up once there
-		 *    are noe more references to the object in the program.
-		 * 3. The V8 GC runs sometime in the future, and the gc() callback of the
-		 *    Persistent object is called. This causes the done flag to be set.
-		 * 4. The storage removes the Persistent from its list once it sees that
-		 *    the done flag has been set. All objects are now deallocated.
-		 */
 
 		v8::Isolate *isolate;
 
