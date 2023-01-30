@@ -46,7 +46,8 @@ namespace RRR::Event {
 		rrr_event_handle handle;
 
 		public:
-		HandleBase()
+		HandleBase() :
+			handle(RRR_EVENT_HANDLE_STRUCT_INITIALIZER)
 		{}
 		virtual ~HandleBase() = default;
 		void set_handle(rrr_event_handle handle) {

@@ -51,6 +51,7 @@ extern "C" {
 
 }; // extern "C"
 
+#include "../lib/event/Event.hxx"
 #include "../lib/js/Message.hxx"
 #include "../lib/js/Config.hxx"
 #include "../lib/js/Timeout.hxx"
@@ -92,6 +93,7 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 
 class js_run_data {
 	private:
+	RRR::Event::Collection event_collection;
 	RRR::JS::CTX &ctx;
 	RRR::JS::Isolate &isolate;
 	RRR::JS::TryCatch &trycatch;
@@ -223,6 +225,7 @@ class js_run_data {
 			RRR::JS::TryCatch &trycatch,
 			RRR::JS::PersistentStorage &persistent_storage
 	) :
+		event_collection(INSTANCE_D_EVENTS(data->thread_data)),
 		isolate(isolate),
 		ctx(ctx),
 		trycatch(trycatch),

@@ -30,7 +30,7 @@ typedef struct rrr_event_handle {
 	struct timeval interval;
 } rrr_event_handle;
 
-#define RRR_EVENT_HANDLE_INITIALIZER \
+#define RRR_EVENT_HANDLE_STRUCT_INITIALIZER \
     {NULL,{0,0}}
 
 #define EVENT_INITIALIZED(e) \

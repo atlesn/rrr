@@ -35,4 +35,7 @@ struct rrr_event_collection {
 	size_t event_count;
 };
 
+#define RRR_EVENT_COLLECTION_STRUCT_INITIALIZER \
+    {NULL,{NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL},0}
+
 #endif /* RRR_EVENT_COLLECTION_STRUCT_H */

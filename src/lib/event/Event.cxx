@@ -34,7 +34,7 @@ namespace RRR::Event {
 	}
 
 	rrr_event_handle Collection::push_periodic(HandleBase *base, uint64_t interval_us) {
-		rrr_event_handle handle = RRR_EVENT_HANDLE_INITIALIZER;
+		rrr_event_handle handle = RRR_EVENT_HANDLE_STRUCT_INITIALIZER;
 		if (rrr_event_collection_push_periodic (
 				&handle,
 				&collection,
@@ -49,6 +49,7 @@ namespace RRR::Event {
 
 	Collection::Collection(struct rrr_event_queue *queue) :
 		queue(queue),
+		collection(RRR_EVENT_COLLECTION_STRUCT_INITIALIZER),
 		handles()
 	{
 		rrr_event_collection_init(&collection, queue);
