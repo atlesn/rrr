@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event.h"
 #include "event_struct.h"
 #include "event_collection.h"
+#include "event_collection_struct.h"
+#include "event_handle_struct.h"
 #include "../util/rrr_time.h"
 
 void rrr_event_collection_init (
