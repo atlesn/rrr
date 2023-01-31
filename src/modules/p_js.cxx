@@ -91,6 +91,8 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 	return ret;
 }
 
+}; // extern "C"
+
 class js_run_data {
 	private:
 	RRR::Event::Collection event_collection;
@@ -105,7 +107,7 @@ class js_run_data {
 	RRR::JS::ConfigFactory cfg_factory;
 	RRR::JS::TimeoutFactory timeout_factory;
 	RRR::JS::EventQueue event_queue;
-	RRR::JS::Script script;
+	std::shared_ptr<RRR::JS::Program> program;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
@@ -216,13 +218,13 @@ class js_run_data {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
 	}
-	js_run_data(
+	template <typename L> js_run_data (
 			struct js_data *data,
 			struct rrr_cmodule_worker *worker,
 			RRR::JS::Isolate &isolate,
 			RRR::JS::CTX &ctx,
 			RRR::JS::PersistentStorage &persistent_storage,
-			std::string script_source
+			L make_program
 	) :
 		event_collection(rrr_cmodule_worker_get_event_queue(worker)),
 		isolate(isolate),
@@ -235,27 +237,27 @@ class js_run_data {
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
-		script(ctx)
+		program(make_program(ctx))
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
 		timeout_factory.register_as_global(ctx);
 
 		try {
-			script.compile(ctx, script_source);
+			program->compile(ctx);
 		}
 		catch (E e) {
 			throw e;
 		}
 
-		if (!script.is_compiled()) {
+		if (!program->is_compiled()) {
 			ctx.trycatch_ok([](std::string &&msg){
 				throw E(std::string(msg));
 			});
-			throw E("Script was not compiled");
+			throw E("Script or module was not compiled");
 		}
 
-		script.run(ctx);
+		program->run(ctx);
 
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
@@ -270,6 +272,8 @@ class js_run_data {
 		}
 	}
 };
+
+extern "C" {
 
 static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct js_data *data = (struct js_data *) private_arg;
@@ -286,7 +290,7 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto persistent_storage = PersistentStorage(ctx);
 		auto scope = Scope(ctx);
 
-		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
+		auto source = std::string(RRR::util::Readfile(std::string(data->js_file), 0, 0));
 
 		js_run_data run_data (
 				data,
@@ -294,7 +298,9 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				isolate,
 				ctx,
 				persistent_storage,
-				file
+				[data,source](CTX &ctx){
+					return new RRR::JS::Script(std::string(data->js_file), source);
+				}
 		);
 
 		callbacks->ping_callback_arg = (void *) &run_data;

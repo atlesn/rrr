@@ -333,71 +333,103 @@ namespace RRR::JS {
 		return str;
 	}
 
-	Script::Script(CTX &ctx) :
+	void Program::set_compiled() {
+		assert(!compiled);
+		compiled = true;
+	}
+
+	template <typename L> void Program::compile_str_wrap(CTX &ctx, L l) {
+		if (program_source.length() > v8::String::kMaxLength) {
+			throw E("Script or module data too long");
+		}
+		l(v8::String::NewFromUtf8 (
+				ctx,
+				program_source.c_str(),
+				v8::NewStringType::kNormal,
+				(int) program_source.length()
+		).ToLocalChecked());
+
+		set_compiled();
+	}
+
+	Program::Program(std::string name, std::string program_source) :
+		name(name),
+		program_source(program_source)
+	{
+	}
+
+	bool Program::is_compiled() {
+		return compiled;
+	}
+
+	std::string Program::get_name() {
+		return name;
+	}
+
+	Script::Script(std::string name, std::string script_source) :
+		Program(name, script_source),
 		script()
 	{
 	}
 
-	v8::MaybeLocal<v8::Module> resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer) {
-		printf("Resolve callback\n");
-		return v8::MaybeLocal<v8::Module>(referrer);
-	}
-
-	void Script::compile(CTX &ctx, std::string &str) {
-		assert(!compiled);
-		if (str.length() > v8::String::kMaxLength) {
-			throw E("Script data too long");
-		}
-
-		auto origin = v8::ScriptOrigin(
-				(v8::Local<v8::String>) String(ctx, "my module"),
-				v8::Local<v8::Integer>(),
-				v8::Local<v8::Integer>(),
-				v8::Local<v8::Boolean>(),
-				v8::Local<v8::Integer>(),
-				v8::Local<v8::Value>(),
-				v8::Local<v8::Boolean>(),
-				v8::Local<v8::Boolean>(),
-				v8::Boolean::New(ctx, true) // is_module
-		);
-		auto source = v8::ScriptCompiler::Source(v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked(), origin);
-		auto module_ = v8::ScriptCompiler::CompileModule(ctx, &source);
-
-		if (ctx.trycatch_ok([](auto msg){
-			throw E(std::string("Failed to compile module: ") + msg);
-		})) {
-			// OK
-		}
-
-		assert(!module_.IsEmpty());
-
-
-
-		if (module_->InstantiateModule(ctx, resolve_callback).IsNothing()) {
-			printf("Instantiate failed\n");
-		}
-
-/*		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked()));
-		if (script_.IsEmpty()) {
+	void Script::compile(CTX &ctx) {
+		compile_str_wrap(ctx, [&ctx,this](auto str){
+			auto script_maybe = v8::Script::Compile (ctx, str);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to compile script: ") + msg);
 			})) {
 				// OK
 			}
-			throw E(std::string("Failed to compile script"));
-		}
-		script = script_.ToLocalChecked();
-		compiled = true;*/
-	}
-
-	bool Script::is_compiled() {
-		return compiled;
+			script = script_maybe.ToLocalChecked();
+		});
 	}
 
 	void Script::run(CTX &ctx) {
 		assert(compiled);
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
 		// Ignore result
+	}
+
+	v8::MaybeLocal<v8::Module> Module::resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer) {
+		printf("Resolve callback\n");
+		return v8::MaybeLocal<v8::Module>(referrer);
+	}
+
+	Module::Module(std::string name, std::string module_source) :
+		Program(name, module_source),
+		mod()
+	{
+	}
+
+	void Module::compile(CTX &ctx) {
+		compile_str_wrap(ctx, [&ctx,this](auto str){
+			auto origin = v8::ScriptOrigin(
+					(v8::Local<v8::String>) String(ctx, "my module"),
+					v8::Local<v8::Integer>(),
+					v8::Local<v8::Integer>(),
+					v8::Local<v8::Boolean>(),
+					v8::Local<v8::Integer>(),
+					v8::Local<v8::Value>(),
+					v8::Local<v8::Boolean>(),
+					v8::Local<v8::Boolean>(),
+					v8::Boolean::New(ctx, true) // is_module
+			);
+			auto source = v8::ScriptCompiler::Source(str, origin);
+			auto module_maybe = v8::ScriptCompiler::CompileModule(ctx, &source);
+			if (ctx.trycatch_ok([](auto msg){
+				throw E(std::string("Failed to compile module: ") + msg);
+			})) {
+				// OK
+			}
+			mod = module_maybe.ToLocalChecked();
+		});
+
+		if (mod->InstantiateModule(ctx, resolve_callback).IsNothing()) {
+			throw("Instantiate failed\n");
+		}
+	}
+
+	void Module::run(CTX &ctx) {
 	}
 } // namespace RRR::JS
 

@@ -53,12 +53,11 @@ int main(int argc, const char **argv) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, "-");
 		auto scope = Scope(ctx);
-		auto script = Script(ctx);
-		auto script_source = std::string(in);
+		auto script = Script("-", std::string(in));
 	
 		Value arg = String(ctx, "arg");
 
-		script.compile(ctx, script_source);
+		script.compile(ctx);
 		if (script.is_compiled()) {
 			script.run(ctx);
 		}

@@ -189,17 +189,44 @@ namespace RRR::JS {
 		}
 	};
 
-	class Script {
-		private:
-		v8::Local<v8::Script> script;
-		void compile(CTX &ctx);
+	class Program {
+		protected:
+		std::string name;
+		std::string program_source;
 		bool compiled = false;
 
+		protected:
+		void set_compiled();
+		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+
 		public:
-		Script(CTX &ctx);
-		void compile(CTX &ctx, std::string &str);
+		Program(std::string name, std::string program_source);
 		bool is_compiled();
-		void run(CTX &ctx);
+		std::string get_name();
+		virtual ~Program() = default;
+		virtual void compile(CTX &ctx) = 0;
+		virtual void run(CTX &ctx) = 0;
+	};
+
+	class Script : public Program {
+		private:
+		v8::Local<v8::Script> script;
+
+		public:
+		Script(std::string name, std::string script_source);
+		void compile(CTX &ctx) final;
+		void run(CTX &ctx) final;
+	};
+
+	class Module : public Program {
+		private:
+		v8::Local<v8::Module> mod;
+		static v8::MaybeLocal<v8::Module> resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
+
+		public:
+		Module(std::string name, std::string module_source);
+		void compile(CTX &ctx) final;
+		void run(CTX &ctx) final;
 	};
 
 	template <class A, class B> class Duple {
