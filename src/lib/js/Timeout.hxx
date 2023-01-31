@@ -41,7 +41,6 @@ namespace RRR::JS {
 		int func_pos = 0;
 		std::vector<int> args_pos;
 
-		uint32_t timeout_ms = 0;
 		int64_t timeout_us = 0;
 
 		private:
@@ -55,7 +54,7 @@ namespace RRR::JS {
 		void acknowledge(void *arg) final;
 		bool is_complete() const final;
 		void set_timeout(uint32_t timeout_ms) {
-			this->timeout_ms = timeout_ms;
+			timeout_us = timeout_ms * 1000;
 		}
 		void set_function(v8::Local<v8::Function> function) {
 			func_pos = push_persistent(function);
@@ -64,7 +63,6 @@ namespace RRR::JS {
 			args_pos.emplace_back(push_persistent(arg));
 		}
 		void finalize() {
-			timeout_us = timeout_ms * 1000;
 			pass(EventQueue::MSG_SET_TIMEOUT, &timeout_us);
 		}
 		static void cb_clear(const v8::FunctionCallbackInfo<v8::Value> &info);

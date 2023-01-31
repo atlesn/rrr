@@ -3,16 +3,17 @@ function config() {
 }
 
 let timeouts = 0;
+	
+for (let i = 0; i < 20; i++) {
+//		let message = new Message();
+		let timeout = new Timeout(function(i){return () => { console.log("Timeout " + 100*i*i + "\n"); timeouts++; }}(i), 100*i*i, 1, 2, 3, 4);
+	}
 
 function process(message) {
 //	console.log("Process function topic " + message.topic + "\n");
 
-	for (let i = 0; i < 1000; i++) {
-//		let message = new Message();
-		let timeout = new Timeout(() => { timeouts++; }, 2000, 1, 2, 3, 4);
-	}
 
-	console.log("Timeouts: " + timeouts + "\n");
+//	console.log("Timeouts: " + timeouts + "\n");
 
 //	let timeout = setTimeout(() => {
 //		console.log("Timeout\n");

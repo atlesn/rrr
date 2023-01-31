@@ -20,26 +20,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "EventQueue.hxx"
-
+#include "Js.hxx"
 
 namespace RRR::JS {
-	bool EventQueue::accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) {
-		if (strcmp(identifier, MSG_SET_TIMEOUT) == 0) {
-			timeout_events.emplace(object, RRR::util::time_get_i64() + * (int64_t *) arg, arg);
-			return true;
-		}
-		return false;
-	}
-
-	void EventQueue::run() {
+	void EventQueue::dispatch() {
 		const int64_t now = RRR::util::time_get_i64();
+		int64_t next_exec_time = now + (int64_t) default_interval_us;
+
 		for (auto it = timeout_events.begin(); it != timeout_events.end();) {
 			bool erase = false;
-			if (!(*it).is_alive()) {
+			if (!it->is_alive()) {
 				erase = true;
 			}
-			else if (now >= (*it).get_exec_time()) {
-				(*it).acknowledge();
+			else if (now >= it->get_exec_time()) {
+				Scope scope(ctx);
+				it->acknowledge();
+				if (ctx.trycatch_ok([](auto msg){
+					throw E(std::string("Error while running event: ") + msg);
+				})) {
+					// OK
+				}
 				erase = true;
 			}
 			
@@ -48,8 +48,40 @@ namespace RRR::JS {
 			}
 			else {
 				// List is sorted by execution time, and no more timers has expired
+				next_exec_time = it->get_exec_time();
 				break;
 			}
 		}
+
+		const int64_t next_interval = next_exec_time - now;
+		assert (next_interval > 0);
+		handle->set_interval((uint64_t) next_interval > default_interval_us
+			? default_interval_us
+			: (uint64_t) next_interval
+		);
+		handle->add();
+	}
+
+	bool EventQueue::accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) {
+		if (strcmp(identifier, MSG_SET_TIMEOUT) == 0) {
+			timeout_events.emplace(object, RRR::util::time_get_i64() + * (int64_t *) arg, arg);
+			return true;
+		}
+		return false;
+	}
+
+	std::function<void(EventQueue *)> EventQueue::callback([](EventQueue *queue){
+		queue->dispatch();
+	});
+
+	EventQueue::EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection) :
+		timeout_events(),
+		ctx(ctx),
+		collection(collection),
+		handle()
+	{
+		persistent_storage.register_sniffer(this);
+		handle = collection.push_periodic(callback, this, initial_interval_us);
+		handle->add();
 	}
 }; // namespace RRR::JS

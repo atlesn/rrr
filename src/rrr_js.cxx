@@ -51,18 +51,18 @@ int main(int argc, const char **argv) {
 
 	try {
 		auto isolate = Isolate(env);
-		auto ctx = CTX(env);
+		auto ctx = CTX(env, "-");
 		auto scope = Scope(ctx);
-		auto trycatch = TryCatch(ctx, "-");
 		auto script = Script(ctx);
+		auto script_source = std::string(in);
 	
 		Value arg = String(ctx, "arg");
 
-		script.compile(ctx, in);
+		script.compile(ctx, script_source);
 		if (script.is_compiled()) {
 			script.run(ctx);
 		}
-		if (trycatch.ok(ctx, [](std::string &&msg){
+		if (ctx.trycatch_ok([](std::string &&msg){
 			throw E(std::string(msg));
 		})) {
 			// OK

@@ -32,7 +32,6 @@ extern "C" {
 namespace RRR::JS {
 	class CTX;
 	class Scope;
-	class TryCatch;
 	class Isolate;
 
 	class ENV {
@@ -132,46 +131,13 @@ namespace RRR::JS {
 	class CTX {
 		private:
 		v8::Local<v8::Context> ctx;
-
-		public:
-		CTX(ENV &env);
-		~CTX();
-		CTX(const CTX &) = delete;
-		operator v8::Local<v8::Context>();
-		operator v8::Local<v8::Value>();
-		operator v8::Isolate *();
-		template <typename T> void set_global(std::string name, T object) {
-			auto result = ctx->Global()->Set(ctx, String(*this, name), object);
-			if (!result.FromMaybe(false)) {
-				throw E("Failed to set global '" + name + "'\n");
-			}
-		}
-		Function get_function(const char *name);
-		void run_function(TryCatch &trycatch, Function &function, const char *name, int argc, Value argv[]);
-		void run_function(TryCatch &trycatch, const char *name, int argc, Value argv[]);
-	};
-
-	class Scope {
-		v8::HandleScope handle_scope;
-
-		public:
-		Scope(CTX &ctx) :
-			handle_scope(ctx)
-		{
-		}
-	};
-
-	class TryCatch {
-		private:
 		v8::TryCatch trycatch;
 		std::string script_name;
 
-		std::string make_location_message(CTX &ctx, v8::Local<v8::Message> msg);
+		std::string make_location_message(v8::Local<v8::Message> msg);
 
 		public:
-		TryCatch(CTX &ctx, std::string script_name);
-
-		template <class A> bool ok(CTX &ctx, A err) {
+		template <class A> bool trycatch_ok(A err) {
 			auto msg = trycatch.Message();
 			auto str = std::string("");
 
@@ -186,7 +152,7 @@ namespace RRR::JS {
 			}
 
 			if (!msg.IsEmpty()) {
-				str += std::string(":\n") + make_location_message(ctx, msg);
+				str += std::string(":\n") + make_location_message(msg);
 			}
 			else {
 				str += "\n";
@@ -196,17 +162,42 @@ namespace RRR::JS {
 
 			return trycatch.CanContinue();
 		}
+		CTX(ENV &env, std::string script_name);
+		~CTX();
+		CTX(const CTX &) = delete;
+		operator v8::Local<v8::Context>();
+		operator v8::Local<v8::Value>();
+		operator v8::Isolate *();
+		template <typename T> void set_global(std::string name, T object) {
+			auto result = ctx->Global()->Set(ctx, String(*this, name), object);
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to set global '" + name + "'\n");
+			}
+		}
+		Function get_function(const char *name);
+		void run_function(Function &function, const char *name, int argc, Value argv[]);
+		void run_function(const char *name, int argc, Value argv[]);
+	};
+
+	class Scope {
+		v8::HandleScope handle_scope;
+
+		public:
+		Scope(CTX &ctx) :
+			handle_scope(ctx)
+		{
+		}
 	};
 
 	class Script {
 		private:
 		v8::Local<v8::Script> script;
-		void compile(CTX &ctx, TryCatch &trycatch);
+		void compile(CTX &ctx);
 		bool compiled = false;
 
 		public:
 		Script(CTX &ctx);
-		void compile(CTX &ctx, std::string &&str);
+		void compile(CTX &ctx, std::string &str);
 		bool is_compiled();
 		void run(CTX &ctx);
 	};

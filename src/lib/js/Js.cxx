@@ -214,8 +214,10 @@ namespace RRR::JS {
 		}
 	} // namespace Console
 
-	CTX::CTX(ENV &env) :
-		ctx(v8::Context::New(env, nullptr))
+	CTX::CTX(ENV &env, std::string script_name) :
+		ctx(v8::Context::New(env, nullptr)),
+		script_name(script_name),
+		trycatch(*this)
 	{
 		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
 		{
@@ -237,6 +239,7 @@ namespace RRR::JS {
 			}
 		}
 		ctx->Enter();
+		trycatch.SetCaptureMessage(true);
 	}
 
 	CTX::~CTX() {
@@ -272,22 +275,23 @@ namespace RRR::JS {
 		return Function(value.ToLocalChecked().As<v8::Function>());
 	}
 
-	void CTX::run_function(TryCatch &trycatch, Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
+	void CTX::run_function(Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
 		function.run(ctx, argc, argv);
-		if (trycatch.ok(ctx, [&ctx, name](const char *msg) mutable {
+		if (trycatch_ok([&ctx, name](const char *msg) mutable {
 			throw E(std::string("Exception while running function '") + name + "': " + msg + "\n");
 		})) {
 			// OK
 		}
 	}
 
-	void CTX::run_function(TryCatch &trycatch, const char *name, int argc = 0, Value argv[] = nullptr) {
+	void CTX::run_function(const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto function = get_function(name);
-		run_function(trycatch, function, name, argc, argv);
+		run_function(function, name, argc, argv);
 	}
 
-	std::string TryCatch::make_location_message(CTX &ctx, v8::Local<v8::Message> msg) {
+	std::string CTX::make_location_message(v8::Local<v8::Message> msg) {
+		auto &ctx = *this;
 		std::string str("");
 		int line = 0;
 		int col = 0;
@@ -329,19 +333,12 @@ namespace RRR::JS {
 		return str;
 	}
 
-	TryCatch::TryCatch(CTX &ctx, std::string script_name) :
-		trycatch(v8::TryCatch(ctx)),
-		script_name(script_name)
-	{
-		trycatch.SetCaptureMessage(true);
-	}
-
 	Script::Script(CTX &ctx) :
 		script()
 	{
 	}
 
-	void Script::compile(CTX &ctx, std::string &&str) {
+	void Script::compile(CTX &ctx, std::string &str) {
 		assert(!compiled);
 		if (str.length() > v8::String::kMaxLength) {
 			throw E("Script data too long");

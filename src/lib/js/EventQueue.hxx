@@ -21,7 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include "Js.hxx"
 #include "Persistent.hxx"
+#include "../event/Event.hxx"
 #include "../util/Time.hxx"
 
 #include <v8.h>
@@ -69,6 +71,9 @@ namespace RRR::JS {
 
 	class EventQueue : public PersistentSniffer {
 		private:
+		constexpr static const uint64_t initial_interval_us = 1 * 1000;        // 1 millisecond
+		constexpr static const uint64_t default_interval_us = 1 * 1000 * 1000; // 1 second
+		static std::function<void(EventQueue *)> callback;
 		class CompareExecTime {
 			public:
 			bool operator()(const Event &a, const Event &b) const {
@@ -76,16 +81,19 @@ namespace RRR::JS {
 			}
 		};
 		std::set<Event, CompareExecTime> timeout_events;
+		CTX &ctx;
+		RRR::Event::Collection &collection;
+		std::shared_ptr<RRR::Event::HandleBase> handle;
+
+		void dispatch();
 
 		protected:
 		bool accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) final;
 
 		public:
-		EventQueue(PersistentStorage &persistent_storage) {
-			persistent_storage.register_sniffer(this);
-		}
 		constexpr static const char MSG_SET_TIMEOUT[] = "EventQueue/set_timeout";
 
-		void run();
+		EventQueue(CTX &ctx, PersistentStorage &persistent_storage, RRR::Event::Collection &collection);
+		EventQueue(const EventQueue &) = delete;
 	};
 }; // namespace RRR::JS

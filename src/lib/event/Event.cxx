@@ -24,13 +24,61 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 extern "C" {
 #include "event.h"
 #include "event_collection.h"
+#include "../log.h"
+#include "../util/rrr_time.h"
 };
 
 #include <string>
+#include <cassert>
 
 namespace RRR::Event {
+	void HandleBase::set_handle(rrr_event_handle handle) {
+		assert(!EVENT_INITIALIZED(this->handle));
+		this->handle = handle;
+	}
+
+	HandleBase::HandleBase(CollectionActions &actions) :
+		actions(actions),
+		handle(RRR_EVENT_HANDLE_STRUCT_INITIALIZER)
+	{}
+
+	void HandleBase::base_run() noexcept {
+		try {
+			run();
+		}
+		catch (E e) {
+			RRR_MSG_0("Event exception in %s: %s\n", __func__, std::string(e).c_str());
+			actions.dispatch_break();
+		}
+		catch (RRR::util::E e) {
+			RRR_MSG_0("RRR exception in %s: %s\n", __func__, std::string(e).c_str());
+			actions.dispatch_break();
+		}
+		catch (...) {
+			RRR_MSG_0("Unknown exception in %s\n", __func__);
+			actions.dispatch_break();
+		}
+	}
+
+	void HandleBase::set_interval(uint64_t interval_us) {
+		EVENT_INTERVAL_SET(handle, interval_us);
+	}
+
+	void HandleBase::add() {
+		EVENT_ADD(handle);
+	}
+
+	CollectionActions::CollectionActions(Collection &collection) :
+		collection(collection)
+	{
+	}
+
+	void CollectionActions::dispatch_break() {
+		collection.dispatch_break();
+	}
+
 	void __handle_callback(evutil_socket_t fd, short flags, void *arg) noexcept {
-		auto base = (HandleBase *) arg;
+		((HandleBase *) arg)->base_run();
 	}
 
 	rrr_event_handle Collection::push_periodic(HandleBase *base, uint64_t interval_us) {
@@ -47,10 +95,15 @@ namespace RRR::Event {
 		return handle;
 	}
 
+	void Collection::dispatch_break() {
+		rrr_event_dispatch_break(queue);
+	}
+
 	Collection::Collection(struct rrr_event_queue *queue) :
 		queue(queue),
 		collection(RRR_EVENT_COLLECTION_STRUCT_INITIALIZER),
-		handles()
+		handles(),
+		actions(*this)
 	{
 		rrr_event_collection_init(&collection, queue);
 	}

@@ -53,9 +53,7 @@ namespace RRR::JS {
 		int argc = (int) argv.size();
 		assert(argc >= 0);
 		auto value = function.As<v8::Function>()->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), argc, argc > 0 ? argv.data() : nullptr);
-		if (value.IsEmpty()) {
-			throw E(std::string("Empty return value from function in ") + __func__);
-		}
+		// Don't check return value. Let EventQueue deal with any exception.
 	}
 
 	bool Timeout::is_complete() const {

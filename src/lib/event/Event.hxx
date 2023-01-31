@@ -33,27 +33,34 @@ struct rrr_event_queue;
 #include <forward_list>
 #include <memory>
 #include <string>
-#include <cassert>
 
 namespace RRR::Event {
+	class Collection;
+	class CollectionActions;
+
 	class E : public RRR::util::E {
 		public:
 		E(std::string msg) : RRR::util::E(msg) {}
 	};
 
 	class HandleBase {
+		friend class Collection;
+
+		CollectionActions &actions;
+
 		private:
 		rrr_event_handle handle;
+		virtual void run() = 0;
+
+		protected:
+		void set_handle(rrr_event_handle handle);
 
 		public:
-		HandleBase() :
-			handle(RRR_EVENT_HANDLE_STRUCT_INITIALIZER)
-		{}
+		HandleBase(CollectionActions &actions);
 		virtual ~HandleBase() = default;
-		void set_handle(rrr_event_handle handle) {
-			assert(!EVENT_INITIALIZED(handle));
-			this->handle = handle;
-		}
+		void base_run() noexcept;
+		void set_interval(uint64_t interval_us);
+		void add();
 	};
 
 	template <typename T, typename L> class Handle : public HandleBase {
@@ -64,10 +71,10 @@ namespace RRR::Event {
 		T arg;
 
 		protected:
-		Handle(L callback, T arg) :
+		Handle(CollectionActions &actions, L callback, T arg) :
+			HandleBase(actions),
 			callback(callback),
-			arg(arg),
-			HandleBase()
+			arg(arg)
 		{
 		}
 		void run() {
@@ -75,12 +82,28 @@ namespace RRR::Event {
 		}
 	};
 
+	class CollectionActions {
+		private:
+		Collection &collection;
+
+		public:
+		CollectionActions(Collection &collection);
+		void dispatch_break();
+	};
+
 	class Collection {
+		friend class CollectionActions;
+
 		private:
 		struct rrr_event_queue *queue;
 		struct rrr_event_collection collection;
 		std::forward_list<std::weak_ptr<HandleBase>> handles;
+		CollectionActions actions;
+
 		rrr_event_handle push_periodic(HandleBase *base, uint64_t interval_us);
+
+		protected:
+		void dispatch_break();
 
 		public:
 		Collection(struct rrr_event_queue *queue);
@@ -90,7 +113,7 @@ namespace RRR::Event {
 				T arg,
 				uint64_t interval_us
 		) {
-			auto ret = std::shared_ptr<HandleBase>(new Handle<T,L>(callback, arg));
+			auto ret = std::shared_ptr<HandleBase>(new Handle<T,L>(actions, callback, arg));
 			ret->set_handle(push_periodic(ret.get(), interval_us));
 			return ret;
 		}

@@ -96,7 +96,6 @@ class js_run_data {
 	RRR::Event::Collection event_collection;
 	RRR::JS::CTX &ctx;
 	RRR::JS::Isolate &isolate;
-	RRR::JS::TryCatch &trycatch;
 	RRR::JS::PersistentStorage &persistent_storage;
 	RRR::JS::Function config;
 	RRR::JS::Function source;
@@ -106,6 +105,7 @@ class js_run_data {
 	RRR::JS::ConfigFactory cfg_factory;
 	RRR::JS::TimeoutFactory timeout_factory;
 	RRR::JS::EventQueue event_queue;
+	RRR::JS::Script script;
 
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
@@ -184,7 +184,7 @@ class js_run_data {
 		auto cfg = cfg_factory.new_external(ctx, instance_config);
 		RRR::JS::Value arg(cfg.first());
 		config.run(ctx, 1, &arg);
-		trycatch.ok(ctx, [](std::string msg) {
+		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run config function: ") + msg);
 		});
 	}
@@ -193,7 +193,7 @@ class js_run_data {
 		auto message = msg_factory.new_external(ctx);
 		RRR::JS::Value arg(message.first());
 		source.run(ctx, 1, &arg);
-		trycatch.ok(ctx, [](std::string msg) {
+		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
 	}
@@ -205,15 +205,14 @@ class js_run_data {
 			auto message = msg_factory.new_external(ctx, msg, msg_addr);
 			RRR::JS::Value arg(message.first());
 			process.run(ctx, 1, &arg);
-			trycatch.ok(ctx, [](std::string msg) {
+			ctx.trycatch_ok([](std::string msg) {
 				throw E(std::string("Failed to run process function: ") + msg);
 			});
 		}
 	}
 	void runEvents() {
 		auto scope = RRR::JS::Scope(ctx);
-		event_queue.run();
-		trycatch.ok(ctx, [](std::string msg) {
+		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
 	}
@@ -222,13 +221,12 @@ class js_run_data {
 			struct rrr_cmodule_worker *worker,
 			RRR::JS::Isolate &isolate,
 			RRR::JS::CTX &ctx,
-			RRR::JS::TryCatch &trycatch,
-			RRR::JS::PersistentStorage &persistent_storage
+			RRR::JS::PersistentStorage &persistent_storage,
+			std::string script_source
 	) :
-		event_collection(INSTANCE_D_EVENTS(data->thread_data)),
+		event_collection(rrr_cmodule_worker_get_event_queue(worker)),
 		isolate(isolate),
 		ctx(ctx),
-		trycatch(trycatch),
 		persistent_storage(persistent_storage),
 		data(data),
 		worker(worker),
@@ -236,8 +234,29 @@ class js_run_data {
 		msg_factory(ctx, persistent_storage, message_drop),
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
-		event_queue(persistent_storage)
+		event_queue(ctx, persistent_storage, event_collection),
+		script(ctx)
 	{
+		msg_factory.register_as_global(ctx);
+		cfg_factory.register_as_global(ctx);
+		timeout_factory.register_as_global(ctx);
+
+		try {
+			script.compile(ctx, script_source);
+		}
+		catch (E e) {
+			throw e;
+		}
+
+		if (!script.is_compiled()) {
+			ctx.trycatch_ok([](std::string &&msg){
+				throw E(std::string(msg));
+			});
+			throw E("Script was not compiled");
+		}
+
+		script.run(ctx);
+
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
 		if (cmodule_config_data->config_function != NULL && *cmodule_config_data->config_function != '\0') {
@@ -249,10 +268,6 @@ class js_run_data {
 		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
 			process = ctx.get_function(cmodule_config_data->process_function);
 		}
-
-		msg_factory.register_as_global(ctx);
-		cfg_factory.register_as_global(ctx);
-		timeout_factory.register_as_global(ctx);
 	}
 };
 
@@ -267,31 +282,20 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 
 	try {
 		auto isolate = Isolate(env);
-		auto ctx = CTX(env);
-		auto trycatch = TryCatch(ctx, data->js_file);
+		auto ctx = CTX(env, std::string(data->js_file));
 		auto persistent_storage = PersistentStorage(ctx);
 		auto scope = Scope(ctx);
 
 		auto file = RRR::util::Readfile(std::string(data->js_file), 0, 0);
-		auto script = Script(ctx);
 
-		try {
-			script.compile(ctx, (std::string) file);
-		}
-		catch (E e) {
-			throw e;
-		}
-
-		if (!script.is_compiled()) {
-			trycatch.ok(ctx, [](std::string &&msg){
-				throw E(std::string(msg));
-			});
-			throw E("Script was not compiled");
-		}
-
-		script.run(ctx);
-
-		js_run_data run_data(data, worker, isolate, ctx, trycatch, persistent_storage);
+		js_run_data run_data (
+				data,
+				worker,
+				isolate,
+				ctx,
+				persistent_storage,
+				file
+		);
 
 		callbacks->ping_callback_arg = (void *) &run_data;
 		callbacks->configuration_callback_arg = (void *) &run_data;
