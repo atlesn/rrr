@@ -309,13 +309,18 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				goto out;
 		}
 	}
-	catch (E e) {
+	catch (RRR::util::Readfile::E e) {
+		RRR_MSG_0("Failed while reading script %s: %s\n", data->js_file, *e);
+		ret = 1;
+		goto out;
+	}
+	catch (RRR::util::E e) {
 		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
 		ret = 1;
 		goto out;
 	}
-	catch (RRR::util::Readfile::E e) {
-		RRR_MSG_0("Failed while reading script %s: %s\n", data->js_file, *e);
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(data->thread_data), __func__);
 		ret = 1;
 		goto out;
 	}
@@ -357,6 +362,11 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 		ret = 1;
 		goto out;
 	}
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(run_data->data->thread_data), __func__);
+		ret = 1;
+		goto out;
+	}
 	
 	out:
 	return ret;
@@ -386,8 +396,13 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		// Run any imminent events
 		run_data->runEvents();
 	}
-	catch (js_run_data::E e) {
+	catch (RRR::util::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
+		ret = 1;
+		goto out;
+	}
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(run_data->data->thread_data), __func__);
 		ret = 1;
 		goto out;
 	}
