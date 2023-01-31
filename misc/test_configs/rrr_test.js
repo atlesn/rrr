@@ -4,10 +4,18 @@ function config() {
 
 let timeouts = 0;
 	
-for (let i = 0; i < 20; i++) {
+//for (let i = 0; i < 20; i++) {
 //		let message = new Message();
-		let timeout = new Timeout(function(i){return () => { console.log("Timeout " + 100*i*i + "\n"); timeouts++; }}(i), 100*i*i, 1, 2, 3, 4);
-	}
+//		let timeout = new Timeout(function(i){return () => { console.log("Timeout " + 100*i*i + "\n"); timeouts++; }}(i), 100*i*i, 1, 2, 3, 4);
+//	}
+
+let p = new Promise((resolve, reject) => {
+	new Timeout(() => {resolve("Done\n")}, 1000);
+}).then((msg) => {console.log(msg)});
+
+import("localhost").then((msg) => {
+	console.log("Imported\n");
+}).catch((msg) => {console.log("Failed " + msg + "\n")});
 
 function process(message) {
 //	console.log("Process function topic " + message.topic + "\n");

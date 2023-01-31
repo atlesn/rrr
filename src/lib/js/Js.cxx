@@ -338,17 +338,56 @@ namespace RRR::JS {
 	{
 	}
 
+	v8::MaybeLocal<v8::Module> resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer) {
+		printf("Resolve callback\n");
+		return v8::MaybeLocal<v8::Module>(referrer);
+	}
+
 	void Script::compile(CTX &ctx, std::string &str) {
 		assert(!compiled);
 		if (str.length() > v8::String::kMaxLength) {
 			throw E("Script data too long");
 		}
-		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked()));
+
+		auto origin = v8::ScriptOrigin(
+				(v8::Local<v8::String>) String(ctx, "my module"),
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Boolean>(),
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Value>(),
+				v8::Local<v8::Boolean>(),
+				v8::Local<v8::Boolean>(),
+				v8::Boolean::New(ctx, true) // is_module
+		);
+		auto source = v8::ScriptCompiler::Source(v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked(), origin);
+		auto module_ = v8::ScriptCompiler::CompileModule(ctx, &source);
+
+		if (ctx.trycatch_ok([](auto msg){
+			throw E(std::string("Failed to compile module: ") + msg);
+		})) {
+			// OK
+		}
+
+		assert(!module_.IsEmpty());
+
+
+
+		if (module_->InstantiateModule(ctx, resolve_callback).IsNothing()) {
+			printf("Instantiate failed\n");
+		}
+
+/*		v8::MaybeLocal<v8::Script> script_(v8::Script::Compile(ctx, v8::String::NewFromUtf8(ctx, str.c_str(), v8::NewStringType::kNormal, (int) str.length()).ToLocalChecked()));
 		if (script_.IsEmpty()) {
-			return;
+			if (ctx.trycatch_ok([](auto msg){
+				throw E(std::string("Failed to compile script: ") + msg);
+			})) {
+				// OK
+			}
+			throw E(std::string("Failed to compile script"));
 		}
 		script = script_.ToLocalChecked();
-		compiled = true;
+		compiled = true;*/
 	}
 
 	bool Script::is_compiled() {
