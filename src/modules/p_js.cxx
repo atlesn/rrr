@@ -102,6 +102,7 @@ class js_run_data {
 	RRR::Event::Collection event_collection;
 	RRR::JS::CTX &ctx;
 	RRR::JS::Isolate &isolate;
+	RRR::JS::Scope scope;
 	RRR::JS::PersistentStorage &persistent_storage;
 	RRR::JS::Function config;
 	RRR::JS::Function source;
@@ -233,6 +234,7 @@ class js_run_data {
 		event_collection(rrr_cmodule_worker_get_event_queue(worker)),
 		isolate(isolate),
 		ctx(ctx),
+		scope(ctx),
 		persistent_storage(persistent_storage),
 		data(data),
 		worker(worker),
@@ -292,8 +294,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, std::string(data->js_file));
 		auto persistent_storage = PersistentStorage(ctx);
-		auto scope = Scope(ctx);
-
 		auto source = std::string(RRR::util::Readfile(std::string(data->js_file), 0, 0));
 
 		js_run_data run_data (

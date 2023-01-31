@@ -391,8 +391,9 @@ namespace RRR::JS {
 	}
 
 	v8::MaybeLocal<v8::Module> Module::resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer) {
-		printf("Resolve callback\n");
-		return v8::MaybeLocal<v8::Module>(referrer);
+		assert(0);
+//		printf("Resolve callback ctx %p\n", *context);
+		return v8::MaybeLocal<v8::Module>();
 	}
 
 	Module::Module(std::string name, std::string module_source) :
@@ -403,6 +404,7 @@ namespace RRR::JS {
 
 	void Module::compile(CTX &ctx) {
 		compile_str_wrap(ctx, [&ctx,this](auto str){
+			printf("Ctx %p\n", *((v8::Local<v8::Context>) ctx));
 			auto origin = v8::ScriptOrigin(
 					(v8::Local<v8::String>) String(ctx, "my module"),
 					v8::Local<v8::Integer>(),
@@ -427,9 +429,20 @@ namespace RRR::JS {
 		if (mod->InstantiateModule(ctx, resolve_callback).IsNothing()) {
 			throw("Instantiate failed\n");
 		}
+		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
+		
 	}
 
 	void Module::run(CTX &ctx) {
+		auto result = mod->Evaluate(ctx);
+		if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
+			if (ctx.trycatch_ok([](auto msg){
+				throw E(std::string("Failed to evaluate module: ") + msg);
+			})) {
+				// OK
+			}
+			throw E(std::string("Failed to evaluate module, unknown reason."));
+		}
 	}
 } // namespace RRR::JS
 
