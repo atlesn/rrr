@@ -1239,6 +1239,14 @@ If multiple workers are used by setting the parameter
 .B js_workers,
 the script will run once for each worker and global variables will not be accessible between different workers.
 
+.It js_module_name=NAME
+Load the file given
+.B js_file
+as a module. This allows the usage of the
+.B import
+keyword to load other modules.
+If not given, the file will be loaded as a plain script.
+
 .It js_config_function=NAME
 The function to call before sourcing and processing starts.
 

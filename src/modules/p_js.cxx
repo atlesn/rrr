@@ -63,12 +63,14 @@ extern "C" {
 struct js_data {
 	struct rrr_instance_runtime_data *thread_data;
 	char *js_file;
+	char *js_module_name;
 };
 
 static void js_data_cleanup(void *arg) {
 	struct js_data *data = (struct js_data *) arg;
 
 	RRR_FREE_IF_NOT_NULL(data->js_file);
+	RRR_FREE_IF_NOT_NULL(data->js_module_name);
 }
 
 static void js_data_init(struct js_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -86,6 +88,8 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 		ret = 1;
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("js_module_name", js_module_name);
 
 	out:
 	return ret;
@@ -298,9 +302,13 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				isolate,
 				ctx,
 				persistent_storage,
-				[data,source](CTX &ctx){
-					return new RRR::JS::Script(std::string(data->js_file), source);
-				}
+				data->js_module_name != NULL
+					? std::function([data,source](CTX &ctx){
+						return (RRR::JS::Program*) new RRR::JS::Module(std::string(data->js_file), source);
+					})
+					: std::function([data,source](CTX &ctx){
+						return (RRR::JS::Program*) new RRR::JS::Script(std::string(data->js_file), source);
+					})
 		);
 
 		callbacks->ping_callback_arg = (void *) &run_data;
