@@ -66,6 +66,7 @@ namespace RRR::JS {
 		isolate_scope(isolate),
 		handle_scope(isolate)
 	{
+		isolate->SetHostImportModuleDynamicallyCallback(Module::dynamic_resolve_callback);
 	}
 
 	Isolate::~Isolate() {
@@ -400,15 +401,11 @@ namespace RRR::JS {
 		return Program::get_function(ctx, ((v8::Local<v8::Context>) ctx)->Global(), name);
 	}
 
-	v8::MaybeLocal<v8::Module> Module::resolve_callback (
-			v8::Local<v8::Context> context,
-			v8::Local<v8::String> specifier,
-			v8::Local<v8::Module> referrer
-	) {
-		RRR_DBG_1("V8 import %s\n", ((std::string) String(context->GetIsolate(), specifier)).c_str());
+	Module::operator v8::MaybeLocal<v8::Module>() {
+		return mod;
+	}
 
-		auto name = std::string(String(context->GetIsolate(), specifier));
-		auto ctx = CTX(context, name);
+	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, std::string name) {
 		try {
 			auto submodule = Module(name, std::string(RRR::util::Readfile(name, 0, 0)));
 			submodule.compile(ctx);
@@ -424,8 +421,41 @@ namespace RRR::JS {
 		return v8::MaybeLocal<v8::Module>();
 	}
 
-	Module::operator v8::MaybeLocal<v8::Module>() {
-		return mod;
+	v8::MaybeLocal<v8::Module> Module::static_resolve_callback (
+			v8::Local<v8::Context> context,
+			v8::Local<v8::String> specifier,
+			v8::Local<v8::Module> referrer
+	) {
+		auto name = std::string(String(context->GetIsolate(), specifier));
+		auto ctx = CTX(context, name);
+
+		RRR_DBG_1("V8 static import %s\n", name.c_str());
+
+		return load_module(ctx, name);
+	}
+
+	v8::MaybeLocal<v8::Promise> Module::dynamic_resolve_callback (
+			v8::Local<v8::Context> context,
+			v8::Local<v8::ScriptOrModule> referrer,
+			v8::Local<v8::String> specifier
+	) {
+		auto name = std::string(String(context->GetIsolate(), specifier));
+		auto ctx = CTX(context, name);	
+		auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+
+		RRR_DBG_1("V8 dynamic import %s\n", name.c_str());
+
+		try {
+			auto mod = load_module(ctx, name);
+			resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
+		}
+		catch(RRR::util::E e) {
+			// Reject
+			auto msg = String(ctx, std::string("Error while loading module ") + name + ": " + std::string(e));
+			resolver->Reject(ctx, msg).Check();
+			// ((v8::Isolate *) ctx)->ThrowException(String(ctx, std::string("Error while loading module ") + name + ": " + std::string(e)));
+		}
+		return resolver->GetPromise();
 	}
 
 	Module::Module(std::string name, std::string module_source) :
@@ -467,7 +497,7 @@ namespace RRR::JS {
 	}
 
 	void Module::run(CTX &ctx) {
-		if (mod->InstantiateModule(ctx, resolve_callback).IsNothing()) {
+		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
 			throw E(std::string("Instantiation of module ") + name + (" failed"));
 		}
 		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);

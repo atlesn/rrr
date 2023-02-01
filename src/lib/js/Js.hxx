@@ -221,10 +221,12 @@ namespace RRR::JS {
 		private:
 		v8::Local<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
-		static v8::MaybeLocal<v8::Module> resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
 		operator v8::MaybeLocal<v8::Module>();
+		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
 
 		public:
+		static v8::MaybeLocal<v8::Module> static_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
+		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::ScriptOrModule> referrer, v8::Local<v8::String> specifier);
 		Module(std::string name, std::string module_source);
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;

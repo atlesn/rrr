@@ -2,6 +2,14 @@ console.log("Running module!!!!!!!\n");
 
 export function config() {
 	console.log("Config function\n");
+	import("rrr_test_module_dynamic.js").then((namespace) => {
+		console.log("Loaded " + namespace.dynamic() + "\n");
+		Object.keys(namespace.dynamic).forEach((key) => {
+			console.log("Key: " + key + "\n");
+		});
+	}).catch((e) => {
+		console.log("Rejected: " + e + "\n");
+	});
 }
 
 let timeouts = 0;
