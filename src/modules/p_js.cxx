@@ -268,13 +268,13 @@ class js_run_data {
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
 		if (cmodule_config_data->config_function != NULL && *cmodule_config_data->config_function != '\0') {
-			config = ctx.get_function(cmodule_config_data->config_function);
+			config = program->get_function(ctx, cmodule_config_data->config_function);
 		}
 		if (cmodule_config_data->source_function != NULL && *cmodule_config_data->source_function != '\0') {
-			source = ctx.get_function(cmodule_config_data->source_function);
+			source = program->get_function(ctx, cmodule_config_data->source_function);
 		}
 		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
-			process = ctx.get_function(cmodule_config_data->process_function);
+			process = program->get_function(ctx, cmodule_config_data->process_function);
 		}
 	}
 };
