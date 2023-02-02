@@ -219,14 +219,39 @@ namespace RRR::JS {
 
 	class Module : public Program {
 		private:
+		enum ImportType {
+			tScript
+		};
 		v8::Local<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
 		operator v8::MaybeLocal<v8::Module>();
 		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
+		template <class T> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t);
 
 		public:
-		static v8::MaybeLocal<v8::Module> static_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
-		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::ScriptOrModule> referrer, v8::Local<v8::String> specifier);
+		static v8::MaybeLocal<v8::Module> static_resolve_callback(
+				v8::Local<v8::Context> context,
+				v8::Local<v8::String> specifier,
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+				v8::Local<v8::FixedArray> import_assertions,
+#endif
+				v8::Local<v8::Module> referrer
+		);
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
+				v8::Local<v8::Context> context,
+				v8::Local<v8::Data> host_defined_options,
+				v8::Local<v8::Value> resource_name,
+				v8::Local<v8::String> specifier,
+				v8::Local<v8::FixedArray> import_assertions
+		);
+#else
+		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
+				v8::Local<v8::Context> context,
+				v8::Local<v8::ScriptOrModule> referrer,
+				v8::Local<v8::String> specifier
+		);
+#endif
 		Module(std::string name, std::string module_source);
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;

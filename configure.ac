@@ -395,6 +395,60 @@ AC_DEFUN([V8TESTS],[
 	],[
 		# Not found, no action required
 	])
+
+	AC_MSG_CHECKING([V8 has FixedArray arg in ResolveModuleCallback])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-script.h>
+			v8::MaybeLocal<v8::Module> dummy (
+					v8::Local<v8::Context>,
+					v8::Local<v8::String>,
+					v8::Local<v8::FixedArray>,
+					v8::Local<v8::Module>
+			) {
+				auto ctx = v8::Local<v8::Context>();
+				auto mod = v8::Local<v8::Module>();
+				mod->InstantiateModule(ctx, dummy);
+			}
+			int main (int argc, char **argv) {
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK], [1], [Have FixedArray in ResolveModuleCallback])
+	],[
+		# Not found, no action required
+	])
+
+	AC_MSG_CHECKING([V8 has primitive arguments to ScriptOrigin])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-message.h>
+			int main (int argc, char **argv) {
+				auto dummy = v8::ScriptOrigin(
+						nullptr,
+						v8::Local<v8::Value>(),
+						0,
+						0,
+						false,
+						-1,
+						v8::Local<v8::Value>(),
+						false,
+						false,
+						false
+				);
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN], [1], [Have primitive arguments to ScriptOrigin])
+	],[
+		# Not found, no action required
+	])
 ])
 
 AC_LANG_PUSH([C++])

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <cassert>
 #include <iostream>
 #include <algorithm>
+#include <set>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
@@ -418,12 +419,59 @@ namespace RRR::JS {
 		catch (RRR::util::E e) {
 			throw E(std::string("Failed to load module '") + name + "': " + ((std::string) e));
 		}
-		return v8::MaybeLocal<v8::Module>();
+		catch (...) {
+			throw E(std::string("Failed to load module. Unknown reason."));
+		}
+		assert(0);
 	}
+
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+	template <class T> void Module::import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t) {
+		assert(import_assertions->Length() % 2 == 0);
+
+		std::set<std::string> encountered_keys;
+		ImportType type = tScript;
+
+		for (int i = 0; i < import_assertions->Length(); i += 2) {
+			auto key_data = import_assertions->Get(ctx, i);
+			auto value_data = import_assertions->Get(ctx, i);
+			if (key_data.IsEmpty()) {
+				throw E("Undefined key in import assertions");
+			}
+
+			auto key = (std::string) String(ctx, import_assertions->Get(ctx, i).As<v8::String>());
+			if (encountered_keys.find(key) != encountered_keys.end()) {
+				throw E(std::string("Import assertion key '") + key + "' specified more than once");
+			}
+
+			if (key.compare("type") == 0) {
+				if (value_data.IsEmpty()) {
+					// OK, assume script
+					type = tScript;
+					continue;
+				}
+
+				// TODO : Uncertainty about what types are actually legal. JSON
+				//        and other types are nevertheless not supported here.
+				auto value = (std::string) String(ctx, import_assertions->Get(ctx, i + 1).As<v8::String>());
+				throw E(std::string("Unsupported import assertion type '") + value + "'. Only no type set, meaning script, is supported.");
+			}
+			else {
+				throw E(std::string("Unknown import assertion key '") + key + "'. Only no type set, meaning script, is supported.");
+			}
+		}
+
+		// Only one branch for now (JavaScript module)
+		t();
+	}
+#endif
 
 	v8::MaybeLocal<v8::Module> Module::static_resolve_callback (
 			v8::Local<v8::Context> context,
 			v8::Local<v8::String> specifier,
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+v8::Local<v8::FixedArray> import_assertions,
+#endif
 			v8::Local<v8::Module> referrer
 	) {
 		auto name = std::string(String(context->GetIsolate(), specifier));
@@ -431,23 +479,47 @@ namespace RRR::JS {
 
 		RRR_DBG_1("V8 static import %s\n", name.c_str());
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+		auto mod = v8::MaybeLocal<v8::Module>();
+		import_assertions_diverge<>(ctx, import_assertions, [&ctx,name,&mod](){
+			mod = load_module(ctx, name);
+		});
+		return mod;
+#else
 		return load_module(ctx, name);
+#endif
 	}
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+	v8::MaybeLocal<v8::Promise> Module::dynamic_resolve_callback(
+			v8::Local<v8::Context> context,
+			v8::Local<v8::Data> host_defined_options,
+			v8::Local<v8::Value> resource_name,
+			v8::Local<v8::String> specifier,
+			v8::Local<v8::FixedArray> import_assertions
+	) {
+#else
 	v8::MaybeLocal<v8::Promise> Module::dynamic_resolve_callback (
 			v8::Local<v8::Context> context,
 			v8::Local<v8::ScriptOrModule> referrer,
 			v8::Local<v8::String> specifier
 	) {
+#endif
 		auto name = std::string(String(context->GetIsolate(), specifier));
-		auto ctx = CTX(context, name);	
+		auto ctx = CTX(context, name);
 		auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
 
 		RRR_DBG_1("V8 dynamic import %s\n", name.c_str());
 
 		try {
-			auto mod = load_module(ctx, name);
-			resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+			import_assertions_diverge(ctx, import_assertions, [&ctx,name,resolver](){
+#endif
+				auto mod = load_module(ctx, name);
+				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+			});
+#endif
 		}
 		catch(RRR::util::E e) {
 			// Reject
@@ -468,7 +540,21 @@ namespace RRR::JS {
 
 	void Module::compile(CTX &ctx) {
 		compile_str_wrap(ctx, [&ctx,this](auto str){
-			auto origin = v8::ScriptOrigin(
+#ifdef RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN
+			auto origin = v8::ScriptOrigin (
+					ctx,
+					(v8::Local<v8::String>) String(ctx, name),
+					0,
+					0,
+					false,
+					-1,
+					v8::Local<v8::Value>(),
+					false,
+					false,
+					true // is_module
+			);
+#else
+			auto origin = v8::ScriptOrigin (
 					(v8::Local<v8::String>) String(ctx, name),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Integer>(),
@@ -479,6 +565,7 @@ namespace RRR::JS {
 					v8::Local<v8::Boolean>(),
 					v8::Boolean::New(ctx, true) // is_module
 			);
+#endif
 			auto source = v8::ScriptCompiler::Source(str, origin);
 			auto module_maybe = v8::ScriptCompiler::CompileModule(ctx, &source);
 			if (ctx.trycatch_ok([](auto msg){
