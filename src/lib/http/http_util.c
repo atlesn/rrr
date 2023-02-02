@@ -1319,7 +1319,7 @@ const char *rrr_http_util_iana_response_phrase_from_status_code (
 	out_unknown:
 	return "Unknown status";
 }
-
+#ifdef RRR_WITH_JSONC
 int rrr_http_util_json_to_arrays (
 		const char *data,
 		rrr_length data_size,
@@ -1328,7 +1328,7 @@ int rrr_http_util_json_to_arrays (
 ) {
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
-
+#endif
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 int rrr_http_util_encode (
 		struct rrr_nullsafe_str *output,
