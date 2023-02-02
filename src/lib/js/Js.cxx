@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Js.hxx"
+#include "../util/Readfile.hxx"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +66,7 @@ namespace RRR::JS {
 		isolate_scope(isolate),
 		handle_scope(isolate)
 	{
+		isolate->SetHostImportModuleDynamicallyCallback(Module::dynamic_resolve_callback);
 	}
 
 	Isolate::~Isolate() {
@@ -167,13 +169,13 @@ namespace RRR::JS {
 	{
 	}
 
-	Function::Function(v8::Local<v8::Function> &&function) :
-		function(function)
+	Function::Function() :
+		function()
 	{
 	}
 
-	Function::Function() :
-		function()
+	Function::Function(v8::Local<v8::Function> function) :
+		function(function)
 	{
 	}
 
@@ -214,6 +216,14 @@ namespace RRR::JS {
 		}
 	} // namespace Console
 
+	CTX::CTX(v8::Local<v8::Context> ctx, std::string script_name) :
+		ctx(ctx),
+		script_name(script_name),
+		trycatch(*this)
+	{
+		ctx->Enter();
+		trycatch.SetCaptureMessage(true);
+	}
 	CTX::CTX(ENV &env, std::string script_name) :
 		ctx(v8::Context::New(env, nullptr)),
 		script_name(script_name),
@@ -258,23 +268,6 @@ namespace RRR::JS {
 		return ctx->GetIsolate();
 	}
 
-	Function CTX::get_function(const char *name) {
-		v8::MaybeLocal<v8::Value> value = ctx->Global()->Get(ctx, String(*this, name));
-		if (value.IsEmpty()) {
-			std::string msg("Error while finding function '" + std::string(name) + "'");
-			throw E(msg.c_str());
-		}
-		if (value.ToLocalChecked()->IsUndefined()) {
-			std::string msg("Function '" + std::string(name) + "' not found");
-			throw E(msg.c_str());
-		}
-		if (!value.ToLocalChecked()->IsFunction()) {
-			std::string msg("Name '" + std::string(name) + "' was not a function");
-			throw E(msg.c_str());
-		}
-		return Function(value.ToLocalChecked().As<v8::Function>());
-	}
-
 	void CTX::run_function(Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
 		function.run(ctx, argc, argv);
@@ -283,11 +276,6 @@ namespace RRR::JS {
 		})) {
 			// OK
 		}
-	}
-
-	void CTX::run_function(const char *name, int argc = 0, Value argv[] = nullptr) {
-		auto function = get_function(name);
-		run_function(function, name, argc, argv);
 	}
 
 	std::string CTX::make_location_message(v8::Local<v8::Message> msg) {
@@ -352,6 +340,24 @@ namespace RRR::JS {
 		set_compiled();
 	}
 
+	Function Program::get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name) {
+		// Enforce usage of MaybeLocal overload as Local overload is deprecated
+		v8::MaybeLocal<v8::Value> value = object->Get(ctx, (v8::Local<v8::String>) String(ctx, name));
+		if (value.IsEmpty()) {
+			std::string msg("Error while finding function '" + std::string(name) + "'");
+			throw E(msg.c_str());
+		}
+		if (value.ToLocalChecked()->IsUndefined()) {
+			std::string msg("Function '" + std::string(name) + "' not found");
+			throw E(msg.c_str());
+		}
+		if (!value.ToLocalChecked()->IsFunction()) {
+			std::string msg("Name '" + std::string(name) + "' was not a function");
+			throw E(msg.c_str());
+		}
+		return Function(value.ToLocalChecked().As<v8::Function>());
+	}
+
 	Program::Program(std::string name, std::string program_source) :
 		name(name),
 		program_source(program_source)
@@ -370,6 +376,7 @@ namespace RRR::JS {
 		Program(name, script_source),
 		script()
 	{
+		RRR_DBG_1("V8 new Script %s\n", name.c_str());
 	}
 
 	void Script::compile(CTX &ctx) {
@@ -390,23 +397,79 @@ namespace RRR::JS {
 		// Ignore result
 	}
 
-	v8::MaybeLocal<v8::Module> Module::resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer) {
-		assert(0);
-//		printf("Resolve callback ctx %p\n", *context);
+	Function Script::get_function(CTX &ctx, std::string name) {
+		return Program::get_function(ctx, ((v8::Local<v8::Context>) ctx)->Global(), name);
+	}
+
+	Module::operator v8::MaybeLocal<v8::Module>() {
+		return mod;
+	}
+
+	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, std::string name) {
+		try {
+			auto submodule = Module(name, std::string(RRR::util::Readfile(name, 0, 0)));
+			submodule.compile(ctx);
+			submodule.run(ctx);
+			return submodule;
+		}
+		catch (RRR::util::Readfile::E e) {
+			throw E(std::string("Failed to read from module file '") + name + "': " + ((std::string) e));
+		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load module '") + name + "': " + ((std::string) e));
+		}
 		return v8::MaybeLocal<v8::Module>();
+	}
+
+	v8::MaybeLocal<v8::Module> Module::static_resolve_callback (
+			v8::Local<v8::Context> context,
+			v8::Local<v8::String> specifier,
+			v8::Local<v8::Module> referrer
+	) {
+		auto name = std::string(String(context->GetIsolate(), specifier));
+		auto ctx = CTX(context, name);
+
+		RRR_DBG_1("V8 static import %s\n", name.c_str());
+
+		return load_module(ctx, name);
+	}
+
+	v8::MaybeLocal<v8::Promise> Module::dynamic_resolve_callback (
+			v8::Local<v8::Context> context,
+			v8::Local<v8::ScriptOrModule> referrer,
+			v8::Local<v8::String> specifier
+	) {
+		auto name = std::string(String(context->GetIsolate(), specifier));
+		auto ctx = CTX(context, name);	
+		auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+
+		RRR_DBG_1("V8 dynamic import %s\n", name.c_str());
+
+		try {
+			auto mod = load_module(ctx, name);
+			resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
+		}
+		catch(RRR::util::E e) {
+			// Reject
+			auto msg = String(ctx, std::string("Error while loading module ") + name + ": " + std::string(e));
+			resolver->Reject(ctx, msg).Check();
+			// ((v8::Isolate *) ctx)->ThrowException(String(ctx, std::string("Error while loading module ") + name + ": " + std::string(e)));
+		}
+		return resolver->GetPromise();
 	}
 
 	Module::Module(std::string name, std::string module_source) :
 		Program(name, module_source),
-		mod()
+		mod(),
+		submodules()
 	{
+		RRR_DBG_1("V8 new Module %s\n", name.c_str());
 	}
 
 	void Module::compile(CTX &ctx) {
 		compile_str_wrap(ctx, [&ctx,this](auto str){
-			printf("Ctx %p\n", *((v8::Local<v8::Context>) ctx));
 			auto origin = v8::ScriptOrigin(
-					(v8::Local<v8::String>) String(ctx, "my module"),
+					(v8::Local<v8::String>) String(ctx, name),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Boolean>(),
@@ -426,14 +489,20 @@ namespace RRR::JS {
 			mod = module_maybe.ToLocalChecked();
 		});
 
-		if (mod->InstantiateModule(ctx, resolve_callback).IsNothing()) {
-			throw("Instantiate failed\n");
+		if (ctx.trycatch_ok([](auto msg){
+			throw E(std::string("Failed to instantiate  module: ") + msg);
+		})) {
+			// OK
 		}
-		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
-		
 	}
 
 	void Module::run(CTX &ctx) {
+		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
+			throw E(std::string("Instantiation of module ") + name + (" failed"));
+		}
+		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
+
+		// Ignore result
 		auto result = mod->Evaluate(ctx);
 		if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
 			if (ctx.trycatch_ok([](auto msg){
@@ -443,6 +512,12 @@ namespace RRR::JS {
 			}
 			throw E(std::string("Failed to evaluate module, unknown reason."));
 		}
+	}
+
+	Function Module::get_function(CTX &ctx, std::string name) {
+		// Force use of MaybeLocal overloads as Local overloads are deprecated
+		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
+		return Program::get_function(ctx, object, name);
 	}
 } // namespace RRR::JS
 

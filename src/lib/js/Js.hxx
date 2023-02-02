@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/E.hxx"
 
 #include <v8.h>
+#include <forward_list>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -112,16 +113,12 @@ namespace RRR::JS {
 	};
 
 	class Function {
-		friend class CTX;
-
 		private:
 		v8::Local<v8::Function> function;
 
-		protected:
-		Function(v8::Local<v8::Function> &&function);
-
 		public:
 		Function();
+		Function(v8::Local<v8::Function> function);
 		bool empty() const {
 			return function.IsEmpty();
 		}
@@ -162,6 +159,7 @@ namespace RRR::JS {
 
 			return trycatch.CanContinue();
 		}
+		CTX(v8::Local<v8::Context> ctx, std::string script_name);
 		CTX(ENV &env, std::string script_name);
 		~CTX();
 		CTX(const CTX &) = delete;
@@ -174,9 +172,7 @@ namespace RRR::JS {
 				throw E("Failed to set global '" + name + "'\n");
 			}
 		}
-		Function get_function(const char *name);
 		void run_function(Function &function, const char *name, int argc, Value argv[]);
-		void run_function(const char *name, int argc, Value argv[]);
 	};
 
 	class Scope {
@@ -198,6 +194,7 @@ namespace RRR::JS {
 		protected:
 		void set_compiled();
 		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+		Function get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name);
 
 		public:
 		Program(std::string name, std::string program_source);
@@ -206,6 +203,7 @@ namespace RRR::JS {
 		virtual ~Program() = default;
 		virtual void compile(CTX &ctx) = 0;
 		virtual void run(CTX &ctx) = 0;
+		virtual Function get_function(CTX &ctx, std::string name) = 0;
 	};
 
 	class Script : public Program {
@@ -216,17 +214,23 @@ namespace RRR::JS {
 		Script(std::string name, std::string script_source);
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;
+		Function get_function(CTX &ctx, std::string name) final;
 	};
 
 	class Module : public Program {
 		private:
 		v8::Local<v8::Module> mod;
-		static v8::MaybeLocal<v8::Module> resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
+		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
+		operator v8::MaybeLocal<v8::Module>();
+		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
 
 		public:
+		static v8::MaybeLocal<v8::Module> static_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::String> specifier, v8::Local<v8::Module> referrer);
+		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(v8::Local<v8::Context> context, v8::Local<v8::ScriptOrModule> referrer, v8::Local<v8::String> specifier);
 		Module(std::string name, std::string module_source);
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;
+		Function get_function(CTX &ctx, std::string name) final;
 	};
 
 	template <class A, class B> class Duple {
