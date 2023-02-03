@@ -226,7 +226,9 @@ namespace RRR::JS {
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
 		operator v8::MaybeLocal<v8::Module>();
 		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		template <class T> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t);
+#endif
 
 		public:
 		static v8::MaybeLocal<v8::Module> static_resolve_callback(
