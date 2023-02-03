@@ -163,6 +163,23 @@ do_test_socket test_cmodule.conf
 
 echo "With node: $RRR_WITH_NODE"
 if test "x$RRR_WITH_NODE" != 'xno'; then
+	./test_js_await_import.sh
+	case $? in
+		0)
+			# OK, await import is availbable
+			if ! ../rrr_test test_dynamic_import.js; then
+				# Dynamic import test failed
+				exit 1
+			fi
+			;;
+		2)
+			# OK, but await import is not available
+			;;
+		*)
+			# Error while checking await import availibility
+			exit 1
+			;;
+	esac
 	do_test_socket test_js.conf
 fi
 
