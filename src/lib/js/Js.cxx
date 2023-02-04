@@ -322,12 +322,12 @@ namespace RRR::JS {
 		return str;
 	}
 
-	void Program::set_compiled() {
+	void Source::set_compiled() {
 		assert(!compiled);
 		compiled = true;
 	}
 
-	template <typename L> void Program::compile_str_wrap(CTX &ctx, L l) {
+	template <typename L> void Source::compile_str_wrap(CTX &ctx, L l) {
 		if (program_source.length() > v8::String::kMaxLength) {
 			throw E("Script or module data too long");
 		}
@@ -339,6 +339,20 @@ namespace RRR::JS {
 		).ToLocalChecked());
 
 		set_compiled();
+	}
+
+	Source::Source(std::string name, std::string program_source) :
+		name(name),
+		program_source(program_source)
+	{
+	}
+
+	bool Source::is_compiled() {
+		return compiled;
+	}
+
+	std::string Source::get_name() {
+		return name;
 	}
 
 	Function Program::get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name) {
@@ -360,17 +374,8 @@ namespace RRR::JS {
 	}
 
 	Program::Program(std::string name, std::string program_source) :
-		name(name),
-		program_source(program_source)
+		Source(name, program_source)
 	{
-	}
-
-	bool Program::is_compiled() {
-		return compiled;
-	}
-
-	std::string Program::get_name() {
-		return name;
 	}
 
 	Script::Script(std::string name, std::string script_source) :
@@ -393,7 +398,7 @@ namespace RRR::JS {
 	}
 
 	void Script::run(CTX &ctx) {
-		assert(compiled);
+		assert(is_compiled());
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
 		// Ignore result
 	}
@@ -543,7 +548,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN
 			auto origin = v8::ScriptOrigin (
 					ctx,
-					(v8::Local<v8::String>) String(ctx, name),
+					(v8::Local<v8::String>) String(ctx, get_name()),
 					0,
 					0,
 					false,
@@ -585,7 +590,7 @@ v8::Local<v8::FixedArray> import_assertions,
 
 	void Module::run(CTX &ctx) {
 		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
-			throw E(std::string("Instantiation of module ") + name + (" failed"));
+			throw E(std::string("Instantiation of module ") + get_name() + (" failed"));
 		}
 		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
 

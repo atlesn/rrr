@@ -185,21 +185,30 @@ namespace RRR::JS {
 		}
 	};
 
-	class Program {
-		protected:
+	class Source {
+		private:
+		bool compiled = false;
 		std::string name;
 		std::string program_source;
-		bool compiled = false;
+
+		void set_compiled();
 
 		protected:
-		void set_compiled();
 		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+
+		public:
+		Source(std::string name, std::string program_source);
+		bool is_compiled();
+		std::string get_name();
+		virtual ~Source() = default;
+	};
+
+	class Program : public Source {
+		protected:
 		Function get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name);
 
 		public:
 		Program(std::string name, std::string program_source);
-		bool is_compiled();
-		std::string get_name();
 		virtual ~Program() = default;
 		virtual void compile(CTX &ctx) = 0;
 		virtual void run(CTX &ctx) = 0;
@@ -258,6 +267,9 @@ namespace RRR::JS {
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;
 		Function get_function(CTX &ctx, std::string name) final;
+	};
+
+	class JSONModule {
 	};
 
 	template <class A, class B> class Duple {
