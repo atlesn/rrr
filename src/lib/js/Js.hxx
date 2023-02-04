@@ -201,6 +201,7 @@ namespace RRR::JS {
 		bool is_compiled();
 		std::string get_name();
 		virtual ~Source() = default;
+		virtual void compile(CTX &ctx) = 0;
 	};
 
 	class Program : public Source {
@@ -233,7 +234,6 @@ namespace RRR::JS {
 		};
 		v8::Local<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
-		operator v8::MaybeLocal<v8::Module>();
 		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		template <class T> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t);
@@ -269,7 +269,15 @@ namespace RRR::JS {
 		Function get_function(CTX &ctx, std::string name) final;
 	};
 
-	class JSONModule {
+	class JSONModule : public Source {
+		private:
+		v8::Local<v8::Module> mod;
+		static v8::MaybeLocal<v8::Value> evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod);
+
+		public:
+		JSONModule(std::string name, std::string program_source);
+		operator v8::MaybeLocal<v8::Module>();
+		void compile(CTX &ctx) final;
 	};
 
 	template <class A, class B> class Duple {

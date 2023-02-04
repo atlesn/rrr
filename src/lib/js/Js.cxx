@@ -407,16 +407,12 @@ namespace RRR::JS {
 		return Program::get_function(ctx, ((v8::Local<v8::Context>) ctx)->Global(), name);
 	}
 
-	Module::operator v8::MaybeLocal<v8::Module>() {
-		return mod;
-	}
-
 	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, std::string name) {
 		try {
 			auto submodule = Module(name, std::string(RRR::util::Readfile(name, 0, 0)));
 			submodule.compile(ctx);
 			submodule.run(ctx);
-			return submodule;
+			return submodule.mod;
 		}
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from module file '") + name + "': " + ((std::string) e));
@@ -610,6 +606,50 @@ v8::Local<v8::FixedArray> import_assertions,
 		// Force use of MaybeLocal overloads as Local overloads are deprecated
 		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
 		return Program::get_function(ctx, object, name);
+	}
+
+	v8::MaybeLocal<v8::Value> JSONModule::evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod) {
+		assert(0);
+	}
+
+	JSONModule::JSONModule(std::string name, std::string program_source) :
+		Source(name, program_source)
+	{
+	}
+
+	JSONModule::operator v8::MaybeLocal<v8::Module>() {
+		assert(is_compiled());
+		return mod;
+	}
+
+	void JSONModule::compile(CTX &ctx) {
+		auto export_names = std::vector<v8::Local<v8::String>>();
+		export_names.emplace_back(String(ctx, "default"));
+
+		mod = v8::Module::CreateSyntheticModule(
+			ctx,
+			String(ctx, get_name()),
+			export_names,
+			evaluation_steps_callback
+		);
+
+		if (ctx.trycatch_ok([](auto msg){
+			throw E(std::string("Failed to create JSON module: ") + msg);
+		})) {
+			// OK
+		}
+
+		assert(!mod.IsEmpty());
+
+		compile_str_wrap(ctx, [&ctx,this](auto str){
+			auto json = v8::JSON::Parse(ctx, str);
+			if (ctx.trycatch_ok([](auto msg){
+				throw E(std::string("Failed to parse JSON module: ") + msg);
+			})) {
+				// OK
+			}
+			mod->SetSyntheticModuleExport(ctx, String(ctx, "default"), json.ToLocalChecked()).Check();
+		});
 	}
 } // namespace RRR::JS
 
