@@ -167,8 +167,12 @@ if test "x$RRR_WITH_NODE" != 'xno'; then
 	case $? in
 		0)
 			# OK, await import is availbable
-			if ! ../rrr_test test_dynamic_import.js; then
+			if ! ../rrr_js test_dynamic_import.js; then
 				# Dynamic import test failed
+				exit 1
+			fi
+			if ! ../rrr_js test_json_import.js; then
+				# Dynamic json import test failed
 				exit 1
 			fi
 			;;

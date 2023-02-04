@@ -8,7 +8,7 @@ else
 	exit 1
 fi
 
-if echo "await import('nonexistent').catch();" | ../rrr_js; then
+if echo "async function a() { await import('nonexistent').catch(); }" | ../rrr_js; then
 	echo "Dynamic import with await works" 1>&2
 else
 	echo "Dynamic import with await does not work" 1>&2

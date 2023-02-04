@@ -417,9 +417,6 @@ namespace RRR::JS {
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from module file '") + name + "': " + ((std::string) e));
 		}
-		catch (RRR::util::E e) {
-			throw E(std::string("Failed to load module '") + name + "': " + ((std::string) e));
-		}
 		catch (...) {
 			throw E(std::string("Failed to load module. Unknown reason."));
 		}
@@ -427,11 +424,26 @@ namespace RRR::JS {
 	}
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-	template <class T> void Module::import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t) {
+	v8::MaybeLocal<v8::Module> Module::load_json(CTX &ctx, std::string name) {
+		try {
+			auto submodule = JSONModule(name, std::string(RRR::util::Readfile(name, 0, 0)));
+			submodule.compile(ctx);
+			return submodule;
+		}
+		catch (RRR::util::Readfile::E e) {
+			throw E(std::string("Failed to read from JSON module file '") + name + "': " + ((std::string) e));
+		}
+		catch (...) {
+			throw E(std::string("Failed to load JSON module. Unknown reason."));
+		}
+		assert(0);
+	}
+
+	template <class T, class U> void Module::import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t, U u) {
 		assert(import_assertions->Length() % 2 == 0);
 
 		std::set<std::string> encountered_keys;
-		ImportType type = tScript;
+		ImportType type = tModule;
 
 		for (int i = 0; i < import_assertions->Length(); i += 2) {
 			auto key_data = import_assertions->Get(ctx, i);
@@ -448,22 +460,37 @@ namespace RRR::JS {
 			if (key.compare("type") == 0) {
 				if (value_data.IsEmpty()) {
 					// OK, assume script
-					type = tScript;
+					type = tModule;
 					continue;
 				}
 
-				// TODO : Uncertainty about what types are actually legal. JSON
-				//        and other types are nevertheless not supported here.
+				// TODO : Uncertainty about what types are actually legal.
 				auto value = (std::string) String(ctx, import_assertions->Get(ctx, i + 1).As<v8::String>());
-				throw E(std::string("Unsupported import assertion type '") + value + "'. Only no type set, meaning script, is supported.");
+				if (value.compare("module") == 0) {
+					type = tModule;
+				}
+				else if (value.compare("json") == 0) {
+					type = tJSON;
+				}
+				else {
+					throw E(std::string("Unsupported import assertion type '") + value + "'. Only no type set, meaning script, is supported.");
+				}
 			}
 			else {
 				throw E(std::string("Unknown import assertion key '") + key + "'. Only no type set, meaning script, is supported.");
 			}
 		}
 
-		// Only one branch for now (JavaScript module)
-		t();
+		switch (type) {
+			case tModule:
+				t();
+				break;
+			case tJSON:
+				u();
+				break;
+			default:
+				assert(0);
+		};
 	}
 #endif
 
@@ -484,6 +511,8 @@ v8::Local<v8::FixedArray> import_assertions,
 		auto mod = v8::MaybeLocal<v8::Module>();
 		import_assertions_diverge<>(ctx, import_assertions, [&ctx,name,&mod](){
 			mod = load_module(ctx, name);
+		}, [&ctx,name,&mod](){
+			mod = load_json(ctx, name);
 		});
 		return mod;
 #else
@@ -519,6 +548,7 @@ v8::Local<v8::FixedArray> import_assertions,
 				auto mod = load_module(ctx, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+			}, [&ctx,name,resolver](){
 			});
 #endif
 		}
