@@ -1,3 +1,8 @@
+// When running under NodeJS, critical() does not exist
+if (console.critical === undefined) {
+	console.critical = console.log;
+}
+
 import("./test_module_process.js", { assert: {type: "json"} }).then((mod) => {
 	console.critical("Script was loaded despite JSON assertion being set\n");
 }).catch((msg) => {
