@@ -8,10 +8,10 @@ else
 	exit 1
 fi
 
-if echo "async function a() { await import('nonexistent').catch(); }" | ../rrr_js; then
-	echo "Dynamic import with await works" 1>&2
+if echo " import('nonexistent', { assert: { type: 'xxx' } }).catch();" | ../rrr_js; then
+	echo "Dynamic import with assert works" 1>&2
 else
-	echo "Dynamic import with await does not work" 1>&2
+	echo "Dynamic import with assert does not work" 1>&2
 	# Return two for await not available
 	exit 2
 fi

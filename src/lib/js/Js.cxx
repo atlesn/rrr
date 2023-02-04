@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Js.hxx"
 #include "../util/Readfile.hxx"
+#include "v8-primitive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,15 +63,40 @@ namespace RRR::JS {
 		RRR_BUG("Fatal error from V8. This is a bug. : %s %s\n", where, what);
 	}
 
+	void *Isolate::get_data(uint32_t pos) {
+		return isolate->GetData(pos);
+	}
+
+	uint32_t Isolate::set_data(void *ptr) {
+		uint32_t pos = data_pos++;
+		isolate->SetData(pos, ptr);
+		return pos;
+	}
+
 	Isolate::Isolate(ENV &env) :
-		isolate(env.isolate),
+		isolate(env),
 		isolate_scope(isolate),
-		handle_scope(isolate)
+		handle_scope(isolate),
+		module_map(),
+		isolate_handle(make_handle(this)),
+		module_map_handle(make_handle(&module_map))
 	{
 		isolate->SetHostImportModuleDynamicallyCallback(Module::dynamic_resolve_callback);
 	}
 
 	Isolate::~Isolate() {
+	}
+
+	void *Isolate::get_module(int identity) {
+		return module_map[identity];
+	}
+
+	void Isolate::set_module(int identity, void *mod) {
+		module_map[identity] = mod;
+	}
+
+	Isolate *Isolate::get_from_context(CTX &ctx) {
+		return (Isolate *) ((v8::Isolate *) ctx)->GetData(0);
 	}
 
 	Value::Value(v8::Local<v8::Value> value) :
@@ -215,6 +241,11 @@ namespace RRR::JS {
 		void error(const v8::FunctionCallbackInfo<v8::Value> &args) {
 			flog(0, args);
 		}
+
+		void critical(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			flog(0, args);
+			abort();
+		}
 	} // namespace Console
 
 	CTX::CTX(v8::Local<v8::Context> ctx, std::string script_name) :
@@ -239,6 +270,12 @@ namespace RRR::JS {
 		}
 		{
 			auto result = console->Set(ctx, String(*this, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to intitialize globals\n");
+			}
+		}
+		{
+			auto result = console->Set(ctx, String(*this, "critical"), v8::Function::New(ctx, Console::critical).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
 				throw E("Failed to intitialize globals\n");
 			}
@@ -331,13 +368,7 @@ namespace RRR::JS {
 		if (program_source.length() > v8::String::kMaxLength) {
 			throw E("Script or module data too long");
 		}
-		l(v8::String::NewFromUtf8 (
-				ctx,
-				program_source.c_str(),
-				v8::NewStringType::kNormal,
-				(int) program_source.length()
-		).ToLocalChecked());
-
+		l(String(ctx, program_source));
 		set_compiled();
 	}
 
@@ -417,6 +448,9 @@ namespace RRR::JS {
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from module file '") + name + "': " + ((std::string) e));
 		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load module file '") + name + "': " + ((std::string) e));
+		}
 		catch (...) {
 			throw E(std::string("Failed to load module. Unknown reason."));
 		}
@@ -432,6 +466,9 @@ namespace RRR::JS {
 		}
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from JSON module file '") + name + "': " + ((std::string) e));
+		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load JSON module file '") + name + "': " + ((std::string) e));
 		}
 		catch (...) {
 			throw E(std::string("Failed to load JSON module. Unknown reason."));
@@ -549,6 +586,8 @@ v8::Local<v8::FixedArray> import_assertions,
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			}, [&ctx,name,resolver](){
+				auto mod = load_json(ctx, name);
+				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 			});
 #endif
 		}
@@ -639,9 +678,35 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	v8::MaybeLocal<v8::Value> JSONModule::evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod) {
+		auto ctx = CTX(context, __func__);
+		auto self = (JSONModule *) Isolate::get_from_context(ctx)->get_module(mod->GetIdentityHash());
+		auto result = mod->SetSyntheticModuleExport(ctx, String(ctx, "default"), self->json);
+		if (ctx.trycatch_ok([](auto msg){
+			throw E(std::string("Failed set default export for JSON module: ") + msg);
+		})) {
+			// OK
+		}
+		return v8::Boolean::New(ctx, true);
+
+//		ns->Set(ctx, String(ctx, "default"), json.ToLocalChecked()).Check();
+//		auto ns = mod->GetModuleNamespace().As<v8::Object>();
+//.		assert(0);
+
+/*
+
+			assert(!result.IsNothing());*/
+	}
+
+	v8::MaybeLocal<v8::Module> JSONModule::static_resolve_callback_unexpected (
+			v8::Local<v8::Context> context,
+			v8::Local<v8::String> specifier,
+			v8::Local<v8::FixedArray> import_assertions,
+			v8::Local<v8::Module> referrer
+	) {
 		assert(0);
 	}
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	JSONModule::JSONModule(std::string name, std::string program_source) :
 		Source(name, program_source)
 	{
@@ -656,7 +721,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		auto export_names = std::vector<v8::Local<v8::String>>();
 		export_names.emplace_back(String(ctx, "default"));
 
-		mod = v8::Module::CreateSyntheticModule(
+		mod = v8::Module::CreateSyntheticModule (
 			ctx,
 			String(ctx, get_name()),
 			export_names,
@@ -671,15 +736,31 @@ v8::Local<v8::FixedArray> import_assertions,
 
 		assert(!mod.IsEmpty());
 
+		Isolate::get_from_context(ctx)->set_module(mod->GetIdentityHash(), this);
+
 		compile_str_wrap(ctx, [&ctx,this](auto str){
-			auto json = v8::JSON::Parse(ctx, str);
+			auto json_maybe = v8::JSON::Parse(ctx, str);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to parse JSON module: ") + msg);
 			})) {
 				// OK
 			}
-			mod->SetSyntheticModuleExport(ctx, String(ctx, "default"), json.ToLocalChecked()).Check();
+			json = json_maybe.ToLocalChecked();
+
+			if (mod->InstantiateModule(ctx, static_resolve_callback_unexpected).IsNothing()) {
+				throw E(std::string("Instantiation of module ") + get_name() + (" failed"));
+			}
+			assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
+
+			auto result = mod->Evaluate(ctx);
+			if (ctx.trycatch_ok([](auto msg){
+				throw E(std::string("Failed to evaluate JSON module: ") + msg);
+			})) {
+				// OK
+			}
+			assert(!result.IsEmpty());
 		});
 	}
+#endif
 } // namespace RRR::JS
 

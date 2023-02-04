@@ -22,9 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "../util/E.hxx"
+#include "v8-value.h"
 
 #include <v8.h>
 #include <forward_list>
+#include <map>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -36,8 +38,6 @@ namespace RRR::JS {
 	class Isolate;
 
 	class ENV {
-		friend class Isolate;
-
 		private:
 		std::unique_ptr<v8::Platform> platform;
 		v8::Isolate::CreateParams isolate_create_params;
@@ -51,17 +51,48 @@ namespace RRR::JS {
 	};
 
 	class Isolate {
+		public:
+		template <class T> class DataHandle {
+			private:
+			uint32_t pos;
+			Isolate *isolate;
+
+			public:
+			DataHandle(Isolate *isolate, T *ptr) :
+				isolate(isolate),
+				pos(isolate->set_data(ptr))
+			{
+			}
+			T *operator *() {
+				return (T *) isolate->get_data(pos);
+			}
+		};
+
 		private:
+		uint32_t data_pos = 0;
 		v8::Isolate *isolate;
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
+		std::map<int,void *> module_map;
+		DataHandle<Isolate> isolate_handle;
+		DataHandle<std::map<int,void *>> module_map_handle;
+
+		protected:
+		void *get_data(uint32_t pos);
+		uint32_t set_data(void *ptr);
 
 		public:
 		Isolate(ENV &env);
 		~Isolate();
+		void *get_module(int identity);
+		void set_module(int identity, void *mod);
 		v8::Isolate *operator-> () {
 			return isolate;
 		}
+		template <class T> DataHandle<T> make_handle(T *ptr) {
+			return DataHandle<T>(this, ptr);
+		}
+		static Isolate *get_from_context(CTX &ctx);
 	};
 
 	class Value : public v8::Local<v8::Value> {
@@ -240,8 +271,6 @@ namespace RRR::JS {
 		static v8::MaybeLocal<v8::Module> load_json(CTX &ctx, std::string name);
 		template <class T, class U> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t, U u);
 #endif
-
-		public:
 		static v8::MaybeLocal<v8::Module> static_resolve_callback(
 				v8::Local<v8::Context> context,
 				v8::Local<v8::String> specifier,
@@ -250,6 +279,8 @@ namespace RRR::JS {
 #endif
 				v8::Local<v8::Module> referrer
 		);
+
+		public:
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
 				v8::Local<v8::Context> context,
@@ -271,16 +302,25 @@ namespace RRR::JS {
 		Function get_function(CTX &ctx, std::string name) final;
 	};
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	class JSONModule : public Source {
 		private:
 		v8::Local<v8::Module> mod;
+		v8::Local<v8::Value> json;
 		static v8::MaybeLocal<v8::Value> evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod);
+		static v8::MaybeLocal<v8::Module> static_resolve_callback_unexpected (
+				v8::Local<v8::Context> context,
+				v8::Local<v8::String> specifier,
+				v8::Local<v8::FixedArray> import_assertions,
+				v8::Local<v8::Module> referrer
+		);
 
 		public:
 		JSONModule(std::string name, std::string program_source);
 		operator v8::MaybeLocal<v8::Module>();
 		void compile(CTX &ctx) final;
 	};
+#endif
 
 	template <class A, class B> class Duple {
 		private:

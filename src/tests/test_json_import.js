@@ -1,16 +1,15 @@
-let ok = false;
-await import("test.json").then((json) => {
-	console.log("Text from JSON: " + json.foo + "\n");
-	if (json.foo === "bar") {
-		ok = true;
-		console.log("Match\n");
-	}
-	else {
-		console.log("Mismatch\n");
-	}
+import("./test_module_process.js", { assert: {type: "json"} }).then((mod) => {
+	console.critical("Script was loaded despite JSON assertion being set\n");
 }).catch((msg) => {
-	console.log("Loading of JSON failed: " + msg);
+	console.log("Script loaded as JSON failed as expected: " + msg + "\n");
 });
-if (!ok) {
-	throw "Failed to load JSON file";
-}
+
+import("./test.json", { assert: {type: "json"} }).then((mod) => {
+	if (mod.default.foo !== "bar") {
+		console.log("" + mod.default.foo + "\n");
+		console.critical("Mismatch in variable from JSON file. Value was '" + mod.foo + "'.\n");
+	}
+	console.log("Module as JSON load succeeded\n");
+}).catch((msg) => {
+	console.critical("Dynamic import of module as JSON failed: " + msg + "\n");
+});
