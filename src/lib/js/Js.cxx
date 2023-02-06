@@ -21,12 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Js.hxx"
 #include "../util/Readfile.hxx"
-#include "v8-primitive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #include <libplatform/libplatform.h>
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+#  include <v8-primitive.h>
+#endif
 #include <v8.h>
 
 #include <cassert>
@@ -625,7 +627,7 @@ v8::Local<v8::FixedArray> import_assertions,
 			);
 #else
 			auto origin = v8::ScriptOrigin (
-					(v8::Local<v8::String>) String(ctx, name),
+					(v8::Local<v8::String>) String(ctx, get_name()),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Boolean>(),
@@ -677,6 +679,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		return Program::get_function(ctx, object, name);
 	}
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	v8::MaybeLocal<v8::Value> JSONModule::evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod) {
 		auto ctx = CTX(context, __func__);
 		auto self = (JSONModule *) Isolate::get_from_context(ctx)->get_module(mod->GetIdentityHash());
@@ -706,7 +709,6 @@ v8::Local<v8::FixedArray> import_assertions,
 		assert(0);
 	}
 
-#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	JSONModule::JSONModule(std::string name, std::string program_source) :
 		Source(name, program_source)
 	{

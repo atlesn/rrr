@@ -22,8 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "../util/E.hxx"
-#include "v8-value.h"
 
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+#  include <v8-value.h>
+#endif
 #include <v8.h>
 #include <forward_list>
 #include <map>
