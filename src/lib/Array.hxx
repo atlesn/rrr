@@ -39,13 +39,18 @@ namespace RRR {
 
 		template <typename T, typename L> void blob_split(L l) const {
 			const rrr_length element_length = value->total_stored_length / value->element_count;
-			RRR::util::DynExtVector<T>(
-				(T *) value->data,
-				value->total_stored_length,
-				element_length
-			).iterate([l, element_length] (T *data) {
-				l(data, element_length);
-			});
+			if (element_length == 0) {
+				l((T *) nullptr, 0);
+			}
+			else {
+				RRR::util::DynExtVector<T>(
+					(T *) value->data,
+					value->total_stored_length,
+					element_length
+				).iterate([l, element_length] (T *data) {
+					l(data, element_length);
+				});
+			}
 		}
 
 		template <typename T, typename L> void primitive_split(L l) const {
