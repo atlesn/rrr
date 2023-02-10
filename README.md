@@ -1,5 +1,4 @@
 ![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr-not-tall.svg)
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/atlesn/rrr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/atlesn/rrr/context:cpp)
 ![Build master](http://www.goliathdns.no/rrr/build-master.svg?a "Build status master")
 ![Build development](http://www.goliathdns.no/rrr/build-development.svg?a "Build status master")
 
