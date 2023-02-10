@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "log.h"
 #include "array_tree.h"
@@ -435,9 +436,9 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 				goto out_err;
 			}
 
-			if (length > 0xffffffff) {
-				RRR_MSG_0("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
-						start, type->identifier);
+			if (length > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Size argument '%s' in type definition '%s' was too long, max is %llu\n",
+						start, type->identifier, (unsigned long long) length);
 				ret = RRR_ARRAY_TREE_SOFT_ERROR;
 				goto out_err;
 			}
@@ -518,14 +519,14 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 		// start = integer_end; - Enable if more parsing is to be performed
 
 		if (item_count == 0) {
-			RRR_MSG_0("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
+			RRR_MSG_0("Item count definition @ was zero after type '%s'\n",
 					type->identifier);
 			ret = RRR_ARRAY_TREE_SOFT_ERROR;
 			goto out_err;
 		}
-		if (item_count > 0xffffffff) {
-			RRR_MSG_0("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
-					type->identifier);
+		if (item_count > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Item count definition @ was too big after type '%s', maximum value is %llu\n",
+					type->identifier, (unsigned long long) RRR_LENGTH_MAX);
 			ret = RRR_ARRAY_TREE_SOFT_ERROR;
 			goto out_err;
 		}
@@ -543,11 +544,8 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 	}
 
 	out_ok:
-		if (length > RRR_LENGTH_MAX || item_count > RRR_LENGTH_MAX) {
-			RRR_MSG_0("Length or item count overflow in __rrr_array_tree_interpret_identifier_and_size\n");
-			ret = RRR_ARRAY_TREE_SOFT_ERROR;
-			goto out_err;
-		}
+		assert(length <= RRR_LENGTH_MAX);
+		assert(item_count <= RRR_LENGTH_MAX);
 
 		*length_return = (rrr_length) length;
 		*item_count_return = (rrr_length) item_count;
@@ -1337,7 +1335,7 @@ int __rrr_array_tree_import_value_callback (
 		goto out;
 	}
 
-	if (new_value->definition->import == NULL) {
+	if (new_value->definition->do_import == NULL) {
 		RRR_BUG("BUG: No convert function found for type %d\n", new_value->definition->type);
 	}
 
@@ -1370,7 +1368,7 @@ int __rrr_array_tree_import_value_callback (
 	}
 
 	rrr_length parsed_bytes = 0;
-	if ((ret = new_value->definition->import (
+	if ((ret = new_value->definition->do_import (
 			new_value,
 			&parsed_bytes,
 			callback_data->pos,

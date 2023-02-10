@@ -13,6 +13,8 @@
 /src/rrr_auth
 /src/rrr_msgdb
 /src/rrr_msg
+/src/rrr_sub
+/src/rrr_js
 /src/test.sh
 /src/test.sh.log
 /src/test-suite.log

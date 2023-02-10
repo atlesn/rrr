@@ -223,6 +223,21 @@ static int socket_read_raw_complete_callback (
 	);
 }
 
+static void socket_read_raw_error_callback (
+		RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS
+) {
+	struct socket_data *data = arg;
+
+	(void)(read_session);
+	(void)(addr);
+	(void)(addr_len);
+	(void)(is_hard_err);
+	(void)(private_data);
+	(void)(data);
+
+	// Any error message goes here
+}
+
 struct socket_read_message_broker_callback_data {
 	struct socket_data *data;
 	struct rrr_msg_msg **message;
@@ -333,6 +348,8 @@ static int socket_start (
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				socket_read_raw_get_target_size_callback,
 				raw_callback_data,
+				socket_read_raw_error_callback,
+				data,
 				socket_read_raw_complete_callback,
 				data
 		);

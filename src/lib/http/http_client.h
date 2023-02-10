@@ -124,6 +124,7 @@ struct rrr_http_client_request_data {
 };
 
 struct rrr_http_client_request_callback_data {
+	struct rrr_http_client *http_client;
 	const struct rrr_http_client_request_data *data;
 
 	const char *request_header_host;

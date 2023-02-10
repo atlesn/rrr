@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
+#define RRR_READ_BUF_STACK_MAX_SIZE 8192
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 
 #define RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD  2 * 1024 * 1024
@@ -181,6 +182,11 @@ static int __rrr_read_message_using_callbacks (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -210,9 +216,26 @@ static int __rrr_read_message_using_callbacks (
 	int ret = RRR_READ_OK;
 	int ret_from_read = RRR_READ_OK;
 
+	char *buf_dynamic = NULL;
+	char buf_static[RRR_READ_BUF_STACK_MAX_SIZE];
+
 	rrr_biglength bytes = 0;
-	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
+
+	char *buf;
+
+	if (read_step_max_size > RRR_READ_BUF_STACK_MAX_SIZE) {
+		if ((buf_dynamic = rrr_allocate(read_step_max_size)) == NULL) {
+			RRR_MSG_0("Failed to allocate %" PRIrrrbl " bytes of read buffer in %s\n",
+					read_step_max_size, __func__);
+			ret = RRR_READ_HARD_ERROR;
+			goto out;
+		}
+		buf = buf_dynamic;
+	}
+	else {
+		buf = buf_static;
+	}
 
 	if ((read_session = function_get_read_session_with_overshoot(functions_callback_arg)) == NULL) {
 		if (function_read == NULL) {
@@ -409,6 +432,9 @@ static int __rrr_read_message_using_callbacks (
 		// OK is returned.
 		ret = function_get_target_size(read_session, functions_callback_arg);
 		if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE) {
+			if (function_get_target_size_error_callback != NULL) {
+				function_get_target_size_error_callback(read_session, ret == RRR_READ_HARD_ERROR, functions_callback_arg);
+			}
 			goto out;
 		}
 
@@ -496,6 +522,7 @@ static int __rrr_read_message_using_callbacks (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(buf_dynamic);
 	if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE && read_session != NULL) {
 		function_read_session_remove(read_session, functions_callback_arg);
 	}
@@ -513,6 +540,11 @@ int rrr_read_message_using_callbacks (
 		rrr_biglength ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
 				void *private_arg
 		),
 		int (*function_complete_callback) (
@@ -554,6 +586,7 @@ int rrr_read_message_using_callbacks (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			function_get_target_size,
+			function_get_target_size_error_callback,
 			function_complete_callback,
 			function_read,
 			function_get_read_session_with_overshoot,
@@ -575,6 +608,7 @@ int rrr_read_message_using_callbacks (
 				read_step_max_size,
 				read_max_size,
 				function_get_target_size,
+				function_get_target_size_error_callback,
 				function_complete_callback,
 				function_get_read_session_with_overshoot,
 				function_read_session_remove,
@@ -601,6 +635,11 @@ int rrr_read_message_using_callbacks_flush (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -623,6 +662,7 @@ int rrr_read_message_using_callbacks_flush (
 			0,
 			0,
 			function_get_target_size,
+			function_get_target_size_error_callback,
 			function_complete_callback,
 			NULL,
 			function_get_read_session_with_overshoot,

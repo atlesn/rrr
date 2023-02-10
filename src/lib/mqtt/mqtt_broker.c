@@ -887,7 +887,6 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) suback,
-					0,
 					__rrr_mqtt_broker_send_now_callback,
 					handle
 			),
@@ -937,7 +936,6 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) unsuback,
-					0,
 					__rrr_mqtt_broker_send_now_callback,
 					handle
 			),
@@ -1127,10 +1125,6 @@ void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
 	rrr_free(broker);
-}
-
-void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker) {
-	rrr_mqtt_common_data_notify_pthread_cancel(&broker->mqtt_data);
 }
 
 static int __rrr_mqtt_broker_read_callback (

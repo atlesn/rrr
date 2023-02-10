@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event.h"
 #include "event_struct.h"
 #include "event_collection.h"
+#include "event_collection_struct.h"
+#include "event_handle_struct.h"
 #include "../util/rrr_time.h"
 
 void rrr_event_collection_init (
@@ -88,7 +90,7 @@ static int __rrr_event_collection_push (
 		goto out;
 	}
 
-	if (collection->event_count == RRR_EVENT_COLLECTION_MAX) {
+	if (collection->event_count == RRR_EVENT_COLLECTION_STRUCT_MAX) {
 		RRR_BUG("BUG: No more room in event collection in rrr_event_collection_push\n");
 	}
 

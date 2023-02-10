@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_types.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
+#include "lib/event/event_collection_struct.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
@@ -53,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/util/rrr_time.h"
 #include "lib/util/posix.h"
+#include "lib/util/arguments.h"
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S 10
 
@@ -69,7 +71,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            'O',    "no-output",            "[-O|--no-output]"},
         {0,                            'P',    "plain-force",          "[-P|--plain-force]"},
         {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
-        {0,                            'H',    "http10-force",         "[-H|--http10-force]"},
+        {0,                            '0',    "http10-force",         "[-0|--http10-force]"},
+        {0,                            '2',    "http2-upgrade",        "[-2|--http2-upgrade]"},
         {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -142,17 +145,19 @@ static int __rrr_http_client_parse_config (
 
 	// HTTP CLIENT EXECUTABLE SPECIFIC PARAMETERS
 
+	// Multiple arguments write to upgrade_mode, the order of these matters
+	data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+
 	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 	}
-	else {
 #ifdef RRR_WITH_NGHTTP2
+	// Send upgrade: h2c etc. with http/1.1 
+	else if (cmd_exists(cmd, "http2-upgrade", 0)) {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
-#else
-		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-#endif
 	}
+#endif
 
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
 
@@ -216,7 +221,7 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	request_data->server= rrr_strdup(server);
+	request_data->server = rrr_strdup(server);
 	if (request_data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -279,34 +284,14 @@ static int __rrr_http_client_parse_config (
 	}
 
 	// HTTP port
-	const char *port = cmd_get_value(cmd, "port", 0);
-	uint64_t port_tmp = 0;
-	if (cmd_get_value (cmd, "port", 1) != NULL) {
-		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
-		ret = 1;
+	if ((ret = rrr_arguments_parse_port (
+			&request_data->http_port,
+			cmd,
+			"port",
+			request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS ? 443 : 80
+	)) != 0) {
 		goto out;
 	}
-	if (port != NULL) {
-		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
-			ret = 1;
-			goto out;
-		}
-	}
-	if (port_tmp == 0) {
-		if (request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-			port_tmp = 443;
-		}
-		else {
-			port_tmp = 80;
-		}
-	}
-	if (port_tmp < 1 || port_tmp > 65535) {
-		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
-		ret = 1;
-		goto out;
-	}
-	request_data->http_port = (uint16_t) port_tmp;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(array_tree_tmp);
@@ -375,11 +360,11 @@ static int __rrr_http_client_final_callback (
 			goto out;
 		}
 		else {
-			data_start += (rrr_nullsafe_len) bytes;
-			data_size -= (rrr_nullsafe_len) bytes;
-			if (data_size > (rrr_nullsafe_len) bytes) {
+			if ((rrr_nullsafe_len) bytes > data_size) {
 				RRR_BUG("BUG: Underflow in __rrr_http_client_final_callack\n");
 			}
+			data_start += (rrr_nullsafe_len) bytes;
+			data_size -= (rrr_nullsafe_len) bytes;
 		}
 	}
 
@@ -522,6 +507,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 			0, // No ratelimit max bytes
 			1 * 1024 * 1024 * 1024, // 1 GB
 			__rrr_http_client_send_websocket_frame_final_callback,
+			NULL,
 			&callback_data
 	)) != 0) {
 		goto out;
@@ -573,7 +559,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(raw_tmp);
 	rrr_array_clear(&array);
-	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE) {
+	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE && EVENT_INITIALIZED(http_client_data->event_stdin)) {
 		EVENT_REMOVE(http_client_data->event_stdin);
 	}
 	return ret;
@@ -653,7 +639,7 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	}
 
 	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
-		if (!EVENT_PENDING(data->event_stdin)) {
+		if (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) {
 			return RRR_EVENT_EXIT;
 		}
 	}

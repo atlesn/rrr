@@ -66,7 +66,7 @@ int rrr_socket_get_options_from_fd (
 );
 void *rrr_socket_get_private_data_from_fd (
 		int fd,
-		enum rrr_socket_private_data_class class,
+		enum rrr_socket_private_data_class class_,
 		size_t size
 );
 int rrr_socket_with_lock_do (

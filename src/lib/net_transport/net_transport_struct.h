@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
-#include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -50,11 +50,13 @@ struct rrr_nullsafe_str;
     uint16_t port,                                             \
     const char *host
 
-#define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD                                \
-    struct rrr_net_transport_handle *handle;                                     \
-    int (*get_target_size)(struct rrr_read_session *read_session, void *arg);    \
-    void *get_target_size_arg;                                                   \
-    int (*complete_callback)(struct rrr_read_session *read_session, void *arg);  \
+#define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD                                                      \
+    struct rrr_net_transport_handle *handle;                                                           \
+    int (*get_target_size)(struct rrr_read_session *read_session, void *arg);                          \
+    void *get_target_size_arg;                                                                         \
+    void (*get_target_size_error)(struct rrr_read_session *read_session, int is_hard_err, void *arg);  \
+    void *get_target_size_error_arg;                                                                   \
+    int (*complete_callback)(struct rrr_read_session *read_session, void *arg);                        \
     void *complete_callback_arg;
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS                \
@@ -103,6 +105,8 @@ struct rrr_nullsafe_str;
     const rrr_biglength ratelimit_max_bytes,                                    \
     int (*get_target_size)(struct rrr_read_session *read_session, void *arg),   \
     void *get_target_size_arg,                                                  \
+    void (*get_target_size_error)(struct rrr_read_session *read_session, int is_hard_err, void *arg), \
+    void *get_target_size_error_arg,                                            \
     int (*complete_callback)(struct rrr_read_session *read_session, void *arg), \
     void *complete_callback_arg
 

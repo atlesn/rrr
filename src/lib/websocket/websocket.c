@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -251,9 +252,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			INC_POSITION();
 		}
 
-		if (pos > sizeof(header)) {
-			RRR_BUG("BUG: pos exceeds header size in __rrr_websocket_transport_ctx_send_frame\n");
-		}
+		assert(pos <= sizeof(header));
 
 		if ((ret = rrr_net_transport_ctx_send_push_const(handle, header, pos)) != 0) {
 			RRR_DBG_1("Failed to send websocket header for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
@@ -562,6 +561,13 @@ int __rrr_websocket_receive_callback_interpret_step (
 	return ret;
 }
 
+void __rrr_websocket_get_target_size_error (struct rrr_read_session *read_session, int is_hard_err, void *arg) {
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(arg);
+	// Any error message goes here
+}
+
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
@@ -587,6 +593,8 @@ int rrr_websocket_transport_ctx_read_frames (
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
 			__rrr_websocket_get_target_size,
+			&callback_data,
+			__rrr_websocket_get_target_size_error,
 			&callback_data,
 			__rrr_websocket_receive_callback_interpret_step,
 			&callback_data

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/banner.h"
 #include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -89,6 +90,8 @@ struct httpserver_data {
 	int do_receive_websocket_rrr_message;
 	int do_disable_http2;
 	int do_get_response_from_senders;
+	int do_test_page_default_response;
+	int do_favicon_not_found_response;
 
 	rrr_setting_uint response_timeout_ms;
 
@@ -217,6 +220,8 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_test_page_default_response", do_test_page_default_response, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_favicon_not_found_response", do_favicon_not_found_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
 
 	if (data->do_get_response_from_senders) {
@@ -636,6 +641,27 @@ static void httpserver_response_data_destroy_void (
 	httpserver_response_data_destroy(data);
 }
 
+struct httpserver_field_value_search_callback_data {
+	const char *name;
+	const struct rrr_nullsafe_str *result;
+};
+		
+static int httpserver_field_value_search_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		const struct rrr_nullsafe_str *content_type,
+		void *arg
+) {
+	(void)(content_type);
+
+	struct httpserver_field_value_search_callback_data *callback_data = arg;
+	if (rrr_nullsafe_str_cmpto_case(name, callback_data->name) == 0) {
+		callback_data->result = value;
+		return RRR_READ_EOF;
+	}
+	return RRR_READ_OK;
+}
+
 static int httpserver_receive_callback_get_full_request_fields (
 		struct rrr_array *target_array,
 		struct httpserver_data *httpserver_data,
@@ -664,7 +690,7 @@ static int httpserver_receive_callback_get_full_request_fields (
 		goto out;
 	}
 
-	// http_method, http_endpoint, http_body, http_content_transfer_encoding, http_content_type
+	// http_method, http_endpoint, http_body, http_content_transfer_encoding, http_content_type, http_content_type_boundary
 
 	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
@@ -673,40 +699,77 @@ static int httpserver_receive_callback_get_full_request_fields (
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
+	if (ret != 0) {
+		goto out_value_error;
+	}
+
 	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
-		ret |= rrr_array_push_value_str_with_tag (
+		if ((ret = rrr_array_push_value_str_with_tag (
 				target_array,
 				"http_content_type",
 				value
-		);
+		)) != 0) {
+			goto out_value_error;
+		}
+
+		if (rrr_nullsafe_str_cmpto_case(content_type->value, "multipart/form-data") == 0) {
+			struct httpserver_field_value_search_callback_data callback_data = {
+				"boundary",
+				NULL
+			};
+
+			if ((ret = rrr_http_field_collection_iterate_as_strings (
+					&content_type->fields,
+					httpserver_field_value_search_callback,
+					&callback_data
+			)) != 0) {
+				if (ret != RRR_READ_EOF) {
+					RRR_MSG_0("Error while searching for boundary in content-type field in httpserver instance %s\n",
+							INSTANCE_D_NAME(httpserver_data->thread_data));
+					goto out;
+				}
+				if ((ret = rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_content_type_boundary", callback_data.result)) != 0) {
+					RRR_MSG_0("Failed to push content-type boundary value to array in httpserver instance %s\n",
+							INSTANCE_D_NAME(httpserver_data->thread_data));
+					goto out;
+				}
+			}
+			else {
+				RRR_MSG_0("Warning: boundary directive missing in multipart/form-data content-type field in httpserver instance %s\n",
+						INSTANCE_D_NAME(httpserver_data->thread_data));
+			}
+		}
 	}
 
 	if (content_transfer_encoding != NULL && rrr_nullsafe_str_isset(content_transfer_encoding->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_transfer_encoding->value);
-		ret |= rrr_array_push_value_str_with_tag (
+		if ((ret = rrr_array_push_value_str_with_tag (
 				target_array,
 				"http_content_transfer_encoding",
 				value
-		);
+		)) != 0) {
+			goto out_value_error;
+		}
 	}
 
 	if (body_len > 0) {
-		ret |= rrr_array_push_value_str_with_tag_with_size (
+		if ((ret = rrr_array_push_value_str_with_tag_with_size (
 				target_array,
 				"http_body",
 				body_ptr,
 				rrr_length_from_biglength_bug_const(body_len)
-		);
+		)) != 0) {
+			goto out_value_error;
+		}
 	}
 
-	if (ret != 0) {
-		RRR_MSG_0("Failed to add full request fields in httpserver_receive_callback_get_full_request_fields\n");
-		goto out;
-	}
-
+	goto out;
+	out_value_error:
+		RRR_MSG_0("Error while pushing full request fields to array in httpserver instance %s\n",
+				INSTANCE_D_NAME(httpserver_data->thread_data));
 	out:
-	return ret;
+		return ret;
 }
 
 static int httpserver_receive_callback_get_part_fields (
@@ -935,6 +998,50 @@ static int httpserver_async_response_process (
 	return ret;
 }
 
+static int httpserver_default_test_response_set (
+		struct rrr_http_transaction *transaction
+) {
+	int ret = 0;
+
+	char *body = NULL;
+	int body_len = 0;
+
+	if ((body_len = rrr_asprintf (
+			&body,
+			"<!DOCTYPE HTML>\r\n"
+			"<html>\r\n"
+			"<head>\r\n"
+			"<title>RRR %s Test Page</title>\r\n"
+			"</head>\r\n"
+			"<body>\r\n"
+			"<pre>\r\n"
+			"%s\r\n"
+			"</pre>\r\n"
+			"</body>\r\n"
+			"</html>\r\n",
+			VERSION,
+			rrr_banner
+	)) <= 0) {
+		RRR_MSG_0("Failed to allocate response body in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_send_body_set (
+			transaction,
+			body,
+			rrr_length_from_slength_bug_const(body_len)
+	)) != 0) {
+		goto out;
+	}
+
+	transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(body);
+	return ret;
+}
+
 static int httpserver_async_response_get_and_process (
 		struct httpserver_data *data,
 		const struct httpserver_response_data *response_data,
@@ -1062,6 +1169,12 @@ static int httpserver_receive_callback (
 
 	}
 
+	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		ret = RRR_HTTP_OK;
+		goto out;
+	}
+
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
@@ -1153,6 +1266,12 @@ static int httpserver_receive_callback (
 	if (data->do_get_response_from_senders) {
 		rrr_http_transaction_application_data_set(transaction, (void **) &response_data, httpserver_response_data_destroy_void);
 		ret = RRR_HTTP_NO_RESULT;
+	}
+	else if (data->do_test_page_default_response) {
+		if ((ret = httpserver_default_test_response_set (transaction)) != 0) {
+			goto out;
+		}
+		ret = RRR_HTTP_OK;
 	}
 
 	out:
@@ -1342,6 +1461,7 @@ static int httpserver_websocket_handshake_callback (
 		goto out_bad_request;
 	}
 
+	// Match only endpoint part
 	char *questionmark = strchr(topic_begin, '?');
 	if (questionmark) {
 		*questionmark = '\0';
@@ -1355,19 +1475,27 @@ static int httpserver_websocket_handshake_callback (
 
 	int topic_ok = 0;
 	RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->websocket_topic_filters);
-		if (rrr_mqtt_topic_match_str(topic_begin, node_tag)) {
+		if ((ret = rrr_mqtt_topic_match_str(node_tag, topic_begin)) != RRR_MQTT_TOKEN_MATCH) {
+			if (ret == RRR_MQTT_TOKEN_MISMATCH) {
+				RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
+						INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+						topic_begin,
+						node_tag);
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Error while matching topic in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
 			RRR_DBG_3("httpserver %s websocket topic '%s' matched with topic filter '%s'\n",
 					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
 					topic_begin,
 					node_tag);
 			topic_ok = 1;
 			break;
-		}
-		else {
-			RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
-					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
-					topic_begin,
-					node_tag);
 		}
 	RRR_MAP_ITERATE_END();
 
@@ -1415,6 +1543,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 
 	struct rrr_msg_msg *msg = entry->message;
 
+#if RRR_MSG_SIZE_MAX > RRR_LENGTH_MAX
 	if (MSG_DATA_LENGTH(msg) > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%" PRIu64 "\n",
 				unique_id,
@@ -1424,7 +1553,11 @@ static int httpserver_websocket_get_response_callback_extract_data (
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out_unlock;
 	}
-	else if (MSG_DATA_LENGTH(msg) == 0) {
+	else
+#else
+	(void)(unique_id);
+#endif
+	if (MSG_DATA_LENGTH(msg) == 0) {
 		if ((response_data = rrr_strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;

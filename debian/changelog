@@ -1,4 +1,76 @@
-rrr (1.23-1) bullseye; urgency=medium
+rrr (1.26-4) bullseye; urgency=medium
+
+  * RUNNING DEVELOPMENT RELEASE
+
+  * Improvements:
+    * Clarified inconsitency of manual with respect to configuration
+      paramter mqtt_publish_rrr_message
+    * Never send raw array data from mqttclient
+    * Remove stale configuration cmodule parameters sleep_time_ms and
+      nothing_happend_limit which had no effect when used.
+
+  * Fixes:
+    * Handling of websocket topic filters in httpserver
+    * Crash in httpclient when content-encoding: gzip was set from server with
+      zero length body
+
+  * Features
+    * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
+
+rrr (1.25-2) bullseye; urgency=medium
+
+  * Under the hood:
+    * Fix misc. code quality issues
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 26 Jun 2022 12:05:57 +0200
+
+rrr (1.25-1) bullseye; urgency=medium
+
+  * Changes:
+    * Argument '-f|--force', force read of unsupported array message version,
+      is removed from rrr_msg utility.
+
+  * Features:
+    * Add configurable delay between forks during startup
+    * New rrr_sub binary which can read RRR messages in the payload of MQTT
+      messages.
+    * Support gzip compression in HTTP server and client
+    * Default test page in HTTP server
+    * Option in HTTP server to produce 404 responses to /favicon.ico requets
+
+  * Improvements:
+    * Show IP address of remote host in error message when array data parsing
+      fails in IP module
+    * Extract boundary directive from content-type fields of type
+      multipart/form-data in httpserver
+    * New configuration parameter in httpclient to set content-type boundary
+      directive in incoming messages.
+    * If conversion from str to PyUnicode fails in python3 for array values,
+      fallback to PyByteArray with a warning
+    * Set CODE_FILE and CODE_LINE fields when logging to systemd-journald
+    * More aggressive cleanup of larger allocations in mmap channel to reduce
+      persistent memory usage in some situations.
+
+  * Fixes:
+    * Misc. features in python RRR array handling API not working correctly,
+      in particular handling of multibyte character sets
+    * cmodule test failed if it found the dummy module on the filesystem with
+      non-compatible version.
+
+  * Under the hood:
+    * Cleanups in net transport framework
+
+  * Other:
+    * Remove obsolete configuration parameter ip_persistent_connections
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:19:19 +0200
+
+rrr (1.23-2) bullseye; urgency=medium
 
   * Features:
     * Option in httpclient to silence error messages for PUT queries for a
@@ -33,7 +105,7 @@ rrr (1.23-1) bullseye; urgency=medium
   * Under the hood:
     * Cleanups in MQTT framework
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 23 Feb 2022 00:43:10 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 29 Mar 2022 09:26:52 +0200
 
 rrr (1.21-1) bullseye; urgency=medium
 

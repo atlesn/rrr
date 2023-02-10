@@ -142,6 +142,11 @@ int rrr_read_message_using_callbacks (
 				struct rrr_read_session *read_session,
 				void *private_arg
 		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
+				void *private_arg
+		),
 		int (*function_complete_callback) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -174,6 +179,11 @@ int rrr_read_message_using_callbacks_flush (
 		rrr_biglength read_max_size,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		void (*function_get_target_size_error_callback) (
+				struct rrr_read_session *read_session,
+				int is_hard_error,
 				void *private_arg
 		),
 		int (*function_complete_callback) (

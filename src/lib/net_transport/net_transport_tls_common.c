@@ -179,22 +179,6 @@ void rrr_net_transport_tls_common_read_remove_read_session (
 	rrr_read_session_collection_remove_session(&callback_data->handle->read_sessions, read_session);
 }
 
-int rrr_net_transport_tls_common_read_get_target_size (
-		struct rrr_read_session *read_session,
-		void *private_arg
-) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
-}
-
-int rrr_net_transport_tls_common_read_complete_callback (
-		struct rrr_read_session *read_session,
-		void *private_arg
-) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
-}
-
 // Caller must allocate size of ALPN vector + 1 byte. If to little is
 // allocated, empty string is returned. No that even though a vector with
 // one element is the exact size of the resulting output string, we must

@@ -45,7 +45,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../map.h"
 #include "../event/event.h"
+#include "../event/event_handle_struct.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 // The difference between these gives room for other operations
 // to take place during iteration, like communication with clients
@@ -1060,8 +1062,11 @@ static void __rrr_msgdb_client_event_iteration (
 		EVENT_REMOVE(client->iteration_event);
 	}
 
-	RRR_DBG_1("msgdb fd %i iteration time %lu remaining directories %i\n",
-		client->fd, rrr_time_get_64() - time_start, client->iteration_session != NULL ? RRR_LL_COUNT(&client->iteration_session->dirs) : 0);
+	RRR_DBG_1("msgdb fd %i iteration time %" PRIu64 " remaining directories %i\n",
+		client->fd,
+		rrr_time_get_64() - time_start,
+		client->iteration_session != NULL ? RRR_LL_COUNT(&client->iteration_session->dirs) : 0
+	);
 }
 
 static int __rrr_msgdb_server_client_new (

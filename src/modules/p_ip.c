@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/util/rrr_time.h"
@@ -103,7 +104,6 @@ struct ip_data {
 	int do_preserve_order;
 
 	int do_multiple_per_connection;
-	int do_persistent_connections_obsolete;
 
 	rrr_setting_uint close_grace_ms;
 	rrr_setting_uint persistent_timeout_ms;
@@ -121,6 +121,8 @@ struct ip_data {
 
 	char *default_topic;
 	uint16_t default_topic_length;
+	char *accept_topic;
+	uint16_t accept_topic_length;
 
 	char *target_host;
 	uint16_t target_port;
@@ -150,6 +152,7 @@ static void ip_data_cleanup(void *arg) {
 		rrr_array_tree_destroy(data->definitions);
 	}
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
+	RRR_FREE_IF_NOT_NULL(data->accept_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
 	RRR_FREE_IF_NOT_NULL(data->timeout_action_str);
@@ -326,6 +329,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_default_topic", default_topic, default_topic_length);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("ip_accept_topic", accept_topic, accept_topic_length);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_graylist_timeout_ms", graylist_timeout_ms, IP_DEFAULT_GRAYLIST_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
@@ -342,15 +346,9 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_strip_array_separators", do_strip_array_separators, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections_obsolete, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 1); // Default yes
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_persistent_timeout_ms", persistent_timeout_ms, IP_DEFAULT_PERSISTENT_TIMEOUT_MS);
-
-	if (RRR_INSTANCE_CONFIG_EXISTS("ip_persistent_connections")) {
-		RRR_MSG_0("Warning: Use of obsolete parameter 'ip_persistent_connections' in ip instance %s, use 'ip_persistent_timeout_ms' instead.\n",
-				config->name);
-	}
 
 	if (data->do_preserve_order && data->persistent_timeout_ms == 0) {
 		RRR_DBG_1("Note: ip_preserve_order is set while ip_persistent_timeout_ms is zero in ip instance %s, send order may not be guaranteed in all situations.\n",
@@ -634,6 +632,8 @@ static int ip_array_callback (
 		goto out;
 	}
 
+	// All entries are allocated within message broker context within
+	// ip_array_callback_broker, hence memory barrier is achieved.
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			&callback_data.new_entries,
@@ -645,6 +645,95 @@ static int ip_array_callback (
 
 	out:
 	rrr_msg_holder_collection_clear(&callback_data.new_entries);
+	return ret;
+}
+
+struct ip_accept_callback_data {
+	struct ip_data *data;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
+};
+
+static int ip_accept_callback_broker (struct rrr_msg_holder *entry, void *arg) {
+	struct ip_accept_callback_data *callback_data = arg;
+	struct ip_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			&msg,
+			MSG_TYPE_GET,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			data->accept_topic,
+			data->accept_topic_length,
+			NULL,
+			0
+	)) != 0) {
+		RRR_MSG_0("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_msg_holder_set_unlocked (
+			entry,
+			msg,
+			MSG_TOTAL_SIZE(msg),
+			callback_data->addr,
+			callback_data->addr_len,
+			RRR_IP_TCP
+	);
+	msg = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	rrr_msg_holder_unlock(entry);
+	return ret;
+}
+
+static int ip_accept_callback (
+		RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS
+) {
+	struct ip_data *data = arg;
+
+	(void)(private_data);
+
+	int ret = 0;
+
+	if (data->accept_topic != NULL) {
+		struct ip_accept_callback_data callback_data = {
+			data,
+			addr,
+			addr_len
+		};
+
+		if ((ret = rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				NULL,
+				0,
+				0,
+				NULL,
+				ip_accept_callback_broker,
+				&callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+		)) != 0) {
+			RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+	}
+
+	if (RRR_DEBUGLEVEL_2) {
+		char buf[128];
+		*buf = '\0';
+
+		rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+
+		RRR_DBG_2 ("ip instance %s accepted connection from %s\n",
+				INSTANCE_D_NAME(data->thread_data), buf);
+	}
+
+	out:
 	return ret;
 }
 
@@ -1089,9 +1178,6 @@ static int ip_push_raw (
 
 	if (send_size == 0) {
 		goto out;
-	}
-	if (send_size <= 0) {
-		RRR_BUG("BUG: Send size was < 0 in ip_send_raw\n");
 	}
 
 	// Configuration validation should produce an error if do_force_target is set
@@ -1873,6 +1959,22 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return ret;
 }
 
+static void ip_array_parse_error_callback(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+	struct ip_data *data = arg;
+
+	(void)(read_session);
+	(void)(private_data);
+
+	char buf[256];
+	*buf = '\0';
+	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+	RRR_MSG_0("ip instance %s failed to parse array data from %s%s\n",
+			INSTANCE_D_NAME(data->thread_data),
+			buf,
+			(is_hard_err ? " (hard_error)": "")
+	);
+}
+
 static void ip_event_setup (
 		struct ip_data *data,
 		struct rrr_socket_client_collection *collection,
@@ -1890,6 +1992,10 @@ static void ip_event_setup (
 			4096,
 			0, /* No message max size */
 			ip_array_callback,
+			data,
+			ip_array_parse_error_callback,
+			data,
+			ip_accept_callback,
 			data
 		);
 	}

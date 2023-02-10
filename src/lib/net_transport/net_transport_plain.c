@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 
 #include "net_transport_plain.h"
+#include "net_transport_common.h"
 
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
@@ -146,26 +147,6 @@ static int __rrr_net_transport_plain_connect (
 		return ret;
 }
 
-struct rrr_net_transport_plain_read_session {
-	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
-};
-
-static int __rrr_net_transport_plain_read_get_target_size_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
-}
-
-static int __rrr_net_transport_plain_read_complete_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
-}
-
 static int __rrr_net_transport_plain_read_message (
 		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
@@ -173,10 +154,12 @@ static int __rrr_net_transport_plain_read_message (
 
 	*bytes_read = 0;
 
-	struct rrr_net_transport_plain_read_session callback_data = {
+	struct rrr_net_transport_read_callback_data callback_data = {
 			handle,
 			get_target_size,
 			get_target_size_arg,
+			get_target_size_error,
+			get_target_size_error_arg,
 			complete_callback,
 			complete_callback_arg,
 	};
@@ -195,9 +178,11 @@ static int __rrr_net_transport_plain_read_message (
 			 RRR_READ_MESSAGE_FLUSH_OVERSHOOT),
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
-			__rrr_net_transport_plain_read_get_target_size_callback,
+			rrr_net_transport_common_read_get_target_size,
 			&callback_data,
-			__rrr_net_transport_plain_read_complete_callback,
+			rrr_net_transport_common_read_get_target_size_error_callback,
+			&callback_data,
+			rrr_net_transport_common_read_complete_callback,
 			&callback_data
 	);
 	*bytes_read += bytes_read_tmp;

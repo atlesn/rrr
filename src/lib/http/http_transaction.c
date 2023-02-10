@@ -29,7 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_part_multipart.h"
 #include "http_fields.h"
+#include "http_util.h"
 #include "../util/rrr_time.h"
+
+#define RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE 256
 
 uint64_t rrr_http_transaction_lifetime_get (
 		const struct rrr_http_transaction *transaction
@@ -243,6 +246,22 @@ int rrr_http_transaction_request_content_type_set (
 	return rrr_http_part_header_field_push_and_replace (transaction->request_part, "content-type", content_type);
 }
 
+int rrr_http_transaction_request_accept_encoding_set (
+		struct rrr_http_transaction *transaction,
+		const char *accept_encoding
+) {
+	return rrr_http_part_header_field_push_and_replace (transaction->request_part, "accept-encoding", accept_encoding);
+}
+
+
+int rrr_http_transaction_request_content_type_directive_set (
+		struct rrr_http_transaction *transaction,
+		const char *name,
+		const char *value
+) {
+	return rrr_http_part_header_field_push_subvalue(transaction->request_part, "content-type", name, value);
+}
+
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
 		struct rrr_http_transaction *transaction
@@ -412,11 +431,11 @@ int rrr_http_transaction_send_body_set_allocated (
 }
 
 static int __rrr_http_transaction_part_content_length_set (
-		struct rrr_http_transaction *transaction,
-		struct rrr_http_part *part
+		struct rrr_http_part *part,
+		const struct rrr_nullsafe_str *send_body
 ) {
 	char content_length_str[64];
-	sprintf(content_length_str, "%" PRIrrr_nullsafe_len, rrr_nullsafe_str_len(transaction->send_body));
+	sprintf(content_length_str, "%" PRIrrr_nullsafe_len, rrr_nullsafe_str_len(send_body));
 	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
 }
 
@@ -454,7 +473,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 	}
 
 	if (transaction->response_part->response_code != 204) {
-		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
+		if ((ret = __rrr_http_transaction_part_content_length_set(transaction->response_part, transaction->send_body)) != 0) {
 			goto out;
 		}
 	}
@@ -467,17 +486,35 @@ int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
 		int (*response_code_callback)(unsigned int response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(
-				struct rrr_http_part *request_part,
-				struct rrr_http_part *response_part,
-				const struct rrr_nullsafe_str *send_data,
-				void *arg
-		),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
+	struct rrr_nullsafe_str *send_body_encoded = NULL;
+
 	// The order of the function calls matter
+
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+	if (rrr_http_header_field_collection_has_subvalue (
+			&transaction->request_part->headers,
+			"accept-encoding",
+			"gzip"
+	) && rrr_nullsafe_str_len(transaction->send_body) > RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_empty (&send_body_encoded)) != 0) {
+			RRR_MSG_0("Failed to allocate nullsafe str in %s\n", __func__);
+			goto out;
+		}
+		if ((ret = rrr_http_util_encode (send_body_encoded, transaction->send_body, "gzip")) != 0) {
+			RRR_MSG_0("Failed to encode body in %s\n", __func__);
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push_and_replace (transaction->response_part, "content-encoding", "gzip")) != 0) {
+			goto out;
+		}
+		rrr_nullsafe_str_move(&transaction->send_body, &send_body_encoded);
+	}
+#endif
 
 	__rrr_http_transaction_response_code_ensure (transaction);
 
@@ -500,15 +537,14 @@ int rrr_http_transaction_response_prepare_wrapper (
 	}
 
 	if ((ret = final_callback (
-			transaction->request_part,
-			transaction->response_part,
-			transaction->send_body,
+			transaction,
 			callback_arg
 	)) != 0) {
 		goto out;
 	}
 
 	out:
+	rrr_nullsafe_str_destroy_if_not_null(&send_body_encoded);
 	return ret;
 }
 
@@ -526,7 +562,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 			void *arg
 		),
 		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
+		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -555,7 +591,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 	}
 
 	if (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) {
-		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->request_part)) != 0) {
+		if ((ret = __rrr_http_transaction_part_content_length_set( transaction->request_part, transaction->send_body)) != 0) {
 			goto out;
 		}
 	}
@@ -578,7 +614,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = final_callback(transaction->request_part, transaction->send_body, callback_arg)) != 0) {
+	if ((ret = final_callback(transaction, callback_arg)) != 0) {
 		goto out;
 	}
 

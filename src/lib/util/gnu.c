@@ -42,6 +42,7 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 #else*/
 	size_t size = strlen(format) * 2;
 	char *buf = NULL;
+	int retry_count = 0;
 
 	*resultp = NULL;
 
@@ -52,8 +53,6 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 		ret = -1;
 		goto out;
 	}
-
-	int retry_count = 0;
 
 	va_list args_tmp;
 	va_copy(args_tmp, args);

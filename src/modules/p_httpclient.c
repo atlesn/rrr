@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -115,6 +116,9 @@ struct httpclient_data {
 
 	char *content_type_tag;
 	int do_content_type_tag_force;
+
+	char *content_type_boundary_tag;
+	int do_content_type_boundary_tag_force;
 
 	char *format_tag;
 	int do_format_tag_force;
@@ -1343,11 +1347,13 @@ static int httpclient_session_query_prepare_callback (
 	rrr_length body_length = 0;
 	rrr_length format_length = 0;
 	rrr_length content_type_length = 0;
+	rrr_length content_type_boundary_length = 0;
 
 	char *endpoint_to_free = NULL;
 	char *body_to_free = NULL;
 	char *format_to_free = NULL;
 	char *content_type_to_free = NULL;
+	char *content_type_boundary_to_free = NULL;
 
 	struct rrr_array array_to_send_tmp = {0};
 
@@ -1390,10 +1396,27 @@ static int httpclient_session_query_prepare_callback (
 				goto out;
 			}
 
-			if ((content_type_to_free != NULL && content_type_length > 0) &&
-			    (ret = rrr_http_transaction_request_content_type_set (transaction, content_type_to_free)) != 0
-			) {
-				goto out;
+			if (content_type_to_free != NULL && content_type_length > 0) {
+				if ((ret = rrr_http_transaction_request_content_type_set (transaction, content_type_to_free)) != 0
+				) {
+					goto out;
+				}
+				if (strcasecmp(content_type_to_free, "multipart/form-data") == 0) {
+					if (data->content_type_boundary_tag == NULL) {
+						RRR_MSG_0("Warning: Configuration http_content_type_boundary_tag is not set in the configuration for httpclient instance %s while a request has a content type of multipart/form-data. The resulting request may be malformed\n", INSTANCE_D_NAME(data->thread_data));
+					}
+					else {
+						HTTPCLIENT_OVERRIDE_PREPARE(content_type_boundary);
+						HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(content_type_boundary);
+						if ((ret = rrr_http_transaction_request_content_type_directive_set (
+								transaction,
+								"boundary",
+								content_type_boundary_to_free
+						)) != 0) {
+							goto out;
+						}
+					}
+				}
 			}
 		}
 		else {
@@ -1513,6 +1536,7 @@ static int httpclient_session_query_prepare_callback (
 		RRR_FREE_IF_NOT_NULL(body_to_free);
 		RRR_FREE_IF_NOT_NULL(format_to_free);
 		RRR_FREE_IF_NOT_NULL(content_type_to_free);
+		RRR_FREE_IF_NOT_NULL(content_type_boundary_to_free);
 		return ret;
 }
 
@@ -1858,11 +1882,19 @@ static int httpclient_parse_config (
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
 	HTTPCLIENT_OVERRIDE_TAG_GET(content_type);
+	HTTPCLIENT_OVERRIDE_TAG_GET(content_type_boundary);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
 	HTTPCLIENT_OVERRIDE_TAG_GET(port);
 	HTTPCLIENT_OVERRIDE_TAG_GET(body);
+
+	if (data->content_type_boundary_tag != NULL && data->content_type_tag == NULL) {
+		RRR_MSG_0("Setting http_content_type_boundary_tag was set for instance %s while http_content_type_tag was not. This is an error.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
@@ -1920,6 +1952,7 @@ static int httpclient_parse_config (
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type_boundary);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(server);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
@@ -1988,7 +2021,9 @@ static void httpclient_queue_process (
 		}
 
 		// Always set this, also upon redirects
-		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2;
+		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 || data->http_client_config.do_no_http2_upgrade
+			? RRR_HTTP_UPGRADE_MODE_NONE
+			: RRR_HTTP_UPGRADE_MODE_HTTP2;
 
 		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
 				// Delete any message from message db upon TTL timeout
@@ -2190,6 +2225,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
 	RRR_FREE_IF_NOT_NULL(data->content_type_tag);
+	RRR_FREE_IF_NOT_NULL(data->content_type_boundary_tag);
 	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);

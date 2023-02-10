@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/allocator.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
@@ -206,10 +207,24 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
+	struct response_callback_data response_callback_data = {
+		data, 0
+	};
+
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			RRR_HTTP_APPLICATION_HTTP1,
 			handle,
-			RRR_HTTP_CLIENT_USER_AGENT
+			RRR_HTTP_CLIENT_USER_AGENT,
+			NULL,
+			NULL,
+			influxdb_receive_http_response,
+			&response_callback_data,
+			NULL, /* Failure callback, not implemented in InfluxDB) */
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -330,27 +345,13 @@ static void influxdb_send_data_callback (
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
-	struct response_callback_data response_callback_data = {
-			data, 0
-	};
-
 	rrr_biglength received_bytes = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
 				handle,
-				0, // No max read size
-				NULL,
-				NULL,
-				influxdb_receive_http_response,
-				&response_callback_data,
-				NULL, /* Failure callback, not implemented in InfluxDB) */
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL
+				0 // No max read size
 		)) != 0 && ret != RRR_READ_INCOMPLETE) {
 			RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
 					INSTANCE_D_NAME(data->thread_data));

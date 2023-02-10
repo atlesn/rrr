@@ -34,6 +34,7 @@ struct rrr_poll_collection;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_cmodule;
+struct rrr_cmodule_worker_callbacks;
 
 extern struct rrr_instance_event_functions rrr_cmodule_helper_event_functions;
 
@@ -61,6 +62,17 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
+int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS),
+		void *ping_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg
+);
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
 		unsigned int tick_interval_us,
@@ -71,16 +83,12 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 );
 void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 		unsigned long long int *count,
-		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *count,
-		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule
 );
 

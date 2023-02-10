@@ -93,6 +93,8 @@ int rrr_net_transport_ctx_read_message (
 		rrr_biglength ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
+		void (*get_target_size_error)(struct rrr_read_session *read_session, int is_hard_err, void *arg),
+		void *get_target_size_error_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
@@ -111,6 +113,8 @@ int rrr_net_transport_ctx_read_message (
 			ratelimit_max_bytes,
 			get_target_size,
 			get_target_size_arg,
+			get_target_size_error,
+			get_target_size_error_arg,
 			complete_callback,
 			complete_callback_arg
 	);

@@ -29,7 +29,7 @@ SEND_FIFO=./send_fifo
 SEND_FIFO_FILENAME=/tmp/rrr-test-fifo.sock
 
 SEND_WEBSOCKET="../rrr_http_client"
-SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /x -w"
+SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /test/x -w"
 
 fail () {
 	echo "Test $1 failed" 1>&2
@@ -160,6 +160,35 @@ do_test_socket test_http2.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf
+
+echo "With node: $RRR_WITH_NODE"
+if test "x$RRR_WITH_NODE" != 'xno'; then
+	if ! ../rrr_js < test_import.js; then
+		# Import test failed
+		exit 1
+	fi
+
+	./test_import_support.sh
+	case $? in
+		0)
+			if ! ../rrr_js < test_json_import.js; then
+				# Dynamic json import test failed
+				exit 1
+			fi
+			;;
+		2)
+			# OK, but assert import is not available
+			;;
+		*)
+			# Error while checking await import availibility
+			exit 1
+			;;
+	esac
+
+	echo "Import tests succeeded"
+
+	do_test_socket test_js.conf
+fi
 
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then

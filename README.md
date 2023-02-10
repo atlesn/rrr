@@ -65,6 +65,10 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## NEWS
 
+### v1.25
+ - gzip support in HTTP protocols
+ - `rrr_sub` binary to monitor RRR messages in MQTT traffic
+
 ### v1.23
  - Improve MQTT protocol support and control the MQTT client module by passing command messages
  - Possibility to invert the topic filter for instances
@@ -133,13 +137,14 @@ Some systems have customized branches, choose one of the following if appropriat
 	$ git checkout alpine
 	$ git checkout freebsd
 	$ git checkout ubuntu (Current LTS release)
+	$ git checkout ubuntu-focal (Old LTS release)
 	$ git checkout ubuntu-hirsute
 
 The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
 
 See the *COMPILE* section below for further information.
 
-#### Pre-compiled package for Debian Bullseye amd64/armhf using APT
+#### Pre-compiled package for Debian Bullseye i386/amd64/armhf using APT
 
 	$ su -
 	# apt install curl gnupg
@@ -149,16 +154,17 @@ See the *COMPILE* section below for further information.
 	# apt install rrr
 
 To use Debian Buster, replace "bullseye.list" with "buster.list".
-The i386 platform is available for Buster.
 
-#### Pre-compiled package for Ubuntu Focal amd64 using APT
+#### Pre-compiled package for Ubuntu Jammy Jellyfish amd64 using APT
 
 	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
-	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/jammy.list > /etc/apt/sources.list.d/goliathdns.list"
 	$ sudo apt update
 	$ sudo apt install rrr
 
-To use Ubuntu Hirsute, replace "focal.list" with "hirsute.list".
+To use Ubuntu Hirsute, replace "jammy.list" with "hirsute.list".
+
+To use Ubuntu Focal, replace "jammy.list" with "focal.list".
 
 #### Pre-compiled Fedora package using yum
 

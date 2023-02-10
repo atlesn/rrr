@@ -337,9 +337,6 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	PUT_RAW_WITH_LENGTH(publish->topic, (uint16_t) topic_len);
 
-	// Note : The separate dup variable overrides the value in type_flags.
-	RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(publish, publish->dup);
-
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0) {
 		PUT_U16(publish->packet_identifier);
 	}

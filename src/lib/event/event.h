@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #undef _GNU_SOURCE
 
+#include "event_handle_struct.h"
 #include "../read_constants.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
@@ -56,13 +57,7 @@ enum rrr_event_priority {
 
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
-typedef void *rrr_event;
 struct rrr_event_queue;
-
-typedef struct rrr_event_handle {
-	rrr_event event;
-	struct timeval interval;
-} rrr_event_handle;
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
@@ -175,9 +170,5 @@ static inline int rrr_event_pending (
 /* Change the timeout interval for the e, 0 disables timeout. EVENT_ADD should follow. */
 #define EVENT_INTERVAL_SET(e, us) \
     rrr_time_from_usec(&(e.interval), us)
-
-/* Check if e handle is initialized */
-#define EVENT_INITIALIZED(e) \
-    (e.event != NULL)
 
 #endif /* RRR_EVENT_H */

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,21 +50,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
 
-const char *cmodule_library_paths[] = {
-		"/usr/lib/rrr/cmodules",
-		"/lib/rrr/cmodules",
-		"/usr/local/lib/rrr/cmodules",
-		"./src/cmodules/.libs",
-		"./src/cmodules",
-		"../cmodules/.libs", // <!-- For test suite
-		"../cmodules", // <!-- For test suite
-		"./cmodules",
-		"./",
-		""
+const char * const cmodule_library_paths[] = {
+	"/usr/lib/rrr/cmodules",
+	"/lib/rrr/cmodules",
+	"/usr/local/lib/rrr/cmodules",
+	"./src/cmodules/.libs",
+	"./src/cmodules",
+	"./cmodules",
+	"./",
+	""
+};
+
+const char * const cmodule_library_paths_test[] = {
+	"../cmodules/.libs",
+	"../cmodules",
+	""
 };
 
 struct cmodule_data {
 	struct rrr_instance_runtime_data *thread_data;
+
+	int do_library_paths_test;
 
 	char *cmodule_name;
 	char *cleanup_function;
@@ -98,6 +104,9 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
+
+	/* Undocumented parameter, used in test suite only. */
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cmodule_library_paths_test", do_library_paths_test, 0);
 
 	out:
 	return ret;
@@ -145,9 +154,11 @@ static int __cmodule_load (
 
 	void *handle = NULL;
 
-	for (int i = 0; *(cmodule_library_paths[i]) != '\0'; i++) {
+	const char * const *library_paths = data->do_library_paths_test ? cmodule_library_paths_test : cmodule_library_paths;
+
+	for (int i = 0; *(library_paths[i]) != '\0'; i++) {
 		char path[256 + strlen(data->cmodule_name) + 1];
-		sprintf(path, "%s/%s.so", cmodule_library_paths[i], data->cmodule_name);
+		sprintf(path, "%s/%s.so", library_paths[i], data->cmodule_name);
 
 //		printf("check path %s\n", path);
 		struct stat buf;
@@ -217,9 +228,6 @@ static void __cmodule_application_cleanup (void *arg) {
 static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct cmodule_data *data = private_arg;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	int ret = 0;
 
 	struct cmodule_run_data run_data = {0};
@@ -233,18 +241,15 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 
 	run_data.data = data;
 	run_data.ctx.worker = worker;
+	callbacks->configuration_callback_arg = &run_data;
+	callbacks->process_callback_arg = &run_data;
 
 	pthread_cleanup_push(__cmodule_dl_unload, run_data.dl_ptr);
 	pthread_cleanup_push(__cmodule_application_cleanup, &run_data);
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&run_data,
-			process_callback,
-			&run_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions

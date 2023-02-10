@@ -1,6 +1,10 @@
+if RRR_WITH_NODE
+noinst_js=rrr_js
+endif
+
 SUBDIRS = lib modules tests python cmodules
-bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg
-noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb
+bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub
+noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb ${noinst_js}
 TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
@@ -56,6 +60,14 @@ rrr_msgdb_LDFLAGS = ${ldflags} -pie
 rrr_msg_SOURCES = rrr_msg.c main.c
 rrr_msg_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_msg_LDFLAGS = ${ldflags} -pie
+
+rrr_sub_SOURCES = rrr_sub.c main.c
+rrr_sub_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_sub_LDFLAGS = ${ldflags} -pie
+
+rrr_js_SOURCES = rrr_js.cxx
+rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS} -fpie
+rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS} -pie
 
 if RRR_WITH_PERL5
 all-local:

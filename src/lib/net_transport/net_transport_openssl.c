@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport_openssl.h"
 #include "net_transport_tls_common.h"
+#include "net_transport_common.h"
 
 #include "../socket/rrr_socket.h"
 #include "../rrr_openssl.h"
@@ -827,6 +828,8 @@ static int __rrr_net_transport_openssl_read_message (
 		handle,
 		get_target_size,
 		get_target_size_arg,
+		get_target_size_error,
+		get_target_size_error_arg,
 		complete_callback,
 		complete_callback_arg
 	};
@@ -841,8 +844,9 @@ static int __rrr_net_transport_openssl_read_message (
 			RRR_LL_FIRST(&handle->read_sessions),
 			ratelimit_interval_us,
 			ratelimit_max_bytes,
-			rrr_net_transport_tls_common_read_get_target_size,
-			rrr_net_transport_tls_common_read_complete_callback,
+			rrr_net_transport_common_read_get_target_size,
+			rrr_net_transport_common_read_get_target_size_error_callback,
+			rrr_net_transport_common_read_complete_callback,
 			__rrr_net_transport_openssl_read_read,
 			rrr_net_transport_tls_common_read_get_read_session_with_overshoot,
 			rrr_net_transport_tls_common_read_get_read_session,
@@ -958,8 +962,11 @@ static int __rrr_net_transport_openssl_handshake (
 
 	if (!SSL_is_server(ssl)) {
 		// TODO : Hostname verification
-
+#ifdef RRR_HAVE_GET1_PEER_CERTIFICATE
+		X509 *cert = SSL_get1_peer_certificate(ssl);
+#else
 		X509 *cert = SSL_get_peer_certificate(ssl);
+#endif
 		if (cert != NULL) {
 			X509_free(cert);
 		}

@@ -27,8 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_cmodule_config_data {
 	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_sleep_time_us;
-	rrr_setting_uint worker_nothing_happened_limit;
 	rrr_setting_uint worker_count;
 
 	int do_spawning;
