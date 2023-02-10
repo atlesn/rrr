@@ -27,10 +27,12 @@ passing messages to each other, and message passing is the only way for the modu
 
 Among other things, RRR can be used to:
 
-- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
-- Transfer messages using HTTP, WebSocket, MQTT, UDP or TCP
-- Modify messages using Perl or Python
-- Save messages using InfluxDB, MySQL or a customized save method
+- **Read**
+  Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
+- **Route**
+  Transfer messages using HTTP, WebSocket, MQTT, UDP or TCP
+- **Record**
+  Modify and process messages using Perl, Python or JavaScript. Save messages using InfluxDB, MySQL or a customized save method.
 
 Application examples may include:
 
@@ -63,6 +65,9 @@ The directory `/examples/` in the source tree or on github.com/atlesn/rrr contai
 The `.md` files contain the examples, and the source scripts and configuration files used in the examples are found alongside these.  
 
 ## NEWS
+
+### v1.27
+ - Support JavaScript modules by using the V8 JS engine
 
 ### v1.25
  - gzip support in HTTP protocols
