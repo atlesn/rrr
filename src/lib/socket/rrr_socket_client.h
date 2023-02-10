@@ -63,6 +63,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *private_data,                                     \
     void *arg
 
+#define RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS              \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    void *private_data,                                     \
+    void *arg
+
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
 struct rrr_read_session;
@@ -238,7 +244,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
 		void *array_callback_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
-		void *error_callback_arg
+		void *error_callback_arg,
+		int (*accept_callback)(RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS),
+		void *accept_callback_arg
 );
 void rrr_socket_client_collection_event_setup_ignore (
 		struct rrr_socket_client_collection *collection,

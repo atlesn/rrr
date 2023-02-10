@@ -122,12 +122,7 @@ int rrr_cmodule_main_worker_fork_start (
 		struct rrr_event_queue *notify_queue,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -153,8 +148,6 @@ int rrr_cmodule_main_worker_fork_start (
 			worker_queue,
 			cmodule->fork_handler,
 			cmodule->config_data.worker_spawn_interval_us,
-			cmodule->config_data.worker_sleep_time_us,
-			cmodule->config_data.worker_nothing_happened_limit,
 			cmodule->config_data.do_spawning,
 			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error
@@ -194,12 +187,7 @@ int rrr_cmodule_main_worker_fork_start (
 			cmodule->config_data.log_prefix,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	);
 
 	// Clean up any events created after forking
@@ -277,8 +265,6 @@ int rrr_cmodule_new (
 
 	// Default settings for modules which do not parse config
 	cmodule->config_data.worker_spawn_interval_us = RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS * 1000;
-	cmodule->config_data.worker_sleep_time_us = RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS * 1000;
-	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	// Memory map not allocated until needed

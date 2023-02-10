@@ -559,7 +559,7 @@ static struct rrr_python3_array_value_data *__rrr_python3_array_get_node_by_tag 
 	for (ssize_t i = 0; i < max; i++) {
 		PyObject *node = PyList_GET_ITEM(data->list, i);
 		struct rrr_python3_array_value_data *value = (struct rrr_python3_array_value_data *) node;
-		if (value->tag != NULL && PyUnicode_Compare(value->tag, tag) == 0) {
+		if ((value->tag == NULL && PyUnicode_CompareWithASCIIString(tag, "") == 0) || PyUnicode_Compare(tag, value->tag) == 0) {
 			return value;
 		}
 	}

@@ -65,7 +65,7 @@ void rrr_ip_to_str (char *dest, rrr_biglength dest_size, const struct sockaddr *
 
 		char buf[256];
 		*buf = '\0';
-		result = inet_ntop(addr->sa_family, addr_final, buf, 256);
+		result = inet_ntop(addr->sa_family, addr_final, buf, sizeof(buf));
 		buf[256 - 1] = '\0';
 
 		if (result == NULL) {
@@ -188,4 +188,30 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		*target_len = source_len;
 	out:
 	return;
+}
+
+int rrr_ip_check (
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	char buf[128];
+
+	struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) addr;
+	struct sockaddr_in *in = (struct sockaddr_in *) addr;
+
+	if (addr_len == sizeof(*in6) && addr->sa_family == AF_INET6) {
+		// OK
+	}
+	else if (addr_len == sizeof(*in) && addr->sa_family == AF_INET) {
+		// OK
+	}
+	else {
+		// NOT OK
+		return 1;
+	}
+
+	return inet_ntop(addr->sa_family, addr, buf, sizeof(buf)) == NULL
+		? 1
+		: 0
+	;
 }

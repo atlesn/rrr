@@ -45,7 +45,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../map.h"
 #include "../event/event.h"
+#include "../event/event_handle_struct.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 // The difference between these gives room for other operations
 // to take place during iteration, like communication with clients

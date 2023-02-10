@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
@@ -99,6 +100,10 @@ struct rrr_socket_client_collection {
 	// Callback for parse errors
 	void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS);
 	void *error_callback_arg;
+
+	// Callback for new accepted connections
+	int (*accept_callback)(RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS);
+	void *accept_callback_arg;
 };
 
 struct rrr_socket_client_fd {
@@ -1835,7 +1840,7 @@ static void __rrr_socket_client_event_accept (
 	int connected_fd = ret_tmp;
 
 	struct rrr_socket_client *client_new = NULL;
-	ret_tmp = __rrr_socket_client_collection_connected_fd_push (
+	if ((ret_tmp = __rrr_socket_client_collection_connected_fd_push (
 			&client_new,
 			collection,
 			connected_fd,
@@ -1843,7 +1848,16 @@ static void __rrr_socket_client_event_accept (
 			addr_len,
 			NULL,
 			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if (collection->accept_callback != NULL) {
+		if ((ret_tmp = collection->accept_callback((const struct sockaddr *) &addr, addr_len, client_new->private_data, collection->accept_callback_arg)) != 0) {
+			RRR_MSG_0("Error %i from accept callback in %s\n", ret_tmp, __func__);
+			goto out;
+		}
+	}
 
 	out:
 	if (ret_tmp != 0) {
@@ -2010,7 +2024,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
 		void *array_callback_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
-		void *error_callback_arg
+		void *error_callback_arg,
+		int (*accept_callback)(RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS),
+		void *accept_callback_arg
 ) {
 	collection->array_do_sync_byte_by_byte = do_sync_byte_by_byte;
 	collection->array_message_max_size = message_max_size;
@@ -2021,6 +2037,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 
 	collection->error_callback = error_callback;
 	collection->error_callback_arg = error_callback_arg;
+
+	collection->accept_callback = accept_callback;
+	collection->accept_callback_arg = accept_callback_arg;
 
 	__rrr_socket_client_collection_event_setup (
 			collection,

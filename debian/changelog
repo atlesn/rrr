@@ -1,4 +1,4 @@
-rrr (1.26-1) bullseye; urgency=medium
+rrr (1.26-4) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -6,11 +6,21 @@ rrr (1.26-1) bullseye; urgency=medium
     * Clarified inconsitency of manual with respect to configuration
       paramter mqtt_publish_rrr_message
     * Never send raw array data from mqttclient
+    * Remove stale configuration cmodule parameters sleep_time_ms and
+      nothing_happend_limit which had no effect when used.
 
   * Fixes:
     * Handling of websocket topic filters in httpserver
+    * Crash in httpclient when content-encoding: gzip was set from server with
+      zero length body
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Jun 2022 10:55:09 +0200
+  * Features
+    * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
 
 rrr (1.25-2) bullseye; urgency=medium
 

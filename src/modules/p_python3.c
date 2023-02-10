@@ -182,9 +182,6 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	int ret = 0;
 
-	(void)(process_callback_arg);
-	(void)(configuration_callback_arg);
-
 	struct python3_data *data = private_arg;
 	struct python3_child_data child_data = {0};
 
@@ -271,15 +268,12 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	child_data.config_function = config_function;
 	child_data.source_function = source_function;
 	child_data.process_function = process_function;
+	callbacks->configuration_callback_arg = &child_data;
+	callbacks->process_callback_arg = &child_data;
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&child_data,
-			process_callback,
-			&child_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions

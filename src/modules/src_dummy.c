@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 
 #define DUMMY_DEFAULT_SLEEP_INTERVAL_US 50 * 1000
 

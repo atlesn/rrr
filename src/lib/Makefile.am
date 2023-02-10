@@ -67,6 +67,14 @@ librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
 zlib_extra_ld = ${ZLIB_LDFLAGS}
 endif
 
+if RRR_WITH_NODE
+libadd_js = librrrjs.la
+librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/EventQueue.cxx js/Persistent.cxx
+librrrjs_la_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
+librrrjs_la_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
+js_extra_ld = ${NODE_LDFLAGS} ${NODE_LIBS}
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
        mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
@@ -121,8 +129,21 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
+if RRR_WITH_CXX
+lib_cxx=librrrcxx.la
+
+util_cxx = util/Readfile.cxx
+
+event_cxx = event/Event.cxx
+
+librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -lrrr ${js_extra_ld}
+librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
+endif
+
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
+                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c \
@@ -139,7 +160,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     ${input} ${input_system} ${helpers} ${websocket} \
 		    ${msgdb} ${event}
 
-lib_LTLIBRARIES = librrr.la ${lib_mysql}
+lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -200,5 +221,14 @@ libadd_all =                         \
     ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}
 
-noinst_LTLIBRARIES = ${libadd_all}
+if RRR_WITH_CXX
+libadd_all_cxx =                     \
+    ${libadd_js}
+endif
+
+noinst_LTLIBRARIES = ${libadd_all} ${libadd_all_cxx}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
+
+if RRR_WITH_CXX
+librrrcxx_la_LIBADD = ${libadd_all_cxx} -lpthread -ldl -lm -levent -levent_pthreads
+endif

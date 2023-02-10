@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "net_transport_tls.h"
 #endif
 
-#include "../event/event.h"
+#include "../event/event_collection.h"
 #include "../ip/ip_util.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"

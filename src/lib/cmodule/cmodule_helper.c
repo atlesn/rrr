@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../event/event_functions.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"
@@ -824,20 +825,6 @@ int rrr_cmodule_helper_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
 	data->worker_spawn_interval_us *= 1000;
 
-	// Input in ms, multiply by 1000
-	RRR_INSTANCE_CONFIG_STRING_SET("_sleep_time_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
-	data->worker_sleep_time_us *= 1000;
-
-	RRR_INSTANCE_CONFIG_STRING_SET("_nothing_happened_limit");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
-	if (data->worker_nothing_happened_limit < 1) {
-		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
 
@@ -863,12 +850,7 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	rrr_event_function_set (
 			INSTANCE_D_EVENTS(thread_data),
@@ -884,13 +866,44 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 			INSTANCE_D_EVENTS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	);
+}
+
+int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS),
+		void *ping_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg
+) {
+	struct rrr_cmodule_worker_callbacks callbacks = {
+		ping_callback,
+		ping_callback_arg,
+		configuration_callback,
+		configuration_callback_arg,
+		process_callback,
+		process_callback_arg,
+		NULL,
+		NULL
+	};
+
+	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
+		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+					thread_data,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					&callbacks
+		) != 0) {
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 int rrr_cmodule_helper_worker_forks_start (
@@ -902,23 +915,17 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					configuration_callback,
-					configuration_callback_arg,
-					process_callback,
-					process_callback_arg,
-					NULL,
-					NULL
-		) != 0) {
-			return 1;
-		}
-	}
-	return 0;
+	return rrr_cmodule_helper_worker_forks_start_with_ping_callback(
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			NULL,
+			NULL,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg
+	);
 }
 
 int rrr_cmodule_helper_worker_custom_fork_start (
@@ -931,16 +938,22 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 ) {
 	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
 
+	struct rrr_cmodule_worker_callbacks callbacks = {
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		custom_tick_callback,
+		custom_tick_callback_arg
+	};
+
 	return __rrr_cmodule_main_worker_fork_start_intermediate (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			&callbacks
 	);
 }
 

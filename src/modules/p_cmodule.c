@@ -228,9 +228,6 @@ static void __cmodule_application_cleanup (void *arg) {
 static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct cmodule_data *data = private_arg;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	int ret = 0;
 
 	struct cmodule_run_data run_data = {0};
@@ -244,18 +241,15 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 
 	run_data.data = data;
 	run_data.ctx.worker = worker;
+	callbacks->configuration_callback_arg = &run_data;
+	callbacks->process_callback_arg = &run_data;
 
 	pthread_cleanup_push(__cmodule_dl_unload, run_data.dl_ptr);
 	pthread_cleanup_push(__cmodule_application_cleanup, &run_data);
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&run_data,
-			process_callback,
-			&run_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions

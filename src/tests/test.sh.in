@@ -161,6 +161,35 @@ do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf
 
+echo "With node: $RRR_WITH_NODE"
+if test "x$RRR_WITH_NODE" != 'xno'; then
+	if ! ../rrr_js < test_import.js; then
+		# Import test failed
+		exit 1
+	fi
+
+	./test_import_support.sh
+	case $? in
+		0)
+			if ! ../rrr_js < test_json_import.js; then
+				# Dynamic json import test failed
+				exit 1
+			fi
+			;;
+		2)
+			# OK, but assert import is not available
+			;;
+		*)
+			# Error while checking await import availibility
+			exit 1
+			;;
+	esac
+
+	echo "Import tests succeeded"
+
+	do_test_socket test_js.conf
+fi
+
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then
 	do_test_socket test_perl5.conf
