@@ -1,6 +1,10 @@
-rrr (1.26-4) bullseye; urgency=medium
+rrr (1.27-1) bullseye; urgency=medium
 
-  * RUNNING DEVELOPMENT RELEASE
+  * Features
+    * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
 
   * Improvements:
     * Clarified inconsitency of manual with respect to configuration
@@ -13,14 +17,10 @@ rrr (1.26-4) bullseye; urgency=medium
     * Handling of websocket topic filters in httpserver
     * Crash in httpclient when content-encoding: gzip was set from server with
       zero length body
+    * Build with new major release of OpenSSL
+    * Build with Python 3.11
 
-  * Features
-    * New module to run JavaScript programs
-    * New parameter in ip module to generate empty messages when new
-      TCP connections are accepted.
-    * New parameter in httpclient to disable HTTP/2 upgrade headers
-
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Feb 2023 08:59:28 +0100
 
 rrr (1.25-2) bullseye; urgency=medium
 
