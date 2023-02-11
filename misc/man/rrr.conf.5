@@ -1853,11 +1853,6 @@ An appropriate Content-Type header will be sent according to standards.
 Messages with a body are otherwise not affected by this parameter.
 Defaults to 'urlencoded'.
 
-.It http_taint_tag=ARRAY TAG
-The specified tag of vain type will be added to generated response messages of array type.
-In addition, any received messages from senders in which this tag is present will be ignored.
-If left unset, no taint tag will be used.
-
 \(bu If
 .B get
 is used, any fields will be appended to the endpoint after a questionmark ?. GET requests have no body.
@@ -1944,6 +1939,11 @@ and
 resectively, and the same values may be used in the messages.
 
 Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
+
+.It http_taint_tag=ARRAY TAG
+The specified tag of vain type will be added to generated response messages of array type.
+In addition, any received messages from senders in which this tag is present will be ignored.
+If left unset, no taint tag will be used.
 
 .It http_meta_tags_ignore={yes|no}
 Ignore the above defined tags when array values to the HTTP query (controlled by)
