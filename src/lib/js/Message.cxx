@@ -108,7 +108,7 @@ namespace RRR::JS {
 		if (msg_addr == nullptr || RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr) == 0)
 			return;
 
-		memcpy(&ip_addr, &msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+		memcpy(&ip_addr, msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
 		ip_addr_len = (socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr);
 		switch (msg_addr->protocol) {
 			case RRR_IP_UDP:
@@ -381,11 +381,11 @@ namespace RRR::JS {
 		rrr_ip_to_str(ip_str, sizeof(ip_str), (const sockaddr *) &message->ip_addr, message->ip_addr_len);
 
 		if (rrr_ip_check((const struct sockaddr *) &message->ip_addr, message->ip_addr_len) != 0) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "No valid IP address in address field")));
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("No valid IP address in address field (") + ip_str + ")")));
 			return;
 		}
 		if (rrr_ip_to_str_and_port(&port, ip_str, sizeof(ip_str), (const struct sockaddr *) &message->ip_addr, message->ip_addr_len) != 0) {
-			isolate->ThrowException(v8::Exception::Error(String(isolate, "Conversion of IP address failed")));
+			isolate->ThrowException(v8::Exception::Error(String(isolate, std::string("Conversion of IP address failed (") + ip_str + ")")));
 			return;
 		}
 
