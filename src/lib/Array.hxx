@@ -117,7 +117,7 @@ namespace RRR {
 				case RRR_TYPE_FIXP:
 					primitive_split<rrr_fixp>(h);
 					break;
-				case RRR_TYPE_STR:
+				RRR_TYPE_CASE_STR:
 					blob_split<const char>(s);
 					break;
 				case RRR_TYPE_VAIN:

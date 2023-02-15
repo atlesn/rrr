@@ -23,6 +23,13 @@ let p = new Promise((resolve, reject) => {
 	new Timeout(() => {resolve("Done\n")}, 1000);
 }).then((msg) => {console.log(msg)});
 
+export function source(message) {
+	message.ip_set("127.0.0.1", "2001");
+	message.push_tag("data", "dasdsadsadas\n");
+	message.ip_so_type="TCP";
+	message.send();
+}
+
 export function process(message) {
 //	console.log("Process function topic " + message.topic + "\n");
 
@@ -46,5 +53,9 @@ export function process(message) {
 //	const buf = new ArrayBuffer(65536 * 16);
 //	message.push_tag("a", buf);
 
-	message.send();
+//	message.send();
+	//
+	const [ip, port] = message.ip_get();
+	const data = message.get_tag_all("data")[0];
+	console.log("From: " + ip + ":" + port + " Data: " + data + "\n");
 }
