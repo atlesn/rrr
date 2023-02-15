@@ -511,6 +511,7 @@ static void __rrr_socket_client_read_callback_address_deduct (
 ) {
 	switch (client->create_type) {
 		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND:
+		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND:
 			*result_addr = (const struct sockaddr *) &client->connected_fd->addr;
 			*result_addr_len = client->connected_fd->addr_len;
 		       break;
