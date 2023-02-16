@@ -1,4 +1,4 @@
-import {config, process} from "./rrr_test_module.js";
+import {config, source, process} from "./rrr_test_module.js";
 
 //console.log("Call config function\n");
 //config(new Message());
@@ -7,4 +7,4 @@ import {config, process} from "./rrr_test_module.js";
 //	console.log("Config in main\n");
 //}
 
-export {config,process};
+export {config, source, process};
