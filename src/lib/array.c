@@ -1275,6 +1275,29 @@ int rrr_array_message_clone_value_by_tag (
 	);
 }
 
+int rrr_array_message_append_to_array_by_tag (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	int ret = 0;
+
+	struct rrr_type_value *value = NULL;
+
+	if ((ret = rrr_array_message_clone_value_by_tag (&value, message_orig, tag)) != 0) {
+		goto out;
+	}
+
+	if (value == NULL) {
+		goto out;
+	}
+
+	RRR_LL_PUSH(target, value);
+
+	out:
+	return ret;
+}
+
 struct rrr_array_message_append_to_array_callback_data {
 	struct rrr_array *target_tmp;
 };

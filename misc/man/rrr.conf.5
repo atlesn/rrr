@@ -1,4 +1,4 @@
-.Dd 2023-01-28
+.Dd 2023-02-11
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1888,6 +1888,10 @@ If the
 .B force
 options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
 
+The parameter
+.B http_meta_tags_ignore
+controls whether or not these parameters are sent as-is along with queries in addition to their usual function.
+
 If
 .B http_content_type_boundary_tag_force
 is set to yes, the tag is only required to be present if the active content type is
@@ -1945,8 +1949,20 @@ The specified tag of vain type will be added to generated response messages of a
 In addition, any received messages from senders in which this tag is present will be ignored.
 If left unset, no taint tag will be used.
 
+.It http_report_tag=ARRAY TAG
+If set, and the given tag is present in any received messages from senders,
+the tag and its value will be added to any messages generated as a result of the query it produces.
+
+The parameter
+.B http_meta_tags_ignore
+controls whether or not this parameter is sent as-is along with queries in addition its usual function.
+
+The parameter
+.B http_receive_ignore_error_part_data
+controls whether or messages are generated for error responses.
+
 .It http_meta_tags_ignore={yes|no}
-Ignore the above defined tags when array values to the HTTP query (controlled by)
+Ignore any meta tags when array values to the HTTP query (controlled by)
 .B http_tags.
 If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
 
