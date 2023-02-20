@@ -107,6 +107,7 @@ enum rrr_type_enum {
 #define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)         ((type) == RRR_TYPE_MSG)
 #define RRR_TYPE_IS_STR(type)         ((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+#define RRR_TYPE_CASE_STR             case RRR_TYPE_STR: case RRR_TYPE_SEP: case RRR_TYPE_NSEP: case RRR_TYPE_STX
 #define RRR_TYPE_IS_STR_EXCACT(type)  ((type) == RRR_TYPE_STR)
 #define RRR_TYPE_IS_SEP(type)         ((type) == RRR_TYPE_SEP)
 #define RRR_TYPE_IS_NSEP(type)        ((type) == RRR_TYPE_NSEP)
