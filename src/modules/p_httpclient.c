@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -110,6 +110,7 @@ struct httpclient_data {
 	int do_meta_tags_ignore;
 
 	char *taint_tag;
+	char *report_tag;
 
 	char *method_tag;
 	int do_method_tag_force;
@@ -203,7 +204,7 @@ static int httpclient_transaction_data_new (
 
 	struct httpclient_transaction_data *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_httpclient_transaction_data_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -211,7 +212,7 @@ static int httpclient_transaction_data_new (
 	memset(result, '\0', sizeof(*result));
 
 	if ((result->msg_topic = rrr_allocate(topic_len + (rrr_biglength) 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for topic in rrr_httpclient_transaction_data_new\n");
+		RRR_MSG_0("Could not allocate memory for topic in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -245,7 +246,7 @@ static int httpclient_redirect_data_new (
 	struct httpclient_redirect_data *redirect_data;
 
 	if ((redirect_data = rrr_allocate(sizeof(*redirect_data))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in httpclient_redirect_data_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -351,8 +352,8 @@ static int httpclient_create_array_message (
 			);
 		}
 		else {
-			RRR_MSG_0("Failed to create array message in httpclient_create_array_message of httpclient instance %s\n",
-					INSTANCE_D_NAME(httpclient_data->thread_data));
+			RRR_MSG_0("Failed to create array message in %s of httpclient instance %s\n",
+					__func__, INSTANCE_D_NAME(httpclient_data->thread_data));
 		}
 		goto out;
 	}
@@ -426,14 +427,14 @@ static int httpclient_create_message_from_response_data_callback (
 	struct rrr_array array_tmp = {0};
 
 	if (rrr_nullsafe_str_len(callback_data->response_data) > 0xffffffff) { // Eight f's
-		RRR_MSG_0("HTTP length too long in httpclient_create_message_callback, max is 0xffffffff\n");
+		RRR_MSG_0("HTTP length too long in %s, max is 0xffffffff\n", __func__);
 		ret = RRR_MESSAGE_BROKER_DROP;
 		goto out;
 	}
 
 	if (RRR_LL_COUNT(callback_data->structured_data) != 0) {
 		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
-			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_response_data_callback\n");
+			RRR_MSG_0("Failed to clone structured data in %s\n", __func__);
 			goto out;
 		}
 
@@ -445,7 +446,7 @@ static int httpclient_create_message_from_response_data_callback (
 		}
 
 		if (ret != 0) {
-			RRR_MSG_0("Failed to push response data to array in httpclient_create_message_from_response_data_callback\n");
+			RRR_MSG_0("Failed to push response data to array in %s\n", __func__);
 			goto out;
 		}
 
@@ -471,7 +472,7 @@ static int httpclient_create_message_from_response_data_callback (
 				httpclient_create_message_from_response_data_nullsafe_callback,
 				&nullsafe_callback_data
 		)) != 0) {
-			RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
+			RRR_MSG_0("Failed to create message in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -538,11 +539,11 @@ static int httpclient_create_message_from_json_callback (
 
 	if (RRR_LL_COUNT(callback_data->structured_data) > 0) {
 		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
-			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_json_callback\n");
+			RRR_MSG_0("Failed to clone structured data in %s\n", __func__);
 			goto out;
 		}
 		if ((ret = rrr_array_append_from (&array_tmp, callback_data->array)) != 0) {
-			RRR_MSG_0("Failed to clone json data in httpclient_create_message_from_json_callback\n");
+			RRR_MSG_0("Failed to clone json data in %s\n", __func__);
 			goto out;
 		}
 		array_to_use = &array_tmp;
@@ -855,7 +856,7 @@ static int httpclient_final_callback (
 				"http_response_code",
 				(unsigned int) transaction->response_part->response_code
 		)) != 0)  {
-			RRR_MSG_0("Failed to push response code to array in httpclient_final_callback\n");
+			RRR_MSG_0("Failed to push response code to array in %s\n", __func__);
 			goto out;
 		}
 
@@ -867,7 +868,7 @@ static int httpclient_final_callback (
 					"http_content_type",
 					field->value
 			)) != 0) {
-				RRR_MSG_0("Failed to push content type to array in httpclient_final_callback A\n");
+				RRR_MSG_0("Failed to push content type to array in %s A\n", __func__);
 				goto out;
 			}
 		}
@@ -877,7 +878,7 @@ static int httpclient_final_callback (
 					"http_content_type",
 					""
 			)) != 0) {
-				RRR_MSG_0("Failed to push content type to array in httpclient_final_callback B\n");
+				RRR_MSG_0("Failed to push content type to array in %s B\n", __func__);
 				goto out;
 			}
 		}
@@ -888,7 +889,19 @@ static int httpclient_final_callback (
 				&structured_data,
 				httpclient_data->taint_tag
 		)) != 0) {
-			RRR_MSG_0("Failed to push taint tag value to array in httpclient_final_callback\n");
+			RRR_MSG_0("Failed to push taint tag value to array in %s\n", __func__);
+			goto out;
+		}
+	}
+
+	if (httpclient_data->report_tag != NULL && *(httpclient_data->report_tag) != '\0') {
+		rrr_msg_holder_lock(transaction_data->entry);
+		const struct rrr_msg_msg *msg = transaction_data->entry->message;
+		ret = rrr_array_message_append_to_array_by_tag(&structured_data, msg, httpclient_data->report_tag);
+		rrr_msg_holder_unlock(transaction_data->entry);
+
+		if (ret != 0) {
+			RRR_MSG_0("Failed to push report tag to array in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -1034,7 +1047,7 @@ static int httpclient_message_values_get (
 
 	uint16_t array_version_dummy;
 	if (rrr_array_message_append_to_array(&array_version_dummy, target_array, message) != 0) {
-		RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
+		RRR_MSG_0("Error while converting message to collection in %s\n", __func__);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -1051,7 +1064,7 @@ static int httpclient_get_metadata_from_message (
 
 	// Push timestamp
 	if (rrr_array_push_value_u64_with_tag(target_array, "timestamp", message->timestamp) != 0) {
-		RRR_MSG_0("Could not create timestamp array value in httpclient_get_values_from_message\n");
+		RRR_MSG_0("Could not create timestamp array value in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
@@ -1064,7 +1077,7 @@ static int httpclient_get_metadata_from_message (
 				MSG_TOPIC_PTR(message),
 				MSG_TOPIC_LENGTH(message)
 		) != 0) {
-			RRR_MSG_0("Could not create topic array value in httpclient_get_values_from_message\n");
+			RRR_MSG_0("Could not create topic array value in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -1078,7 +1091,7 @@ static int httpclient_get_metadata_from_message (
 				MSG_DATA_PTR(message),
 				MSG_DATA_LENGTH(message)
 		) != 0) {
-			RRR_MSG_0("Could not create data array value in httpclient_get_values_from_message\n");
+			RRR_MSG_0("Could not create data array value in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -1112,7 +1125,7 @@ static int httpclient_session_query_prepare_callback_process_override (
 	else if (RRR_TYPE_IS_STR_EXCACT(value->definition->type)) {
 		if (value->total_stored_length > 0) {
 			if ((data_to_free = rrr_allocate(value->total_stored_length + 1)) == NULL) {
-				RRR_MSG_0("Warning: Failed to allocate memory for data in httpclient_session_query_prepare_callback_process_override\n");
+				RRR_MSG_0("Warning: Failed to allocate memory for data in %s\n", __func__);
 				goto out_check_force;
 			}
 			memcpy(data_to_free, value->data, value->total_stored_length);
@@ -1269,17 +1282,17 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 	}
 
 	if ((ret = rrr_string_builder_new(&string_builder)) != 0) {
-		RRR_MSG_0("Could not create string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		RRR_MSG_0("Could not create string builder in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
-		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
-		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
 		goto out;
 	}
 
@@ -1361,7 +1374,7 @@ static int httpclient_session_query_prepare_callback (
 
 	if (data->http_header_accept) {
 		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "Accept", data->http_header_accept)) != 0) {
-			RRR_MSG_0("Failed to push Accept: header to request in httpclient_session_query_prepare_callback\n");
+			RRR_MSG_0("Failed to push Accept: header to request in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -1438,7 +1451,7 @@ static int httpclient_session_query_prepare_callback (
 	}
 
 	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(&array_to_send_tmp) > 0)) {
-		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_query_prepare_callback\n");
+		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in %s\n", __func__);
 	}
 
 	if (data->do_meta_tags_ignore) {
@@ -1772,7 +1785,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		char *topic_tmp = NULL;
 
 		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
-			RRR_MSG_0("Warning: Error while getting topic from message in httpclient_poll_callback\n");
+			RRR_MSG_0("Warning: Error while getting topic from message in %s\n", __func__);
 		}
 
 		RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 " topic '%s'\n",
@@ -1806,7 +1819,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));                                 \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0);                        \
     do {if (data->RRR_PASTE(parameter,_tag) != NULL && (ret = rrr_map_item_add_new(&data->meta_tags_all, data->RRR_PASTE(parameter,_tag), NULL)) != 0) {  \
-        RRR_MSG_0("Failed to add meta tag to map in httpclient_parse_config\n");                                                                          \
+        RRR_MSG_0("Failed to add meta tag to map in %s\n", __func__);                                                                          \
         ret = 1; goto out;                                                                                                                                \
     }} while(0)
 
@@ -1879,7 +1892,14 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
-
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_report_tag",
+		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_report_tag", report_tag);
+    		if ((ret = rrr_map_item_add_new(&data->meta_tags_all, "http_report_tag", NULL)) != 0) {
+			RRR_MSG_0("Failed to add meta tag in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+	);
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
 	HTTPCLIENT_OVERRIDE_TAG_GET(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_GET(content_type_boundary);
@@ -2223,6 +2243,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
+	RRR_FREE_IF_NOT_NULL(data->report_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
 	RRR_FREE_IF_NOT_NULL(data->content_type_tag);
 	RRR_FREE_IF_NOT_NULL(data->content_type_boundary_tag);
