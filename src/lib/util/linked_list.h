@@ -128,6 +128,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_LAST(head)                                      \
     ((head)->ptr_last)                                         \
 
+#define RRR_LL_PREV(node)                                      \
+    ((node)->ptr_prev)                                         \
+
 #define RRR_LL_DESTROY(head, type, destroy_func) do {          \
     type *node = (head)->ptr_first;                            \
     type *next = NULL;                                         \

@@ -221,6 +221,39 @@ int rrr_parse_match_letters_simple (
 	return ret;
 }
 
+static int __rrr_parse_match_char (char c, rrr_length flags) {
+	return (((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
+	        ((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
+	        ((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
+	        ((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
+	        ((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c)) ||
+	        ((flags & RRR_PARSE_MATCH_CONTROL) && RRR_PARSE_MATCH_C_CONTROL(c))
+	);
+}
+
+rrr_length rrr_parse_match_letters_peek (
+		const struct rrr_parse_pos *pos_orig,
+		rrr_length flags
+) {
+	struct rrr_parse_pos pos_tmp = *pos_orig;
+
+	char c;
+	while (!RRR_PARSE_CHECK_EOF(&pos_tmp)) {
+		c = pos_tmp.data[pos_tmp.pos];
+
+		if (!__rrr_parse_match_char(c, flags)) {
+			break;
+		}
+
+		rrr_length_inc_bug(&pos_tmp.pos);
+	}
+
+	return pos_tmp.pos - pos_orig->pos;
+}
+
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
@@ -230,29 +263,7 @@ void rrr_parse_match_letters (
 	*start = pos->pos;
 	*end = pos->pos;
 
-	char c = pos->data[pos->pos];
-	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
-				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
-				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
-				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
-				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
-				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
-				((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c))
-		) {
-			// OK
-		}
-		else {
-			break;
-		}
-
-		pos->pos++;
-		if (RRR_PARSE_CHECK_EOF(pos)) {
-			break;
-		}
-		c = pos->data[pos->pos];
-	}
+	rrr_length_add_bug(&pos->pos, rrr_parse_match_letters_peek(pos, flags));
 
 	*end = (rrr_slength) pos->pos - 1;
 }
@@ -271,15 +282,7 @@ void rrr_parse_match_until (
 	int found = 0;
 	char c = pos->data[pos->pos];
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
-				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
-				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
-				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
-				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
-				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
-				((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c))
-		) {
+		if (__rrr_parse_match_char(c, flags)) {
 			found = 1;
 			break;
 		}
@@ -313,6 +316,30 @@ void rrr_parse_non_newline (
 	char c = pos->data[pos->pos];
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
 		if (c == '\r' || c == '\n') {
+			break;
+		}
+
+		pos->pos++;
+		if (RRR_PARSE_CHECK_EOF(pos)) {
+			break;
+		}
+		c = pos->data[pos->pos];
+	}
+
+	*end = (rrr_slength) pos->pos - 1;
+}
+
+void rrr_parse_non_control (
+		struct rrr_parse_pos *pos,
+		rrr_length *start,
+		rrr_slength *end
+) {
+	*start = pos->pos;
+	*end = pos->pos;
+
+	char c = pos->data[pos->pos];
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		if (RRR_PARSE_MATCH_C_CONTROL(c)) {
 			break;
 		}
 

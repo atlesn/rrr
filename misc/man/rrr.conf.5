@@ -110,25 +110,23 @@ ELSE
 sep1#separator
 ;
 
-# Any number of named route definitions may be specified
+# Any number of named route definitions may be specified.
 # Modules with defined output routes may refer to these instead of having them defined inside each instance block.
 # Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
-# are interpreted as any other printable character.
+# are interpreted as any other printable character, except from when occuring after an operator or a keyword.
 
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
-# Values are pushed to a stack by placing one of the following keywords after them:
-# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message
+# Values are pushed to a stack by placing one of the following keywords in front of them:
+# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
 # - H - Has      - Push a boolean value indicating precence of a given array tag in a message
 # - I - Instance - Push an instance name to the stack
 
-# If T is used, the topic filter given is immediately checked against the topic of the message being processed and
-# a boolean value is pushed. If the message does not have a topic, a value of false will be pushed
-
-# Conditions are used after pushing elements to the stack. These require one or two arguments to be present
-# on the stack. After the condition has been run, the values are consumed and the result of the condition is
-# left on the stack. The route definition must be constructed such that no values are present on the stack
-# after processing.
+# Operators are used after pushing elements to the stack. These require one or two values to be present
+# on the stack. After an operator has been run, the values are consumed and the result of the condition is
+# pushed onto the stack. The route definition must be constructed such that no values are present on the stack
+# after processing, which means that a route definition usually ends with one or more POP operators.
 
 # The following operators may be used:
 # - AND    - Apply boolean AND on the two preceeding values and push the result.
@@ -140,28 +138,25 @@ sep1#separator
 
 # If a line begins with # (possibly with tab characters in front), this line is ignored.
 
-# The parsing of a definition ends where there would be no elements left on the stack, hence
-# the last element is removed using POP.
+# The parsing of a definition ends where there would be no elements left on the stack.
 
-# The following definition
+# Example:
 
 <ROUTE_DEFINITION_A>
 	# Push two topic filters to the stack
-	my_topic_a/+
-		T
-	my_topic_b/+
-		T
+	T my_topic_a/+
+	T my_topic_b/+
 	# Run OR operator on the two stack values, leaves a boolean value on the stack 
-		OR
+	OR
 	# Set the reader instance_receier_1 to receive messages matching one of the filters
-	instance_receiver_1
-		APPLY
+	I instance_receiver_1
+	APPLY
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
 	instance_receiver_2
 		APPLY
-	# Clear the stack
+	# Remove the remaining value from the stack
 		POP
 .fi
 .PP

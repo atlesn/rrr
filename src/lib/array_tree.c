@@ -322,7 +322,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 	(*parsed_bytes)++;
 
 	const char *tag_begin = (*start);
-	while (**start != '\0' && (RRR_PARSE_MATCH_C_LETTER(**start) || RRR_PARSE_MATCH_C_NUMBER(**start))) {
+	while (**start != '\0' && RRR_PARSE_MATCH_C_TAG(**start)) {
 		(*parsed_bytes)++;
 		(*start)++;
 	}
@@ -607,7 +607,7 @@ static int __rrr_array_tree_interpret_single_definition (
 		tag_start = start;
 
 		while (*start != '\0') {
-			if (!RRR_PARSE_MATCH_C_LETTER(*start) && !RRR_PARSE_MATCH_C_NUMBER(*start)) {
+			if (!RRR_PARSE_MATCH_C_TAG(*start)) {
 				RRR_MSG_0("Invalid character '%c' in tag name (decimal %u)\n", (*start), (unsigned char) (*start));
 				ret = RRR_ARRAY_TREE_SOFT_ERROR;
 				goto out;

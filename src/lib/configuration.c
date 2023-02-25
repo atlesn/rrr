@@ -67,7 +67,7 @@ static int __rrr_config_parse_name (
 	rrr_length start;
 	rrr_slength end;
 
-	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS|RRR_PARSE_MATCH_NUMBERS|RRR_PARSE_MATCH_DASH);
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NAME);
 
 	if (end < start) {
 		goto out;

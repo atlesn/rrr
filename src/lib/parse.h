@@ -24,6 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_types.h"
 
+// In RRR, a NAME may have letters, numbers, underscore and dash. On the other
+// hand, a TAG may have letters, numbers and underscore (but not dash).
+
 #define RRR_PARSE_MATCH_SPACE_TAB (1<<0)
 #define RRR_PARSE_MATCH_COMMAS    (1<<1)
 #define RRR_PARSE_MATCH_LETTERS   (1<<2)
@@ -33,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PARSE_MATCH_NULL      (1<<6)
 #define RRR_PARSE_MATCH_END       (1<<7)
 #define RRR_PARSE_MATCH_DASH      (1<<8)
+#define RRR_PARSE_MATCH_CONTROL   (1<<9)
+#define RRR_PARSE_MATCH_NAME      (RRR_PARSE_MATCH_LETTERS|RRR_PARSE_MATCH_NUMBERS|RRR_PARSE_MATCH_DASH)
+#define RRR_PARSE_MATCH_TAG       (RRR_PARSE_MATCH_LETTERS|RRR_PARSE_MATCH_NUMBERS)
 
 #define RRR_PARSE_CHECK_EOF(_pos)		\
 	((_pos)->pos >= (_pos)->size)
@@ -59,6 +65,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((c) == '\0')
 #define RRR_PARSE_MATCH_C_CONTROL(c)	\
 	((c) <= 0x1f)
+#define RRR_PARSE_MATCH_C_TAG(c)	\
+	(RRR_PARSE_MATCH_C_LETTER(c) || RRR_PARSE_MATCH_C_NUMBER(c))
 
 struct rrr_parse_pos {
 	const char *data;
@@ -96,6 +104,10 @@ int rrr_parse_match_word (
 int rrr_parse_match_letters_simple (
 		struct rrr_parse_pos *pos
 );
+rrr_length rrr_parse_match_letters_peek (
+		const struct rrr_parse_pos *pos,
+		rrr_length flags
+);
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
@@ -109,6 +121,11 @@ void rrr_parse_match_until (
 		rrr_length flags
 );
 void rrr_parse_non_newline (
+		struct rrr_parse_pos *pos,
+		rrr_length *start,
+		rrr_slength *end
+);
+void rrr_parse_non_control (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
 		rrr_slength *end
