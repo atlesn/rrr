@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,36 +39,39 @@ void rrr_parse_pos_init (
 	target->line_begin_pos = 0;
 }
 
-void rrr_parse_ignore_space_and_tab (
-		struct rrr_parse_pos *pos
+static int __rrr_parse_is_space_or_tab (
+		unsigned char c
 ) {
-	if (pos->pos >= pos->size) {
-		return;
-	}
-
-	char c = pos->data[pos->pos];
-
-	while ((c == ' ' || c == '\t') && pos->pos < pos->size) {
-		pos->pos++;
-		if (RRR_PARSE_CHECK_EOF(pos)) {
-			break;
-		}
-
-		c = pos->data[pos->pos];
-	}
+	return RRR_PARSE_MATCH_C_SPACE_TAB(c);
 }
 
-void rrr_parse_ignore_spaces_and_increment_line (
-		struct rrr_parse_pos *pos
+static int __rrr_parse_is_spaces (
+		unsigned char c
+) {
+	return RRR_PARSE_MATCH_C_SPACE_TAB(c) || RRR_PARSE_MATCH_C_NEWLINES(c);
+}
+
+static int __rrr_parse_is_control (
+		unsigned char c
+) {
+	return RRR_PARSE_MATCH_C_CONTROL(c);
+}
+
+static void __rrr_parse_ignore_and_increment_line (
+		struct rrr_parse_pos *pos,
+		int (*condition_cb)(unsigned char c)
 ) {
 	if (pos->pos >= pos->size) {
 		return;
 	}
 
-	char c = pos->data[pos->pos];
+	unsigned char c = (unsigned char) pos->data[pos->pos];
 
-	while ((c == ' ' || c == '\t' || c == '\n' || c == '\r') && pos->pos < pos->size) {
-		char next = pos->pos + 1 < pos->size ? pos->data[pos->pos + 1] : '\0';
+	// If the given condition_cb does not match newlines, line counting
+	// is not performed (parsing will stop at newlines).
+
+	while (condition_cb(c) && pos->pos < pos->size) {
+		unsigned char next = pos->pos + 1 < pos->size ? (unsigned char) pos->data[pos->pos + 1] : '\0';
 
 		if (c == '\r' && next == '\n') {
 			// Windows
@@ -92,8 +95,26 @@ void rrr_parse_ignore_spaces_and_increment_line (
 			break;
 		}
 
-		c = pos->data[pos->pos];
+		c = (unsigned char) pos->data[pos->pos];
 	}
+}
+
+void rrr_parse_ignore_space_and_tab (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_space_or_tab);
+}
+
+void rrr_parse_ignore_control_and_increment_line (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_control);
+}
+
+void rrr_parse_ignore_spaces_and_increment_line (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_spaces);
 }
 
 void rrr_parse_comment (
@@ -217,7 +238,8 @@ void rrr_parse_match_letters (
 				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
 				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
 				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
+				((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c))
 		) {
 			// OK
 		}
@@ -255,7 +277,8 @@ void rrr_parse_match_until (
 				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
 				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
 				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
+				((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c))
 		) {
 			found = 1;
 			break;

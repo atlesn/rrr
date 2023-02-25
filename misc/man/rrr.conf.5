@@ -1,4 +1,4 @@
-.Dd 2023-02-11
+.Dd 2023-02-25
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -64,6 +64,15 @@ wait_for=WAIT FOR,...
 # receive all messages. If set to no, the readers will compete over the messages (default mode).
 duplicate=yes
 
+# Set a route definition to apply on output messages to control which reader instance messages
+# are destined fore (optional). If not given, all readers may receive any message. If a route
+# definition is given, the duplicate keyword still controls wether or not messages may be
+# read by only one or multiple reader instances. To refer to a route definition specified outside
+# the block, enclose its name in angle brackets like <NAME>. The route definition syntax is given
+# below. Note that space character (ASCII 0x20) cannot be used to separate statements, use tab
+# character (ASCII 0x0B) instead.
+route=ROUTE DEFINITION
+
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
 
@@ -100,6 +109,60 @@ ELSE
 	;
 sep1#separator
 ;
+
+# Any number of named route definitions may be specified
+# Modules with defined output routes may refer to these instead of having them defined inside each instance block.
+# Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
+# are interpreted as any other printable character.
+
+# Postfix notation is used, and the route definition is processed from top to bottom.
+
+# Values are pushed to a stack by placing one of the following keywords after them:
+# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message
+# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
+# - I - Instance - Push an instance name to the stack
+
+# If T is used, the topic filter given is immediately checked against the topic of the message being processed and
+# a boolean value is pushed. If the message does not have a topic, a value of false will be pushed
+
+# Conditions are used after pushing elements to the stack. These require one or two arguments to be present
+# on the stack. After the condition has been run, the values are consumed and the result of the condition is
+# left on the stack. The route definition must be constructed such that no values are present on the stack
+# after processing.
+
+# The following operators may be used:
+# - AND    - Apply boolean AND on the two preceeding values and push the result.
+# - OR     - Apply boolean OR on the two preceeding values and push the result.
+# - NOT    - Apply boolean NOT on the preceeding value and push the result.
+# - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
+#            and an instance name to be present on the stack. Leaves the boolean value on the stack.
+# - POP    - Remove one value from the stack.
+
+# If a line begins with # (possibly with tab characters in front), this line is ignored.
+
+# The parsing of a definition ends where there would be no elements left on the stack, hence
+# the last element is removed using POP.
+
+# The following definition
+
+<ROUTE_DEFINITION_A>
+	# Push two topic filters to the stack
+	my_topic_a/+
+		T
+	my_topic_b/+
+		T
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+		OR
+	# Set the reader instance_receier_1 to receive messages matching one of the filters
+	instance_receiver_1
+		APPLY
+	# Invert the result
+		NOT
+	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
+	instance_receiver_2
+		APPLY
+	# Clear the stack
+		POP
 .fi
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.

@@ -31,8 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		
 #define RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS     void **block, \
                                                struct rrr_config *config, \
-                                               const void *name, \
-                                               rrr_length name_length, \
+                                               const char *name, \
 					       void *callback_arg
 #define RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS   void *block, const char *name, const char *value, void *callback_arg
 

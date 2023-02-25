@@ -63,51 +63,45 @@ static void __rrr_instance_config_destroy (
 
 static int __rrr_instance_config_new (
 		struct rrr_instance_config_data **result,
-		const char *name_begin,
-		const rrr_length name_length,
+		const char *name,
 		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees
 ) {
 	int ret = 0;
 
 	struct rrr_instance_config_data *instance_config = NULL;
-	char *name = NULL;
 
 	*result = NULL;
 
-	if ((name = rrr_allocate(name_length + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for name in __rrr_instance_config_new\b");
+	if ((instance_config = rrr_allocate_zero(sizeof(*instance_config))) == NULL) {
+		RRR_MSG_0("Could not allocate memory for name in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	if ((instance_config = rrr_allocate_zero(sizeof(*instance_config))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for name in __rrr_instance_config_new\n");
+	if ((instance_config->name = rrr_strdup(name)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for name in %s\b", __func__);
+		ret = 1;
+		goto out_free_config;
+	}
+
+	if ((instance_config->settings = rrr_settings_new(max_settings)) == NULL) {
+		RRR_MSG_0("Could not create settings structure in %s\n", __func__);
 		ret = 1;
 		goto out_free_name;
 	}
 
-	memcpy(name, name_begin, name_length);
-	name[name_length] = '\0';
-
-	instance_config->name = name;
-	instance_config->settings = rrr_settings_new(max_settings);
-	if (instance_config->settings == NULL) {
-		RRR_MSG_0("Could not create settings structure in __rrr_instance_config_new\n");
-		ret = 1;
-		goto out_free_config;
-	}
 	instance_config->global_array_trees = global_array_trees;
 
 	*result = instance_config;
 
 	goto out;
-
+//	out_free_settings:
+//		rrr_settings_destroy(instance_config->settings);
+	out_free_name:
+		rrr_free(instance_config->name);
 	out_free_config:
 		rrr_free(instance_config);
-		instance_config = NULL;
-	out_free_name:
-		rrr_free(name);
 	out:
 		return ret;
 }
@@ -560,7 +554,6 @@ static int __rrr_instance_config_new_block_callback (
 	if ((ret = __rrr_instance_config_new (
 			&instance_config,
 			name,
-			name_length,
 			RRR_INSTANCE_CONFIG_MAX_SETTINGS,
 			rrr_config_get_array_tree_list(config)
 	)) != 0) {

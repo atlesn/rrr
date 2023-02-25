@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,14 +24,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_types.h"
 
-#define RRR_PARSE_MATCH_SPACE_TAB	(1<<0)
-#define RRR_PARSE_MATCH_COMMAS		(1<<1)
-#define RRR_PARSE_MATCH_LETTERS		(1<<2)
-#define RRR_PARSE_MATCH_HEX			(1<<3)
-#define RRR_PARSE_MATCH_NUMBERS		(1<<4)
-#define RRR_PARSE_MATCH_NEWLINES	(1<<5)
-#define RRR_PARSE_MATCH_NULL		(1<<6)
-#define RRR_PARSE_MATCH_END			(1<<7)
+#define RRR_PARSE_MATCH_SPACE_TAB (1<<0)
+#define RRR_PARSE_MATCH_COMMAS    (1<<1)
+#define RRR_PARSE_MATCH_LETTERS   (1<<2)
+#define RRR_PARSE_MATCH_HEX       (1<<3)
+#define RRR_PARSE_MATCH_NUMBERS   (1<<4)
+#define RRR_PARSE_MATCH_NEWLINES  (1<<5)
+#define RRR_PARSE_MATCH_NULL      (1<<6)
+#define RRR_PARSE_MATCH_END       (1<<7)
+#define RRR_PARSE_MATCH_DASH      (1<<8)
 
 #define RRR_PARSE_CHECK_EOF(_pos)		\
 	((_pos)->pos >= (_pos)->size)
@@ -56,6 +57,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((c) >= '0' && (c) <= '9')
 #define RRR_PARSE_MATCH_C_NULL(c) 		\
 	((c) == '\0')
+#define RRR_PARSE_MATCH_C_CONTROL(c)	\
+	((c) <= 0x1f)
 
 struct rrr_parse_pos {
 	const char *data;
@@ -71,6 +74,9 @@ void rrr_parse_pos_init (
 		rrr_length size
 );
 void rrr_parse_ignore_space_and_tab (
+		struct rrr_parse_pos *pos
+);
+void rrr_parse_ignore_control_and_increment_line (
 		struct rrr_parse_pos *pos
 );
 void rrr_parse_ignore_spaces_and_increment_line (
