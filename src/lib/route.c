@@ -77,6 +77,7 @@ struct rrr_route_list {
 };
 
 struct rrr_route {
+	RRR_LL_NODE(struct rrr_route);
 	struct rrr_route_list list;
 };
 
@@ -138,6 +139,12 @@ static int __rrr_route_new (
 
 	out:
 	return ret;
+}
+
+void rrr_route_collection_clear (
+		struct rrr_route_collection *list
+) {
+	RRR_LL_DESTROY(list, struct rrr_route, rrr_route_destroy(node));
 }
 
 void rrr_route_destroy (
@@ -352,6 +359,11 @@ static int __rrr_route_parse (
 		if ((ret = __rrr_route_list_push(&route->list, type, op, (void **) &str_tmp)) != 0) {
 			goto out;
 		}
+
+		// Parsing is done when stack would have been empty
+		if (stack_size == 0) {
+			break;
+		}
 	}
 
 	if (stack_size != 0) {
@@ -369,15 +381,13 @@ static int __rrr_route_parse (
 }
 
 int rrr_route_interpret (
+		struct rrr_route_collection *target,
 		enum rrr_route_fault *fault,
-		struct rrr_route **result,
 		struct rrr_parse_pos *pos
 ) {
 	int ret = 0;
 
 	struct rrr_route *route = NULL;
-
-	*result = NULL;
 
 	if ((ret = __rrr_route_new(&route)) != 0) {
 		goto out;
@@ -387,7 +397,7 @@ int rrr_route_interpret (
 		goto out_destroy;
 	}
 
-	*result = route;
+	RRR_LL_APPEND(target, route);
 
 	goto out;
 	out_destroy:

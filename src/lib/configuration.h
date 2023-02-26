@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "settings.h"
 #include "array_tree.h"
+#include "route.h"
 
 #define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
 #define RRR_CONFIG_MAX_SIZE 16*1024*1024
@@ -37,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_config {
 	struct rrr_array_tree_list array_trees;
+	struct rrr_route_collection routes;
 };
 
 int rrr_config_new (

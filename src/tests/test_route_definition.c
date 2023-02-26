@@ -105,6 +105,8 @@ static const char *valids[] = {
 int rrr_test_route_definition(void) {
 	int ret = 0;
 
+	struct rrr_route_collection routes = {0};
+
 	assert(sizeof(fails)/sizeof(*fails) == sizeof(fail_codes)/sizeof(*fail_codes));
 
 	for (unsigned int i = 0; i < sizeof(fails)/sizeof(*fails); i++) {
@@ -118,9 +120,8 @@ int rrr_test_route_definition(void) {
 		rrr_parse_pos_init(&pos, fail, rrr_length_from_biglength_bug_const(strlen(fail)));
 
 		enum rrr_route_fault fault = 0;
-		struct rrr_route *route = NULL;
 		int ret_tmp = 0;
-		if ((ret_tmp = rrr_route_interpret (&fault, &route, &pos)) != 1) {
+		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos)) != 1) {
 			TEST_MSG(" NOT OK - Test '%s' did not fail as expected, result was %i fault was %i\n",
 					fail, ret_tmp, fault);
 			ret = 1;
@@ -132,8 +133,8 @@ int rrr_test_route_definition(void) {
 		}
 		else {
 			TEST_MSG(" -> OK\n");
+			assert(RRR_LL_COUNT(&routes) == 0);
 		}
-		assert(route == NULL);
 	}
 
 	for (unsigned int i = 0; i < sizeof(valids)/sizeof(*valids); i++) {
@@ -146,22 +147,24 @@ int rrr_test_route_definition(void) {
 		rrr_parse_pos_init(&pos, valid, rrr_length_from_biglength_bug_const(strlen(valid)));
 
 		enum rrr_route_fault fault = 0;
-		struct rrr_route *route = NULL;
 		int ret_tmp = 0;
-		if ((ret_tmp = rrr_route_interpret (&fault, &route, &pos)) != 0) {
-			assert(route == NULL);
+		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos)) != 0) {
 			assert(fault != 0);
 			TEST_MSG(" -> NOT OK - Test did not succeed as expected, result was %i fault was %i\n",
 					ret_tmp, fault);
 			ret = 1;
 		}
 		else {
-			assert(route != NULL);
 			assert(fault == 0);
 			TEST_MSG(" OK\n");
-			rrr_route_destroy(route);
 		}
 	}
+
+	if (ret == 0) {
+		assert(RRR_LL_COUNT(&routes) == sizeof(valids)/sizeof(*valids));
+	}
+
+	rrr_route_collection_clear(&routes);
 
 	return ret;
 }

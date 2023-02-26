@@ -22,8 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_ROUTE_H
 #define RRR_ROUTE_H
 
+#include "util/linked_list.h"
+
 struct rrr_route;
 struct rrr_parse_pos;
+
+struct rrr_route_collection {
+	RRR_LL_HEAD(struct rrr_route);
+};
 
 enum rrr_route_fault {
 	RRR_ROUTE_FAULT_OK,
@@ -36,12 +42,15 @@ enum rrr_route_fault {
 	RRR_ROUTE_FAULT_STACK_COUNT
 };
 
+void rrr_route_collection_clear (
+		struct rrr_route_collection *list
+);
 void rrr_route_destroy (
 		struct rrr_route *route
 );
 int rrr_route_interpret (
+		struct rrr_route_collection *target,
 		enum rrr_route_fault *fault,
-		struct rrr_route **result,
 		struct rrr_parse_pos *pos
 );
 

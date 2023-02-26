@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array_tree.h"
 #include "allocator.h"
 #include "socket/rrr_socket.h"
+#include "route.h"
 
 int rrr_config_new (struct rrr_config **result) {
 	struct rrr_config *config = NULL;
@@ -309,11 +310,10 @@ static int __rrr_config_parse_route (
 		struct rrr_parse_pos *pos
 ) {
 	int ret = 0;
-/*
-	struct rrr_route *new_route = NULL;
+
 	char *name = NULL;
 
-	if ((ret = __rrr_config_interpret_block_tag (&name, pos, '>')) != 0) {
+	if ((ret = __rrr_config_parse_name (&name, pos, '>')) != 0) {
 		goto out;
 	}
 
@@ -322,11 +322,13 @@ static int __rrr_config_parse_route (
 		goto out;
 	}
 
+	enum rrr_route_fault fault;
 	if (rrr_route_interpret (
-			&new_route,
-			pos,
-			name
+			&config->routes,
+			&fault,
+			pos
 	) != 0) {
+		RRR_MSG_0("Failed to parse route definition, error code was %u\n", fault);
 		ret = 1;
 		goto out;
 	}
@@ -335,18 +337,10 @@ static int __rrr_config_parse_route (
 		RRR_BUG("BUG: Parsed beyond end in %s\n", __func__);
 	}
 
-	RRR_LL_APPEND(&config->routes, new_route);
-	new_route = NULL;
-
 	goto out;
 	out:
-		if (new_route != NULL) {
-			rrr_route_destroy(new_route);
-		}
 		RRR_FREE_IF_NOT_NULL(name);
 		return ret;
-		*/
-		RRR_BUG("Routes not implemented\n");
 }
 
 static int __rrr_config_parse_any (
@@ -446,6 +440,7 @@ void rrr_config_destroy (
 		struct rrr_config *target
 ) {
 	rrr_array_tree_list_clear(&target->array_trees);
+	rrr_route_collection_clear(&target->routes);
 	rrr_free(target);
 }
 
