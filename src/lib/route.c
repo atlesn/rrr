@@ -29,11 +29,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
-// DO NOT change order of elements without understanding access macros
 enum rrr_route_element_type {
 	RRR_ROUTE_E_NONE,
 	RRR_ROUTE_E_TOPIC_FILTER,
 	RRR_ROUTE_E_ARRAY_TAG,
+	RRR_ROUTE_E_BOOL,
 	RRR_ROUTE_E_INSTANCE
 };
 
@@ -47,9 +47,7 @@ enum rrr_route_operator_type {
 	RRR_ROUTE_OP_POP
 };
 
-#define OP_ARG_COUNT(op) (op < RRR_ROUTE_OP_AND || op > RRR_ROUTE_OP_APPLY ? 1 : 2)
-#define OP_RES_COUNT(op) (op<=RRR_ROUTE_OP_APPLY ? 1 : 0)
-#define OP_DIFF(op)      (OP_RES_COUNT(op)-OP_ARG_COUNT(op))
+#define OP_ARG_COUNT(op) (op < RRR_ROUTE_OP_AND ? 0 : op > RRR_ROUTE_OP_APPLY ? 1 : 2)
 
 #define OP_NAME(op)                                 \
   (op == RRR_ROUTE_OP_PUSH ? "PUSH" :               \
@@ -66,12 +64,6 @@ struct rrr_route_element {
 	void *data;
 	rrr_length data_size;
 };
-
-#define STACK_E_IS_BOOL(e) \
-  (e->type == RRR_ROUTE_E_TOPIC_FILTER || e->type == RRR_ROUTE_E_ARRAY_TAG || (e->op >= RRR_ROUTE_OP_AND && e->op <= RRR_ROUTE_OP_NOT))
-
-#define STACK_E_IS_INSTANCE(e) \
-  (e->type == RRR_ROUTE_E_INSTANCE)
 
 struct rrr_route_list {
 	RRR_LL_HEAD(struct rrr_route_element);
@@ -100,6 +92,14 @@ static void __rrr_route_destroy (
 	__rrr_route_list_clear(&route->list);
 	rrr_free(route->name);
 	rrr_free(route);
+}
+
+static void __rrr_route_list_pop (
+		struct rrr_route_list *route
+) {
+	assert(RRR_LL_COUNT(route) > 0);
+	struct rrr_route_element *e = RRR_LL_POP(route);
+	__rrr_route_element_destroy(e);
 }
 
 static int __rrr_route_list_push (
@@ -144,6 +144,19 @@ static int __rrr_route_list_push (
 		return ret;
 }
 
+static int __rrr_route_list_push_bool (
+		struct rrr_route_list *route,
+		int result
+) {
+	return __rrr_route_list_push (
+			route,
+			RRR_ROUTE_E_BOOL,
+			RRR_ROUTE_OP_PUSH,
+			&result,
+			sizeof(result)
+	);
+}
+
 static int __rrr_route_list_add_from (
 		struct rrr_route_list *target,
 		const struct rrr_route_list *source
@@ -151,7 +164,7 @@ static int __rrr_route_list_add_from (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_route_element);
-		if ((ret = __rrr_route_list_push(
+		if ((ret = __rrr_route_list_push (
 				target,
 				node->type,
 				node->op,
@@ -252,6 +265,284 @@ void rrr_route_collection_iterate_names (
 	RRR_LL_ITERATE_END();
 }
 
+static int __rrr_route_execute_resolve_and_push (
+		struct rrr_route_list *stack,
+		const struct rrr_route_element *node,
+		int (*resolve_cb)(int *result, const char *data, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	int result = 0;
+
+	if ((ret = resolve_cb (&result, node->data, callback_arg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_route_list_push_bool (
+			stack,
+			result
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_route_execute_op_and (int a, int b) {
+	return a && b;
+}
+
+static int __rrr_route_execute_op_or (int a, int b) {
+	return a || b;
+}
+
+static int __rrr_route_execute_op_not (int a) {
+	return !a;
+}
+
+static int __rrr_route_execute_op_bool (
+		enum rrr_route_fault *fault,
+		struct rrr_route_list *stack,
+		int (*eval_one)(int a),
+		int (*eval_two)(int a, int b)
+) {
+	int ret = 0;
+
+	*fault = RRR_ROUTE_FAULT_OK;
+
+	const struct rrr_route_element *a = RRR_LL_LAST(stack);
+	const struct rrr_route_element *b = eval_two != NULL ? RRR_LL_PREV(a) : NULL;
+
+	if (a->type != RRR_ROUTE_E_BOOL || (eval_two != NULL && b->type != RRR_ROUTE_E_BOOL)) {
+		RRR_MSG_0("Operand(s) for operator were not of boolean type as expected\n");
+		*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
+		ret = 1;
+		goto out;
+	}
+
+	const int result = eval_one != NULL
+		? eval_one(*((int *)(a->data)))
+		: eval_two(*((int *)(a->data)), *((int*)(b->data)))
+	;
+
+	__rrr_route_list_pop(stack);
+	if (eval_two != NULL) {
+		__rrr_route_list_pop(stack);
+	}
+
+	if ((ret = __rrr_route_list_push_bool (
+			stack,
+			result
+	)) != 0) {
+		*fault = RRR_ROUTE_FAULT_CRITICAL;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+				
+static int __rrr_route_execute_op_apply (
+		enum rrr_route_fault *fault,
+		struct rrr_route_list *stack,
+		int (*apply_cb)(int result, const char *instance, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	*fault = RRR_ROUTE_FAULT_OK;
+
+	const struct rrr_route_element *a = RRR_LL_LAST(stack);
+	const struct rrr_route_element *b = RRR_LL_PREV(a);
+
+	if (b->type != RRR_ROUTE_E_BOOL) {
+		RRR_MSG_0("First operand for APPLY operator was not of boolean type as expected\n");
+		*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
+		ret = 1;
+		goto out;
+	}
+
+	if (a->type != RRR_ROUTE_E_INSTANCE) {
+		RRR_MSG_0("Second operand for APPLY operator was not of instance type as expected\n");
+		*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
+		ret = 1;
+		goto out;
+	}
+
+	assert(b->type == RRR_ROUTE_E_BOOL);
+
+	if ((ret = apply_cb(*((int*)(b->data)), a->data, callback_arg)) != 0) {
+		*fault = RRR_ROUTE_FAULT_CRITICAL;
+		goto out;
+	}
+
+	// Pop off instance name and leave boolean value
+	__rrr_route_list_pop(stack);
+
+	out:
+	return ret;
+}
+
+static int __rrr_route_execute_step (
+		enum rrr_route_fault *fault,
+		struct rrr_route_list *stack,
+		const struct rrr_route_element *node,
+		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
+		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		int (*apply_cb)(int result, const char *instance, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	*fault = RRR_ROUTE_FAULT_OK;
+
+	const int args = OP_ARG_COUNT(node->op);
+	if (args > RRR_LL_COUNT(stack)) {
+		RRR_MSG_0("Not enough elements on stack for operator %s\n", OP_NAME(node->op));
+		*fault = RRR_ROUTE_FAULT_STACK_COUNT;
+		ret = 1;
+		goto out;
+	}
+
+	switch (node->op) {
+		case RRR_ROUTE_OP_PUSH:
+			switch (node->type) {
+				case RRR_ROUTE_E_TOPIC_FILTER:
+					if ((ret = __rrr_route_execute_resolve_and_push (stack, node, resolve_topic_filter_cb, callback_arg)) != 0) {
+						*fault = RRR_ROUTE_FAULT_CRITICAL;
+						goto out;
+					}
+					break;
+				case RRR_ROUTE_E_ARRAY_TAG:
+					if ((ret = __rrr_route_execute_resolve_and_push (stack, node, resolve_array_tag_cb, callback_arg)) != 0) {
+						*fault = RRR_ROUTE_FAULT_CRITICAL;
+						goto out;
+					}
+					break;
+				case RRR_ROUTE_E_INSTANCE:
+					if ((ret = __rrr_route_list_push (
+							stack,
+							node->type,
+							node->op,
+							node->data,
+							node->data_size
+					)) != 0) {
+						*fault = RRR_ROUTE_FAULT_CRITICAL;
+						goto out;
+					}
+					break;
+				default:
+					assert(0);
+			};
+			break;
+		case RRR_ROUTE_OP_AND:
+			if ((ret = __rrr_route_execute_op_bool (
+					fault,
+					stack,
+					NULL,
+					__rrr_route_execute_op_and
+			)) != 0) {
+				goto out;
+			}
+			break;
+		case RRR_ROUTE_OP_OR:
+			if ((ret = __rrr_route_execute_op_bool (
+					fault,
+					stack,
+					NULL,
+					__rrr_route_execute_op_or
+			)) != 0) {
+				goto out;
+			}
+			break;
+		case RRR_ROUTE_OP_APPLY:
+			if ((ret = __rrr_route_execute_op_apply (
+					fault,
+					stack,
+					apply_cb,
+					callback_arg
+			)) != 0) {
+				goto out;
+			}
+			break;
+		case RRR_ROUTE_OP_NOT:
+			if ((ret = __rrr_route_execute_op_bool (
+					fault,
+					stack,
+					__rrr_route_execute_op_not,
+					NULL
+			)) != 0) {
+				goto out;
+			}
+			break;
+		case RRR_ROUTE_OP_POP:
+			__rrr_route_list_pop(stack);
+			break;
+	};
+
+	out:
+	return ret;
+}
+
+int rrr_route_execute (
+		enum rrr_route_fault *fault,
+		const struct rrr_route *route,
+		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
+		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		int (*apply_cb)(int result, const char *instance, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	*fault = RRR_ROUTE_FAULT_OK;
+
+	struct rrr_route_list stack = {0};
+
+	RRR_LL_ITERATE_BEGIN(&route->list, const struct rrr_route_element);
+		if ((ret = __rrr_route_execute_step (
+				fault,
+				&stack,
+				node,
+				resolve_topic_filter_cb,
+				resolve_array_tag_cb,
+				apply_cb,
+				callback_arg
+		)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	__rrr_route_list_clear(&stack);
+	return ret;
+}
+
+static int __rrr_route_parse_execute_resolve (
+		int *result,
+		const char *str,
+		void *arg
+) {
+	(void)(str);
+	(void)(arg);
+
+	*result = 1;
+
+	return 0;
+}
+
+static int __rrr_route_parse_execute_apply (
+		int result,
+		const char *str,
+		void *arg
+) {
+	(void)(result);
+	(void)(str);
+	(void)(arg);
+	return 0;
+}
+
 static int __rrr_route_parse (
 		enum rrr_route_fault *fault,
 		struct rrr_route *route,
@@ -259,6 +550,7 @@ static int __rrr_route_parse (
 ) {
 	int ret = 0;
 
+	struct rrr_route_list stack = {0};
 	char *str_tmp = NULL;
 
 	*fault = RRR_ROUTE_FAULT_OK;
@@ -271,8 +563,6 @@ static int __rrr_route_parse (
 		*fault = RRR_ROUTE_FAULT_END_MISSING;
 		goto out;
 	}
-
-	rrr_slength stack_size = 0;
 
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
 		enum rrr_route_element_type type = RRR_ROUTE_E_NONE;
@@ -393,64 +683,7 @@ static int __rrr_route_parse (
 			goto out;
 		}
 
-		stack_size++;
-
                 push:
-
-		if (op != RRR_ROUTE_OP_PUSH) {
-			if (stack_size < OP_ARG_COUNT(op)) {
-				RRR_MSG_0("Not enough values would be present on stack for operator %s (%" PRIrrrl " would be present but at least %i %s requried)\n",
-						OP_NAME(op), stack_size, OP_ARG_COUNT(op), OP_ARG_COUNT(op) == 1 ? "is" : "are");
-				ret = 1;
-				*fault = RRR_ROUTE_FAULT_VALUE_MISSING;
-				goto out;
-			}
-
-			const struct rrr_route_element *top = RRR_LL_LAST(&route->list);
-			const struct rrr_route_element *toptop = RRR_LL_PREV(top);
-
-			switch (op) {
-	                        case RRR_ROUTE_OP_AND:
-                        	case RRR_ROUTE_OP_OR:
-					if (!STACK_E_IS_BOOL(top) || !STACK_E_IS_BOOL(toptop)) {
-						RRR_MSG_0("Top two elements on stack would not be boolean types which is required by OR and AND operators\n");
-						ret = 1;
-						*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
-						goto out;
-					}
-	                                break;
-	                        case RRR_ROUTE_OP_APPLY:
-					if (!STACK_E_IS_INSTANCE(top)) {
-						RRR_MSG_0("Top element on stack would not be an instance name which is required by APPLY operator\n");
-						ret = 1;
-						*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
-						goto out;
-					}
-					if (!STACK_E_IS_BOOL(toptop)) {
-						RRR_MSG_0("Second topmost element on stack would not be a boolean which is required by APPLY operator\n");
-						ret = 1;
-						*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
-						goto out;
-					}
-					break;
-        	                case RRR_ROUTE_OP_NOT:
-                	        case RRR_ROUTE_OP_POP:
-					if (!STACK_E_IS_BOOL(top)) {
-						RRR_MSG_0("Top element was not a boolean which is required by POP and NOT operators\n");
-						ret = 1;
-						*fault = RRR_ROUTE_FAULT_INVALID_TYPE;
-						goto out;
-					}
-					break;
-	                        case RRR_ROUTE_OP_PUSH:
-				default:
-					assert(0);
-                        };
-                }
-
-		stack_size += OP_DIFF(op);
-
-		assert (stack_size >= 0);
 
 		if ((ret = __rrr_route_list_push (
 				&route->list,
@@ -463,13 +696,25 @@ static int __rrr_route_parse (
 			goto out;
 		}
 
+		if ((ret = __rrr_route_execute_step (
+				fault,
+				&stack,
+				RRR_LL_LAST(&route->list),
+				__rrr_route_parse_execute_resolve,
+				__rrr_route_parse_execute_resolve,
+				__rrr_route_parse_execute_apply,
+				NULL
+		)) != 0) {
+			goto out;
+		}
+
 		// Parsing is done when stack would have been empty
-		if (stack_size == 0) {
+		if (RRR_LL_COUNT(&stack) == 0) {
 			break;
 		}
 	}
 
-	if (stack_size != 0) {
+	if (RRR_LL_COUNT(&stack) != 0) {
 		// Happens if POP is missing and we reach EOF
 		RRR_MSG_0("Route definition would not have empty stack after execution, maybe there are not enough POP operators?\n");
 		ret = 1;
@@ -479,6 +724,7 @@ static int __rrr_route_parse (
 
 	goto out;
 	out:
+		__rrr_route_list_clear(&stack);
 		RRR_FREE_IF_NOT_NULL(str_tmp);
 		return ret;
 }

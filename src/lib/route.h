@@ -58,6 +58,14 @@ void rrr_route_collection_iterate_names (
 		void (*callback)(const char *name, void *arg),
 		void *callback_arg
 );
+int rrr_route_execute (
+		enum rrr_route_fault *fault,
+		const struct rrr_route *route,
+		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
+		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		int (*apply_cb)(int result, const char *instance, void *arg),
+		void *callback_arg
+);
 int rrr_route_interpret (
 		struct rrr_route_collection *target,
 		enum rrr_route_fault *fault,
