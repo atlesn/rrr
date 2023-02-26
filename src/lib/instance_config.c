@@ -251,42 +251,33 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	rrr_parse_ignore_space_and_tab(&pos);
 
 	if (rrr_parse_match_word(&pos, "{")) {
-		rrr_length start;
-		rrr_slength end;
-		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_NAME);
-		rrr_parse_ignore_space_and_tab(&pos);
-		if (rrr_parse_match_word(&pos, "}") && end > start) {
-			rrr_parse_ignore_space_and_tab(&pos);
-			if (!RRR_PARSE_CHECK_EOF(&pos)) {
-				RRR_MSG_0("Extra data found after array tree name enclosed by {} '%s'\n", target_str_tmp);
-				ret = 1;
-				goto out;
-			}
-
-			rrr_parse_str_extract(&array_tree_name_tmp, &pos, start, rrr_length_from_slength_bug_const(end));
-
-			const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
-					config->global_array_trees,
-					array_tree_name_tmp
-			);
-
-			if (array_tree == NULL) {
-				RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", array_tree_name_tmp);
-				ret = 1;
-				goto out;
-			}
-
-			if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
-				goto out;
-			}
-
-			goto out_save_tree;
+		if ((ret = rrr_parse_str_extract_name(&array_tree_name_tmp, &pos, '}')) != 0) {
+			RRR_MSG_0("Failed to parse array tree name indicated by {\n");
+			goto out;
 		}
-		else {
-			RRR_MSG_0("Missing end } in array tree name or non-letter characters encountered '%s'\n", target_str_tmp);
+
+		if (array_tree_name_tmp == NULL) {
+			RRR_MSG_0("Array tree name within {} was empty\n");
 			ret = 1;
 			goto out;
 		}
+
+		const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
+				config->global_array_trees,
+				array_tree_name_tmp
+		);
+
+		if (array_tree == NULL) {
+			RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", array_tree_name_tmp);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
+			goto out;
+		}
+
+		goto out_save_tree;
 	}
 
 	rrr_length definition_length = rrr_length_from_size_t_bug_const(strlen(target_str_tmp));
