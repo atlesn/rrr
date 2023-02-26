@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "log.h"
 #include "settings.h"
@@ -65,7 +66,8 @@ static int __rrr_instance_config_new (
 		struct rrr_instance_config_data **result,
 		const char *name,
 		const rrr_length max_settings,
-		const struct rrr_array_tree_list *global_array_trees
+		const struct rrr_array_tree_list *global_array_trees,
+		const struct rrr_route_collection *global_routes
 ) {
 	int ret = 0;
 
@@ -92,6 +94,7 @@ static int __rrr_instance_config_new (
 	}
 
 	instance_config->global_array_trees = global_array_trees;
+	instance_config->global_routes = global_routes;
 
 	*result = instance_config;
 
@@ -220,18 +223,18 @@ int rrr_instance_config_check_all_settings_used (
 	return ret;
 }
 
-int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
-		struct rrr_array_tree **target_array_tree,
+static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
 		struct rrr_instance_config_data *config,
-		const char *cmd_key
+		const char *cmd_key,
+		const char *tag_start,
+		const char *tag_end,
+		int (*name_callback)(const char *tag, void *arg),
+		int (*interpret_callback)(const char *str, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
-	*target_array_tree = NULL;
-
-	struct rrr_array_tree *new_tree = NULL;
-
-	char *array_tree_name_tmp = NULL;
+	char *name_tmp = NULL;
 	char *target_str_tmp = NULL;
 
 	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, config->settings, cmd_key)) != 0) {
@@ -250,69 +253,264 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	rrr_parse_pos_init(&pos, target_str_tmp, rrr_length_from_size_t_bug_const(strlen(target_str_tmp)));
 	rrr_parse_ignore_space_and_tab(&pos);
 
-	if (rrr_parse_match_word(&pos, "{")) {
-		if ((ret = rrr_parse_str_extract_name(&array_tree_name_tmp, &pos, '}')) != 0) {
-			RRR_MSG_0("Failed to parse array tree name indicated by {\n");
-			goto out;
-		}
+	if (rrr_parse_match_word(&pos, tag_start)) {
+		int comma;
+		do {
+			comma = 0;
 
-		if (array_tree_name_tmp == NULL) {
-			RRR_MSG_0("Array tree name within {} was empty\n");
-			ret = 1;
-			goto out;
-		}
+			RRR_FREE_IF_NOT_NULL(name_tmp);
+			if ((ret = rrr_parse_str_extract_name(&name_tmp, &pos, *tag_end)) != 0) {
+				RRR_MSG_0("Failed to parse name indicated by %s\n", tag_start);
+				goto out;
+			}
 
-		const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
-				config->global_array_trees,
-				array_tree_name_tmp
-		);
+			if (name_tmp == NULL) {
+				RRR_MSG_0("Name within %s%s was empty\n", tag_start, tag_end);
+				ret = 1;
+				goto out;
+			}
 
-		if (array_tree == NULL) {
-			RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", array_tree_name_tmp);
-			ret = 1;
-			goto out;
-		}
+			if ((ret = name_callback(name_tmp, callback_arg)) != 0) {
+				goto out;
+			}
 
-		if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
-			goto out;
-		}
+			rrr_parse_ignore_space_and_tab(&pos);
 
-		goto out_save_tree;
+			if (rrr_parse_match_word(&pos, ",")) {
+				rrr_parse_ignore_space_and_tab(&pos);
+				if (!rrr_parse_match_word(&pos, tag_start)) {
+					RRR_MSG_0("Expected tag start %s after comma\n");
+					ret = 1;
+					goto out;
+				}
+				comma = 1;
+			}
+		} while (comma);
+
+		goto out;
 	}
 
-	rrr_length definition_length = rrr_length_from_size_t_bug_const(strlen(target_str_tmp));
+	if ((ret = interpret_callback(target_str_tmp, callback_arg)) != 0) {
+		goto out;
+	}
 
-	// Replace terminating \0 with semicolon. We don't actually use the \0 to
-	// figure out where the end is when parsing the array. This adding of ;
-	// allows simple array definition to be specified without ; at the end.
-	target_str_tmp[definition_length] = ';';
+	out:
+	RRR_FREE_IF_NOT_NULL(target_str_tmp);
+	RRR_FREE_IF_NOT_NULL(name_tmp);
+	return ret;
+}
 
-	if (rrr_array_tree_interpret_raw (
-			&new_tree,
-			target_str_tmp,
-			rrr_length_inc_bug_const(definition_length),  // DO NOT use strlen here, string no longer has \0
-			"-"
-	)) {
-		RRR_MSG_0("Error while parsing array tree in setting %s in instance %s\n", cmd_key, config->name);
+struct rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_callback_data {
+	struct rrr_instance_config_data *config;
+	struct rrr_array_tree *new_tree;
+};
+
+static int __rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_name_callback (
+		const char *name,
+		void *arg
+) {
+	struct rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (callback_data->new_tree != NULL) {
+		RRR_MSG_0("Multiple array tree definitions are not allowed\n");
 		ret = 1;
 		goto out;
 	}
 
-	out_save_tree:
-		if (RRR_DEBUGLEVEL_1) {
-			rrr_array_tree_dump(new_tree);
-		}
+	const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
+			callback_data->config->global_array_trees,
+			name
+	);
 
-		*target_array_tree = new_tree;
-		new_tree = NULL;
+	if (array_tree == NULL) {
+		RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_array_tree_clone_without_data(&callback_data->new_tree, array_tree)) != 0) {
+		goto out;
+	}
+	
+	out:
+	return ret;
+}
+
+static int __rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_interpret_callback (
+		const char *str,
+		void *arg
+) {
+	struct rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *tmp;
+
+	if ((tmp = rrr_strdup(str)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	rrr_length definition_length = rrr_length_from_size_t_bug_const(strlen(tmp));
+
+	// Replace terminating \0 with semicolon. We don't actually use the \0 to
+	// figure out where the end is when parsing the array. This adding of ;
+	// allows simple array definition to be specified without ; at the end.
+	tmp[definition_length] = ';';
+
+	assert(callback_data->new_tree == NULL);
+
+	if (rrr_array_tree_interpret_raw (
+			&callback_data->new_tree,
+			tmp,
+			rrr_length_inc_bug_const(definition_length),  // DO NOT use strlen here, string no longer has \0
+			"-"
+	)) {
+		RRR_MSG_0("Error while interpreting array tree\n");
+		ret = 1;
+		goto out;
+	}
 
 	out:
-		RRR_FREE_IF_NOT_NULL(target_str_tmp);
-		RRR_FREE_IF_NOT_NULL(array_tree_name_tmp);
-		if (new_tree != NULL) {
-			rrr_array_tree_destroy(new_tree);
+	RRR_FREE_IF_NOT_NULL(tmp);
+	return ret;
+}
+
+int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
+		struct rrr_array_tree **target_array_tree,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+	*target_array_tree = NULL;
+
+	struct rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_callback_data callback_data = {
+		config,
+		NULL
+	};
+
+	if ((ret = __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
+			config,
+			cmd_key,
+			"{",
+			"}",
+			__rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_name_callback,
+			__rrr_instance_config_parse_array_tree_definition_from_config_silent_fail_interpret_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			goto out;
 		}
-		return ret;
+		else {
+			RRR_MSG_0("Failed while interpreting parameter %s of instance %s\n",
+					cmd_key,
+					config->name);
+		}
+		goto out;
+	}
+
+	assert(callback_data.new_tree != NULL);
+
+	*target_array_tree = callback_data.new_tree;
+
+	out:
+	return ret;
+}
+
+struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data {
+	struct rrr_instance_config_data *config;
+	struct rrr_route_collection *routes;
+};
+
+static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback (
+		const char *name,
+		void *arg
+) {
+	int ret = 0;
+	
+	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+
+	const struct rrr_route *route = rrr_route_collection_get (
+			callback_data->config->global_routes,
+			name
+	);
+
+	if (route == NULL) {
+		RRR_MSG_0("Route with name '%s' not found, check spelling\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_route_collection_add_cloned (callback_data->routes, route)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback (
+		const char *str,
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+
+	enum rrr_route_fault fault;
+	struct rrr_parse_pos pos;
+
+	rrr_parse_pos_init(&pos, str, rrr_length_from_size_t_bug_const(strlen(str)));
+
+	assert(RRR_LL_COUNT(callback_data->routes) == 0);
+
+	if ((ret = rrr_route_interpret (callback_data->routes, &fault, &pos, "anonymous")) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_instance_config_parse_route_definition_from_config_silent_fail (
+		struct rrr_route_collection *routes,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+
+	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data callback_data = {
+		config,
+		routes
+	};
+
+	if ((ret = __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
+			config,
+			cmd_key,
+			"<",
+			">",
+			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback,
+			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			goto out;
+		}
+		else {
+			RRR_MSG_0("Failed while interpreting parameter %s of instance %s\n",
+					cmd_key,
+					config->name);
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 struct parse_associative_list_to_map_callback_data {
@@ -546,7 +744,8 @@ static int __rrr_instance_config_new_block_callback (
 			&instance_config,
 			name,
 			RRR_INSTANCE_CONFIG_MAX_SETTINGS,
-			rrr_config_get_array_tree_list(config)
+			rrr_config_get_array_tree_list(config),
+			rrr_config_get_routes(config)
 	)) != 0) {
 		goto out;
 	}

@@ -45,8 +45,18 @@ enum rrr_route_fault {
 void rrr_route_collection_clear (
 		struct rrr_route_collection *list
 );
-void rrr_route_destroy (
-		struct rrr_route *route
+const struct rrr_route *rrr_route_collection_get (
+		const struct rrr_route_collection *list,
+		const char *name
+);
+int rrr_route_collection_add_cloned (
+		struct rrr_route_collection *list,
+		const struct rrr_route *route
+);
+void rrr_route_collection_iterate_names (
+		const struct rrr_route_collection *list,
+		void (*callback)(const char *name, void *arg),
+		void *callback_arg
 );
 int rrr_route_interpret (
 		struct rrr_route_collection *target,

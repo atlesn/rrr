@@ -265,6 +265,12 @@ static int __rrr_config_parse_route (
 		goto out;
 	}
 
+	if (rrr_route_collection_get(&config->routes, name) != NULL) {
+		RRR_MSG_0("Duplicate route definition name %s\n", name);
+		ret = 1;
+		goto out;
+	}
+
 	enum rrr_route_fault fault;
 	if (rrr_route_interpret (
 			&config->routes,
@@ -439,4 +445,10 @@ const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config
 ) {
 	return &config->array_trees;
+}
+
+const struct rrr_route_collection *rrr_config_get_routes (
+		struct rrr_config *config
+) {
+	return &config->routes;
 }

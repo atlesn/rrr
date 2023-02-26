@@ -57,5 +57,8 @@ int rrr_config_parse_file (
 const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config
 );
+const struct rrr_route_collection *rrr_config_get_routes (
+		struct rrr_config *config
+);
 
 #endif /* RRR_CONFIGURATION_H */

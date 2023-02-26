@@ -64,6 +64,7 @@ struct rrr_route_element {
 	enum rrr_route_element_type type;
 	enum rrr_route_operator_type op;
 	void *data;
+	rrr_length data_size;
 };
 
 #define STACK_E_IS_BOOL(e) \
@@ -93,11 +94,20 @@ static void __rrr_route_list_clear (struct rrr_route_list *route) {
 	RRR_LL_DESTROY(route, struct rrr_route_element, __rrr_route_element_destroy(node));
 }
 
+static void __rrr_route_destroy (
+		struct rrr_route *route
+) {
+	__rrr_route_list_clear(&route->list);
+	rrr_free(route->name);
+	rrr_free(route);
+}
+
 static int __rrr_route_list_push (
 		struct rrr_route_list *route,
 		enum rrr_route_element_type type,
 		enum rrr_route_operator_type op,
-		void **data
+		const void *data,
+		rrr_length data_size
 ) {
 	int ret = 0;
 
@@ -111,10 +121,46 @@ static int __rrr_route_list_push (
 
 	element->type = type;
 	element->op = op;
-	element->data = *data;
-	*data = NULL;
+	if (data != NULL) {
+		assert(data_size > 0);
+		if ((element->data = rrr_allocate(data_size)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for data in %s\n", __func__);
+			ret = 1;
+			goto out_free;
+		}
+		memcpy(element->data, data, data_size);
+		element->data_size = data_size;
+	}
+	else {
+		assert(data_size == 0);
+	}
 
 	RRR_LL_APPEND(route, element);
+
+	goto out;
+	out_free:
+		rrr_free(element);
+	out:
+		return ret;
+}
+
+static int __rrr_route_list_add_from (
+		struct rrr_route_list *target,
+		const struct rrr_route_list *source
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_route_element);
+		if ((ret = __rrr_route_list_push(
+				target,
+				node->type,
+				node->op,
+				node->data,
+				node->data_size
+		)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
@@ -155,15 +201,55 @@ static int __rrr_route_new (
 void rrr_route_collection_clear (
 		struct rrr_route_collection *list
 ) {
-	RRR_LL_DESTROY(list, struct rrr_route, rrr_route_destroy(node));
+	RRR_LL_DESTROY(list, struct rrr_route, __rrr_route_destroy(node));
 }
 
-void rrr_route_destroy (
-		struct rrr_route *route
+const struct rrr_route *rrr_route_collection_get (
+		const struct rrr_route_collection *list,
+		const char *name
 ) {
-	__rrr_route_list_clear(&route->list);
-	rrr_free(route->name);
-	rrr_free(route);
+	RRR_LL_ITERATE_BEGIN(list, const struct rrr_route);
+		if (strcmp(node->name, name) == 0) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+int rrr_route_collection_add_cloned (
+		struct rrr_route_collection *list,
+		const struct rrr_route *route
+) {
+	int ret = 0;
+
+	struct rrr_route *new_route;
+
+	if ((ret = __rrr_route_new (&new_route, route->name)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_route_list_add_from (&new_route->list, &route->list)) != 0) {
+		goto out_destroy;
+	}
+
+	RRR_LL_APPEND(list, new_route);
+
+	goto out;
+	out_destroy:
+		__rrr_route_destroy(new_route);
+	out:
+		return ret;
+}
+
+void rrr_route_collection_iterate_names (
+		const struct rrr_route_collection *list,
+		void (*callback)(const char *name, void *arg),
+		void *callback_arg
+) {
+	RRR_LL_ITERATE_BEGIN(list, const struct rrr_route);
+		callback(node->name, callback_arg);
+	RRR_LL_ITERATE_END();
 }
 
 static int __rrr_route_parse (
@@ -294,8 +380,7 @@ static int __rrr_route_parse (
 			goto out;
 		}
 
-		assert(str_tmp == NULL);
-
+		RRR_FREE_IF_NOT_NULL(str_tmp);
 		if ((ret = rrr_parse_str_extract(&str_tmp, pos, start, str_length + 1)) != 0) {
 			*fault = RRR_ROUTE_FAULT_CRITICAL;
 			goto out;
@@ -367,8 +452,14 @@ static int __rrr_route_parse (
 
 		assert (stack_size >= 0);
 
-		// Consumes the str_tmp upon success
-		if ((ret = __rrr_route_list_push(&route->list, type, op, (void **) &str_tmp)) != 0) {
+		if ((ret = __rrr_route_list_push (
+				&route->list,
+				type, op,
+				str_tmp,
+				str_tmp != NULL
+					? rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(str_tmp)))
+					: 0
+		)) != 0) {
 			goto out;
 		}
 
@@ -414,7 +505,7 @@ int rrr_route_interpret (
 
 	goto out;
 	out_destroy:
-		rrr_route_destroy(route);
+		__rrr_route_destroy(route);
 	out:
 		return ret;
 }
