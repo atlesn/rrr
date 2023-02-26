@@ -478,6 +478,63 @@ int rrr_parse_str_extract_until (
 	return 0;
 }
 
+int rrr_parse_str_extract_name (
+		char **name,
+		struct rrr_parse_pos *pos,
+		char end_char
+) {
+	int ret = 0;
+
+	char *name_tmp = NULL;
+
+	*name = NULL;
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos)) {
+		goto out;
+	}
+
+	rrr_length start;
+	rrr_slength end;
+
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NAME);
+
+	if (end < start) {
+		goto out;
+	}
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+
+	if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != end_char) {
+		goto out_missing_end_char;
+	}
+	rrr_length_inc_bug(&pos->pos);
+
+	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
+	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
+		goto out_failed_alloc;
+	}
+
+	memcpy(name_tmp, pos->data + start, name_length);
+	name_tmp[name_length] = '\0';
+
+	*name = name_tmp;
+	name_tmp = NULL;
+
+	goto out;
+	out_failed_alloc:
+		RRR_MSG_0("Could not allocate memory for name in %s\n", __func__);
+		ret = 1;
+		goto out;
+	out_missing_end_char:
+		RRR_MSG_0("End character %c missing after name\n", end_char);
+		ret = 1;
+		goto out;
+	out:
+		RRR_FREE_IF_NOT_NULL(name_tmp);
+		return ret;
+}
+
 void rrr_parse_str_strip_newlines (
 		char *str
 ) {

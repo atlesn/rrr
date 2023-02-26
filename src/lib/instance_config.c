@@ -253,7 +253,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	if (rrr_parse_match_word(&pos, "{")) {
 		rrr_length start;
 		rrr_slength end;
-		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_LETTERS | RRR_PARSE_MATCH_NUMBERS);
+		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_NAME);
 		rrr_parse_ignore_space_and_tab(&pos);
 		if (rrr_parse_match_word(&pos, "}") && end > start) {
 			rrr_parse_ignore_space_and_tab(&pos);

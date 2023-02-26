@@ -149,6 +149,11 @@ int rrr_parse_str_extract_until (
 		const char *str,
 		char end_char
 );
+int rrr_parse_str_extract_name (
+		char **name,
+		struct rrr_parse_pos *pos,
+		char end_char
+);
 void rrr_parse_str_strip_newlines (
 		char *str
 );
