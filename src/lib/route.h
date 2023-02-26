@@ -51,7 +51,8 @@ void rrr_route_destroy (
 int rrr_route_interpret (
 		struct rrr_route_collection *target,
 		enum rrr_route_fault *fault,
-		struct rrr_parse_pos *pos
+		struct rrr_parse_pos *pos,
+		const char *name
 );
 
 #endif /* RRR_ROUTE_H */

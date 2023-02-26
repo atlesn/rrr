@@ -79,6 +79,7 @@ struct rrr_route_list {
 struct rrr_route {
 	RRR_LL_NODE(struct rrr_route);
 	struct rrr_route_list list;
+	char *name;
 };
 
 static void __rrr_route_element_destroy (
@@ -120,7 +121,8 @@ static int __rrr_route_list_push (
 }
 
 static int __rrr_route_new (
-		struct rrr_route **result
+		struct rrr_route **result,
+		const char *name
 ) {
 	int ret = 0;
 
@@ -134,11 +136,20 @@ static int __rrr_route_new (
 		goto out;
 	}
 
+	if ((route->name = rrr_strdup(name)) == NULL) {
+		RRR_MSG_0("Could not allocate name in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
 	*result = route;
 	route = NULL;
 
+	goto out;
+	out_free:
+		rrr_free(route);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_route_collection_clear (
@@ -151,6 +162,7 @@ void rrr_route_destroy (
 		struct rrr_route *route
 ) {
 	__rrr_route_list_clear(&route->list);
+	rrr_free(route->name);
 	rrr_free(route);
 }
 
@@ -383,13 +395,14 @@ static int __rrr_route_parse (
 int rrr_route_interpret (
 		struct rrr_route_collection *target,
 		enum rrr_route_fault *fault,
-		struct rrr_parse_pos *pos
+		struct rrr_parse_pos *pos,
+		const char *name
 ) {
 	int ret = 0;
 
 	struct rrr_route *route = NULL;
 
-	if ((ret = __rrr_route_new(&route)) != 0) {
+	if ((ret = __rrr_route_new(&route, name)) != 0) {
 		goto out;
 	}
 

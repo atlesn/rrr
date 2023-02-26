@@ -121,7 +121,7 @@ int rrr_test_route_definition(void) {
 
 		enum rrr_route_fault fault = 0;
 		int ret_tmp = 0;
-		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos)) != 1) {
+		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos, fail)) != 1) {
 			TEST_MSG(" NOT OK - Test '%s' did not fail as expected, result was %i fault was %i\n",
 					fail, ret_tmp, fault);
 			ret = 1;
@@ -148,7 +148,7 @@ int rrr_test_route_definition(void) {
 
 		enum rrr_route_fault fault = 0;
 		int ret_tmp = 0;
-		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos)) != 0) {
+		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos, valid)) != 0) {
 			assert(fault != 0);
 			TEST_MSG(" -> NOT OK - Test did not succeed as expected, result was %i fault was %i\n",
 					ret_tmp, fault);

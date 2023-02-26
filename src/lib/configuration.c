@@ -326,7 +326,8 @@ static int __rrr_config_parse_route (
 	if (rrr_route_interpret (
 			&config->routes,
 			&fault,
-			pos
+			pos,
+			name
 	) != 0) {
 		RRR_MSG_0("Failed to parse route definition, error code was %u\n", fault);
 		ret = 1;
