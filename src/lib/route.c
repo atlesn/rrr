@@ -179,7 +179,11 @@ static int __rrr_route_parse (
 			break;
 		}
 	
-		if (rrr_parse_match_word(pos, "T")) {
+		if (rrr_parse_match_word(pos, "#")) {
+			rrr_parse_comment(pos);
+			continue;
+		}
+		else if (rrr_parse_match_word(pos, "T")) {
 			type = RRR_ROUTE_E_TOPIC_FILTER;
 		}
 		else if (rrr_parse_match_word(pos, "H")) {

@@ -99,7 +99,7 @@ const enum rrr_route_fault fail_codes[] = {
 static const char *valids[] = {
 	"H a T b\tAND\tPOP",
 	"H a T b\tOR\tPOP",
-	"H a I c\tAPPLY\tPOP"
+	"H a I c\tAPPLY\tPOP # Comment",
 };
 
 int rrr_test_route_definition(void) {
