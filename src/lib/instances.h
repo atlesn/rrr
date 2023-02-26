@@ -97,6 +97,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
+#define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;
@@ -192,9 +193,6 @@ int rrr_instance_collection_count (
 );
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
-);
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
-		struct rrr_instance_runtime_init_data *init_data
 );
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,

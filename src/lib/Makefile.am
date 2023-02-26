@@ -146,7 +146,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
                     ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
-                    message_broker.c map.c array.c array_tree.c route.c \
+                    message_broker.c map.c array.c array_tree.c route.c message_helper.c \
                     read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c modules.c \
 		    poll_helper.c msgdb_helper.c \

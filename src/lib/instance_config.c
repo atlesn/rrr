@@ -838,7 +838,7 @@ static int __rrr_instance_config_friend_collection_populate_from_config_callback
 
 	RRR_DBG_1("Added %s\n", INSTANCE_M_NAME(instance));
 
-	if ((ret = rrr_instance_friend_collection_append(data->collection, instance)) != 0) {
+	if ((ret = rrr_instance_friend_collection_append(data->collection, instance, NULL)) != 0) {
 		goto out;
 	}
 

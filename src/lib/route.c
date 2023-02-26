@@ -486,7 +486,7 @@ static int __rrr_route_execute_step (
 	return ret;
 }
 
-int rrr_route_execute (
+static int __rrr_route_execute (
 		enum rrr_route_fault *fault,
 		const struct rrr_route *route,
 		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
@@ -516,6 +516,35 @@ int rrr_route_execute (
 
 	out:
 	__rrr_route_list_clear(&stack);
+	return ret;
+}
+
+int rrr_route_collection_execute (
+		enum rrr_route_fault *fault,
+		const struct rrr_route_collection *collection,
+		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
+		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		int (*apply_cb)(int result, const char *instance, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	*fault = RRR_ROUTE_FAULT_OK;
+
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_route);
+		if ((ret = __rrr_route_execute (
+				fault,
+				node,
+				resolve_topic_filter_cb,
+				resolve_array_tag_cb,
+				apply_cb,
+				callback_arg
+		)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
 	return ret;
 }
 
@@ -727,6 +756,29 @@ static int __rrr_route_parse (
 		__rrr_route_list_clear(&stack);
 		RRR_FREE_IF_NOT_NULL(str_tmp);
 		return ret;
+}
+
+int rrr_route_collection_iterate_instance_names (
+		const struct rrr_route_collection *collection,
+		int (*callback)(const char *route_name, const char *instance_name, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_route);
+		const struct rrr_route *route = node;
+		RRR_LL_ITERATE_BEGIN(&route->list, const struct rrr_route_element);
+			if (node->type != RRR_ROUTE_E_INSTANCE) {
+				RRR_LL_ITERATE_NEXT();
+			}
+			if ((ret = callback(route->name, node->data, callback_arg)) != 0) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
 }
 
 int rrr_route_interpret (

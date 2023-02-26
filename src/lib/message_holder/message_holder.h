@@ -94,6 +94,9 @@ int rrr_msg_holder_nexthop_ok (
 		const struct rrr_msg_holder *entry,
 		const struct rrr_instance *instance
 );
+int rrr_msg_holder_nexthop_count (
+	const struct rrr_msg_holder *entry
+);
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,

@@ -65,13 +65,14 @@ wait_for=WAIT FOR,...
 duplicate=yes
 
 # Set a route definition to apply on output messages to control which reader instance messages
-# are destined fore (optional). If not given, all readers may receive any message. If a route
-# definition is given, the duplicate keyword still controls wether or not messages may be
+# are destined fore (optional). If not given, or the definition produces no result, all readers
+# may receive any message.
+
+# If a route definition is given, the duplicate keyword still controls wether or not messages may be
 # read by only one or multiple reader instances. To refer to a route definition specified outside
-# the block, enclose its name in angle brackets like <NAME>. The route definition syntax is given
-# below. Note that space character (ASCII 0x20) cannot be used to separate statements, use tab
-# character (ASCII 0x0B) instead.
-route=ROUTE DEFINITION
+# the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
+# the definitions will be run in order.
+route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
 
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
@@ -2376,6 +2377,10 @@ Note that
 duplicate=yes
 should be set when there are multiple readers of the cacher module.
 If left undefined for one or more of the message types, all readers will receive this type.
+
+Any receivers set here will override any configuration set by the
+.B route
+parameter.
 
 .It cacher_memory_consume_requests={yes|no}
 If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the

@@ -354,6 +354,12 @@ int rrr_msg_holder_nexthop_ok (
 	       rrr_instance_friend_collection_check_exists (&entry->nexthops, instance);
 }
 
+int rrr_msg_holder_nexthop_count (
+	const struct rrr_msg_holder *entry
+) {
+	return rrr_instance_friend_collection_count(&entry->nexthops);
+}
+
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
