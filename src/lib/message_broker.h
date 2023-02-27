@@ -69,7 +69,7 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker *broker,
 		const char *name_unique,
 		int no_buffer,
-		int (*entry_postprocess_cb)(struct rrr_msg_holder *entry_locked, void *arg),
+		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
 );
 int rrr_message_broker_setup_split_output_buffer (

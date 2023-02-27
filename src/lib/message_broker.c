@@ -72,7 +72,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 	struct rrr_message_broker_costumer *senders[RRR_MESSAGE_BROKER_SENDERS_MAX];
-	int (*entry_postprocess_cb)(struct rrr_msg_holder *entry_locked, void *arg);
+	int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg);
 	void *callback_arg;
 };
 
@@ -408,7 +408,7 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker *broker,
 		const char *name_unique,
 		int no_buffer,
-		int (*entry_postprocess_cb)(struct rrr_msg_holder *entry_locked, void *arg),
+		int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -428,7 +428,7 @@ int rrr_message_broker_costumer_register (
 		goto out;
 	}
 
-	costumer->entry_postprocess_cb = entry_postprocess_cb;
+	costumer->entry_pre_buffer_hook = entry_pre_buffer_hook;
 	costumer->callback_arg = callback_arg;
 
 	RRR_LL_APPEND(broker, costumer);
@@ -614,7 +614,7 @@ static int __rrr_message_broker_entry_prepare (
 	return ret;
 }
 
-static int __rrr_message_broker_entry_postprocess (
+static int __rrr_message_broker_pre_buffer_hook (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry
 ) {
@@ -622,7 +622,7 @@ static int __rrr_message_broker_entry_postprocess (
 
 	// Any nexthops set by postprocess cb will override those set in prepare
 
-	if ((ret = costumer->entry_postprocess_cb(entry, costumer->callback_arg)) != 0) {
+	if ((ret = costumer->entry_pre_buffer_hook(entry, costumer->callback_arg)) != 0) {
 		RRR_MSG_0("Error %i from entry postprocess callback in %s\n", ret, __func__);
 		goto out;
 	}
@@ -728,7 +728,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	if (!(*do_drop)) {
 		rrr_msg_holder_lock(entry);
-		ret = __rrr_message_broker_entry_postprocess (
+		ret = __rrr_message_broker_pre_buffer_hook (
 				callback_data->costumer,
 				entry
 		);
@@ -766,7 +766,7 @@ static int __rrr_message_broker_write_entry_intermediate_postprocess (
 		RRR_BUG("BUG: Entry message was set but data length was left being + in %s, callback must set data length\n", __func__);
 	}
 
-	if (__rrr_message_broker_entry_postprocess (
+	if (__rrr_message_broker_pre_buffer_hook (
 			costumer,
 			entry
 	) != 0) {
@@ -1004,11 +1004,11 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECT
 
 	rrr_msg_holder_lock(target);
 	ret |= __rrr_message_broker_entry_prepare(callback_data->costumer, target, callback_data->nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(callback_data->costumer, target);
+	ret |= __rrr_message_broker_pre_buffer_hook(callback_data->costumer, target);
 	rrr_msg_holder_unlock(target);
 
 	if (ret != 0) {
-		RRR_MSG_0("Failed to prepare or postprocess entry in %s\n", __func__);
+		RRR_MSG_0("Failed to prepare entry in %s\n", __func__);
 		goto out;
 	}
 
@@ -1040,7 +1040,7 @@ static void __rrr_message_broker_clone_and_write_entry_slot_callback (
 
 	rrr_msg_holder_lock(entry);
 	ret |= __rrr_message_broker_entry_prepare(callback_data->costumer, entry, callback_data->nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(callback_data->costumer, entry);
+	ret |= __rrr_message_broker_pre_buffer_hook(callback_data->costumer, entry);
 	if (ret != 0) {
 		RRR_BUG("Unhandleable error: Failed to prepare or process entry in %s\n", __func__);
 	}
@@ -1126,7 +1126,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe (
 
 	rrr_msg_holder_lock(entry);
 	ret |= __rrr_message_broker_entry_prepare(costumer, entry, nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(costumer, entry);
+	ret |= __rrr_message_broker_pre_buffer_hook(costumer, entry);
 	rrr_msg_holder_unlock(entry);
 
 	if (ret != 0) {
@@ -1200,10 +1200,10 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 		ret |= __rrr_message_broker_entry_prepare(costumer, node, nexthops);
-		ret |= __rrr_message_broker_entry_postprocess(costumer, node);
+		ret |= __rrr_message_broker_pre_buffer_hook(costumer, node);
 		rrr_msg_holder_unlock(node);
 		if (ret != 0) {
-			RRR_MSG_0("Failed to prepare or postprocess entry in %s\n", __func__);
+			RRR_MSG_0("Failed to prepare entry in %s\n", __func__);
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
