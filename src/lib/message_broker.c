@@ -750,6 +750,39 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 	return ret;
 }
 
+static int __rrr_message_broker_write_entry_intermediate_postprocess (
+		struct rrr_message_broker_costumer *costumer,
+		struct rrr_msg_holder *entry
+) {
+	int ret = 0;
+
+	rrr_msg_holder_lock(entry);
+
+	if (entry->usercount != 1) {
+		RRR_BUG("BUG: Usercount was not 1 after callback in %s\n", __func__);
+	}
+
+	if (entry->message != NULL && entry->data_length == 0) {
+		RRR_BUG("BUG: Entry message was set but data length was left being + in %s, callback must set data length\n", __func__);
+	}
+
+	if (__rrr_message_broker_entry_postprocess (
+			costumer,
+			entry
+	) != 0) {
+		ret = 1;
+		rrr_msg_holder_unlock(entry);
+		goto out;
+	}
+
+	// Prevents cleanup_pop below to free the entry now that everything is in order
+	rrr_msg_holder_incref_while_locked(entry);
+	rrr_msg_holder_unlock(entry);
+
+	out:
+	return ret;
+}
+
 static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
 	struct rrr_message_broker_write_entry_intermediate_callback_data *callback_data = arg;
 
@@ -812,27 +845,12 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		ret &= ~(RRR_FIFO_PROTECTED_WRITE_AGAIN);
 	}
 
-	{
-		rrr_msg_holder_lock(entry);
-		if (entry->usercount != 1) {
-			RRR_BUG("BUG: Usercount was not 1 after callback in %s\n", __func__);
-		}
-		if (entry->message != NULL && entry->data_length == 0) {
-			RRR_BUG("BUG: Entry message was set but data length was left being + in %s, callback must set data length\n", __func__);
-		}
-
-		if (__rrr_message_broker_entry_postprocess (
-				callback_data->costumer,
-				entry
-		) != 0) {
-			ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
-			rrr_msg_holder_unlock(entry);
-			goto out;
-		}
-
-		// Prevents cleanup_pop below to free the entry now that everything is in order
-		rrr_msg_holder_incref_while_locked(entry);
-		rrr_msg_holder_unlock(entry);
+	if (__rrr_message_broker_write_entry_intermediate_postprocess (
+			callback_data->costumer,
+			entry
+	) != 0) {
+		ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
+		goto out;
 	}
 
 	*data = (char*) entry;
