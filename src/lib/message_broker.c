@@ -1181,7 +1181,6 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
-		node->buffer_time = rrr_time_get_64();
 		ret |= __rrr_message_broker_entry_prepare(costumer, node, nexthops);
 		ret |= __rrr_message_broker_entry_postprocess(costumer, node);
 		rrr_msg_holder_unlock(node);
