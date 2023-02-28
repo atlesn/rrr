@@ -2378,9 +2378,9 @@ duplicate=yes
 should be set when there are multiple readers of the cacher module.
 If left undefined for one or more of the message types, all readers will receive this type.
 
-Any receivers set here will override any configuration set by the
+These parameters may not be used if the
 .B route
-parameter.
+parameter is set for the cacher instance.
 
 .It cacher_memory_consume_requests={yes|no}
 If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the

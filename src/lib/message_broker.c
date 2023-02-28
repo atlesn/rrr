@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 	struct rrr_message_broker_costumer *senders[RRR_MESSAGE_BROKER_SENDERS_MAX];
-	int (*entry_postprocess_cb)(struct rrr_msg_holder *entry_locked, void *arg);
+	int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg);
 	void *callback_arg;
 };
 
@@ -130,7 +130,7 @@ static int __rrr_message_broker_friend_add (
 	}
 
 	if (listener_costumer != NULL) {
-		RRR_MSG_0("Friend list was full in __rrr_message_broker_friend_add\n");
+		RRR_MSG_0("Friend list was full in %s\n", __func__);
 		ret = 1;
 	}
 
@@ -212,7 +212,7 @@ static int __rrr_message_broker_costumer_new (
 
 	struct rrr_message_broker_costumer *costumer = rrr_allocate(sizeof(*costumer));
 	if (costumer == NULL) {
-		RRR_MSG_0("Could not allocate memory for costumer in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not allocate memory for costumer in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -220,25 +220,25 @@ static int __rrr_message_broker_costumer_new (
 	memset(costumer, '\0', sizeof(*costumer));
 
 	if ((costumer->name = rrr_strdup(name_unique)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for name in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not allocate memory for name in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
 
 	if (rrr_fifo_protected_init(&costumer->main_queue, rrr_msg_holder_decref_void) != 0) {
-		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not initialize buffer in %s\n", __func__);
 		ret = 1;
 		goto out_free_name;
 	}
 
 	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex A in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not initialize mutex A in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_fifo;
 	}
 
 	if ((ret = rrr_event_queue_new(&costumer->events)) != 0){
-		RRR_MSG_0("Could not create event queue in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not create event queue in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_split_buffer_lock;
 	}
@@ -336,7 +336,7 @@ int rrr_message_broker_new (
 	struct rrr_message_broker *broker = NULL;
 
 	if ((broker = rrr_allocate(sizeof(*broker))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_message_broker_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -344,7 +344,7 @@ int rrr_message_broker_new (
 	memset(broker, '\0', sizeof (*broker));
 
 	if (rrr_posix_mutex_init(&broker->lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_message_broker_init\n");
+		RRR_MSG_0("Could not initialize mutex in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -408,7 +408,7 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker *broker,
 		const char *name_unique,
 		int no_buffer,
-		int (*entry_postprocess_cb)(struct rrr_msg_holder *entry_locked, void *arg),
+		int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -420,15 +420,15 @@ int rrr_message_broker_costumer_register (
 	pthread_mutex_lock(&broker->lock);
 
 	if (__rrr_message_broker_costumer_find_by_name_unlocked(broker, name_unique) != 0) {
-		RRR_BUG("BUG: Attempted to register costumer with non-uniqe name '%s' in rrr_message_broker_costumer_register\n",
-				name_unique);
+		RRR_BUG("BUG: Attempted to register costumer with non-uniqe name '%s' in %s\n",
+				name_unique, __func__);
 	}
 
 	if ((ret = __rrr_message_broker_costumer_new (&costumer, broker, name_unique, no_buffer)) != 0) {
 		goto out;
 	}
 
-	costumer->entry_postprocess_cb = entry_postprocess_cb;
+	costumer->entry_pre_buffer_hook = entry_pre_buffer_hook;
 	costumer->callback_arg = callback_arg;
 
 	RRR_LL_APPEND(broker, costumer);
@@ -454,7 +454,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 
 	struct rrr_message_broker_split_buffer_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_message_broker_split_output_buffer_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -462,7 +462,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 	memset(node, '\0', sizeof(*node));
 
 	if (rrr_fifo_protected_init(&node->queue, rrr_msg_holder_decref_void) != 0) {
-		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_split_output_buffer_new\n");
+		RRR_MSG_0("Could not initialize buffer in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -495,7 +495,7 @@ int rrr_message_broker_setup_split_output_buffer (
 	}
 	else {
 		if (RRR_LL_COUNT(&costumer->split_buffers) > 0) {
-			RRR_BUG("BUG: rrr_message_broker_setup_split_output_buffer called more than once\n");
+			RRR_BUG("BUG: %s called more than once\n", __func__);
 		}
 
 		while (slots--) {
@@ -614,7 +614,7 @@ static int __rrr_message_broker_entry_prepare (
 	return ret;
 }
 
-static int __rrr_message_broker_entry_postprocess (
+static int __rrr_message_broker_pre_buffer_hook (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry
 ) {
@@ -622,7 +622,7 @@ static int __rrr_message_broker_entry_postprocess (
 
 	// Any nexthops set by postprocess cb will override those set in prepare
 
-	if ((ret = costumer->entry_postprocess_cb(entry, costumer->callback_arg)) != 0) {
+	if ((ret = costumer->entry_pre_buffer_hook(entry, costumer->callback_arg)) != 0) {
 		RRR_MSG_0("Error %i from entry postprocess callback in %s\n", ret, __func__);
 		goto out;
 	}
@@ -681,14 +681,14 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 	if ((ret = callback(entry, callback_arg)) != 0) {
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
 			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN which was not DROP in __rrr_message_broker_write_entry_callback_handling\n", ret);
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN which was not DROP in %s\n", ret, __func__);
 			}
 			*write_again = 1;
 		}
 
 		if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
 			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP which was not AGAIN in __rrr_message_broker_write_entry_callback_handling\n", ret);
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP which was not AGAIN in %s\n", ret, __func__);
 			}
 			*write_drop = 1;
 		}
@@ -696,7 +696,7 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 		ret &= ~(RRR_MESSAGE_BROKER_DROP|RRR_MESSAGE_BROKER_AGAIN);
 
 		if ((ret & ~(RRR_MESSAGE_BROKER_ERR)) != 0) {
-			RRR_BUG("Unknown return values %i from callback to __rrr_message_broker_write_entry_callback_handling\n", ret);
+			RRR_BUG("Unknown return values %i from callback to %s\n", ret, __func__);
 		}
 	}
 
@@ -728,7 +728,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	if (!(*do_drop)) {
 		rrr_msg_holder_lock(entry);
-		ret = __rrr_message_broker_entry_postprocess (
+		ret = __rrr_message_broker_pre_buffer_hook (
 				callback_data->costumer,
 				entry
 		);
@@ -745,6 +745,39 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 	if (callback_data->entries_written == 0xff) {
 		*do_again = 0;
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_message_broker_write_entry_intermediate_postprocess (
+		struct rrr_message_broker_costumer *costumer,
+		struct rrr_msg_holder *entry
+) {
+	int ret = 0;
+
+	rrr_msg_holder_lock(entry);
+
+	if (entry->usercount != 1) {
+		RRR_BUG("BUG: Usercount was not 1 after callback in %s\n", __func__);
+	}
+
+	if (entry->message != NULL && entry->data_length == 0) {
+		RRR_BUG("BUG: Entry message was set but data length was left being + in %s, callback must set data length\n", __func__);
+	}
+
+	if (__rrr_message_broker_pre_buffer_hook (
+			costumer,
+			entry
+	) != 0) {
+		ret = 1;
+		rrr_msg_holder_unlock(entry);
+		goto out;
+	}
+
+	// Prevents cleanup_pop below to free the entry now that everything is in order
+	rrr_msg_holder_incref_while_locked(entry);
+	rrr_msg_holder_unlock(entry);
 
 	out:
 	return ret;
@@ -772,7 +805,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 			callback_data->protocol,
 			NULL
 	) != 0) {
-		RRR_MSG_0("Could not allocate ip buffer entry in __rrr_message_broker_write_entry_intermediate\n");
+		RRR_MSG_0("Could not allocate ip buffer entry in %s\n", __func__);
 		ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
 		goto out;
 	}
@@ -812,27 +845,12 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		ret &= ~(RRR_FIFO_PROTECTED_WRITE_AGAIN);
 	}
 
-	{
-		rrr_msg_holder_lock(entry);
-		if (entry->usercount != 1) {
-			RRR_BUG("BUG: Usercount was not 1 after callback in __rrr_message_broker_write_entry_intermediate\n");
-		}
-		if (entry->message != NULL && entry->data_length == 0) {
-			RRR_BUG("BUG: Entry message was set but data length was left being + in __rrr_message_broker_write_entry_intermediate, callback must set data length\n");
-		}
-
-		if (__rrr_message_broker_entry_postprocess (
-				callback_data->costumer,
-				entry
-		) != 0) {
-			ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
-			rrr_msg_holder_unlock(entry);
-			goto out;
-		}
-
-		// Prevents cleanup_pop below to free the entry now that everything is in order
-		rrr_msg_holder_incref_while_locked(entry);
-		rrr_msg_holder_unlock(entry);
+	if (__rrr_message_broker_write_entry_intermediate_postprocess (
+			callback_data->costumer,
+			entry
+	) != 0) {
+		ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
+		goto out;
 	}
 
 	*data = (char*) entry;
@@ -935,7 +953,7 @@ int rrr_message_broker_write_entry (
 				check_cancel_callback,
 				check_cancel_callback_arg
 		)) != 0) { 
-			RRR_MSG_0("Error while writing to buffer (slot) in rrr_message_broker_write_entry\n");
+			RRR_MSG_0("Error while writing to buffer (slot) in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -946,7 +964,7 @@ int rrr_message_broker_write_entry (
 				__rrr_message_broker_write_entry_intermediate,
 				&callback_data
 		)) != 0) {
-			RRR_MSG_0("Error while writing to buffer (main_queue) in rrr_message_broker_write_entry\n");
+			RRR_MSG_0("Error while writing to buffer (main_queue) in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -986,11 +1004,11 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_PROTECT
 
 	rrr_msg_holder_lock(target);
 	ret |= __rrr_message_broker_entry_prepare(callback_data->costumer, target, callback_data->nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(callback_data->costumer, target);
+	ret |= __rrr_message_broker_pre_buffer_hook(callback_data->costumer, target);
 	rrr_msg_holder_unlock(target);
 
 	if (ret != 0) {
-		RRR_MSG_0("Failed to prepare or postprocess entry in %s\n", __func__);
+		RRR_MSG_0("Failed to prepare entry in %s\n", __func__);
 		goto out;
 	}
 
@@ -1022,7 +1040,7 @@ static void __rrr_message_broker_clone_and_write_entry_slot_callback (
 
 	rrr_msg_holder_lock(entry);
 	ret |= __rrr_message_broker_entry_prepare(callback_data->costumer, entry, callback_data->nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(callback_data->costumer, entry);
+	ret |= __rrr_message_broker_pre_buffer_hook(callback_data->costumer, entry);
 	if (ret != 0) {
 		RRR_BUG("Unhandleable error: Failed to prepare or process entry in %s\n", __func__);
 	}
@@ -1065,7 +1083,7 @@ int rrr_message_broker_clone_and_write_entry (
 				__rrr_message_broker_clone_and_write_entry_callback,
 				&callback_data
 		) != 0) {
-			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry_no_unlock\n");
+			RRR_MSG_0("Error while writing to buffer in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -1108,7 +1126,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe (
 
 	rrr_msg_holder_lock(entry);
 	ret |= __rrr_message_broker_entry_prepare(costumer, entry, nexthops);
-	ret |= __rrr_message_broker_entry_postprocess(costumer, entry);
+	ret |= __rrr_message_broker_pre_buffer_hook(costumer, entry);
 	rrr_msg_holder_unlock(entry);
 
 	if (ret != 0) {
@@ -1132,7 +1150,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe (
 				__rrr_message_broker_write_entry_unsafe_callback,
 				entry
 		) != 0) {
-			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_write_entry_unsafe\n");
+			RRR_MSG_0("Error while writing to buffer in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -1181,12 +1199,11 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
-		node->buffer_time = rrr_time_get_64();
 		ret |= __rrr_message_broker_entry_prepare(costumer, node, nexthops);
-		ret |= __rrr_message_broker_entry_postprocess(costumer, node);
+		ret |= __rrr_message_broker_pre_buffer_hook(costumer, node);
 		rrr_msg_holder_unlock(node);
 		if (ret != 0) {
-			RRR_MSG_0("Failed to prepare or postprocess entry in %s\n", __func__);
+			RRR_MSG_0("Failed to prepare entry in %s\n", __func__);
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
@@ -1349,7 +1366,7 @@ static void __rrr_message_broker_get_source_buffer (
 	RRR_LL_ITERATE_END();
 
 	if (found_buffer == NULL) {
-		RRR_BUG("Not enough slots in __rrr_message_broker_get_source_buffer\n");
+		RRR_BUG("Not enough slots in %s\n", __func__);
 	}
 
 	*use_buffer = found_buffer;
@@ -1383,7 +1400,7 @@ static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_PROTECTED_
 				__rrr_message_broker_clone_and_write_entry_callback,
 				&callback_data
 		)) != 0) {
-			RRR_MSG_0("Error while writing to buffer in __rrr_message_broker_split_buffers_fill_callback\n");
+			RRR_MSG_0("Error while writing to buffer in %s\n", __func__);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
@@ -1413,7 +1430,7 @@ static int __rrr_message_broker_split_buffers_fill (
 			__rrr_message_broker_split_buffers_fill_callback,
 			costumer
 	)) != 0) {
-		RRR_MSG_0("Error from FIFO in __rrr_message_broker_split_buffers_fill\n");
+		RRR_MSG_0("Error from FIFO in %s\n", __func__);
 		goto out;
 	}
 
