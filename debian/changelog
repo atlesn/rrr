@@ -3,8 +3,10 @@ rrr (1.28-1) bullseye; urgency=medium
   * RUNNING DEVELOPMENT RELEASE
 
   * Features
-    * Ability to matche generated messages in httpclient with their
-      corresponding message triggering the query by using a report tag
+    * Match generated messages in httpclient with their corresponding message
+      triggering the query by using a report tag
+    * Route messages leaving an instance to specific reader instances by topic
+      or array tags 
 
  -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Feb 2023 08:30:08 +0100
 
