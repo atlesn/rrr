@@ -2004,22 +2004,53 @@ static int httpclient_parse_config (
 	return ret;
 }
 
+static void httpclient_queue_check_timeouts (
+		struct rrr_msg_holder_collection *queue,
+		struct httpclient_data *data
+) {
+	const uint64_t loop_begin_time = rrr_time_get_64();
+	int ttl_timeout_count = 0;
+	int send_timeout_count = 0;
+
+	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
+				// Delete any message from message db upon TTL timeout
+				httpclient_msgdb_notify_timeout(data, node);
+				ttl_timeout_count++;
+				RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
+				// No msgdb notify for normal timeout, let any messages get read back into the queue again
+				send_timeout_count++;
+				RRR_LL_ITERATE_SET_DESTROY();
+		}
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, 0; rrr_msg_holder_decref(node));
+
+	if (ttl_timeout_count > 0) {
+		RRR_MSG_0("TTL timeout for %i messages in httpclient instance %s\n",
+				ttl_timeout_count,
+				INSTANCE_D_NAME(data->thread_data));
+	}
+	if (send_timeout_count > 0) {
+		RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
+				send_timeout_count,
+				INSTANCE_D_NAME(data->thread_data));
+	}
+}
+
 static void httpclient_queue_process (
-	struct rrr_msg_holder_collection *queue,
-	struct httpclient_data *data
+		struct rrr_msg_holder_collection *queue,
+		struct httpclient_data *data
 ) {
 	if (RRR_LL_COUNT(queue) == 0) {
 		return;
 	}
 
-	uint64_t loop_max_time = rrr_time_get_64() + 2 * 1000 * 1000; // + 2 seconds
+	uint64_t loop_max_time = rrr_time_get_64() + 50 * 1000; // 50 ms
 	int loop_max = 256;
 
-	// Check timeouts based on the time the loop starts to be fair
-	// if there are errors and the loop takes a while
-	const uint64_t loop_begin_time = rrr_time_get_64();
-	int ttl_timeout_count = 0;
-	int send_timeout_count = 0;
 	int send_busy_count = 0;
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
@@ -2056,20 +2087,7 @@ static void httpclient_queue_process (
 			? RRR_HTTP_UPGRADE_MODE_NONE
 			: RRR_HTTP_UPGRADE_MODE_HTTP2;
 
-		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
-				// Delete any message from message db upon TTL timeout
-				httpclient_msgdb_notify_timeout(data, node);
-				ttl_timeout_count++;
-				loop_max++;
-				RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
-				// No msgdb notify for normal timeout, let any messages get read back into the queue again
-				send_timeout_count++;
-				loop_max++;
-				RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else if ((ret_tmp = httpclient_request_send (
+		if ((ret_tmp = httpclient_request_send (
 				data,
 				request_data_to_use,
 				node,
@@ -2102,16 +2120,6 @@ static void httpclient_queue_process (
 		pthread_cleanup_pop(1); // Unlock
 	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, 0; rrr_msg_holder_decref(node));
 
-	if (ttl_timeout_count > 0) {
-		RRR_MSG_0("TTL timeout for %i messages in httpclient instance %s\n",
-				ttl_timeout_count,
-				INSTANCE_D_NAME(data->thread_data));
-	}
-	if (send_timeout_count > 0) {
-		RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
-				send_timeout_count,
-				INSTANCE_D_NAME(data->thread_data));
-	}
 	if (send_busy_count > 0) {
 		RRR_DBG_7("Send busy for %i messages in httpclient instance %s\n",
 				send_busy_count,
@@ -2156,6 +2164,9 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		RRR_LL_COUNT(&data->from_senders_queue),
 		RRR_LL_COUNT(&data->low_pri_queue)
 	);
+
+	httpclient_queue_check_timeouts(&data->from_msgdb_queue, data);
+	httpclient_queue_check_timeouts(&data->from_senders_queue, data);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
