@@ -1720,7 +1720,7 @@ static int httpclient_entry_choose_method (
 
 	struct rrr_array array_tmp = {0};
 
-	if (data->msgdb_socket == NULL) {
+	if (data->msgdb_socket == NULL || data->method_tag == NULL || *data->method_tag == '\0') {
 		goto out;
 	}
 
@@ -1730,7 +1730,7 @@ static int httpclient_entry_choose_method (
 		if ((ret = rrr_array_message_clone_value_by_tag (
 				&value_tmp,
 				message,
-				"http_method"
+				data->method_tag
 		)) != 0) {
 			goto out;
 		}
@@ -1741,10 +1741,15 @@ static int httpclient_entry_choose_method (
 	}
 
 	if ((ret = httpclient_choose_method(method, data, &array_tmp)) != 0) {
-		if (ret != RRR_HTTP_NO_RESULT) {
-			goto out;
+		if (ret == RRR_HTTP_NO_RESULT) {
+			// OK, use default method
+			ret = 0;
 		}
-		ret = 0;
+		else if (ret == RRR_HTTP_SOFT_ERROR) {
+			// Method tag might be enforced but is not present in message,
+			// propagate return value
+		}
+		goto out;
 	}
 
 	out:
@@ -1757,10 +1762,16 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct httpclient_data *data = thread_data->private_data;
 	const struct rrr_msg_msg *message = entry->message;
 
+	int ret_tmp = 0;
+
 	// We need to sneak-peak into the message to figure out if 
 	// it will become a PUT request.
 	enum rrr_http_method method = 0;
-	if (httpclient_entry_choose_method (&method, data, entry) != 0) {
+	if ((ret_tmp = httpclient_entry_choose_method (&method, data, entry)) != 0) {
+		if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
+			// Invalid message
+			goto out_ignore;
+		}
 		return 1;
 	}
 
