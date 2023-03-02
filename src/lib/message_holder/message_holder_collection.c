@@ -88,7 +88,7 @@ int __rrr_msg_holder_colleciton_randomize_compare (
 	(void)(collection);
 	(void)(a);
 	(void)(b);
-	int rand = rrr_rand() % RRR_LL_COUNT(collection) - RRR_LL_COUNT(collection) / 2;
+	return rrr_rand() % RRR_LL_COUNT(collection) - RRR_LL_COUNT(collection) / 2;
 }
 
 void rrr_msg_holder_collection_randomize (
