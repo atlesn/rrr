@@ -2249,7 +2249,7 @@ static void httpclient_event_queue_process (
 		data->from_msgdb_queue_need_randomize = 0;
 	}
 	if (data->low_pri_queue_need_randomize) {
-		rrr_msg_holder_collection_randomize(&data->low_pri_queue, 1, /* Lock entries */);
+		rrr_msg_holder_collection_randomize(&data->low_pri_queue, 1 /* Lock entries */);
 		data->low_pri_queue_need_randomize = 0;
 	}
 
