@@ -1454,6 +1454,7 @@ static void ip_timeout_check (
 }
 
 static int ip_entry_index_compare (
+		const struct rrr_msg_holder_collection *collection,
 		const struct rrr_msg_holder *a,
 		const struct rrr_msg_holder *b
 ) {

@@ -86,6 +86,9 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
 
+	int low_pri_queue_not_randomized;
+	int from_msgdb_queue_not_randomized;
+
 	struct rrr_msgdb_client_conn msgdb_conn_store;
 	struct rrr_msgdb_client_conn msgdb_conn_iterate;
 
@@ -714,9 +717,11 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 
 	if (data->do_low_priority_put) {
 		RRR_LL_APPEND(&data->low_pri_queue, entry);
+		data->low_pri_queue_not_randomized = 1;
 	}
 	else {
 		RRR_LL_APPEND(&data->from_msgdb_queue, entry);
+		data->from_msgdb_queue_not_randomized = 1;
 	}
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
@@ -2233,6 +2238,20 @@ static void httpclient_event_queue_process (
 	(void)(flags);
 
 	struct httpclient_data *data = arg;
+
+	// In case PUT records depend on each other, randomize lists
+	// to ensure that a valid order is ever achieved. In high
+	// traffic situations where timeout is active, only the first
+	// elements of the queue will be checked, avoid having the same
+	// elements checked every time creating permanent HOL blocking.
+	if (data->from_msgdb_queue_not_randomized) {
+		rrr_msg_holder_collection_randomize(&data->from_msgdb_queue, 1);
+		data->from_msgdb_queue_not_randomized = 0;
+	}
+	if (data->low_pri_queue_not_randomized) {
+		rrr_msg_holder_collection_randomize(&data->low_pri_queue, 1);
+		data->low_pri_queue_not_randomized = 0;
+	}
 
 	// Priority to the msgdb queue, runs first 
 	httpclient_queue_process(&data->from_msgdb_queue, data);

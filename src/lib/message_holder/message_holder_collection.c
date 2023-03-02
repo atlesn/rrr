@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../random.h"
 
 #include "message_holder_collection.h"
 #include "message_holder_struct.h"
@@ -43,7 +44,11 @@ void rrr_msg_holder_collection_clear_void (
 void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
 		int do_lock,
-		int (*compare)(const struct rrr_msg_holder *a, const struct rrr_msg_holder *b)
+		int (*compare)(
+				const struct rrr_msg_holder_collection *collection,
+				const struct rrr_msg_holder *a,
+				const struct rrr_msg_holder *b
+		)
 ) {
 	struct rrr_msg_holder_collection tmp = {0};
 
@@ -56,7 +61,7 @@ void rrr_msg_holder_collection_sort (
 	while (RRR_LL_COUNT(target) != 0) {
 		struct rrr_msg_holder *smallest = RRR_LL_FIRST(target);
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
-			if (compare(node, smallest) < 0) {
+			if (compare(target, node, smallest) < 0) {
 				smallest = node;
 			}
 		RRR_LL_ITERATE_END();
@@ -73,4 +78,21 @@ void rrr_msg_holder_collection_sort (
 	}
 
 	*target = tmp;
+}
+
+int __rrr_msg_holder_colleciton_randomize_compare (
+		const struct rrr_msg_holder_collection *collection,
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	(void)(a);
+	(void)(b);
+	return rrr_rand() % RRR_LL_COUNT(collection);
+}
+
+void rrr_msg_holder_collection_randomize (
+		struct rrr_msg_holder_collection *target,
+		int do_lock
+) {
+	rrr_msg_holder_collection_sort(target, do_lock, __rrr_msg_holder_colleciton_randomize_compare);
 }
