@@ -2245,8 +2245,10 @@ static void httpclient_event_queue_process (
 	// elements of the queue will be checked, avoid having the same
 	// elements checked every time creating permanent HOL blocking.
 	if (data->from_msgdb_queue_need_randomize) {
+		uint64_t begin = rrr_time_get_64();
 		rrr_msg_holder_collection_randomize(&data->from_msgdb_queue, 1 /* Lock entries */);
 		data->from_msgdb_queue_need_randomize = 0;
+		printf("Time %lu\n", (rrr_time_get_64() - begin) / 1000);
 	}
 	if (data->low_pri_queue_need_randomize) {
 		rrr_msg_holder_collection_randomize(&data->low_pri_queue, 1 /* Lock entries */);

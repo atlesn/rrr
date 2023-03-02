@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LINKED_LIST_H
 
 #include <stdlib.h>
+#include <assert.h>
 
 #include "slow_noop.h"
 
@@ -337,5 +338,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)         \
     RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())   \
+
+#define RRR_LL_ROTATE(head, type, pos)                         \
+    do{assert(pos < RRR_LL_COUNT((head)));assert(pos>=0);      \
+    if(pos>1){int i = 0; RRR_LL_ITERATE_BEGIN((head), type);   \
+        if (i++ != pos) { RRR_LL_ITERATE_NEXT(); }             \
+        node->ptr_prev->ptr_next = NULL;                       \
+        (head)->ptr_last->ptr_next = (head)->ptr_first;        \
+        (head)->ptr_first->ptr_prev = (head)->ptr_last;        \
+        (head)->ptr_last = node->ptr_prev;                     \
+        (head)->ptr_first = node;                              \
+        node->ptr_prev = 0;                                    \
+        RRR_LL_ITERATE_BREAK();                                \
+    RRR_LL_ITERATE_END();}}while(0)
 
 #endif /* RRR_LINKED_LIST_H */

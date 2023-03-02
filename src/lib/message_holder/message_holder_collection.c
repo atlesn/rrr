@@ -91,9 +91,19 @@ int __rrr_msg_holder_colleciton_randomize_compare (
 	return rrr_rand() % RRR_LL_COUNT(collection) - RRR_LL_COUNT(collection) / 2;
 }
 
+
 void rrr_msg_holder_collection_randomize (
 		struct rrr_msg_holder_collection *target,
 		int do_lock
 ) {
 	rrr_msg_holder_collection_sort(target, do_lock, __rrr_msg_holder_colleciton_randomize_compare);
+}
+
+void rrr_msg_holder_collection_random_rotate (
+		struct rrr_msg_holder_collection *target,
+		int do_lock
+) {
+	if (RRR_LL_COUNT(target) <= 1) {
+		return;
+	}
 }

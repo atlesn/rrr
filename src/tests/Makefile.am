@@ -35,7 +35,8 @@ test_SOURCES = test.c \
 	test_allocator.c \
 	test_mmap_channel.c \
 	test_increment.c \
-	test_route_definition.c
+	test_route_definition.c \
+	test_linked_list.c
 test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \

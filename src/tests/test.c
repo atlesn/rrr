@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_route_definition.h"
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
+#include "test_linked_list.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -212,6 +213,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("route definition parsing") {
 		ret_tmp = rrr_test_route_definition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("linked list") {
+		ret_tmp = rrr_test_linked_list();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
