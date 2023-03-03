@@ -40,13 +40,13 @@ void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
 		int do_lock,
 		int (*compare)(
-				const struct rrr_msg_holder_collection *collection,
 				const struct rrr_msg_holder *a,
 				const struct rrr_msg_holder *b
 		)
 );
-void rrr_msg_holder_collection_randomize (
+void rrr_msg_holder_collection_rotate (
 		struct rrr_msg_holder_collection *target,
+		int pos,
 		int do_lock
 );
 

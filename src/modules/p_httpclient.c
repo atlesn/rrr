@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/msgdb/msgdb_client.h"
+#include "../lib/random.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
@@ -86,8 +87,8 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
 
-	int low_pri_queue_need_randomize;
-	int from_msgdb_queue_need_randomize;
+	int low_pri_queue_need_rotate;
+	int from_msgdb_queue_need_rotate;
 
 	struct rrr_msgdb_client_conn msgdb_conn_store;
 	struct rrr_msgdb_client_conn msgdb_conn_iterate;
@@ -717,11 +718,11 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 
 	if (data->do_low_priority_put) {
 		RRR_LL_APPEND(&data->low_pri_queue, entry);
-		data->low_pri_queue_need_randomize = 1;
+		data->low_pri_queue_need_rotate = 1;
 	}
 	else {
 		RRR_LL_APPEND(&data->from_msgdb_queue, entry);
-		data->from_msgdb_queue_need_randomize = 1;
+		data->from_msgdb_queue_need_rotate = 1;
 	}
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
@@ -2229,6 +2230,23 @@ static void httpclient_event_msgdb_poll (
 	}
 }
 
+static void httpclient_event_queue_process_check_rotate (
+		struct httpclient_data *data,
+		int *need,
+		struct rrr_msg_holder_collection *queue
+) {
+	if (*need && RRR_LL_COUNT(queue) > 1) {
+		const int pos = rrr_rand() % RRR_LL_COUNT(queue);
+		RRR_DBG_3("httpclient instance %s rotate send queue elements %i at pos %i\n",
+				INSTANCE_D_NAME(data->thread_data),
+				RRR_LL_COUNT(queue),
+				pos
+		);
+		rrr_msg_holder_collection_rotate(queue, 1 /* Lock entries */, pos);
+	}
+	*need = 0;
+}
+
 static void httpclient_event_queue_process (
 		evutil_socket_t fd,
 		short flags,
@@ -2239,27 +2257,22 @@ static void httpclient_event_queue_process (
 
 	struct httpclient_data *data = arg;
 
-	// In case PUT records depend on each other, randomize lists
-	// to ensure that a valid order is ever achieved. In high
-	// traffic situations where timeout is active, only the first
+	// In high traffic situations where timeout is active, only the first
 	// elements of the queue will be checked, avoid having the same
-	// elements checked every time creating permanent HOL blocking.
-	if (data->from_msgdb_queue_need_randomize) {
-		uint64_t begin = rrr_time_get_64();
-		rrr_msg_holder_collection_randomize(&data->from_msgdb_queue, 1 /* Lock entries */);
-		data->from_msgdb_queue_need_randomize = 0;
-		printf("Time %lu\n", (rrr_time_get_64() - begin) / 1000);
-	}
-	if (data->low_pri_queue_need_randomize) {
-		rrr_msg_holder_collection_randomize(&data->low_pri_queue, 1 /* Lock entries */);
-		data->low_pri_queue_need_randomize = 0;
-	}
+	// elements checked every time creating permanent HOL blocking if
+	// stores fail. To mitigate this, rotate the lists at a random point
+	// before processing.
 
-	// Priority to the msgdb queue, runs first 
+	// Priority to the msgdb queue, runs first. Needs rotating.
+	httpclient_event_queue_process_check_rotate(data, &data->from_msgdb_queue_need_rotate, &data->from_msgdb_queue);
 	httpclient_queue_process(&data->from_msgdb_queue, data);
+
+	// Normal flow when there are not errors. Need not rotating.
 	httpclient_queue_process(&data->from_senders_queue, data);
 
+	// Process low pri if other queues are empty. Needs rotating.
 	if (RRR_LL_COUNT(&data->from_msgdb_queue) == 0 && RRR_LL_COUNT(&data->from_senders_queue) == 0) {
+		httpclient_event_queue_process_check_rotate(data, &data->low_pri_queue_need_rotate, &data->low_pri_queue);
 		httpclient_queue_process(&data->low_pri_queue, data);
 	}
 

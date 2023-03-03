@@ -45,7 +45,6 @@ void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
 		int do_lock,
 		int (*compare)(
-				const struct rrr_msg_holder_collection *collection,
 				const struct rrr_msg_holder *a,
 				const struct rrr_msg_holder *b
 		)
@@ -61,7 +60,7 @@ void rrr_msg_holder_collection_sort (
 	while (RRR_LL_COUNT(target) != 0) {
 		struct rrr_msg_holder *smallest = RRR_LL_FIRST(target);
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
-			if (compare(target, node, smallest) < 0) {
+			if (compare(node, smallest) < 0) {
 				smallest = node;
 			}
 		RRR_LL_ITERATE_END();
@@ -80,30 +79,22 @@ void rrr_msg_holder_collection_sort (
 	*target = tmp;
 }
 
-int __rrr_msg_holder_colleciton_randomize_compare (
-		const struct rrr_msg_holder_collection *collection,
-		const struct rrr_msg_holder *a,
-		const struct rrr_msg_holder *b
-) {
-	(void)(collection);
-	(void)(a);
-	(void)(b);
-	return rrr_rand() % RRR_LL_COUNT(collection) - RRR_LL_COUNT(collection) / 2;
-}
-
-
-void rrr_msg_holder_collection_randomize (
+void rrr_msg_holder_collection_rotate (
 		struct rrr_msg_holder_collection *target,
+		int pos,
 		int do_lock
 ) {
-	rrr_msg_holder_collection_sort(target, do_lock, __rrr_msg_holder_colleciton_randomize_compare);
-}
+	if (do_lock) {
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
+			rrr_msg_holder_lock(node);
+		RRR_LL_ITERATE_END();
+	}
 
-void rrr_msg_holder_collection_random_rotate (
-		struct rrr_msg_holder_collection *target,
-		int do_lock
-) {
-	if (RRR_LL_COUNT(target) <= 1) {
-		return;
+	RRR_LL_ROTATE(target, struct rrr_msg_holder, pos);
+
+	if (do_lock) {
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
+			rrr_msg_holder_unlock(node);
+		RRR_LL_ITERATE_END();
 	}
 }
