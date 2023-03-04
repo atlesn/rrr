@@ -69,6 +69,7 @@ int rrr_hdlc_parse_frame (
 				break;
 			case RRR_HDLC_PARSE_STATE_ESCAPE:
 				PUSH(rrr_parse_quick_byte(state->parse_pos) ^ RRR_HDLC_BYTE_XOR);
+				state->parse_flag = RRR_HDLC_PARSE_STATE_FRAME;
 				break;
 			case RRR_HDLC_PARSE_STATE_DONE:
 				return RRR_HDLC_OK;
