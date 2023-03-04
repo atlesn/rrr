@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static const char *TEST_DATA_FILE = "test_hdlc_data.bin";
 
-int rrr_test_hdlc(void) {
+static int __rrr_test_hdlc_read (void) {
 	int ret = 0;
 
 	const int offset = 16;
@@ -133,9 +133,33 @@ int rrr_test_hdlc(void) {
 		goto out;
 	}
 
+	
+
 	out:
 		close(fd);
 	out_final:
 		return ret;
+}
+
+static int __rrr_test_hdlc_array_import (char target[64]) {
+	(void)(target);
+	return 1;
+}
+
+static int __rrr_test_hdlc_array_export (const char source[64]) {
+	(void)(source);
+	return 1;
+}
+
+int rrr_test_hdlc(void) {
+	int ret = 0;
+
+	char frame[64];
+
+	ret |= __rrr_test_hdlc_read();
+	ret |= __rrr_test_hdlc_array_import(frame);
+	ret |= __rrr_test_hdlc_array_export(frame);
+
+	return ret;
 }
 

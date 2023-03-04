@@ -62,7 +62,8 @@ enum rrr_type_enum {
 	RRR_TYPE_STX  = 13, // STX or SOH, start of transmission or start of header
 	RRR_TYPE_ERR  = 14, // Always produces soft error when being parsed, used to abort branched parsing
 	RRR_TYPE_VAIN = 15, // The useless type, indicates NULL or void. Will parse 0 bytes.
-	RRR_TYPE_MAX  = 15
+	RRR_TYPE_HDLC = 16, // HDLC frame delimited with 0x7e at the beginning and end
+	RRR_TYPE_MAX  = 16
 };
 
 #define RRR_TYPE_NAME_LE    "le"
@@ -79,6 +80,7 @@ enum rrr_type_enum {
 #define RRR_TYPE_NAME_STX   "stx"
 #define RRR_TYPE_NAME_ERR   "err"
 #define RRR_TYPE_NAME_VAIN  "vain"
+#define RRR_TYPE_NAME_HDLC  "hdlc"
 
 // Alias for string
 #define RRR_TYPE_NAME_HEX   "hex"
@@ -97,6 +99,7 @@ enum rrr_type_enum {
 #define RRR_TYPE_MAX_STX   64
 #define RRR_TYPE_MAX_ERR    0
 #define RRR_TYPE_MAX_VAIN   0
+#define RRR_TYPE_MAX_HDLC   0
 
 #define RRR_TYPE_IS_64(type)  (                                                             \
   (type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||                 \
@@ -104,6 +107,7 @@ enum rrr_type_enum {
 #define RRR_TYPE_IS_BLOB(type)        ((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || \
                                        (type) == RRR_TYPE_MSG  || (type) == RRR_TYPE_STR || \
 				       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+
 #define RRR_TYPE_IS_BLOB_EXCACT(type) ((type) == RRR_TYPE_BLOB)
 #define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)         ((type) == RRR_TYPE_MSG)
@@ -254,6 +258,7 @@ RRR_TYPE_DECLARE_EXTERN(nsep);
 RRR_TYPE_DECLARE_EXTERN(stx);
 RRR_TYPE_DECLARE_EXTERN(err);
 RRR_TYPE_DECLARE_EXTERN(vain);
+RRR_TYPE_DECLARE_EXTERN(hdlc);
 RRR_TYPE_DECLARE_EXTERN(null);
 
 #define RRR_TYPE_DEFINITION_BE     rrr_type_definition_be
@@ -270,7 +275,8 @@ RRR_TYPE_DECLARE_EXTERN(null);
 #define RRR_TYPE_DEFINITION_NSEP   rrr_type_definition_nsep
 #define RRR_TYPE_DEFINITION_STX    rrr_type_definition_stx
 #define RRR_TYPE_DEFINITION_ERR    rrr_type_definition_err
-#define RRR_TYPE_DEFINITION_VAIN    rrr_type_definition_vain
+#define RRR_TYPE_DEFINITION_VAIN   rrr_type_definition_vain
+#define RRR_TYPE_DEFINITION_HDLC   rrr_type_definition_hdlc
 #define RRR_TYPE_DEFINITION_NULL   rrr_type_definition_null
 
 static inline int rrr_type_value_is_tag (
