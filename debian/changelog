@@ -2,11 +2,15 @@ rrr (1.28-3) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
-  * Features
+  * Features:
     * Match generated messages in httpclient with their corresponding message
       triggering the query by using a report tag
     * Route messages leaving an instance to specific reader instances by topic
-      or array tags 
+      or array tags
+    * New parameter in httpclient to control timeout of low priority messages
+      specifically
+ 
+  * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
       messages to ensure all are attempted and not the same messages time out
       repeatedly.
@@ -15,7 +19,7 @@ rrr (1.28-3) bullseye; urgency=medium
 
 rrr (1.27-1) bullseye; urgency=medium
 
-  * Features
+  * Features:
     * New module to run JavaScript programs
     * New parameter in ip module to generate empty messages when new
       TCP connections are accepted.

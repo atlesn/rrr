@@ -2115,6 +2115,16 @@ Messages being defered to fhe message DB (see
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
 If the timeout is set too high or is not set, messages may accumulate in memory.
 
+.It http_low_priority_message_timeout_factor=FACTOR
+If
+.B http_low_priority_put
+is set to "yes", this timeout will apply to low priority messages.
+The factor given is multiplied with the value of
+.B http_message_timeout_ms
+to produce the timeout used.
+
+If not given, a factor of 10 is assumed. The value may be set to 0 to disable timeout for low priority messages.
+
 .It http_ttl_seconds=SECONDS
 When the time timestamp of a message in the send queue becomes older than the specified amount of seconds, it is dropped.
 The message will also get deleted from the message DB if used (see

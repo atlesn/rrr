@@ -146,6 +146,7 @@ struct httpclient_data {
 
 	rrr_setting_uint message_timeout_us;
 	rrr_setting_uint message_ttl_us;
+	rrr_setting_uint message_low_pri_timeout_factor;
 
 	rrr_setting_uint redirects_max;
 
@@ -1894,6 +1895,15 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_silent_put_error_limit_s", silent_put_error_limit_us, 0);
 	data->silent_put_error_limit_us *= 1000 * 1000;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_low_priority_message_timeout_factor", message_low_pri_timeout_factor, 10);
+
+	if (data->message_low_pri_timeout_factor * data->message_timeout_us < data->message_timeout_us) {
+		RRR_MSG_0("Overflow while multiplying parameters http_message_timeout_ms and http_low_priority_message_timeout_factor in httpclient instance %s. Please reduce the values.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_accept", http_header_accept);
@@ -2011,6 +2021,8 @@ static int httpclient_parse_config (
 }
 
 static void httpclient_queue_check_timeouts (
+		rrr_setting_uint ttl_us,
+		rrr_setting_uint timeout_us,
 		struct rrr_msg_holder_collection *queue,
 		struct httpclient_data *data
 ) {
@@ -2020,13 +2032,13 @@ static void httpclient_queue_check_timeouts (
 
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
-		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
+		if (ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + ttl_us) {
 				// Delete any message from message db upon TTL timeout
 				httpclient_msgdb_notify_timeout(data, node);
 				ttl_timeout_count++;
 				RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
+		else if (timeout_us != 0 && loop_begin_time > node->send_time + timeout_us) {
 				// No msgdb notify for normal timeout, let any messages get read back into the queue again
 				send_timeout_count++;
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -2171,8 +2183,12 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		RRR_LL_COUNT(&data->low_pri_queue)
 	);
 
-	httpclient_queue_check_timeouts(&data->from_msgdb_queue, data);
-	httpclient_queue_check_timeouts(&data->from_senders_queue, data);
+	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_timeout_us;
+	assert(low_pri_timeout_us >= data->message_timeout_us);
+
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_msgdb_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_senders_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
