@@ -152,7 +152,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
 		    poll_helper.c msgdb_helper.c \
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
-                    serial/serial.c \
+                    serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \

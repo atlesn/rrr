@@ -76,6 +76,36 @@ struct rrr_parse_pos {
 	rrr_length line_begin_pos;
 };
 
+// Notes for quick functions:
+// - Functions do not increment line counts
+// - No check for EOF, this is caller responsibility
+
+static inline int rrr_parse_quick_match_or_skip (
+		struct rrr_parse_pos *pos,
+		char c
+) {
+	const char pos_c = *(pos->data + pos->pos);
+	pos->pos++;
+	return pos_c == c ? 0 : 1;
+}
+
+static inline int rrr_parse_quick_match (
+		struct rrr_parse_pos *pos,
+		char c
+) {
+	const char pos_c = *(pos->data + pos->pos);
+	if (pos_c == c) {
+		pos->pos++;
+	}
+	return pos_c == c ? 0 : 1;
+}
+
+static inline char rrr_parse_quick_byte (
+		struct rrr_parse_pos *pos
+) {
+	return *(pos->data + pos->pos++);
+}
+
 void rrr_parse_pos_init (
 		struct rrr_parse_pos *target,
 		const char *data,
