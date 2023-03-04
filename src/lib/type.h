@@ -38,10 +38,10 @@ static const union type_system_endian {
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_LE (type_system_endian.one == 1)
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_BE (type_system_endian.one == 0)
 
-#define RRR_TYPE_PARSE_OK			RRR_READ_OK
-#define RRR_TYPE_PARSE_HARD_ERR		RRR_READ_HARD_ERROR
-#define RRR_TYPE_PARSE_SOFT_ERR		RRR_READ_SOFT_ERROR
-#define RRR_TYPE_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
+#define RRR_TYPE_PARSE_OK          RRR_READ_OK
+#define RRR_TYPE_PARSE_HARD_ERR    RRR_READ_HARD_ERROR
+#define RRR_TYPE_PARSE_SOFT_ERR    RRR_READ_SOFT_ERROR
+#define RRR_TYPE_PARSE_INCOMPLETE  RRR_READ_INCOMPLETE
 
 // Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
@@ -65,48 +65,50 @@ enum rrr_type_enum {
 	RRR_TYPE_MAX  = 15
 };
 
-#define RRR_TYPE_NAME_LE	"le"
-#define RRR_TYPE_NAME_BE	"be"
-#define RRR_TYPE_NAME_H		"h"
-#define RRR_TYPE_NAME_BLOB	"blob"
-#define RRR_TYPE_NAME_USTR	"ustr"
-#define RRR_TYPE_NAME_ISTR	"istr"
-#define RRR_TYPE_NAME_SEP	"sep"
-#define RRR_TYPE_NAME_MSG	"msg"
-#define RRR_TYPE_NAME_FIXP	"fixp"
-#define RRR_TYPE_NAME_STR	"str"
-#define RRR_TYPE_NAME_NSEP	"nsep"
-#define RRR_TYPE_NAME_STX	"stx"
-#define RRR_TYPE_NAME_ERR	"err"
-#define RRR_TYPE_NAME_VAIN	"vain"
+#define RRR_TYPE_NAME_LE    "le"
+#define RRR_TYPE_NAME_BE    "be"
+#define RRR_TYPE_NAME_H     "h"
+#define RRR_TYPE_NAME_BLOB  "blob"
+#define RRR_TYPE_NAME_USTR  "ustr"
+#define RRR_TYPE_NAME_ISTR  "istr"
+#define RRR_TYPE_NAME_SEP   "sep"
+#define RRR_TYPE_NAME_MSG   "msg"
+#define RRR_TYPE_NAME_FIXP  "fixp"
+#define RRR_TYPE_NAME_STR   "str"
+#define RRR_TYPE_NAME_NSEP  "nsep"
+#define RRR_TYPE_NAME_STX   "stx"
+#define RRR_TYPE_NAME_ERR   "err"
+#define RRR_TYPE_NAME_VAIN  "vain"
 
 // Alias for string
-#define RRR_TYPE_NAME_HEX	"hex"
+#define RRR_TYPE_NAME_HEX   "hex"
 
-#define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
-#define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
-#define RRR_TYPE_MAX_H		sizeof(rrr_type_h)
-#define RRR_TYPE_MAX_BLOB	RRR_TYPE_MAX_BLOB_LENGTH
-#define RRR_TYPE_MAX_USTR	0
-#define RRR_TYPE_MAX_ISTR	0
-#define RRR_TYPE_MAX_SEP	64
-#define RRR_TYPE_MAX_MSG	0
-#define RRR_TYPE_MAX_FIXP	0
-#define RRR_TYPE_MAX_STR	0
-#define RRR_TYPE_MAX_NSEP	0
-#define RRR_TYPE_MAX_STX	64
-#define RRR_TYPE_MAX_ERR	0
-#define RRR_TYPE_MAX_VAIN	0
+#define RRR_TYPE_MAX_LE     sizeof(rrr_type_le)
+#define RRR_TYPE_MAX_BE     sizeof(rrr_type_be)
+#define RRR_TYPE_MAX_H      sizeof(rrr_type_h)
+#define RRR_TYPE_MAX_BLOB   RRR_TYPE_MAX_BLOB_LENGTH
+#define RRR_TYPE_MAX_USTR   0
+#define RRR_TYPE_MAX_ISTR   0
+#define RRR_TYPE_MAX_SEP   64
+#define RRR_TYPE_MAX_MSG    0
+#define RRR_TYPE_MAX_FIXP   0
+#define RRR_TYPE_MAX_STR    0
+#define RRR_TYPE_MAX_NSEP   0
+#define RRR_TYPE_MAX_STX   64
+#define RRR_TYPE_MAX_ERR    0
+#define RRR_TYPE_MAX_VAIN   0
 
-#define RRR_TYPE_IS_64(type) 	(														\
-			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
-			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
-		)
-#define RRR_TYPE_IS_BLOB(type)        ((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+#define RRR_TYPE_IS_64(type)  (                                                             \
+  (type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||                 \
+  (type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR)
+#define RRR_TYPE_IS_BLOB(type)        ((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || \
+                                       (type) == RRR_TYPE_MSG  || (type) == RRR_TYPE_STR || \
+				       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
 #define RRR_TYPE_IS_BLOB_EXCACT(type) ((type) == RRR_TYPE_BLOB)
 #define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)         ((type) == RRR_TYPE_MSG)
-#define RRR_TYPE_IS_STR(type)         ((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+#define RRR_TYPE_IS_STR(type)         ((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP ||  \
+                                       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
 #define RRR_TYPE_CASE_STR             case RRR_TYPE_STR: case RRR_TYPE_SEP: case RRR_TYPE_NSEP: case RRR_TYPE_STX
 #define RRR_TYPE_IS_STR_EXCACT(type)  ((type) == RRR_TYPE_STR)
 #define RRR_TYPE_IS_SEP(type)         ((type) == RRR_TYPE_SEP)
@@ -118,14 +120,14 @@ enum rrr_type_enum {
 
 #define RRR_TYPE_FLAG_SIGNED ((uint8_t) (1<<0))
 
-#define RRR_TYPE_FLAG_IS_SIGNED(flags)		(((flags) & RRR_TYPE_FLAG_SIGNED) == 1)
-#define RRR_TYPE_FLAG_IS_UNSIGNED(flags)	(((flags) & RRR_TYPE_FLAG_SIGNED) == 0)
+#define RRR_TYPE_FLAG_IS_SIGNED(flags)     (((flags) & RRR_TYPE_FLAG_SIGNED) == 1)
+#define RRR_TYPE_FLAG_IS_UNSIGNED(flags)   (((flags) & RRR_TYPE_FLAG_SIGNED) == 0)
 
-#define RRR_TYPE_FLAG_SET_SIGNED(flags)		(flags) |= (RRR_TYPE_FLAG_SIGNED)
-#define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= (uint8_t) ~(RRR_TYPE_FLAG_SIGNED)
+#define RRR_TYPE_FLAG_SET_SIGNED(flags)    (flags) |= (RRR_TYPE_FLAG_SIGNED)
+#define RRR_TYPE_FLAG_SET_UNSIGNED(flags)  (flags) &= (uint8_t) ~(RRR_TYPE_FLAG_SIGNED)
 
-#define RRR_TYPE_CHAR_IS_STX(c) \
-	(c >= 1 && c <= 2)     // SOH, STX
+#define RRR_TYPE_CHAR_IS_STX(c)                                \
+	(c >= 1 && c <= 2)                     // SOH, STX
 
 #define RRR_TYPE_CHAR_IS_SEP_A(c) \
 	(c == '\n' || c == '\r' || c == '\t')
@@ -138,16 +140,15 @@ enum rrr_type_enum {
 #define RRR_TYPE_CHAR_IS_SEP_E(c) \
 	(c >= 123 && c <= 126) // { | } ~
 #define RRR_TYPE_CHAR_IS_SEP_F(c) \
-	(c == 0 || (c >= 3 &&c <= 4))     // NULL, ETX, EOT
+	(c == 0 || (c >= 3 &&c <= 4))   // NULL, ETX, EOT
 
 #define RRR_TYPE_CHAR_IS_SEP(c) (                              \
-        RRR_TYPE_CHAR_IS_SEP_A(c)||                            \
-        RRR_TYPE_CHAR_IS_SEP_B(c)||                            \
-        RRR_TYPE_CHAR_IS_SEP_C(c)||                            \
-        RRR_TYPE_CHAR_IS_SEP_D(c)||                            \
-        RRR_TYPE_CHAR_IS_SEP_E(c)||                            \
-        RRR_TYPE_CHAR_IS_SEP_F(c)                              \
-    )
+        RRR_TYPE_CHAR_IS_SEP_A(c) ||                           \
+        RRR_TYPE_CHAR_IS_SEP_B(c) ||                           \
+        RRR_TYPE_CHAR_IS_SEP_C(c) ||                           \
+        RRR_TYPE_CHAR_IS_SEP_D(c) ||                           \
+        RRR_TYPE_CHAR_IS_SEP_E(c) ||                           \
+        RRR_TYPE_CHAR_IS_SEP_F(c))
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS                        \
         rrr_length *import_length,                             \
