@@ -58,6 +58,8 @@ static int __rrr_hdlc_parse_frame_done_verify_size (
     state->result[state->result_wpos++] = c;                   \
     } while (0)
 
+#define WPOS() state->result_wpos
+
 int rrr_hdlc_parse_frame (
 		struct rrr_hdlc_parse_state *state
 ) {
@@ -74,6 +76,12 @@ int rrr_hdlc_parse_frame (
 					break;
 				}
 				if (rrr_parse_quick_match(state->parse_pos, RRR_HDLC_BYTE_FRAME) == 0) {
+					if (WPOS() == 0) {
+						// Ignore multiple 0x7e start bytes (parsing possibly started
+						// at end 0x7e of a frame)
+						state->parse_flag = RRR_HDLC_PARSE_STATE_FRAME;
+						break;
+					}
 					state->parse_flag = RRR_HDLC_PARSE_STATE_DONE;
 					return __rrr_hdlc_parse_frame_done_verify_size(state);
 				}

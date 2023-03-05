@@ -56,10 +56,10 @@ static int __rrr_test_hdlc_read (void) {
 	TEST_MSG("Raw HDLC zero byte frame...\n");
 	buf[0] = 0x7e;
 	buf[1] = 0x7e;
-	rrr_parse_pos_init(&pos, buf, rrr_length_from_size_t_bug_const(sizeof(buf)));
+	rrr_parse_pos_init(&pos, buf, 2);
 	rrr_hdlc_parse_state_init(&state, &pos);
-	if ((ret = rrr_hdlc_parse_frame(&state)) != RRR_HDLC_SOFT_ERROR) {
-		TEST_MSG("Parsing zero byte frame did not return soft error as expected, return was %i\n", ret);
+	if ((ret = rrr_hdlc_parse_frame(&state)) != RRR_HDLC_INCOMPLETE) {
+		TEST_MSG("Parsing zero byte frame did not return incomplete as expected, return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -117,12 +117,13 @@ static int __rrr_test_hdlc_read (void) {
 	}
 
 	TEST_MSG("Raw HDLC escape sequence...\n");
-	buf[0] = 0x7e;
-	buf[1] = 0x7d;
-	buf[2] = 0x7e ^ 0x20;
-	buf[3] = 0x7d;
-	buf[4] = 0x10 ^ 0x20;
-	buf[5] = 0x7e;
+	buf[0] = 0x7e; // Double 0x7e at beginning should be ignored
+	buf[1] = 0x7e;
+	buf[2] = 0x7d;
+	buf[3] = 0x7e ^ 0x20;
+	buf[4] = 0x7d;
+	buf[5] = 0x10 ^ 0x20;
+	buf[6] = 0x7e;
 	rrr_parse_pos_init(&pos, buf, rrr_length_from_size_t_bug_const(sizeof(buf)));
 	rrr_hdlc_parse_state_init(&state, &pos);
 
@@ -143,8 +144,6 @@ static int __rrr_test_hdlc_read (void) {
 		ret = 1;
 		goto out;
 	}
-
-	
 
 	out:
 		close(fd);
