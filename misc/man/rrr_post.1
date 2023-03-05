@@ -193,6 +193,11 @@ The length of these types are identified automatically and must not have length 
 .It msg
 A full RRR message complete with headers and checksums.
 
+.It hdlc
+An HDLC (High-Level Data Link Control) message delimeted by 0x7e at the beginning and end.
+Any data before the start byte is ignored.
+The final value does not contain the boundaries and has all escape sequences resolved.
+
 .It str
 An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \\. The
 surrounding quotes are not included in the final string.

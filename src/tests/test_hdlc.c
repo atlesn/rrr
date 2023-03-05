@@ -28,8 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_hdlc.h"
 #include "../lib/route.h"
 #include "../lib/parse.h"
+#include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/hdlc/hdlc.h"
+#include "../lib/array_tree.h"
 
 static const char *TEST_DATA_FILE = "test_hdlc_data.bin";
 
@@ -49,23 +51,32 @@ static int __rrr_test_hdlc_read (void) {
 		goto out_final;
 	}
 
-	assert(sizeof(buf) > RRR_HDLC_MAX(&state));
+	assert(sizeof(buf) > RRR_HDLC_MAX);
 
-	memset(buf, '\0', sizeof(buf));
+	TEST_MSG("Raw HDLC zero byte frame...\n");
+	buf[0] = 0x7e;
+	buf[1] = 0x7e;
+	rrr_parse_pos_init(&pos, buf, rrr_length_from_size_t_bug_const(sizeof(buf)));
+	rrr_hdlc_parse_state_init(&state, &pos);
+	if ((ret = rrr_hdlc_parse_frame(&state)) != RRR_HDLC_SOFT_ERROR) {
+		TEST_MSG("Parsing zero byte frame did not return soft error as expected, return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
 
 	TEST_MSG("Raw HDLC overflow...\n");
+	memset(buf, '\0', sizeof(buf));
 	buf[offset] = 0x7e;
 	rrr_parse_pos_init(&pos, buf, rrr_length_from_size_t_bug_const(sizeof(buf)));
 	rrr_hdlc_parse_state_init(&state, &pos);
 
 	if ((ret = rrr_hdlc_parse_frame(&state)) != RRR_HDLC_SOFT_ERROR) {
-		TEST_MSG("Parsing did not return soft error as expected, return was %i\n", ret);
+		TEST_MSG("Parsing overflow test did not return soft error as expected, return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
 
 	TEST_MSG("Raw HDLC frames...\n");
-
 	memset(buf, '\0', sizeof(buf));
 
 	// Offset write position to include junk data before first frame
@@ -141,23 +152,214 @@ static int __rrr_test_hdlc_read (void) {
 		return ret;
 }
 
-static int __rrr_test_hdlc_array_import (char target[64]) {
-	(void)(target);
-	return 1;
+static const char rrr_test_hdlc_array_definition[] = "hdlc#my_hdlc;";
+static const char rrr_test_hdlc_array_tag[] = "my_hdlc";
+
+struct rrr_test_hdlc_array_import_callback_data {
+	char *target;
+	rrr_length *target_size;
+};
+
+static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void *arg) {
+	struct rrr_test_hdlc_array_import_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(array, rrr_test_hdlc_array_tag);
+
+	if (value == NULL) {
+		TEST_MSG("Value was NULL in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	assert(RRR_TYPE_IS_BLOB(value->definition->type));
+	assert(RRR_TYPE_IS_HDLC(value->definition->type));
+	assert(rrr_type_value_is_tag(value, rrr_test_hdlc_array_tag));
+	assert (value->element_count == 1);
+	assert(*callback_data->target_size > value->total_stored_length);
+
+	// Both frames
+	memcpy(callback_data->target, value->data, value->total_stored_length);
+	*callback_data->target_size = value->total_stored_length;
+
+	out:
+	return ret;
+}
+
+static int __rrr_test_hdlc_array_import (char *target, rrr_length *target_size) {
+	int ret = 0;
+
+	char buf[65535];
+	struct rrr_array_tree *tree;
+	rrr_length parsed_bytes = 0;
+
+	if ((ret = rrr_array_tree_interpret_raw (
+			&tree,
+			rrr_test_hdlc_array_definition,
+			rrr_length_from_size_t_bug_const(sizeof(rrr_test_hdlc_array_definition) - 1),
+			"my_definition"
+	)) != 0) {
+		TEST_MSG("Failed to interpret array tree definition in %s\n", __func__);
+		goto out_final;
+	}
+
+	TEST_MSG("Array tree import of HDLC frame...\n");
+
+	buf[0] = 0x7e;
+	buf[1] = 0x7d;
+	buf[2] = 0x7e ^ 0x20;
+	buf[3] = 0x7d;
+	buf[4] = 0x10 ^ 0x20;
+	buf[5] = 0x7e;
+
+	struct rrr_test_hdlc_array_import_callback_data callback_data = {
+		target,
+		target_size
+	};
+
+	// Parse half the frame
+	if ((ret = rrr_array_tree_import_from_buffer (
+			&parsed_bytes,
+			buf,
+			3,
+			tree,
+			__rrr_test_hdlc_array_import_callback,
+			&callback_data
+	)) == RRR_ARRAY_TREE_PARSE_INCOMPLETE) {
+		// OK, expected result
+	}
+	else {
+		TEST_MSG("Unexpected result %i from array tree import in %s\n", ret, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	assert(parsed_bytes == 0);
+
+	// Parse the whole frame
+	if ((ret = rrr_array_tree_import_from_buffer (
+			&parsed_bytes,
+			buf,
+			6,
+			tree,
+			__rrr_test_hdlc_array_import_callback,
+			&callback_data
+	)) == RRR_ARRAY_TREE_OK) {
+		// OK, expected result
+	}
+	else {
+		TEST_MSG("Unexpected result %i from array tree import in %s\n", ret, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	assert(parsed_bytes == 6);
+
+	if (*callback_data.target_size != 2) {
+		TEST_MSG("Incorrect frame size of %" PRIrrrl " after array import\n", *callback_data.target_size);
+		ret = 1;
+		goto out;
+	}
+
+	if (target[0] != 0x7e || target[1] != 0x10) {
+		TEST_MSG("Incorrect frame data after array import\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+		rrr_array_tree_destroy(tree);
+	out_final:
+		return ret;
 }
 
 static int __rrr_test_hdlc_array_export (const char source[64]) {
 	(void)(source);
-	return 1;
+
+	int ret = 0;
+
+	char *target = NULL;
+	rrr_biglength target_size;
+	struct rrr_array array = {0};
+
+	TEST_MSG("Array tree export of HDLC frame...\n");
+
+	// assert rrr_type_value_get_export_length
+	//r rrr_type_vaoue_allocate_and_export
+
+	{
+		struct rrr_type_value *value;
+		if ((ret = rrr_type_value_new (
+				&value,
+				rrr_type_get_from_id(RRR_TYPE_HDLC),
+				0,
+				0,
+				NULL,
+				0,
+				NULL,
+				1,
+				NULL,
+				3
+		)) != 0) {
+			TEST_MSG("Failed to create value in %s\n", __func__);
+			goto out;
+		}
+		RRR_LL_APPEND(&array, value);
+
+		// Use values which will be escaped
+		value->data[0] = 0x7e;
+		value->data[1] = 0x7d;
+		value->data[2] = 0x10;
+	}
+
+	int found_tags = 0;
+	if ((ret = rrr_array_selected_tags_export (
+			&target,
+			&target_size,
+			&found_tags,
+			&array,
+			NULL
+	)) != 0) {
+		TEST_MSG("Failed to pack array in %s\n", __func__);
+		goto out;
+	}
+
+	assert(found_tags == 1);
+
+	if (target_size != 7) {
+		TEST_MSG("Unexpected exported size of %" PRIrrrbl " in %s\n", target_size, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (target[0] != 0x7e ||
+	    target[1] != 0x7d ||
+	    target[2] != (0x7e ^ 0x20) ||
+	    target[3] != 0x7d ||
+	    target[4] != (0x7d ^ 0x20) ||
+	    target[5] != 0x10 ||
+	    target[6] != 0x7e
+	) {
+		TEST_MSG("Invalid exported data in %s\n", __func__);
+		ret = 1;
+		return ret;
+	}
+
+	out:
+	rrr_array_clear(&array);
+	RRR_FREE_IF_NOT_NULL(target);
+	return ret;
 }
 
 int rrr_test_hdlc(void) {
 	int ret = 0;
 
 	char frame[64];
+	rrr_length frame_size = rrr_length_from_size_t_bug_const(sizeof(frame));
 
 	ret |= __rrr_test_hdlc_read();
-	ret |= __rrr_test_hdlc_array_import(frame);
+	ret |= __rrr_test_hdlc_array_import(frame, &frame_size);
 	ret |= __rrr_test_hdlc_array_export(frame);
 
 	return ret;

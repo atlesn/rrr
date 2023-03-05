@@ -29,6 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HDLC_INCOMPLETE   RRR_READ_INCOMPLETE
 #define RRR_HDLC_SOFT_ERROR   RRR_READ_SOFT_ERROR
 
+#define RRR_HDLC_DATA(s)       ((s)->result)
+#define RRR_HDLC_DATA_SIZE(s)  ((s)->result_wpos)
+#define RRR_HDLC_MAX           4096
+
 enum rrr_hdlc_parse_flag {
 	RRR_HDLC_PARSE_STATE_IDLE,
 	RRR_HDLC_PARSE_STATE_FRAME,
@@ -40,12 +44,8 @@ struct rrr_hdlc_parse_state {
 	struct rrr_parse_pos *parse_pos;
 	rrr_length result_wpos;
 	enum rrr_hdlc_parse_flag parse_flag;
-	char result[4096];
+	char result[RRR_HDLC_MAX];
 };
-
-#define RRR_HDLC_DATA(s)       ((s)->result)
-#define RRR_HDLC_DATA_SIZE(s)  ((s)->result_wpos)
-#define RRR_HDLC_MAX(s)        (sizeof((s)->result))
 
 void rrr_hdlc_parse_state_init (
 		struct rrr_hdlc_parse_state *state,
@@ -54,6 +54,19 @@ void rrr_hdlc_parse_state_init (
 
 int rrr_hdlc_parse_frame (
 		struct rrr_hdlc_parse_state *state
+);
+
+int rrr_hdlc_get_export_length (
+		rrr_length *result,
+		const char *data,
+		rrr_length data_size
+);
+
+void rrr_hdlc_export_frame (
+		char *target,
+		rrr_length *written_bytes,
+		const char *data,
+		rrr_length data_size
 );
 
 #endif /* RRR_HDLC_H */

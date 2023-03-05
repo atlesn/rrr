@@ -106,7 +106,8 @@ enum rrr_type_enum {
   (type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR)
 #define RRR_TYPE_IS_BLOB(type)        ((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || \
                                        (type) == RRR_TYPE_MSG  || (type) == RRR_TYPE_STR || \
-				       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+				       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX || \
+				       (type) == RRR_TYPE_HDLC)
 
 #define RRR_TYPE_IS_BLOB_EXCACT(type) ((type) == RRR_TYPE_BLOB)
 #define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)
@@ -119,6 +120,7 @@ enum rrr_type_enum {
 #define RRR_TYPE_IS_NSEP(type)        ((type) == RRR_TYPE_NSEP)
 #define RRR_TYPE_IS_STX(type)         ((type) == RRR_TYPE_STX)
 #define RRR_TYPE_IS_VAIN(type)        ((type) == RRR_TYPE_VAIN)
+#define RRR_TYPE_IS_HDLC(type)        ((type) == RRR_TYPE_HDLC)
 #define RRR_TYPE_ALLOWS_SIGN(type)    ((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)             ((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 

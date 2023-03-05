@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/gnu.h"
 #include "util/hex.h"
+#include "parse.h"
+#include "hdlc/hdlc.h"
 
 static int __rrr_type_convert_integer_10 (
 		char **end,
@@ -656,12 +658,45 @@ static int __rrr_type_import_vain (RRR_TYPE_IMPORT_ARGS) {
 
 static int __rrr_type_import_hdlc (RRR_TYPE_IMPORT_ARGS) {
 	(void)(node);
-	(void)(start);
-	(void)(end);
+
+	int ret_tmp = 0;
 
 	*parsed_bytes = 0;
 
-	return 1;
+	struct rrr_parse_pos pos;
+	struct rrr_hdlc_parse_state state;
+
+	rrr_parse_pos_init(&pos, start, rrr_length_from_ptr_sub_bug_const(end, start));
+	rrr_hdlc_parse_state_init(&state, &pos);
+
+	if ((ret_tmp = rrr_hdlc_parse_frame(&state)) != 0) {
+		if (ret_tmp == RRR_HDLC_INCOMPLETE) {
+			return RRR_TYPE_PARSE_INCOMPLETE;
+		}
+		else if (ret_tmp == RRR_HDLC_SOFT_ERROR) {
+			RRR_MSG_0("Soft error while importing HDLC frame\n");
+			return RRR_TYPE_PARSE_SOFT_ERR;
+		}
+		RRR_MSG_0("Hard error %i while importing HDLC frame\n", ret_tmp);
+		return RRR_TYPE_PARSE_HARD_ERR;
+	}
+
+	assert(RRR_HDLC_DATA_SIZE(&state) > 0);
+
+	if ((node->data = rrr_allocate(RRR_HDLC_DATA_SIZE(&state))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return RRR_TYPE_PARSE_HARD_ERR;
+	}
+
+	memcpy(node->data, RRR_HDLC_DATA(&state), RRR_HDLC_DATA_SIZE(&state));
+
+	node->element_count = 1;
+	node->total_stored_length = RRR_HDLC_DATA_SIZE(&state);
+	node->definition = rrr_type_get_from_id(RRR_TYPE_HDLC);
+
+	*parsed_bytes = pos.pos;
+
+	return RRR_TYPE_PARSE_OK;
 }
 
 static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
@@ -1151,13 +1186,22 @@ static int __rrr_type_hdlc_unpack (RRR_TYPE_UNPACK_ARGS) {
 	return 0;
 }
 
+static int __rrr_type_hdlc_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
+	if ((rrr_hdlc_get_export_length(bytes, node->data, node->total_stored_length)) != 0) {
+		RRR_MSG_0("Failed to get export length of HDLC frame\n");
+		return 1;
+	}
+	return 0;
+}
+
 static int __rrr_type_hdlc_export (RRR_TYPE_EXPORT_ARGS) {
-	(void)(target);
-	(void)(node);
-
-	*written_bytes = 0;
-
-	return 1;
+	rrr_hdlc_export_frame (
+			target,
+			written_bytes,
+			node->data,
+			node->total_stored_length
+	);
+	return 0;
 }
 
 static int __rrr_type_hdlc_pack (RRR_TYPE_PACK_ARGS) {
@@ -1341,13 +1385,14 @@ RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP, RRR_TYPE_MAX_NSEP, __rrr_type_import_nsep, 
 RRR_TYPE_DEFINE(stx,  RRR_TYPE_STX,  RRR_TYPE_MAX_STX,  __rrr_type_import_stx,  NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_STX);
 RRR_TYPE_DEFINE(err,  RRR_TYPE_ERR,  RRR_TYPE_MAX_ERR,  __rrr_type_import_err,  NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  NULL, RRR_TYPE_NAME_ERR);
 RRR_TYPE_DEFINE(vain, RRR_TYPE_VAIN, RRR_TYPE_MAX_VAIN, __rrr_type_import_vain, NULL,                             __rrr_type_vain_export, __rrr_type_vain_unpack, __rrr_type_vain_pack, __rrr_type_vain_to_str, __rrr_type_vain_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_VAIN);
-RRR_TYPE_DEFINE(hdlc, RRR_TYPE_HDLC, RRR_TYPE_MAX_HDLC, __rrr_type_import_hdlc, NULL,                             __rrr_type_hdlc_export, __rrr_type_hdlc_unpack, __rrr_type_hdlc_pack, __rrr_type_hdlc_to_str, __rrr_type_hdlc_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_HDLC);
+RRR_TYPE_DEFINE(hdlc, RRR_TYPE_HDLC, RRR_TYPE_MAX_HDLC, __rrr_type_import_hdlc, __rrr_type_hdlc_get_export_length,__rrr_type_hdlc_export, __rrr_type_hdlc_unpack, __rrr_type_hdlc_pack, __rrr_type_hdlc_to_str, __rrr_type_hdlc_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_HDLC);
 RRR_TYPE_DEFINE(null, 0,             0,                 NULL,                   NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  NULL, NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array
 // The list MUST end with a null definition
 static const struct rrr_type_definition *type_templates[] = {
 		&rrr_type_definition_be,
+		&rrr_type_definition_hdlc,
 		&rrr_type_definition_h,
 		&rrr_type_definition_le,
 		&rrr_type_definition_blob,
@@ -1361,7 +1406,6 @@ static const struct rrr_type_definition *type_templates[] = {
 		&rrr_type_definition_stx,
 		&rrr_type_definition_err,
 		&rrr_type_definition_vain,
-		&rrr_type_definition_hdlc,
 		&rrr_type_definition_null
 };
 
