@@ -1,4 +1,4 @@
-rrr (1.28-3) bullseye; urgency=medium
+rrr (1.28-4) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -9,6 +9,7 @@ rrr (1.28-3) bullseye; urgency=medium
       or array tags
     * New parameter in httpclient to control timeout of low priority messages
       specifically
+    * New array value "hdlc" for parsing HDLC messages 
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
