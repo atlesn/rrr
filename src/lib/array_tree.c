@@ -81,7 +81,7 @@ int rrr_array_tree_new (
 
 	struct rrr_array_tree *new_tree = rrr_allocate(sizeof(*new_tree));
 	if (new_tree == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -89,7 +89,7 @@ int rrr_array_tree_new (
 	memset(new_tree, '\0', sizeof(*new_tree));
 
 	if ((new_tree->name = rrr_strdup(name != NULL ? name : "-")) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -125,7 +125,7 @@ const struct rrr_array_tree *rrr_array_tree_list_get_tree_by_name (
 static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
 	struct rrr_array_branch *branch = rrr_allocate(sizeof(*branch));
 	if (branch == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_array_branch_allocate\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return NULL;
 	}
 	memset(branch, '\0', sizeof(*branch));
@@ -135,7 +135,7 @@ static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
 static struct rrr_array_node *__rrr_array_node_allocate (void) {
 	struct rrr_array_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_array_node_allocate\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return NULL;
 	}
 	memset(node, '\0', sizeof(*node));
@@ -344,7 +344,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 	(*start)++;
 
 	if ((result = rrr_allocate(length + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
+		RRR_MSG_0("Could not allocate memory for ref tag in %s\n", __func__);
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
 		goto out;
 	}
@@ -650,7 +650,7 @@ static int __rrr_array_tree_interpret_single_definition (
 			item_count_ref,
 			0
 	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_parse_definition\n");
+		RRR_MSG_0("Could not create value in %s\n", __func__);
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
 		goto out;
 	}
@@ -1268,7 +1268,7 @@ int __rrr_array_tree_import_rewind_callback (
 		rrr_length_add_bug(&total_length, length_tmp);
 
 		if (callback_data->pos < callback_data->start) {
-			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
+			RRR_BUG("BUG: REWIND past beginning of buffer occured in %s\n", __func__);
 		}
 
 		rrr_type_value_destroy(value);
@@ -1340,7 +1340,7 @@ int __rrr_array_tree_import_value_callback (
 	}
 
 	if (new_value->data != NULL) {
-		RRR_BUG("node->data was not NULL in __rrr_array_tree_import_data_into_value\n");
+		RRR_BUG("node->data was not NULL in %s\n", __func__);
 	}
 
 	RESOLVE_REF(import_length,import_length_ref);
@@ -1381,14 +1381,14 @@ int __rrr_array_tree_import_value_callback (
 			RRR_MSG_0("Type conversion in array tree failed for type '%s'\n", new_value->definition->identifier);
 		}
 		else {
-			RRR_MSG_0("Hard error while importing data in __rrr_array_tree_import_data_into_value, return was %i\n", ret);
+			RRR_MSG_0("Hard error while importing data in %s, return was %i\n", __func__, ret);
 			ret = RRR_ARRAY_TREE_HARD_ERROR;
 		}
 		goto out;
 	}
 
 	if (parsed_bytes == 0 && !RRR_TYPE_IS_VAIN(new_value->definition->type)) {
-		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
+		RRR_BUG("Parsed bytes was zero in %s\n", __func__);
 	}
 
 	RRR_DBG_3("Imported a value of type %s size %" PRIrrrl "x%" PRIrrrl "\n",
