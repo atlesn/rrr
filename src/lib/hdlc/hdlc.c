@@ -79,7 +79,6 @@ int rrr_hdlc_parse_frame (
 					if (WPOS() == 0) {
 						// Ignore multiple 0x7e start bytes (parsing possibly started
 						// at end 0x7e of a frame)
-						state->parse_flag = RRR_HDLC_PARSE_STATE_FRAME;
 						break;
 					}
 					state->parse_flag = RRR_HDLC_PARSE_STATE_DONE;
