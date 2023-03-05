@@ -186,9 +186,11 @@ static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void 
 	return ret;
 }
 
-static int __rrr_test_hdlc_array_import (char *target, rrr_length *target_size) {
+static int __rrr_test_hdlc_array_import (void) {
 	int ret = 0;
 
+	char target[64];
+	rrr_length target_size = rrr_length_from_size_t_bug_const(sizeof(target));
 	char buf[65535];
 	struct rrr_array_tree *tree;
 	rrr_length parsed_bytes = 0;
@@ -214,7 +216,7 @@ static int __rrr_test_hdlc_array_import (char *target, rrr_length *target_size) 
 
 	struct rrr_test_hdlc_array_import_callback_data callback_data = {
 		target,
-		target_size
+		&target_size
 	};
 
 	// Parse half the frame
@@ -273,9 +275,7 @@ static int __rrr_test_hdlc_array_import (char *target, rrr_length *target_size) 
 		return ret;
 }
 
-static int __rrr_test_hdlc_array_export (const char source[64]) {
-	(void)(source);
-
+static int __rrr_test_hdlc_array_export (void) {
 	int ret = 0;
 
 	char *target = NULL;
@@ -354,12 +354,9 @@ static int __rrr_test_hdlc_array_export (const char source[64]) {
 int rrr_test_hdlc(void) {
 	int ret = 0;
 
-	char frame[64];
-	rrr_length frame_size = rrr_length_from_size_t_bug_const(sizeof(frame));
-
 	ret |= __rrr_test_hdlc_read();
-	ret |= __rrr_test_hdlc_array_import(frame, &frame_size);
-	ret |= __rrr_test_hdlc_array_export(frame);
+	ret |= __rrr_test_hdlc_array_import();
+	ret |= __rrr_test_hdlc_array_export();
 
 	return ret;
 }
