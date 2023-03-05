@@ -178,7 +178,6 @@ static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void 
 	assert (value->element_count == 1);
 	assert(*callback_data->target_size > value->total_stored_length);
 
-	// Both frames
 	memcpy(callback_data->target, value->data, value->total_stored_length);
 	*callback_data->target_size = value->total_stored_length;
 
@@ -191,7 +190,7 @@ static int __rrr_test_hdlc_array_import (void) {
 
 	char target[64];
 	rrr_length target_size = rrr_length_from_size_t_bug_const(sizeof(target));
-	char buf[65535];
+	char source[65535];
 	struct rrr_array_tree *tree;
 	rrr_length parsed_bytes = 0;
 
@@ -207,12 +206,12 @@ static int __rrr_test_hdlc_array_import (void) {
 
 	TEST_MSG("Array tree import of HDLC frame...\n");
 
-	buf[0] = 0x7e;
-	buf[1] = 0x7d;
-	buf[2] = 0x7e ^ 0x20;
-	buf[3] = 0x7d;
-	buf[4] = 0x10 ^ 0x20;
-	buf[5] = 0x7e;
+	source[0] = 0x7e;
+	source[1] = 0x7d;
+	source[2] = 0x7e ^ 0x20;
+	source[3] = 0x7d;
+	source[4] = 0x10 ^ 0x20;
+	source[5] = 0x7e;
 
 	struct rrr_test_hdlc_array_import_callback_data callback_data = {
 		target,
@@ -222,7 +221,7 @@ static int __rrr_test_hdlc_array_import (void) {
 	// Parse half the frame
 	if ((ret = rrr_array_tree_import_from_buffer (
 			&parsed_bytes,
-			buf,
+			source,
 			3,
 			tree,
 			__rrr_test_hdlc_array_import_callback,
@@ -241,7 +240,7 @@ static int __rrr_test_hdlc_array_import (void) {
 	// Parse the whole frame
 	if ((ret = rrr_array_tree_import_from_buffer (
 			&parsed_bytes,
-			buf,
+			source,
 			6,
 			tree,
 			__rrr_test_hdlc_array_import_callback,
