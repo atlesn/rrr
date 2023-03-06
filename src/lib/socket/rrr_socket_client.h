@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -212,6 +212,8 @@ void rrr_socket_client_collection_event_setup (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 );
@@ -223,6 +225,8 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
@@ -237,6 +241,8 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		rrr_biglength read_step_max_size,
@@ -253,7 +259,9 @@ void rrr_socket_client_collection_event_setup_ignore (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		int read_flags_socket
+		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg
 );
 
 #endif /* RRR_SOCKET_CLIENT_H */

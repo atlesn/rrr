@@ -2428,6 +2428,8 @@ int rrr_udpstream_init (
 			data,
 			8192,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
+			NULL,
+			NULL,
 			__rrr_udpstream_read_get_target_size,
 			NULL,
 			__rrr_udpstream_read_get_target_size_error,

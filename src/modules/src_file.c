@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/random.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/read.h"
 #include "../lib/array_tree.h"
 #include "../lib/read_constants.h"
@@ -83,7 +85,6 @@ struct file {
 	int fd;
 	struct stat file_stat;
 	uint64_t total_messages;
-	uint64_t last_read_time;
 };
 
 struct file_collection {
@@ -135,19 +136,20 @@ struct file_data {
 	uint16_t topic_len;
 
 	uint64_t message_count;
+	uint64_t message_count_prev;
+	uint64_t bytes_read_accumulator;
 
 	struct file_collection files;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_probe;
+	rrr_event_handle event_stats;
 
 	struct rrr_socket_client_collection *sockets;
 };
 
 static void file_destroy(struct file *file) {
 	rrr_read_session_collection_clear(&file->read_session_collection);
-
-	if (file->fd > 0) {
-		rrr_socket_close(file->fd);
-	}
-
 	RRR_FREE_IF_NOT_NULL(file->orig_path);
 	RRR_FREE_IF_NOT_NULL(file->real_path);
 	rrr_free(file);
@@ -268,12 +270,17 @@ static int file_collection_push (
 
 static int file_data_init(struct file_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
+
 	data->thread_data = thread_data;
+
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
 	return 0;
 }
 
 static void file_data_cleanup(void *arg) {
 	struct file_data *data = (struct file_data *) arg;
+	rrr_event_collection_clear(&data->events);
 	if (data->sockets != NULL) {
 		rrr_socket_client_collection_destroy(data->sockets);
 	}
@@ -594,6 +601,11 @@ static int file_probe_callback (
 		goto out;
 	}
 
+	if (rrr_socket_client_collection_connected_fd_push(data->sockets, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND) != 0) {
+		RRR_MSG_0("Failed to add fd to client collection in file instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
 	fd = 0;
 
 	out:
@@ -650,67 +662,77 @@ static int file_read_array_write_callback (struct rrr_msg_holder *entry, void *a
 	return ret;
 }
 
-struct file_read_callback_data {
-	struct file_data *file_data;
-	struct file *file;
-};
+static void file_read_set_flags_callback (int *flags, void *private_data, void *arg) {
+	struct file *file = private_data;
+	struct file_data *data = arg;
 
-static int file_read_array_callback (struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg) {
-	struct file_read_callback_data *callback_data = arg;
+	(void)(data);
+
+	*flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
+
+	if (file->type == DT_CHR || file->type == DT_SOCK || file->type == DT_FIFO) {
+		// For devices without any end
+		*flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
+	}
+	else {
+		// For devices with finite size or files
+		*flags |= RRR_SOCKET_READ_CHECK_EOF;
+	}
+
+	if (file->flags & RRR_FILE_F_IS_KEYBOARD) {
+		*flags |= RRR_SOCKET_READ_INPUT_DEVICE;
+	}
+}
+
+static int file_read_array_callback (RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS) {
+	struct file *file = private_data;
+	struct file_data *data = arg;
+
+	(void)(addr);
+	(void)(addr_len);
 
 	int ret = 0;
 
-	(void)(read_session);
-
 	struct file_read_array_write_callback_data write_callback_data = {
-			callback_data->file_data,
+			data,
 			array_final
 	};
 
-	if (callback_data->file_data->do_strip_array_separators) {
+	if (data->do_strip_array_separators) {
 		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
 	}
 
 	if ((ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(callback_data->file_data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,
 			NULL,
 			file_read_array_write_callback,
 			&write_callback_data,
-			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->file_data->thread_data)
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Could not create new array message in file instance %s, return was %i\n",
-				INSTANCE_D_NAME(callback_data->file_data->thread_data), ret);
+				INSTANCE_D_NAME(data->thread_data), ret);
 		return ret;
 	}
 
-	callback_data->file->total_messages++;
-	if (callback_data->file_data->max_messages_per_file != 0 && callback_data->file->total_messages >= callback_data->file_data->max_messages_per_file) {
+	file->total_messages++;
+
+	if (data->max_messages_per_file != 0 && file->total_messages >= data->max_messages_per_file) {
 		RRR_DBG_3("file instance %s closing file '%s'=>'%s' after max messages received (%" PRIu64 "/%" PRIrrrbl ")\n",
-				INSTANCE_D_NAME(callback_data->file_data->thread_data),
-				callback_data->file->orig_path,
-				callback_data->file->real_path,
-				callback_data->file->total_messages,
-				callback_data->file_data->max_messages_per_file
+				INSTANCE_D_NAME(data->thread_data),
+				file->orig_path,
+				file->real_path,
+				file->total_messages,
+				data->max_messages_per_file
 		);
 		ret = RRR_READ_EOF;
 	}
 
+	data->bytes_read_accumulator += read_session->target_size;
+
 	return ret;
-}
-
-static int file_read_all_to_message_get_target_size_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	(void)(read_session);
-	(void)(arg);
-
-	read_session->read_complete_method = RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ;
-
-	return RRR_READ_OK;
 }
 
 static int file_verify_wpos (
@@ -929,155 +951,6 @@ static int file_read_all_to_message_complete (
 	return ret;
 }
 
-static int file_read_all_to_message_complete_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct file_read_callback_data *callback_data = arg;
-	return file_read_all_to_message_complete (callback_data->file_data, callback_data->file, read_session);
-}
-
-static int file_read (uint64_t *bytes_read, struct file_data *data, struct file *file) {
-	int ret = 0;
-
-	struct rrr_array array_final = {0};
-
-	if (data->timeout_s != 0) {
-		uint64_t time_min = rrr_time_get_64() - (data->timeout_s * 1000 * 1000);
-		if (file->last_read_time == 0) {
-			file->last_read_time = rrr_time_get_64();
-		}
-		else if (file->last_read_time < time_min) {
-			RRR_DBG_1("Timeout for file %s in instance %s, closing.\n",
-					file->orig_path, INSTANCE_D_NAME(data->thread_data));
-			ret = RRR_READ_EOF;
-			goto out;
-		}
-	}
-
-	int socket_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
-
-	if (file->type == DT_CHR || file->type == DT_SOCK || file->type == DT_FIFO) {
-		// For devices without any end
-		socket_flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
-	}
-	else {
-		// For devices with finite size or files
-		socket_flags |= RRR_SOCKET_READ_CHECK_EOF;
-	}
-
-	if (file->flags & RRR_FILE_F_IS_KEYBOARD) {
-		socket_flags |= RRR_SOCKET_READ_INPUT_DEVICE;
-	}
-
-	struct file_read_callback_data read_callback_data = {
-		data,
-		file
-	};
-
-	if (data->read_method == FILE_READ_METHOD_TELEGRAMS) {
-		if (data->tree == NULL) {
-			RRR_BUG("BUG: No array tree was present for read method TELEGRAMS in file_read\n");
-		}
-		if ((ret = rrr_socket_common_receive_array_tree (
-				bytes_read,
-				&file->read_session_collection,
-				file->fd,
-				socket_flags,
-				&array_final,
-				data->tree,
-				data->do_sync_byte_by_byte,
-				data->max_read_step_size,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
-				file_read_array_callback,
-				NULL,
-				&read_callback_data
-		)) != 0) {
-			if (ret == RRR_READ_INCOMPLETE) {
-				ret = 0;
-				goto out;
-			}
-			if (ret != RRR_READ_EOF) {
-				RRR_MSG_0("Warning: Failed while reading array data from file '%s'=>'%s' in file instance %s\n",
-						file->orig_path, file->real_path, INSTANCE_D_NAME(data->thread_data));
-			}
-			goto out;
-		}
-	}
-	else if (data->read_method == FILE_READ_METHOD_ALL_SIMPLE ||
-			data->read_method == FILE_READ_METHOD_ALL_STRUCTURED
-	) {
-		if (data->tree != NULL) {
-			RRR_BUG("BUG: Two methods was specified in file_read, config parser should check for this\n");
-		}
-
-		if ((ret = rrr_socket_read_message_default (
-				bytes_read,
-				&file->read_session_collection,
-				file->fd,
-				65536,
-				65536,
-				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
-				socket_flags,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				file_read_all_to_message_get_target_size_callback,
-				NULL,
-				NULL,
-				NULL,
-				file_read_all_to_message_complete_callback,
-				&read_callback_data
-		)) != 0) {
-			if (ret == RRR_READ_EOF) {
-				// Close file
-				ret = RRR_READ_SOFT_ERROR;
-			}
-			else if (ret == RRR_READ_INCOMPLETE) {
-				ret = 0;
-			}
-			else {
-				RRR_MSG_0("Error while reading from '%s'=>'%s' in file instance %s, return was %i\n",
-						file->orig_path, file->real_path, INSTANCE_D_NAME(data->thread_data), ret);
-				goto out;
-			}
-		}
-		else {
-			// Return soft error to close file
-			ret = RRR_READ_SOFT_ERROR;
-		}
-	}
-	else {
-		RRR_BUG("BUG: Unknown read_method %i in file_read\n", data->read_method);
-	}
-
-	file->last_read_time = rrr_time_get_64();
-
-	out:
-	rrr_array_clear(&array_final);
-	return ret;
-}
-
-static int file_read_all (uint64_t *bytes_read_accumulator, struct file_data *data) {
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(&data->files, struct file);
-		uint64_t bytes_read_tmp = 0;
-		if ((ret = file_read(&bytes_read_tmp, data, node)) != 0) {
-			if (ret & RRR_SOCKET_HARD_ERROR) {
-				goto out;
-			}
-			RRR_LL_ITERATE_SET_DESTROY();
-			ret = 0;
-		}
-		(*bytes_read_accumulator) += bytes_read_tmp;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->files, 0; file_destroy(node));
-
-	out:
-	return ret;
-}
-
 static int file_private_data_new(void **target, int fd, void *private_arg) {
 	struct file_data *data = private_arg;
 
@@ -1100,20 +973,30 @@ static int file_read_raw_get_target_size(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_C
     	struct file *file = private_data;
 	struct file_data *data = arg;
 
+	(void)(file);
 	(void)(addr);
 	(void)(addr_len);
 	(void)(data);
-
-	printf("Get target size %s\n", file->orig_path);
 
 	read_session->read_complete_method = RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ;
 
 	return RRR_READ_OK;
 }
 
-static void file_read_error(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
-	assert(0);
-	return 0;
+static void file_read_error_callback(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+	struct file_data *data = arg;
+	struct file *file = private_data;
+
+	(void)(read_session);
+	(void)(addr);
+	(void)(addr_len);
+
+	RRR_MSG_0("Failed while reading from file '%s'=>'%s' in file instance %s%s\n",
+		file->orig_path,
+		file->real_path,
+		INSTANCE_D_NAME(data->thread_data),
+		(is_hard_err ? " (hard error)" : "")
+	);
 }
 
 static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) {
@@ -1124,7 +1007,59 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 	(void)(addr_len);
 	(void)(data);
 
+	data->bytes_read_accumulator += read_session->target_size;
+
 	return file_read_all_to_message_complete (file->data, file, read_session);
+}
+
+static void file_event_probe (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct file_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (file_probe(data) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
+}
+
+static void file_event_stats (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct file_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	RRR_DBG_1("file instance %s messages per second %" PRIu64 " total %" PRIu64"\n",
+			INSTANCE_D_NAME(data->thread_data), data->message_count - data->message_count_prev, data->message_count);
+
+	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 0, "generated", data->message_count - data->message_count_prev);
+	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 1, "bytes", data->bytes_read_accumulator);
+
+	data->bytes_read_accumulator = 0;
+	data->message_count_prev = data->message_count;
+}
+
+static int file_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct file_data *data = thread_data->private_data;
+
+	(void)(data);
+
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
+		return RRR_EVENT_EXIT;
+	}
+	rrr_thread_watchdog_time_update(thread);
+
+	return RRR_EVENT_OK;
 }
 
 static void *thread_entry_file (struct rrr_thread *thread) {
@@ -1166,119 +1101,85 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		goto out_cleanup;
 	}
 
-	rrr_socket_client_collection_event_setup_raw (
+	rrr_socket_client_collection_set_idle_timeout (
 			data->sockets,
-			file_private_data_new,
-			file_private_data_destroy,
-			data,
-			65536,
-			RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS,
-			file_read_raw_get_target_size,
-			data,
-			file_read_error,
-			data,
-			file_read_raw_complete,
-			data
+			data->timeout_s * 1000 * 1000
 	);
 
-	int fd = open("/tmp/x", 0);
-	if (fd == -1) {
-		RRR_MSG_0("Failed to open /tmp/x: %s\n", rrr_strerror(errno));
+	if (data->read_method == FILE_READ_METHOD_TELEGRAMS) {
+		rrr_socket_client_collection_event_setup_array_tree (
+				data->sockets,
+				file_private_data_new,
+				file_private_data_destroy,
+				data,
+				0,
+				file_read_set_flags_callback,
+				data,
+				data->tree,
+				data->do_sync_byte_by_byte,
+				data->max_read_step_size,
+				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
+				file_read_array_callback,
+				data,
+				file_read_error_callback,
+				data,
+				NULL,
+				NULL
+		);
+	}
+	else {
+		rrr_socket_client_collection_event_setup_raw (
+				data->sockets,
+				file_private_data_new,
+				file_private_data_destroy,
+				data,
+				data->max_read_step_size,
+				0,
+				file_read_set_flags_callback,
+				data,
+				file_read_raw_get_target_size,
+				data,
+				file_read_error_callback,
+				data,
+				file_read_raw_complete,
+				data
+		);
+	}
+
+	if (rrr_event_collection_push_periodic (
+			&data->event_probe,
+			&data->events,
+			file_event_probe,
+			data,
+			data->probe_interval * 1000
+	) != 0) {
+		RRR_MSG_0("Failed to create probe event in file instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
 
-	const struct stat file_stat = {0};
+	EVENT_ADD(data->event_probe);
 
-	if (file_collection_push(&data->files, data, 0, 0, "/tmp/x", "/tmp/x", fd, &file_stat) != 0) {
-		RRR_MSG_0("Failed to push file to file collection\n");
+	if (rrr_event_collection_push_periodic (
+			&data->event_stats,
+			&data->events,
+			file_event_stats,
+			data,
+			1 * 1000 * 1000 // 1 second
+	) != 0) {
+		RRR_MSG_0("Failed to create stats event in file instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
-	};
+	}
 
-	if (rrr_socket_client_collection_connected_fd_push(data->sockets, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND) != 0) {
-		RRR_MSG_0("Failed to add fd to client collection in file instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_cleanup;
+	if (RRR_DEBUGLEVEL_1) {
+		EVENT_ADD(data->event_stats);
 	}
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			file_periodic,
 			thread
 	);
-
-	/*
-	const uint64_t probe_interval = data->probe_interval * 1000;
-
-	uint64_t time_prev_stats = rrr_time_get_64();
-	uint64_t time_next_probe = time_prev_stats;
-
-	uint64_t bytes_read_accumulator = 0;
-	uint64_t messages_count_prev = 0;
-
-	uint64_t ticks = 0;
-	uint64_t messages_count_prev_stats = 0;
-
-	int consecutive_nothing_happened = 0;
-
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
-
-		ticks++;
-
-		uint64_t time_now = rrr_time_get_64();
-
-		if (time_now >= time_next_probe) {
-//			printf("probe interval %" PRIu64 "\n", probe_interval);
-			int ret_tmp;
-			if ((ret_tmp = file_probe(data)) != 0) {
-				if (ret_tmp != RRR_FILE_STOP) {
-					break;
-				}
-			}
-			time_next_probe = time_now + probe_interval;
-		}
-
-		uint64_t bytes_read_tmp = 0;
-		if (file_read_all(&bytes_read_tmp, data) != 0) {
-			break;
-		}
-		bytes_read_accumulator += bytes_read_tmp;
-
-		if (bytes_read_tmp == 0 && messages_count_prev == data->message_count) {
-			consecutive_nothing_happened++;
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		messages_count_prev = data->message_count;
-
-		if (consecutive_nothing_happened > 1000) {
-//			printf("Long sleep\n");
-			rrr_posix_usleep (5000); // 5ms
-		}
-		else if (consecutive_nothing_happened > 100) {
-//			printf("Short sleep %i bytes read %" PRIu64 "\n", consecutive_nothing_happened, bytes_read_tmp);
-			rrr_posix_usleep (2000); // 2ms
-		}
-
-		if (time_now - time_prev_stats > 1000000) {
-			RRR_DBG_1("file instance %s messages per second %" PRIu64 " total %" PRIu64"\n",
-					INSTANCE_D_NAME(thread_data), data->message_count - messages_count_prev_stats, data->message_count);
-
-			time_prev_stats = time_now;
-
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "generated", data->message_count - messages_count_prev_stats);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "bytes", bytes_read_accumulator);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 2, "ticks", ticks);
-
-			bytes_read_accumulator = 0;
-			messages_count_prev_stats = data->message_count;
-			ticks = 0;
-		}
-	}
-
-	*/
 
 	out_cleanup:
 	RRR_DBG_1 ("Thread file instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));

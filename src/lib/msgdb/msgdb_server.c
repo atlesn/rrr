@@ -1353,6 +1353,8 @@ int rrr_msgdb_server_new (
 			server,
 			1 * 1024 * 1024, // 1 MB
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_READ_MESSAGE_FLUSH_OVERSHOOT,
+			NULL,
+			NULL,
 			__rrr_msgdb_server_read_msg_msg_callback,
 			NULL,
 			NULL,

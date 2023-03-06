@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -78,10 +78,11 @@ struct rrr_socket_client_collection {
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
-
 	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
 	void (*callback_private_data_destroy)(void *private_data);
 	void *callback_private_data_arg;
+	void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg);
+	void *callback_set_read_flags_arg;
 
 	// Callbacks for message mode
 	RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
@@ -521,10 +522,27 @@ static void __rrr_socket_client_read_callback_address_deduct (
 	};
 }
 
+static int __rrr_socket_client_read_callback_flags_deduct (
+		const struct rrr_socket_client *client
+) {
+	const struct rrr_socket_client_collection *collection = client->collection;
+
+	int read_flags_socket = client->collection->read_flags_socket;
+
+	if (collection->callback_set_read_flags != NULL) {
+		collection->callback_set_read_flags(&read_flags_socket, client->private_data, collection->callback_set_read_flags_arg);
+	}
+
+	return read_flags_socket;
+}
+
 #define DEDUCT_ADDRESS()                            \
 	const struct sockaddr *addr;                \
 	socklen_t addr_len;                         \
 	__rrr_socket_client_read_callback_address_deduct (&addr, &addr_len, read_session, client)
+
+#define DEDUCT_READ_FLAGS()                         \
+	const int read_flags_socket = __rrr_socket_client_read_callback_flags_deduct(client);
 
 static int __rrr_socket_client_collection_read_raw_get_target_size_callback (
 		struct rrr_read_session *read_session,
@@ -851,6 +869,7 @@ static void __rrr_socket_client_event_read_message (
 
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	uint64_t bytes_read = 0;
 
@@ -864,7 +883,7 @@ static void __rrr_socket_client_event_read_message (
 				sizeof(struct rrr_msg),
 				collection->read_step_max_size,
 				0, // No max size
-				collection->read_flags_socket,
+				read_flags_socket,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
@@ -913,6 +932,7 @@ static void __rrr_socket_client_event_read_raw (
 
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	uint64_t bytes_read = 0;
 
@@ -926,7 +946,7 @@ static void __rrr_socket_client_event_read_raw (
 				4096,
 				collection->read_step_max_size,
 				0, // No max size
-				collection->read_flags_socket,
+				read_flags_socket,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				__rrr_socket_client_collection_read_raw_get_target_size_callback,
@@ -972,6 +992,7 @@ static void __rrr_socket_client_event_read_array_tree (
 
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	uint64_t bytes_read = 0;
 
@@ -984,7 +1005,7 @@ static void __rrr_socket_client_event_read_array_tree (
 			&bytes_read,
 			&client->read_sessions,
 			fd,
-			collection->read_flags_socket,
+			read_flags_socket,
 			&array_tmp,
 			collection->array_tree,
 			collection->array_do_sync_byte_by_byte,
@@ -1014,6 +1035,7 @@ static void __rrr_socket_client_event_read_ignore (
 
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	char buf[1024];
 	rrr_biglength read_bytes = 0;
@@ -1030,7 +1052,7 @@ static void __rrr_socket_client_event_read_ignore (
 					sizeof(buf),
 					(struct sockaddr *) &addr,
 					&addr_len,
-					collection->read_flags_socket
+					read_flags_socket
 			)
 	);
 
@@ -1898,6 +1920,8 @@ static void __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
@@ -1913,6 +1937,8 @@ static void __rrr_socket_client_collection_event_setup (
 	collection->callback_private_data_new = callback_private_data_new;
 	collection->callback_private_data_destroy = callback_private_data_destroy;
 	collection->callback_private_data_arg = callback_private_data_arg;
+	collection->callback_set_read_flags = callback_set_read_flags;
+	collection->callback_set_read_flags_arg = callback_set_read_flags_arg;
 }
 
 int rrr_socket_client_collection_connected_fd_push (
@@ -1957,6 +1983,8 @@ void rrr_socket_client_collection_event_setup (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 ) {
@@ -1971,6 +1999,8 @@ void rrr_socket_client_collection_event_setup (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_message,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -1985,6 +2015,8 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
@@ -2005,6 +2037,8 @@ void rrr_socket_client_collection_event_setup_raw (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_raw,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -2018,6 +2052,8 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		rrr_biglength read_step_max_size,
@@ -2046,6 +2082,8 @@ void rrr_socket_client_collection_event_setup_array_tree (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_array_tree,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -2058,12 +2096,16 @@ void rrr_socket_client_collection_event_setup_ignore (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		int read_flags_socket
+		int read_flags_socket,
+		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void *callback_set_read_flags_arg
 ) {
 	__rrr_socket_client_collection_event_setup (
 			collection,
 			0,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_ignore,
 			callback_private_data_new,
 			callback_private_data_destroy,
