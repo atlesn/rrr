@@ -1168,6 +1168,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	}
 
 	EVENT_ADD(data->event_probe);
+	EVENT_ACTIVATE(data->event_probe); // Probe immediately when starting
 
 	if (rrr_event_collection_push_periodic (
 			&data->event_stats,
@@ -1216,7 +1217,7 @@ __attribute__((constructor)) void load(void) {
 
 void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_PROCESSOR;
+		data->type = RRR_MODULE_TYPE_FLEXIBLE;
 		data->operations = module_operations;
 		data->private_data = NULL;
 		data->event_functions = event_functions;
