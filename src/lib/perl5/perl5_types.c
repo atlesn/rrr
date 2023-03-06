@@ -566,6 +566,7 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	switch (def_orig->type) {
 		case RRR_TYPE_BLOB:
 		case RRR_TYPE_MSG:
+		case RRR_TYPE_HDLC:
 			do_binary = 1;
 			break;
 		default:
