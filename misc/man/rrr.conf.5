@@ -434,7 +434,7 @@ Subscribes to MQTT topics and/or publishes messages. TLS-capable V5/V3.1(.1) MQT
 .It journal (SA)
 Traps log messages from all modules and saves them into RRR messages.
 
-.It file (SA)
+.It file (PA)
 Reads from files, sockets, character devices and FIFO pipes.
 
 .It mysql (DAI)
@@ -2789,12 +2789,19 @@ Generate dummy messages for testing purposes. Defaults to no.
 Hostname to send along with log messages. Defaults to system hostname.
 .El
 
-.SS file (SA)
-Reads from files, character devices, block devices, sockets and FIFO pipes.
+.SS file (PA)
+Reading and writing to or from files, character devices, block devices, sockets and FIFO pipes.
 Full file contents may be read into RRR messages, or and array definition may be used to create RRR array messages from the data.
 The
 .B file
 module periodically checks for new entries in the specified directory and tries to read from them.
+.PP
+.B THIS MODULE MAY READ AND WRITE ANYWHERE ON THE FILESYSTEM IN CERTAIN CONFIGRATIONS
+
+When instructing the file module to write to a specific file path using a paths from array messages, ensure
+that the paths used does not come directly from outside.
+Note that when writing to a file, the file module may also start reading from the same file if configured to do so.
+Make messages with paths within RRR only (in a script module).
 .PP
 Sockets, character devices and FIFO pipes are kept open until the other end closes them or EOF is encountered.
 If disconnected,

@@ -1012,6 +1012,16 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 	return file_read_all_to_message_complete (file->data, file, read_session);
 }
 
+static int file_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct file_data *data = thread_data->private_data;
+
+	(void)(data);
+
+	assert(0);
+}
+
 static void file_event_probe (
 		evutil_socket_t fd,
 		short flags,
@@ -1195,6 +1205,10 @@ static struct rrr_module_operations module_operations = {
 	NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	file_event_broker_data_available
+};
+
 static const char *module_name = "file";
 
 __attribute__((constructor)) void load(void) {
@@ -1202,9 +1216,10 @@ __attribute__((constructor)) void load(void) {
 
 void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_SOURCE;
+		data->type = RRR_MODULE_TYPE_PROCESSOR;
 		data->operations = module_operations;
 		data->private_data = NULL;
+		data->event_functions = event_functions;
 }
 
 void unload(void) {

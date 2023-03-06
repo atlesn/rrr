@@ -104,6 +104,6 @@ httpserver_la_LDFLAGS = ${module_ldflags}
 httpserver_la_SOURCES = p_httpserver.c
 
 file_la_LDFLAGS = ${module_ldflags}
-file_la_SOURCES = src_file.c
+file_la_SOURCES = p_file.c
 
 libdir=${exec_prefix}/lib/rrr
