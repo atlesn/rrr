@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/random.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/event/event.h"
 #include "../lib/read.h"
 #include "../lib/array_tree.h"
 #include "../lib/read_constants.h"
@@ -55,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/posix.h"
 #include "../lib/input/input.h"
 #include "../lib/serial/serial.h"
+#include "../lib/socket/rrr_socket_client.h"
 
 #define RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE 4096
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
@@ -68,8 +70,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_FILE_STOP RRR_READ_EOF
 
+struct file_data;
+
 struct file {
 	RRR_LL_NODE(struct file);
+	struct file_data *data;
 	struct rrr_read_session_collection read_session_collection;
 	unsigned char type; // DT_*
 	int flags;
@@ -132,6 +137,8 @@ struct file_data {
 	uint64_t message_count;
 
 	struct file_collection files;
+
+	struct rrr_socket_client_collection *sockets;
 };
 
 static void file_destroy(struct file *file) {
@@ -155,12 +162,80 @@ static int file_collection_has (const struct file_collection *files, const char 
 	return 0;
 }
 
+static struct file *file_collection_get_by_fd (const struct file_collection *files, int fd) {
+	RRR_LL_ITERATE_BEGIN(files, struct file);
+		if (node->fd == fd) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+static void file_collection_remove (struct file_collection *files, struct file *file) {
+	RRR_LL_ITERATE_BEGIN(files, struct file);
+		if (node == file) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(files, 0; file_destroy(node));
+}
+
 static int file_collection_count (const struct file_collection *files) {
 	return RRR_LL_COUNT(files);
 }
 
+static int file_new (
+		struct file **result,
+		struct file_data *data,
+		unsigned char type,
+		int flags,
+		const char *orig_path,
+		const char *real_path,
+		int fd,
+		const struct stat *file_stat
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	struct file *file = NULL;
+
+	if ((file = rrr_allocate_zero(sizeof(*file))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((file->orig_path = rrr_strdup(orig_path)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for path in %s\n", __func__);
+		ret = 1;
+		goto out_destroy;
+	}
+
+	if ((file->real_path = rrr_strdup(real_path)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for path in %s\n", __func__);
+		ret = 1;
+		goto out_destroy;
+	}
+
+	file->data = data;
+	file->type = type;
+	file->fd = fd;
+	file->flags = flags;
+	file->file_stat = *file_stat;
+
+	*result = file;
+
+	goto out;
+	out_destroy:
+		file_destroy(file);
+	out:
+		return ret;
+}
+
 static int file_collection_push (
 		struct file_collection *files,
+		struct file_data *data,
 		unsigned char type,
 		int flags,
 		const char *orig_path,
@@ -172,38 +247,22 @@ static int file_collection_push (
 
 	struct file *file = NULL;
 
-	if ((file = rrr_allocate(sizeof(*file))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in file_collection_push\n");
-		ret = 1;
+	if ((ret = file_new (
+			&file,
+			data,
+			type,
+			flags,
+			orig_path,
+			real_path,
+			fd,
+			file_stat
+	)) != 0) {
 		goto out;
 	}
-
-	memset(file, '\0', sizeof(*file));
-
-	if ((file->orig_path = rrr_strdup(orig_path)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for path in file_collection_push");
-		ret = 1;
-		goto out;
-	}
-
-	if ((file->real_path = rrr_strdup(real_path)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for path in file_collection_push");
-		ret = 1;
-		goto out;
-	}
-
-	file->type = type;
-	file->fd = fd;
-	file->flags = flags;
-	file->file_stat = *file_stat;
 
 	RRR_LL_PUSH(files, file);
-	file = NULL;
 
 	out:
-	if (file != NULL) {
-		file_destroy(file);
-	}
 	return ret;
 }
 
@@ -215,6 +274,9 @@ static int file_data_init(struct file_data *data, struct rrr_instance_runtime_da
 
 static void file_data_cleanup(void *arg) {
 	struct file_data *data = (struct file_data *) arg;
+	if (data->sockets != NULL) {
+		rrr_socket_client_collection_destroy(data->sockets);
+	}
 	RRR_LL_DESTROY (&data->files, struct file, file_destroy(node));
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
@@ -528,7 +590,7 @@ static int file_probe_callback (
 		goto out;
 	}
 
-	if ((ret = file_collection_push(&data->files, type, flags, orig_path, resolved_path, fd, &file_stat)) != 0) {
+	if ((ret = file_collection_push(&data->files, data, type, flags, orig_path, resolved_path, fd, &file_stat)) != 0) {
 		goto out;
 	}
 
@@ -833,18 +895,16 @@ static int file_read_all_to_message_write_callback (struct rrr_msg_holder *entry
 	return ret;
 }
 
-static int file_read_all_to_message_complete_callback (
-		struct rrr_read_session *read_session,
-		void *arg
+static int file_read_all_to_message_complete (
+		struct file_data *data,
+		struct file *file,
+		struct rrr_read_session *read_session
 ) {
-	struct file_read_callback_data *callback_data = arg;
-	struct file_data *data = callback_data->file_data;
-
 	int ret = 0;
 
 	struct file_read_all_to_message_write_callback_data write_callback_data = {
 			data,
-			callback_data->file,
+			file,
 			read_session
 	};
 
@@ -867,6 +927,14 @@ static int file_read_all_to_message_complete_callback (
 
 	out:
 	return ret;
+}
+
+static int file_read_all_to_message_complete_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct file_read_callback_data *callback_data = arg;
+	return file_read_all_to_message_complete (callback_data->file_data, callback_data->file, read_session);
 }
 
 static int file_read (uint64_t *bytes_read, struct file_data *data, struct file *file) {
@@ -1010,6 +1078,55 @@ static int file_read_all (uint64_t *bytes_read_accumulator, struct file_data *da
 	return ret;
 }
 
+static int file_private_data_new(void **target, int fd, void *private_arg) {
+	struct file_data *data = private_arg;
+
+	*target = file_collection_get_by_fd (&data->files, fd);
+	assert(*target != NULL);
+
+	return 0;
+}
+
+static void file_private_data_destroy(void *private_data) {
+	struct file *file = private_data;
+
+	// Let client collection close socket
+	file->fd = 0;
+
+	file_collection_remove(&file->data->files, file);
+}
+
+static int file_read_raw_get_target_size(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
+    	struct file *file = private_data;
+	struct file_data *data = arg;
+
+	(void)(addr);
+	(void)(addr_len);
+	(void)(data);
+
+	printf("Get target size %s\n", file->orig_path);
+
+	read_session->read_complete_method = RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ;
+
+	return RRR_READ_OK;
+}
+
+static void file_read_error(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+	assert(0);
+	return 0;
+}
+
+static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) {
+    	struct file *file = private_data;
+	struct file_data *data = arg;
+
+	(void)(addr);
+	(void)(addr_len);
+	(void)(data);
+
+	return file_read_all_to_message_complete (file->data, file, read_session);
+}
+
 static void *thread_entry_file (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct file_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1040,6 +1157,56 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			(data->prefix != NULL ? data->prefix : "")
 	);
 
+	if (rrr_socket_client_collection_new (
+			&data->sockets,
+			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_NAME(thread_data)
+	) != 0) {
+		RRR_MSG_0("Failed to create client collection in file instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup;
+	}
+
+	rrr_socket_client_collection_event_setup_raw (
+			data->sockets,
+			file_private_data_new,
+			file_private_data_destroy,
+			data,
+			65536,
+			RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS,
+			file_read_raw_get_target_size,
+			data,
+			file_read_error,
+			data,
+			file_read_raw_complete,
+			data
+	);
+
+	int fd = open("/tmp/x", 0);
+	if (fd == -1) {
+		RRR_MSG_0("Failed to open /tmp/x: %s\n", rrr_strerror(errno));
+		goto out_cleanup;
+	}
+
+	const struct stat file_stat = {0};
+
+	if (file_collection_push(&data->files, data, 0, 0, "/tmp/x", "/tmp/x", fd, &file_stat) != 0) {
+		RRR_MSG_0("Failed to push file to file collection\n");
+		goto out_cleanup;
+	};
+
+	if (rrr_socket_client_collection_connected_fd_push(data->sockets, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND) != 0) {
+		RRR_MSG_0("Failed to add fd to client collection in file instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup;
+	}
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
+
+	/*
 	const uint64_t probe_interval = data->probe_interval * 1000;
 
 	uint64_t time_prev_stats = rrr_time_get_64();
@@ -1110,6 +1277,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			ticks = 0;
 		}
 	}
+
+	*/
 
 	out_cleanup:
 	RRR_DBG_1 ("Thread file instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
