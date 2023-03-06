@@ -1181,11 +1181,6 @@ static int __rrr_type_vain_pack (RRR_TYPE_PACK_ARGS) {
 	return 0;
 }
 
-static int __rrr_type_hdlc_unpack (RRR_TYPE_UNPACK_ARGS) {
-	(void)(node);
-	return 0;
-}
-
 static int __rrr_type_hdlc_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
 	if ((rrr_hdlc_get_export_length(bytes, node->data, node->total_stored_length)) != 0) {
 		RRR_MSG_0("Failed to get export length of HDLC frame\n");
@@ -1202,16 +1197,6 @@ static int __rrr_type_hdlc_export (RRR_TYPE_EXPORT_ARGS) {
 			node->total_stored_length
 	);
 	return 0;
-}
-
-static int __rrr_type_hdlc_pack (RRR_TYPE_PACK_ARGS) {
-	(void)(node);
-	(void)(target);
-
-	*written_bytes = 0;
-	*new_type_id = RRR_TYPE_VAIN;
-
-	return 1;
 }
 
 static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
@@ -1385,7 +1370,7 @@ RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP, RRR_TYPE_MAX_NSEP, __rrr_type_import_nsep, 
 RRR_TYPE_DEFINE(stx,  RRR_TYPE_STX,  RRR_TYPE_MAX_STX,  __rrr_type_import_stx,  NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_STX);
 RRR_TYPE_DEFINE(err,  RRR_TYPE_ERR,  RRR_TYPE_MAX_ERR,  __rrr_type_import_err,  NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  NULL, RRR_TYPE_NAME_ERR);
 RRR_TYPE_DEFINE(vain, RRR_TYPE_VAIN, RRR_TYPE_MAX_VAIN, __rrr_type_import_vain, NULL,                             __rrr_type_vain_export, __rrr_type_vain_unpack, __rrr_type_vain_pack, __rrr_type_vain_to_str, __rrr_type_vain_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_VAIN);
-RRR_TYPE_DEFINE(hdlc, RRR_TYPE_HDLC, RRR_TYPE_MAX_HDLC, __rrr_type_import_hdlc, __rrr_type_hdlc_get_export_length,__rrr_type_hdlc_export, __rrr_type_hdlc_unpack, __rrr_type_hdlc_pack, __rrr_type_hdlc_to_str, __rrr_type_hdlc_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_HDLC);
+RRR_TYPE_DEFINE(hdlc, RRR_TYPE_HDLC, RRR_TYPE_MAX_HDLC, __rrr_type_import_hdlc, __rrr_type_hdlc_get_export_length,__rrr_type_hdlc_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_hdlc_to_str, __rrr_type_hdlc_to_64, __rrr_type_str_to_ull, RRR_TYPE_NAME_HDLC);
 RRR_TYPE_DEFINE(null, 0,             0,                 NULL,                   NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  NULL, NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array

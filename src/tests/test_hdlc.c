@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/hdlc/hdlc.h"
 #include "../lib/array_tree.h"
+#include "../lib/util/rrr_time.h"
 
 static const char *TEST_DATA_FILE = "test_hdlc_data.bin";
 
@@ -165,6 +166,7 @@ static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void 
 	int ret = 0;
 
 	const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(array, rrr_test_hdlc_array_tag);
+	struct rrr_msg_msg *msg = NULL;
 
 	if (value == NULL) {
 		TEST_MSG("Value was NULL in %s\n", __func__);
@@ -181,7 +183,45 @@ static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void 
 	memcpy(callback_data->target, value->data, value->total_stored_length);
 	*callback_data->target_size = value->total_stored_length;
 
+	// Pack to message
+	if ((ret = rrr_array_new_message_from_array (
+			&msg,
+			array,
+			rrr_time_get_64(),
+			NULL,
+			0
+	)) != 0) {
+		TEST_MSG("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	// Unpack
+	uint16_t version;
+	if ((ret = rrr_array_message_append_to_array (
+			&version,
+			array,
+			msg
+	)) != 0) {
+		TEST_MSG("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	assert(rrr_array_count(array) == 2);
+
+	const struct rrr_type_value *value_unpacked = rrr_array_value_get_by_index(array, 1);
+
+	if (value->total_stored_length != value_unpacked->total_stored_length) {
+		TEST_MSG("Length mismatch after unpacking in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	assert(value->element_count == value_unpacked->element_count);
+	assert(memcmp(value->data, value_unpacked->data, value->total_stored_length) == 0);
+	assert(value->definition->type == value_unpacked->definition->type);
+
 	out:
+	RRR_FREE_IF_NOT_NULL(msg);
 	return ret;
 }
 
