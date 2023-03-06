@@ -836,6 +836,7 @@ static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
 	DEFINE_PERL5_TYPE(STX,  stx,  __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //12
 	DEFINE_PERL5_TYPE(ERR,  err,  NULL,                        NULL),                                //13
 	DEFINE_PERL5_TYPE(VAIN, vain, __rrr_perl5_type_to_sv_vain, __rrr_perl5_type_to_value_vain),      //14
+	DEFINE_PERL5_TYPE(HDLC, hdlc, __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //15
 	{ 0, NULL, NULL, NULL }
 };
 // NOTE : Count correctly here

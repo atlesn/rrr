@@ -101,6 +101,9 @@ enum rrr_type_enum {
 #define RRR_TYPE_MAX_VAIN   0
 #define RRR_TYPE_MAX_HDLC   0
 
+// Don't have the CASE macros overlap, a type must be in one CASE macro only. The
+// IS macros must overlap when types are convertibe (e.g. STR is also BLOB).
+
 #define RRR_TYPE_IS_64(type)  (                                                             \
   (type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||                 \
   (type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR)
@@ -108,6 +111,7 @@ enum rrr_type_enum {
                                        (type) == RRR_TYPE_MSG  || (type) == RRR_TYPE_STR || \
 				       (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX || \
 				       (type) == RRR_TYPE_HDLC)
+#define RRR_TYPE_CASE_BLOB            case RRR_TYPE_BLOB: case RRR_TYPE_HDLC
 
 #define RRR_TYPE_IS_BLOB_EXCACT(type) ((type) == RRR_TYPE_BLOB)
 #define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)

@@ -111,7 +111,7 @@ namespace RRR {
 				case RRR_TYPE_MSG:
 					msg_split(m);
 					break;
-				case RRR_TYPE_BLOB:
+				RRR_TYPE_CASE_BLOB:
 					blob_split<const uint8_t>(b);
 					break;
 				case RRR_TYPE_FIXP:
