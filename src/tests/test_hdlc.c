@@ -195,6 +195,31 @@ static int __rrr_test_hdlc_array_import_callback (struct rrr_array *array, void 
 		goto out;
 	}
 
+	// Unpack
+	uint16_t version;
+	if ((ret = rrr_array_message_append_to_array (
+			&version,
+			array,
+			msg
+	)) != 0) {
+		TEST_MSG("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	assert(rrr_array_count(array) == 2);
+
+	const struct rrr_type_value *value_unpacked = rrr_array_value_get_by_index(array, 1);
+
+	if (value->total_stored_length != value_unpacked->total_stored_length) {
+		TEST_MSG("Length mismatch after unpacking in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	assert(value->element_count == value_unpacked->element_count);
+	assert(memcmp(value->data, value_unpacked->data, value->total_stored_length) == 0);
+	assert(value->definition->type == value_unpacked->definition->type);
+
 	out:
 	RRR_FREE_IF_NOT_NULL(msg);
 	return ret;
