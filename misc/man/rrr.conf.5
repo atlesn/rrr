@@ -2892,15 +2892,31 @@ Note that this is probably not useful for sockets and character devices. Cannot 
 .B file_input_types,
 but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
-.It file_read_all_method={simple|structured}
+.It file_read_all_method={simple|structured|file}
 May be set if
 .B file_read_all_to_message
 is 'yes'.
 If set to 'simple', the contents of the file is put into a plain message.
-If set to 'structured', the constents of the file along with metadata is put into an array array message.
-For the latter, the array fields
+.PP
+If set to 'structured', the contents of the file along with metadata is put into an array array message.
+The array fields
 .B data, size, path_original, path_resolved, atime, mtime, and ctime
 will be present in the generated messages.
+.PP
+If set to 'file', the fields
+.B file_path, file_directory, file_name, file_data
+will be present in the message. The field
+.B file_path_resolved
+contains the full resolved path of the file (after resolving symbolic links).
+The parameters
+.B file_directory
+and
+.B file_name
+together describe the original path of the file before any symlink resolving.
+The parameter
+.B file_data
+contains the data of the file.
+Messages produced with these fields are appropriate for passing into another file module for writing.
 
 The
 .B data
@@ -2982,9 +2998,11 @@ If no message is read in the specified amount of seconds, close the file. Defaul
 Put all values from an array (*) or selected values (by tag) into the file.
 RRR messages which do not contain an array are dropped.
 Any integer types will have big endianess in the resulting publish message.
-If set to 'no' or left unset, the parameter
+If left unset, the field
+.B file_data
+will be used unless
 .B file_write_rrr_message
-must be set instead if writing is to be performed.
+is set to 'yes'.
 
 .It file_write_rrr_message={yes|no}
 If set to 'yes', full RRR messages will be written.
@@ -3001,7 +3019,7 @@ This parameter has no effect if the output file is a stream.
 Allow usage of the array field
 .B file_directory
 in messages from sender instances, overriding the directory specified in the configuration.
-If not given or set to no, messages containing this field will be dropped with an error message.
+If not given or set to no, any directory set in messages will be ignored.
 Read about security considerations above before enabling this parameter.
 
 .El

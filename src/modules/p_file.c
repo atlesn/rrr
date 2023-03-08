@@ -94,7 +94,8 @@ struct file_collection {
 enum file_read_method {
 	FILE_READ_METHOD_TELEGRAMS,
 	FILE_READ_METHOD_ALL_SIMPLE,
-	FILE_READ_METHOD_ALL_STRUCTURED
+	FILE_READ_METHOD_ALL_STRUCTURED,
+	FILE_READ_METHOD_ALL_FILE
 };
 
 struct file_data {
@@ -410,10 +411,12 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 		else if (rrr_posix_strcasecmp(data->read_all_method, "structured") == 0) {
 			data->read_method = FILE_READ_METHOD_ALL_STRUCTURED;
-
+		}
+		else if (rrr_posix_strcasecmp(data->read_all_method, "file") == 0) {
+			data->read_method = FILE_READ_METHOD_ALL_FILE;
 		}
 		else {
-			RRR_MSG_0("Unknown value '%s' for file_read_all_method in file instance %s, valid options are 'simple' and 'structured'.\n",
+			RRR_MSG_0("Unknown value '%s' for file_read_all_method in file instance %s, valid options are 'simple', 'structured' and 'file'.\n",
 					data->read_all_method, config->name);
 			ret = 1;
 		}
@@ -471,29 +474,29 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		goto out;
 	}
 
-	if (data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE && !RRR_INSTANCE_CONFIG_EXISTS("senders")) {
-		RRR_MSG_0("A write method was set while no senders were set in file instance %s, this is an invalid configuration\n", config->name);
-		ret = 1;
-		goto out;
-	}
-
 	if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
 		if (RRR_INSTANCE_CONFIG_EXISTS("senders")) {
-			RRR_MSG_0("Sender instances were set while no write method was specified in file instance %s, this is an invalid configuration\n", config->name);
-			ret = 1;
-			goto out;
+			if ((ret = rrr_map_parse_pair("file_data", &data->write_values_list, NULL)) != 0) {
+				RRR_MSG_0("Failed to add default arrray value in %s\n", __func__);
+				goto out;
+			}
+			data->write_method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
 		}
-		if (data->do_read_from_written_files) {
+		else if (data->do_read_from_written_files) {
 			RRR_MSG_0("Parameter file_read_from_written_files was set to yes while no write method was specified in file instance %s, this is an invalid configuration\n", config->name);
 			ret = 1;
 			goto out;
 		}
-
-		if (data->do_no_probing) {
+		else if (data->do_no_probing) {
 			RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
 			ret = 1;
 			goto out;
 		}
+	}
+	else if (!RRR_INSTANCE_CONFIG_EXISTS("senders")) {
+		RRR_MSG_0("A write method was set in the configuration for file instance %s, but no senders were set. This is an invalid configuration.\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
 	/* On error, memory is freed by data_cleanup */
