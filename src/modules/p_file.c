@@ -77,7 +77,6 @@ struct file_data;
 struct file {
 	RRR_LL_NODE(struct file);
 	struct file_data *data;
-	struct rrr_read_session_collection read_session_collection;
 	unsigned char type; // DT_*
 	int flags;
 	char *orig_path;
@@ -149,7 +148,6 @@ struct file_data {
 };
 
 static void file_destroy(struct file *file) {
-	rrr_read_session_collection_clear(&file->read_session_collection);
 	RRR_FREE_IF_NOT_NULL(file->orig_path);
 	RRR_FREE_IF_NOT_NULL(file->real_path);
 	rrr_free(file);
@@ -962,10 +960,6 @@ static int file_private_data_new(void **target, int fd, void *private_arg) {
 
 static void file_private_data_destroy(void *private_data) {
 	struct file *file = private_data;
-
-	// Let client collection close socket
-	file->fd = 0;
-
 	file_collection_remove(&file->data->files, file);
 }
 
