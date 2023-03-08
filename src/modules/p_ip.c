@@ -1777,7 +1777,7 @@ static void ip_chunk_send_smart_timeout_callback (
 	ip_entry_timeout_update(callback_data->ip_data, callback_data->entry_orig, entry);
 }
 
-static void ip_chunk_send_fail_notify_callback (
+static void ip_chunk_send_notify_callback (
 		int was_sent,
 		const void *data,
 		rrr_biglength data_size,
@@ -2015,7 +2015,7 @@ static void ip_event_setup (
 
 	rrr_socket_client_collection_send_notify_setup (
 		collection,
-		ip_chunk_send_fail_notify_callback,
+		ip_chunk_send_notify_callback,
 		data
 	);
 	rrr_socket_client_collection_fd_close_notify_setup (
