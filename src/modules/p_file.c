@@ -697,7 +697,7 @@ static int file_read_array_write_callback (struct rrr_msg_holder *entry, void *a
 			callback_data->data->topic,
 			callback_data->data->topic_len
 	)) != 0) {
-		RRR_MSG_0("Could not create message in file_read_array_write_callback\n");
+		RRR_MSG_0("Could not create message in %s\n", __func__);
 		goto out;
 	}
 
@@ -830,7 +830,7 @@ static int file_read_all_to_message_write_callback_simple (
 			file_data->topic_len,
 			rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 	)) != 0) {
-		RRR_MSG_0("Could not create message in file_read_all_to_message_write_callback_simple\n");
+		RRR_MSG_0("Could not create message in %s\n", __func__);
 		goto out;
 	}
 
@@ -868,49 +868,49 @@ static int file_read_all_to_message_write_callback_structured (
 			read_session->rx_buf_ptr,
 			rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 	)) != 0) {
-		RRR_MSG_0("Failed to push file data to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file data to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_u64_with_tag (
 			&array_tmp, "size", read_session->rx_buf_wpos
 	)) != 0) {
-		RRR_MSG_0("Failed to push file size to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file size to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_str_with_tag (
 			&array_tmp, "path_original", file->orig_path
 	)) != 0) {
-		RRR_MSG_0("Failed to push file original path to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file original path to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_str_with_tag (
 			&array_tmp, "path_resolved", file->real_path
 	)) != 0) {
-		RRR_MSG_0("Failed to push file resolved path to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file resolved path to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp, "atime", file->file_stat.st_atim.tv_sec
 	)) != 0) {
-		RRR_MSG_0("Failed to push file atime to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file atime to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp, "mtime", file->file_stat.st_mtim.tv_sec
 	)) != 0) {
-		RRR_MSG_0("Failed to push file mtime to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file mtime to array in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp, "ctime", file->file_stat.st_ctim.tv_sec
 	)) != 0) {
-		RRR_MSG_0("Failed to push file ctime to array in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Failed to push file ctime to array in %s\n", __func__);
 		goto out;
 	}
 
@@ -924,7 +924,7 @@ static int file_read_all_to_message_write_callback_structured (
 			file_data->topic,
 			file_data->topic_len
 	)) != 0) {
-		RRR_MSG_0("Could not create array message in file_read_all_to_message_write_callback_structured\n");
+		RRR_MSG_0("Could not create array message in %s\n", __func__);
 		goto out;
 	}
 
