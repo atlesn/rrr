@@ -2860,7 +2860,14 @@ Optional prefix for files to read from in the chosen directory. Non-matching fil
 Probing for new files is done immediately after startup and then periodically every time the probe interval has passed.
 A value of zero is allowed, this might be CPU intensive. Defaults to 5000 ms.
 
-.It file_
+.It file_no_probing={yes|no}
+If set to 'yes', no probing for files in the specified directory will be performed.
+If set no 'no' or left unset, files will be read.
+
+.It file_read_from_written_files={yes|no}
+If set to 'yes' and a file is written, the file will also be opened for reading.
+This is most useful for opening stream devices like serial ports.
+If set to 'no' or left unset, written files are only read from if probing is active and they match the specified file prefix.
 
 .It file_topic=MQTT TOPIC
 Set an MQTT topic on generated messages. Optional parameter.

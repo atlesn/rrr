@@ -114,6 +114,7 @@ struct file_data {
 	int do_serial_one_stop_bit;
 	int do_serial_two_stop_bits;
 	int do_no_probing;
+	int do_read_from_written_files;
 	int do_write_allow_directory_override;
 	int do_write_rrr_messsage;
 	int do_write_append;
@@ -306,6 +307,7 @@ static void file_data_cleanup(void *arg) {
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_probing", do_no_probing, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_prefix", prefix);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("file_topic", topic, topic_len);
@@ -455,23 +457,44 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		ret = 1;
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_allow_directory_override", do_write_allow_directory_override, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_append", do_write_append, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_from_written_files", do_read_from_written_files, 0);
+
 	if ((ret = rrr_instance_config_parse_optional_write_method (
 			&data->write_values_list,
 			&data->write_method,
 			config,
 			"file_write_rrr_message",
-			"file_write_values_from_array"
+			"file_write_array_values"
 	)) != 0) {
 		goto out;
 	}
 
-	// file_write_allow_directory_override
-	// file_write_rrr_message
-	// file_write_array_values
-	// file_write_append
-	// file_no_probing
+	if (data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE && !RRR_INSTANCE_CONFIG_EXISTS("senders")) {
+		RRR_MSG_0("A write method was set while no senders were set in file instance %s, this is an invalid configuration\n", config->name);
+		ret = 1;
+		goto out;
+	}
 
+	if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
+		if (RRR_INSTANCE_CONFIG_EXISTS("senders")) {
+			RRR_MSG_0("Sender instances were set while no write method was specified in file instance %s, this is an invalid configuration\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (data->do_read_from_written_files) {
+			RRR_MSG_0("Parameter file_read_from_written_files was set to yes while no write method was specified in file instance %s, this is an invalid configuration\n", config->name);
+			ret = 1;
+			goto out;
+		}
 
+		if (data->do_no_probing) {
+			RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -1116,10 +1139,11 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	RRR_DBG_1 ("File %p instance %s probe interval is %" PRIrrrbl " ms in directory '%s' with prefix '%s'\n",
+	RRR_DBG_1 ("File %p instance %s probe interval is %" PRIrrrbl " ms%s in directory '%s' with prefix '%s'\n",
 			thread_data,
 			INSTANCE_D_NAME(thread_data),
 			data->probe_interval,
+			(data->do_no_probing ? " (but probing disabled)" : ""),
 			(data->directory != NULL ? data->directory : ""),
 			(data->prefix != NULL ? data->prefix : "")
 	);
