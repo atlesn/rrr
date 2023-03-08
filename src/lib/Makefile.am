@@ -104,7 +104,7 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c util/arguments.c
+       util/increment.c util/sha256.c util/arguments.c util/fs.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
