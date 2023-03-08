@@ -112,6 +112,12 @@ do {rrr_setting_double tmp_double = (default_double);                           
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE(string, target, default_double)                           \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, data->target, default_double)
 
+enum rrr_instance_config_write_method {
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE,
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE,
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES
+};
+
 struct rrr_array;
 struct rrr_array_tree;
 struct rrr_route_collection;
@@ -246,6 +252,13 @@ int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_map *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
+);
+int rrr_instance_config_parse_optional_write_method (
+		struct rrr_map *array_values,
+		enum rrr_instance_config_write_method *method,
+		struct rrr_instance_config_data *config,
+		const char *string_write_rrr_message,
+		const char *string_array_values
 );
 int rrr_instance_config_parse_optional_utf8 (
 		char **target,

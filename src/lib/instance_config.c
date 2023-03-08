@@ -561,6 +561,112 @@ int rrr_instance_config_parse_comma_separated_to_map (
 	);
 }
 
+static int __rrr_instance_config_parse_comma_separated_to_map_check_unary_all (
+		struct rrr_map *target,
+		int *is_all,
+		struct rrr_instance_config_data *config,
+		const char *string
+) {
+	int ret = 0;
+
+	*is_all = 0;
+
+	int result = 0;
+	if ((ret = rrr_settings_cmpto(&result, config->settings, string, "*")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		goto out;
+	}
+
+	if (result == 0) {
+		*is_all = 1;
+		goto out;
+	}
+
+	struct parse_associative_list_to_map_callback_data callback_data = {
+		target, NULL
+	};
+
+	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			string,
+			__parse_associative_list_to_map_callback,
+			&callback_data
+	)) != 0) {
+		assert(ret != RRR_SETTING_NOT_FOUND);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_instance_config_parse_optional_write_method (
+		struct rrr_map *array_values,
+		enum rrr_instance_config_write_method *method,
+		struct rrr_instance_config_data *config,
+		const char *string_write_rrr_message,
+		const char *string_array_values
+) {
+	int ret = 0;
+
+	// Either rrr_message or array values (tags) may be set. IF array
+	// values are used, this field may be set to * to indicate use of all
+	// values in array.
+
+	*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
+
+	int yesno = 0;
+ 	if ((ret = rrr_settings_check_yesno(&yesno, config->settings, string_write_rrr_message)) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Failed to parse yes/no parameter '%s' of instance %s\n",
+					string_write_rrr_message,
+					config->name);
+			goto out;
+		}
+		ret = 0;
+	}
+
+	*method = yesno == 1 /* -1 means not found, 0 means no */
+		? RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE
+		: RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE
+	;
+
+	{
+		int is_all = 0;
+		if ((ret = __rrr_instance_config_parse_comma_separated_to_map_check_unary_all (
+				array_values,
+				&is_all,
+				config,
+				string_array_values
+		)) != 0) {
+			RRR_MSG_0("Error while parsing parameter '%s' of instance %s\n",
+					string_array_values, config->name);
+			ret = 1;
+			goto out;
+		}
+
+		if (is_all || RRR_LL_COUNT(array_values) > 0) {
+			if (*method == RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE) {
+				RRR_MSG_0("Cannot have '%s' set while '%s' is 'yes' in instance %s\n",
+						string_write_rrr_message,
+						string_array_values,
+						config->name);
+				ret = 1;
+				goto out;
+			}
+
+			assert(*method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE);
+
+			*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_instance_config_parse_optional_utf8 (
 		char **target,
 		struct rrr_instance_config_data *config,

@@ -1905,7 +1905,7 @@ Which method to use when sending data to the server. Defaults to
 .It http_format={urlencoded|multipart|json|raw}
 Control which body format to use for PUT and POST requests. If the
 .B raw
-mode is set, messages which does not contain a body (specified in the tag named in
+mode is set, messages which do not contain a body (specified in the tag named in
 .B http_body_tag
 ) will trigger an error as they are processed.
 An appropriate Content-Type header will be sent according to standards.
@@ -2680,7 +2680,7 @@ If the contents of the array value is anything else or not present, the contents
 
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
-messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
+messages which do not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
 Cannot be used with
 .B mqtt_publish_rrr_message=yes.
 
@@ -2826,6 +2826,25 @@ may be configured to delete files after they are read.
 .PP
 There is no limit on how many files, sockets etc. which can be simultaneously open.
 .PP
+Messages read from sender instances contain data and information on where to store it.
+Note that if files are written, these files may also be read back if their name matches the prefix.
+Use different prefixes for written files to avoid this or disable probing using
+.B file_no_probing
+if reading need not be performed.
+.PP
+The following array fields are used in these messages:
+.PP
+.Bl -tag -width -indent
+.It file_directory
+If the configuration
+.B file_write_allow_directory_override
+is set to yes, this value may be present in the message to override the directory of where the file is located.
+.It file_name
+The name of the file to open to save the data.
+The file must be located inside the directory being used and the name may not contain directories (e.g. slashes).
+.El
+
+.PP
 The following configuration parameters are available in the
 .B file
 module:
@@ -2840,6 +2859,8 @@ Optional prefix for files to read from in the chosen directory. Non-matching fil
 .It file_probe_interval_ms=MILLISECONDS
 Probing for new files is done immediately after startup and then periodically every time the probe interval has passed.
 A value of zero is allowed, this might be CPU intensive. Defaults to 5000 ms.
+
+.It file_
 
 .It file_topic=MQTT TOPIC
 Set an MQTT topic on generated messages. Optional parameter.
@@ -2949,6 +2970,32 @@ Must be greater than zero, defaults to 4096.
 
 .It file_timeout_s=SECONDS
 If no message is read in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
+
+.It file_write_array_values={*|tag1[,tag2[,...]]}
+Put all values from an array (*) or selected values (by tag) into the file.
+RRR messages which do not contain an array are dropped.
+Any integer types will have big endianess in the resulting publish message.
+If set to 'no' or left unset, the parameter
+.B file_write_rrr_message
+must be set instead if writing is to be performed.
+
+.It file_write_rrr_message={yes|no}
+If set to 'yes', full RRR messages will be written.
+If set to 'no' or left unset, the parameter
+.B file_write_array_values
+must be set instead if writing is to be performed.
+
+.It file_write_append={yes|no}
+If set to 'yes', data will be appended to the given file if it already exists.
+If set to 'no' or left unset, existing files will be truncated.
+This parameter has no effect if the output file is a stream.
+
+.It file_write_allow_directory_override={yes|no}
+Allow usage of the array field
+.B file_directory
+in messages from sender instances, overriding the directory specified in the configuration.
+If not given or set to no, messages containing this field will be dropped with an error message.
+Read about security considerations above before enabling this parameter.
 
 .El
 .SS mysql (DAI)

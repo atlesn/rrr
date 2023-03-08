@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read.h"
 #include "../lib/array_tree.h"
 #include "../lib/read_constants.h"
+#include "../lib/map.h"
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/socket/rrr_socket_common.h"
@@ -112,6 +113,10 @@ struct file_data {
 	int do_serial_parity_none;
 	int do_serial_one_stop_bit;
 	int do_serial_two_stop_bits;
+	int do_no_probing;
+	int do_write_allow_directory_override;
+	int do_write_rrr_messsage;
+	int do_write_append;
 
 	char *serial_parity;
 
@@ -122,9 +127,11 @@ struct file_data {
 	char *read_all_method;
 
 	enum file_read_method read_method;
+	enum rrr_instance_config_write_method write_method;
 
 	char *directory;
 	char *prefix;
+
 	rrr_setting_uint probe_interval;
 	rrr_setting_uint max_messages_per_file;
 	rrr_setting_uint max_read_step_size;
@@ -133,6 +140,8 @@ struct file_data {
 
 	char *topic;
 	uint16_t topic_len;
+
+	struct rrr_map write_values_list;
 
 	uint64_t message_count;
 	uint64_t message_count_prev;
@@ -291,6 +300,7 @@ static void file_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->prefix);
 	RRR_FREE_IF_NOT_NULL(data->topic);
 	RRR_FREE_IF_NOT_NULL(data->serial_parity);
+	rrr_map_clear(&data->write_values_list);
 }
 
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
@@ -444,6 +454,24 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		RRR_MSG_0("Both file_max_read_step_size and do_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
 		ret = 1;
 	}
+
+	if ((ret = rrr_instance_config_parse_optional_write_method (
+			&data->write_values_list,
+			&data->write_method,
+			config,
+			"file_write_rrr_message",
+			"file_write_values_from_array"
+	)) != 0) {
+		goto out;
+	}
+
+	// file_write_allow_directory_override
+	// file_write_rrr_message
+	// file_write_array_values
+	// file_write_append
+	// file_no_probing
+
+
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -613,10 +641,10 @@ static int file_probe_callback (
 	return ret;
 }
 
-static int file_probe (struct file_data *data) {
+static int file_probe (struct file_data *data, const char *directory, const char *prefix) {
 	return rrr_readdir_foreach_prefix (
-			data->directory,
-			data->prefix, // NULL allowed
+			directory,
+			prefix, // NULL allowed
 			file_probe_callback,
 			data
 	);
@@ -1026,7 +1054,7 @@ static void file_event_probe (
 	(void)(fd);
 	(void)(flags);
 
-	if (file_probe(data) != 0) {
+	if (file_probe(data, data->directory, data->prefix) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
 }
