@@ -62,6 +62,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_linked_list.h"
 #include "test_hdlc.h"
 #include "test_readdir.h"
+#include "test_send_loop.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -229,8 +230,16 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 		ret_tmp = rrr_test_hdlc();
 	} TEST_RESULT(ret_tmp == 0);
 
+	ret |= ret_tmp;
+
 	TEST_BEGIN("Readdir") {
 		ret_tmp = rrr_test_readdir();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Send loop") {
+		ret_tmp = rrr_test_send_loop();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

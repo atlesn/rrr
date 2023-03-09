@@ -38,7 +38,8 @@ test_SOURCES = test.c \
 	test_route_definition.c \
 	test_linked_list.c \
 	test_hdlc.c \
-	test_readdir.c
+	test_readdir.c \
+	test_send_loop.c
 test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \

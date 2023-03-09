@@ -50,6 +50,15 @@ void rrr_msg_holder_private_data_set (
 		void *private_data,
 		void (*private_data_destroy)(void *private_data)
 );
+uint64_t rrr_msg_holder_send_time (
+		const struct rrr_msg_holder *entry
+);
+uint64_t rrr_msg_holder_send_index (
+		const struct rrr_msg_holder *entry
+);
+int rrr_msg_holder_usercount (
+		const struct rrr_msg_holder *entry
+);
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
 );
