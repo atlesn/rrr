@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array_tree.h"
 #include "../lib/read_constants.h"
 #include "../lib/map.h"
+#include "../lib/send_loop.h"
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/socket/rrr_socket_common.h"
@@ -139,6 +140,10 @@ struct file_data {
 	rrr_setting_uint max_read_step_size;
 	rrr_setting_uint max_open;
 	rrr_setting_uint timeout_s;
+	rrr_setting_uint write_timeout_us;
+	rrr_setting_uint write_ttl_us;
+
+	enum rrr_send_loop_action write_timeout_action;
 
 	char *topic;
 	uint16_t topic_len;
@@ -156,6 +161,7 @@ struct file_data {
 	rrr_event_handle event_stats;
 
 	struct rrr_socket_client_collection *sockets;
+	struct rrr_send_loop *send_loop;
 };
 
 static void file_destroy(struct file *file) {
@@ -292,6 +298,9 @@ static void file_data_cleanup(void *arg) {
 	rrr_event_collection_clear(&data->events);
 	if (data->sockets != NULL) {
 		rrr_socket_client_collection_destroy(data->sockets);
+	}
+	if (data->send_loop != NULL) {
+		rrr_send_loop_destroy(data->send_loop);
 	}
 	RRR_LL_DESTROY (&data->files, struct file, file_destroy(node));
 	if (data->tree != NULL) {
@@ -1060,6 +1069,30 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 	return file_read_all_to_message_complete (file->data, file, read_session);
 }
 
+static int file_send_push_callback (
+		struct rrr_msg_holder *entry,
+		void *arg
+) {
+	struct file_data *data = arg;
+
+	int ret = 0;
+
+	out:
+	return ret;
+}
+
+static int file_send_return_callback (
+		struct rrr_msg_holder *entry,
+		void *arg
+) {
+	struct file_data *data = arg;
+
+	int ret = 0;
+
+	out:
+	return ret;
+}
+
 static int file_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -1158,6 +1191,28 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	) != 0) {
 		RRR_MSG_0("Failed to create client collection in file instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
+	}
+
+	{
+		char tmp[256];
+		snprintf(tmp, sizeof(tmp), "file instance %s", INSTANCE_D_NAME(thread_data));
+		tmp[sizeof(tmp)-1] = '\0';
+		if (rrr_send_loop_new (
+				&data->send_loop,
+				INSTANCE_D_EVENTS(thread_data),
+				tmp,
+				1, /* Preserve order */
+				data->write_ttl_us,
+				data->write_timeout_us,
+				data->write_timeout_action,
+				file_send_push_callback,
+				file_send_return_callback,
+				NULL, /* run callback */
+				data
+		) != 0) {
+			RRR_MSG_0("Failed to create send loop in file instance %s\n", INSTANCE_D_NAME(thread_data));
+			goto out_cleanup;
+		}
 	}
 
 	rrr_socket_client_collection_set_idle_timeout (

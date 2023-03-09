@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/allocator.h"
 #include "../lib/send_loop.h"
+#include "../lib/event/event.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/util/rrr_time.h"
@@ -125,20 +126,32 @@ static int __rrr_test_send_loop_related_callback (const struct rrr_msg_holder *e
 	return 0;
 }
 
+static int __rrr_test_send_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	(void)(arg);
+	return 1;
+}
+
 int rrr_test_send_loop(void) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg[2];
 	struct rrr_msg_msg *msg_ptr[2];
 	struct rrr_msg_holder *entry[2];
+	struct rrr_event_queue *queue = NULL;
 	struct rrr_send_loop *send_loop = NULL;
 	int result = 0;
 
 	memset(msg, '\0', sizeof(msg));
 	memset(entry, '\0', sizeof(entry));
 
+	if ((ret = rrr_event_queue_new (&queue)) != 0) {
+		TEST_MSG("Failed to create event queue in %s\n", __func__);
+		goto out_final;
+	}
+
 	if ((ret = rrr_send_loop_new (
 			&send_loop,
+			queue,
 			"test",
 			0,
 			0,
@@ -146,11 +159,11 @@ int rrr_test_send_loop(void) {
 			RRR_SEND_LOOP_ACTION_DROP,
 			__rrr_test_send_loop_push_callback,
 			__rrr_test_send_loop_return_callback,
+			NULL,
 			&result
 	)) != 0) {
 		TEST_MSG("Failed to create send loop in %s\n", __func__);
-		ret = 1;
-		goto out;
+		goto out_destroy_event_queue;
 	}
 
 	for (size_t i = 0; i < sizeof(msg) / sizeof(*msg); i++) {
@@ -180,6 +193,114 @@ int rrr_test_send_loop(void) {
 
 		msg_ptr[i] = msg[i];
 		msg[i] = NULL;
+	}
+
+	//////////////////////////////////////////////////////////////////////
+	// Event test
+	/////////////////////////////
+	TEST_MSG("Test event run and remove...\n");
+	rrr_msg_holder_lock(entry[0]);
+	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+	rrr_send_loop_push(send_loop, entry[0]);
+	rrr_msg_holder_unlock(entry[0]);
+
+	if (rrr_event_dispatch_once(queue) != 0) {
+		TEST_MSG("- Error from dispatch in %s\n", __func__);
+		ret |= 1;
+	}
+
+	if (rrr_send_loop_count(send_loop) != 0) {
+		TEST_MSG("- Message was not pushed\n");
+		ret |= 1;
+	}
+
+	if (rrr_send_loop_event_pending(send_loop)) {
+		TEST_MSG("- Send loop event still pending\n");
+		ret |= 1;
+	}
+
+	TEST_MSG("Test event pending after retry...\n");
+	rrr_msg_holder_lock(entry[0]);
+	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+	rrr_send_loop_push(send_loop, entry[0]);
+	rrr_msg_holder_unlock(entry[0]);
+
+	result = DO_RETRY;
+	if (rrr_send_loop_run(send_loop) != 0 || result != DID_RETRY) {
+		TEST_MSG("- Failed ret %i result %i\n", ret, result);
+		ret |= 1;
+	}
+
+	// Event is not added implicitly when direct call to run is performed
+	rrr_send_loop_event_add_or_remove (send_loop);
+	if (!rrr_send_loop_event_pending(send_loop)) {
+		TEST_MSG("- Send loop event not pending despite retry\n");
+		ret |= 1;
+	}
+
+	TEST_MSG("Test event removed after clear...\n");
+	rrr_send_loop_clear(send_loop);
+
+	if (rrr_send_loop_count(send_loop) != 0) {
+		TEST_MSG("- Message was not cleared\n");
+		ret |= 1;
+	}
+
+	rrr_send_loop_event_add_or_remove (send_loop);
+	if (rrr_send_loop_event_pending(send_loop)) {
+		TEST_MSG("- Send loop event still pending despite clear\n");
+		ret |= 1;
+	}
+
+	TEST_MSG("Test event run by periodic start...\n");
+	rrr_msg_holder_lock(entry[0]);
+	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+	rrr_send_loop_push(send_loop, entry[0]);
+	rrr_msg_holder_unlock(entry[0]);
+
+	rrr_send_loop_event_remove(send_loop);
+	if (rrr_send_loop_event_pending(send_loop)) {
+		TEST_MSG("- Send loop event still pending despite remove\n");
+		ret |= 1;
+	}
+
+	// The periodic event in send loop should re-add the event. Note that
+	// the timer starts when the send loop is created, hence we should run
+	// this early in the test.
+	if (rrr_event_dispatch (
+			queue,
+			100 * 1000, // 100 ms. Send loop should not before  250 ms
+			__rrr_test_send_loop_periodic,
+			NULL
+	) != 1) {
+		TEST_MSG("- Unexpected return from event dispatch\n");
+		ret |= 1;
+	}
+
+	if (rrr_send_loop_count(send_loop) != 1) {
+		TEST_MSG("- Loop ran too early within 100ms\n");
+		ret |= 1;
+	}
+
+	// Loop should run once within this dispatch
+	if (rrr_event_dispatch (
+			queue,
+			200 * 1000, // 200 ms. Send loop should run within 250 ms
+			__rrr_test_send_loop_periodic,
+			NULL
+	) != 1) {
+		TEST_MSG("- Unexpected return from event dispatch\n");
+		ret |= 1;
+	}
+
+	if (rrr_send_loop_count(send_loop) != 0) {
+		TEST_MSG("- Count not zero after dispatch\n");
+		ret |= 1;
+	}
+
+	if (rrr_send_loop_event_pending(send_loop)) {
+		TEST_MSG("- Event still pending after dispatch\n");
+		ret |= 1;
 	}
 
 	//////////////////////////////////////////////////////////////////////
@@ -261,6 +382,7 @@ int rrr_test_send_loop(void) {
 	//////////////////////////////////////////////////////////////////////
 	// Retry test
 	/////////////////////////////
+	TEST_MSG("Test retry...\n");
 	rrr_msg_holder_lock(entry[0]);
 	assert(rrr_msg_holder_usercount(entry[0]) == 1);
 	rrr_send_loop_push(send_loop, entry[0]);
@@ -272,6 +394,7 @@ int rrr_test_send_loop(void) {
 		TEST_MSG("- Failed ret %i result %i\n", ret, result);
 		ret |= 1;
 	}
+
 	result = 0;
 	if (rrr_send_loop_run(send_loop) != 0 || result != DID_PUSH) {
 		TEST_MSG("- Failed ret %i result %i\n", ret, result);
@@ -281,6 +404,7 @@ int rrr_test_send_loop(void) {
 	//////////////////////////////////////////////////////////////////////
 	// Soft error test
 	/////////////////////////////
+	TEST_MSG("Test soft error...\n");
 	rrr_msg_holder_lock(entry[0]);
 	assert(rrr_msg_holder_usercount(entry[0]) == 1);
 	rrr_send_loop_push(send_loop, entry[0]);
@@ -296,6 +420,7 @@ int rrr_test_send_loop(void) {
 	//////////////////////////////////////////////////////////////////////
 	// Hard error test
 	/////////////////////////////
+	TEST_MSG("Test hard error...\n");
 	rrr_msg_holder_lock(entry[0]);
 	assert(rrr_msg_holder_usercount(entry[0]) == 1);
 	rrr_send_loop_push(send_loop, entry[0]);
@@ -424,11 +549,14 @@ int rrr_test_send_loop(void) {
 	rrr_msg_holder_unlock(entry[1]);
 
 	out:
-	for (size_t i = 0; i < sizeof(msg) / sizeof(*msg); i++) {
-		if (entry[i] != NULL)
-			rrr_msg_holder_decref(entry[i]);
-		RRR_FREE_IF_NOT_NULL(msg[i]);
-	}
-	rrr_send_loop_destroy(send_loop);
-	return ret;
+		for (size_t i = 0; i < sizeof(msg) / sizeof(*msg); i++) {
+			if (entry[i] != NULL)
+				rrr_msg_holder_decref(entry[i]);
+			RRR_FREE_IF_NOT_NULL(msg[i]);
+		}
+		rrr_send_loop_destroy(send_loop);
+	out_destroy_event_queue:
+		rrr_event_queue_destroy(queue);
+	out_final:
+		return ret;
 }

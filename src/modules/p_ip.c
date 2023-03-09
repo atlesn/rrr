@@ -43,9 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/message_broker.h"
 #include "../lib/send_loop.h"
-#include "../lib/event/event.h"
-#include "../lib/event/event_collection.h"
-#include "../lib/event/event_collection_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/util/rrr_time.h"
@@ -76,9 +73,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_send_loop *send_loop;
-
-	struct rrr_event_collection events;
-	rrr_event_handle event_send_loop_iterate;
 
 	struct rrr_socket_client_collection *collection_udp;
 	struct rrr_socket_client_collection *collection_tcp;
@@ -141,7 +135,6 @@ static void ip_data_cleanup(void *arg) {
 	if (data->collection_udp != NULL) {
 		rrr_socket_client_collection_destroy(data->collection_udp);
 	}
-	rrr_event_collection_clear(&data->events);
 	if (data->send_loop != NULL) {
 		rrr_send_loop_destroy(data->send_loop);
 	}
@@ -161,8 +154,6 @@ static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
-
-	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 
 	return 0;
 }
@@ -742,9 +733,6 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static int ip_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct ip_data *ip_data = thread_data->private_data;
-
-	EVENT_ACTIVATE(ip_data->event_send_loop_iterate);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback);
 }
@@ -1456,6 +1444,16 @@ static int ip_send_loop_return_callback (
 	return ret;
 }
 
+static void ip_send_loop_run_callback (
+		void *arg
+) {
+	struct ip_data *ip_data = arg;
+
+	if (rrr_send_loop_count(ip_data->send_loop) == 0 && ip_data->persistent_timeout_ms == 0) {
+		rrr_socket_client_collection_close_outbound_when_send_complete(ip_data->collection_tcp);
+	}
+}
+
 static int ip_start_udp (struct ip_data *data) {
 	int ret = 0;
 
@@ -1745,32 +1743,6 @@ static void ip_fd_close_notify_callback (
 	}
 }
 
-static void ip_event_send_loop (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct ip_data *ip_data = arg;
-
-	(void)(fd);
-	(void)(flags);
-
-	if (rrr_send_loop_run(ip_data->send_loop) != 0) {
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(ip_data->thread_data));
-	}
-
-	if (rrr_send_loop_count(ip_data->send_loop) > 0) {
-		// Short wait
-		EVENT_INTERVAL_SET(ip_data->event_send_loop_iterate, 10 * 1000); // 10 ms
-		EVENT_ADD(ip_data->event_send_loop_iterate);
-	}
-	else {
-		if (ip_data->persistent_timeout_ms == 0) {
-			rrr_socket_client_collection_close_outbound_when_send_complete(ip_data->collection_tcp);
-		}
-	}
-}
-
 static void ip_send_chunk_periodic_callback (
 		int *do_remove,
 		const void *data,
@@ -1802,10 +1774,6 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 	rrr_thread_watchdog_time_update(thread);
-
-	if (rrr_send_loop_count(ip_data->send_loop) > 0) {
-		EVENT_ACTIVATE(ip_data->event_send_loop_iterate);
-	}
 
 	rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", ip_data->messages_count_read);
 	rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "polled_count", ip_data->messages_count_polled);
@@ -1913,16 +1881,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (rrr_event_collection_push_oneshot (
-			&data->event_send_loop_iterate,
-			&data->events,
-			ip_event_send_loop,
-			data
-	) != 0) {
-		RRR_MSG_0("Failed to create send buffer event in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
-
 	if (ip_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parsing failed for ip instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
@@ -1936,6 +1894,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		tmp[sizeof(tmp) - 1] = '\0';
 		if (rrr_send_loop_new (
 				&data->send_loop,
+				INSTANCE_D_EVENTS(thread_data),
 				tmp,
 				data->do_preserve_order,
 				data->message_ttl_us,
@@ -1943,6 +1902,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				data->timeout_action,
 				ip_send_loop_push_callback,
 				ip_send_loop_return_callback,
+				ip_send_loop_run_callback,
 				data
 		)) {
 			RRR_MSG_0("Failed to create send loop in ip instance %s", INSTANCE_D_NAME(thread_data));

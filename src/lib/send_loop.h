@@ -36,6 +36,7 @@ enum rrr_send_loop_action {
 	RRR_SEND_LOOP_ACTION_RETURN
 };
 
+struct rrr_event_queue;
 struct rrr_msg_holder;
 struct rrr_send_loop;
 
@@ -61,6 +62,7 @@ void rrr_send_loop_destroy (
 );
 int rrr_send_loop_new (
 		struct rrr_send_loop **result,
+		struct rrr_event_queue *queue,
 		const char *debug_name,
 		int do_preserve_order,
 		uint64_t ttl_us,
@@ -68,6 +70,7 @@ int rrr_send_loop_new (
 		enum rrr_send_loop_action timeout_action,
 		int (*push_callback)(struct rrr_msg_holder *entry, void *arg),
 		int (*return_callback)(struct rrr_msg_holder *entry, void *arg),
+		void (*run_callback)(void *arg),
 		void *callback_arg
 );
 void rrr_send_loop_entry_prepare (
@@ -96,7 +99,19 @@ void rrr_send_loop_unshift_if_timed_out (
 		struct rrr_send_loop *send_loop,
 		struct rrr_msg_holder *entry_locked
 );
+void rrr_send_loop_clear (
+		struct rrr_send_loop *send_loop
+);
 int rrr_send_loop_run (
+		struct rrr_send_loop *send_loop
+);
+int rrr_send_loop_event_pending (
+		struct rrr_send_loop *send_loop
+);
+void rrr_send_loop_event_remove (
+		struct rrr_send_loop *send_loop
+);
+void rrr_send_loop_event_add_or_remove (
 		struct rrr_send_loop *send_loop
 );
 

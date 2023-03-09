@@ -29,8 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "allocator.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
+#include "event/event.h"
+#include "event/event_collection.h"
+#include "event/event_collection_struct.h"
 
 struct rrr_send_loop {
+	struct rrr_event_queue *queue;
 	char *debug_name;
 
 	int do_preserve_order;
@@ -41,7 +45,12 @@ struct rrr_send_loop {
 
 	int (*push_callback)(struct rrr_msg_holder *entry, void *arg);
 	int (*return_callback)(struct rrr_msg_holder *entry, void *arg);
+	void (*run_callback)(void *arg);
 	void *callback_arg;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_run;
+	rrr_event_handle event_periodic;
 
 	struct rrr_msg_holder_collection send_entries;
 	uint64_t entry_send_index_pos;
@@ -88,11 +97,25 @@ void rrr_send_loop_destroy (
 ) {
 	rrr_free(send_loop->debug_name);
 	rrr_msg_holder_collection_clear(&send_loop->send_entries);
+	rrr_event_collection_clear(&send_loop->events);
 	rrr_free(send_loop);
 }
 
+static void __rrr_send_loop_event_run (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+);
+
+static void __rrr_send_loop_event_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+);
+
 int rrr_send_loop_new (
 		struct rrr_send_loop **result,
+		struct rrr_event_queue *queue,
 		const char *debug_name,
 		int do_preserve_order,
 		uint64_t ttl_us,
@@ -100,6 +123,7 @@ int rrr_send_loop_new (
 		enum rrr_send_loop_action timeout_action,
 		int (*push_callback)(struct rrr_msg_holder *entry, void *arg),
 		int (*return_callback)(struct rrr_msg_holder *entry, void *arg),
+		void (*run_callback)(void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -120,6 +144,32 @@ int rrr_send_loop_new (
 		goto out_free;
 	}
 
+	rrr_event_collection_init(&send_loop->events, queue);
+
+	if (rrr_event_collection_push_oneshot (
+			&send_loop->event_run,
+			&send_loop->events,
+			__rrr_send_loop_event_run,
+			send_loop
+	) != 0) {
+		RRR_MSG_0("Failed to create run event in %s\n", __func__);
+		goto out_clear_event_collection;
+	}
+
+	if (rrr_event_collection_push_periodic (
+			&send_loop->event_periodic,
+			&send_loop->events,
+			__rrr_send_loop_event_periodic,
+			send_loop,
+			250 * 1000 // 250 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create periodic event in %s\n", __func__);
+		goto out_clear_event_collection;
+	}
+
+	EVENT_ADD(send_loop->event_periodic);
+
+	send_loop->queue = queue;
 	rrr_send_loop_set_parameters (
 			send_loop,
 			do_preserve_order,
@@ -129,11 +179,15 @@ int rrr_send_loop_new (
 	);
 	send_loop->push_callback = push_callback;
 	send_loop->return_callback = return_callback;
+	send_loop->run_callback = run_callback;
 	send_loop->callback_arg = callback_arg;
 
 	*result = send_loop;
 
 	goto out;
+	out_clear_event_collection:
+		rrr_event_collection_clear(&send_loop->events);
+		rrr_free(send_loop->debug_name);
 	out_free:
 		rrr_free(send_loop);
 	out:
@@ -188,6 +242,7 @@ void rrr_send_loop_push (
 ) {
 	rrr_msg_holder_incref_while_locked (entry_locked);
 	RRR_LL_APPEND(&send_loop->send_entries, entry_locked);
+	EVENT_ACTIVATE(send_loop->event_run);
 }
 
 void rrr_send_loop_unshift (
@@ -196,6 +251,7 @@ void rrr_send_loop_unshift (
 ) {
 	rrr_msg_holder_incref_while_locked (entry_locked);
 	RRR_LL_UNSHIFT(&send_loop->send_entries, entry_locked);
+	EVENT_ACTIVATE(send_loop->event_run);
 }
 
 void rrr_send_loop_unshift_if_timed_out (
@@ -214,6 +270,12 @@ void rrr_send_loop_unshift_if_timed_out (
 		rrr_send_loop_unshift(send_loop, entry_locked);
 		*did_unshift = 1;
 	}
+}
+
+void rrr_send_loop_clear (
+		struct rrr_send_loop *send_loop
+) {
+	rrr_msg_holder_collection_clear(&send_loop->send_entries);
 }
 
 int rrr_send_loop_run (
@@ -319,4 +381,66 @@ int rrr_send_loop_run (
 
 	out:
 	return ret;
+}
+
+int rrr_send_loop_event_pending (
+		struct rrr_send_loop *send_loop
+) {
+	return EVENT_PENDING(send_loop->event_run);
+}
+
+void rrr_send_loop_event_remove (
+		struct rrr_send_loop *send_loop
+) {
+	EVENT_REMOVE(send_loop->event_run);
+}
+
+void rrr_send_loop_event_add_or_remove (
+		struct rrr_send_loop *send_loop
+) {
+	if (rrr_send_loop_count(send_loop) > 0) {
+		if (!EVENT_PENDING(send_loop->event_run)) {
+			EVENT_INTERVAL_SET(send_loop->event_run, 10 * 1000); // 10 ms
+			EVENT_ADD(send_loop->event_run);
+		}
+	}
+	else {
+		EVENT_REMOVE(send_loop->event_run);
+	}
+}
+
+static void __rrr_send_loop_event_run (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_send_loop *send_loop = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (rrr_send_loop_run(send_loop) != 0) {
+		rrr_event_dispatch_break(send_loop->queue);
+	}
+
+	if (send_loop->run_callback != NULL) {
+		send_loop->run_callback(send_loop->callback_arg);
+	}
+
+	rrr_send_loop_event_add_or_remove(send_loop);
+}
+
+static void __rrr_send_loop_event_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_send_loop *send_loop = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (rrr_send_loop_count(send_loop) > 0) {
+		EVENT_ACTIVATE(send_loop->event_run);
+	}
 }
