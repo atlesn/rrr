@@ -717,11 +717,11 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
-
 	rrr_send_loop_entry_prepare(ip_data->send_loop, entry);
 	rrr_send_loop_push(ip_data->send_loop, entry);
+
+	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
 
 	rrr_msg_holder_unlock(entry);
 

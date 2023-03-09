@@ -1077,6 +1077,8 @@ static int file_send_push_callback (
 
 	int ret = 0;
 
+	assert(0);
+
 	out:
 	return ret;
 }
@@ -1089,18 +1091,34 @@ static int file_send_return_callback (
 
 	int ret = 0;
 
+	assert(0);
+
 	out:
 	return ret;
+}
+
+static int file_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct file_data *data = thread_data->private_data;
+
+	struct rrr_msg_msg *message = entry->message;
+
+	rrr_send_loop_entry_prepare(data->send_loop, entry);
+	rrr_send_loop_push(data->send_loop, entry);
+
+	RRR_DBG_2 ("file instance %s result from buffer timestamp %" PRIu64 " index %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, entry->send_index);
+
+	rrr_msg_holder_unlock(entry);
+
+	return 0;
 }
 
 static int file_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct file_data *data = thread_data->private_data;
 
-	(void)(data);
-
-	assert(0);
+	return rrr_poll_do_poll_delete (amount, thread_data, file_poll_callback);
 }
 
 static void file_event_probe (
