@@ -2897,40 +2897,40 @@ May be set if
 .B file_read_all_to_message
 is 'yes'.
 If set to 'simple', the contents of the file is put into a plain message.
-.PP
-If set to 'structured', the contents of the file along with metadata is put into an array array message.
-The array fields
-.B data, size, path_original, path_resolved, atime, mtime, and ctime
-will be present in the generated messages.
-.PP
-If set to 'file', the fields
-.B file_path_resolved, file_directory, file_name, file_data, file_size
-will be present in the message. The field
-.B file_path_resolved
-contains the full resolved path of the file (after resolving symbolic links).
-The parameters
-.B file_directory
-and
-.B file_name
-together describe the original path of the file before any symbolic link resolving.
-The parameters
-.B file_data
-and
-.B file_size
-contain the data of the file and data size respectively.
-Messages produced with these fields are appropriate for passing into another file module for writing.
 
-The
-.B data
-and
-.B size
-fields contain the actual raw data of the file and the it's size.  
+If set to 'structured', the contents of the file along with metadata is put into an array with the following fields:
 
-The two
-.B path_
-fields contain the original path and resolved symbolic link path respectively. If there was not symlic, they are equal.
+.Bl -tag -width "aa" -indent
+.It data
+.It size
+The raw data of the file and it's size.
+.Pp
+.It path_original
+.It path_resolved
+The original and resolved path (in case original is a symbolic link) of the file respectively.
+.Pp
+.It atime
+.It mtime
+.It ctime
+Timestamps in epoch format with second resolution. Describe file access time, modification time and creation time. 
+.El
 
-The time parameters is in epoch time format with seconds resolution and describe file access time, modification time and creation time. 
+If set to 'file', the contents of the file along with metadata is put into an array with the following fields:
+
+.Bl -tag -width "aa" -indent
+.It file_data
+.It file_size
+The raw data of the file and it's size.
+.Pp
+.It file_directory
+.It file_name
+The original path of the file before any symbolic link resolving.
+.Pp
+.It file_path
+The resolved path (in case original is a symbolic link) of the file respectively.
+.El
+
+Messages produced using the 'file' method are appropriate for passing into another file module for writing.
 
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
