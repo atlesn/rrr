@@ -45,6 +45,10 @@ struct rrr_send_loop;
    action == RRR_SEND_LOOP_ACTION_RETURN ? "RETURN" :  \
    "UNKNOWN")
 
+int rrr_send_loop_action_from_str (
+		enum rrr_send_loop_action *action,
+		const char *str
+);
 void rrr_send_loop_set_parameters (
 		struct rrr_send_loop *send_loop,
 		int do_preserve_order,
@@ -76,11 +80,19 @@ void rrr_send_loop_entry_touch_related (
 		int (*cmp)(const struct rrr_msg_holder *entry, const struct rrr_msg_holder *entry_related, void *arg),
 		void *callback_arg
 );
+int rrr_send_loop_count (
+		struct rrr_send_loop *send_loop
+);
 void rrr_send_loop_push (
 		struct rrr_send_loop *send_loop,
 		struct rrr_msg_holder *entry_locked
 );
 void rrr_send_loop_unshift (
+		struct rrr_send_loop *send_loop,
+		struct rrr_msg_holder *entry_locked
+);
+void rrr_send_loop_unshift_if_timed_out (
+		int *did_unshift,
 		struct rrr_send_loop *send_loop,
 		struct rrr_msg_holder *entry_locked
 );

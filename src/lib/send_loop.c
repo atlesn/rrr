@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "allocator.h"
 #include "util/rrr_time.h"
+#include "util/posix.h"
 
 struct rrr_send_loop {
 	char *debug_name;
@@ -45,6 +46,29 @@ struct rrr_send_loop {
 	struct rrr_msg_holder_collection send_entries;
 	uint64_t entry_send_index_pos;
 };
+
+int rrr_send_loop_action_from_str (
+		enum rrr_send_loop_action *action,
+		const char *str
+) {
+	*action = 0;
+
+	if (rrr_posix_strcasecmp(str, RRR_SEND_LOOP_ACTION_STR(RRR_SEND_LOOP_ACTION_RETRY)) == 0) {
+		*action = RRR_SEND_LOOP_ACTION_RETRY;
+	}
+	else if (rrr_posix_strcasecmp(str, RRR_SEND_LOOP_ACTION_STR(RRR_SEND_LOOP_ACTION_DROP)) == 0) {
+		*action = RRR_SEND_LOOP_ACTION_DROP;
+	}
+	else if (rrr_posix_strcasecmp(str, RRR_SEND_LOOP_ACTION_STR(RRR_SEND_LOOP_ACTION_RETURN)) == 0) {
+		*action = RRR_SEND_LOOP_ACTION_RETURN;
+	}
+	else {
+		RRR_MSG_0("Unknown action '%s'\n", str);
+		return 1;
+	}
+
+	return 0;
+}
 
 void rrr_send_loop_set_parameters (
 		struct rrr_send_loop *send_loop,
@@ -152,6 +176,12 @@ void rrr_send_loop_entry_touch_related (
 	RRR_LL_ITERATE_END();
 }
 
+int rrr_send_loop_count (
+		struct rrr_send_loop *send_loop
+) {
+	return RRR_LL_COUNT(&send_loop->send_entries);
+}
+
 void rrr_send_loop_push (
 		struct rrr_send_loop *send_loop,
 		struct rrr_msg_holder *entry_locked
@@ -166,6 +196,24 @@ void rrr_send_loop_unshift (
 ) {
 	rrr_msg_holder_incref_while_locked (entry_locked);
 	RRR_LL_UNSHIFT(&send_loop->send_entries, entry_locked);
+}
+
+void rrr_send_loop_unshift_if_timed_out (
+		int *did_unshift,
+		struct rrr_send_loop *send_loop,
+		struct rrr_msg_holder *entry_locked
+) {
+	*did_unshift = 0;
+
+	int ttl_reached = 0;
+	int timeout_reached = 0;
+
+	rrr_msg_holder_util_timeout_check(&ttl_reached, &timeout_reached, send_loop->ttl_us, send_loop->timeout_us, entry_locked);
+
+	if (ttl_reached || timeout_reached) {
+		rrr_send_loop_unshift(send_loop, entry_locked);
+		*did_unshift = 1;
+	}
 }
 
 int rrr_send_loop_run (
