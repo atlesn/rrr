@@ -58,6 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
 #include "../lib/util/posix.h"
+#include "../lib/util/fs.h"
 #include "../lib/input/input.h"
 #include "../lib/serial/serial.h"
 #include "../lib/socket/rrr_socket_client.h"
@@ -859,6 +860,38 @@ static int file_read_all_to_message_write_callback_simple (
 	return ret;
 }
 
+static int file_read_all_to_message_write_callback_array_final (
+		struct file_data *file_data,
+		struct rrr_msg_holder *entry,
+		const struct rrr_array *array,
+		const struct rrr_read_session *read_session
+) {
+	int ret = 0;
+
+	uint64_t time = rrr_time_get_64();
+
+	struct rrr_msg_msg *reading = NULL;
+	if ((ret = rrr_array_new_message_from_array (
+			&reading,
+			array,
+			time,
+			file_data->topic,
+			file_data->topic_len
+	)) != 0) {
+		RRR_MSG_0("Could not create array message in %s\n", __func__);
+		goto out;
+	}
+
+	entry->message = reading;
+	entry->data_length = MSG_TOTAL_SIZE(reading);
+
+	RRR_DBG_2("file instance %s created message with array data of size %" PRIrrrbl " and timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(file_data->thread_data), read_session->rx_buf_wpos, time);
+
+	out:
+	return ret;
+}
+
 static int file_read_all_to_message_write_callback_structured (
 		struct rrr_msg_holder *entry,
 		struct file_data *file_data,
@@ -923,25 +956,104 @@ static int file_read_all_to_message_write_callback_structured (
 		goto out;
 	}
 
-	uint64_t time = rrr_time_get_64();
-
-	struct rrr_msg_msg *reading = NULL;
-	if ((ret = rrr_array_new_message_from_array (
-			&reading,
+	if ((ret = file_read_all_to_message_write_callback_array_final (
+			file_data,
+			entry,
 			&array_tmp,
-			time,
-			file_data->topic,
-			file_data->topic_len
+			read_session
 	)) != 0) {
-		RRR_MSG_0("Could not create array message in %s\n", __func__);
 		goto out;
 	}
 
-	entry->message = reading;
-	entry->data_length = MSG_TOTAL_SIZE(reading);
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
 
-	RRR_DBG_2("file instance %s created message with structured raw file_data of size %" PRIrrrbl " and timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(file_data->thread_data), read_session->rx_buf_wpos, time);
+static int file_read_all_to_message_write_callback_file_basename_callback (
+		const char *path,
+		const char *dir,
+		const char *name,
+		void *arg
+) {
+	struct rrr_array *array = arg;
+
+	(void)(path);
+
+	int ret = 0;
+
+	if ((ret = rrr_array_push_value_str_with_tag (
+			array, "file_directory", dir
+	)) != 0) {
+		RRR_MSG_0("Failed to push file dir to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_str_with_tag (
+			array, "file_name", name
+	)) != 0) {
+		RRR_MSG_0("Failed to push file dir to array in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int file_read_all_to_message_write_callback_file (
+		struct rrr_msg_holder *entry,
+		struct file_data *file_data,
+		const struct rrr_read_session *read_session,
+		struct file *file
+) {
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	VERIFY_WPOS();
+
+	if ((ret = rrr_array_push_value_str_with_tag (
+			&array_tmp, "file_path_resolved", file->real_path
+	)) != 0) {
+		RRR_MSG_0("Failed to push file resolved path to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_util_fs_basename (
+			file->orig_path,
+			file_read_all_to_message_write_callback_file_basename_callback,
+			&array_tmp
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_blob_with_tag_with_size (
+			&array_tmp,
+			"file_data",
+			read_session->rx_buf_ptr,
+			rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
+	)) != 0) {
+		RRR_MSG_0("Failed to push file data to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_u64_with_tag (
+			&array_tmp,
+			"file_size",
+			read_session->rx_buf_wpos
+	)) != 0) {
+		RRR_MSG_0("Failed to push file size to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = file_read_all_to_message_write_callback_array_final (
+			file_data,
+			entry,
+			&array_tmp,
+			read_session
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	rrr_array_clear(&array_tmp);
@@ -958,6 +1070,16 @@ static int file_read_all_to_message_write_callback (struct rrr_msg_holder *entry
 				entry,
 				callback_data->file_data,
 				callback_data->read_session
+		)) != 0) {
+			goto out;
+		}
+	}
+	else if (callback_data->file_data->read_method == FILE_READ_METHOD_ALL_FILE) {
+		if ((ret = file_read_all_to_message_write_callback_file (
+				entry,
+				callback_data->file_data,
+				callback_data->read_session,
+				callback_data->file
 		)) != 0) {
 			goto out;
 		}
@@ -1278,19 +1400,21 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		);
 	}
 
-	if (rrr_event_collection_push_periodic (
-			&data->event_probe,
-			&data->events,
-			file_event_probe,
-			data,
-			data->probe_interval * 1000
-	) != 0) {
-		RRR_MSG_0("Failed to create probe event in file instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_cleanup;
-	}
+	if (!data->do_no_probing) {
+		if (rrr_event_collection_push_periodic (
+				&data->event_probe,
+				&data->events,
+				file_event_probe,
+				data,
+				data->probe_interval * 1000
+		) != 0) {
+			RRR_MSG_0("Failed to create probe event in file instance %s\n", INSTANCE_D_NAME(thread_data));
+			goto out_cleanup;
+		}
 
-	EVENT_ADD(data->event_probe);
-	EVENT_ACTIVATE(data->event_probe); // Probe immediately when starting
+		EVENT_ADD(data->event_probe);
+		EVENT_ACTIVATE(data->event_probe); // Probe immediately when starting
+	}
 
 	if (rrr_event_collection_push_periodic (
 			&data->event_stats,

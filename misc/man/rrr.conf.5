@@ -2904,7 +2904,7 @@ The array fields
 will be present in the generated messages.
 .PP
 If set to 'file', the fields
-.B file_path, file_directory, file_name, file_data
+.B file_path_resolved, file_directory, file_name, file_data, file_size
 will be present in the message. The field
 .B file_path_resolved
 contains the full resolved path of the file (after resolving symbolic links).
@@ -2912,10 +2912,12 @@ The parameters
 .B file_directory
 and
 .B file_name
-together describe the original path of the file before any symlink resolving.
-The parameter
+together describe the original path of the file before any symbolic link resolving.
+The parameters
 .B file_data
-contains the data of the file.
+and
+.B file_size
+contain the data of the file and data size respectively.
 Messages produced with these fields are appropriate for passing into another file module for writing.
 
 The
