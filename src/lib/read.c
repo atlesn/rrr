@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -214,7 +214,7 @@ static int __rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 ) {
 	int ret = RRR_READ_OK;
-	int ret_from_read = RRR_READ_OK;
+	int do_emit_eof = 0;
 
 	char *buf_dynamic = NULL;
 	char buf_static[RRR_READ_BUF_STACK_MAX_SIZE];
@@ -276,18 +276,19 @@ static int __rrr_read_message_using_callbacks (
 	}
 
 	/* Read */
-	ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
+	const int ret_from_read = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
 
 	// We don't quit on soft error yet, downstream must be able to retrieve the correct read session to
 	// handle errors, which might include to remove the read_session from the collection
-	if (ret & (RRR_READ_HARD_ERROR)) {
+	if (ret_from_read & (RRR_READ_HARD_ERROR)) {
 		RRR_MSG_0("Hard error from read callback in rrr_read_message_using_callbacks\n");
+		ret = RRR_READ_HARD_ERROR;
 		goto out;
 	}
-	if (ret & RRR_READ_INCOMPLETE) {
+	if (ret_from_read & RRR_READ_INCOMPLETE) {
 		RRR_BUG("BUG: READ_INCOMPLETE returned from read callback in rrr_read_message_using_callbacks, this is not allowed\n");
 	}
-	if ((ret & RRR_READ_EOF) && bytes != 0) {
+	if ((ret_from_read & RRR_READ_EOF) && bytes != 0) {
 		RRR_BUG("BUG: READ_EOF returned from read callback while bytes was non-zero in rrr_read_message_using_callbacks, this is not allowed\n");
 	}
 
@@ -316,7 +317,9 @@ static int __rrr_read_message_using_callbacks (
 			RRR_DBG_7("Read returned 0, set target size to bytes read as instructed.\n");
 			read_session->target_size = read_session->rx_buf_wpos;
 			ret = RRR_READ_OK;
-			// Don't goto out, call complete handler after storing buffer
+			// Don't goto out, call complete handler after storing buffer. Also,
+			// emit EOF after complete callback.
+			do_emit_eof = 1;
 		}
 		else if (ret_from_read & RRR_READ_EOF) {
 			if (read_session->eof_ok_now && read_session->rx_buf_ptr == NULL && read_session->rx_overshoot == NULL) {
@@ -519,6 +522,10 @@ static int __rrr_read_message_using_callbacks (
 	}
 	else {
 		RRR_BUG("Some sort of invalid read complete method state at end of rrr_socket_read_message_using_callbacks");
+	}
+
+	if (do_emit_eof) {
+		ret = RRR_READ_EOF;
 	}
 
 	out:
