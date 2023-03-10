@@ -2862,7 +2862,8 @@ module:
 .PP
 .Bl -tag -width -indent
 .It file_directory=DIRECTORY
-Directory in which to probe for files to read from. Must be set.
+Directory in which to probe for files to read from, must be set.
+If the directory does not exist or cannot be opened, the file module will not start.
 
 .It file_prefix=FILE PREFIX
 Optional prefix for files to read from in the chosen directory. Non-matching files are ignored.
@@ -3000,7 +3001,19 @@ This parameter is not respected when file_read_all_to_message is 'yes', and havi
 Must be greater than zero, defaults to 4096.
 
 .It file_timeout_s=SECONDS
-If no message is read or written in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
+If no message is read or written in the specified amount of seconds, close the file.
+Any messages not yet written are dropped.
+Defaults to 0 which means no timeout. 
+
+.It file_write_timeout_ms=MILLISECONDS
+If a particular message to write is not written within this time, it is dropped.
+Must be set to an interval shorter than
+.B file_timeout_s.
+Defaults to 0 which means no timeout.
+
+.It file_ttl_seconds=SECONDS
+Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.
+Defaults to 0 which means that TTL check is disabled.   
 
 .It file_write_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the file.

@@ -68,7 +68,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
 #define RRR_FILE_MAX_MAX_OPEN 65536
 #define RRR_FILE_DEFAULT_MAX_OPEN RRR_FILE_MAX_MAX_OPEN
-#define RRR_FILE_DEFAULT_TIMEOUT 0
+#define RRR_FILE_DEFAULT_TIMEOUT_S 0
+#define RRR_FILE_DEFAULT_WRITE_TIMEOUT_MS 0
+#define RRR_FILE_DEFAULT_TTL 0
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
@@ -145,8 +147,8 @@ struct file_data {
 	rrr_setting_uint max_read_step_size;
 	rrr_setting_uint max_open;
 	rrr_setting_uint timeout_s;
-	rrr_setting_uint write_timeout_us;
-	rrr_setting_uint write_ttl_us;
+	rrr_setting_uint write_timeout_ms;
+	rrr_setting_uint ttl_s;
 
 	enum rrr_send_loop_action write_timeout_action;
 
@@ -349,6 +351,9 @@ static void file_data_cleanup(void *arg) {
 
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
+	int ret_tmp;
+
+	/* Don't goto out in non-critical errors, check all possible errors first. */
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_probing", do_no_probing, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
@@ -359,11 +364,10 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if (data->directory == NULL) {
 		RRR_MSG_0("Required parameter 'file_directory' missing for instance %s\n", config->name);
 		ret = 1;
-		goto out;
 	}
 
-	if ((ret = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "file_input_types")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
+	if ((ret_tmp = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "file_input_types")) != 0) {
+		if (ret_tmp != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse array definition in file_input_types in instance %s\n", config->name);
 			ret = 1;
 			goto out;
@@ -389,9 +393,14 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_open", max_open, RRR_FILE_DEFAULT_MAX_OPEN);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_write_timeout_ms", write_timeout_ms, RRR_FILE_DEFAULT_WRITE_TIMEOUT_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_ttl_seconds", ttl_s, RRR_FILE_DEFAULT_TTL);
 
-	/* Don't goto out in errors, check all possible errors first. */
+	if (data->timeout_s != 0 && data->timeout_s * 1000 < data->write_timeout_ms) {
+		RRR_MSG_0("Value for parameter file_timeout_s was less than file_write_timeout_ms in file instance %s, this is an invalid configuration.\n", config->name);
+		ret = 1;
+	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("file_serial_two_stop_bits")) {
 		if (!data->do_serial_two_stop_bits) {
@@ -505,34 +514,36 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_allow_directory_override", do_write_allow_directory_override, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_append", do_write_append, 0);
 
-	if ((ret = rrr_instance_config_parse_optional_write_method (
+	if (rrr_instance_config_parse_optional_write_method (
 			&data->write_values_list,
 			&data->write_method,
 			config,
 			NULL,
 			"file_write_array_values"
-	)) != 0) {
-		goto out;
-	}
-
-	if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
-		if (RRR_INSTANCE_CONFIG_EXISTS("senders")) {
-			if ((ret = rrr_map_parse_pair("file_data", &data->write_values_list, NULL)) != 0) {
-				RRR_MSG_0("Failed to add default arrray value in %s\n", __func__);
+	) == 0) {
+		if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
+			if (RRR_INSTANCE_CONFIG_EXISTS("senders")) {
+				if (rrr_map_parse_pair("file_data", &data->write_values_list, NULL) != 0) {
+					RRR_MSG_0("Failed to add default arrray value in %s\n", __func__);
+					ret = 1;
+					goto out;
+				}
+				data->write_method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
+			}
+			else if (data->do_no_probing) {
+				RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
+				ret = 1;
 				goto out;
 			}
-			data->write_method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
 		}
-		else if (data->do_no_probing) {
-			RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
+		else if (!RRR_INSTANCE_CONFIG_EXISTS("senders")) {
+			RRR_MSG_0("A write method was set in the configuration for file instance %s, but no senders were set. This is an invalid configuration.\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
-	else if (!RRR_INSTANCE_CONFIG_EXISTS("senders")) {
-		RRR_MSG_0("A write method was set in the configuration for file instance %s, but no senders were set. This is an invalid configuration.\n", config->name);
+	else {
 		ret = 1;
-		goto out;
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -809,6 +820,8 @@ static int file_probe_excact_or_create (
 			0
 		};
 
+		printf("dir %s name %s path %s\n", directory, name, orig_path);
+
 		if ((ret = rrr_readdir_foreach_prefix (
 				directory,
 				name,
@@ -833,7 +846,7 @@ static int file_probe_excact_or_create (
 		RRR_DBG_3("file instance %s creating file '%s'\n",
 				INSTANCE_D_NAME(data->thread_data), orig_path);
 
-		if ((fd = open(orig_path, O_CREAT, 06600)) == -1) {
+		if ((fd = open(orig_path, O_CREAT, 0660)) == -1) {
 			RRR_MSG_0("Failed to create file %s in file instance %s\n",
 					orig_path, INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_FILE_SOFT_ERROR;
@@ -1432,12 +1445,13 @@ static int file_send_push_array_values (
 
 	int fd = 0;
 	unsigned char type = 0;
-	char *directory = NULL;
+	char *directory_override = NULL;
 	char *name = NULL;
 	char *write_data = NULL;
 	int found_tags = 0;
 	rrr_length send_chunk_count = 0;
 	rrr_biglength write_data_size = 0;
+	const char *directory = data->directory;
 
 	if (!MSG_IS_ARRAY(msg)) {
 		RRR_MSG_0("Received message in file instance %s was not an array message as expected\n", INSTANCE_D_NAME(data->thread_data));
@@ -1454,13 +1468,16 @@ static int file_send_push_array_values (
 	const struct rrr_type_value *value_name = rrr_array_value_get_by_tag_const(&array, "file_name");
 
 	if (value_directory != NULL) {
-		if (data->do_write_allow_directory_override) {
+		if (!data->do_write_allow_directory_override) {
 			RRR_DBG_3("Ignoring 'file_directory' field in message to file instance %s per configuration\n", INSTANCE_D_NAME(data->thread_data));
 		}
-		else if ((ret = rrr_type_value_to_str (&directory, value_directory)) != 0)  {
+		else if ((ret = rrr_type_value_to_str (&directory_override, value_directory)) != 0)  {
 			RRR_MSG_0("Failed to get string value of directory value from array message in %s of file instance %ss\n",
 					__func__, INSTANCE_D_NAME(data->thread_data));
 			goto out;
+		}
+		else {
+			directory = directory_override;
 		}
 	}
 
@@ -1502,7 +1519,13 @@ static int file_send_push_array_values (
 		goto out;
 	}
 
-	if ((ret = file_probe_excact_or_create (&fd, &type, data, directory, name)) != 0) {
+	if ((ret = file_probe_excact_or_create (
+			&fd,
+			&type,
+			data,
+			directory,
+			name
+	)) != 0) {
 		if (ret == RRR_FILE_BUSY) {
 			ret = RRR_SEND_LOOP_NOT_READY;
 		}
@@ -1597,7 +1620,7 @@ static int file_send_push_array_values (
 
 			break;
 		default:
-			RRR_MSG_0("Cannot write to file %s/%s of type %i in file instance %s, dropping message.\n",
+			RRR_MSG_0("Cannot write to file %s/%s of type %i in file instance %s, possible readdir problem or unknown type. Dropping message.\n",
 					directory, name, type, INSTANCE_D_NAME(data->thread_data));
 			goto out_close;
 	};
@@ -1609,7 +1632,7 @@ static int file_send_push_array_values (
 		rrr_socket_client_collection_close_by_fd(data->write_only_sockets, fd);
 		rrr_socket_client_collection_close_by_fd(data->read_write_sockets, fd);
 	out:
-		RRR_FREE_IF_NOT_NULL(directory);
+		RRR_FREE_IF_NOT_NULL(directory_override);
 		RRR_FREE_IF_NOT_NULL(name);
 		RRR_FREE_IF_NOT_NULL(write_data);
 		rrr_array_clear(&array);
@@ -1787,12 +1810,12 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 				INSTANCE_D_EVENTS(thread_data),
 				tmp,
 				1, /* Preserve order */
-				data->write_ttl_us,
-				data->write_timeout_us,
+				data->ttl_s * 1000 * 1000,
+				data->write_timeout_ms * 1000,
 				data->write_timeout_action,
 				file_send_push_callback,
 				file_send_return_callback,
-				NULL, /* run callback */
+				NULL, /* run callback not used */
 				data
 		) != 0) {
 			RRR_MSG_0("Failed to create send loop in file instance %s\n", INSTANCE_D_NAME(thread_data));
