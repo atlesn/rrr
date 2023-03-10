@@ -69,6 +69,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *private_data,                                     \
     void *arg
 
+#define RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS \
+    int was_sent, int fd, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg
+
+#define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS \
+    int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg
+
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
 struct rrr_read_session;
@@ -161,6 +167,10 @@ void rrr_socket_client_collection_close_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
 );
+int rrr_socket_client_collection_has_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+);
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
@@ -216,13 +226,13 @@ int rrr_socket_client_collection_connected_fd_push (
 );
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg),
+		void (*callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg),
-		void *client_fd_close_callback_arg
+		void (*callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS),
+		void *callback_arg
 );
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,

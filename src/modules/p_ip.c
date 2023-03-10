@@ -1662,17 +1662,11 @@ static void ip_chunk_send_smart_timeout_callback (
 	rrr_msg_holder_unlock(entry);
 }
 
-static void ip_chunk_send_notify_callback (
-		int was_sent,
-		const void *data,
-		rrr_biglength data_size,
-		rrr_biglength data_pos,
-		void *chunk_private_data,
-		void *callback_arg
-) {
+static void ip_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS) {
 	struct ip_data *ip_data = callback_arg;
 	struct rrr_msg_holder *entry = chunk_private_data;
 
+	(void)(fd);
 	(void)(data);
 	(void)(data_size);
 	(void)(data_pos);
@@ -1706,15 +1700,7 @@ static void ip_chunk_send_notify_callback (
 	rrr_msg_holder_unlock(entry);
 }
 
-static void ip_fd_close_notify_callback (
-		int fd,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		const char *addr_string,
-		enum rrr_socket_client_collection_create_type create_type,
-		short was_finalized,
-		void *arg
-) {
+static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
 	struct ip_data *ip_data = arg;
 
 	(void)(fd);

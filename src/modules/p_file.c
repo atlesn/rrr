@@ -90,6 +90,8 @@ struct file {
 	int fd;
 	struct stat file_stat;
 	uint64_t total_messages;
+	rrr_biglength bytes_to_write;
+	rrr_biglength bytes_written;
 };
 
 struct file_collection {
@@ -122,6 +124,7 @@ struct file_data {
 	int do_no_probing;
 	int do_write_allow_directory_override;
 	int do_write_append;
+	int do_write_reopen;
 
 	char *serial_parity;
 
@@ -202,6 +205,30 @@ static void file_collection_remove (struct file_collection *files, struct file *
 
 static int file_collection_count (const struct file_collection *files) {
 	return RRR_LL_COUNT(files);
+}
+
+static void file_collection_add_bytes_to_write (struct file_collection *files, int fd, rrr_biglength bytes) {
+	struct file *file;
+	if ((file = file_collection_get_by_fd(files, fd)) == NULL) {
+		return;
+	}
+	file->bytes_to_write += bytes;
+}
+
+static void file_collection_add_bytes_written (struct file_collection *files, int fd, rrr_biglength bytes) {
+	struct file *file;
+	if ((file = file_collection_get_by_fd(files, fd)) == NULL) {
+		return;
+	}
+	file->bytes_to_write += bytes;
+}
+
+static int file_collection_all_bytes_written (struct file_collection *files, int fd) {
+	struct file *file;
+	if ((file = file_collection_get_by_fd(files, fd)) == NULL) {
+		return 0;
+	}
+	return file->bytes_written == file->bytes_to_write;
 }
 
 static int file_new (
@@ -1346,6 +1373,32 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 	return file_read_all_to_message_complete (file->data, file, read_session);
 }
 
+static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS) {
+	struct file_data *file_data = callback_arg;
+
+	(void)(was_sent);
+	(void)(data);
+	(void)(data_pos);
+	(void)(chunk_private_data);
+
+	assert(data_pos == data_size);
+
+	file_collection_add_bytes_written(&file_data->files, fd, data_size);
+}
+
+static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
+	struct file_data *file_data = arg;
+
+	(void)(addr);
+	(void)(addr_len);
+	(void)(addr_string);
+	(void)(create_type);
+	(void)(was_finalized);
+
+	if (file_collection_all_bytes_written (&file_data->files, fd)) {
+	}
+}
+
 static int file_send_push_array_values (
 		struct file_data *data,
 		struct rrr_msg_holder *entry,
@@ -1526,6 +1579,8 @@ static int file_send_push_array_values (
 					directory, name, type, INSTANCE_D_NAME(data->thread_data));
 			goto out_close;
 	};
+
+	file_collection_add_bytes_to_write(&data->files, fd, write_data_size);
 
 	goto out;
 	out_close:
@@ -1780,6 +1835,17 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			data
 	);
 
+	rrr_socket_client_collection_send_notify_setup (
+			data->write_only_sockets,
+			file_chunk_send_notify_callback,
+			data
+	);
+
+	rrr_socket_client_collection_fd_close_notify_setup (
+			data->write_only_sockets,
+			file_fd_close_notify_callback,
+			data
+	);
 
 	if (!data->do_no_probing) {
 		if (rrr_event_collection_push_periodic (
