@@ -148,6 +148,7 @@ struct rrr_socket_client {
 	uint64_t last_seen;
 
 	enum rrr_socket_client_collection_create_type create_type;
+
 	int close_when_send_complete;
 
 	void *private_data;
@@ -1062,6 +1063,21 @@ static void __rrr_socket_client_event_read_ignore (
 	}
 }
 
+static int __rrr_socket_client_fd_reset (
+		struct rrr_socket_client_fd *client_fd,
+		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg)
+) {
+	rrr_event_collection_clear_soft(&client_fd->events);
+	return __rrr_socket_client_fd_event_setup (
+			client_fd,
+			event_read_callback,
+			client_fd->client,
+			event_write_callback,
+			client_fd->client
+	);
+}
+
 static int __rrr_socket_client_fd_push (
 		struct rrr_socket_client *client,
 		int fd,
@@ -1158,6 +1174,28 @@ static int __rrr_socket_client_collection_fd_push (
 	collection->event_read_callback,  \
 	__rrr_socket_client_event_write
 
+static int __rrr_socket_client_reset (
+		struct rrr_socket_client *client,
+		struct rrr_socket_client_collection *collection
+) {
+	int ret = 0;
+
+	client->collection = collection;
+
+	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+		if ((ret = __rrr_socket_client_fd_reset (
+				node,
+				CONNECTED_CALLBACKS
+		)) != 0) {
+			goto out;
+		}
+				
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static int __rrr_socket_client_collection_not_ready_fd_push (
 		struct rrr_socket_client **result,
 		struct rrr_socket_client_collection *collection,
@@ -1239,11 +1277,14 @@ static int __rrr_socket_client_collection_connected_fd_push (
 	return ret;
 }
 
-static int __rrr_socket_client_send_push (
+static int __rrr_socket_client_send_push_with_private_data (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		void **data,
-		rrr_biglength data_size
+		rrr_biglength data_size,
+		void (*private_data_new)(void **private_data, void *arg),
+		void *private_data_arg,
+		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
 
@@ -1251,12 +1292,15 @@ static int __rrr_socket_client_send_push (
 		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
 	}
 
-	if ((ret = rrr_socket_send_chunk_collection_push (
+	if ((ret = rrr_socket_send_chunk_collection_push_with_private_data (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
 			data_size,
-			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
+			private_data_new,
+			private_data_arg,
+			private_data_destroy
 	)) != 0) {
 		goto out;
 	}
@@ -1265,6 +1309,23 @@ static int __rrr_socket_client_send_push (
 
 	out:
 	return ret;
+}
+
+static int __rrr_socket_client_send_push (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client *client,
+		void **data,
+		rrr_biglength data_size
+) {
+	return __rrr_socket_client_send_push_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			data_size,
+			NULL,
+			NULL,
+			NULL
+	);
 }
 
 static int __rrr_socket_client_send_push_const (
@@ -1498,6 +1559,33 @@ int rrr_socket_client_collection_send_push (
 	);
 }
 
+int rrr_socket_client_collection_send_push_with_private_data (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		void **data,
+		rrr_biglength data_size,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
+		void (*chunk_private_data_destroy)(void *chunk_private_data)
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client == NULL) {
+		return RRR_READ_SOFT_ERROR;
+	}
+
+	return __rrr_socket_client_send_push_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			data_size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy
+	);
+}
+
 int rrr_socket_client_collection_send_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
@@ -1551,6 +1639,67 @@ void rrr_socket_client_collection_close_when_send_complete_by_fd (
 	if (client != NULL) {
 		__rrr_socket_client_close_when_send_complete (client);
 	}
+}
+
+int rrr_socket_client_collection_migrate_by_fd (
+		struct rrr_socket_client_collection *target,
+		struct rrr_socket_client_collection *source,
+		int fd
+) {
+	int ret = 0;
+
+	assert(target != source);
+
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(source, fd);
+
+	if (client == NULL) {
+		goto out;
+	}
+
+	RRR_DBG_7("fd %i in client collection migrating to other collection\n",
+			client->connected_fd->fd);
+
+	int found = 0;
+	RRR_LL_ITERATE_BEGIN(source, struct rrr_socket_client);
+		if (node == client) {
+			found = 1;
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(source, 0);
+	assert(found == 1);
+
+	if ((ret = __rrr_socket_client_reset (client, target)) != 0) {
+		__rrr_socket_client_destroy_dangerous(client);
+		goto out;
+	}
+
+	RRR_LL_APPEND(target, client);
+
+	out:
+	return ret;
+}
+
+void rrr_socket_client_collection_close_by_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client == NULL) {
+		return;
+	}
+
+	RRR_DBG_7("fd %i in client collection close now (external call)\n",
+			client->connected_fd->fd);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node == client) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+
 }
 
 static int __rrr_socket_client_collection_find_by_address_or_connect (
@@ -2107,6 +2256,25 @@ void rrr_socket_client_collection_event_setup_ignore (
 			callback_set_read_flags,
 			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_ignore,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
+	);
+}
+
+void rrr_socket_client_collection_event_setup_write_only (
+		struct rrr_socket_client_collection *collection,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg
+) {
+	__rrr_socket_client_collection_event_setup (
+			collection,
+			0,
+			0,
+			NULL,
+			NULL,
+			NULL,
 			callback_private_data_new,
 			callback_private_data_destroy,
 			callback_private_data_arg

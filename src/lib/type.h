@@ -423,5 +423,11 @@ int rrr_type_value_with_tmp_do (
 		int (*callback)(const struct rrr_type_value *value, void *arg),
 		void *callback_arg
 );
+static inline int rrr_type_value_to_str (
+		char **target,
+		const struct rrr_type_value *value
+) {
+	return value->definition->to_str(target, value);
+}
 
 #endif /* RRR_TYPE_HEADER */

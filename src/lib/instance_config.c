@@ -611,14 +611,18 @@ int rrr_instance_config_parse_optional_write_method (
 ) {
 	int ret = 0;
 
-	// Either rrr_message or array values (tags) may be set. IF array
+	int yesno = 0;
+	int is_all = 0;
+
+	// Either rrr_message or array values (tags) may be set. If array
 	// values are used, this field may be set to * to indicate use of all
-	// values in array.
+	// values in array. String arguments may be NULL if option is not used.
 
 	*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
 
-	int yesno = 0;
- 	if ((ret = rrr_settings_check_yesno(&yesno, config->settings, string_write_rrr_message)) != 0) {
+ 	if ((string_write_rrr_message != NULL) &&
+	    (ret = rrr_settings_check_yesno(&yesno, config->settings, string_write_rrr_message)) != 0
+	) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse yes/no parameter '%s' of instance %s\n",
 					string_write_rrr_message,
@@ -628,13 +632,12 @@ int rrr_instance_config_parse_optional_write_method (
 		ret = 0;
 	}
 
-	*method = yesno == 1 /* -1 means not found, 0 means no */
-		? RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE
-		: RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE
-	;
+	/* -1 means not found, 0 means no, 1 means yes */
+	if (yesno == 1) {
+		*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE;
+	}
 
-	{
-		int is_all = 0;
+	if (string_array_values != NULL) {
 		if ((ret = __rrr_instance_config_parse_comma_separated_to_map_check_unary_all (
 				array_values,
 				&is_all,

@@ -58,6 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
 #include "../lib/util/posix.h"
+#include "../lib/util/gnu.h"
 #include "../lib/util/fs.h"
 #include "../lib/input/input.h"
 #include "../lib/serial/serial.h"
@@ -73,7 +74,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
 #define RRR_FILE_F_IS_SERIAL (1<<1)
 
+#define RRR_FILE_BUSY RRR_READ_BUSY
 #define RRR_FILE_STOP RRR_READ_EOF
+#define RRR_FILE_SOFT_ERROR RRR_READ_SOFT_ERROR
 
 struct file_data;
 
@@ -117,9 +120,7 @@ struct file_data {
 	int do_serial_one_stop_bit;
 	int do_serial_two_stop_bits;
 	int do_no_probing;
-	int do_read_from_written_files;
 	int do_write_allow_directory_override;
-	int do_write_rrr_messsage;
 	int do_write_append;
 
 	char *serial_parity;
@@ -161,7 +162,8 @@ struct file_data {
 	rrr_event_handle event_probe;
 	rrr_event_handle event_stats;
 
-	struct rrr_socket_client_collection *sockets;
+	struct rrr_socket_client_collection *write_only_sockets;
+	struct rrr_socket_client_collection *read_write_sockets;
 	struct rrr_send_loop *send_loop;
 };
 
@@ -171,13 +173,13 @@ static void file_destroy(struct file *file) {
 	rrr_free(file);
 }
 
-static int file_collection_has (const struct file_collection *files, const char *orig_path) {
+static struct file *file_collection_get_by_orig_path (const struct file_collection *files, const char *orig_path) {
 	RRR_LL_ITERATE_BEGIN(files, struct file);
 		if (strcmp(orig_path, node->orig_path) == 0) {
-			return 1;
+			return node;
 		}
 	RRR_LL_ITERATE_END();
-	return 0;
+	return NULL;
 }
 
 static struct file *file_collection_get_by_fd (const struct file_collection *files, int fd) {
@@ -297,8 +299,11 @@ static int file_data_init(struct file_data *data, struct rrr_instance_runtime_da
 static void file_data_cleanup(void *arg) {
 	struct file_data *data = (struct file_data *) arg;
 	rrr_event_collection_clear(&data->events);
-	if (data->sockets != NULL) {
-		rrr_socket_client_collection_destroy(data->sockets);
+	if (data->write_only_sockets != NULL) {
+		rrr_socket_client_collection_destroy(data->write_only_sockets);
+	}
+	if (data->read_write_sockets != NULL) {
+		rrr_socket_client_collection_destroy(data->read_write_sockets);
 	}
 	if (data->send_loop != NULL) {
 		rrr_send_loop_destroy(data->send_loop);
@@ -472,13 +477,12 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_allow_directory_override", do_write_allow_directory_override, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_append", do_write_append, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_from_written_files", do_read_from_written_files, 0);
 
 	if ((ret = rrr_instance_config_parse_optional_write_method (
 			&data->write_values_list,
 			&data->write_method,
 			config,
-			"file_write_rrr_message",
+			NULL,
 			"file_write_array_values"
 	)) != 0) {
 		goto out;
@@ -491,11 +495,6 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 				goto out;
 			}
 			data->write_method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
-		}
-		else if (data->do_read_from_written_files) {
-			RRR_MSG_0("Parameter file_read_from_written_files was set to yes while no write method was specified in file instance %s, this is an invalid configuration\n", config->name);
-			ret = 1;
-			goto out;
 		}
 		else if (data->do_no_probing) {
 			RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
@@ -515,27 +514,30 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	return ret;
 }
 
-static int file_probe_callback (
-		struct dirent *entry,
+static int file_open_as_needed (
+		int *result_fd,
+		struct file_data *data,
 		const char *orig_path,
 		const char *resolved_path,
-		unsigned char type,
-		void *private_data
+		unsigned char type
 ) {
-	struct file_data *data = private_data;
-
-	(void)(entry);
-
 	int ret = 0;
 
+	*result_fd = 0;
+
+	const int do_write = data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
+
+	struct file *file;
 	int fd = 0;
 
-	if (file_collection_has(&data->files, orig_path)) {
-		goto out;
+	if ((file = file_collection_get_by_orig_path(&data->files, orig_path)) != NULL) {
+		fd = file->fd;
+		type = file->type;
+		goto set_result;
 	}
 
 	if (data->max_open > 0 && file_collection_count(&data->files) >= (int) data->max_open) {
-		ret = RRR_FILE_STOP;
+		ret = RRR_FILE_BUSY;
 		goto out;
 	}
 
@@ -549,7 +551,7 @@ static int file_probe_callback (
 		}
 	}
 	else {
-		int flags = O_RDONLY;
+		int flags = (do_write ? O_RDWR : O_RDONLY);
 
 		if (type == DT_CHR || type == DT_FIFO) {
 			if (type == DT_CHR) {
@@ -663,11 +665,17 @@ static int file_probe_callback (
 		goto out;
 	}
 
-	if (rrr_socket_client_collection_connected_fd_push(data->sockets, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND) != 0) {
+	if (rrr_socket_client_collection_connected_fd_push (
+			data->read_write_sockets,
+			fd,
+			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND
+	) != 0) {
 		RRR_MSG_0("Failed to add fd to client collection in file instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
+	set_result:
+	*result_fd = fd;
 	fd = 0;
 
 	out:
@@ -677,6 +685,22 @@ static int file_probe_callback (
 	return ret;
 }
 
+static int file_probe_callback (
+		struct dirent *entry,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
+	struct file_data *data = private_data;
+
+	(void)(entry);
+
+	int fd;
+	// Note : May return RRR_FILE_BUSY
+	return file_open_as_needed(&fd, data, orig_path, resolved_path, type);
+}
+
 static int file_probe (struct file_data *data, const char *directory, const char *prefix) {
 	return rrr_readdir_foreach_prefix (
 			directory,
@@ -684,6 +708,126 @@ static int file_probe (struct file_data *data, const char *directory, const char
 			file_probe_callback,
 			data
 	);
+}
+
+struct file_probe_excact_callback_data {
+	struct file_data *data;
+	const char *expected_orig_path;
+	int fd;
+	unsigned char type;
+};
+
+static int file_probe_excact_callback (
+		struct dirent *entry,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
+	struct file_probe_excact_callback_data *callback_data = private_data;
+	struct file_data *data = callback_data->data;
+
+	(void)(entry);
+
+	int ret = 0;
+
+	if (strcmp(callback_data->expected_orig_path, orig_path) != 0) {
+		return 0;
+	}
+
+	int fd;
+	if ((ret = file_open_as_needed(&fd, data, orig_path, resolved_path, type)) != 0) {
+		// Note : May return RRR_FILE_BUSY
+		goto out;
+	}
+
+	assert(fd > 0);
+	callback_data->fd = fd;
+	callback_data->type = type;
+
+	// File found, no need to probe for more
+	ret = RRR_FILE_STOP;
+
+	out:
+	return ret;
+}
+
+static int file_probe_excact_or_create (
+		int *result_fd,
+		unsigned char *result_type,
+		struct file_data *data,
+		const char *directory,
+		const char *name
+) {
+	int ret = 0;
+
+	*result_fd = 0;
+	*result_type = 0;
+
+	char *orig_path = NULL;
+	int fd = 0;
+	unsigned char type = 0;
+
+	if (!(rrr_asprintf (&orig_path, "%s/%s", directory, name) > 0)) {
+		RRR_MSG_0("Failed to make path in %s\n", __func__);
+		ret = 1;
+
+	}
+
+	for (int i = 0; i < 1; i++) {
+		struct file_probe_excact_callback_data callback_data = {
+			data,
+			orig_path,
+			0,
+			0
+		};
+
+		if ((ret = rrr_readdir_foreach_prefix (
+				directory,
+				name,
+				file_probe_excact_callback,
+				&callback_data
+		)) != 0) {
+			if (ret == RRR_FILE_STOP) {
+				ret = 0;
+			}
+			else {
+				goto out;
+			}
+		}
+
+		fd = callback_data.fd;
+		type = callback_data.type;
+
+		if (fd > 0 || i == 1) {
+			break;
+		}
+
+		RRR_DBG_3("file instance %s creating file '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), orig_path);
+
+		if ((fd = open(orig_path, O_CREAT, 06600)) == -1) {
+			RRR_MSG_0("Failed to create file %s in file instance %s\n",
+					orig_path, INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_FILE_SOFT_ERROR;
+			goto out;
+		}
+		close(fd);
+	}
+
+	if (!(fd > 0)) {
+		RRR_MSG_0("Unable to open or create file %s in file instance %s\n",
+				orig_path, INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_FILE_SOFT_ERROR;
+		goto out;
+	}
+
+	*result_fd = fd;
+	*result_type = type;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(orig_path);
+	return ret;
 }
 
 struct file_read_array_write_callback_data {
@@ -1134,7 +1278,7 @@ static int file_read_all_to_message_complete (
 	return ret;
 }
 
-static int file_private_data_new(void **target, int fd, void *private_arg) {
+static int file_client_private_data_new(void **target, int fd, void *private_arg) {
 	struct file_data *data = private_arg;
 
 	*target = file_collection_get_by_fd (&data->files, fd);
@@ -1143,9 +1287,20 @@ static int file_private_data_new(void **target, int fd, void *private_arg) {
 	return 0;
 }
 
-static void file_private_data_destroy(void *private_data) {
+static void file_client_private_data_destroy(void *private_data) {
 	struct file *file = private_data;
 	file_collection_remove(&file->data->files, file);
+}
+
+static void file_send_chunk_private_data_new (void **chunk_private_data, void *arg) {
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_incref(entry);
+	*chunk_private_data = entry;
+}
+
+static void file_send_chunk_private_data_destroy (void *arg) {
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_decref(entry);
 }
 
 static int file_read_raw_get_target_size(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
@@ -1191,6 +1346,199 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 	return file_read_all_to_message_complete (file->data, file, read_session);
 }
 
+static int file_send_push_array_values (
+		struct file_data *data,
+		struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg
+) {
+	struct rrr_array array = {0};
+
+	int ret = 0;
+
+	int fd = 0;
+	unsigned char type = 0;
+	char *directory = NULL;
+	char *name = NULL;
+	char *write_data = NULL;
+	int found_tags = 0;
+	rrr_length send_chunk_count = 0;
+	rrr_biglength write_data_size = 0;
+
+	if (!MSG_IS_ARRAY(msg)) {
+		RRR_MSG_0("Received message in file instance %s was not an array message as expected\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	uint16_t version;
+	if ((ret = rrr_array_message_append_to_array (&version, &array, msg)) != 0) {
+		RRR_MSG_0("Failed to extract array from message in %s\n", __func__);
+		goto out;
+	}
+
+	const struct rrr_type_value *value_directory = rrr_array_value_get_by_tag_const(&array, "file_directory");
+	const struct rrr_type_value *value_name = rrr_array_value_get_by_tag_const(&array, "file_name");
+
+	if (value_directory != NULL) {
+		if (data->do_write_allow_directory_override) {
+			RRR_DBG_3("Ignoring 'file_directory' field in message to file instance %s per configuration\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else if ((ret = rrr_type_value_to_str (&directory, value_directory)) != 0)  {
+			RRR_MSG_0("Failed to get string value of directory value from array message in %s of file instance %ss\n",
+					__func__, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+	}
+
+	if (value_name == NULL) {
+		RRR_MSG_0("Field 'value_name' missing in message to file instance %s, dropping it.\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_type_value_to_str (&name, value_name)) != 0)  {
+		RRR_MSG_0("Failed to get string value of name value from array message in %s of file instance %ss\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (strchr(name, '/') != NULL) {
+		RRR_MSG_0("Field 'value_name' contained illegal directory separator character / in file instance %s. Dropping it.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_array_selected_tags_export (
+			&write_data,
+			&write_data_size,
+			&found_tags,
+			&array,
+			&data->write_values_list
+	)) != 0) {
+		RRR_MSG_0("Failed to export array in %s\n", __func__);
+		goto out;
+	}
+
+	if (found_tags != RRR_LL_COUNT(&data->write_values_list)) {
+		RRR_MAP_ITERATE_BEGIN(&data->write_values_list);
+			if (!rrr_array_has_tag(&array, node->tag)) {
+				RRR_MSG_0("Data value with tag '%s' missing in message to file instance %s, ropping it.\n",
+						node->tag, INSTANCE_D_NAME(data->thread_data));
+			}
+		RRR_MAP_ITERATE_END();
+		goto out;
+	}
+
+	if ((ret = file_probe_excact_or_create (&fd, &type, data, directory, name)) != 0) {
+		if (ret == RRR_FILE_BUSY) {
+			ret = RRR_SEND_LOOP_NOT_READY;
+		}
+		else if (ret == RRR_FILE_SOFT_ERROR) {
+			RRR_MSG_0("Dropping message after soft error in file instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+		}
+		goto out;
+	}
+
+	assert(fd > 0);
+
+	switch (type) {
+		case DT_REG:
+			if (!data->do_write_append) {
+				RRR_DBG_3("file instance %s seeking to end of file '%s/%s'\n",
+						INSTANCE_D_NAME(data->thread_data), directory, name);
+
+				if (lseek(fd, 0, SEEK_END) == -1) {
+					RRR_MSG_0("Failed to seek to beginning of file '%s/%s' in file instance %s: %s\n",
+							directory, name, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+					ret = RRR_FILE_SOFT_ERROR;
+					goto out_close;
+				}
+			}
+			else {
+				RRR_DBG_3("file instance %s truncating file '%s/%s'\n",
+						INSTANCE_D_NAME(data->thread_data), directory, name);
+
+				if (ftruncate(fd, 0) == -1 && errno != EINVAL) {
+					RRR_MSG_0("Failed to truncate file '%s/%s' in file instance %s: %s\n",
+							directory, name, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+					ret = RRR_FILE_SOFT_ERROR;
+					goto out_close;
+				}
+
+				if (lseek(fd, 0, SEEK_SET) == -1 && errno != EINVAL) {
+					RRR_MSG_0("Failed to seek to beginning of file '%s/%s' in file instance %s: %s\n",
+							directory, name, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+					ret = RRR_FILE_SOFT_ERROR;
+					goto out_close;
+				}
+			}
+
+			// Prevent reading from the file by moving to write only collection. FD might already
+			// be in correct client socket collection, which is OK.
+			if ((ret = rrr_socket_client_collection_migrate_by_fd (data->write_only_sockets, data->read_write_sockets, fd)) != 0) {
+				if (ret != RRR_SOCKET_SOFT_ERROR) {
+					RRR_MSG_0("Failed to migrate socket in %s\n", __func__);
+					goto out_close;
+				}
+				ret = 0;
+			}
+
+			if ((ret = rrr_socket_client_collection_send_push_with_private_data (
+					&send_chunk_count,
+					data->write_only_sockets,
+					fd,
+					(void **) &write_data,
+					write_data_size,
+					file_send_chunk_private_data_new,
+					entry,
+					file_send_chunk_private_data_destroy
+			)) != 0) {
+				RRR_MSG_0("Error %i while pushing data to client collection in %s\n", ret, __func__);
+				goto out_close;
+			}
+
+			rrr_socket_client_collection_close_when_send_complete_by_fd (data->read_write_sockets, fd);
+
+			break;
+		case DT_FIFO:
+		case DT_CHR:
+		case DT_SOCK:
+			RRR_DBG_3("file instance %s file '%s/%s' is not regular file, not seeking or truncating.\n",
+					INSTANCE_D_NAME(data->thread_data), directory, name);
+
+			if ((ret = rrr_socket_client_collection_send_push_with_private_data (
+					&send_chunk_count,
+					data->read_write_sockets,
+					fd,
+					(void **) &write_data,
+					write_data_size,
+					file_send_chunk_private_data_new,
+					entry,
+					file_send_chunk_private_data_destroy
+			)) != 0) {
+				RRR_MSG_0("Error %i while pushing data to client collection in %s\n", ret, __func__);
+				goto out_close;
+			}
+
+			break;
+		default:
+			RRR_MSG_0("Cannot write to file %s/%s of type %i in file instance %s, dropping message.\n",
+					directory, name, type, INSTANCE_D_NAME(data->thread_data));
+			goto out_close;
+	};
+
+	goto out;
+	out_close:
+		rrr_socket_client_collection_close_by_fd(data->write_only_sockets, fd);
+		rrr_socket_client_collection_close_by_fd(data->read_write_sockets, fd);
+	out:
+		RRR_FREE_IF_NOT_NULL(directory);
+		RRR_FREE_IF_NOT_NULL(name);
+		RRR_FREE_IF_NOT_NULL(write_data);
+		rrr_array_clear(&array);
+		return ret;
+}
+
 static int file_send_push_callback (
 		struct rrr_msg_holder *entry,
 		void *arg
@@ -1199,9 +1547,20 @@ static int file_send_push_callback (
 
 	int ret = 0;
 
-	assert(0);
+	const struct rrr_msg_msg *msg = entry->message;
 
-	out:
+	switch (data->write_method) {
+		case RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES:
+			ret = file_send_push_array_values(data, entry, msg);
+			break;
+		case RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE:
+			RRR_BUG("BUG: Write method was RRR_MESSAGE in %s, configuration must avoid this\n", __func__);
+			break;
+		default:
+			RRR_BUG("BUG: Write method was NONE or unknown in %s, configuration must avoid this\n", __func__);
+			break;
+	}
+
 	return ret;
 }
 
@@ -1211,12 +1570,12 @@ static int file_send_return_callback (
 ) {
 	struct file_data *data = arg;
 
-	int ret = 0;
+	(void)(entry);
+	(void)(data);
 
 	assert(0);
 
-	out:
-	return ret;
+	return 0;
 }
 
 static int file_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -1325,7 +1684,16 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	);
 
 	if (rrr_socket_client_collection_new (
-			&data->sockets,
+			&data->read_write_sockets,
+			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_NAME(thread_data)
+	) != 0) {
+		RRR_MSG_0("Failed to create client collection in file instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup;
+	}
+
+	if (rrr_socket_client_collection_new (
+			&data->write_only_sockets,
 			INSTANCE_D_EVENTS(thread_data),
 			INSTANCE_D_NAME(thread_data)
 	) != 0) {
@@ -1356,15 +1724,20 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	}
 
 	rrr_socket_client_collection_set_idle_timeout (
-			data->sockets,
+			data->read_write_sockets,
+			data->timeout_s * 1000 * 1000
+	);
+
+	rrr_socket_client_collection_set_idle_timeout (
+			data->write_only_sockets,
 			data->timeout_s * 1000 * 1000
 	);
 
 	if (data->read_method == FILE_READ_METHOD_TELEGRAMS) {
 		rrr_socket_client_collection_event_setup_array_tree (
-				data->sockets,
-				file_private_data_new,
-				file_private_data_destroy,
+				data->read_write_sockets,
+				file_client_private_data_new,
+				file_client_private_data_destroy,
 				data,
 				0,
 				file_read_set_flags_callback,
@@ -1383,9 +1756,9 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	}
 	else {
 		rrr_socket_client_collection_event_setup_raw (
-				data->sockets,
-				file_private_data_new,
-				file_private_data_destroy,
+				data->read_write_sockets,
+				file_client_private_data_new,
+				file_client_private_data_destroy,
 				data,
 				data->max_read_step_size,
 				0,
@@ -1399,6 +1772,14 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 				data
 		);
 	}
+
+	rrr_socket_client_collection_event_setup_write_only (
+			data->write_only_sockets,
+			file_client_private_data_new,
+			file_client_private_data_destroy,
+			data
+	);
+
 
 	if (!data->do_no_probing) {
 		if (rrr_event_collection_push_periodic (

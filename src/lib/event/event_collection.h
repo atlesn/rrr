@@ -33,6 +33,9 @@ void rrr_event_collection_init (
 		struct rrr_event_collection *collection,
 		struct rrr_event_queue *queue
 );
+void rrr_event_collection_clear_soft (
+		struct rrr_event_collection *collection
+);
 void rrr_event_collection_clear (
 		struct rrr_event_collection *collection
 );

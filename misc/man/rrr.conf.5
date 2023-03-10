@@ -2831,7 +2831,18 @@ Note that if files are written, these files may also be read back if their name 
 Use different prefixes for written files to avoid this or disable probing using
 .B file_no_probing
 if reading need not be performed.
-.PP
+
+If any senders are specified for a file instance, making writing possible,
+write access is required for all files to be opened regardless of whether writing is actually performed or not.
+If no writing is possible, files will be opened read-only.
+
+If a normal file is already open for reading when writing starts, seek will be performed to either the beginning or end of the file depending on the
+.B file_write_append
+parameter.
+Any ongoing reading operation will stop, but the file may be read from at a later time depending on the configuration.
+
+If writing is performed to a stream device, these will also be read from.
+
 The following array fields are used in these messages:
 .PP
 .Bl -tag -width -indent
@@ -2863,11 +2874,6 @@ A value of zero is allowed, this might be CPU intensive. Defaults to 5000 ms.
 .It file_no_probing={yes|no}
 If set to 'yes', no probing for files in the specified directory will be performed.
 If set no 'no' or left unset, files will be read.
-
-.It file_read_from_written_files={yes|no}
-If set to 'yes' and a file is written, the file will also be opened for reading.
-This is most useful for opening stream devices like serial ports.
-If set to 'no' or left unset, written files are only read from if probing is active and they match the specified file prefix.
 
 .It file_topic=MQTT TOPIC
 Set an MQTT topic on generated messages. Optional parameter.
@@ -2926,7 +2932,7 @@ The raw data of the file and it's size.
 .It file_name
 The original path of the file before any symbolic link resolving.
 .Pp
-.It file_path
+.It file_path_resolved
 The resolved path (in case original is a symbolic link) of the file respectively.
 .El
 
@@ -3002,15 +3008,7 @@ RRR messages which do not contain an array are dropped.
 Any integer types will have big endianess in the resulting publish message.
 If left unset, the field
 .B file_data
-will be used unless
-.B file_write_rrr_message
-is set to 'yes'.
-
-.It file_write_rrr_message={yes|no}
-If set to 'yes', full RRR messages will be written.
-If set to 'no' or left unset, the parameter
-.B file_write_array_values
-must be set instead if writing is to be performed.
+will be used.
 
 .It file_write_append={yes|no}
 If set to 'yes', data will be appended to the given file if it already exists.

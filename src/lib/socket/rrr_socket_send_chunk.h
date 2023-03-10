@@ -60,6 +60,16 @@ int rrr_socket_send_chunk_collection_push (
 		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority
 );
+int rrr_socket_send_chunk_collection_push_with_private_data (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *chunks,
+		void **data,
+		rrr_biglength data_size,
+		enum rrr_socket_send_chunk_priority priority,
+		void (*private_data_new)(void **private_data, void *arg),
+		void *private_data_arg,
+		void (*private_data_destroy)(void *private_data)
+);
 int rrr_socket_send_chunk_collection_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,

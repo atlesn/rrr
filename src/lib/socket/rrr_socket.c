@@ -1267,11 +1267,14 @@ int rrr_socket_sendto_nonblock (
 	// Truncate to size_t
 	const size_t send_size = __rrr_socket_send_size_from_biglength(size - done_bytes_total);
 
-	if (addr == NULL || addr_len == 0) {
+	if (addr_len > 0) {
+		done_bytes = sendto(fd, data + done_bytes_total, send_size, flags, addr, addr_len);
+	}
+	else if (flags != 0) {
 		done_bytes = send(fd, data + done_bytes_total, send_size, flags);
 	}
 	else {
-		done_bytes = sendto(fd, data + done_bytes_total, send_size, flags, addr, addr_len);
+		done_bytes = write(fd, data + done_bytes_total, send_size);
 	}
 
 	if (done_bytes > 0) {

@@ -122,6 +122,16 @@ int rrr_socket_client_collection_send_push (
 		void **data,
 		rrr_biglength data_size
 );
+int rrr_socket_client_collection_send_push_with_private_data (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		void **data,
+		rrr_biglength data_size,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
+		void (*chunk_private_data_destroy)(void *chunk_private_data)
+);
 int rrr_socket_client_collection_send_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
@@ -139,6 +149,15 @@ void rrr_socket_client_collection_close_when_send_complete_by_address_string (
 		const char *addr_string
 );
 void rrr_socket_client_collection_close_when_send_complete_by_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+);
+int rrr_socket_client_collection_migrate_by_fd (
+		struct rrr_socket_client_collection *target,
+		struct rrr_socket_client_collection *source,
+		int fd
+);
+void rrr_socket_client_collection_close_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
 );
@@ -262,6 +281,12 @@ void rrr_socket_client_collection_event_setup_ignore (
 		int read_flags_socket,
 		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
 		void *callback_set_read_flags_arg
+);
+void rrr_socket_client_collection_event_setup_write_only (
+		struct rrr_socket_client_collection *collection,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg
 );
 
 #endif /* RRR_SOCKET_CLIENT_H */

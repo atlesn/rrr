@@ -68,6 +68,7 @@ int rrr_test_linked_list(void) {
 	struct test_node *node_ptrs[6];
 	struct test_node nodes[6];
 	struct test_head head = {0};
+	struct test_head head_target = {0};
 	memset(nodes, 0, sizeof(nodes));
 
 	TEST_MSG("Checking empty...\n");
@@ -194,6 +195,21 @@ int rrr_test_linked_list(void) {
 	node_ptrs[4] = &nodes[4];
 
 	ret |= check(&head, node_ptrs, 5);
+
+	TEST_MSG("Checking move to other list while iterating...\n");
+	RRR_LL_ITERATE_BEGIN(&head, struct test_node);
+		RRR_LL_ITERATE_LAST();
+		RRR_LL_ITERATE_SET_DESTROY();
+		RRR_LL_APPEND(&head_target, node);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&head, 0);
+
+	ret |= check(&head_target, node_ptrs, 1);
+
+	node_ptrs[0] = &nodes[1];
+	node_ptrs[1] = &nodes[2];
+	node_ptrs[2] = &nodes[3];
+	node_ptrs[3] = &nodes[4];
+	ret |= check(&head, node_ptrs, 4);
 
 	return ret;
 }

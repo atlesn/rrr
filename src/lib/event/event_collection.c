@@ -43,6 +43,15 @@ void rrr_event_collection_init (
 	collection->event_base = queue->event_base;
 }
 
+void rrr_event_collection_clear_soft (
+		struct rrr_event_collection *collection
+) {
+	for (size_t i = 0; i < collection->event_count; i++) {
+		event_free(collection->events[i]);
+	}
+	collection->event_count = 0;
+}
+
 void rrr_event_collection_clear (
 		struct rrr_event_collection *collection
 ) {
@@ -55,7 +64,7 @@ void rrr_event_collection_clear (
 void rrr_event_collection_clear_void (
 		void *arg
 ) {
-	rrr_event_collection_clear(arg);
+	rrr_event_collection_clear((struct rrr_event_collection *) arg);
 }
 
 static int __rrr_event_collection_push (
