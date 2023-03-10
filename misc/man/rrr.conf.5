@@ -3000,7 +3000,7 @@ This parameter is not respected when file_read_all_to_message is 'yes', and havi
 Must be greater than zero, defaults to 4096.
 
 .It file_timeout_s=SECONDS
-If no message is read in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
+If no message is read or written in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
 
 .It file_write_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the file.
