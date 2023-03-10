@@ -68,8 +68,8 @@ int rrr_send_loop_new (
 		uint64_t ttl_us,
 		uint64_t timeout_us,
 		enum rrr_send_loop_action timeout_action,
-		int (*push_callback)(struct rrr_msg_holder *entry, void *arg),
-		int (*return_callback)(struct rrr_msg_holder *entry, void *arg),
+		int (*push_callback)(struct rrr_msg_holder *entry_locked, void *arg),
+		int (*return_callback)(struct rrr_msg_holder *entry_locked, void *arg),
 		void (*run_callback)(void *arg),
 		void *callback_arg
 );

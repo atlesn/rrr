@@ -43,8 +43,8 @@ struct rrr_send_loop {
 	uint64_t timeout_us;
 	enum rrr_send_loop_action timeout_action;
 
-	int (*push_callback)(struct rrr_msg_holder *entry, void *arg);
-	int (*return_callback)(struct rrr_msg_holder *entry, void *arg);
+	int (*push_callback)(struct rrr_msg_holder *entry_locked, void *arg);
+	int (*return_callback)(struct rrr_msg_holder *entry_locked, void *arg);
 	void (*run_callback)(void *arg);
 	void *callback_arg;
 
@@ -121,8 +121,8 @@ int rrr_send_loop_new (
 		uint64_t ttl_us,
 		uint64_t timeout_us,
 		enum rrr_send_loop_action timeout_action,
-		int (*push_callback)(struct rrr_msg_holder *entry, void *arg),
-		int (*return_callback)(struct rrr_msg_holder *entry, void *arg),
+		int (*push_callback)(struct rrr_msg_holder *entry_locked, void *arg),
+		int (*return_callback)(struct rrr_msg_holder *entry_locked, void *arg),
 		void (*run_callback)(void *arg),
 		void *callback_arg
 ) {
@@ -399,10 +399,8 @@ void rrr_send_loop_event_add_or_remove (
 		struct rrr_send_loop *send_loop
 ) {
 	if (rrr_send_loop_count(send_loop) > 0) {
-		if (!EVENT_PENDING(send_loop->event_run)) {
-			EVENT_INTERVAL_SET(send_loop->event_run, 10 * 1000); // 10 ms
-			EVENT_ADD(send_loop->event_run);
-		}
+		EVENT_INTERVAL_SET(send_loop->event_run, 10 * 1000); // 10 ms
+		EVENT_ADD(send_loop->event_run);
 	}
 	else {
 		EVENT_REMOVE(send_loop->event_run);
