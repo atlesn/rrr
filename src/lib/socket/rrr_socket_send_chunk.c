@@ -323,6 +323,7 @@ static int __rrr_socket_send_chunk_collection_send (
 				}
 				goto out;
 			}
+			node->data_pos += written_bytes;
 			if (notify_callback) {
 				notify_callback(node->data, node->data_size, node->data_pos, node->private_data, notify_callback_arg);
 			}
