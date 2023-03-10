@@ -1383,20 +1383,42 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 
 	assert(data_pos == data_size);
 
+	struct file *file = file_collection_get_by_fd (&file_data->files, fd);
+
+	if (file == NULL) {
+		RRR_MSG_0("Warning: Close notify on fd %i which was not registered in file instance %s\n",
+			fd, INSTANCE_D_NAME(file_data->thread_data));
+		return;
+	}
+
 	file_collection_add_bytes_written(&file_data->files, fd, data_size);
+	if (file_collection_all_bytes_written (&file_data->files, fd)) {
+		RRR_DBG_3("file instance %s all queued bytes written on fd %i orig path '%s'\n",
+				INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+	}
 }
 
 static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
 	struct file_data *file_data = arg;
 
+	(void)(file_data);
+	(void)(fd);
 	(void)(addr);
 	(void)(addr_len);
 	(void)(addr_string);
 	(void)(create_type);
 	(void)(was_finalized);
 
-	if (file_collection_all_bytes_written (&file_data->files, fd)) {
+	struct file *file = file_collection_get_by_fd (&file_data->files, fd);
+
+	if (file == NULL) {
+		RRR_MSG_0("Warning: Close notify on fd %i which was not registered in file instance %s\n",
+			fd, INSTANCE_D_NAME(file_data->thread_data));
+		return;
 	}
+
+	RRR_DBG_3("file instance %s close notify on fd %i orig path '%s'\n",
+			INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
 }
 
 static int file_send_push_array_values (
@@ -1496,7 +1518,7 @@ static int file_send_push_array_values (
 
 	switch (type) {
 		case DT_REG:
-			if (!data->do_write_append) {
+			if (data->do_write_append) {
 				RRR_DBG_3("file instance %s seeking to end of file '%s/%s'\n",
 						INSTANCE_D_NAME(data->thread_data), directory, name);
 
