@@ -337,7 +337,7 @@ int rrr_test_send_loop(void) {
 	rrr_msg_holder_lock(entry[0]);
 
 	// Sleep before setting message timestamp to make only send time expire
-	rrr_posix_usleep(1000); /* 1ms */
+	rrr_posix_usleep(10 * 1000); /* 10 ms */
 
 	msg_ptr[0]->timestamp = rrr_time_get_64();
 
