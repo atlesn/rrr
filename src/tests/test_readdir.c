@@ -32,14 +32,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_path_max.h"
 
 #define TEST_DIR                 "readdir"
-#define TEST_PREFIX              "test_readdir_link_"
+#define TEST_PREFIX_LINK         "test_readdir_link_"
 #define TEST_LINK_INITIAL        "test_readdir_link_initial"
 #define TEST_LINK_INTERMEDIATE   "test_readdir_link_intermediate"
-#define TEST_TARGET              "test_readdir_target"
+#define TEST_LINK_TARGET         "test_readdir_target"
+#define TEST_FILE_EMPTY          "test_readdir_empty_file"
 
 #define FOUND_INITIAL       1
 #define FOUND_INTERMEDIATE  2
 #define FOUND_TARGET        4
+#define FOUND_EMPTY         8
 
 static int __rrr_test_readdir_check_paths (const char *prefix, const char *path, const char *dir, const char *name) {
 	int ret = 0;
@@ -86,6 +88,14 @@ static int __rrr_test_readdir_orig_path_callback (const char *path, const char *
 
 		(*status) |= FOUND_INTERMEDIATE;
 	}
+	else if (strcmp(name, TEST_FILE_EMPTY) == 0) {
+		if ((*status) & FOUND_EMPTY) {
+			TEST_MSG("- " TEST_FILE_EMPTY " found more than once\n");
+			ret |= 1;
+		}
+
+		(*status) |= FOUND_EMPTY;
+	}
 	else {
 		TEST_MSG("- Unexpeted filename %s in %s\n", name, __func__);
 		ret |= 1;
@@ -99,18 +109,26 @@ static int __rrr_test_readdir_resolved_path_callback (const char *path, const ch
 
 	int ret = 0;
 
-	char cwd[PATH_MAX + 2];
-	getcwd(cwd, sizeof(cwd) - 1);
-	sprintf(cwd + strlen(cwd), "/");
-
-	ret |= __rrr_test_readdir_check_paths(cwd, path, dir, name);
-
-	if (strcmp(name, TEST_TARGET) == 0) {
-		(*status) |= FOUND_TARGET;
+	if (strcmp(name, TEST_FILE_EMPTY) == 0) {
+		if (!((*status) & FOUND_EMPTY)) {
+			TEST_MSG("- Status not set for filename %s in %s\n", name, __func__);
+			ret |= 1;
+		}
 	}
 	else {
-		TEST_MSG("- Unexpeted filename %s in %s\n", name, __func__);
-		ret |= 1;
+		char cwd[PATH_MAX + 2];
+		getcwd(cwd, sizeof(cwd) - 1);
+		sprintf(cwd + strlen(cwd), "/");
+
+		ret |= __rrr_test_readdir_check_paths(cwd, path, dir, name);
+
+		if (strcmp(name, TEST_LINK_TARGET) == 0) {
+			(*status) |= FOUND_TARGET;
+		}
+		else {
+			TEST_MSG("- Unexpeted filename %s in %s\n", name, __func__);
+			ret |= 1;
+		}
 	}
 
 
@@ -132,16 +150,32 @@ static int __rrr_test_readdir_foreach_callback (struct dirent *entry, const char
 int rrr_test_readdir(void) {
 	int ret = 0;
 
+	int status;
+
 	TEST_MSG("Readdir symlinks...\n");
 
-	int status = 0;
+	status = 0;
 
-	if (rrr_readdir_foreach_prefix(TEST_DIR, TEST_PREFIX, __rrr_test_readdir_foreach_callback, &status) != 0) {
+	if (rrr_readdir_foreach_prefix(TEST_DIR, TEST_PREFIX_LINK, __rrr_test_readdir_foreach_callback, &status) != 0) {
 		TEST_MSG("- Failed\n");
 		ret |= 1;
 	}
 
 	if (status != (FOUND_INITIAL|FOUND_INTERMEDIATE|FOUND_TARGET)) {
+		TEST_MSG("- Failed, statuses missing (result was %i)\n", status);
+		ret |= 1;
+	}
+
+	TEST_MSG("Readdir empty file...\n");
+
+	status = 0;
+
+	if (rrr_readdir_foreach_prefix(TEST_DIR, TEST_FILE_EMPTY, __rrr_test_readdir_foreach_callback, &status) != 0) {
+		TEST_MSG("- Failed\n");
+		ret |= 1;
+	}
+
+	if (status != (FOUND_EMPTY)) {
 		TEST_MSG("- Failed, statuses missing (result was %i)\n", status);
 		ret |= 1;
 	}

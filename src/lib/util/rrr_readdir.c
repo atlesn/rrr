@@ -101,6 +101,16 @@ int rrr_readdir_foreach_prefix (
 	printf ("dir_path: %s\n", dir_path);
 #endif
 
+	int n;
+	struct dirent **namelist;
+	if ((n = scandir(dir_path, &namelist, NULL, NULL)) > 0) {
+		while (n--) {
+			printf ("namelist entry: %s\n", namelist[n]->d_name);
+			rrr_free(namelist[n]);
+		}
+		rrr_free(namelist);
+	}
+
 	struct dirent *entry = NULL;
 	while ((entry = readdir(dirp)) != NULL) {
 		unsigned char d_type = DT_UNKNOWN;
