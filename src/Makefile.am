@@ -4,7 +4,7 @@ endif
 
 SUBDIRS = lib modules tests python cmodules
 bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub
-noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb ${noinst_js}
+noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb rrr_readdir ${noinst_js}
 TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
@@ -56,6 +56,10 @@ rrr_stats_LDADD = -levent
 rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_msgdb_LDFLAGS = ${ldflags} -pie
+
+rrr_readdir_SOURCES = rrr_readdir.c main.c paths.c
+rrr_readdir_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_readdir_LDFLAGS = ${ldflags} -pie
 
 rrr_msg_SOURCES = rrr_msg.c main.c
 rrr_msg_CFLAGS = ${AM_CFLAGS} -fpie

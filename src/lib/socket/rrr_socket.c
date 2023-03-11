@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -229,6 +229,25 @@ int __rrr_socket_holder_new (
 	out:
 	RRR_FREE_IF_NOT_NULL(result);
 	return ret;
+}
+
+void rrr_socket_unlink (
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			char *filename = node->filename_unlink != NULL ? node->filename_unlink : node->filename_no_unlink;
+			if (filename == NULL) {
+				RRR_MSG_0("Warning: Socket unlink of fd %i called but it had no filename registered with it.\n", fd);
+				return;
+			}
+			RRR_DBG_7("socket pid %i fd %i filename %s direct unlink\n", getpid(), fd, filename);
+			unlink(filename);
+			return;
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_MSG_0("Warning: Socket unlink of fd %i called but it was not registered.\n", fd);
 }
 
 int rrr_socket_with_filename_do (
@@ -508,11 +527,10 @@ static int __rrr_socket_open_nolock (
 	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL), register_for_unlink);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, register_for_unlink);
 	}
 
 	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s flags %i\n", fd, getpid(), filename, creator, flags);
-
 
 	return fd;
 }

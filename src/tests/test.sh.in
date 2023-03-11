@@ -133,7 +133,9 @@ do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
+mkdir /tmp/rrr-test-file-dir
 do_test_simple test_file.conf
+rmdir /tmp/rrr-test-file-dir || exit 1
 
 # Begin message DB tests
 rm -rf /tmp/rrr-test-msgdb*

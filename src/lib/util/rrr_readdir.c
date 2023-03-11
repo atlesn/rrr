@@ -105,7 +105,6 @@ int rrr_readdir_foreach_prefix (
 	struct dirent **namelist;
 	if ((n = scandir(dir_path, &namelist, NULL, NULL)) > 0) {
 		while (n--) {
-			printf ("namelist entry: %s\n", namelist[n]->d_name);
 			rrr_free(namelist[n]);
 		}
 		rrr_free(namelist);

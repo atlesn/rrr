@@ -2942,7 +2942,9 @@ Messages produced using the 'file' method are appropriate for passing into anoth
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
-as long as the user running RRR has permission to do that. Defaults to 'no'.
+as long as the user running RRR has permission to do that.
+Files which were opened as a result of a write operation are not unlinked when closed regardless.
+Defaults to 'no' which means that unlinking is never performed.
 
 .It file_max_open=UNSIGNED INTEGER
 Maximum number of simultaneously open files. If multiple files are open at the same time,

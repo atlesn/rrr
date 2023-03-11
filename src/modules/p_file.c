@@ -614,7 +614,7 @@ static int file_open_as_needed (
 			goto out;
 		}
 
-		if ((fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), data->do_unlink_on_close)) <= 0) {
+		if ((fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), 0)) <= 0) {
 			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
 					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			goto out;
@@ -812,48 +812,43 @@ static int file_probe_excact_or_create (
 
 	}
 
-	for (int i = 0; i < 1; i++) {
-		struct file_probe_excact_callback_data callback_data = {
-			data,
-			orig_path,
-			0,
-			0
-		};
-
-		printf("dir %s name %s path %s\n", directory, name, orig_path);
-
-		if ((ret = rrr_readdir_foreach_prefix (
-				directory,
-				name,
-				file_probe_excact_callback,
-				&callback_data
-		)) != 0) {
-			if (ret == RRR_FILE_STOP) {
-				ret = 0;
-			}
-			else {
-				goto out;
-			}
-		}
-
-		fd = callback_data.fd;
-		type = callback_data.type;
-
-		if (fd > 0 || i == 1) {
-			break;
-		}
-
-		RRR_DBG_3("file instance %s creating file '%s'\n",
-				INSTANCE_D_NAME(data->thread_data), orig_path);
-
-		if ((fd = open(orig_path, O_CREAT, 0660)) == -1) {
+	if ((fd = open(orig_path, O_CREAT|O_EXCL, 0660)) == -1) {
+		if (errno != EEXIST) {
 			RRR_MSG_0("Failed to create file %s in file instance %s\n",
 					orig_path, INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_FILE_SOFT_ERROR;
 			goto out;
 		}
+	}
+	else {
+		RRR_DBG_3("file instance %s created file '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), orig_path);
 		close(fd);
 	}
+
+	struct file_probe_excact_callback_data callback_data = {
+		data,
+		orig_path,
+		0,
+		0
+	};
+
+	if ((ret = rrr_readdir_foreach_prefix (
+			directory,
+			name,
+			file_probe_excact_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_FILE_STOP) {
+			ret = 0;
+		}
+		else {
+			goto out;
+		}
+	}
+
+	fd = callback_data.fd;
+	type = callback_data.type;
 
 	if (!(fd > 0)) {
 		RRR_MSG_0("Unable to open or create file %s in file instance %s\n",
@@ -1399,7 +1394,7 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 	struct file *file = file_collection_get_by_fd (&file_data->files, fd);
 
 	if (file == NULL) {
-		RRR_MSG_0("Warning: Close notify on fd %i which was not registered in file instance %s\n",
+		RRR_MSG_0("Warning: Send notify on fd %i which was not registered in file instance %s\n",
 			fd, INSTANCE_D_NAME(file_data->thread_data));
 		return;
 	}
@@ -1414,8 +1409,6 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
 	struct file_data *file_data = arg;
 
-	(void)(file_data);
-	(void)(fd);
 	(void)(addr);
 	(void)(addr_len);
 	(void)(addr_string);
@@ -1432,6 +1425,13 @@ static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_A
 
 	RRR_DBG_3("file instance %s close notify on fd %i orig path '%s'\n",
 			INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+
+	// Remove files not exclusively being written to if unlink on close is active
+	if (file_data->do_unlink_on_close && !rrr_socket_client_collection_has_fd (file_data->write_only_sockets, fd)) {
+		RRR_DBG_3("file instance %s unlinking file per configuration fd %i orig path '%s'\n",
+				INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+		rrr_socket_unlink(fd);
+	}
 }
 
 static int file_send_push_array_values (
@@ -1833,6 +1833,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			data->timeout_s * 1000 * 1000
 	);
 
+	// READ/WRITE SOCKETS
+
 	if (data->read_method == FILE_READ_METHOD_TELEGRAMS) {
 		rrr_socket_client_collection_event_setup_array_tree (
 				data->read_write_sockets,
@@ -1872,6 +1874,14 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 				data
 		);
 	}
+
+	rrr_socket_client_collection_fd_close_notify_setup (
+			data->read_write_sockets,
+			file_fd_close_notify_callback,
+			data
+	);
+
+	// WRITE ONLY SOCKETS
 
 	rrr_socket_client_collection_event_setup_write_only (
 			data->write_only_sockets,
