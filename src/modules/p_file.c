@@ -118,6 +118,7 @@ struct file_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	struct rrr_array_tree *tree;
+	int do_add_metadata;
 	int do_strip_array_separators;
 	int do_try_keyboard_input;
 	int do_no_keyboard_hijack;
@@ -397,6 +398,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_strip_array_separators", do_strip_array_separators, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_add_metadata", do_add_metadata, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message_, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_read_all_method", read_all_method);
@@ -460,7 +462,13 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	}
 
 	if (data->do_strip_array_separators && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
-		RRR_MSG_0("file_do_strip_array_separators was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
+		RRR_MSG_0("file_strip_array_separators was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
+				config->name);
+		ret_keep = 1;
+	}
+
+	if (data->do_add_metadata && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
+		RRR_MSG_0("file_add_metadata was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
 				config->name);
 		ret_keep = 1;
 	}
@@ -952,6 +960,52 @@ static int file_probe_excact_or_create (
 	return ret;
 }
 
+static int file_add_structured_metadata_to_array (
+		struct rrr_array *array,
+		const struct file *file
+) {
+	int ret = 0;
+
+	if ((ret = rrr_array_push_value_str_with_tag (
+			array, "path_original", file->orig_path
+	)) != 0) {
+		RRR_MSG_0("Failed to push file original path to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_str_with_tag (
+			array, "path_resolved", file->real_path
+	)) != 0) {
+		RRR_MSG_0("Failed to push file resolved path to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			array, "atime", file->file_stat.st_atim.tv_sec
+	)) != 0) {
+		RRR_MSG_0("Failed to push file atime to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			array, "mtime", file->file_stat.st_mtim.tv_sec
+	)) != 0) {
+		RRR_MSG_0("Failed to push file mtime to array in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			array, "ctime", file->file_stat.st_ctim.tv_sec
+	)) != 0) {
+		RRR_MSG_0("Failed to push file ctime to array in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+
 struct file_read_array_write_callback_data {
 	struct file_data *data;
 	const struct rrr_array *array_final;
@@ -1037,6 +1091,11 @@ static int file_read_array_callback (RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS) {
 
 	if (data->do_strip_array_separators) {
 		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+	}
+
+	if (data->do_add_metadata && (ret = file_add_structured_metadata_to_array (array_final, file)) != 0) {
+		RRR_MSG_0("Could not add structured fields to array in %s\n", __func__);
+		return ret;
 	}
 
 	if ((ret = rrr_message_broker_write_entry (
@@ -1196,38 +1255,8 @@ static int file_read_all_to_message_write_callback_structured (
 		goto out;
 	}
 
-	if ((ret = rrr_array_push_value_str_with_tag (
-			&array_tmp, "path_original", file->orig_path
-	)) != 0) {
-		RRR_MSG_0("Failed to push file original path to array in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_array_push_value_str_with_tag (
-			&array_tmp, "path_resolved", file->real_path
-	)) != 0) {
-		RRR_MSG_0("Failed to push file resolved path to array in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_array_push_value_i64_with_tag (
-			&array_tmp, "atime", file->file_stat.st_atim.tv_sec
-	)) != 0) {
-		RRR_MSG_0("Failed to push file atime to array in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_array_push_value_i64_with_tag (
-			&array_tmp, "mtime", file->file_stat.st_mtim.tv_sec
-	)) != 0) {
-		RRR_MSG_0("Failed to push file mtime to array in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_array_push_value_i64_with_tag (
-			&array_tmp, "ctime", file->file_stat.st_ctim.tv_sec
-	)) != 0) {
-		RRR_MSG_0("Failed to push file ctime to array in %s\n", __func__);
+	if ((ret = file_add_structured_metadata_to_array (&array_tmp, file)) != 0) {
+		RRR_MSG_0("Could not add structured fields to array in %s\n", __func__);
 		goto out;
 	}
 
@@ -1585,7 +1614,7 @@ static int file_send_push_array_values (
 	}
 
 	if (value_name == NULL) {
-		RRR_MSG_0("Field 'value_name' missing in message to file instance %s, dropping it.\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Field 'file_name' missing in message to file instance %s, dropping it.\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
@@ -1595,8 +1624,14 @@ static int file_send_push_array_values (
 		goto out;
 	}
 
+	if (strlen(name) == 0) {
+		RRR_MSG_0("Field 'file_name' was empty in file instance %s. Dropping message.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
 	if (strchr(name, '/') != NULL) {
-		RRR_MSG_0("Field 'value_name' contained illegal directory separator character / in file instance %s. Dropping it.\n",
+		RRR_MSG_0("Field 'file_name' contained illegal directory separator character / in file instance %s. Dropping message.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -1615,7 +1650,7 @@ static int file_send_push_array_values (
 	if (found_tags != RRR_LL_COUNT(&data->write_values_list)) {
 		RRR_MAP_ITERATE_BEGIN(&data->write_values_list);
 			if (!rrr_array_has_tag(&array, node->tag)) {
-				RRR_MSG_0("Data value with tag '%s' missing in message to file instance %s, ropping it.\n",
+				RRR_MSG_0("Data value with tag '%s' missing in message to file instance %s, dropping the message.\n",
 						node->tag, INSTANCE_D_NAME(data->thread_data));
 			}
 		RRR_MAP_ITERATE_END();
