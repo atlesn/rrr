@@ -324,12 +324,12 @@ static int __rrr_read_message_using_callbacks (
 		else if (ret_from_read & RRR_READ_EOF) {
 			if (read_session->eof_ok_now && read_session->rx_buf_ptr == NULL && read_session->rx_overshoot == NULL) {
 				// Complete callback says that EOF is OK now
-				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was expected.\n");
+				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was expected, emit EOF.\n");
 				ret = RRR_READ_EOF;
 			}
 			else {
 				// Unexpected EOF
-				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was NOT expected.\n");
+				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was NOT expected, emit SOFT ERROR.\n");
 				ret = RRR_READ_SOFT_ERROR;
 			}
 			goto out;

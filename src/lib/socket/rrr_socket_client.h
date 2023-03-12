@@ -33,6 +33,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../util/linked_list.h"
 
+#define RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS      \
+    int *socket_read_flags,                                 \
+    int *do_soft_error_propagates,                          \
+    void *private_data,                                     \
+    void *arg
+
 #define RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS \
     struct rrr_read_session *read_session,                  \
     const struct sockaddr *addr,                            \
@@ -241,7 +247,7 @@ void rrr_socket_client_collection_event_setup (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
@@ -254,7 +260,7 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
@@ -270,7 +276,7 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
@@ -289,7 +295,7 @@ void rrr_socket_client_collection_event_setup_ignore (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg
 );
 void rrr_socket_client_collection_event_setup_write_only (

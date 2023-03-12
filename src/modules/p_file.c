@@ -80,6 +80,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_STOP RRR_READ_EOF
 #define RRR_FILE_SOFT_ERROR RRR_READ_SOFT_ERROR
 
+#define RRR_FILE_DT_IS_INFINITE(type) \
+    (type == DT_CHR || type == DT_SOCK || type == DT_FIFO)
+
+#define RRR_FILE_DT_IS_SENDER_RELIANT(type) \
+    (type == DT_SOCK || type == DT_FIFO)
+
 struct file_data;
 
 struct file {
@@ -903,25 +909,34 @@ static int file_read_array_write_callback (struct rrr_msg_holder *entry, void *a
 	return ret;
 }
 
-static void file_read_set_flags_callback (int *flags, void *private_data, void *arg) {
+static void file_read_set_flags_callback (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
 	struct file *file = private_data;
 	struct file_data *data = arg;
 
 	(void)(data);
 
-	*flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
+	*socket_read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
 
-	if (file->type == DT_CHR || file->type == DT_SOCK || file->type == DT_FIFO) {
-		// For devices without any end
-		*flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
+	if (RRR_FILE_DT_IS_INFINITE(file->type)) {
+		// For devices without any end like character devices
+		*socket_read_flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
+		if (data->read_method == FILE_READ_METHOD_TELEGRAMS && !RRR_FILE_DT_IS_SENDER_RELIANT(file->type)) {
+			// Continue reading in case of input data errors, don't close socket. If
+			// socket is sender reliant, like fifo socket, we must close the socket
+			// as soft error could mean that sender is no longer connected.
+			*do_soft_error_propagates = 0;
+		}
 	}
 	else {
 		// For devices with finite size or files
-		*flags |= RRR_SOCKET_READ_CHECK_EOF;
+		*socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
+
+		// Close a file with input data errors
+		*do_soft_error_propagates = 1;
 	}
 
 	if (file->flags & RRR_FILE_F_IS_KEYBOARD) {
-		*flags |= RRR_SOCKET_READ_INPUT_DEVICE;
+		*socket_read_flags |= RRR_SOCKET_READ_INPUT_DEVICE;
 	}
 }
 

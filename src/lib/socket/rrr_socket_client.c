@@ -81,7 +81,7 @@ struct rrr_socket_client_collection {
 	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
 	void (*callback_private_data_destroy)(void *private_data);
 	void *callback_private_data_arg;
-	void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg);
+	void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS);
 	void *callback_set_read_flags_arg;
 
 	// Callbacks for message mode
@@ -525,18 +525,18 @@ static void __rrr_socket_client_read_callback_address_deduct (
 	};
 }
 
-static int __rrr_socket_client_read_callback_flags_deduct (
+static void __rrr_socket_client_read_callback_flags_deduct (
+		int *read_flags_socket,
+		int *do_soft_error_propagates,
 		const struct rrr_socket_client *client
 ) {
 	const struct rrr_socket_client_collection *collection = client->collection;
 
-	int read_flags_socket = client->collection->read_flags_socket;
+	*read_flags_socket = client->collection->read_flags_socket;
 
 	if (collection->callback_set_read_flags != NULL) {
-		collection->callback_set_read_flags(&read_flags_socket, client->private_data, collection->callback_set_read_flags_arg);
+		collection->callback_set_read_flags(read_flags_socket, do_soft_error_propagates, client->private_data, collection->callback_set_read_flags_arg);
 	}
-
-	return read_flags_socket;
 }
 
 #define DEDUCT_ADDRESS()                            \
@@ -545,7 +545,12 @@ static int __rrr_socket_client_read_callback_flags_deduct (
 	__rrr_socket_client_read_callback_address_deduct (&addr, &addr_len, read_session, client)
 
 #define DEDUCT_READ_FLAGS()                         \
-	const int read_flags_socket = __rrr_socket_client_read_callback_flags_deduct(client);
+	int read_flags_socket = 0;                  \
+	int do_soft_error_propagates = 1;           \
+	__rrr_socket_client_read_callback_flags_deduct (&read_flags_socket, &do_soft_error_propagates, client);
+
+#define ENFORCE_SOFT_ERROR_PROPAGATES()             \
+	if (!do_soft_error_propagates) { RRR_BUG("BUG: Soft error propagation is implied in %s and must be set to 1\n", __func__); }
 
 static int __rrr_socket_client_collection_read_raw_get_target_size_callback (
 		struct rrr_read_session *read_session,
@@ -873,6 +878,7 @@ static void __rrr_socket_client_event_read_message (
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
+	ENFORCE_SOFT_ERROR_PROPAGATES();
 
 	uint64_t bytes_read = 0;
 
@@ -936,6 +942,7 @@ static void __rrr_socket_client_event_read_raw (
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
+	ENFORCE_SOFT_ERROR_PROPAGATES();
 
 	uint64_t bytes_read = 0;
 
@@ -1000,26 +1007,40 @@ static void __rrr_socket_client_event_read_array_tree (
 	uint64_t bytes_read = 0;
 
 	struct rrr_array array_tmp = {0};
+	int ret = rrr_socket_common_receive_array_tree (
+		&bytes_read,
+		&client->read_sessions,
+		fd,
+		read_flags_socket,
+		&array_tmp,
+		collection->array_tree,
+		collection->array_do_sync_byte_by_byte,
+		collection->read_step_max_size,
+		0, // No ratelimit interval
+		0, // No ratelimit max bytes
+		collection->array_message_max_size,
+		__rrr_socket_client_event_read_array_tree_callback,
+		__rrr_socket_client_event_read_error_callback,
+		client
+	);
+
+	// Prevent connection closure upon parse errors. Read session is still cleared by read framework,
+	// and parsing commenses when more data is avilable. For files with finite size, soft error should
+	// propagate instead to force closure.
+	if (ret == RRR_READ_SOFT_ERROR && do_soft_error_propagates) {
+		// Propagate return value
+		RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd);
+	}
+	else {
+		// Ignore any soft error
+		ret &= ~(RRR_READ_SOFT_ERROR);
+		RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);
+	}
 
 	__rrr_socket_client_return_value_process (
 		collection,
 		client,
-		rrr_socket_common_receive_array_tree (
-			&bytes_read,
-			&client->read_sessions,
-			fd,
-			read_flags_socket,
-			&array_tmp,
-			collection->array_tree,
-			collection->array_do_sync_byte_by_byte,
-			collection->read_step_max_size,
-			0, // No ratelimit interval
-			0, // No ratelimit max bytes
-			collection->array_message_max_size,
-			__rrr_socket_client_event_read_array_tree_callback,
-			__rrr_socket_client_event_read_error_callback,
-			client
-		) & ~(RRR_READ_SOFT_ERROR) // Prevent connection closure upon parse errors (read session is still cleared by read framework)
+		ret
 	);
 
 	rrr_array_clear(&array_tmp);
@@ -2077,7 +2098,7 @@ static void __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -2140,7 +2161,7 @@ void rrr_socket_client_collection_event_setup (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
@@ -2172,7 +2193,7 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
@@ -2209,7 +2230,7 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
@@ -2254,7 +2275,7 @@ void rrr_socket_client_collection_event_setup_ignore (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
-		void (*callback_set_read_flags)(int *read_flags, void *private_data, void *arg),
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
 		void *callback_set_read_flags_arg
 ) {
 	__rrr_socket_client_collection_event_setup (

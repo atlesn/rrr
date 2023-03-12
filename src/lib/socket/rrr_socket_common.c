@@ -112,7 +112,6 @@ int rrr_socket_common_receive_array_tree (
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
 			RRR_MSG_0("Hard error while reading data in %s\n", __func__);
-			ret = RRR_SOCKET_HARD_ERROR;
 		}
 		else {
 			RRR_BUG("Unknown return value %i while reading data in %s\n", ret, __func__);
