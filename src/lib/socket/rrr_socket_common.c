@@ -108,14 +108,14 @@ int rrr_socket_common_receive_array_tree (
 			// OK, return EOF
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array_tree\n");
+			RRR_DBG_3("Soft error while reading data in %s\n", __func__);
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
+			RRR_MSG_0("Hard error while reading data in %s\n", __func__);
 			ret = RRR_SOCKET_HARD_ERROR;
 		}
 		else {
-			RRR_BUG("Unknown return value %i while reading data in rrr_socket_common_receive_array_tree\n", ret);
+			RRR_BUG("Unknown return value %i while reading data in %s\n", ret, __func__);
 		}
 	}
 
@@ -146,7 +146,7 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				wait_callback,
 				wait_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			RRR_MSG_0("Error while sending message in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -163,7 +163,7 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				wait_callback,
 				wait_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			RRR_MSG_0("Error while sending address message in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -177,12 +177,12 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				wait_callback,
 				wait_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			RRR_MSG_0("Error while sending control message in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		RRR_BUG("Unknown socket msg in rrr_socket_common_prepare_and_msg");
+		RRR_BUG("Unknown socket msg in %s\n", __func__);
 	}
 
 	if (ret == RRR_SOCKET_OK && in_flight != NULL) {
