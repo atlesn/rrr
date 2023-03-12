@@ -107,6 +107,7 @@ struct file_collection {
 };
 
 enum file_read_method {
+	FILE_READ_METHOD_NONE,
 	FILE_READ_METHOD_TELEGRAMS,
 	FILE_READ_METHOD_ALL_SIMPLE,
 	FILE_READ_METHOD_ALL_STRUCTURED,
@@ -205,6 +206,15 @@ static struct file *file_collection_get_by_fd (const struct file_collection *fil
 static void file_collection_remove (struct file_collection *files, struct file *file) {
 	RRR_LL_ITERATE_BEGIN(files, struct file);
 		if (node == file) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(files, 0; file_destroy(node));
+}
+
+static void file_collection_remove_by_fd (struct file_collection *files, int fd) {
+	RRR_LL_ITERATE_BEGIN(files, struct file);
+		if (node->fd == fd) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
@@ -373,12 +383,17 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		ret_keep = 1;
 	}
 
+	data->read_method = FILE_READ_METHOD_NONE;
+
 	if ((ret_tmp = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "file_input_types")) != 0) {
 		if (ret_tmp != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse array definition in file_input_types in instance %s\n", config->name);
 			ret_keep = 1;
 			goto out;
 		}
+	}
+	else {
+		data->read_method = FILE_READ_METHOD_TELEGRAMS;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_strip_array_separators", do_strip_array_separators, 0);
@@ -453,9 +468,6 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if (data->do_read_all_to_message_) {
 		data->read_method = FILE_READ_METHOD_ALL_SIMPLE;
 	}
-	else {
-		data->read_method = FILE_READ_METHOD_TELEGRAMS;
-	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("file_read_all_method")) {
 		if (!data->do_read_all_to_message_) {
@@ -483,14 +495,6 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if (data->max_open > RRR_FILE_MAX_MAX_OPEN) {
 		RRR_MSG_0("Parameter file_max_open out of range for file instance %s (%" PRIrrrbl ">%i).\n",
 				config->name, data->max_open, RRR_FILE_MAX_MAX_OPEN);
-		ret_keep = 1;
-	}
-
-	if (	!RRR_INSTANCE_CONFIG_EXISTS("file_input_types") &&
-			data->do_read_all_to_message_ == 0 &&
-			data->do_unlink_on_close == 0
-	) {
-		RRR_MSG_0("No actions defined in configuration for file instance %s, one or more must be specified\n", config->name);
 		ret_keep = 1;
 	}
 
@@ -553,115 +557,51 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		ret_keep = 1;
 	}
 
+	if ( data->read_method == FILE_READ_METHOD_NONE &&
+	     data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE
+	) {
+		RRR_MSG_0("No read nor write action defined in configuration for file instance %s, this is a configuration error.\n", config->name);
+		ret_keep = 1;
+	}
+
 	/* On error, memory is freed by data_cleanup */
 
 	out:
 	return ret | ret_keep;
 }
 
-static int file_open_as_needed (
-		int *result_fd,
+static int file_set_special_behaviour (
+		int *flags,
 		struct file_data *data,
 		const char *orig_path,
 		const char *resolved_path,
-		unsigned char type
+		unsigned char type,
+		int fd
 ) {
 	int ret = 0;
 
-	*result_fd = 0;
-
-	const int do_write = data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
-
-	struct rrr_socket_client_collection *target_collection = data->read_write_sockets;
-	struct file *file;
-	int fd = 0;
-
-	if ((file = file_collection_get_by_orig_path(&data->files, orig_path)) != NULL) {
-		fd = file->fd;
-		type = file->type;
-		goto set_result;
-	}
-
-	if (data->max_open > 0 && file_collection_count(&data->files) >= (int) data->max_open) {
-		ret = RRR_FILE_BUSY;
+	if (type != DT_CHR) {
 		goto out;
 	}
 
-	if (RRR_FILE_DT_IS_INFINITE(type) && data->read_method != FILE_READ_METHOD_TELEGRAMS) {
-		if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
-			RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Also, no writing is configured. Ignoring file.\n",
-					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-			goto out;
-		}
-		else {
-			RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Cannot read whole file, making the file write-only.\n",
-					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-			target_collection = data->write_only_sockets;
-		}
-	}
-
-	if (type == DT_SOCK) {
-		RRR_DBG_3("file instance %s connecting to socket '%s'=>'%s'\n", INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-
-		if (rrr_socket_unix_connect(&fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1) != 0) {
-			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", orig_path, INSTANCE_D_NAME(data->thread_data));
-			ret = 0;
-			goto out;
-		}
-	}
-	else {
-		int flags = (do_write ? O_RDWR : O_RDONLY);
-
-		if (type == DT_CHR || type == DT_FIFO) {
-			if (type == DT_CHR) {
-				RRR_DBG_3("file instance %s opening character device '%s'=>'%s'\n",
-						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-			}
-			else {
-				RRR_DBG_3("file instance %s opening fifo device '%s'=>'%s'\n",
-						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-			}
-			flags |= O_NONBLOCK;
-		}
-		else if (type == DT_BLK) {
-			RRR_DBG_3("file instance %s opening block device '%s'=>'%s'\n",
-					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-		}
-		else if (type == DT_REG) {
-			RRR_DBG_3("file instance %s opening file '%s'=>'%s'\n",
-					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
-		}
-		else {
-			goto out;
-		}
-
-		if ((fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), 0)) <= 0) {
-			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
-					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
-			goto out;
-		}
-	}
-
-	int flags = 0;
-
-	if (data->do_try_keyboard_input && type == DT_CHR) {
+	if (data->do_try_keyboard_input) {
 		if (rrr_input_device_grab(fd, 1) == 0) {
 			if (data->do_no_keyboard_hijack && (ret = rrr_input_device_grab(fd, 0)) != 0) {
 				RRR_MSG_0("Could not ungrab keyboard device '%s'=>'%s' in file instance %s\n",
 						 orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data));
 				goto out;
 			}
-			flags |= RRR_FILE_F_IS_KEYBOARD;
+			(*flags) |= RRR_FILE_F_IS_KEYBOARD;
 			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as keyboard event device\n",
 					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
 		}
 	}
 
-	if (data->do_try_serial_input && type == DT_CHR) {
+	if (data->do_try_serial_input) {
 		int is_serial = 0;
 		rrr_serial_check(&is_serial, fd); // Ignore errors
 		if (is_serial) {
-			flags |= RRR_FILE_F_IS_SERIAL;
+			(*flags) |= RRR_FILE_F_IS_SERIAL;
 			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as serial device\n",
 					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
 
@@ -712,39 +652,162 @@ static int file_open_as_needed (
 		}
 	}
 
+	out:
+	return ret;
+}
+
+static int file_open_or_connect (
+		int *result_fd,
+		struct file_data *data,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type
+) {
+	int ret = 0;
+
+	*result_fd = 0;
+
+	if (type == DT_SOCK) {
+		RRR_DBG_3("file instance %s connecting to socket '%s'=>'%s'\n", INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+
+		if (rrr_socket_unix_connect(result_fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1) != 0) {
+			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", orig_path, INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+			goto out;
+		}
+	}
+	else {
+		int flags = (data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE ? O_RDWR : O_RDONLY);
+
+		if (type == DT_CHR || type == DT_FIFO) {
+			if (type == DT_CHR) {
+				RRR_DBG_3("file instance %s opening character device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+			}
+			else {
+				RRR_DBG_3("file instance %s opening fifo device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+			}
+			flags |= O_NONBLOCK;
+		}
+		else if (type == DT_BLK) {
+			RRR_DBG_3("file instance %s opening block device '%s'=>'%s'\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+		}
+		else if (type == DT_REG) {
+			RRR_DBG_3("file instance %s opening file '%s'=>'%s'\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+		}
+		else {
+			goto out;
+		}
+
+		if ((*result_fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), 0)) <= 0) {
+			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
+					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int file_open_as_needed (
+		int *result_fd,
+		struct file_data *data,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type
+) {
+	int ret = 0;
+
+	*result_fd = 0;
+
+	struct rrr_socket_client_collection *target_collection = data->read_write_sockets;
+	struct file *file;
+	int fd = 0;
+	int flags = 0;
+
+	if ((file = file_collection_get_by_orig_path(&data->files, orig_path)) != NULL) {
+		fd = file->fd;
+		type = file->type;
+		goto set_result;
+	}
+
+	if (data->max_open > 0 && file_collection_count(&data->files) >= (int) data->max_open) {
+		ret = RRR_FILE_BUSY;
+		goto out;
+	}
+
+	if ((ret = file_open_or_connect (&fd, data, orig_path, resolved_path, type)) != 0) {
+		goto out;
+	}
+
+	if (!(fd > 0)) {
+		goto out;
+	}
+
+	if ((ret = file_set_special_behaviour (&flags, data, orig_path, resolved_path, type, fd)) != 0) {
+		goto out_close;
+	}
+
+	if (data->read_method == FILE_READ_METHOD_NONE) {
+		RRR_DBG_3("file instance %s file '%s'=>'%s' opening write-only as no read method is set.\n",
+				INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+		target_collection = data->write_only_sockets;
+	}
+	else {
+		if (RRR_FILE_DT_IS_INFINITE(type) && data->read_method != FILE_READ_METHOD_TELEGRAMS) {
+			if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
+				RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Also, no writing is configured. Ignoring file.\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+				goto out_close;
+			}
+			else {
+				RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Cannot read whole file, making the file write-only.\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+				target_collection = data->write_only_sockets;
+			}
+		}
+	}
+
 	struct stat file_stat = {0};
 	if (fstat(fd, &file_stat) != 0) {
-		RRR_MSG_0("Warning: Failed to stat file %s: %s\n",
-				resolved_path, rrr_strerror(errno));
+		RRR_MSG_0("Failed to stat file '%s'=>'%s': %s\n",
+				orig_path, resolved_path, rrr_strerror(errno));
 		ret = 1;
-		goto out;
+		goto out_close;
 	}
 
 	if ((ret = file_collection_push(&data->files, data, type, flags, orig_path, resolved_path, fd, &file_stat)) != 0) {
-		goto out;
+		goto out_close;
 	}
 
-	if (rrr_socket_client_collection_connected_fd_push (
+	if ((ret = rrr_socket_client_collection_connected_fd_push (
 			target_collection,
 			fd,
 			type == DT_SOCK
 				? RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
 				: RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_FILE
 
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Failed to add fd to client collection in file instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		goto out;
+		goto out_remove_from_file_collection;
 	}
 
 	set_result:
 	*result_fd = fd;
 	fd = 0;
 
-	out:
-	if (fd > 0) {
+	goto out;
+	//out_remove_from_client_collection:
+	out_remove_from_file_collection:
+		file_collection_remove_by_fd(&data->files, fd);
+	out_close:
 		rrr_socket_close_no_unlink(fd);
-	}
-	return ret;
+	out:
+		return ret;
 }
 
 static int file_probe_callback (
