@@ -136,7 +136,7 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 				memcmp(src_addr, &node->src_addr, src_addr_len) == 0
 		) {
 			if (res != NULL) {
-				RRR_BUG("Two equal src_addr in rrr_socket_read_session_collection_maintain_and_find\n");
+				RRR_BUG("Two equal src_addr in %s\n", __func__);
 			}
 			res = node;
 		}
@@ -145,7 +145,7 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 	if (res == NULL) {
 		res = rrr_read_session_new(src_addr, src_addr_len);
 		if (res == NULL) {
-			RRR_MSG_0("Could not allocate memory for read session in rrr_socket_read_message\n");
+			RRR_MSG_0("Could not allocate memory for read session in %s\n", __func__);
 			goto out;
 		}
 
@@ -281,15 +281,15 @@ static int __rrr_read_message_using_callbacks (
 	// We don't quit on soft error yet, downstream must be able to retrieve the correct read session to
 	// handle errors, which might include to remove the read_session from the collection
 	if (ret_from_read & (RRR_READ_HARD_ERROR)) {
-		RRR_MSG_0("Hard error from read callback in rrr_read_message_using_callbacks\n");
+		RRR_MSG_0("Hard error from read callback in %s\n", __func__);
 		ret = RRR_READ_HARD_ERROR;
 		goto out;
 	}
 	if (ret_from_read & RRR_READ_INCOMPLETE) {
-		RRR_BUG("BUG: READ_INCOMPLETE returned from read callback in rrr_read_message_using_callbacks, this is not allowed\n");
+		RRR_BUG("BUG: READ_INCOMPLETE returned from read callback in %s, this is not allowed\n", __func__);
 	}
 	if ((ret_from_read & RRR_READ_EOF) && bytes != 0) {
-		RRR_BUG("BUG: READ_EOF returned from read callback while bytes was non-zero in rrr_read_message_using_callbacks, this is not allowed\n");
+		RRR_BUG("BUG: READ_EOF returned from read callback while bytes was non-zero in %s, this is not allowed\n", __func__);
 	}
 
 	/* Check for new read session, this must be done after read */
@@ -301,7 +301,7 @@ static int __rrr_read_message_using_callbacks (
 	/* Check for socket_options */
 	if (function_get_socket_options != NULL && read_session->socket_options == 0) {
 		if ((ret = function_get_socket_options(read_session, functions_callback_arg)) != 0) {
-			RRR_MSG_0("Error while getting socket options in rrr_read_message_using_callbacks\n");
+			RRR_MSG_0("Error while getting socket options in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -312,7 +312,7 @@ static int __rrr_read_message_using_callbacks (
 		// return something else than OK. If not, we will always exit here.
 		if (read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ) {
 			if (read_session->target_size > 0) {
-				RRR_BUG("Target size was set in rrr_read_message while complete method was connection closed\n");
+				RRR_BUG("Target size was set in %s while complete method was connection closed\n", __func__);
 			}
 			RRR_DBG_7("Read returned 0, set target size to bytes read as instructed.\n");
 			read_session->target_size = read_session->rx_buf_wpos;
@@ -362,7 +362,7 @@ static int __rrr_read_message_using_callbacks (
 			RRR_SIZE_CHECK(bytes,"Read buffer too big A",ret = RRR_READ_SOFT_ERROR; goto out);
 			read_session->rx_buf_ptr = rrr_allocate_group((size_t) (bytes > read_step_max_size ? bytes : read_step_max_size), RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
-				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
+				RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -374,7 +374,7 @@ static int __rrr_read_message_using_callbacks (
 	}
 
 	if (read_session->read_complete != 0) {
-		RRR_BUG("Read complete was non-zero in rrr_read_message_using_callbacks, read session must be cleared prior to reading more data\n");
+		RRR_BUG("Read complete was non-zero in %s, read session must be cleared prior to reading more data\n", __func__);
 	}
 
 	/* Check for expansion of buffer */
@@ -395,9 +395,10 @@ static int __rrr_read_message_using_callbacks (
 			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
 
 			if (new_buf == NULL) {
-				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in rrr_read_message_using_callbacks\n",
+				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in %s\n",
 					(long long unsigned) read_session->rx_buf_size,
-					(long long unsigned) new_size
+					(long long unsigned) new_size,
+					__func__
 				);
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
@@ -413,8 +414,10 @@ static int __rrr_read_message_using_callbacks (
 
 	/* Check for max bytes read */
 	if (read_max_size > 0 && read_session->rx_buf_wpos > read_max_size) {
-		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%" PRIrrrbl ">%" PRIrrrbl ")\n",
-				read_session->rx_buf_wpos, read_max_size);
+		RRR_MSG_0("Too many bytes read in %s (%" PRIrrrbl ">%" PRIrrrbl ")\n",
+				__func__,
+				read_session->rx_buf_wpos,
+				read_max_size);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -449,7 +452,7 @@ static int __rrr_read_message_using_callbacks (
 			RRR_SIZE_CHECK(read_session->rx_buf_size,"Read buffer too big C",ret = RRR_READ_SOFT_ERROR; goto out);
 			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
-				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Could not allocate memory while aligning buffer in %s\n", __func__);
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -474,7 +477,7 @@ static int __rrr_read_message_using_callbacks (
 		if (read_session->target_size == 0 &&
 				read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_TARGET_LENGTH
 		) {
-			RRR_BUG("target_size was still zero after get_target_size in rrr_read_message_using_callbacks\n");
+			RRR_BUG("target_size was still zero after get_target_size in %s\n", __func__);
 		}
 	}
 
@@ -482,7 +485,7 @@ static int __rrr_read_message_using_callbacks (
 			read_session->read_complete_method != RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ
 	) {
 		if (read_session->rx_overshoot != NULL) {
-			RRR_BUG("overshoot was not NULL in rrr_socket_read_message\n");
+			RRR_BUG("overshoot was not NULL in %s\n", __func__);
 		}
 
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
@@ -491,7 +494,7 @@ static int __rrr_read_message_using_callbacks (
 		RRR_SIZE_CHECK(read_session->rx_overshoot_size,"Read buffer too big D",ret = RRR_READ_SOFT_ERROR; goto out);
 		read_session->rx_overshoot = rrr_allocate_group(read_session->rx_overshoot_size, RRR_ALLOCATOR_GROUP_MSG);
 		if (read_session->rx_overshoot == NULL) {
-			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
+			RRR_MSG_0("Could not allocate memory for overshoot in %s\n", __func__);
 			ret = RRR_READ_HARD_ERROR;
 			goto out;
 		}
@@ -504,7 +507,7 @@ static int __rrr_read_message_using_callbacks (
 		if (function_complete_callback != NULL) {
 			ret = function_complete_callback (read_session, functions_callback_arg);
 			if (ret != 0) {
-				RRR_DBG_3("Note: Return %i from complete callback in rrr_read_message_using_callbacks\n", ret);
+				RRR_DBG_3("Note: Return %i from complete callback in %s\n", ret, __func__);
 				goto out;
 			}
 
@@ -521,7 +524,7 @@ static int __rrr_read_message_using_callbacks (
 		goto out;
 	}
 	else {
-		RRR_BUG("Some sort of invalid read complete method state at end of rrr_socket_read_message_using_callbacks");
+		RRR_BUG("Some sort of invalid read complete method state at end of %s\n", __func__);
 	}
 
 	if (do_emit_eof) {
@@ -687,13 +690,14 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		void *arg
 ) {
 	if (arg != NULL) {
-		RRR_BUG("arg was not NULL in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
+		RRR_BUG("arg was not NULL in %s\n", __func__);
 	}
 
 	*result = 0;
 
 	if (data_size > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Message target length too long in rrr_read_common_get_session_target_length_from_message_and_checksum_raw (%llu>%llu)\n",
+		RRR_MSG_0("Message target length too long in %s (%llu>%llu)\n",
+			__func__,
 			(unsigned long long) data_size,
 			(unsigned long long) RRR_LENGTH_MAX
 		);
@@ -708,7 +712,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	if (ret != 0) {
 		if (ret != RRR_READ_INCOMPLETE) {
-			RRR_MSG_0("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
+			RRR_MSG_0("Warning: Header checksum of message failed in %s\n", __func__);
 		}
 		goto out;
 	}
@@ -732,7 +736,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum (
 
 	if (ret != 0) {
 		if (ret != RRR_READ_INCOMPLETE) {
-			RRR_MSG_0("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
+			RRR_MSG_0("Warning: Header checksum of message failed in %s\n", __func__);
 		}
 		goto out;
 	}
@@ -762,7 +766,8 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 	char *pos = read_session->rx_buf_ptr;
 
 	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Array data too long in rrr_read_common_get_session_target_length_from_array_tree (%llu>%llu)\n",
+		RRR_MSG_0("Array data too long in %s (%llu>%llu)\n",
+			__func__,
 			(unsigned long long) read_session->rx_buf_wpos,
 			(unsigned long long) RRR_LENGTH_MAX
 		);
