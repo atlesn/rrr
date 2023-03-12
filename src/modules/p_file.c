@@ -1439,8 +1439,15 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 	}
 }
 
+struct file_fd_close_notify_callback_data {
+	struct file_data *data;
+	struct rrr_socket_client_collection *collection;
+};
+
 static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
-	struct file_data *file_data = arg;
+	struct file_fd_close_notify_callback_data *callback_data = arg;
+	struct file_data *file_data = callback_data->data;
+	struct rrr_socket_client_collection *collection = callback_data->collection;
 
 	(void)(addr);
 	(void)(addr_len);
@@ -1460,8 +1467,8 @@ static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_A
 			INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
 
 	// Remove files not exclusively being written to if unlink on close is active
-	if (file_data->do_unlink_on_close && !rrr_socket_client_collection_has_fd (file_data->write_only_sockets, fd)) {
-		RRR_DBG_3("file instance %s unlinking file per configuration fd %i orig path '%s'\n",
+	if (file_data->do_unlink_on_close && collection != file_data->write_only_sockets) {
+		RRR_DBG_3("file instance %s unlinking file per configuration fd %i path '%s'\n",
 				INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
 		rrr_socket_unlink(fd);
 	}
@@ -1908,10 +1915,14 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		);
 	}
 
+	struct file_fd_close_notify_callback_data read_write_close_notify_callback_data = {
+		data,
+		data->read_write_sockets
+	};
 	rrr_socket_client_collection_fd_close_notify_setup (
 			data->read_write_sockets,
 			file_fd_close_notify_callback,
-			data
+			&read_write_close_notify_callback_data
 	);
 
 	// WRITE ONLY SOCKETS
@@ -1929,10 +1940,14 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			data
 	);
 
+	struct file_fd_close_notify_callback_data write_only_close_notify_callback_data = {
+		data,
+		data->write_only_sockets
+	};
 	rrr_socket_client_collection_fd_close_notify_setup (
 			data->write_only_sockets,
 			file_fd_close_notify_callback,
-			data
+			&write_only_close_notify_callback_data
 	);
 
 	if (!data->do_no_probing) {

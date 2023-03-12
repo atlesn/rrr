@@ -75,11 +75,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *private_data,                                     \
     void *arg
 
-#define RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS \
-    int was_sent, int fd, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg
+#define RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS         \
+    int was_sent,                                           \
+    int fd,                                                 \
+    const void *data,                                       \
+    rrr_biglength data_size,                                \
+    rrr_biglength data_pos,                                 \
+    void *chunk_private_data,                               \
+    void *callback_arg
 
-#define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS \
-    int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg
+#define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS            \
+    int fd,                                                 \
+    const struct sockaddr *addr,                            \
+    socklen_t addr_len,                                     \
+    const char *addr_string,                                \
+    enum rrr_socket_client_collection_create_type create_type, \
+    short was_finalized,                                    \
+    void *arg
 
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
