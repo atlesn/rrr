@@ -49,6 +49,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_CONNECT_TIMEOUT_S 5
 #define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_IDLE_TIMEOUT_S 0 /* No timeout */
 
+#define RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_HARD_TIMEOUT(type)  \
+    (type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT &&    \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN &&        \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_FILE)
+
+#define RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_IDLE_TIMEOUT(type)  \
+    (type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT &&    \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+
 struct rrr_socket_client_collection {
 	RRR_LL_HEAD(struct rrr_socket_client);
 	char *creator;
@@ -342,8 +351,8 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(client, __rrr_socket_client_fd_destroy(node));
 	
-	RRR_DBG_7("fd %i in client collection remaining during connect finalize, %i other fds were closed. Connection is ready.\n",
-		fd, destroyed);
+	RRR_DBG_7("fd %i in client collection remaining during connect finalize, %i other fds were closed. Connection is ready, type is %s.\n",
+		fd, destroyed, RRR_SOCKET_CLIENT_CREATE_TYPE_STR(client->create_type));
 
 	if (RRR_LL_COUNT(client) != 1) {
 		RRR_BUG("BUG: FD count was not exactly 1 in %s\n", __func__);
@@ -514,6 +523,7 @@ static void __rrr_socket_client_read_callback_address_deduct (
 		const struct rrr_socket_client *client
 ) {
 	switch (client->create_type) {
+		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_FILE:
 		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND:
 		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND:
 			*result_addr = (const struct sockaddr *) &client->connected_fd->addr;
@@ -647,9 +657,8 @@ static int __rrr_socket_client_fd_event_setup (
 		EVENT_ADD(client_fd->event_write);
 	}
 
-	if ( client_fd->client->collection->idle_timeout_us > 0 &&
-	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN &&
-	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
+	if (client_fd->client->collection->idle_timeout_us > 0 &&
+	    RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_IDLE_TIMEOUT(client_fd->client->create_type)
 	) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&client_fd->event_timeout,
@@ -681,8 +690,8 @@ static void __rrr_socket_client_return_value_process (
 		client->last_seen = rrr_time_get_64();
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
-		if ((client->last_seen < timeout) &&
-		    (client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT && client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+		if (client->last_seen < timeout &&
+		    RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_HARD_TIMEOUT(client->create_type)
 		) {
 			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
@@ -1300,6 +1309,11 @@ static int __rrr_socket_client_collection_connected_fd_push (
 	return ret;
 }
 
+#define ENFORCE_NON_LISTEN_TYPE()                                                        \
+    do {if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {    \
+        RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);    \
+    }} while(0)
+
 static int __rrr_socket_client_send_push_with_private_data (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
@@ -1311,9 +1325,7 @@ static int __rrr_socket_client_send_push_with_private_data (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_with_private_data (
 			send_chunk_count,
@@ -1359,9 +1371,7 @@ static int __rrr_socket_client_send_push_const (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const (
 			send_chunk_count,
@@ -1390,9 +1400,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
 			send_chunk_count,
@@ -1426,9 +1434,7 @@ static int __rrr_socket_client_sendto_push_const (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 			send_chunk_count,
