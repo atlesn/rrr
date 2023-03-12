@@ -572,6 +572,7 @@ static int file_open_as_needed (
 
 	const int do_write = data->write_method != RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
 
+	struct rrr_socket_client_collection *target_collection = data->read_write_sockets;
 	struct file *file;
 	int fd = 0;
 
@@ -584,6 +585,19 @@ static int file_open_as_needed (
 	if (data->max_open > 0 && file_collection_count(&data->files) >= (int) data->max_open) {
 		ret = RRR_FILE_BUSY;
 		goto out;
+	}
+
+	if (RRR_FILE_DT_IS_INFINITE(type) && data->read_method != FILE_READ_METHOD_TELEGRAMS) {
+		if (data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE) {
+			RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Also, no writing is configured. Ignoring file.\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+			goto out;
+		}
+		else {
+			RRR_DBG_3("file instance %s file '%s'=>'%s' is not a file with finite size and no input types are set. Cannot read whole file, making the file write-only.\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+			target_collection = data->write_only_sockets;
+		}
 	}
 
 	if (type == DT_SOCK) {
@@ -711,7 +725,7 @@ static int file_open_as_needed (
 	}
 
 	if (rrr_socket_client_collection_connected_fd_push (
-			data->read_write_sockets,
+			target_collection,
 			fd,
 			type == DT_SOCK
 				? RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
@@ -1614,7 +1628,7 @@ static int file_send_push_array_values (
 				goto out_close;
 			}
 
-			rrr_socket_client_collection_close_when_send_complete_by_fd (data->read_write_sockets, fd);
+			rrr_socket_client_collection_close_when_send_complete_by_fd (data->write_only_sockets, fd);
 
 			break;
 		case DT_FIFO:

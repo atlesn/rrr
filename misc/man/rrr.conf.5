@@ -2895,7 +2895,7 @@ Defaults to no, which means to only sync on boundaries of incoming messages.
 
 .It file_read_all_to_message={yes|no}
 Read all data from the entries and put it into an RRR message.
-Note that this is probably not useful for sockets and character devices. Cannot be used with
+Note that with this parameter active, reading is not performed for non-regular files with finite size. Cannot be used with
 .B file_input_types,
 but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
