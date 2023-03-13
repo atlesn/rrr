@@ -1,4 +1,4 @@
-rrr (1.28-5) bullseye; urgency=medium
+rrr (1.28-7) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -20,6 +20,7 @@ rrr (1.28-5) bullseye; urgency=medium
 
   * Under the hood:
     * Use events in file module
+    * Common send loop for file and ip modules
 
  -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Feb 2023 08:30:08 +0100
 

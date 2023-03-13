@@ -245,10 +245,15 @@ static void __rrr_socket_client_chunk_send_notify_success_callback (
 		void *arg
 ) {
 	struct rrr_socket_client *client = arg;
+
+	if (client->connected_fd == NULL) {
+		RRR_BUG("BUG: Connected FD not set in %s\n", __func__);
+	}
+
 	if (client->collection->chunk_send_notify_callback) {
 		client->collection->chunk_send_notify_callback (
 				1, // Success
-				client->connected_fd->fd,
+ 				client->connected_fd->fd,
 				data,
 				data_size,
 				data_pos,
@@ -269,7 +274,7 @@ static void __rrr_socket_client_chunk_send_notify_fail_callback (
 	if (client->collection->chunk_send_notify_callback) {
 		client->collection->chunk_send_notify_callback (
 				0, // Fail
-				client->connected_fd->fd,
+ 				client->connected_fd != NULL ? client->connected_fd->fd : -1,
 				data,
 				data_size,
 				data_pos,
@@ -310,6 +315,10 @@ static int __rrr_socket_client_private_data_create_as_needed (
 		struct rrr_socket_client *client
 ) {
 	int ret = 0;
+
+	if (client->connected_fd == NULL) {
+		RRR_BUG("BUG: Connected FD not set in %s\n", __func__);
+	}
 
 	if (client->collection->callback_private_data_new != NULL) {
 		if ((ret = client->collection->callback_private_data_new (
@@ -1504,13 +1513,14 @@ void rrr_socket_client_collection_send_push_const_multicast (
 		rrr_length count_tmp = 0;
 		int ret_tmp;
 		if ((ret_tmp = __rrr_socket_client_send_push_const (&count_tmp, node, data, size)) != 0) {
-			RRR_DBG_7("Send failed with return value %i during multicast send, destroying client\n", ret_tmp);
+			RRR_DBG_7("Send failed with return value %i for fd %i during multicast send, destroying client\n",
+					ret_tmp, node->connected_fd != NULL ? node->connected_fd->fd : -1);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
 		if (count_tmp > send_chunk_limit) {
 			RRR_MSG_0("Send chunk limit reach for fd %i in client collection multicast send (%i>%i), closing connection.\n",
-					node->connected_fd->fd, count_tmp, send_chunk_limit);
+					node->connected_fd != NULL ? node->connected_fd->fd : -1, count_tmp, send_chunk_limit);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
@@ -1686,7 +1696,7 @@ int rrr_socket_client_collection_migrate_by_fd (
 	}
 
 	RRR_DBG_7("fd %i in client collection migrating to other collection\n",
-			client->connected_fd->fd);
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
 
 	int found = 0;
 	RRR_LL_ITERATE_BEGIN(source, struct rrr_socket_client);
@@ -1720,7 +1730,7 @@ void rrr_socket_client_collection_close_by_fd (
 	}
 
 	RRR_DBG_7("fd %i in client collection close now (external call)\n",
-			client->connected_fd->fd);
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		if (node == client) {
