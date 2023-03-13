@@ -134,7 +134,7 @@ struct file_data {
 	int do_no_probing;
 	int do_write_allow_directory_override;
 	int do_write_append;
-	int do_write_reopen;
+	int do_write_multicast;
 
 	char *serial_parity;
 
@@ -532,6 +532,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_allow_directory_override", do_write_allow_directory_override, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_append", do_write_append, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_multicast", do_write_multicast, 0);
 
 	if (rrr_instance_config_parse_optional_write_method (
 			&data->write_values_list,
@@ -1508,11 +1509,10 @@ static int file_read_raw_complete(RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) 
 
 static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS) {
 	struct file_data *file_data = callback_arg;
+	struct rrr_msg_holder *entry = chunk_private_data;
 
-	(void)(was_sent);
 	(void)(data);
 	(void)(data_pos);
-	(void)(chunk_private_data);
 
 	assert(data_pos == data_size);
 
@@ -1524,10 +1524,26 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 		return;
 	}
 
-	file_collection_add_bytes_written(&file_data->files, fd, data_size);
-	if (file_collection_all_bytes_written (&file_data->files, fd)) {
-		RRR_DBG_3("file instance %s all queued bytes written on fd %i orig path '%s'\n",
-				INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+	if (!was_sent) {
+		// Entry is NULL if multicast is used
+		if (entry != NULL) {
+			RRR_DBG_3("file instance %s send error, re-queing entry for fd %i orig path '%s'.\n",
+					INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+			rrr_msg_holder_lock(entry);
+			rrr_send_loop_unshift(file_data->send_loop, entry);
+			rrr_msg_holder_unlock(entry);
+		}
+		else {
+			RRR_DBG_3("file instance %s send error, but no entry is available for re-queue for fd %i orig path '%s'. Data is lost.\n",
+					INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+		}
+	}
+	else {
+		file_collection_add_bytes_written(&file_data->files, fd, data_size);
+		if (file_collection_all_bytes_written (&file_data->files, fd)) {
+			RRR_DBG_3("file instance %s all queued bytes written on fd %i orig path '%s'\n",
+					INSTANCE_D_NAME(file_data->thread_data), fd, file->orig_path);
+		}
 	}
 }
 
@@ -1566,116 +1582,19 @@ static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_A
 	}
 }
 
-static int file_send_push_array_values (
+static int file_send_to_fd (
 		struct file_data *data,
 		struct rrr_msg_holder *entry,
-		const struct rrr_msg_msg *msg
+		int fd,
+		const char *directory,
+		const char *name,
+		unsigned char type,
+		const char *write_data,
+		rrr_biglength write_data_size
 ) {
-	struct rrr_array array = {0};
-
 	int ret = 0;
 
-	int fd = 0;
-	unsigned char type = 0;
-	char *directory_override = NULL;
-	char *name = NULL;
-	char *write_data = NULL;
-	int found_tags = 0;
 	rrr_length send_chunk_count = 0;
-	rrr_biglength write_data_size = 0;
-	const char *directory = data->directory;
-
-	if (!MSG_IS_ARRAY(msg)) {
-		RRR_MSG_0("Received message in file instance %s was not an array message as expected\n", INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	uint16_t version;
-	if ((ret = rrr_array_message_append_to_array (&version, &array, msg)) != 0) {
-		RRR_MSG_0("Failed to extract array from message in %s\n", __func__);
-		goto out;
-	}
-
-	const struct rrr_type_value *value_directory = rrr_array_value_get_by_tag_const(&array, "file_directory");
-	const struct rrr_type_value *value_name = rrr_array_value_get_by_tag_const(&array, "file_name");
-
-	if (value_directory != NULL) {
-		if (!data->do_write_allow_directory_override) {
-			RRR_DBG_3("Ignoring 'file_directory' field in message to file instance %s per configuration\n", INSTANCE_D_NAME(data->thread_data));
-		}
-		else if ((ret = rrr_type_value_to_str (&directory_override, value_directory)) != 0)  {
-			RRR_MSG_0("Failed to get string value of directory value from array message in %s of file instance %ss\n",
-					__func__, INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-		else {
-			directory = directory_override;
-		}
-	}
-
-	if (value_name == NULL) {
-		RRR_MSG_0("Field 'file_name' missing in message to file instance %s, dropping it.\n", INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	if ((ret = rrr_type_value_to_str (&name, value_name)) != 0)  {
-		RRR_MSG_0("Failed to get string value of name value from array message in %s of file instance %ss\n",
-				__func__, INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	if (strlen(name) == 0) {
-		RRR_MSG_0("Field 'file_name' was empty in file instance %s. Dropping message.\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	if (strchr(name, '/') != NULL) {
-		RRR_MSG_0("Field 'file_name' contained illegal directory separator character / in file instance %s. Dropping message.\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	if ((ret = rrr_array_selected_tags_export (
-			&write_data,
-			&write_data_size,
-			&found_tags,
-			&array,
-			&data->write_values_list
-	)) != 0) {
-		RRR_MSG_0("Failed to export array in %s\n", __func__);
-		goto out;
-	}
-
-	if (found_tags != RRR_LL_COUNT(&data->write_values_list)) {
-		RRR_MAP_ITERATE_BEGIN(&data->write_values_list);
-			if (!rrr_array_has_tag(&array, node->tag)) {
-				RRR_MSG_0("Data value with tag '%s' missing in message to file instance %s, dropping the message.\n",
-						node->tag, INSTANCE_D_NAME(data->thread_data));
-			}
-		RRR_MAP_ITERATE_END();
-		goto out;
-	}
-
-	if ((ret = file_probe_excact_or_create (
-			&fd,
-			&type,
-			data,
-			directory,
-			name
-	)) != 0) {
-		if (ret == RRR_FILE_BUSY) {
-			ret = RRR_SEND_LOOP_NOT_READY;
-		}
-		else if (ret == RRR_FILE_SOFT_ERROR) {
-			RRR_MSG_0("Dropping message after soft error in file instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 0;
-		}
-		goto out;
-	}
-
-	assert(fd > 0);
 
 	switch (type) {
 		case DT_REG:
@@ -1769,12 +1688,197 @@ static int file_send_push_array_values (
 	out_close:
 		rrr_socket_client_collection_close_by_fd(data->write_only_sockets, fd);
 		rrr_socket_client_collection_close_by_fd(data->read_write_sockets, fd);
+
 	out:
-		RRR_FREE_IF_NOT_NULL(directory_override);
-		RRR_FREE_IF_NOT_NULL(name);
-		RRR_FREE_IF_NOT_NULL(write_data);
-		rrr_array_clear(&array);
-		return ret;
+	return ret;
+}
+
+static void file_send_push_array_values_multicast (
+		struct file_data *data,
+		const char *write_data,
+		rrr_biglength write_data_size
+) {
+	rrr_length send_chunk_count = 0;
+
+	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count,
+			data->write_only_sockets,
+			write_data,
+			write_data_size,
+			RRR_FILE_MAX_MAX_OPEN	
+	);
+
+	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count,
+			data->read_write_sockets,
+			write_data,
+			write_data_size,
+			RRR_FILE_MAX_MAX_OPEN	
+	);
+}
+
+static int file_send_push_array_values_unicast (
+		struct file_data *data,
+		struct rrr_msg_holder *entry,
+		struct rrr_array *array,
+		const char *write_data,
+		rrr_biglength write_data_size
+) {
+	int ret = 0;
+
+	int fd = 0;
+	unsigned char type = 0;
+	char *directory_override = NULL;
+	char *name = NULL;
+	const char *directory = data->directory;
+
+	const struct rrr_type_value *value_directory = rrr_array_value_get_by_tag_const(array, "file_directory");
+	const struct rrr_type_value *value_name = rrr_array_value_get_by_tag_const(array, "file_name");
+
+	if (value_directory != NULL) {
+		if (!data->do_write_allow_directory_override) {
+			RRR_DBG_3("Ignoring 'file_directory' field in message to file instance %s per configuration\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else if ((ret = rrr_type_value_to_str (&directory_override, value_directory)) != 0)  {
+			RRR_MSG_0("Failed to get string value of directory value from array message in %s of file instance %ss\n",
+					__func__, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		else {
+			directory = directory_override;
+		}
+	}
+
+	if (value_name == NULL) {
+		RRR_MSG_0("Field 'file_name' missing in message to file instance %s, dropping it.\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_type_value_to_str (&name, value_name)) != 0)  {
+		RRR_MSG_0("Failed to get string value of name value from array message in %s of file instance %ss\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (strlen(name) == 0) {
+		RRR_MSG_0("Field 'file_name' was empty in file instance %s. Dropping message.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (strchr(name, '/') != NULL) {
+		RRR_MSG_0("Field 'file_name' contained illegal directory separator character / in file instance %s. Dropping message.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = file_probe_excact_or_create (
+			&fd,
+			&type,
+			data,
+			directory,
+			name
+	)) != 0) {
+		if (ret == RRR_FILE_BUSY) {
+			ret = RRR_SEND_LOOP_NOT_READY;
+		}
+		else if (ret == RRR_FILE_SOFT_ERROR) {
+			RRR_MSG_0("Dropping message after soft error in file instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+		}
+		goto out;
+	}
+
+	assert(fd > 0);
+
+	if ((ret = file_send_to_fd (
+			data,
+			entry,
+			fd,
+			directory,
+			name,
+			type,
+			write_data,
+			write_data_size
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(directory_override);
+	RRR_FREE_IF_NOT_NULL(name);
+	return ret;
+}
+
+static int file_send_push_array_values (
+		struct file_data *data,
+		struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg
+) {
+	struct rrr_array array = {0};
+
+	int ret = 0;
+
+	char *write_data = NULL;
+	int found_tags = 0;
+	rrr_biglength write_data_size = 0;
+
+	if (!MSG_IS_ARRAY(msg)) {
+		RRR_MSG_0("Received message in file instance %s was not an array message as expected\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	uint16_t version;
+	if ((ret = rrr_array_message_append_to_array (&version, &array, msg)) != 0) {
+		RRR_MSG_0("Failed to extract array from message in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_array_selected_tags_export (
+			&write_data,
+			&write_data_size,
+			&found_tags,
+			&array,
+			&data->write_values_list
+	)) != 0) {
+		RRR_MSG_0("Failed to export array in %s\n", __func__);
+		goto out;
+	}
+
+	if (found_tags != RRR_LL_COUNT(&data->write_values_list)) {
+		RRR_MAP_ITERATE_BEGIN(&data->write_values_list);
+			if (!rrr_array_has_tag(&array, node->tag)) {
+				RRR_MSG_0("Data value with tag '%s' missing in message to file instance %s, dropping the message.\n",
+						node->tag, INSTANCE_D_NAME(data->thread_data));
+			}
+		RRR_MAP_ITERATE_END();
+		goto out;
+	}
+
+	if (data->do_write_multicast) {
+		file_send_push_array_values_multicast (
+				data,
+				write_data,
+				write_data_size
+		);
+	}
+	else {
+		if ((ret = file_send_push_array_values_unicast (
+				data,
+				entry,
+				&array,
+				write_data,
+				write_data_size
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(write_data);
+	rrr_array_clear(&array);
+	return ret;
 }
 
 static int file_send_push_callback (
@@ -2012,6 +2116,12 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 				data
 		);
 	}
+
+	rrr_socket_client_collection_send_notify_setup (
+			data->read_write_sockets,
+			file_chunk_send_notify_callback,
+			data
+	);
 
 	struct file_fd_close_notify_callback_data read_write_close_notify_callback_data = {
 		data,

@@ -3050,6 +3050,17 @@ in messages from sender instances, overriding the directory specified in the con
 If not given or set to no, any directory set in messages will be ignored.
 Read about security considerations above before enabling this parameter.
 
+.It file_write_multicast={yes|no}
+If set to yes, any
+.B file_name
+and
+.B file_directory
+values in messages are ignored, and the data is written to all files already open.
+If no files are open, the message is dropped.
+If write error occurs during multicast, the file in question will be closed.
+No attempt will be made to write the data again.
+Defaults to 'no' which disables write multicast.
+
 .El
 .SS mysql (DAI)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
