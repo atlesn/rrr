@@ -9,7 +9,8 @@ rrr (1.28-4) bullseye; urgency=medium
       or array tags
     * New parameter in httpclient to control timeout of low priority messages
       specifically
-    * New array value "hdlc" for parsing HDLC messages 
+    * New array value "hdlc" for parsing HDLC messages
+    * File module can write to files and streams. New configuration parameters.
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
