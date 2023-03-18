@@ -5,11 +5,13 @@ extern "C" {
 	RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_js");
 };
 
+#include <filesystem>
+
 #include "lib/js/Js.hxx"
 
-int main(int argc, const char **argv) {
-	using namespace RRR::JS;
+using namespace RRR::JS;
 
+int main(int argc, const char **argv) {
 	int ret = EXIT_SUCCESS;
 
 	ENV env(*argv);
@@ -18,6 +20,22 @@ int main(int argc, const char **argv) {
 	size_t size_total = 0;
 	char tmp[4096];
 	char *in = NULL;
+	int is_module = 0;
+
+	switch (argc) {
+		case 2:
+			if (strcmp(argv[1], "module") == 0) {
+				is_module = 1;
+				break;
+			}
+			else if (strcmp(argv[1], "script") == 0) {
+				break;
+			}
+			// Fallthrough
+		default:
+			ret = EXIT_FAILURE;
+			goto usage;
+	};
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
@@ -50,22 +68,25 @@ int main(int argc, const char **argv) {
 	in[size_total] = '\0';
 
 	try {
+		auto cwd = std::filesystem::current_path().string();
+		printf("CWD: %s\n", cwd.c_str());
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, "-");
 		auto scope = Scope(ctx);
-		auto script = Script("-", std::string(in));
-	
-		Value arg = String(ctx, "arg");
-
-		script.compile(ctx);
-		if (script.is_compiled()) {
-			script.run(ctx);
+		std::unique_ptr<Program> program(is_module
+			? (Program *) new Module(cwd, "-", std::string(in))
+			: (Program *) new Script(cwd, "-", std::string(in))
+		);
+		program->compile(ctx);
+		if (program->is_compiled()) {
+			program->run(ctx);
 		}
 		if (ctx.trycatch_ok([](std::string &&msg){
 			throw E(std::string(msg));
 		})) {
 			// OK
 		}
+
 	}
 	catch (E &e) {
 		fprintf(stderr, "%s\n", *e);
@@ -76,6 +97,9 @@ int main(int argc, const char **argv) {
 		rrr_strerror_cleanup();
 	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	goto out_final;
+	usage:
+		printf("Usage: %s [module|script]\n", argv[0]);
 	out_final:
 		RRR_FREE_IF_NOT_NULL(in);
 		return ret;

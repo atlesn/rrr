@@ -51,12 +51,13 @@ extern "C" {
 
 }; // extern "C"
 
+#include <filesystem>
+
 #include "../lib/event/Event.hxx"
 #include "../lib/js/Message.hxx"
 #include "../lib/js/Config.hxx"
 #include "../lib/js/Timeout.hxx"
 #include "../lib/js/Js.hxx"
-#include "../lib/util/Readfile.hxx"
 
 extern "C" {
 
@@ -294,7 +295,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, std::string(data->js_file));
 		auto persistent_storage = PersistentStorage(ctx);
-		auto source = std::string(RRR::util::Readfile(std::string(data->js_file), 0, 0));
+		auto cwd = std::filesystem::current_path().string();
+		auto relative_path = std::filesystem::path(std::string(data->js_file));
 
 		js_run_data run_data (
 				data,
@@ -303,11 +305,11 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				ctx,
 				persistent_storage,
 				data->js_module_name != NULL
-					? std::function([data,source](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Module(std::string(data->js_file), source);
+					? std::function([cwd,relative_path](CTX &ctx){
+						return (RRR::JS::Program*) new RRR::JS::Module(cwd, relative_path);
 					})
-					: std::function([data,source](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Script(std::string(data->js_file), source);
+					: std::function([cwd,relative_path](CTX &ctx){
+						return (RRR::JS::Program*) new RRR::JS::Script(cwd, relative_path);
 					})
 		);
 
@@ -322,11 +324,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
 				goto out;
 		}
-	}
-	catch (RRR::util::Readfile::E e) {
-		RRR_MSG_0("Failed while reading script %s: %s\n", data->js_file, *e);
-		ret = 1;
-		goto out;
 	}
 	catch (RRR::util::E e) {
 		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);

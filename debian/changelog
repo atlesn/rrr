@@ -15,6 +15,9 @@ rrr (1.28-4) bullseye; urgency=medium
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
       messages to ensure all are attempted and not the same messages time out
       repeatedly.
+    * In JS, refuse bare name module imports (require prefix like ./) and
+      process relative paths correctly with respect to directory of importing
+      script.
 
   * Under the hood:
     * Use events in file module

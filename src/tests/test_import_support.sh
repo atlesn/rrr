@@ -1,6 +1,6 @@
 #1/bin/sh
 
-if echo "import('nonexistent').catch();" | ../rrr_js; then
+if echo "import('nonexistent').catch();" | ../rrr_js module; then
 	echo "Dynamic import works" 1>&2
 else
 	echo "Dynamic import does not work" 1>&2
@@ -8,7 +8,7 @@ else
 	exit 1
 fi
 
-if echo " import('nonexistent', { assert: { type: 'xxx' } }).catch();" | ../rrr_js; then
+if echo " import('nonexistent', { assert: { type: 'xxx' } }).catch();" | ../rrr_js module; then
 	echo "Dynamic import with assert works" 1>&2
 else
 	echo "Dynamic import with assert does not work" 1>&2

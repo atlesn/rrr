@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <v8.h>
 #include <forward_list>
 #include <map>
+#include <cassert>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -38,6 +39,7 @@ namespace RRR::JS {
 	class CTX;
 	class Scope;
 	class Isolate;
+	class Source;
 
 	class ENV {
 		private:
@@ -53,47 +55,19 @@ namespace RRR::JS {
 	};
 
 	class Isolate {
-		public:
-		template <class T> class DataHandle {
-			private:
-			uint32_t pos;
-			Isolate *isolate;
-
-			public:
-			DataHandle(Isolate *isolate, T *ptr) :
-				isolate(isolate),
-				pos(isolate->set_data(ptr))
-			{
-			}
-			T *operator *() {
-				return (T *) isolate->get_data(pos);
-			}
-		};
-
 		private:
 		uint32_t data_pos = 0;
 		v8::Isolate *isolate;
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
-		std::map<int,void *> module_map;
-		DataHandle<Isolate> isolate_handle;
-		DataHandle<std::map<int,void *>> module_map_handle;
-
-		protected:
-		void *get_data(uint32_t pos);
-		uint32_t set_data(void *ptr);
+		std::map<int,Source *> module_map;
 
 		public:
 		Isolate(ENV &env);
 		~Isolate();
-		void *get_module(int identity);
-		void set_module(int identity, void *mod);
-		v8::Isolate *operator-> () {
-			return isolate;
-		}
-		template <class T> DataHandle<T> make_handle(T *ptr) {
-			return DataHandle<T>(this, ptr);
-		}
+		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> T *get_module(int identity);
+		void set_module(int identity, Source *mod);
+		v8::Isolate *operator-> ();
 		static Isolate *get_from_context(CTX &ctx);
 	};
 
@@ -143,6 +117,18 @@ namespace RRR::JS {
 	class E : public RRR::util::E {
 		public:
 		E( std::string &&str);
+	};
+
+	template <class A, class B> class Duple {
+		private:
+		A a;
+		B b;
+
+		public:
+		Duple(A a, B b) : a(a), b(b) {}
+		A first() { return a; }
+		B second() { return b; }
+		A* operator->() { return &a; };
 	};
 
 	class Function {
@@ -221,18 +207,34 @@ namespace RRR::JS {
 	class Source {
 		private:
 		bool compiled = false;
+		std::string cwd;
 		std::string name;
 		std::string program_source;
 
 		void set_compiled();
+		static const std::string &verify_cwd(const std::string &cwd);
+		static const std::string &verify_name(const std::string &name);
 
 		protected:
 		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+		virtual bool is_type(const std::type_info &type) const = 0;
+		const std::string &get_cwd() const {
+			return cwd;
+		}
+		const std::string &get_name() const {
+			return name;
+		}
+		std::string get_path_() const {
+			return cwd + "/" + name;
+		}
 
 		public:
-		Source(std::string name, std::string program_source);
-		bool is_compiled();
-		std::string get_name();
+		Source(const std::string &cwd, const std::string &name, const std::string &program_source);
+		Source(const std::string &cwd, const std::string &name);
+		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> T *cast();
+		bool is_compiled() const {
+			return compiled;
+		}
 		virtual ~Source() = default;
 		virtual void compile(CTX &ctx) = 0;
 	};
@@ -242,7 +244,8 @@ namespace RRR::JS {
 		Function get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name);
 
 		public:
-		Program(std::string name, std::string program_source);
+		Program(const std::string &cwd, const std::string &name, const std::string &program_source);
+		Program(const std::string &cwd, const std::string &name);
 		virtual ~Program() = default;
 		virtual void compile(CTX &ctx) = 0;
 		virtual void run(CTX &ctx) = 0;
@@ -253,11 +256,28 @@ namespace RRR::JS {
 		private:
 		v8::Local<v8::Script> script;
 
+		protected:
+		bool is_type(const std::type_info &type) const override {
+			return typeid(Script) == type;
+		};
+
 		public:
-		Script(std::string name, std::string script_source);
+		Script(const std::string &cwd, const std::string &name, const std::string &script_source);
+		Script(const std::string &cwd, const std::string &name);
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;
 		Function get_function(CTX &ctx, std::string name) final;
+	};
+
+	class ImportCallbackData {
+		private:
+		Source *mod;
+
+		public:
+		ImportCallbackData(Source *mod) : mod(mod) {}
+		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> T *get_module() const {
+			return mod->cast<T>();
+		}
 	};
 
 	class Module : public Program {
@@ -268,9 +288,13 @@ namespace RRR::JS {
 		};
 		v8::Local<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
-		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, std::string name);
+		ImportCallbackData import_callback_data;
+		static Duple<std::string, std::string> split_path(const std::string &path);
+		static std::string load_resolve_path(const std::string &specifier, const std::string &referrer);
+		template<typename L> static v8::MaybeLocal<v8::Module> load_wrap(const std::string &referrer_cwd, const std::string &relative_path, L l);
+		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-		static v8::MaybeLocal<v8::Module> load_json(CTX &ctx, std::string name);
+		static v8::MaybeLocal<v8::Module> load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 		template <class T, class U> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t, U u);
 #endif
 		static v8::MaybeLocal<v8::Module> static_resolve_callback(
@@ -281,6 +305,11 @@ namespace RRR::JS {
 #endif
 				v8::Local<v8::Module> referrer
 		);
+
+		protected:
+		bool is_type(const std::type_info &type) const override {
+			return typeid(Module) == type;
+		};
 
 		public:
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
@@ -298,7 +327,9 @@ namespace RRR::JS {
 				v8::Local<v8::String> specifier
 		);
 #endif
-		Module(std::string name, std::string module_source);
+		Module(const std::string &cwd, const std::string &name, const std::string &module_source);
+		Module(const std::string &cwd, const std::string &name);
+		operator v8::MaybeLocal<v8::Module>();
 		void compile(CTX &ctx) final;
 		void run(CTX &ctx) final;
 		Function get_function(CTX &ctx, std::string name) final;
@@ -317,23 +348,26 @@ namespace RRR::JS {
 				v8::Local<v8::Module> referrer
 		);
 
+		protected:
+		bool is_type(const std::type_info &type) const override {
+			return typeid(JSONModule) == type;
+		};
+
 		public:
-		JSONModule(std::string name, std::string program_source);
+		JSONModule(const std::string &cwd, const std:string &name, const std::string &program_source);
+		JSONModule(const std::string &cwd, const std:string &name);
 		operator v8::MaybeLocal<v8::Module>();
 		void compile(CTX &ctx) final;
 	};
 #endif
 
-	template <class A, class B> class Duple {
-		private:
-		A a;
-		B b;
+	template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> T *Isolate::get_module(int identity) {
+		return module_map.at(identity)
+			->cast<T>();
+	}
 
-		public:
-		Duple(A a, B b) : a(a), b(b) {}
-		A first() { return a; }
-		B second() { return b; }
-		A* operator->() { return &a; };
-	};
-
+	template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> T *Source::cast() {
+		assert(is_type(typeid(T)));
+		return static_cast<T *>(this);
+	}
 } // namespace RRR::JS
