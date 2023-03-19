@@ -2886,6 +2886,19 @@ Cannot be used with
 .B file_read_all_to_message=yes,
 but one of them must be specified. No default value.
 
+.It file_add_metadata={yes|no}
+If
+.B file_input_types
+is set, this parameter may be set to 'yes' to add file metadata to messages produced.
+The fields added will be the same as for the read all method 'structured' below except from the
+.B data
+and
+.B size
+values.
+The fields will be added to the end of the array, after the parsed data values.
+There is no checks for wether or not tags in the array definition are the same as any of the metadata tags, duplicate tags may exist in the array in such a situation.
+Defaults to 'no' which means that metadata will not be added.
+
 .It file_strip_array_separators={yes|no}
 Disregard any separator items when creating RRR array messages. Defaults to no.
 
@@ -3036,6 +3049,17 @@ Allow usage of the array field
 in messages from sender instances, overriding the directory specified in the configuration.
 If not given or set to no, any directory set in messages will be ignored.
 Read about security considerations above before enabling this parameter.
+
+.It file_write_multicast={yes|no}
+If set to yes, any
+.B file_name
+and
+.B file_directory
+values in messages are ignored, and the data is written to all files already open.
+If no files are open, the message is dropped.
+If write error occurs during multicast, the file in question will be closed.
+No attempt will be made to write the data again.
+Defaults to 'no' which disables write multicast.
 
 .El
 .SS mysql (DAI)

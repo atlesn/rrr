@@ -1,4 +1,4 @@
-rrr (1.28-4) bullseye; urgency=medium
+rrr (1.28-7) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -10,7 +10,8 @@ rrr (1.28-4) bullseye; urgency=medium
     * New parameter in httpclient to control timeout of low priority messages
       specifically
     * New array value "hdlc" for parsing HDLC messages
-    * File module can write to files and streams. New configuration parameters.
+    * Ability in file module to write to files and devices among other new
+      configuration parameters
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
@@ -22,6 +23,7 @@ rrr (1.28-4) bullseye; urgency=medium
 
   * Under the hood:
     * Use events in file module
+    * Common send loop for file and ip modules
 
  -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Feb 2023 08:30:08 +0100
 
