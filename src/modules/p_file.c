@@ -1589,7 +1589,7 @@ static int file_send_to_fd (
 		const char *directory,
 		const char *name,
 		unsigned char type,
-		const char *write_data,
+		char **write_data,
 		rrr_biglength write_data_size
 ) {
 	int ret = 0;
@@ -1642,7 +1642,7 @@ static int file_send_to_fd (
 					&send_chunk_count,
 					data->write_only_sockets,
 					fd,
-					(void **) &write_data,
+					(void **) write_data,
 					write_data_size,
 					file_send_chunk_private_data_new,
 					entry,
@@ -1665,7 +1665,7 @@ static int file_send_to_fd (
 					&send_chunk_count,
 					data->read_write_sockets,
 					fd,
-					(void **) &write_data,
+					(void **) write_data,
 					write_data_size,
 					file_send_chunk_private_data_new,
 					entry,
@@ -1721,7 +1721,7 @@ static int file_send_push_array_values_unicast (
 		struct file_data *data,
 		struct rrr_msg_holder *entry,
 		struct rrr_array *array,
-		const char *write_data,
+		char **write_data,
 		rrr_biglength write_data_size
 ) {
 	int ret = 0;
@@ -1868,7 +1868,7 @@ static int file_send_push_array_values (
 				data,
 				entry,
 				&array,
-				write_data,
+				&write_data,
 				write_data_size
 		)) != 0) {
 			goto out;
