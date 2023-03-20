@@ -22,6 +22,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MACRO_UTILS_H
 #define RRR_MACRO_UTILS_H
 
+/*
+ * Used to suppress compiler and static analyzer warnings about ...
+ * 1. unused function arguments.
+ * 2. variable not used after assignment, for instance whem setting  common
+ *    return value "ret" to zero to indicate that error is to be ignored.
+ */
 #define RRR_UNUSED(x) \
 	((void)(x))
 

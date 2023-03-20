@@ -740,7 +740,6 @@ static int file_open_as_needed (
 
 	if ((file = file_collection_get_by_orig_path(&data->files, orig_path)) != NULL) {
 		fd = file->fd;
-		type = file->type;
 		goto set_result;
 	}
 
@@ -905,6 +904,7 @@ static int file_probe_excact_or_create (
 	if (!(rrr_asprintf (&orig_path, "%s/%s", directory, name) > 0)) {
 		RRR_MSG_0("Failed to make path in %s\n", __func__);
 		ret = 1;
+		goto out;
 
 	}
 
@@ -1636,6 +1636,7 @@ static int file_send_to_fd (
 					goto out_close;
 				}
 				ret = 0;
+				RRR_UNUSED(ret);
 			}
 
 			if ((ret = rrr_socket_client_collection_send_push_with_private_data (

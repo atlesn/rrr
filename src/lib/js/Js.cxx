@@ -209,11 +209,12 @@ namespace RRR::JS {
 				values[i] = argv[i];
 			}
 			auto result = function->Call(ctx, ctx, argc, values);
+			RRR_UNUSED(result);
 		}
 		else {
 			auto result = function->Call(ctx, ctx, 0, nullptr);
+			RRR_UNUSED(result);
 		}
-		// Ignore result
 	}
 
 	namespace Console {
@@ -476,7 +477,7 @@ namespace RRR::JS {
 
 	void Script::_run(CTX &ctx) {
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
-		// Ignore result
+		RRR_UNUSED(result);
 	}
 
 	Function Script::get_function(CTX &ctx, std::string name) {
@@ -762,8 +763,8 @@ v8::Local<v8::FixedArray> import_assertions,
 		}
 		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
 
-		// Ignore result
 		auto result = mod->Evaluate(ctx);
+		RRR_UNUSED(result);
 		if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to evaluate module: ") + msg);

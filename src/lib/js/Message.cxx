@@ -346,7 +346,6 @@ namespace RRR::JS {
 
 	void Message::cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		auto result = String(isolate, message->ip_so_type.c_str());
 		info.GetReturnValue().Set((v8::Local<v8::String>) result);
@@ -465,7 +464,6 @@ namespace RRR::JS {
 
 	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 
@@ -535,7 +533,6 @@ namespace RRR::JS {
 
 	void Message::cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 		GET_VALUE_ARG();
@@ -555,7 +552,6 @@ namespace RRR::JS {
 
 	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 	
@@ -564,7 +560,6 @@ namespace RRR::JS {
 
 	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 
@@ -708,7 +703,6 @@ namespace RRR::JS {
 
 	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		auto store = BackingStore::create(isolate, message->data.data(), message->data.size());
 		info.GetReturnValue().Set(store.second());
@@ -752,7 +746,6 @@ namespace RRR::JS {
 
 	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->type));
 	}
@@ -783,7 +776,6 @@ namespace RRR::JS {
 
 	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->get_class()));
 	}
