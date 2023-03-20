@@ -79,8 +79,9 @@ namespace RRR::JS {
 	Isolate::~Isolate() {
 	}
 
-	void Isolate::set_module(int identity, Source *mod) {
-		module_map[identity] = mod;
+	template <typename T, typename> std::shared_ptr<T> Isolate::get_module(int identity) {
+		RRR_DBG_1("V8 isolate %p get module with id %i type %s\n", this, identity, typeid(T).name());
+		return Source::cast<T>(module_map.at(identity));
 	}
 
 	v8::Isolate *Isolate::operator-> () {
@@ -369,6 +370,16 @@ namespace RRR::JS {
 		return name;
 	}
 
+	Duple<std::string, std::string> Source::split_path(const std::string &path) {
+		assert(path.length() > 0 && path.front() == '/');
+
+		auto fs_path = std::filesystem::path(path);
+		auto dir = fs_path.parent_path().string();
+		auto name = fs_path.filename().string();
+
+		return Duple<std::string, std::string>(dir, name);
+	}
+
 	template <typename L> void Source::compile_str_wrap(CTX &ctx, L l) {
 		if (program_source.length() > v8::String::kMaxLength) {
 			throw E("Script or module data too long");
@@ -384,8 +395,15 @@ namespace RRR::JS {
 	{
 	}
 
-	Source::Source(const std::string &cwd, const std::string &name) :
-		Source(cwd, name, (std::string) RRR::util::Readfile(cwd + "/" + name, 0, 0))
+	Source::Source(const Duple<std::string,std::string> &cwd_and_name, const std::string &program_source) :
+		cwd(cwd_and_name.first()),
+		name(cwd_and_name.second()),
+		program_source(program_source)
+	{
+	}
+
+	Source::Source(const std::string &absolute_path) :
+		Source (split_path(absolute_path), (std::string) RRR::util::Readfile(absolute_path, 0, 0))
 	{
 	}
 
@@ -412,9 +430,14 @@ namespace RRR::JS {
 	{
 	}
 
-	Program::Program(const std::string &cwd, const std::string &name) :
-		Source(cwd, name)
+	Program::Program(const std::string &absolute_path) :
+		Source(absolute_path)
 	{
+	}
+
+	void Program::run(CTX &ctx) {
+		assert(is_compiled());
+		_run(ctx);
 	}
 
 	Script::Script(const std::string &cwd, const std::string &name, const std::string &script_source) :
@@ -424,11 +447,19 @@ namespace RRR::JS {
 		RRR_DBG_1("V8 new Script cwd %s name %s (source provided)\n", cwd.c_str(), name.c_str());
 	}
 
-	Script::Script(const std::string &cwd, const std::string &name) :
-		Program(cwd, name),
+	Script::Script(const std::string &absolute_path) :
+		Program(absolute_path),
 		script()
 	{
-		RRR_DBG_1("V8 new Script cwd %s name %s\n", cwd.c_str(), name.c_str());
+		RRR_DBG_1("V8 new Script absolute_path %s\n", absolute_path.c_str());
+	}
+
+	std::shared_ptr<Script> Script::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
+		return std::shared_ptr<Script>(new Script(cwd, name, module_source));
+	}
+
+	std::shared_ptr<Script> Script::make_shared (const std::string &absolute_path) {
+		return std::shared_ptr<Script>(new Script(absolute_path));
 	}
 
 	void Script::compile(CTX &ctx) {
@@ -443,8 +474,7 @@ namespace RRR::JS {
 		});
 	}
 
-	void Script::run(CTX &ctx) {
-		assert(is_compiled());
+	void Script::_run(CTX &ctx) {
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
 		// Ignore result
 	}
@@ -460,22 +490,9 @@ namespace RRR::JS {
 		return (std::filesystem::path(referrer_cwd) / name).lexically_normal().string();
 	}
 
-	Duple<std::string, std::string> Module::split_path(const std::string &path) {
-		assert(path.length() > 0 && path.front() == '/');
-
-		auto fs_path = std::filesystem::path(path);
-		auto dir = fs_path.parent_path().string();
-		auto name = fs_path.filename().string();
-
-		return Duple<std::string, std::string>(dir, name);
-	}
-
 	template<typename L> v8::MaybeLocal<v8::Module> Module::load_wrap(const std::string &referrer_cwd, const std::string &relative_path, L l) {
 		try {
-			auto split = split_path(load_resolve_path(referrer_cwd, relative_path));
-			auto cwd = split.first();
-			auto name = split.second();
-			return l(cwd, name);
+			return *l(load_resolve_path(referrer_cwd, relative_path));
 		}
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
@@ -489,20 +506,19 @@ namespace RRR::JS {
 	}
 
 	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
-		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &cwd, const std::string &name){
-			auto submodule = Module(cwd, name);
-			submodule.compile(ctx);
-			submodule.run(ctx);
-			return submodule;
+		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &absolute_path){
+			auto mod = std::shared_ptr<Module>(Isolate::get_from_context(ctx)->make_module<Module>(ctx, absolute_path));
+			mod->run(ctx);
+			return mod;
 		});
 	}
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	v8::MaybeLocal<v8::Module> Module::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
-		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &cwd, const std::string &name){
-			auto submodule = JSONModule(split.first(), split.second());
-			submodule.compile(ctx);
-			return submodule;
+		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &absolute_path){
+			auto mod = std::shared_ptr<JSONModule>(Isolate::get_from_context(ctx)->make_module<JSONModule>(ctx, absolute_path));
+			mod->run(ctx);
+			return mod;
 		});
 	}
 
@@ -663,13 +679,21 @@ v8::Local<v8::FixedArray> import_assertions,
 		RRR_DBG_1("V8 new Module cwd %s name %s (source provided)\n", cwd.c_str(), name.c_str());
 	}
 
-	Module::Module(const std::string &cwd, const std::string &name) :
-		Program(cwd, name),
+	Module::Module(const std::string &absolute_path) :
+		Program(absolute_path),
 		mod(),
 		import_callback_data(this),
 		submodules()
 	{
-		RRR_DBG_1("V8 new Module cwd %s name %s\n", cwd.c_str(), name.c_str());
+		RRR_DBG_1("V8 new Module absolute_path %s\n", absolute_path.c_str());
+	}
+
+	std::shared_ptr<Module> Module::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
+		return std::shared_ptr<Module>(new Module(cwd, name, module_source));
+	}
+
+	std::shared_ptr<Module> Module::make_shared (const std::string &absolute_path) {
+		return std::shared_ptr<Module>(new Module(absolute_path));
 	}
 
 	Module::operator v8::MaybeLocal<v8::Module>() {
@@ -719,7 +743,6 @@ v8::Local<v8::FixedArray> import_assertions,
 			}
 			mod = module_maybe.ToLocalChecked();
 			host_defined_options->Set(ctx, 0, v8::Int32::New(ctx, mod->GetIdentityHash()));
-			Isolate::get_from_context(ctx)->set_module(mod->GetIdentityHash(), this);
 		});
 
 		if (ctx.trycatch_ok([](auto msg){
@@ -729,7 +752,11 @@ v8::Local<v8::FixedArray> import_assertions,
 		}
 	}
 
-	void Module::run(CTX &ctx) {
+	int Module::get_identity_hash() const {
+		return mod->GetIdentityHash();
+	}
+
+	void Module::_run(CTX &ctx) {
 		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
 			throw E(std::string("Instantiation of module ") + get_path_() + (" failed"));
 		}
@@ -791,12 +818,20 @@ v8::Local<v8::FixedArray> import_assertions,
 		RRR_DBG_1("V8 new JSON cwd %s name %s (source provided)\n", cwd.c_str(), name.c_str());
 	}
 
-	JSONModule::JSONModule(const std::string &cwd, const std::string &name) :
-		Source(cwd, name),
+	JSONModule::JSONModule(const std::string &absolute_path) :
+		Source(absolute_path),
 		mod(),
 		json()
 	{
 		RRR_DBG_1("V8 new JSON cwd %s name %s\n", cwd.c_str(), name.c_str());
+	}
+
+	std::shared_ptr<JSONModule> JSONModule::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
+		return std::shared_ptr<JSONModule>(new JSONModule(cwd, name, module_source));
+	}
+
+	std::shared_ptr<JSONModule> JSONModule::make_shared (const std::string &absolute_path) {
+		return std::shared_ptr<JSONModule>(new JSONModule(absolute_path));
 	}
 
 	JSONModule::operator v8::MaybeLocal<v8::Module>() {
@@ -847,6 +882,10 @@ v8::Local<v8::FixedArray> import_assertions,
 			}
 			assert(!result.IsEmpty());
 		});
+	}
+
+	int JSONModule::get_identity_hash() const {
+		return mod->GetIdentityHash();
 	}
 #endif
 } // namespace RRR::JS

@@ -6,6 +6,7 @@ extern "C" {
 };
 
 #include <filesystem>
+#include <functional>
 
 #include "lib/js/Js.hxx"
 
@@ -73,11 +74,15 @@ int main(int argc, const char **argv) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, "-");
 		auto scope = Scope(ctx);
-		std::unique_ptr<Program> program(is_module
-			? (Program *) new Module(cwd, "-", std::string(in))
-			: (Program *) new Script(cwd, "-", std::string(in))
-		);
-		program->compile(ctx);
+		auto program = (is_module
+			? std::function<std::shared_ptr<Program>()>([&](){
+				return std::dynamic_pointer_cast<Program>(isolate.make_module<Module>(ctx, cwd, "-", std::string(in)));
+			})
+			: std::function<std::shared_ptr<Program>()>([&](){
+				auto script = Script::make_shared(cwd, "-", std::string(in));
+				script->compile(ctx);
+				return std::dynamic_pointer_cast<Program>(script);
+			}))();
 		if (program->is_compiled()) {
 			program->run(ctx);
 		}

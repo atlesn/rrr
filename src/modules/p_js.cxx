@@ -244,18 +244,11 @@ class js_run_data {
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
-		program(make_program(ctx))
+		program(make_program())
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
 		timeout_factory.register_as_global(ctx);
-
-		try {
-			program->compile(ctx);
-		}
-		catch (E e) {
-			throw e;
-		}
 
 		if (!program->is_compiled()) {
 			ctx.trycatch_ok([](std::string &&msg){
@@ -295,8 +288,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, std::string(data->js_file));
 		auto persistent_storage = PersistentStorage(ctx);
-		auto cwd = std::filesystem::current_path().string();
-		auto relative_path = std::filesystem::path(std::string(data->js_file));
 
 		js_run_data run_data (
 				data,
@@ -304,13 +295,17 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				isolate,
 				ctx,
 				persistent_storage,
-				data->js_module_name != NULL
-					? std::function([cwd,relative_path](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Module(cwd, relative_path);
-					})
-					: std::function([cwd,relative_path](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Script(cwd, relative_path);
-					})
+				[&](){
+					const auto absolute_path = std::filesystem::absolute(std::string(data->js_file)).string();
+
+					if (data->js_module_name != NULL) {
+						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.make_module<Module>(ctx, absolute_path));
+					}
+
+					auto script = RRR::JS::Script::make_shared(absolute_path);
+					script->compile(ctx);
+					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
+				}
 		);
 
 		callbacks->ping_callback_arg = (void *) &run_data;
