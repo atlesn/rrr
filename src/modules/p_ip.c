@@ -894,7 +894,7 @@ static int ip_connect_raw_callback (
 	return ret;
 }
 
-static void ip_msg_holder_incref_while_loced (void **private_data, void *arg) {
+static void ip_msg_holder_incref_while_locked (void **private_data, void *arg) {
 	struct rrr_msg_holder *entry = arg;
 	rrr_msg_holder_incref_while_locked(entry);
 	*private_data = entry;
@@ -1016,7 +1016,7 @@ static int ip_resolve_push_sendto_callback (
 			addr_len,
 			callback_data->send_data,
 			callback_data->send_size,
-			ip_msg_holder_incref_while_loced,
+			ip_msg_holder_incref_while_locked,
 			callback_data->entry_orig,
 			ip_msg_holder_decref_void
 	)) == 0) {
@@ -1070,7 +1070,7 @@ static int ip_push_raw_default_target (
 				ip_data->target_host_and_port,
 				send_data,
 				send_size,
-				ip_msg_holder_incref_while_loced,
+				ip_msg_holder_incref_while_locked,
 				entry_orig,
 				ip_msg_holder_decref_void,
 				ip_resolve_callback,
@@ -1176,7 +1176,7 @@ static int ip_push_raw (
 				entry_orig->addr_len,
 				send_data,
 				send_size,
-				ip_msg_holder_incref_while_loced,
+				ip_msg_holder_incref_while_locked,
 				entry_orig,
 				ip_msg_holder_decref_void,
 				ip_connect_raw_callback,
@@ -1227,7 +1227,7 @@ static int ip_push_raw (
 				entry_orig->addr_len,
 				send_data,
 				send_size,
-				ip_msg_holder_incref_while_loced,
+				ip_msg_holder_incref_while_locked,
 				entry_orig,
 				ip_msg_holder_decref_void
 		);
