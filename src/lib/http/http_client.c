@@ -469,7 +469,7 @@ static int __rrr_http_client_receive_http_part_callback (
 				data_use,
 				encoding->value
 		) != 0)) {
-			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			RRR_MSG_0("Error %i while decoding in response in %s\n", ret, __func__);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}

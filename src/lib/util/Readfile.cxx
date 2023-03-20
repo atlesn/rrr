@@ -32,9 +32,8 @@ namespace RRR::util {
 		char *data_ = nullptr;
 		rrr_biglength size_ = 0;
 
-
 		if ((ret = rrr_readfile_read (&data_, &size_, filename.c_str(), max_size, enoent_ok ? 1 : 0)) != 0) {
-			throw E("Readfile failed");
+			throw E(std::string("Readfile failed with error ") + std::to_string(ret));
 		}
 
 		data = size_ > 0

@@ -373,7 +373,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	data->timeout_action = RRR_SEND_LOOP_ACTION_RETRY;
 
 	if (data->timeout_action_str != NULL) {
-		if ((ret = rrr_send_loop_action_from_str(&data->timeout_action, data->timeout_action_str)) != 0) {
+		if (rrr_send_loop_action_from_str(&data->timeout_action, data->timeout_action_str) != 0) {
 			RRR_MSG_0("Invalid value '%s' for parameter ip_timeout_action in instance %s, must be retry, drop or return\n",
 					data->timeout_action_str, config->name);
 			ret = 1;

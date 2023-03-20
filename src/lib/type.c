@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <assert.h>
 
 #include "log.h"
 #include "allocator.h"
@@ -1626,11 +1627,9 @@ int rrr_type_new_h (
 ) {
 	int ret = 0;
 
-	if (element_count == 0) {
-		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
-	}
-
 	rrr_biglength stored_length = sizeof(uint64_t) * element_count;
+
+	assert(stored_length > 0);
 
 	if (stored_length > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Requested length exceeded maximum in %s (%" PRIrrrbl ">%u)",

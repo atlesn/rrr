@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,9 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LOG_H
 #define RRR_LOG_H
 
-#include <stdio.h>
-
 #include "rrr_config.h"
+
+#ifdef __cplusplus
+#	include <cstdio>
+#	include <cstdlib>
+#	include <cassert>
+#else
+#	include <stdio.h>
+#	include <stdlib.h>
+#	include <assert.h>
+#endif
 
 /*
  * About debug levels, ORed together:
@@ -107,7 +115,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_DBG_8(...) printf(__VA_ARGS__)
 	/* Debuglevel 9 is always printf */
 #	define RRR_DBG(...) printf(__VA_ARGS__)
-#	define RRR_BUG(...) do {printf(__VA_ARGS__); abort();}while(0)
+#	ifdef NDEBUG
+#		define RRR_BUG(...) do {fprintf(stderr, __VA_ARGS__); abort();}while(0)
+#	else
+#		define RRR_BUG(...) do {fprintf(stderr, __VA_ARGS__); assert(0);}while(0)
+#	endif
 #else
 
 #	define RRR_MSG_LOC(...) \
@@ -185,8 +197,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 	// While writing code, use this macro to detect for instance invalid arguments to a function
 	// which caller should have checked as opposed to letting the program crash ungracefully
-#	define RRR_BUG(...) \
-	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+#	ifdef NDEBUG
+#	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+#	else
+#	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); assert(0); } while (0)
+#	endif
 #endif
 
 #define RRR_MSG_0_PRINTF(...) \

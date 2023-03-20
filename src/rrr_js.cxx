@@ -50,11 +50,14 @@ int main(int argc, const char **argv) {
 	rrr_strerror_init();
 
 	while ((size = fread (tmp, 1, 4096, stdin)) > 0) {
-		in = reinterpret_cast<char *>(rrr_reallocate(in, in == NULL ? 0 : size_total + 1, size_total + size + 1));
-		if (in == NULL) {
-			fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
-			ret = EXIT_FAILURE;
-			goto out;
+		{
+			char *in_tmp = reinterpret_cast<char *>(rrr_reallocate(in, in == NULL ? 0 : size_total + 1, size_total + size + 1));
+			if (in_tmp == NULL) {
+				fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+			in = in_tmp;
 		}
 		memcpy(in + size_total, tmp, size);
 		size_total += size;

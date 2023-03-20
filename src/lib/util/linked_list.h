@@ -22,9 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LINKED_LIST_H
 #define RRR_LINKED_LIST_H
 
-#include <stdlib.h>
-#include <assert.h>
-
 #include "slow_noop.h"
 
 #define RRR_LL_DID_DESTROY   0

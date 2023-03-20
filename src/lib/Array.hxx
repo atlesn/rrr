@@ -21,13 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <cassert>
+#include <string>
+
 extern "C" {
 #include "array.h"
 #include "messages/msg.h"
 };
-
-#include <string>
-#include <cassert>
 
 #include "util/E.hxx"
 #include "util/ExtVector.hxx"
