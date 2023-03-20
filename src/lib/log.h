@@ -77,17 +77,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \
 	(x == 0 ? 0 : 1 << (x-1))
 
-// Disables all calls to the logging subsystem. This make the compiler check all
-// arguments properly, use when coding.
-//#define RRR_WITH_PRINTF_LOGGING
-
 //#define RRR_WITH_SIGNAL_PRINTF
 
 #ifndef RRR_WITH_SIGNAL_PRINTF
 #	define RRR_DBG_SIGNAL(...) do { } while(0)
 #endif
 
-#ifdef RRR_WITH_PRINTF_LOGGING
+#ifdef RRR_ENABLE_PRINTF_LOGGING
 #	define RRR_MSG_PLAIN(...) printf(__VA_ARGS__)
 #	define RRR_MSG_PLAIN_N(a,b) do{ (void)(a); (void)(b); }while(0)
 #	define RRR_MSG_0(...) printf(__VA_ARGS__)

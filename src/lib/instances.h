@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "modules.h"
 #include "instance_friends.h"
+#include "route.h"
 #include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
@@ -48,6 +49,7 @@ struct rrr_instance {
 	struct rrr_instance_module_data *module_data;
 	struct rrr_instance_friend_collection senders;
 	struct rrr_instance_friend_collection wait_for;
+	struct rrr_route_collection routes;
 	struct rrr_signal_handler *signal_handler;
 	char *topic_filter;
 	struct rrr_mqtt_topic_token *topic_first_token;
@@ -61,7 +63,8 @@ struct rrr_instance {
 	struct rrr_thread *thread;
 };
 
-#define INSTANCE_M_THREAD(instance) instance->thread
+#define INSTANCE_I_ROUTES(instance) (&instance->routes)
+
 #define INSTANCE_M_NAME(instance) instance->module_data->instance_name
 #define INSTANCE_M_MODULE_TYPE(instance) instance->module_data->type
 #define INSTANCE_M_MODULE_NAME(instance) instance->module_data->module_name
@@ -94,6 +97,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
+#define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;
@@ -189,9 +193,6 @@ int rrr_instance_collection_count (
 );
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
-);
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
-		struct rrr_instance_runtime_init_data *init_data
 );
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,

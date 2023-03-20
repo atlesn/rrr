@@ -32,12 +32,19 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
+if RRR_WITH_NODE
+js = js.la
+js_la_SOURCES = p_js.cxx
+js_la_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS}
+js_la_LDFLAGS = ${module_ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS}
+endif
+
 lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la \
-	${mysql} ${python3} ${voltmonitor} ${perl5}
+	${mysql} ${python3} ${voltmonitor} ${perl5} ${js}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
@@ -97,6 +104,6 @@ httpserver_la_LDFLAGS = ${module_ldflags}
 httpserver_la_SOURCES = p_httpserver.c
 
 file_la_LDFLAGS = ${module_ldflags}
-file_la_SOURCES = src_file.c
+file_la_SOURCES = p_file.c
 
 libdir=${exec_prefix}/lib/rrr

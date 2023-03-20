@@ -34,7 +34,12 @@ test_SOURCES = test.c \
 	test_nullsafe.c \
 	test_allocator.c \
 	test_mmap_channel.c \
-	test_increment.c
+	test_increment.c \
+	test_route_definition.c \
+	test_linked_list.c \
+	test_hdlc.c \
+	test_readdir.c \
+	test_send_loop.c
 test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
@@ -45,7 +50,7 @@ test_LDADD = -ldl -lpthread -lm -L../lib/.libs
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
-make_test_data_LDFLAGS = -pie
+make_test_data_LDFLAGS = ${ldflags} -pie
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fpie

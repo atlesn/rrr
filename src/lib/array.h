@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -232,12 +232,20 @@ int rrr_array_message_clone_value_by_tag (
 		const struct rrr_msg_msg *message_orig,
 		const char *tag
 );
+int rrr_array_message_append_to_array_by_tag (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+);
 int rrr_array_message_append_to_array (
 		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
 );
 int rrr_array_dump (
+		const struct rrr_array *definition
+);
+rrr_biglength rrr_array_get_allocated_size (
 		const struct rrr_array *definition
 );
 static inline int rrr_array_count(const struct rrr_array *array) {

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LINKED_LIST_H
 
 #include <stdlib.h>
+#include <assert.h>
 
 #include "slow_noop.h"
 
@@ -127,6 +128,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_LAST(head)                                      \
     ((head)->ptr_last)                                         \
+
+#define RRR_LL_PREV(node)                                      \
+    ((node)->ptr_prev)                                         \
 
 #define RRR_LL_DESTROY(head, type, destroy_func) do {          \
     type *node = (head)->ptr_first;                            \
@@ -334,5 +338,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)         \
     RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())   \
+
+#define RRR_LL_ROTATE(head, type, pos)                         \
+    do{assert(pos < RRR_LL_COUNT((head)));assert(pos>=0);      \
+    if (RRR_LL_COUNT(head) <= 1) { break; }                    \
+    int i = 0; RRR_LL_ITERATE_BEGIN((head), type);             \
+        if (i++ != pos) { RRR_LL_ITERATE_NEXT(); }             \
+        node->ptr_prev->ptr_next = NULL;                       \
+        (head)->ptr_last->ptr_next = (head)->ptr_first;        \
+        (head)->ptr_first->ptr_prev = (head)->ptr_last;        \
+        (head)->ptr_last = node->ptr_prev;                     \
+        (head)->ptr_first = node;                              \
+        node->ptr_prev = 0;                                    \
+        RRR_LL_ITERATE_BREAK();                                \
+    RRR_LL_ITERATE_END();}while(0)
 
 #endif /* RRR_LINKED_LIST_H */

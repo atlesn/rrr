@@ -75,6 +75,8 @@ static int __rrr_zlib_loop (
 
 	rrr_length buf_size = 0;
 	rrr_length buf_size_old = 0;
+	rrr_length outsize_max = outsize;
+	rrr_length_mul_bug(&outsize_max, 4);
 
 	int flush = Z_NO_FLUSH;
 
@@ -82,6 +84,11 @@ static int __rrr_zlib_loop (
 	RRR_ASSERT(sizeof(buf_size) >= sizeof(stream->avail_out),zstream_unsigned_cannot_hold_outsize);
 
 	while (1) {
+		if (stream->avail_out > outsize_max) {
+			RRR_MSG_0("Too many allocation attempts in %s. Possibly corrupt input.\n", __func__);
+			return RRR_ZLIB_INCOMPLETE;
+		}
+
 		buf_size_old = buf_size;
 
 		if (rrr_length_add_err (&buf_size, outsize)) {

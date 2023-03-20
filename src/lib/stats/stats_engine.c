@@ -460,6 +460,8 @@ int rrr_stats_engine_init (
 			NULL,
 			NULL,
 			NULL,
+			NULL,
+			NULL,
 			__rrr_stats_engine_read_callback,
 			NULL
 	);

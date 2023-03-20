@@ -133,7 +133,9 @@ do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
+mkdir /tmp/rrr-test-file-dir
 do_test_simple test_file.conf
+rmdir /tmp/rrr-test-file-dir || exit 1
 
 # Begin message DB tests
 rm -rf /tmp/rrr-test-msgdb*
@@ -160,6 +162,72 @@ do_test_socket test_http2.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf
+
+echo "With node: $RRR_WITH_NODE"
+if test "x$RRR_WITH_NODE" != 'xno'; then
+	PWD=`pwd`
+	SCRIPT_SUCCESS=test_import_success.js
+	SCRIPT_FAIL=test_import_fail.js
+	TAIL=".then(() => {console.log('- OK')}).catch((msg) => {console.critical('- Loading failed: ' + msg)})";
+
+	# Failing imports test
+	echo "Test failing import"
+	if ! ../rrr_js module < $SCRIPT_FAIL; then
+		# Import test failed
+		exit 1
+	fi
+
+	# Load module
+	echo "Test successful import"
+	if ! ../rrr_js module < $SCRIPT_SUCCESS; then
+		# Import test failed
+		exit 1
+	fi
+
+	# Load module with import statement as script (should fail)
+	echo "Test import statement in script"
+	if ../rrr_js script < $SCRIPT_SUCCESS; then
+		# Import test failed
+		exit 1
+	fi
+
+	# Load with absolute path
+	echo "Test absolute path"
+	if ! echo "import('$PWD/$SCRIPT_SUCCESS')$TAIL;" | ../rrr_js module; then
+		# Import test failed
+		exit 1
+	fi
+	echo
+
+	# Load with relative path
+	echo "Test relative path"
+	if ! echo "import('../tests/$SCRIPT_SUCCESS')$TAIL;" | ../rrr_js module; then
+		# Import test failed
+		exit 1
+	fi
+	echo
+
+	./test_import_support.sh
+	case $? in
+		0)
+			if ! ../rrr_js module < test_json_import.js; then
+				# Dynamic json import test failed
+				exit 1
+			fi
+			;;
+		2)
+			# OK, but assert import is not available
+			;;
+		*)
+			# Error while checking await import availibility
+			exit 1
+			;;
+	esac
+
+	echo "Import tests succeeded"
+
+	do_test_socket test_js.conf
+fi
 
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then

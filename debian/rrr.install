@@ -51,3 +51,5 @@ usr/lib/rrr/exploder.la
 usr/lib/rrr/exploder.so
 usr/lib/rrr/mangler.la
 usr/lib/rrr/mangler.so
+usr/lib/rrr/js.la
+usr/lib/rrr/js.so

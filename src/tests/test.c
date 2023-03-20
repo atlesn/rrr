@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -56,8 +56,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
 #include "test_increment.h"
+#include "test_route_definition.h"
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
+#include "test_linked_list.h"
+#include "test_hdlc.h"
+#include "test_readdir.h"
+#include "test_send_loop.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -205,6 +210,36 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("increment") {
 		ret_tmp = rrr_test_increment();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("route definition parsing") {
+		ret_tmp = rrr_test_route_definition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("linked list") {
+		ret_tmp = rrr_test_linked_list();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("HDLC frames") {
+		ret_tmp = rrr_test_hdlc();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Readdir") {
+		ret_tmp = rrr_test_readdir();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Send loop") {
+		ret_tmp = rrr_test_send_loop();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

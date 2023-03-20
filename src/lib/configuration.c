@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array_tree.h"
 #include "allocator.h"
 #include "socket/rrr_socket.h"
+#include "route.h"
 
 int rrr_config_new (struct rrr_config **result) {
 	struct rrr_config *config = NULL;
@@ -57,10 +58,6 @@ static int __rrr_config_parse_setting (
 ) {
 	int ret = 0;
 
-	char c;
-	rrr_length name_begin;
-	rrr_slength name_end;
-
 	char *name = NULL;
 	char *value = NULL;
 
@@ -83,35 +80,17 @@ static int __rrr_config_parse_setting (
 		goto out;
 	}
 
-	rrr_parse_match_letters (
-			pos,
-			&name_begin,
-			&name_end,
-			RRR_PARSE_MATCH_NUMBERS|RRR_PARSE_MATCH_LETTERS
-	);
-
-	if (name_end < name_begin) {
-		ret = 0;
+	if ((ret = rrr_parse_str_extract_name (&name, pos, '=')) != 0) {
+		RRR_MSG_0("Failed to parse name of setting\n");
 		goto out;
 	}
 
-	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of file after setting name at line %" PRIrrrl "\n", pos->line);
-		ret = 1;
-		goto out;
-	}
-
-	c = pos->data[pos->pos];
-	if (c != '=') {
-		RRR_MSG_0("Expected = after setting name at line %" PRIrrrl ", found %c\n", pos->line, c);
-		ret = 1;
+	if (name == NULL) {
 		goto out;
 	}
 
 	rrr_length line_orig = pos->line;
 
-	rrr_length_inc_bug(&pos->pos);
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
 		RRR_MSG_0("Unexpected end of file after = at line %" PRIrrrl "\n", pos->line);
@@ -131,7 +110,7 @@ static int __rrr_config_parse_setting (
 
 	// Ignore trailing spaces
 	while (value_end > value_begin && (pos->data[value_end] == ' ' || pos->data[value_end] == '\t')) {
-			value_end--;
+		value_end--;
 	}
 
 	if (value_end < value_begin) {
@@ -140,14 +119,7 @@ static int __rrr_config_parse_setting (
 		goto out;
 	}
 
-	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const (name_end, name_begin));
 	rrr_length value_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const (value_end, value_begin));
-
-	if (rrr_parse_str_extract(&name, pos, name_begin, name_length) != 0) {
-		RRR_MSG_0("Could not extract name of setting\n");
-		ret = 1;
-		goto out;
-	}
 
 	if (rrr_parse_str_extract(&value, pos, value_begin, value_length) != 0) {
 		RRR_MSG_0("Could not extract value of setting\n");
@@ -162,12 +134,8 @@ static int __rrr_config_parse_setting (
 	*did_parse = 1;
 
 	out:
-	if (value != NULL) {
-		rrr_free(value);
-	}
-	if (name != NULL) {
-		rrr_free(name);
-	}
+	RRR_FREE_IF_NOT_NULL(name);
+	RRR_FREE_IF_NOT_NULL(value);
 
 	return ret;
 }
@@ -181,39 +149,19 @@ static int __rrr_config_parse_block (
 		void *callback_arg
 ) {
 	int ret = 0;
+
+	char *name = NULL;
+
 	*did_parse = 0;
 
-	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (pos->pos >= pos->size) {
-		ret = 0;
+	if ((ret = rrr_parse_str_extract_name (&name, pos, ']')) != 0) {
+		RRR_MSG_0("Failed to parse block name\n");
 		goto out;
 	}
 
-	rrr_length begin = pos->pos;
-
-	if (pos->pos >= pos->size) {
-		RRR_MSG_0("Unexpected end of instance definition at line %" PRIrrrl "\n", pos->line);
-		return 1;
-	}
-
-	char c = pos->data[pos->pos];
-	while (c != ']' && !RRR_PARSE_CHECK_EOF(pos)) {
-		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
-			// These are ok
-		}
-		else {
-			RRR_MSG_0("Unexpected character '%c' in instance definition in line %" PRIrrrl "\n", c, pos->line);
-			ret = 1;
-			goto out;
-		}
-
-		rrr_length_inc_bug(&pos->pos);
-
-		if (pos->pos >= pos->size) {
-			break;
-		}
-
-		c = pos->data[pos->pos];
+	if (name == NULL) {
+		RRR_MSG_0("Block name missing after [\n");
+		goto out;
 	}
 
 	if (RRR_PARSE_CHECK_EOF(pos)) {
@@ -222,26 +170,8 @@ static int __rrr_config_parse_block (
 		goto out;
 	}
 
-	c = pos->data[pos->pos];
-	if (c != ']') {
-		RRR_MSG_0("Syntax error in instance definition in line %" PRIrrrl ", possibly missing ]\n", pos->line);
-		ret = 1;
-		goto out;
-	}
-
-	rrr_length end = pos->pos - 1;
-	rrr_length length = end - begin + 1;
-
-	rrr_length_inc_bug(&pos->pos);
-
-	if (end < begin) {
-		RRR_MSG_0("Instance name at line %" PRIrrrl " was too short\n", pos->line);
-		ret = 1;
-		goto out;
-	}
-
 	void *block = NULL;
-	if ((ret = new_block_callback (&block, config, pos->data + begin, length, callback_arg)) != 0) {
+	if ((ret = new_block_callback (&block, config, name, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -271,80 +201,95 @@ static int __rrr_config_parse_block (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(name);
 	return ret;
 }
 
-static int __rrr_config_interpret_array_tree (
+static int __rrr_config_parse_array_tree (
 		struct rrr_config *config,
 		struct rrr_parse_pos *pos
 ) {
 	int ret = 0;
 
 	struct rrr_array_tree *new_tree = NULL;
-	char *name_tmp = NULL;
+	char *name = NULL;
 
-	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (RRR_PARSE_CHECK_EOF(pos)) {
-		goto out_missing_name;
+	if ((ret = rrr_parse_str_extract_name (&name, pos, '}')) != 0) {
+		goto out;
 	}
 
-	rrr_length start;
-	rrr_slength end;
-
-	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS);
-
-	if (end < start) {
-		goto out_missing_name;
+	if (name == NULL) {
+		RRR_MSG_0("Array tree name missing after [\n");
+		goto out;
 	}
-
-	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != '}') {
-		goto out_missing_end_curly;
-	}
-	rrr_length_inc_bug(&pos->pos);
-
-	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
-	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
-		goto out_failed_alloc;
-	}
-
-	memcpy(name_tmp, pos->data + start, name_length);
-	name_tmp[name_length] = '\0';
 
 	if (rrr_array_tree_interpret (
 			&new_tree,
 			pos,
-			name_tmp
+			name
 	) != 0) {
 		ret = 1;
 		goto out;
 	}
 
 	if (pos->pos > pos->size) {
-		RRR_BUG("BUG: rrr_array_tree_parse parsed beyond end in __rrr_config_parse_array_tree\n");
+		RRR_BUG("BUG: Parsed beyond end in %s\n", __func__);
 	}
 
 	RRR_LL_APPEND(&config->array_trees, new_tree);
 	new_tree = NULL;
 
 	goto out;
-	out_failed_alloc:
-		RRR_MSG_0("Could not allocate memory for name in __rrr_config_parse_array_tree\n");
-		ret = 1;
-		goto out;
-	out_missing_name:
-		RRR_MSG_0("Missing name for array tree after {\n");
-		ret = 1;
-		goto out;
-	out_missing_end_curly:
-		RRR_MSG_0("Missing end curly bracket } after array tree name\n");
-		ret = 1;
-		goto out;
 	out:
 		if (new_tree != NULL) {
 			rrr_array_tree_destroy(new_tree);
 		}
-		RRR_FREE_IF_NOT_NULL(name_tmp);
+		RRR_FREE_IF_NOT_NULL(name);
+		return ret;
+}
+
+static int __rrr_config_parse_route (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos
+) {
+	int ret = 0;
+
+	char *name = NULL;
+
+	if ((ret = rrr_parse_str_extract_name (&name, pos, '>')) != 0) {
+		goto out;
+	}
+
+	if (name == NULL) {
+		RRR_MSG_0("Route definition name missing after [\n");
+		goto out;
+	}
+
+	if (rrr_route_collection_get(&config->routes, name) != NULL) {
+		RRR_MSG_0("Duplicate route definition name %s\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	enum rrr_route_fault fault;
+	if (rrr_route_interpret (
+			&config->routes,
+			&fault,
+			pos,
+			name
+	) != 0) {
+		RRR_MSG_0("Failed to parse route definition, error code was %u\n", fault);
+		ret = 1;
+		goto out;
+	}
+
+	if (pos->pos > pos->size) {
+		RRR_BUG("BUG: Parsed beyond end in %s\n", __func__);
+	}
+
+	goto out;
+	out:
+		RRR_FREE_IF_NOT_NULL(name);
 		return ret;
 }
 
@@ -370,7 +315,10 @@ static int __rrr_config_parse_any (
 			rrr_parse_comment(pos);
 		}
 		else if (c == '{') {
-			ret = __rrr_config_interpret_array_tree(config, pos);
+			ret = __rrr_config_parse_array_tree(config, pos);
+		}
+		else if (c == '<') {
+			ret = __rrr_config_parse_route(config, pos);
 		}
 		else if (c == '[') {
 			int did_parse;
@@ -442,6 +390,7 @@ void rrr_config_destroy (
 		struct rrr_config *target
 ) {
 	rrr_array_tree_list_clear(&target->array_trees);
+	rrr_route_collection_clear(&target->routes);
 	rrr_free(target);
 }
 
@@ -496,4 +445,10 @@ const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config
 ) {
 	return &config->array_trees;
+}
+
+const struct rrr_route_collection *rrr_config_get_routes (
+		struct rrr_config *config
+) {
+	return &config->routes;
 }

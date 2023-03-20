@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "udpstream.h"
 #include "../read.h"
 #include "../random.h"
+#include "../event/event.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../socket/rrr_socket_client.h"
@@ -1788,7 +1789,6 @@ static int __rrr_udpstream_send_loop (
 
 	int sent_count = 0;
 	int64_t missing_ack_count = 0;
-	int64_t resend_count = 0;
 	RRR_LL_ITERATE_BEGIN(&stream->send_buffer, struct rrr_udpstream_frame);
 		int do_send = 0;
 
@@ -1809,7 +1809,6 @@ static int __rrr_udpstream_send_loop (
 			RRR_DBG_3("UDP-stream TX %u-%u DUP WS %" PRIu32 " UNACK %i\n",
 					stream->stream_id, node->frame_id, stream->window_size_from_remote, node->unacknowledged_count);
 			do_send = 1;
-			resend_count++;
 		}
 		else {
 			missing_ack_count++;
@@ -2429,6 +2428,8 @@ int rrr_udpstream_init (
 			data,
 			8192,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
+			NULL,
+			NULL,
 			__rrr_udpstream_read_get_target_size,
 			NULL,
 			__rrr_udpstream_read_get_target_size_error,

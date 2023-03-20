@@ -1,4 +1,4 @@
-.Dd 2022-12-22
+.Dd 2023-02-25
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -64,6 +64,16 @@ wait_for=WAIT FOR,...
 # receive all messages. If set to no, the readers will compete over the messages (default mode).
 duplicate=yes
 
+# Set a route definition to apply on output messages to control which reader instance messages
+# are destined fore (optional). If not given, or the definition produces no result, all readers
+# may receive any message.
+
+# If a route definition is given, the duplicate keyword still controls wether or not messages may be
+# read by only one or multiple reader instances. To refer to a route definition specified outside
+# the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
+# the definitions will be run in order.
+route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
+
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
 
@@ -100,6 +110,55 @@ ELSE
 	;
 sep1#separator
 ;
+
+# Any number of named route definitions may be specified.
+# Modules with defined output routes may refer to these instead of having them defined inside each instance block.
+# Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
+# are interpreted as any other printable character, except from when occuring after an operator or a keyword.
+
+# Postfix notation is used, and the route definition is processed from top to bottom.
+
+# Values are pushed to a stack by placing one of the following keywords in front of them:
+# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
+# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
+# - I - Instance - Push an instance name to the stack
+
+# Operators are used after pushing elements to the stack. These require one or two values to be present
+# on the stack. After an operator has been run, the values are consumed and the result of the condition is
+# pushed onto the stack. The route definition must be constructed such that no values are present on the stack
+# after processing, which means that a route definition usually ends with one or more POP operators.
+
+# The following operators may be used:
+# - AND    - Apply boolean AND on the two preceeding values and push the result.
+# - OR     - Apply boolean OR on the two preceeding values and push the result.
+# - NOT    - Apply boolean NOT on the preceeding value and push the result.
+# - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
+#            and an instance name to be present on the stack. Leaves the boolean value on the stack.
+# - POP    - Remove one value from the stack.
+
+# Comments may be indicated by using #, they may be placed anywhere except from when a value is expected.
+
+# The parsing of a definition ends where there would be no elements left on the stack.
+
+# Example:
+
+<ROUTE_DEFINITION_A>
+	# Push two topic filters to the stack
+	T my_topic_a/+
+	T my_topic_b/+
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+	OR
+	# Set the reader instance_receier_1 to receive messages matching one of the filters
+	I instance_receiver_1
+	APPLY
+	# Invert the result
+		NOT
+	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
+	instance_receiver_2
+		APPLY
+	# Remove the remaining value from the stack
+		POP
 .fi
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
@@ -340,6 +399,9 @@ Processes and generates messages with custom Python3 scripts.
 .It perl5 (PAI)
 Processes and generates messages with custom Perl5 scripts.
 
+.It js (PAI)
+Processes and generates messages with custom JavaScript scripts.
+
 .It cmodule (P)
 Processes and generates messages with custom C modules.
 
@@ -372,7 +434,7 @@ Subscribes to MQTT topics and/or publishes messages. TLS-capable V5/V3.1(.1) MQT
 .It journal (SA)
 Traps log messages from all modules and saves them into RRR messages.
 
-.It file (SA)
+.It file (PA)
 Reads from files, sockets, character devices and FIFO pipes.
 
 .It mysql (DAI)
@@ -492,6 +554,11 @@ Defaults to 4096.
 .It ip_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
 
+.It ip_accept_topic=TOPIC
+If set, and when a new incoming TCP connection is established, a message is generated.
+The generated message will be an empty data message of type GET.
+If left unset, no messages will be generated until actual data is received.
+
 .It ip_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
@@ -582,6 +649,7 @@ Look for the defined tags in array messages from other modules, and send these c
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
+
 .El
 .PP
 .SS exploder (PA)
@@ -800,8 +868,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It python3_workers=UNSIGNED INTEGER
 .It python3_source_interval_ms=MILLISECONDS
-.It python3_sleep_time_ms=MILLISECONDS
-.It python3_nothing_happend_limit=UNSIGNED INTEGER
 .It python3_log_prefix=PREFIX
 .It python3_drop_on_error={yes|no}
 .El
@@ -899,9 +965,6 @@ module:
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
 
-.It perl5_source_interval_ms=MILLISECONDS
-How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
-
 .It perl5_source_sub=SUBROUTINE NAME
 Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object and modifies
 it to generate a new message. Called at specified interval.
@@ -930,8 +993,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It perl5_workers=UNSIGNED INTEGER
 .It perl5_source_interval_ms=MILLISECONDS
-.It perl5_sleep_time_ms=MILLISECONDS
-.It perl5_nothing_happend_limit=UNSIGNED INTEGER
 .It perl5_log_prefix=PREFIX
 .It perl5_drop_on_error={yes|no}
 .El
@@ -948,8 +1009,8 @@ the address information of the original sender of a message is accessible in the
 .B rrr_message
 object. Other IP-capable modules may
 then use this information if they read data from the Perl instance, for example if you wish to use
-a Perl script to generate a reply message to some remote host. There is no high-level method for modifying
-the address information inside the Perl script, but the values
+a Perl script to generate a reply message to some remote host.
+The values
 .B $message->{'ip_addr'}
 and
 .B $message->{'ip_addr_len'}
@@ -963,7 +1024,7 @@ In addition,
 .B $message->{'ip_so_type'}
 can be either "udp" or "tcp" to describe a protocol type. Some modules may use this parameter. It can also be empty.
 .PP
-The IP information in a message can be accessed and modified through helper functions. IPv4 and IPv6 both work
+The IP information in a message can also be accessed and modified through helper functions. IPv4 and IPv6 both work
 with these transparently.
 .PP
 .Bl -tag -width -indent
@@ -1223,6 +1284,175 @@ sub process {
 	return 1;
 }
 .fi
+.SS js (PAI)
+The js module makes it possible to process and generate messages in a custom  JavaScript.
+
+The following configuration parameters are available in the
+.B js
+module:
+
+.Bl -tag -width -indent
+.It js_file=FILENAME
+The file containing the JavaScript to run. The script will be run once when the program starts, and global code outside of functions will be executed.
+If multiple workers are used by setting the parameter
+.B js_workers,
+the script will run once for each worker and global variables will not be accessible between different workers.
+
+.It js_module_name=NAME
+Load the file given
+.B js_file
+as a module. This allows the usage of the
+.B import
+keyword to load other modules.
+If not given, the file will be loaded as a plain script.
+
+.It js_config_function=NAME
+The function to call before sourcing and processing starts.
+
+.It js_source_function=NAME
+The function to call regularely.
+
+.It js_process_function=NAME
+The function to call when a message from another module should be processed.
+
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the JavaScript script might be set as needed.
+.El
+
+Refer to the
+.B cmodule
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It js_workers=UNSIGNED INTEGER
+.It js_source_interval_ms=MILLISECONDS
+.It js_log_prefix=PREFIX
+.It js_drop_on_error={yes|no}
+.El
+
+A scripts with all three function types defined may look like this:
+
+.nf
+let my_parameter = undefined;
+
+function config(config) {
+	// Read configuration parameter
+	if (!config.has("my_parameter")) {
+		throw "Configuration parameter 'my_parameter' was not found";
+	}
+	my_parameter = config.get("my_parameter");
+}
+
+function source(message) {
+	// Send a new message from the source function
+	console.log("Sourcing a message\n");
+	message.send();
+}
+
+function process(message) {
+	// Process a message from another module
+	// and add the value previously retrieved
+	// from the configuration file.
+	console.log("Processing a message\n");
+	message.push_tag("my_parameter", my_parameter);
+	message.send();
+}
+.fi
+
+The
+.B config
+function receives a Config object from which configuration parameters can be read.
+Config objects cannot be created using the
+.B new
+operator.
+
+The
+.B source
+and
+.B process
+functions both receive a Message object whenever called.
+An empty Message object is passed to the
+.B source
+function.
+
+Additional Message objects may be created using the
+.B new
+operator.
+
+The Config and Message objects have the following members:
+
+.nf
+// Data type Config
+{
+  has: function(parameter){},   // Returns true if the parameter exists, and false otherwise
+  get: function(parameter){}    // Returns the value of the configuration parameter
+}
+
+// Data type Message
+{
+  // Message header manipulation
+  ip_addr: new ArrayBuffer(),    // Operating system raw IP address information (struct sockaddr)
+  ip_so_type: "",                // Protocol, set to UDP or TCP. May also be empty.
+  topic: "",                     // MQTT topic of the message
+  timestamp: BigInt(0),          // The timestamp of the message in microseconds
+  data: new ArrayBuffer(),       // The raw data of the message (ignored when arrays are used)
+  type: MSG_TYPE_MSG,            // Message type. Alternatives are MSG, TAG, GET, PUT, DEL
+  class: MSG_CLASS_DATA,         // Message class (immutable, automatically set to ARRAY if array is used)
+
+  ip_set: function(ip, port){},             // Helper function to set adddress of ip_addr field
+  ip_get: function(){ return [ip, port]; }, // Helper function to retrieve adddress of ip_addr field
+
+  // Constants for the type field
+  MSG_TYPE_MSG: 1,
+  MSG_TYPE_TAG: 2,
+  MSG_TYPE_GET: 3,
+  MSG_TYPE_PUT: 4,
+  MSG_TYPE_DEL: 5,
+
+  // Constants for the class field
+  MSG_CLASS_DATA:  1,
+  MSG_CLASS_ARRAY: 11,
+
+  // Array data manipulation. When tag argument is not given, value(s) without tag is assumed
+  clear_array:   function(){},                  // Clear all array data
+  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
+  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
+  push_tag_str:  function(tag=null, data){},    // Push array value of type string
+  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
+  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
+  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
+  set_tag:       function(tag=null, data){},    // Clear values with the given tag and push a new array value and identify type automatically
+  get_tag_all:   function(tag=null){return [];},// Get array of values with the given tag
+  send:          function(){}                   // Send the message to the output buffer for other instances to receive
+}
+.fi
+
+The following special global Objects are available:
+
+.nf
+// Data type Console (accessed through global name console)
+{
+  log(message);      // Log a message using debuglevel 7
+  error(message);    // Log a message using debuglevel 0 (error)
+  critical(message); // Log a message using debuglevel 0 (error) and crash program
+}
+
+// Data type Timeout (run a scheduled function once). Syntax is shown. The
+// timeout object need not be stored in a variable unless it might be required
+// to run clear() at a later time. If the timeout is 0 milliseconds, the function
+// will run immediately after the script returns. Any additional arguments will be
+// passed to the function.
+
+// Create a timeout
+const timeout = new Timeout(function, timeout_ms = 0, arg1 = undefined, ...)
+
+// Prevent the timeout from ever running (regret)
+timeout.clear();
+
+.fi
+
 .SS cmodule (P)
 This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
 written in the RRR source in the directory /src/cmodules/ and then compiled (just compile RRR as usual and
@@ -1272,8 +1502,6 @@ section for descriptions of the following parameters:
 .Bl -tag -width -indent
 .It cmodule_workers=UNSIGNED INTEGER
 .It cmodule_source_interval_ms=MILLISECONDS
-.It cmodule_sleep_time_ms=MILLISECONDS
-.It cmodule_nothing_happend_limit=UNSIGNED INTEGER
 .It cmodule_log_prefix=PREFIX
 .It cmodule_drop_on_error={yes|no}
 .El
@@ -1376,13 +1604,13 @@ application/x-www-form-urlencoded
 application/json
 .El
 
-If other formats is to be parsed,
+If other formats are to be parsed,
 .B http_server_receive_full_request
 can be used and the body can then be parsed by a script in the python3 or perl5 modules.
 
 Structural fields set due to
 .B http_server_receive_full_request
-, fields from the URI and field from PUT/POST data will all be added to the same array in a pre-defined order.
+being active, fields from the URI and field from PUT/POST data will all be added to the same array in the following pre-defined order.
 Duplicate value field names are allowed.
 
 .Bl -enum -offset indent -compact
@@ -1402,12 +1630,13 @@ describing the total number of messages for this request is placed at the beginn
 This module does not respond with any data by default.
 If a request was successfully processed, a
 .B 204 No Content
-response is returned to the client. If there was any errors,
+response is returned to the client. If there were any errors,
 .B 400 Bad Request
 or
 .B 500 Internal Server Error
 response may be returned.
-If a response is expected to be generated by another module, a
+If a response is expected to be generated by a sender instance of
+.B httpserver, a
 .B 504 Gateway Timeout
 response will be generated if the response timeout is reached.
 .PP
@@ -1447,10 +1676,10 @@ Defaults to 'no'.
 .It http_server_allow_empty_messages={yes|no}
 Allow messages with no array values to be generated. This option also affects
 .B http_server_receive_full_request.
-If set to no or left unset, messages will not be generated unless they would contain at least one value.
+If set to 'no' or left unset, messages will not be generated unless they would contain at least one array value.
 
 .It http_server_receive_full_request={yes|no}
-Get HTTP data from the request and add it to an RRR array message along with any fields. 
+Get structural HTTP data from the request and add it to an RRR array message along with any fields. 
 The following array values will be present in generated messages:
 .sp
 .Bl -tag -width -indent
@@ -1463,37 +1692,46 @@ Always present.
 .It http_body
 Added if a body of non-zero length is present.
 .It http_content_transfer_encoding
-Added if present in the header.
+Added if the header value
+.B content-transfer-encoding
+is present in the header.
 .It http_content_type
-Added if present in the header.
+Added if the header value
+.B content-type
+is present in the header.
 .It http_content_type_boundary
-Added if content-type is present in the header and is multipart/form-data.
+Added if
+.B content-type
+is present in the header and has the value 'multipart/form-data'.
 .El
 .sp
 Note that if
 .B http_server_allow_empty_messages
 is active, no messages without body will be generated.
 
-If set to on or left unset, only fields from the HTTP request will be present in generated messages.
+If set to 'no' or left unset, only fields from the HTTP request will be present in generated messages.
 
 .It http_server_get_response_from_senders={yes|no}
-If this option is set to 'yes', a sender of
+If this option is set to 'yes', a sender instance of
 .B httpserver
-is expected to generate HTTP responses. Imples
+is expected to generate HTTP responses. Implies
 .B http_server_receive_full_request=yes.
 
-A module which receives the RRR message containing the response may generate a response structured in an RRR array message with the following fields of which all are optional:
+An instance which receives RRR messages from
+.B httpserver
+containing requests may generate responses in an RRR array message with the following fields of which all are optional:
 .sp
 .Bl -tag -width -indent
 .It http_response_code
 The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present
-(httpserver will implicitly force use of 200 if the status is 204 and a body is present).
-Must be a value >= 100 and <= 599, 200 or 204 will be selected silently if the provided code is out of this range.
+(httpserver will implicitly force the usage of a 200 response if the status is 204 and a body is present).
+Must be a value >= 100 and <= 599.
+200 or 204 will be selected silently if the provided code is out of this range.
 .sp
 .It http_content_type
 The content type to use for the response. If it is defined but is an empty string, no content type header will be sent.
 If not defined, the content type sent will depend on the type of the
-.B http_data
+.B http_body
 field.
 In any case, a content type header will not be sent if there is no request body.
 
@@ -1515,7 +1753,7 @@ No response body generated
 .sp
 .El
 
-The response message may also be a plain data message in which the data of this message will be treated the same way as data from the
+Response messages from another instance may also be a plain data message in which the data of this message will be treated the same way as data from the
 .B http_body
 field with blob type. The other fields will in this case get default values per above rules.
 
@@ -1527,17 +1765,19 @@ will generate default responses.
 Send a simple test HTML page with the RRR logo whenever an empty default response otherwise would have been sent. Defaults to 'no'.
 
 .It http_server_favicon_not_found_response={yes|no}
-Always respond with 404 NOT FOUND to requests with
+Always respond with 404 Not Found to requests with
 .B /favicon.ico
 endpoint. If set to 'no' or left unset, these requests are treated as any other.
 
 .It http_server_response_timeout=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
-response.
+response. Defaults to 2000.
 
 .It http_server_allow_origin_header=STRING
-If defined, httpserver will send an
+If defined,
+.B httpserver
+will send an
 .B Access-Control-Allow-Origin
 header with the given string in all response headers.
 The header is mainly used by web browsers, look online for documentation on what it does.
@@ -1545,7 +1785,9 @@ Using the header, in particualar setting it to * (which means to allow all origi
 .B security implications.
 
 .It http_server_cache_control_header=STRING
-If defined, httpserver will send a
+If defined,
+.B httpserver
+will send a
 .B Cache-Control
 header with the given string in all response headers.
 
@@ -1577,14 +1819,17 @@ Messages received in httpserver with IDs not matching any active connections wil
 
 .It http_server_accept_websocket_binary={yes|no}
 Allow binary websocket frames. Data from such frames are put into plain RRR messages.
-If set to no or left undefined, received binary frames will be ignored. 
+If set to 'no' or left unset, received binary frames will be ignored. 
 
 .It http_server_receive_websocket_rrr_message={yes|no}
-If set to yes and websocket frames of binary type is received, these are interpreted as being RRR messages of any type.
-RRR message validation and endian conversion will be performed, and the socket will be closed if this fails. Implies
+If set to 'yes' and websocket frames of binary type is received, these are interpreted as being RRR messages of any type.
+RRR message validation and endian conversion will be performed, and the socket will be closed if this fails.
+Implies
 .B http_server_accept_websocket_binary=yes.
+
 Messages of text type are not affected by this parameter.
-If set to no or left unset, binary messages are either ignored or received as-is depending on the value of
+
+If set to 'no' or left unset, binary messages are either ignored or received as-is depending on the value of
 .B http_server_accept_websocket_binary.
 
 .It http_server_tls_*
@@ -1660,17 +1905,12 @@ Which method to use when sending data to the server. Defaults to
 .It http_format={urlencoded|multipart|json|raw}
 Control which body format to use for PUT and POST requests. If the
 .B raw
-mode is set, messages which does not contain a body (specified in the tag named in
+mode is set, messages which do not contain a body (specified in the tag named in
 .B http_body_tag
 ) will trigger an error as they are processed.
 An appropriate Content-Type header will be sent according to standards.
 Messages with a body are otherwise not affected by this parameter.
 Defaults to 'urlencoded'.
-
-.It http_taint_tag=ARRAY TAG
-The specified tag of vain type will be added to generated response messages of array type.
-In addition, any received messages from senders in which this tag is present will be ignored.
-If left unset, no taint tag will be used.
 
 \(bu If
 .B get
@@ -1706,6 +1946,10 @@ identified by the tag of the value.
 If the
 .B force
 options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+The parameter
+.B http_meta_tags_ignore
+controls whether or not these parameters are sent as-is along with queries in addition to their usual function.
 
 If
 .B http_content_type_boundary_tag_force
@@ -1759,8 +2003,25 @@ resectively, and the same values may be used in the messages.
 
 Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
 
+.It http_taint_tag=ARRAY TAG
+The specified tag of vain type will be added to generated response messages of array type.
+In addition, any received messages from senders in which this tag is present will be ignored.
+If left unset, no taint tag will be used.
+
+.It http_report_tag=ARRAY TAG
+If set, and the given tag is present in any received messages from senders,
+the tag and its value will be added to any messages generated as a result of the query it produces.
+
+The parameter
+.B http_meta_tags_ignore
+controls whether or not this parameter is sent as-is along with queries in addition its usual function.
+
+The parameter
+.B http_receive_ignore_error_part_data
+controls whether or messages are generated for error responses.
+
 .It http_meta_tags_ignore={yes|no}
-Ignore the above defined tags when array values to the HTTP query (controlled by)
+Ignore any meta tags when array values to the HTTP query (controlled by)
 .B http_tags.
 If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
 
@@ -1854,6 +2115,16 @@ Messages being defered to fhe message DB (see
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
 If the timeout is set too high or is not set, messages may accumulate in memory.
 
+.It http_low_priority_message_timeout_factor=FACTOR
+If
+.B http_low_priority_put
+is set to "yes", this timeout will apply to low priority messages.
+The factor given is multiplied with the value of
+.B http_message_timeout_ms
+to produce the timeout used.
+
+If not given, a factor of 10 is assumed. The value may be set to 0 to disable timeout for low priority messages.
+
 .It http_ttl_seconds=SECONDS
 When the time timestamp of a message in the send queue becomes older than the specified amount of seconds, it is dropped.
 The message will also get deleted from the message DB if used (see
@@ -1938,6 +2209,11 @@ This parameter is ignored if
 .B http_version_10
 is set to yes.
 
+.It http_no_http2_upgrade={yes|no}
+If set to yes or left unset, An 'Upgrade: h2c' header, along with associated headers, will be sent with all HTTP/1.1 queries.
+The server will usually either respond by confirming upgrade to HTTP/2 or simply continuing using HTTP/1.1.
+If set to no, no such upgrade header will be sent.
+
 .It http_concurrent_connections=UNSIGNED INTEGER
 Maximum number of concurrent connections to open for each host/port combination. Defaults to 10, minimum value is 1 and maximum value is 65535.
 
@@ -1976,7 +2252,6 @@ Multiple instances of the Message DB should not use the same directory and the d
 
 .It msgdb_socket=FILENAME
 The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
-.El
 
 .It msgdb_directory_levels=LEVELS
 The number of directory levels to use when storing files. Each file will be placed into a directory corresponding to the first letters of its name.
@@ -2112,6 +2387,10 @@ Note that
 duplicate=yes
 should be set when there are multiple readers of the cacher module.
 If left undefined for one or more of the message types, all readers will receive this type.
+
+These parameters may not be used if the
+.B route
+parameter is set for the cacher instance.
 
 .It cacher_memory_consume_requests={yes|no}
 If set to yes and a request matches a message in the memory cache, the request will not be forwarded regardless of the
@@ -2401,7 +2680,7 @@ If the contents of the array value is anything else or not present, the contents
 
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
-messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
+messages which do not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
 Cannot be used with
 .B mqtt_publish_rrr_message=yes.
 
@@ -2510,12 +2789,19 @@ Generate dummy messages for testing purposes. Defaults to no.
 Hostname to send along with log messages. Defaults to system hostname.
 .El
 
-.SS file (SA)
-Reads from files, character devices, block devices, sockets and FIFO pipes.
+.SS file (PA)
+Reading and writing to or from files, character devices, block devices, sockets and FIFO pipes.
 Full file contents may be read into RRR messages, or and array definition may be used to create RRR array messages from the data.
 The
 .B file
 module periodically checks for new entries in the specified directory and tries to read from them.
+.PP
+.B THIS MODULE MAY READ AND WRITE ANYWHERE ON THE FILESYSTEM IN CERTAIN CONFIGRATIONS
+
+When instructing the file module to write to a specific file path using a paths from array messages, ensure
+that the paths used does not come directly from outside.
+Note that when writing to a file, the file module may also start reading from the same file if configured to do so.
+Make messages with paths within RRR only (in a script module).
 .PP
 Sockets, character devices and FIFO pipes are kept open until the other end closes them or EOF is encountered.
 If disconnected,
@@ -2540,13 +2826,44 @@ may be configured to delete files after they are read.
 .PP
 There is no limit on how many files, sockets etc. which can be simultaneously open.
 .PP
+Messages read from sender instances contain data and information on where to store it.
+Note that if files are written, these files may also be read back if their name matches the prefix.
+Use different prefixes for written files to avoid this or disable probing using
+.B file_no_probing
+if reading need not be performed.
+
+If any senders are specified for a file instance, making writing possible,
+write access is required for all files to be opened regardless of whether writing is actually performed or not.
+If no writing is possible, files will be opened read-only.
+
+If a normal file is already open for reading when writing starts, seek will be performed to either the beginning or end of the file depending on the
+.B file_write_append
+parameter.
+Any ongoing reading operation will stop, but the file may be read from at a later time depending on the configuration.
+
+If writing is performed to a stream device, these will also be read from.
+
+The following array fields are used in these messages:
+.PP
+.Bl -tag -width -indent
+.It file_directory
+If the configuration
+.B file_write_allow_directory_override
+is set to yes, this value may be present in the message to override the directory of where the file is located.
+.It file_name
+The name of the file to open to save the data.
+The file must be located inside the directory being used and the name may not contain directories (e.g. slashes).
+.El
+
+.PP
 The following configuration parameters are available in the
 .B file
 module:
 .PP
 .Bl -tag -width -indent
 .It file_directory=DIRECTORY
-Directory in which to probe for files to read from. Must be set.
+Directory in which to probe for files to read from, must be set.
+If the directory does not exist or cannot be opened, the file module will not start.
 
 .It file_prefix=FILE PREFIX
 Optional prefix for files to read from in the chosen directory. Non-matching files are ignored.
@@ -2554,6 +2871,10 @@ Optional prefix for files to read from in the chosen directory. Non-matching fil
 .It file_probe_interval_ms=MILLISECONDS
 Probing for new files is done immediately after startup and then periodically every time the probe interval has passed.
 A value of zero is allowed, this might be CPU intensive. Defaults to 5000 ms.
+
+.It file_no_probing={yes|no}
+If set to 'yes', no probing for files in the specified directory will be performed.
+If set no 'no' or left unset, files will be read.
 
 .It file_topic=MQTT TOPIC
 Set an MQTT topic on generated messages. Optional parameter.
@@ -2565,6 +2886,19 @@ Cannot be used with
 .B file_read_all_to_message=yes,
 but one of them must be specified. No default value.
 
+.It file_add_metadata={yes|no}
+If
+.B file_input_types
+is set, this parameter may be set to 'yes' to add file metadata to messages produced.
+The fields added will be the same as for the read all method 'structured' below except from the
+.B data
+and
+.B size
+values.
+The fields will be added to the end of the array, after the parsed data values.
+There is no checks for wether or not tags in the array definition are the same as any of the metadata tags, duplicate tags may exist in the array in such a situation.
+Defaults to 'no' which means that metadata will not be added.
+
 .It file_strip_array_separators={yes|no}
 Disregard any separator items when creating RRR array messages. Defaults to no.
 
@@ -2574,36 +2908,56 @@ Defaults to no, which means to only sync on boundaries of incoming messages.
 
 .It file_read_all_to_message={yes|no}
 Read all data from the entries and put it into an RRR message.
-Note that this is probably not useful for sockets and character devices. Cannot be used with
+Note that with this parameter active, reading is not performed for non-regular files with finite size. Cannot be used with
 .B file_input_types,
 but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
-.It file_read_all_method={simple|structured}
+.It file_read_all_method={simple|structured|file}
 May be set if
 .B file_read_all_to_message
 is 'yes'.
 If set to 'simple', the contents of the file is put into a plain message.
-If set to 'structured', the constents of the file along with metadata is put into an array array message.
-For the latter, the array fields
-.B data, size, path_original, path_resolved, atime, mtime, and ctime
-will be present in the generated messages.
 
-The
-.B data
-and
-.B size
-fields contain the actual raw data of the file and the it's size.  
+If set to 'structured', the contents of the file along with metadata is put into an array with the following fields:
 
-The two
-.B path_
-fields contain the original path and resolved symbolic link path respectively. If there was not symlic, they are equal.
+.Bl -tag -width "aa" -indent
+.It data
+.It size
+The raw data of the file and it's size.
+.Pp
+.It path_original
+.It path_resolved
+The original and resolved path (in case original is a symbolic link) of the file respectively.
+.Pp
+.It atime
+.It mtime
+.It ctime
+Timestamps in epoch format with second resolution. Describe file access time, modification time and creation time. 
+.El
 
-The time parameters is in epoch time format with seconds resolution and describe file access time, modification time and creation time. 
+If set to 'file', the contents of the file along with metadata is put into an array with the following fields:
+
+.Bl -tag -width "aa" -indent
+.It file_data
+.It file_size
+The raw data of the file and it's size.
+.Pp
+.It file_directory
+.It file_name
+The original path of the file before any symbolic link resolving.
+.Pp
+.It file_path_resolved
+The resolved path (in case original is a symbolic link) of the file respectively.
+.El
+
+Messages produced using the 'file' method are appropriate for passing into another file module for writing.
 
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
-as long as the user running RRR has permission to do that. Defaults to 'no'.
+as long as the user running RRR has permission to do that.
+Files which were opened as a result of a write operation are not unlinked when closed regardless.
+Defaults to 'no' which means that unlinking is never performed.
 
 .It file_max_open=UNSIGNED INTEGER
 Maximum number of simultaneously open files. If multiple files are open at the same time,
@@ -2662,7 +3016,50 @@ This parameter is not respected when file_read_all_to_message is 'yes', and havi
 Must be greater than zero, defaults to 4096.
 
 .It file_timeout_s=SECONDS
-If no message is read in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
+If no message is read or written in the specified amount of seconds, close the file.
+Any messages not yet written are dropped.
+Defaults to 0 which means no timeout. 
+
+.It file_write_timeout_ms=MILLISECONDS
+If a particular message to write is not written within this time, it is dropped.
+Must be set to an interval shorter than
+.B file_timeout_s.
+Defaults to 0 which means no timeout.
+
+.It file_ttl_seconds=SECONDS
+Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.
+Defaults to 0 which means that TTL check is disabled.   
+
+.It file_write_array_values={*|tag1[,tag2[,...]]}
+Put all values from an array (*) or selected values (by tag) into the file.
+RRR messages which do not contain an array are dropped.
+Any integer types will have big endianess in the resulting publish message.
+If left unset, the field
+.B file_data
+will be used.
+
+.It file_write_append={yes|no}
+If set to 'yes', data will be appended to the given file if it already exists.
+If set to 'no' or left unset, existing files will be truncated.
+This parameter has no effect if the output file is a stream.
+
+.It file_write_allow_directory_override={yes|no}
+Allow usage of the array field
+.B file_directory
+in messages from sender instances, overriding the directory specified in the configuration.
+If not given or set to no, any directory set in messages will be ignored.
+Read about security considerations above before enabling this parameter.
+
+.It file_write_multicast={yes|no}
+If set to yes, any
+.B file_name
+and
+.B file_directory
+values in messages are ignored, and the data is written to all files already open.
+If no files are open, the message is dropped.
+If write error occurs during multicast, the file in question will be closed.
+No attempt will be made to write the data again.
+Defaults to 'no' which disables write multicast.
 
 .El
 .SS mysql (DAI)
@@ -2860,16 +3257,6 @@ each for will source messages according to given parameters. Defaults to 1, maxi
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 
-.It X_sleep_time_ms=MILLISECONDS
-How many milliseconds to sleep if nothing was processed in the worker after multiple processing loops.
-Sleeping is performed to limit CPU usage.
-It is possible to specify 0 which in practice creates a very small wait.
-The worker will sleep once every round until something happens again. Defaults to 50ms.
-
-.It X_nothing_happend_limit=UNSIGNED INTEGER
-How many loops to perform in the worker with nothing being processed before starting to sleep.
-Defaults to 250, must be 1 or greater.
- 
 .It X_log_prefix=PREFIX
 Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
 macros to print messages like the reset of RRR does.

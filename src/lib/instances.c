@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,14 +21,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "log.h"
 #include "cmodule/cmodule_main.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
+#include "route.h"
 #include "instance_config.h"
 #include "message_broker.h"
+#include "message_helper.h"
+#include "message_holder/message_holder_struct.h"
 #include "poll_helper.h"
 #include "allocator.h"
 #include "event/event_functions.h"
@@ -37,6 +41,147 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/gnu.h"
 
 #define RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
+
+struct rrr_instance_message_broker_entry_postprocess_route_callback_data {
+	struct rrr_instance_runtime_data *data;
+	struct rrr_msg_holder *entry;
+	struct rrr_instance_friend_collection *nexthops;
+};
+
+static int __rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb (
+		int *result,
+		const char *topic_filter,
+		void *arg
+) {
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_mqtt_topic_token *token = NULL;
+
+	if ((ret = rrr_mqtt_topic_tokenize(&token, topic_filter)) != 0) {
+		RRR_MSG_0("Failed to tokenize topic in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_message_helper_topic_match(result, callback_data->entry, token)) != 0) {
+		RRR_MSG_0("Failed to match topic in %s\n", __func__);
+		goto out;
+	}
+
+	RRR_DBG_3("+ Topic filter %s is a %s while routing message from instance %s\n",
+			topic_filter, (*result ? "MATCH" : "MISMATCH"), INSTANCE_D_NAME(callback_data->data));
+	out:
+	rrr_mqtt_topic_token_destroy(token);
+	return ret;
+}
+
+static int __rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb (
+		int *result,
+		const char *array_tag,
+		void *arg
+) {
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_message_helper_has_array_tag (
+			result,
+			callback_data->entry,
+			array_tag
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("+ Array tag check result for %s is %s while routing message from instance %s\n",
+			array_tag, (*result ? "HAS" : "HASN'T"), INSTANCE_D_NAME(callback_data->data));
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_message_broker_entry_postprocess_apply_cb (
+		int result,
+		const char *instance_name,
+		void *arg
+) {
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), instance_name);
+
+	// Instances must be validated before thread is started
+	assert(instance != NULL);
+
+	// Latest result takes precedence in case of apply on same instance multiple times
+	rrr_instance_friend_collection_remove (callback_data->nexthops, instance);
+	if (result) {
+		if ((ret = rrr_instance_friend_collection_append (
+				callback_data->nexthops,
+				instance,
+				NULL
+		)) != 0) {
+			RRR_MSG_0("Failed to append to collection in %s\n", __func__);
+			goto out;
+		}
+	}
+
+	RRR_DBG_3("+ Apply instance %s result %s in message from instance %s\n",
+			instance_name, result ? "ADD" : "REMOVE", INSTANCE_D_NAME(callback_data->data));
+
+	out:
+	return ret;
+}
+		
+static int __rrr_instance_message_broker_entry_postprocess_callback (
+		struct rrr_msg_holder *entry_locked,
+		void *arg
+) {
+	struct rrr_instance_runtime_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_instance_friend_collection nexthops = {0};
+
+	if (RRR_LL_COUNT(INSTANCE_D_ROUTES(data)) == 0) {
+		goto out;
+	}
+
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data callback_data = {
+			data,
+			entry_locked,
+			&nexthops
+	};
+
+	enum rrr_route_fault fault = 0;
+
+	if ((ret = rrr_route_collection_execute (
+			&fault,
+			INSTANCE_D_ROUTES(data),
+			__rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb,
+			__rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb,
+			__rrr_instance_message_broker_entry_postprocess_apply_cb,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("= %i receiver instances set in message from instance %s\n",
+			RRR_LL_COUNT(&nexthops), INSTANCE_D_NAME(data));
+
+	if (RRR_LL_COUNT(&nexthops) > 0) {
+		if ((ret = rrr_msg_holder_nexthops_set (entry_locked, &nexthops)) != 0) {
+			RRR_MSG_0("Failed to set nexthops in %s\n", __func__);
+			goto out;
+		}
+	}
+
+	out:
+	rrr_instance_friend_collection_clear(&nexthops);
+	return ret;
+}
 
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
@@ -104,6 +249,7 @@ static void __rrr_instance_destroy (
 ) {
 	rrr_instance_friend_collection_clear(&target->senders);
 	rrr_instance_friend_collection_clear(&target->wait_for);
+	rrr_route_collection_clear(&target->routes);
 
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
@@ -240,6 +386,39 @@ static int __rrr_instance_parse_topic_filter (
 			data->config,
 			"topic_filter"
 	);
+}
+
+void __rrr_instance_parse_route_name_callback (
+		const char *name,
+		void *arg
+) {
+	(void)(arg);
+	RRR_DBG_1("-> %s\n", name);
+}
+
+static int __rrr_instance_parse_route (
+		struct rrr_instance *data_final
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_parse_route_definition_from_config_silent_fail(&data_final->routes, data_final->config, "route")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_1) {
+		RRR_DBG_1("Active route definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
+		rrr_route_collection_iterate_names(
+				INSTANCE_I_ROUTES(data_final),
+				__rrr_instance_parse_route_name_callback,
+				NULL
+		);
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_instance_parse_misc (
@@ -457,19 +636,57 @@ static void __rrr_instace_runtime_data_destroy_intermediate (
 	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
 }
 
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
+static int __rrr_instance_iterate_route_instances_callback (
+		const char *route_definition_name,
+		const char *instance_name,
+		void *arg
+) {
+	struct rrr_instance_runtime_data *data = arg;
+
+	int ret = 0;
+
+	const struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), instance_name);
+
+	if (instance == NULL) {
+		RRR_MSG_0("Instance '%s' in route definition '%s' used by instance '%s' does not exist\n",
+				instance_name, route_definition_name, INSTANCE_D_NAME(data));
+		ret = 1;
+		goto out;
+	}
+
+	if (!rrr_instance_friend_collection_check_exists(&instance->senders, INSTANCE_D_INSTANCE(data))) {
+		RRR_MSG_0("Instance '%s' in route definition '%s' used by instance '%s' is not a reader of this instance\n",
+				instance_name, route_definition_name, INSTANCE_D_NAME(data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		struct rrr_instance_runtime_init_data *init_data
 ) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
 	struct rrr_instance_runtime_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_init_thread\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return NULL;
 	}
 
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
+
+	// Verify that instances mentioned in any routes are readers of this instance
+	if (rrr_route_collection_iterate_instance_names (
+			INSTANCE_D_ROUTES(data),
+			__rrr_instance_iterate_route_instances_callback,
+			data
+	) != 0) {
+		goto out_free;
+	}
 
 	if (init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
 		RRR_DBG_1("%s instance %s buffer is disabled, starting with one-slot buffer\n",
@@ -480,12 +697,14 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 			&data->message_broker_handle,
 			init_data->message_broker,
 			init_data->module->instance_name,
-			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0
+			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0,
+			__rrr_instance_message_broker_entry_postprocess_callback,
+			data
 	) != 0) {
-		RRR_MSG_0("Could not register with message broker in rrr_instance_new_thread\n");
+		RRR_MSG_0("Could not register with message broker in %s\n", __func__);
 		goto out_free;
 	}
-
+	
 	goto out;
 	out_free:
 		rrr_free(data);
@@ -502,8 +721,11 @@ struct rrr_instance_add_senders_to_broker_callback_data {
 
 static int __rrr_instance_add_senders_to_broker_callback (
 		struct rrr_instance *instance,
+		void *parameter,
 		void *arg
 ) {
+	(void)(parameter);
+
 	int ret = 0;
 
 	struct rrr_instance_add_senders_to_broker_callback_data *data = arg;
@@ -644,8 +866,11 @@ struct rrr_instance_count_receivers_of_self_callback_data {
 
 static int __rrr_instance_count_receivers_of_self_callback (
 		struct rrr_instance *instance,
+		void *parameter,
 		void *arg
 ) {
+	(void)(parameter);
+
 	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
 	if (instance == callback_data->self) {
 		rrr_length_inc_bug(&callback_data->count);
@@ -888,7 +1113,7 @@ int rrr_instances_create_and_start_threads (
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		if ((runtime_data_tmp = rrr_instance_runtime_data_new(&init_data)) == NULL) {
+		if ((runtime_data_tmp = __rrr_instance_runtime_data_new(&init_data)) == NULL) {
 			RRR_MSG_0("Error while creating runtime data for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			ret = 1;
@@ -988,6 +1213,12 @@ int rrr_instances_create_from_config (
 		ret = __rrr_instance_parse_topic_filter(instance);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing topic filter failed for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			goto out;
+		}
+		ret = __rrr_instance_parse_route(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing of route parameter failed for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			goto out;
 		}

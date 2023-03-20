@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_types.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
+#include "lib/event/event_collection_struct.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
@@ -70,7 +71,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            'O',    "no-output",            "[-O|--no-output]"},
         {0,                            'P',    "plain-force",          "[-P|--plain-force]"},
         {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
-        {0,                            'H',    "http10-force",         "[-H|--http10-force]"},
+        {0,                            '0',    "http10-force",         "[-0|--http10-force]"},
+        {0,                            '2',    "http2-upgrade",        "[-2|--http2-upgrade]"},
         {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -143,17 +145,19 @@ static int __rrr_http_client_parse_config (
 
 	// HTTP CLIENT EXECUTABLE SPECIFIC PARAMETERS
 
+	// Multiple arguments write to upgrade_mode, the order of these matters
+	data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+
 	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 	}
-	else {
 #ifdef RRR_WITH_NGHTTP2
+	// Send upgrade: h2c etc. with http/1.1 
+	else if (cmd_exists(cmd, "http2-upgrade", 0)) {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
-#else
-		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-#endif
 	}
+#endif
 
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
 

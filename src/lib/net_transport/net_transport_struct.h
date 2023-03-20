@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
-#include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;

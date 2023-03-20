@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,6 +48,10 @@ struct rrr_socket_options {
 	int protocol;
 };
 
+
+void rrr_socket_unlink (
+		int fd
+);
 int rrr_socket_with_filename_do (
 		int fd,
 		int (*callback)(const char *filename, void *arg),
@@ -66,7 +70,7 @@ int rrr_socket_get_options_from_fd (
 );
 void *rrr_socket_get_private_data_from_fd (
 		int fd,
-		enum rrr_socket_private_data_class class,
+		enum rrr_socket_private_data_class class_,
 		size_t size
 );
 int rrr_socket_with_lock_do (
