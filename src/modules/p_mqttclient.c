@@ -2335,7 +2335,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
 		NULL,
-		NULL,
 		NULL
 };
 

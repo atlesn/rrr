@@ -448,7 +448,6 @@ static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
 	NULL,
-	NULL,
 	NULL
 };
 

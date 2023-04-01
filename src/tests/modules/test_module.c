@@ -180,7 +180,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_test_module,
 		NULL,
-		NULL,
 		NULL
 };
 static const char *module_name = "test_module";

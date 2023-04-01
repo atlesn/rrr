@@ -1952,7 +1952,6 @@ static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_ip,
 	NULL,
-	NULL,
 	NULL
 };
 

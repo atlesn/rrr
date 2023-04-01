@@ -1123,7 +1123,6 @@ int rrr_instances_create_and_start_threads (
 				thread_collection,
 				__rrr_instance_thread_entry_intermediate,
 				__rrr_instance_thread_preload,
-				instance->module_data->operations.poststop,
 				instance->module_data->operations.cancel_function,
 				instance->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,

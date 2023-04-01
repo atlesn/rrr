@@ -401,27 +401,6 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 			RRR_DBG_8 ("Joined with thread watchdog %s\n", node->name);
 		}
 	RRR_LL_ITERATE_END();
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		if (node->is_watchdog) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		rrr_thread_lock(node);
-		if (node->poststop_routine != NULL) {
-			if (node->state == RRR_THREAD_STATE_STOPPED) {
-				RRR_DBG_8 ("Running post stop routine for %s\n", node->name);
-				node->poststop_routine(node);
-			}
-			else {
-				RRR_MSG_0 ("Cannot run post stop for thread %s as it is not in STOPPED state\n", node->name);
-				if (!node->is_ghost) {
-					RRR_BUG ("Bug: Thread was not STOPPED nor ghost after join attempt\n");
-				}
-			}
-		}
-		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END();
 }
 
 void rrr_thread_collection_destroy (
@@ -1072,7 +1051,6 @@ static int __rrr_thread_allocate_and_start (
 		struct rrr_thread **target_wd,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -1103,7 +1081,6 @@ static int __rrr_thread_allocate_and_start (
 	thread->signal = 0;
 
 	thread->cancel_function = cancel_function;
-	thread->poststop_routine = poststop_routine;
 	thread->start_routine = start_routine;
 	thread->private_data = private_data;
 	thread->state = RRR_THREAD_STATE_NEW;
@@ -1171,7 +1148,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -1185,7 +1161,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		&thread_wd,
 		start_routine,
 		preload_routine,
-		poststop_routine,
 		cancel_function,
 		name,
 		watchdog_timeout_us,

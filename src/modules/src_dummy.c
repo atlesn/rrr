@@ -463,7 +463,6 @@ static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
-	NULL,
 	dummy_inject,
 	NULL
 };
