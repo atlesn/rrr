@@ -72,15 +72,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_THREAD_MUTEX_INIT_FLAGS 0
 #endif
 
-struct rrr_thread_postponed_cleanup_node {
-	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
-	struct rrr_thread *thread;
-};
-
-struct rrr_ghost_postponed_cleanup_collection {
-	RRR_LL_HEAD(struct rrr_thread_postponed_cleanup_node);
-};
-
 static int __rrr_thread_destroy (
 		struct rrr_thread *thread
 ) {
@@ -90,48 +81,12 @@ static int __rrr_thread_destroy (
 	return 0;
 }
 
-// It is safe to have these dynamically allocated, a thread may wake up after
-// such memory has been freed and attempt to use it.
-static struct rrr_ghost_postponed_cleanup_collection postponed_cleanup_collection = {0};
-static pthread_mutex_t postponed_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
-
 /* If a ghost becomes ghost (tagged by the watchdog as such):
- * - Main will remove reference to the pointer of the threads rrr_thread struct
- * - If waking up, and prior to exiting, the thread will check if it has been tagged
- *   and will push to this list
- * - At a suitable time, main will call cleanup_run routine and free memory and possibly
- *   run poststop
+ * - Parent process should usually exit at the thread, if it wakes up, may try
+ *   to use resources which are not longer available.
+ * - Parent should shutdown other threads normally and then do an abort() or assert(0)
+ *   to produce a useful core dump of the ghost situation.
  */
-
-// Called from threads
-static void __rrr_thread_cleanup_postponed_push (
-		struct rrr_thread *thread
-) {
-	struct rrr_thread_postponed_cleanup_node *node = rrr_allocate(sizeof(*node));
-	memset(node, '\0', sizeof(*node));
-
-	node->thread = thread;
-
-	pthread_mutex_lock(&postponed_cleanup_lock);
-	RRR_LL_APPEND(&postponed_cleanup_collection, node);
-	pthread_mutex_unlock(&postponed_cleanup_lock);
-}
-
-// Called from main
-void rrr_thread_cleanup_postponed_run (
-		int *count
-) {
-	*count = 0;
-	pthread_mutex_lock(&postponed_cleanup_lock);
-	RRR_LL_ITERATE_BEGIN(&postponed_cleanup_collection, struct rrr_thread_postponed_cleanup_node);
-		if (node->thread->poststop_routine) {
-			node->thread->poststop_routine(node->thread);
-		}
-		RRR_LL_ITERATE_SET_DESTROY();
-		(*count)++;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&postponed_cleanup_collection, __rrr_thread_destroy(node->thread); rrr_free(node));
-	pthread_mutex_unlock(&postponed_cleanup_lock);
-}
 
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
@@ -463,7 +418,6 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 				if (!node->is_ghost) {
 					RRR_BUG ("Bug: Thread was not STOPPED nor ghost after join attempt\n");
 				}
-				RRR_MSG_0 ("Running post stop later if thread wakes up\n");
 			}
 		}
 		rrr_thread_unlock(node);
@@ -471,8 +425,13 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 }
 
 void rrr_thread_collection_destroy (
+		int *ghost_count,
 		struct rrr_thread_collection *collection
 ) {
+	*ghost_count = 0;
+
+	// No errors allowed in this function
+
 	pthread_mutex_lock(&collection->threads_mutex);
 
 	__rrr_thread_collection_stop_and_join_all_nolock(collection);
@@ -480,9 +439,9 @@ void rrr_thread_collection_destroy (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
 		if (node->is_ghost == 1) {
-			// Note that __rrr_thread_destroy() does not lock, race condition with is_ghost and ghost_cleanup_pointer possible
-			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. It will add itself to cleanup list if it wakes up.\n",
+			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. Not freeing memory.\n",
 					node->name);
+			(*ghost_count)++;
 		}
 		else {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -989,8 +948,7 @@ static void __rrr_thread_cleanup (
 ) {
 	struct rrr_thread *thread = arg;
 	if (rrr_thread_ghost_check(thread)) {
-		RRR_MSG_0 ("Thread %s waking up after being ghost, telling parent to clean up now.\n", thread->name);
-		__rrr_thread_cleanup_postponed_push(thread);
+		RRR_MSG_0 ("Thread %s waking up after being ghost\n", thread->name);
 	}
 }
 

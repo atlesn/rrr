@@ -230,9 +230,6 @@ void rrr_thread_state_set (
 		struct rrr_thread *thread,
 		int state
 );
-void rrr_thread_cleanup_postponed_run (
-		int *count
-);
 int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection
 );
@@ -240,6 +237,7 @@ int rrr_thread_collection_new (
 		struct rrr_thread_collection **target
 );
 void rrr_thread_collection_destroy (
+		int *ghost_count,
 		struct rrr_thread_collection *collection
 );
 void rrr_thread_start_condition_helper_nofork (

@@ -269,7 +269,7 @@ static int main_loop_threads_restart (
 
 	main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
 
-	if ((ret = rrr_main_create_and_start_threads (
+	if ((ret = rrr_instances_create_and_start_threads (
 			callback_data->collection,
 			callback_data->instances,
 			callback_data->config,
@@ -334,30 +334,34 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
 
 	if (rrr_instance_check_threads_stopped(callback_data->instances) == 1) {
+		int ghost_count = 0;
+
 		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
 
 		rrr_config_set_debuglevel_on_exit();
-		rrr_main_threads_stop_and_destroy(*(callback_data->collection));
+		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
+		if (ghost_count > 0) {
+			// We cannot continue in ghost situations as the ghosts may
+			// occupy split buffer slots causing a crash on assertion in
+			// the message broker if we restart as not enough slots are
+			// available.
+			//
+			// It is also useful to get a coredump showing the state of
+			// the ghost thread, hence we abort here.
+			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
+		}
 		*(callback_data->collection) = NULL;
 
-		// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
-		// as the handle usercount will be > 1. This handle will not be destroyed untill the
-		// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
-		// to find the handle as it will be removed from the costumer handle list.
 		rrr_message_broker_unregister_all(callback_data->message_broker);
 
+		// If main is still supposed to be active and restart is active, sleep
+		// for one second and continue.
 		if (main_running && rrr_config_global.no_thread_restart == 0) {
 			rrr_posix_usleep(1000000); // 1s
 		}
 		else {
 			return RRR_EVENT_EXIT;
 		}
-	}
-
-	int count;
-	rrr_thread_cleanup_postponed_run(&count);
-	if (count > 0) {
-		RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, callback_data->config_file);
 	}
 
 	return main_mmap_periodic(callback_data->stats_data);
@@ -447,7 +451,7 @@ static int main_loop (
 	RRR_DBG_1 ("Main loop finished\n");
 
 	if (collection != NULL) {
-		rrr_main_threads_stop_and_destroy(collection);
+		RRR_BUG("Thread ollection was not cleared after loop finished in %s\n", __func__);
 	}
 
 	if (stats_data.handle != 0) {
@@ -455,12 +459,6 @@ static int main_loop (
 	}
 	rrr_config_set_debuglevel_on_exit();
 	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-	int count;
-
-	rrr_thread_cleanup_postponed_run(&count);
-	if (count > 0) {
-		RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
-	}
 
 #ifndef RRR_NO_MODULE_UNLOAD
 	rrr_instance_unload_all(&instances);
