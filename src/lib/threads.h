@@ -282,10 +282,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection
 );
-void rrr_thread_collection_join_and_destroy_stopped_threads (
-		int *count,
-		struct rrr_thread_collection *collection
-);
 int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
