@@ -862,14 +862,7 @@ static void *__rrr_thread_watchdog_entry (
 		else if (nowtime > killtime) {
 			RRR_MSG_0 ("Watchdog %p for %s/%p, thread not responding to encourage stop. State is now %i. Trying to cancel it.\n",
 				self_thread, thread->name, thread, thread->state);
-			if (thread->cancel_function != NULL) {
-				int res = thread->cancel_function(thread);
-				RRR_MSG_0 ("Watchdog %p for %s/%p, result from custom cancel function: %i\n", self_thread, thread->name, thread, res);
-				rrr_posix_usleep(1000000); // 1 s
-			}
-			else {
-				pthread_cancel(thread->thread);
-			}
+			pthread_cancel(thread->thread);
 			break;
 		}
 
@@ -1051,7 +1044,6 @@ static int __rrr_thread_allocate_and_start (
 		struct rrr_thread **target_wd,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1080,7 +1072,6 @@ static int __rrr_thread_allocate_and_start (
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->signal = 0;
 
-	thread->cancel_function = cancel_function;
 	thread->start_routine = start_routine;
 	thread->private_data = private_data;
 	thread->state = RRR_THREAD_STATE_NEW;
@@ -1148,7 +1139,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1161,7 +1151,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		&thread_wd,
 		start_routine,
 		preload_routine,
-		cancel_function,
 		name,
 		watchdog_timeout_us,
 		private_data

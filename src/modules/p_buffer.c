@@ -167,8 +167,7 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_buffer,
-		buffer_inject,
-		NULL
+		buffer_inject
 };
 
 struct rrr_instance_event_functions event_functions = {

@@ -496,7 +496,6 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_js,
-		NULL,
 		NULL
 };
 

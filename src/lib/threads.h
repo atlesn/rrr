@@ -106,8 +106,7 @@ struct rrr_thread {
 	// tagging them to be freed.
 	int ready_to_destroy;
 
-	// Start/stop routines
-	int (*cancel_function)(struct rrr_thread *);
+	// Start routines
 	void *(*start_routine) (struct rrr_thread *);
 
 	// Pointer to watchdog thread
@@ -264,7 +263,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data

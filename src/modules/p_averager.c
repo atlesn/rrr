@@ -566,7 +566,6 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
-		NULL,
 		NULL
 };
 

@@ -191,7 +191,6 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_raw,
-		NULL,
 		NULL
 };
 
