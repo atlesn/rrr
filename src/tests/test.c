@@ -356,7 +356,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (rrr_main_create_and_start_threads (
+		if (rrr_instances_create_and_start_threads (
 				&collection,
 				&instances,
 				config,
@@ -394,8 +394,11 @@ int main (int argc, const char **argv, const char **env) {
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
-
-		rrr_main_threads_stop_and_destroy(collection);
+		int ghost_count = 0;
+		rrr_thread_collection_destroy(&ghost_count, collection);
+		if (ghost_count > 0) {
+			RRR_MSG_0("%i threads were ghost during cleanup\n", ghost_count);
+		}
 	} TEST_RESULT(ret == 0);
 
 	out_cleanup_instances:

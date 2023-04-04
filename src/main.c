@@ -40,30 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
-int rrr_main_create_and_start_threads (
-		struct rrr_thread_collection **thread_collection_target,
-		struct rrr_instance_collection *instances,
-		struct rrr_instance_config_collection *config,
-		struct cmd_data *cmd,
-		struct rrr_stats_engine *stats,
-		struct rrr_message_broker *message_broker,
-		struct rrr_fork_handler *fork_handler
-) {
-	return rrr_instances_create_and_start_threads (
-			thread_collection_target,
-			instances,
-			config,
-			cmd,
-			stats,
-			message_broker,
-			fork_handler
-	);
-}
-
-void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection) {
-	rrr_thread_collection_destroy (collection);
-}
-
 #ifdef HAVE_JOURNALD
 // Append = to var to avoid partial match being tolerated. Value may be added after = to match this as well.
 static int __rrr_main_has_env (const char **env, const char *var) {

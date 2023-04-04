@@ -63,14 +63,8 @@ struct rrr_module_operations {
 	// Main function with a loop to run the thread
 	void *(*thread_entry)(struct rrr_thread *);
 
-	// Post stop function - Run after thread has finished from main thread context
-	void (*poststop)(const struct rrr_thread *);
-
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-
-	// Custom cancellation method (if we are hung and main wants to cancel us)
-	int (*cancel_function)(struct rrr_thread *);
 };
 
 void rrr_module_unload (

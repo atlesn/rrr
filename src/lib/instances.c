@@ -203,7 +203,6 @@ int rrr_instance_check_threads_stopped (
 		struct rrr_instance *instance = node;
 		if (
 				rrr_thread_state_get(instance->thread) == RRR_THREAD_STATE_STOPPED ||
-	//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
 				rrr_thread_ghost_check(instance->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", INSTANCE_M_NAME(instance));
@@ -1124,8 +1123,6 @@ int rrr_instances_create_and_start_threads (
 				thread_collection,
 				__rrr_instance_thread_entry_intermediate,
 				__rrr_instance_thread_preload,
-				instance->module_data->operations.poststop,
-				instance->module_data->operations.cancel_function,
 				instance->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data_tmp
@@ -1169,7 +1166,13 @@ int rrr_instances_create_and_start_threads (
 
 	goto out;
 	out_destroy_collection:
-		rrr_thread_collection_destroy(thread_collection);
+		{
+			int ghost_count = 0;
+			rrr_thread_collection_destroy(&ghost_count, thread_collection);
+			if (ghost_count > 0) {
+				RRR_MSG_0("Warning: %i threads were ghost during destruction of collection in %s\n", ghost_count, __func__);
+			}
+		}
 	out:
 		if (runtime_data_tmp != NULL) {
 			rrr_instance_runtime_data_destroy_hard(runtime_data_tmp);
