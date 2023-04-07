@@ -317,18 +317,32 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 }
 
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
-	if (!main_running) {
-		return RRR_EVENT_EXIT;
-	}
-
 	struct main_loop_event_callback_data *callback_data = arg;
 
 	rrr_config_set_debuglevel_orig();
 
 	if (*(callback_data->collection) == NULL) {
 		if (main_loop_threads_restart (callback_data) != 0) {
+			rrr_config_set_debuglevel_on_exit();
 			return RRR_EVENT_EXIT;
 		}
+	}
+
+	if (!main_running) {
+		int ghost_count = 0;
+
+		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
+
+		rrr_config_set_debuglevel_on_exit();
+
+		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
+		if (ghost_count > 0) {
+			// Bug here to produce a possibly useful coredump about ghost situation
+			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
+		}
+		*(callback_data->collection) = NULL;
+
+		return RRR_EVENT_EXIT;
 	}
 
 	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
@@ -339,6 +353,7 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
 
 		rrr_config_set_debuglevel_on_exit();
+
 		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
 		if (ghost_count > 0) {
 			// We cannot continue in ghost situations as the ghosts may
@@ -352,11 +367,10 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		}
 		*(callback_data->collection) = NULL;
 
-		rrr_message_broker_unregister_all(callback_data->message_broker);
-
 		// If main is still supposed to be active and restart is active, sleep
 		// for one second and continue.
 		if (main_running && rrr_config_global.no_thread_restart == 0) {
+			rrr_message_broker_unregister_all(callback_data->message_broker);
 			rrr_posix_usleep(1000000); // 1s
 		}
 		else {
@@ -451,13 +465,13 @@ static int main_loop (
 	RRR_DBG_1 ("Main loop finished\n");
 
 	if (collection != NULL) {
-		RRR_BUG("Thread ollection was not cleared after loop finished in %s\n", __func__);
+		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
 	}
 
 	if (stats_data.handle != 0) {
 		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 	}
-	rrr_config_set_debuglevel_on_exit();
+
 	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 
 #ifndef RRR_NO_MODULE_UNLOAD
