@@ -20,6 +20,8 @@ rrr (1.28-8) bullseye; urgency=medium
     * In JS, refuse bare name module imports (require prefix like ./) and
       process relative paths correctly with respect to directory of importing
       script.
+    * In httpclient, print stats about dropped messages in periodic function
+      instead of once for every message.
 
   * Under the hood:
     * Use events in file module

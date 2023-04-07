@@ -89,6 +89,7 @@ struct httpclient_data {
 
 	int low_pri_queue_need_rotate;
 	int from_msgdb_queue_need_rotate;
+	rrr_length connection_soft_error_dropped_count;
 
 	struct rrr_msgdb_client_conn msgdb_conn_store;
 	struct rrr_msgdb_client_conn msgdb_conn_iterate;
@@ -2116,8 +2117,7 @@ static void httpclient_queue_process (
 			else {
 				if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 					if (data->do_drop_on_error) {
-						RRR_MSG_0("Dropping message per configuration after connection error in httpclient instance %s\n",
-								INSTANCE_D_NAME(data->thread_data));
+						data->connection_soft_error_dropped_count++;
 						RRR_LL_ITERATE_SET_DESTROY();
 					}
 				}
@@ -2178,6 +2178,12 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		RRR_LL_COUNT(&data->from_senders_queue),
 		RRR_LL_COUNT(&data->low_pri_queue)
 	);
+
+	if (data->connection_soft_error_dropped_count > 0) {
+		RRR_MSG_0("%" PRIrrrl " messages dropped per configuration after connection error in httpclient instance %s\n",
+				data->connection_soft_error_dropped_count, INSTANCE_D_NAME(data->thread_data));
+		data->connection_soft_error_dropped_count = 0;
+	}
 
 	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_timeout_us;
 	assert(low_pri_timeout_us >= data->message_timeout_us);
