@@ -154,8 +154,6 @@ struct httpclient_data {
 	rrr_event_handle event_msgdb_poll;
 	rrr_event_handle event_queue_process;
 
-	struct rrr_poll_helper_counters counters;
-
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
 
@@ -2131,7 +2129,7 @@ static void httpclient_queue_process (
 			}
 		}
 		else {
-			// Request send, may now be removed from queue
+			// Request sent, may now be removed from queue
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
@@ -2149,8 +2147,6 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data;
-
-	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	int ret_tmp = rrr_poll_do_poll_delete (amount, thread_data, httpclient_poll_callback);
 
