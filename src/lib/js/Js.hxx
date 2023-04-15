@@ -61,6 +61,7 @@ namespace RRR::JS {
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
 		std::map<int,std::shared_ptr<Source>> module_map;
+		template <typename T> void register_module(int identity, std::shared_ptr<T> mod);
 		template <typename T> std::shared_ptr<T> compile_module(CTX &ctx, std::shared_ptr<T> mod);
 
 		public:
@@ -240,9 +241,7 @@ namespace RRR::JS {
 		Source(const std::string &absolute_path);
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> static std::shared_ptr<T> cast(std::shared_ptr<Source> ptr);
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> static T *cast(Source *ptr);
-		bool is_compiled() const {
-			return compiled;
-		}
+		bool is_compiled() const;
 		virtual ~Source() = default;
 	};
 
@@ -320,7 +319,9 @@ namespace RRR::JS {
 				v8::Local<v8::Module> referrer
 		);
 		void _run(CTX &ctx) final;
+		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
+		bool is_created() const;
 		int get_identity_hash() const;
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
@@ -353,20 +354,25 @@ namespace RRR::JS {
 		friend class Isolate;
 
 		private:
-		JSONModule(const std::string &cwd, const std:string &name, const std::string &program_source);
+		JSONModule(const std::string &cwd, const std::string &name, const std::string &program_source);
 		JSONModule(const std::string &absolute_path);
 		static std::shared_ptr<JSONModule> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
 		static std::shared_ptr<JSONModule> make_shared (const std::string &absolute_path);
 		v8::Local<v8::Module> mod;
 		v8::Local<v8::Value> json;
-		static v8::MaybeLocal<v8::Value> evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod);
+		static v8::MaybeLocal<v8::Value> evaluation_steps_callback (
+				v8::Local<v8::Context> context,
+				v8::Local<v8::Module> mod
+		);
 		static v8::MaybeLocal<v8::Module> static_resolve_callback_unexpected (
 				v8::Local<v8::Context> context,
 				v8::Local<v8::String> specifier,
 				v8::Local<v8::FixedArray> import_assertions,
 				v8::Local<v8::Module> referrer
 		);
+		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
+		bool is_created() const;
 		int get_identity_hash() const;
 
 		protected:
@@ -379,11 +385,31 @@ namespace RRR::JS {
 	};
 #endif
 
+	template <typename T> void Isolate::register_module(int identity, std::shared_ptr<T> mod) {
+		module_map[mod->get_identity_hash()] = mod;
+	}
+
 	template <typename T> std::shared_ptr<T> Isolate::compile_module(CTX &ctx, std::shared_ptr<T> mod) {
-		mod->compile(ctx);
-		if (mod->is_compiled()) {
-			module_map[mod->get_identity_hash()] = mod;
+		// Prepare phase may or may not create the module, difference
+		// being availibility of the identity hash after the call.
+		mod->compile_prepare(ctx);
+
+		if (mod->is_created()) {
+			const int hash = mod->get_identity_hash();
+			module_map[hash] = mod;
+			mod->compile(ctx);
+			if (!mod->is_compiled()) {
+				module_map.erase(hash);
+			}
 		}
+		else {
+			mod->compile(ctx);
+			if (mod->is_compiled()) {
+				const int hash = mod->get_identity_hash();
+				module_map[mod->get_identity_hash()] = mod;
+			}
+		}
+
 		return mod;
 	}
 

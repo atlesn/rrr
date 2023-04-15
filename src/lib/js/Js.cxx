@@ -408,6 +408,10 @@ namespace RRR::JS {
 	{
 	}
 
+	bool Source::is_compiled() const {
+		return compiled;
+	}
+
 	Function Program::get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name) {
 		// Enforce usage of MaybeLocal overload as Local overload is deprecated
 		v8::MaybeLocal<v8::Value> value = object->Get(ctx, (v8::Local<v8::String>) String(ctx, name));
@@ -437,7 +441,6 @@ namespace RRR::JS {
 	}
 
 	void Program::run(CTX &ctx) {
-		assert(is_compiled());
 		_run(ctx);
 	}
 
@@ -501,9 +504,6 @@ namespace RRR::JS {
 		catch (RRR::util::E e) {
 			throw E(std::string("Failed to load module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
 		}
-		catch (...) {
-			throw E(std::string("Failed to load module. Unknown reason."));
-		}
 	}
 
 	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
@@ -518,7 +518,6 @@ namespace RRR::JS {
 	v8::MaybeLocal<v8::Module> Module::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
 		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &absolute_path){
 			auto mod = std::shared_ptr<JSONModule>(Isolate::get_from_context(ctx)->make_module<JSONModule>(ctx, absolute_path));
-			mod->run(ctx);
 			return mod;
 		});
 	}
@@ -618,9 +617,19 @@ v8::Local<v8::FixedArray> import_assertions,
 		auto name = std::string(String(context->GetIsolate(), specifier));
 		auto ctx = CTX(context, name);
 		auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
-		auto import_callback_data = static_cast<ImportCallbackData*>(v8::External::Cast(host_defined_options)->Value());
 
 		try {
+			auto host_defined_options_array = v8::Local<v8::PrimitiveArray>::Cast(host_defined_options);
+			if (host_defined_options_array->Length() == 0) {
+				throw E("Cannot import dynamically from this context");
+			}
+			auto import_callback_data = &(
+				Isolate::get_from_context(ctx)
+					->get_module<Module> (
+							v8::Local<v8::Int32>::Cast(host_defined_options_array->Get(ctx, 0))->Value()
+					)
+				->import_callback_data
+			);
 #else
 	v8::MaybeLocal<v8::Promise> Module::dynamic_resolve_callback (
 			v8::Local<v8::Context> context,
@@ -651,12 +660,12 @@ v8::Local<v8::FixedArray> import_assertions,
 			RRR_DBG_1("V8 dynamic import %s referrer cwd %s\n", name.c_str(), referrer_cwd.c_str());
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-			import_assertions_diverge(ctx, import_assertions, [&ctx,name,resolver](){
+			import_assertions_diverge(ctx, import_assertions, [&ctx,name,resolver,referrer_cwd](){
 #endif
 				auto mod = load_module(ctx, referrer_cwd, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-			}, [&ctx,name,resolver](){
+			}, [&ctx,name,resolver,referrer_cwd](){
 				auto mod = load_json(ctx, referrer_cwd, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 			});
@@ -702,13 +711,16 @@ v8::Local<v8::FixedArray> import_assertions,
 		return mod;
 	}
 
+	void Module::compile_prepare(CTX &ctx) {
+	}
+
 	void Module::compile(CTX &ctx) {
 		compile_str_wrap(ctx, [&ctx,this](auto str){
+			auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
 #ifdef RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN
-			auto host_defined_options = v8::Local<v8::External>::New(ctx, &import_callback_data);
 			auto origin = v8::ScriptOrigin (
 					ctx,
-					(v8::Local<v8::String>) String(ctx, get_path()),
+					(v8::Local<v8::String>) String(ctx, get_path_()),
 					0,
 					0,
 					false,
@@ -717,11 +729,10 @@ v8::Local<v8::FixedArray> import_assertions,
 					false,
 					false,
 					true, // is_module
-					v8::Local<v8::External>::New(ctx, &import_callback_data)
+					host_defined_options
 			);
 #else
 			// Element 0 is set after mod is created below
-			auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
 			auto origin = v8::ScriptOrigin (
 					(v8::Local<v8::String>) String(ctx, get_path_()),
 					v8::Local<v8::Integer>(),
@@ -747,10 +758,14 @@ v8::Local<v8::FixedArray> import_assertions,
 		});
 
 		if (ctx.trycatch_ok([](auto msg){
-			throw E(std::string("Failed to instantiate  module: ") + msg);
+			throw E(std::string("Failed to instantiate module: ") + msg);
 		})) {
 			// OK
 		}
+	}
+
+	bool Module::is_created() const {
+		return !mod.IsEmpty();
 	}
 
 	int Module::get_identity_hash() const {
@@ -784,22 +799,20 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	v8::MaybeLocal<v8::Value> JSONModule::evaluation_steps_callback(v8::Local<v8::Context> context, v8::Local<v8::Module> mod) {
 		auto ctx = CTX(context, __func__);
-		auto self = Isolate::get_from_context(ctx)->get_module<JSONModule>(mod->GetIdentityHash());
+		auto self = Isolate::get_from_context(ctx)
+			->get_module<JSONModule>(mod->GetIdentityHash());
 		auto result = mod->SetSyntheticModuleExport(ctx, String(ctx, "default"), self->json);
+
 		if (ctx.trycatch_ok([](auto msg){
-			throw E(std::string("Failed set default export for JSON module: ") + msg);
+			throw E(std::string("Failed to set JSON module export in ") + __func__ + ": " + msg);
 		})) {
 			// OK
 		}
+
+		if (result.IsNothing()) {
+			throw E(std::string("Failed to set JSON module export in ") + __func__);
+		}
 		return v8::Boolean::New(ctx, true);
-
-//		ns->Set(ctx, String(ctx, "default"), json.ToLocalChecked()).Check();
-//		auto ns = mod->GetModuleNamespace().As<v8::Object>();
-//.		assert(0);
-
-/*
-
-			assert(!result.IsNothing());*/
 	}
 
 	v8::MaybeLocal<v8::Module> JSONModule::static_resolve_callback_unexpected (
@@ -811,7 +824,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		assert(0);
 	}
 
-	JSONModule::JSONModule(const std::string &cwd, const std::string &name, std::string program_source) :
+	JSONModule::JSONModule(const std::string &cwd, const std::string &name, const std::string &program_source) :
 		Source(cwd, name, program_source),
 		mod(),
 		json()
@@ -824,7 +837,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		mod(),
 		json()
 	{
-		RRR_DBG_1("V8 new JSON cwd %s name %s\n", cwd.c_str(), name.c_str());
+		RRR_DBG_1("V8 new JSON cwd %s name %s\n", get_cwd().c_str(), get_name().c_str());
 	}
 
 	std::shared_ptr<JSONModule> JSONModule::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
@@ -840,7 +853,10 @@ v8::Local<v8::FixedArray> import_assertions,
 		return mod;
 	}
 
-	void JSONModule::compile(CTX &ctx) {
+	void JSONModule::compile_prepare(CTX &ctx) {
+		// This function creates the module so that the identity
+		// hash may be found. The caller then registers the module 
+		// using this before calling compile().
 		auto export_names = std::vector<v8::Local<v8::String>>();
 		export_names.emplace_back(String(ctx, "default"));
 
@@ -858,9 +874,12 @@ v8::Local<v8::FixedArray> import_assertions,
 		}
 
 		assert(!mod.IsEmpty());
+	}
 
-		Isolate::get_from_context(ctx)->set_module(mod->GetIdentityHash(), this);
-
+	void JSONModule::compile(CTX &ctx) {
+		// The evaluation steps callback will be invoked here. The
+		// caller must have registered the module using the identity
+		// hash prior to this step.
 		compile_str_wrap(ctx, [&ctx,this](auto str){
 			auto json_maybe = v8::JSON::Parse(ctx, str);
 			if (ctx.trycatch_ok([](auto msg){
@@ -883,6 +902,10 @@ v8::Local<v8::FixedArray> import_assertions,
 			}
 			assert(!result.IsEmpty());
 		});
+	}
+
+	bool JSONModule::is_created() const {
+		return !mod.IsEmpty();
 	}
 
 	int JSONModule::get_identity_hash() const {
