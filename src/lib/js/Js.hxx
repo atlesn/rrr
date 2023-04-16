@@ -406,7 +406,7 @@ namespace RRR::JS {
 			mod->compile(ctx);
 			if (mod->is_compiled()) {
 				const int hash = mod->get_identity_hash();
-				module_map[mod->get_identity_hash()] = mod;
+				module_map[hash] = mod;
 			}
 		}
 
