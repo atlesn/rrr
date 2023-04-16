@@ -55,7 +55,7 @@ struct rrr_message_broker_split_buffer_node {
 
 struct rrr_message_broker_split_buffer_collection {
 	RRR_LL_HEAD(struct rrr_message_broker_split_buffer_node);
-	pthread_mutex_t lock_;
+	pthread_mutex_t lock;
 };
 
 struct rrr_message_broker_costumer {
@@ -118,17 +118,19 @@ static void __rrr_message_broker_costumer_incref_all (
 		int *costumer_count,
 		struct rrr_message_broker *broker
 ) {
+	pthread_mutex_lock(&broker->lock);
+
 	if ((*costumers = rrr_allocate(sizeof(void *) * (unsigned long) RRR_LL_COUNT(broker))) == NULL) {
 		RRR_BUG("Allocation failure in %s\n", __func__);
 	}
 	*costumer_count = RRR_LL_COUNT(broker);
 
-	pthread_mutex_lock(&broker->lock);
 	int pos = 0;
 	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
 		__rrr_message_broker_costumer_incref_unlocked(node);
 		(*costumers)[pos++] = node;
 	RRR_LL_ITERATE_END();
+
 	pthread_mutex_unlock(&broker->lock);
 }
 
@@ -184,13 +186,19 @@ static void __rrr_message_broker_friends_clear (
 static int __rrr_message_broker_costumer_split_buffer_lock (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	return rrr_posix_mutex_robust_lock(&costumer->split_buffers.lock_);
+	return rrr_posix_mutex_robust_lock(&costumer->split_buffers.lock);
+}
+
+static int __rrr_message_broker_costumer_split_buffer_trylock (
+		struct rrr_message_broker_costumer *costumer
+) {
+	return rrr_posix_mutex_robust_trylock(&costumer->split_buffers.lock);
 }
 
 static void __rrr_message_broker_costumer_split_buffer_unlock (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	pthread_mutex_unlock(&costumer->split_buffers.lock_);
+	pthread_mutex_unlock(&costumer->split_buffers.lock);
 }
 
 static void __rrr_message_broker_costumer_destroy (
@@ -204,7 +212,7 @@ static void __rrr_message_broker_costumer_destroy (
 
 	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_protected_destroy(&costumer->main_queue);
-	pthread_mutex_destroy(&costumer->split_buffers.lock_);
+	rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
 	rrr_free(costumer);
@@ -273,7 +281,7 @@ static int __rrr_message_broker_costumer_new (
 		goto out_free_name;
 	}
 
-	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock_, RRR_POSIX_MUTEX_IS_ROBUST)) != 0) {
+	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, RRR_POSIX_MUTEX_IS_ROBUST)) != 0) {
 		RRR_MSG_0("Could not initialize mutex A in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_fifo;
@@ -300,7 +308,7 @@ static int __rrr_message_broker_costumer_new (
 	out_cleanup_events:
 		rrr_event_queue_destroy(costumer->events);
 	out_destroy_split_buffer_lock:
-		pthread_mutex_destroy(&costumer->split_buffers.lock);
+		rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
 		rrr_fifo_protected_destroy(&costumer->main_queue);
 	out_free_name:
@@ -1371,13 +1379,20 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 	return ret & ~(RRR_FIFO_PROTECTED_SEARCH_STOP);
 }
 
-static void __rrr_message_broker_get_source_buffer (
+static int __rrr_message_broker_get_source_buffer (
 		int *source_buffer_is_main,
 		struct rrr_fifo_protected **use_buffer,
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_message_broker_costumer *self
 ) {
-	pthread_mutex_lock(&costumer->split_buffers.lock);
+	int ret = 0;
+
+	if (__rrr_message_broker_costumer_split_buffer_lock(costumer) != 0) {
+		RRR_MSG_0("Split buffer lock of message broker costumer %s was inconsistent in %s\n",
+			costumer->name, __func__);
+		ret = 1;
+		goto out_no_unlock;
+	}
 
 	if (RRR_LL_COUNT(&costumer->split_buffers) == 0) {
 		*source_buffer_is_main = 1;
@@ -1414,7 +1429,9 @@ static void __rrr_message_broker_get_source_buffer (
 	*use_buffer = found_buffer;
 
 	out:
-	pthread_mutex_unlock(&costumer->split_buffers.lock);
+		__rrr_message_broker_costumer_split_buffer_unlock(costumer);
+	out_no_unlock:
+		return ret;
 }
 
 static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_PROTECTED_READ_CALLBACK_ARGS) {
@@ -1462,8 +1479,16 @@ static int __rrr_message_broker_split_buffers_fill (
 		goto out_no_unlock;
 	}
 
-	// Somebody else is probably doing this already
-	if (pthread_mutex_trylock(&costumer->split_buffers.lock) != 0) {
+	if ((ret = __rrr_message_broker_costumer_split_buffer_trylock(costumer)) != 0) {
+		if (ret == RRR_POSIX_MUTEX_ROBUST_BUSY) {
+			// Somebody else is probably doing this already
+			ret = 0;
+		}
+		else {
+			RRR_MSG_0("Failed to lock split buffers of costumer %s in %s, lock inconsistency.\n",
+				costumer->name, __func__);
+			ret = 1;
+		}
 		goto out_no_unlock;
 	}
 
@@ -1477,20 +1502,10 @@ static int __rrr_message_broker_split_buffers_fill (
 	}
 
 	out:
-		pthread_mutex_unlock(&costumer->split_buffers.lock);
+		__rrr_message_broker_costumer_split_buffer_unlock(costumer);
 	out_no_unlock:
 		return ret;
 }
-
-#define RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING()                  \
-    struct rrr_fifo_protected *source_buffer = NULL;                     \
-    do {                                                                 \
-        int source_buffer_is_main = 0;                                   \
-        __rrr_message_broker_get_source_buffer (                         \
-    	    &source_buffer_is_main, &source_buffer, costumer, self       \
-        ); if (source_buffer_is_main == 0 &&                             \
-    	    (ret = __rrr_message_broker_split_buffers_fill(costumer)     \
-        ) != 0) { goto out; }} while(0)
 
 #define FRIENDS_ITERATE_BEGIN(list,max)                                  \
     do {for (size_t i = 0; i < max; i++) {                               \
@@ -1547,7 +1562,23 @@ int rrr_message_broker_poll_delete (
 			}
 		}
 		else {
-			RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+			struct rrr_fifo_protected *source_buffer = NULL;
+			int source_buffer_is_main = 0;
+
+			if ((ret = __rrr_message_broker_get_source_buffer (
+					&source_buffer_is_main,
+					&source_buffer,
+					costumer,
+					self
+			)) != 0) {
+				goto out;
+			}
+
+			if (!source_buffer_is_main) {
+				if ((ret = __rrr_message_broker_split_buffers_fill(costumer)) != 0) {
+					goto out;
+				}
+			}
 
 			if ((ret = rrr_fifo_protected_read_clear_forward (
 					source_buffer,
@@ -1707,7 +1738,12 @@ void rrr_message_broker_report_buffers_exceeding_limit (
 			callback_buffer(costumer->name, count);
 		}
 
-		pthread_mutex_lock(&costumer->split_buffers.lock);
+		if (__rrr_message_broker_costumer_split_buffer_lock(costumer) != 0) {
+			RRR_MSG_0("Failed to lock split buffers of costumer %s in %s, lock inconsistency.\n",
+				costumer->name, __func__);
+			continue;
+		}
+
 		RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
 			if (node->owner == NULL) {
 				RRR_LL_ITERATE_NEXT();
@@ -1717,10 +1753,10 @@ void rrr_message_broker_report_buffers_exceeding_limit (
 				callback_split_buffer(costumer->name, node->owner->name, count);
 			}
 		RRR_LL_ITERATE_END();
-		pthread_mutex_unlock(&costumer->split_buffers.lock);
+
+		__rrr_message_broker_costumer_split_buffer_unlock(costumer);
 	}
 
 	rrr_free(costumers);
-
 	__rrr_message_broker_costumer_decref_all(broker);
 }
