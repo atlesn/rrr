@@ -109,6 +109,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            's',    "stats",                 "[-s|--stats]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
 		{0,                            'b',    "banner",                "[-b|--banner]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -238,6 +239,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 }
 
 struct main_loop_event_callback_data {
+	uint64_t prev_periodic_time;
 	struct rrr_thread_collection **collection;
 	struct rrr_instance_collection *instances;
 	struct rrr_instance_config_collection *config;
@@ -316,6 +318,16 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 	return ret;
 }
 
+static void main_loop_periodic_message_broker_report_buffer_exceeding_limit_callback (const char *name, rrr_length count) {
+	RRR_MSG_0("Warning: Output buffer of instance %s has %" PRIrrrl " entries\n",
+		name, count);
+}
+
+static void main_loop_periodic_message_broker_report_buffer_exceeding_limit_split_buffer_callback (const char *name, const char *receiver_name, rrr_length count) {
+	RRR_MSG_0("Warning: Split output buffer of instance %s to receiver %s has %" PRIrrrl " entries\n",
+		name, receiver_name, count);
+}
+
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct main_loop_event_callback_data *callback_data = arg;
 
@@ -376,6 +388,20 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		else {
 			return RRR_EVENT_EXIT;
 		}
+	}
+
+	const uint64_t now_time = rrr_time_get_64();
+	if (now_time - callback_data->prev_periodic_time >= 1000000) {
+		// One second interval tasks
+		if (rrr_config_global.output_buffer_warn_limit > 0) {
+			rrr_message_broker_report_buffers_exceeding_limit (
+				callback_data->message_broker,
+				rrr_config_global.output_buffer_warn_limit,
+				main_loop_periodic_message_broker_report_buffer_exceeding_limit_callback,
+				main_loop_periodic_message_broker_report_buffer_exceeding_limit_split_buffer_callback
+			);
+		}
+		callback_data->prev_periodic_time = now_time;
 	}
 
 	return main_mmap_periodic(callback_data->stats_data);
@@ -444,6 +470,7 @@ static int main_loop (
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	struct main_loop_event_callback_data event_callback_data = {
+		0,
 		&collection,
 		&instances,
 		config,

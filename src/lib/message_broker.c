@@ -55,7 +55,7 @@ struct rrr_message_broker_split_buffer_node {
 
 struct rrr_message_broker_split_buffer_collection {
 	RRR_LL_HEAD(struct rrr_message_broker_split_buffer_node);
-	pthread_mutex_t lock;
+	pthread_mutex_t lock_;
 };
 
 struct rrr_message_broker_costumer {
@@ -113,6 +113,36 @@ static void __rrr_message_broker_costumer_decref (
 		struct rrr_message_broker_costumer *costumer
 );
 
+static void __rrr_message_broker_costumer_incref_all (
+		struct rrr_message_broker_costumer ***costumers,
+		int *costumer_count,
+		struct rrr_message_broker *broker
+) {
+	if ((*costumers = rrr_allocate(sizeof(void *) * (unsigned long) RRR_LL_COUNT(broker))) == NULL) {
+		RRR_BUG("Allocation failure in %s\n", __func__);
+	}
+	*costumer_count = RRR_LL_COUNT(broker);
+
+	pthread_mutex_lock(&broker->lock);
+	int pos = 0;
+	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
+		__rrr_message_broker_costumer_incref_unlocked(node);
+		(*costumers)[pos++] = node;
+	RRR_LL_ITERATE_END();
+	pthread_mutex_unlock(&broker->lock);
+}
+
+static void __rrr_message_broker_costumer_decref_all (
+		struct rrr_message_broker *broker
+) {
+	pthread_mutex_lock(&broker->lock);
+	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
+		int did_destroy = 0;
+		__rrr_message_broker_costumer_decref(&did_destroy, node);
+	RRR_LL_ITERATE_END();
+	pthread_mutex_unlock(&broker->lock);
+}
+
 static int __rrr_message_broker_friend_add (
 		struct rrr_message_broker_costumer **target,
 		size_t target_size,
@@ -151,6 +181,18 @@ static void __rrr_message_broker_friends_clear (
 	}
 }
 
+static int __rrr_message_broker_costumer_split_buffer_lock (
+		struct rrr_message_broker_costumer *costumer
+) {
+	return rrr_posix_mutex_robust_lock(&costumer->split_buffers.lock_);
+}
+
+static void __rrr_message_broker_costumer_split_buffer_unlock (
+		struct rrr_message_broker_costumer *costumer
+) {
+	pthread_mutex_unlock(&costumer->split_buffers.lock_);
+}
+
 static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
@@ -162,7 +204,7 @@ static void __rrr_message_broker_costumer_destroy (
 
 	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_protected_destroy(&costumer->main_queue);
-	pthread_mutex_destroy(&costumer->split_buffers.lock);
+	pthread_mutex_destroy(&costumer->split_buffers.lock_);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
 	rrr_free(costumer);
@@ -231,7 +273,7 @@ static int __rrr_message_broker_costumer_new (
 		goto out_free_name;
 	}
 
-	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
+	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock_, RRR_POSIX_MUTEX_IS_ROBUST)) != 0) {
 		RRR_MSG_0("Could not initialize mutex A in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_fifo;
@@ -1643,4 +1685,42 @@ int rrr_message_broker_sender_add (
 
 	out:
 	return ret;
+}
+
+void rrr_message_broker_report_buffers_exceeding_limit (
+		struct rrr_message_broker *broker,
+		rrr_length limit,
+		void (*callback_buffer)(const char *name, rrr_length count),
+		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count)
+) {
+	// We cannot hold broker lock during the whole iteration due to different
+	// lock order otherwise with split buffer lock. Instead, incref all costumers
+	// then decref afterwards.
+	struct rrr_message_broker_costumer **costumers;
+	int costumer_count;
+	__rrr_message_broker_costumer_incref_all(&costumers, &costumer_count, broker);
+
+	for (int i = 0; i < costumer_count; i++) {
+		struct rrr_message_broker_costumer *costumer = costumers[i];
+		const rrr_length count = rrr_fifo_protected_get_entry_count(&costumer->main_queue);
+		if (count > limit) {
+			callback_buffer(costumer->name, count);
+		}
+
+		pthread_mutex_lock(&costumer->split_buffers.lock);
+		RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+			if (node->owner == NULL) {
+				RRR_LL_ITERATE_NEXT();
+			}
+			const rrr_length count = rrr_fifo_protected_get_entry_count(&node->queue);
+			if (count > limit) {
+				callback_split_buffer(costumer->name, node->owner->name, count);
+			}
+		RRR_LL_ITERATE_END();
+		pthread_mutex_unlock(&costumer->split_buffers.lock);
+	}
+
+	rrr_free(costumers);
+
+	__rrr_message_broker_costumer_decref_all(broker);
 }

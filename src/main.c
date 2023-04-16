@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/map.h"
 #include "lib/rrr_strerror.h"
 
-#define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
+#define RRR_MAIN_DEFAULT_OUTPUT_BUFFER_WARN_LIMIT 1000
 
 #ifdef HAVE_JOURNALD
 // Append = to var to avoid partial match being tolerated. Value may be added after = to match this as well.
@@ -114,6 +114,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
+	unsigned long int output_buffer_warn_limit = RRR_MAIN_DEFAULT_OUTPUT_BUFFER_WARN_LIMIT;
 	const char *run_directory = NULL;
 
 	const char *tmp;
@@ -142,6 +143,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	GETENV_YESNO(RRR_ENV_NO_WATCHDOG_TIMERS, no_watchdog_timers);
 	GETENV_YESNO(RRR_ENV_NO_THREAD_RESTART, no_thread_restart);
 	GETENV_YESNO(RRR_ENV_LOGLEVEL_TRANSLATION, rfc5424_loglevel_output);
+	GETENV_U(RRR_ENV_OUTPUT_BUFFER_WARN_LIMIT, output_buffer_warn_limit);
 	GETENV_STR(RRR_ENV_RUN_DIRECTORY, run_directory);
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
@@ -216,6 +218,30 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		rfc5424_loglevel_output = 1;
 	}
 
+	const char *output_buffer_warn_limit_string = cmd_get_value(cmd, "output-buffer-warn-limit", 0);
+	if (output_buffer_warn_limit_string != NULL) {
+		long int output_buffer_warn_limit_tmp;
+		if (cmd_convert_integer_10(output_buffer_warn_limit_string, &output_buffer_warn_limit_tmp) != 0) {
+			RRR_MSG_0 ("Could not understand output-buffer-warn-limit argument '%s', use a number.\n",
+					output_buffer_warn_limit_string);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (output_buffer_warn_limit_tmp < 0) {
+			RRR_MSG_0 ("Argument output-buffer-warn-limit must be greater than 0, %ld was given.\n",
+				output_buffer_warn_limit_tmp);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (output_buffer_warn_limit_tmp > 1000000) {
+			RRR_MSG_0 ("Argument output-buffer-warn-limit must be less than or equal to 1000000, %ld was given.\n",
+				output_buffer_warn_limit_tmp);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		output_buffer_warn_limit = (unsigned int) output_buffer_warn_limit_tmp;
+	}
+
 	if ((tmp = cmd_get_value(cmd, "run-directory", 0)) != NULL) {
 		run_directory = tmp;
 	}
@@ -236,13 +262,14 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		goto out;
 	}
 
-	SETENV(RRR_ENV_DEBUGLEVEL,           "%u",    (unsigned int) debuglevel);
-	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,   "%u",    (unsigned int) debuglevel_on_exit);
-	SETENV(RRR_ENV_START_INTERVAL,       "%u",    (unsigned int) start_interval);
-	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,   "%u",    no_watchdog_timers);
-	SETENV(RRR_ENV_NO_THREAD_RESTART,    "%u",    no_thread_restart);
-	SETENV(RRR_ENV_LOGLEVEL_TRANSLATION, "%u",    rfc5424_loglevel_output);
-	SETENV_STR(RRR_ENV_RUN_DIRECTORY,    run_directory);
+	SETENV(RRR_ENV_DEBUGLEVEL,               "%u",    (unsigned int) debuglevel);
+	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,       "%u",    (unsigned int) debuglevel_on_exit);
+	SETENV(RRR_ENV_START_INTERVAL,           "%u",    (unsigned int) start_interval);
+	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,       "%u",    no_watchdog_timers);
+	SETENV(RRR_ENV_NO_THREAD_RESTART,        "%u",    no_thread_restart);
+	SETENV(RRR_ENV_LOGLEVEL_TRANSLATION,     "%u",    rfc5424_loglevel_output);
+	SETENV(RRR_ENV_OUTPUT_BUFFER_WARN_LIMIT, "%u",    (unsigned int) output_buffer_warn_limit);
+	SETENV_STR(RRR_ENV_RUN_DIRECTORY,                 run_directory);
 
 #ifdef HAVE_JOURNALD
 	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env) != 0;
@@ -258,19 +285,21 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
+			(unsigned int) output_buffer_warn_limit,
 			do_journald_output,
 			run_directory
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, obwl:%ld\n",
 			debuglevel,
 			debuglevel_on_exit,
 			start_interval,
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
-			do_journald_output
+			do_journald_output,
+			output_buffer_warn_limit
 	);
 
 #ifdef HAVE_JOURNALD

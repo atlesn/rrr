@@ -1,4 +1,4 @@
-.Dd 2020-09-16
+.Dd 2023-04-15
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -11,6 +11,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-s|--stats]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
+.Dl [-o|--output-buffer-warn-limit[=]LIMIT]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
@@ -114,6 +115,11 @@ Specify an alternative default prefix for runtime sockets.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
+.IP -o|--output-buffer-warn-limit[=]LIMIT
+Maximum number of messages in an instance's output buffer before warnings are
+printed. Warnings will be printed every second if the limit is exceeded. This
+can help to detecting issues with slow-reading instances. If set to 0, warnings
+are disabled. If not given, the default value of 1000 is used.
 .IP -e|--environment-file
 Specify an environment file to read in before the program starts.
 The file should contain one variable per line, like VARIABLE=VALUE. 
@@ -133,6 +139,7 @@ If a variable is specified both in the environment and at the command line, the 
 .It RRR_NO_THREAD_RESTART
 .It RRR_START_INTERVAL
 .It RRR_LOGLEVEL_TRANSLATION
+.It RRR_INSTANCE_OUTPUT_BUFFER_WARN_LIMIT
 .It RRR_RUN_DIRECTORY
 .El
 
