@@ -1718,11 +1718,11 @@ int rrr_message_broker_sender_add (
 	return ret;
 }
 
-void rrr_message_broker_report_buffers_exceeding_limit (
+void rrr_message_broker_report_buffers (
 		struct rrr_message_broker *broker,
-		rrr_length limit,
-		void (*callback_buffer)(const char *name, rrr_length count),
-		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count)
+		void (*callback_buffer)(const char *name, rrr_length count, void *arg),
+		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count, void *arg),
+		void *callback_arg
 ) {
 	// We cannot hold broker lock during the whole iteration due to different
 	// lock order otherwise with split buffer lock. Instead, incref all costumers
@@ -1734,9 +1734,7 @@ void rrr_message_broker_report_buffers_exceeding_limit (
 	for (int i = 0; i < costumer_count; i++) {
 		struct rrr_message_broker_costumer *costumer = costumers[i];
 		const rrr_length count = rrr_fifo_protected_get_entry_count(&costumer->main_queue);
-		if (count > limit) {
-			callback_buffer(costumer->name, count);
-		}
+		callback_buffer(costumer->name, count, callback_arg);
 
 		if (__rrr_message_broker_costumer_split_buffer_lock(costumer) != 0) {
 			RRR_MSG_0("Failed to lock split buffers of costumer %s in %s, lock inconsistency.\n",
@@ -1749,9 +1747,7 @@ void rrr_message_broker_report_buffers_exceeding_limit (
 				RRR_LL_ITERATE_NEXT();
 			}
 			const rrr_length count = rrr_fifo_protected_get_entry_count(&node->queue);
-			if (count > limit) {
-				callback_split_buffer(costumer->name, node->owner->name, count);
-			}
+			callback_split_buffer(costumer->name, node->owner->name, count, callback_arg);
 		RRR_LL_ITERATE_END();
 
 		__rrr_message_broker_costumer_split_buffer_unlock(costumer);

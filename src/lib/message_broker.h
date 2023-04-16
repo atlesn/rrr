@@ -146,11 +146,11 @@ int rrr_message_broker_sender_add (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_message_broker_costumer *listener_costumer
 );
-void rrr_message_broker_report_buffers_exceeding_limit (
+void rrr_message_broker_report_buffers (
 		struct rrr_message_broker *broker,
-		rrr_length limit,
-		void (*callback_buffer)(const char *name, rrr_length count),
-		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count)
+		void (*callback_buffer)(const char *name, rrr_length count, void *arg),
+		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */

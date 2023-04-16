@@ -318,14 +318,36 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 	return ret;
 }
 
-static void main_loop_periodic_message_broker_report_buffer_exceeding_limit_callback (const char *name, rrr_length count) {
-	RRR_MSG_0("Warning: Output buffer of instance %s has %" PRIrrrl " entries\n",
-		name, count);
+static void main_loop_periodic_message_broker_report_buffer_callback (const char *name, rrr_length count, void *arg) {
+	struct main_loop_event_callback_data *callback_data = arg;
+	struct stats_data *stats_data = callback_data->stats_data;
+
+	if (rrr_config_global.output_buffer_warn_limit > 0 && count > rrr_config_global.output_buffer_warn_limit) {
+		RRR_MSG_0("Warning: Output buffer of instance %s has %" PRIrrrl " entries\n",
+			name, count);
+	}
+
+	if (stats_data != NULL && stats_data->handle != 0) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "message_broker/costumers/%s/buffer/count", name);
+		main_stats_post_unsigned_message (stats_data, buf, count, 0);
+	}
 }
 
-static void main_loop_periodic_message_broker_report_buffer_exceeding_limit_split_buffer_callback (const char *name, const char *receiver_name, rrr_length count) {
-	RRR_MSG_0("Warning: Split output buffer of instance %s to receiver %s has %" PRIrrrl " entries\n",
-		name, receiver_name, count);
+static void main_loop_periodic_message_broker_report_buffer_split_buffer_callback (const char *name, const char *receiver_name, rrr_length count, void *arg) {
+	struct main_loop_event_callback_data *callback_data = arg;
+	struct stats_data *stats_data = callback_data->stats_data;
+
+	if (rrr_config_global.output_buffer_warn_limit > 0 && count > rrr_config_global.output_buffer_warn_limit) {
+		RRR_MSG_0("Warning: Split output buffer of instance %s to receiver %s has %" PRIrrrl " entries\n",
+			name, receiver_name, count);
+	}
+
+	if (stats_data != NULL && stats_data->handle != 0) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "message_broker/costumers/%s/split_buffer/%s/count", name, receiver_name);
+		main_stats_post_unsigned_message (stats_data, buf, count, 0);
+	}
 }
 
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -393,14 +415,12 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	const uint64_t now_time = rrr_time_get_64();
 	if (now_time - callback_data->prev_periodic_time >= 1000000) {
 		// One second interval tasks
-		if (rrr_config_global.output_buffer_warn_limit > 0) {
-			rrr_message_broker_report_buffers_exceeding_limit (
-				callback_data->message_broker,
-				rrr_config_global.output_buffer_warn_limit,
-				main_loop_periodic_message_broker_report_buffer_exceeding_limit_callback,
-				main_loop_periodic_message_broker_report_buffer_exceeding_limit_split_buffer_callback
-			);
-		}
+		rrr_message_broker_report_buffers (
+			callback_data->message_broker,
+			main_loop_periodic_message_broker_report_buffer_callback,
+			main_loop_periodic_message_broker_report_buffer_split_buffer_callback,
+			callback_data
+		);
 		callback_data->prev_periodic_time = now_time;
 	}
 

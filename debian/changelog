@@ -23,6 +23,7 @@ rrr (1.28-8) bullseye; urgency=medium
     * In httpclient, print stats about dropped messages in periodic function
       instead of once for every message.
     * Add warning when buffer entry count exceeds a certain configurable limit
+    * Add statistics data for message broker costumer buffers
 
   * Under the hood:
     * Use events in file module
