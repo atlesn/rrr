@@ -2067,8 +2067,11 @@ static void httpclient_queue_process (
 
 	uint64_t loop_max_time = rrr_time_get_64() + 50 * 1000; // 50 ms
 	int loop_max = 256;
-
+	int count = 0;
+	int ok_count = 0;
 	int send_busy_count = 0;
+	int error_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
 
@@ -2113,8 +2116,14 @@ static void httpclient_queue_process (
 		)) != RRR_HTTP_OK) {
 			if (ret_tmp == RRR_HTTP_BUSY) {
 				send_busy_count++;
+
+				// These are quick errors, allow loop max to increase
+				// to iterate more messages.
+				loop_max++;
 			}
 			else {
+				error_count++;
+
 				if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 					if (data->do_drop_on_error) {
 						data->connection_soft_error_dropped_count++;
@@ -2129,18 +2138,24 @@ static void httpclient_queue_process (
 			}
 		}
 		else {
+			ok_count++;
+
 			// Request sent, may now be removed from queue
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
 		pthread_cleanup_pop(1); // Unlock
+
+		count++;
 	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, 0; rrr_msg_holder_decref(node));
 
-	if (send_busy_count > 0) {
-		RRR_DBG_7("Send busy for %i messages in httpclient instance %s\n",
-				send_busy_count,
-				INSTANCE_D_NAME(data->thread_data));
-	}
+	RRR_DBG_3("Iterated %i/%i messages, ok: %i, busy: %i, error: %i in httpclient instance %s\n",
+			count,
+			RRR_LL_COUNT(queue),
+			ok_count,
+			send_busy_count,
+			error_count,
+			INSTANCE_D_NAME(data->thread_data));
 }
 
 static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../util/linked_list.h"
 #include "../socket/rrr_socket_send_chunk.h"
+#include "../socket/rrr_socket_graylist.h"
 
 struct rrr_net_transport;
 struct rrr_net_transport_config;
@@ -68,6 +69,7 @@ struct rrr_event_queue;
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
     const struct rrr_net_transport_methods *methods;                        \
+    struct rrr_socket_graylist graylist;                                    \
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
     struct rrr_event_collection events;                                     \
@@ -162,6 +164,17 @@ int rrr_net_transport_iterate_by_handle_and_do (
 int rrr_net_transport_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
+		const char *string,
+		uint64_t number
+);
+int rrr_net_transport_graylist_push (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number,
+		uint64_t period_us
+);
+int rrr_net_transport_graylist_exists (
+		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
 );

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 #include "../socket/rrr_socket_send_chunk.h"
+#include "../socket/rrr_socket_graylist.h"
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 		struct rrr_net_transport *transport,
@@ -1103,6 +1104,62 @@ int rrr_net_transport_match_data_set (
 	return ret;
 }
 
+static void __rrr_net_transport_graylist_addr_make (
+		struct sockaddr_storage *addr,
+		socklen_t *addr_len,
+		const char *string,
+		uint64_t number
+) {
+	const size_t string_length = strlen(string);
+	const size_t total_length = string_length + sizeof(number);
+
+	assert(total_length <= sizeof(*addr));
+
+	memcpy((void *) addr,                  &number, sizeof(number));
+	memcpy((void *) addr + sizeof(number), string,  string_length);
+
+	*addr_len = (socklen_t) total_length;
+}
+
+int rrr_net_transport_graylist_push (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number,
+		uint64_t period_us
+) {
+	int ret = 0;
+
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+
+	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
+
+	if ((ret = rrr_socket_graylist_push (
+			&transport->graylist,
+			(const struct sockaddr *) &addr,
+			addr_len,
+			period_us
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_graylist_exists (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+) {
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+
+	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
+
+	return rrr_socket_graylist_exists(&transport->graylist, (const struct sockaddr *) &addr, addr_len);
+}
+
 int rrr_net_transport_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
@@ -1216,6 +1273,7 @@ static int __rrr_net_transport_new (
 		goto out;
 	}
 
+	rrr_socket_graylist_init(&new_transport->graylist);
 	rrr_event_collection_init(&new_transport->events, queue);
 	new_transport->event_queue = queue;
 
@@ -1325,6 +1383,7 @@ void rrr_net_transport_destroy (
 	rrr_net_transport_common_cleanup(transport);
 
 	rrr_event_collection_clear(&transport->events);
+	rrr_socket_graylist_clear(&transport->graylist);
 
 	// The matching destroy function of the new function which allocated
 	// memory for the transport will free()
