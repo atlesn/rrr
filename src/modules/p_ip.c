@@ -80,7 +80,7 @@ struct ip_data {
 	int udp_send_fd_ip4;
 	int udp_send_fd_ip6;
 
-	struct rrr_socket_graylist tcp_graylist;
+	struct rrr_socket_graylist *tcp_graylist;
 
 	struct rrr_array_tree *definitions;
 
@@ -135,6 +135,9 @@ static void ip_data_cleanup(void *arg) {
 	if (data->collection_udp != NULL) {
 		rrr_socket_client_collection_destroy(data->collection_udp);
 	}
+	if (data->tcp_graylist != NULL) {
+		rrr_socket_graylist_destroy(data->tcp_graylist);
+	}
 	if (data->send_loop != NULL) {
 		rrr_send_loop_destroy(data->send_loop);
 	}
@@ -147,7 +150,6 @@ static void ip_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
 	RRR_FREE_IF_NOT_NULL(data->timeout_action_str);
 	rrr_map_clear(&data->array_send_tags);
-	rrr_socket_graylist_clear(&data->tcp_graylist);
 }
 
 static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -863,13 +865,13 @@ static int ip_connect_raw_callback (
 	
 	int ret = 0;
 
-	if (rrr_socket_graylist_exists(&ip_data->tcp_graylist, addr, addr_len)) {
+	if (rrr_socket_graylist_exists(ip_data->tcp_graylist, addr, addr_len)) {
 		ret = RRR_SOCKET_NOT_READY;
 		goto out;
 	}
 
 	rrr_socket_graylist_push (
-			&ip_data->tcp_graylist,
+			ip_data->tcp_graylist,
 			addr,
 			addr_len,
 			ip_data->close_grace_ms * 1000
@@ -1721,7 +1723,7 @@ static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARG
 		}
 
 		rrr_socket_graylist_push (
-				&ip_data->tcp_graylist,
+				ip_data->tcp_graylist,
 				addr,
 				addr_len,
 				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU
@@ -1904,7 +1906,10 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_socket_graylist_init(&data->tcp_graylist);
+	if (rrr_socket_graylist_new (&data->tcp_graylist) != 0) {
+		RRR_MSG_0("Failed to create graylist in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_message;
+	}
 
 	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create TDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));

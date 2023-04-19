@@ -1135,7 +1135,7 @@ int rrr_net_transport_graylist_push (
 	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
 
 	if ((ret = rrr_socket_graylist_push (
-			&transport->graylist,
+			transport->graylist,
 			(const struct sockaddr *) &addr,
 			addr_len,
 			period_us
@@ -1157,7 +1157,7 @@ int rrr_net_transport_graylist_exists (
 
 	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
 
-	return rrr_socket_graylist_exists(&transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	return rrr_socket_graylist_exists(transport->graylist, (const struct sockaddr *) &addr, addr_len);
 }
 
 int rrr_net_transport_check_handshake_complete (
@@ -1273,7 +1273,11 @@ static int __rrr_net_transport_new (
 		goto out;
 	}
 
-	rrr_socket_graylist_init(&new_transport->graylist);
+	if ((ret = rrr_socket_graylist_new(&new_transport->graylist)) != 0) {
+		RRR_MSG_0("Could not create graylist in %s\n", __func__);
+		goto out_destroy;
+	}
+
 	rrr_event_collection_init(&new_transport->events, queue);
 	new_transport->event_queue = queue;
 
@@ -1291,7 +1295,7 @@ static int __rrr_net_transport_new (
 				read_callback,
 				read_callback_arg
 		)) != 0) {
-			goto out_destroy;
+			goto out_destroy_graylist;
 		}
 	}
 
@@ -1301,6 +1305,8 @@ static int __rrr_net_transport_new (
 	*result = new_transport;
 
 	goto out;
+	out_destroy_graylist:
+		rrr_socket_graylist_destroy(new_transport->graylist);
 	out_destroy:
 		new_transport->methods->destroy(new_transport);
 	out:
@@ -1383,7 +1389,7 @@ void rrr_net_transport_destroy (
 	rrr_net_transport_common_cleanup(transport);
 
 	rrr_event_collection_clear(&transport->events);
-	rrr_socket_graylist_clear(&transport->graylist);
+	rrr_socket_graylist_destroy(transport->graylist);
 
 	// The matching destroy function of the new function which allocated
 	// memory for the transport will free()

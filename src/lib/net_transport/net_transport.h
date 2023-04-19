@@ -36,13 +36,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../util/linked_list.h"
 #include "../socket/rrr_socket_send_chunk.h"
-#include "../socket/rrr_socket_graylist.h"
 
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
+struct rrr_socket_graylist;
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
@@ -69,7 +69,7 @@ struct rrr_event_queue;
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
     const struct rrr_net_transport_methods *methods;                        \
-    struct rrr_socket_graylist graylist;                                    \
+    struct rrr_socket_graylist *graylist;                                   \
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
     struct rrr_event_collection events;                                     \

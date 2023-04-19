@@ -31,6 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/linked_list.h"
 
+struct rrr_socket_graylist {
+	RRR_LL_HEAD(struct rrr_socket_graylist_entry);
+};
+
 struct rrr_socket_graylist_entry {
 	RRR_LL_NODE(struct rrr_socket_graylist_entry);
 	struct sockaddr_storage addr;
@@ -105,20 +109,36 @@ int rrr_socket_graylist_push (
 	return __rrr_socket_graylist_push(target, addr, len, graylist_period_us);
 }
 
-void rrr_socket_graylist_clear (
+void rrr_socket_graylist_destroy (
 		struct rrr_socket_graylist *target
 ) {
 	RRR_LL_DESTROY(target, struct rrr_socket_graylist_entry, rrr_free(node));
+	rrr_free(target);
 }
 
-void rrr_socket_graylist_clear_void (
+void rrr_socket_graylist_destroy_void (
 		void *target
 ) {
-	return rrr_socket_graylist_clear(target);
+	rrr_socket_graylist_destroy(target);
 }
 
-void rrr_socket_graylist_init (
-		struct rrr_socket_graylist *target
+int rrr_socket_graylist_new (
+		struct rrr_socket_graylist **target
 ) {
-	memset(target, '\0', sizeof(*target));
+	int ret = 0;
+
+	struct rrr_socket_graylist *graylist;
+
+	*target = NULL;
+
+	if ((graylist = rrr_allocate_zero(sizeof(*graylist))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	*target = graylist;
+
+	out:
+	return ret;
 }
