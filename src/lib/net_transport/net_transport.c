@@ -71,10 +71,10 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 	return result;
 }
 
-#define RRR_NET_TRANSPORT_HANDLE_GET(error_source)                                                                             \
+#define RRR_NET_TRANSPORT_HANDLE_GET()                                                                                         \
     struct rrr_net_transport_handle *handle = NULL;                                                                            \
-    do {if ((handle = __rrr_net_transport_handle_get(transport, transport_handle, error_source)) == NULL) {                    \
-        RRR_MSG_0("Could not find transport handle %i in " error_source "\n", transport_handle);                               \
+    do {if ((handle = __rrr_net_transport_handle_get(transport, transport_handle, __func__)) == NULL) {                        \
+        RRR_MSG_0("Could not find transport handle %i in %s\n", transport_handle, __func__);                                   \
         return 1;                                                                                                              \
     }} while (0)
 
@@ -92,7 +92,7 @@ static int __rrr_net_transport_handle_create_and_push (
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	if ((new_handle = rrr_allocate(sizeof(*new_handle))) == NULL) {
-		RRR_MSG_0("Could not allocate handle rrr_net_transport_handle_create_and_push\n");
+		RRR_MSG_0("Could not allocate handle %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -141,8 +141,8 @@ int rrr_net_transport_handle_allocate_and_add (
 	rrr_net_transport_handle new_handle_id = 0;
 
 	if (RRR_LL_COUNT(collection) >= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX) {
-		RRR_MSG_0("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
-				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
+		RRR_MSG_0("Error: Max number of handles (%i) reached in %s\n",
+				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX, __func__);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -168,8 +168,8 @@ int rrr_net_transport_handle_allocate_and_add (
 	}
 
 	if (new_handle_id == 0) {
-		RRR_MSG_0("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
-				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
+		RRR_MSG_0("No free handles in %s, max is %i\n",
+				__func__, RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -269,7 +269,7 @@ static int __rrr_net_transport_handle_close (
 	);
 
 	if (callback_data.found != 1) {
-		RRR_BUG("BUG: Handle %p not found in rrr_net_transport_cyx_close\n", handle);
+		RRR_BUG("BUG: Handle %p not found in %s\n", handle, __func__);
 	}
 
 	return ret;
@@ -296,7 +296,7 @@ static int __rrr_net_transport_handle_send_nonblock (
 	int ret = 0;
 
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-		RRR_BUG("BUG: Handle to __rrr_net_transport_handle_send_nonblock was not of CONNECTION type\n");
+		RRR_BUG("BUG: Handle to %s was not of CONNECTION type\n", __func__);
 	}
 
 	if ((ret = handle->transport->methods->send (
@@ -636,10 +636,10 @@ static int __rrr_net_transport_connect (
 		int close_after_callback
 ) {
 	if (host == NULL) {
-		RRR_BUG("host was NULL in rrr_net_transport_connect_and_destroy_after_callback\n");
+		RRR_BUG("host was NULL in %s\n", __func__);
 	}
 	if (port == 0) {
-		RRR_BUG("port was 0 in rrr_net_transport_connect_and_destroy_after_callback\n");
+		RRR_BUG("port was 0 in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -661,10 +661,10 @@ static int __rrr_net_transport_connect (
 		goto out;
 	}
 
-	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_connect");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	if (handle->submodule_fd == 0) {
-		RRR_BUG("BUG: Submodule FD not set in __rrr_net_transport_connect\n");
+		RRR_BUG("BUG: Submodule FD not set in %s\n", __func__);
 	}
 
 	memcpy(&handle->connected_addr, &addr, socklen);
@@ -757,7 +757,7 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 ) {
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_with_transport_ctx_do ");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 	ret = callback(handle, arg);
 
 	return ret;
@@ -788,7 +788,7 @@ static int __rrr_net_transport_accept_callback_intermediate (
 
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_accept_callback_intermediate");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	if ((ret = __rrr_net_transport_handle_events_setup_connected (
 			handle
@@ -859,7 +859,7 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_bind_and_listen_callback_intermediate");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	if ((ret = __rrr_net_transport_handle_events_setup_listen (
 			handle
@@ -1096,7 +1096,7 @@ int rrr_net_transport_match_data_set (
 ) {
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	ret = rrr_net_transport_ctx_handle_match_data_set(handle, string, number);
 
@@ -1109,7 +1109,7 @@ int rrr_net_transport_check_handshake_complete (
 ) {
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	ret = (handle->handshake_complete ? RRR_READ_OK : RRR_READ_INCOMPLETE);
 
@@ -1182,13 +1182,13 @@ static int __rrr_net_transport_new (
 	switch (config->transport_type) {
 		case RRR_NET_TRANSPORT_PLAIN:
 			if (flags != 0) {
-				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
+				RRR_BUG("BUG: Plain method does not support flags in %s but flags were given\n", __func__);
 			}
 			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
-				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
+				RRR_BUG("BUG: Plain method does not support TLS parameters in %s but they were given\n", __func__);
 			}
 			if (alpn_protos != NULL) {
-				RRR_BUG("BUG: Plain method does not support ALPN in rrr_net_transport_new but it was given\n");
+				RRR_BUG("BUG: Plain method does not support ALPN in %s but it was given\n", __func__);
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
@@ -1207,12 +1207,12 @@ static int __rrr_net_transport_new (
 			break;
 #endif
 		default:
-			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", config->transport_type);
+			RRR_BUG("Transport method %i not implemented in %s\n", config->transport_type, __func__);
 			break;
 	};
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not create transport method in rrr_net_transport_new\n");
+		RRR_MSG_0("Could not create transport method in %s\n", __func__);
 		goto out;
 	}
 
