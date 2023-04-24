@@ -1045,14 +1045,16 @@ static void __rrr_socket_client_event_read_array_tree (
 	// Prevent connection closure upon parse errors. Read session is still cleared by read framework,
 	// and parsing commenses when more data is avilable. For files with finite size, soft error should
 	// propagate instead to force closure.
-	if (ret == RRR_READ_SOFT_ERROR && do_soft_error_propagates) {
-		// Propagate return value
-		RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd);
-	}
-	else {
-		// Ignore any soft error
-		ret &= ~(RRR_READ_SOFT_ERROR);
-		RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);
+	if (ret == RRR_READ_SOFT_ERROR) {
+		if (do_soft_error_propagates) {
+			// Propagate return value
+			RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd);
+		}
+		else {
+			// Ignore any soft error
+			RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);
+			ret = 0;
+		}
 	}
 
 	__rrr_socket_client_return_value_process (
