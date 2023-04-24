@@ -1804,6 +1804,17 @@ static void ip_array_parse_error_callback(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS)
 	);
 }
 
+static void ip_array_set_read_flags_callback (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
+	struct ip_data *data = arg;
+
+	(void)(socket_read_flags);
+	(void)(private_data);
+	(void)(data);
+
+	// Continue parsing array data despite errors, don't close connection (neither for TCP nor UDP)
+	*do_soft_error_propagates = 0;
+}
+
 static void ip_event_setup (
 		struct ip_data *data,
 		struct rrr_socket_client_collection *collection,
@@ -1816,8 +1827,8 @@ static void ip_event_setup (
 			ip_private_data_destroy,
 			data,
 			socket_read_flags,
-			NULL,
-			NULL,
+			ip_array_set_read_flags_callback,
+			data,
 			data->definitions,
 			data->do_sync_byte_by_byte,
 			4096,
@@ -1923,8 +1934,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_socket_client_collection_set_idle_timeout(data->collection_tcp, data->persistent_timeout_ms * 1000);
 	rrr_socket_client_collection_set_idle_timeout(data->collection_udp, data->persistent_timeout_ms * 1000);
-
-	// TODO : Use new read flags callback to distinguish read flags
 
 	ip_event_setup (data, data->collection_tcp, RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK);
 	ip_event_setup (data, data->collection_udp, RRR_SOCKET_READ_METHOD_RECVFROM);
