@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -110,10 +110,10 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	char *buf = NULL;
 
 	if (source->element_count == 0) {
-		RRR_BUG("BUG: Element count was 0 in __rrr_type_convert_h2str\n");
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
 	}
 	if (source->total_stored_length % sizeof(uint64_t) != 0) {
-		RRR_BUG("BUG: Stored length not divisible by 8 in __rrr_type_convert_h2str\n");
+		RRR_BUG("BUG: Stored length not divisible by 8 in %s\n", __func__);
 	}
 
 	rrr_biglength new_size = 0;
@@ -144,7 +144,7 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 		}
 
 		if ((buf = rrr_allocate((size_t) new_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory in __rrr_type_convert_h2str\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 			goto out;
 		}
@@ -166,7 +166,7 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 			);
 
 			if (number_length <= 0) {
-				RRR_MSG_0("Error from snprintf in __rrr_type_convert_h2str\n");
+				RRR_MSG_0("Error from snprintf in %s\n", __func__);
 				ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 				goto out;
 			}
@@ -283,10 +283,10 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	TYPE_STR_ENSURE();
 
 	if (source->element_count == 0) {
-		RRR_BUG("BUG: Element count was 0 in __rrr_type_convert_str2h\n");
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
 	}
 	if (source->total_stored_length % source->element_count != 0) {
-		RRR_BUG("BUG: Stored length not divisible by element count in __rrr_type_convert_str2h\n");
+		RRR_BUG("BUG: Stored length not divisible by element count in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -319,13 +319,13 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	const rrr_biglength size_new = source->element_count * sizeof(uint64_t);
 
 	if (size_new > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Size exceeds maximum in __rrr_type_convert_str2h\n");
+		RRR_MSG_0("Size exceeds maximum in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if ((data_new = rrr_allocate((size_t) size_new)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_type_convert_str2h\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -544,7 +544,7 @@ static int __rrr_type_convert_using_list (
 		const int flags
 ) {
 	if (pos > list->item_count) {
-		RRR_BUG("BUG: Position out of bounds in __rrr_type_convert_using_list\n");
+		RRR_BUG("BUG: Position out of bounds in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -638,7 +638,7 @@ int rrr_type_conversion_collection_new_from_map (
 	;
 
 	if ((result = rrr_allocate(new_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_type_conversion_collection_new_from_map\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -649,10 +649,10 @@ int rrr_type_conversion_collection_new_from_map (
 
 	RRR_MAP_ITERATE_BEGIN_CONST(map);
 		if (node_tag == NULL || *node_tag == '\0') {
-			RRR_BUG("BUG: Node tag was NULL or empty in rrr_type_conversion_collection_new_from_map\n");
+			RRR_BUG("BUG: Node tag was NULL or empty in %s\n", __func__);
 		}
 		if (wpos == (size_t) map->node_count) {
-			RRR_BUG("BUG: wpos out of bounds in rrr_type_conversion_collection_new_from_map, the map must not change while we use it\n");
+			RRR_BUG("BUG: wpos out of bounds in %s, the map must not change while we use it\n", __func__);
 		}
 
 		if ((result->items[wpos++] = __rrr_type_convert_definition_get_from_str(node_tag)) == NULL) {
