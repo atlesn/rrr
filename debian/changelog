@@ -1,4 +1,4 @@
-rrr (1.28-8) bullseye; urgency=medium
+rrr (1.28-9) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -12,6 +12,8 @@ rrr (1.28-8) bullseye; urgency=medium
     * New array value "hdlc" for parsing HDLC messages
     * Ability in file module to write to files and devices among other new
       configuration parameters
+    * New conversion type "hchar2str" in mangler module to convert individual
+      bytes to strings
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT

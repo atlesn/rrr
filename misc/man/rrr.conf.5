@@ -1,4 +1,4 @@
-.Dd 2023-02-25
+.Dd 2023-04-26
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -704,7 +704,7 @@ Values in input arrays which match one of the specified tags are deleted.
 The deletion is performed prior to any conversion.
 Optional parameter.
 
-.It mangler_conversions={h2str|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob}[,...]
+.It mangler_conversions={h2str|h2vain|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob|hchar2str}[,...]
 A comma separated list of conversion methods which provides a conversion recipe.
 For every value of input arrays, all conversions are applied from left to right.
 If a conversion fails or is not possible, it is skipped and the next method is attempted.
@@ -3346,6 +3346,12 @@ Converts vain fields to unsigned integers with value 0.
 .TP 10
 .B vain2str
 Converts vain fields to empty str fields.
+
+.TP 10
+.B hchar2str
+Treats any numbers as characters and stores them in a string value.
+The value of any numbers may not exceed 255.
+If an array value has multiple elements, all of their corresponding characters will be concatenated into a single string value.
 
 .PP
 .SH SEE ALSO

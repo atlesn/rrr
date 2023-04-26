@@ -451,9 +451,78 @@ static int __rrr_type_convert_vain2str (RRR_TYPE_CONVERT_ARGS) {
 	);
 }
 
+static int __rrr_type_convert_hchar2str (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_H_ENSURE();
+
+	if (source->element_count == 0) {
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
+	}
+	if (source->total_stored_length % sizeof(uint64_t) != 0) {
+		RRR_BUG("BUG: Stored length not divisible by 8 in %s\n", __func__);
+	}
+
+	int ret = 0;
+
+	unsigned char *result_str = NULL;
+
+	if ((result_str = rrr_allocate(source->element_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	for (rrr_length i = 0; i < source->element_count; i++) {
+		const void *data = source->data + (i * sizeof(uint64_t));
+		const uint64_t value = *((uint64_t *) data);
+
+		if (value > 0xff) {
+			if (RRR_TYPE_FLAG_IS_SIGNED(source->flags)) {
+				RRR_DBG_3("  E hchar2str cannot convert value exceeding 255 or negative values (%" PRIi64 " was found)\n", (int64_t) value);
+			}
+			else {
+				RRR_DBG_3("  E hchar2str cannot convert value exceeding 255 or negative values (%" PRIu64 " was found)\n", value);
+			}
+			ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+			goto out;
+		}
+
+		result_str[i] = (unsigned char) value;
+	}
+
+	if ((ret = rrr_type_value_new (
+			target,
+			&rrr_type_definition_str,
+			0,
+			source->tag_length,
+			source->tag,
+			0,
+			NULL,
+			1,
+			NULL,
+			source->element_count
+	)) != 0) {
+		goto out;
+	}
+
+	memcpy((*target)->data, result_str, source->element_count);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result_str);
+	return ret;
+}
+
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
         const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
                 RRR_PASTE(RRR_TYPE_NAME_,from_uc) "2" RRR_PASTE(RRR_TYPE_NAME_,to_uc),           \
+                RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
+                RRR_PASTE(__rrr_type_convert_,name_lc)                                           \
+        }
+
+#define RRR_TYPE_CONVERSION_DEFINE_SPECIAL(name_lc,from_uc,to_uc)                                \
+        const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
+                RRR_QUOTE(name_lc),                                                              \
                 RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
                 &RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
                 &RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
@@ -473,7 +542,8 @@ enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_STR2VAIN,
 	RRR_TYPE_CONVERSION_MSG2BLOB,
 	RRR_TYPE_CONVERSION_VAIN2H,
-	RRR_TYPE_CONVERSION_VAIN2STR
+	RRR_TYPE_CONVERSION_VAIN2STR,
+	RRR_TYPE_CONVERSION_HCHAR2STR
 };
 
 RRR_TYPE_CONVERSION_DEFINE(h2str,H,STR);
@@ -488,6 +558,7 @@ RRR_TYPE_CONVERSION_DEFINE(str2vain,STR,VAIN);
 RRR_TYPE_CONVERSION_DEFINE(vain2h,VAIN,H);
 RRR_TYPE_CONVERSION_DEFINE(vain2str,VAIN,STR);
 RRR_TYPE_CONVERSION_DEFINE(msg2blob,MSG,BLOB);
+RRR_TYPE_CONVERSION_DEFINE_SPECIAL(hchar2str,H,STR);
 
 static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_h2str,
@@ -501,8 +572,8 @@ static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_str2vain,
 		&rrr_type_conversion_msg2blob,
 		&rrr_type_conversion_vain2h,
-		&rrr_type_conversion_vain2str
-
+		&rrr_type_conversion_vain2str,
+		&rrr_type_conversion_hchar2str
 };
 
 static const struct rrr_type_conversion_definition *__rrr_type_convert_definition_get_from_str (
