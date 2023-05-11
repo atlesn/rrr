@@ -1,4 +1,10 @@
-rrr (1.28-9) bullseye; urgency=medium
+rrr (1.28-10posten1) bullseye; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Thu, 11 May 2023 11:59:09 +0200
+
+rrr (1.28-10) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 

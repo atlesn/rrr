@@ -1920,10 +1920,12 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_report_tag",
 		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_report_tag", report_tag);
-    		if ((ret = rrr_map_item_add_new(&data->meta_tags_all, "http_report_tag", NULL)) != 0) {
-			RRR_MSG_0("Failed to add meta tag in %s\n", __func__);
-			ret = 1;
-			goto out;
+    		if (data->report_tag != NULL && *(data->report_tag) != '\0') {
+			if ((ret = rrr_map_item_add_new(&data->meta_tags_all, data->report_tag, NULL)) != 0) {
+				RRR_MSG_0("Failed to add meta tag in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
 		}
 	);
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
