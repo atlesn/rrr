@@ -568,8 +568,23 @@ static void __rrr_socket_client_read_callback_flags_deduct (
 	int do_soft_error_propagates = 1;           \
 	__rrr_socket_client_read_callback_flags_deduct (&read_flags_socket, &do_soft_error_propagates, client);
 
+// Soft error propagation disabling will prevent connection closure upon parse errors. Read session
+// is still cleared by read framework,and parsing commenses when more data is avilable. For files
+// with finite size, soft error should propagate instead to force closure.
+
 #define ENFORCE_SOFT_ERROR_PROPAGATES()             \
 	if (!do_soft_error_propagates) { RRR_BUG("BUG: Soft error propagation is implied in %s and must be set to 1\n", __func__); }
+
+#define PROCESS_SOFT_ERROR_PROPAGATION()              \
+  do {if (ret == RRR_READ_SOFT_ERROR) {             \
+    if (do_soft_error_propagates) {                 \
+      RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd); \
+    }                                               \
+    else {                                          \
+      RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);    \
+      ret = 0;                                      \
+    }                                               \
+  }} while (0)
 
 static int __rrr_socket_client_collection_read_raw_get_target_size_callback (
 		struct rrr_read_session *read_session,
@@ -960,30 +975,33 @@ static void __rrr_socket_client_event_read_raw (
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
-	ENFORCE_SOFT_ERROR_PROPAGATES();
 
 	uint64_t bytes_read = 0;
 
+	int ret = rrr_socket_read_message_default (
+			&bytes_read,
+			&client->read_sessions,
+			fd,
+			4096,
+			collection->read_step_max_size,
+			0, // No max size
+			read_flags_socket,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			__rrr_socket_client_collection_read_raw_get_target_size_callback,
+			client,
+			__rrr_socket_client_event_read_error_callback,
+			client,
+			__rrr_socket_client_collection_read_raw_complete_callback,
+			client
+	);	
+
+	PROCESS_SOFT_ERROR_PROPAGATION();
+
 	__rrr_socket_client_return_value_process (
-		collection,
-		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				fd,
-				4096,
-				collection->read_step_max_size,
-				0, // No max size
-				read_flags_socket,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				__rrr_socket_client_collection_read_raw_get_target_size_callback,
-				client,
-				__rrr_socket_client_event_read_error_callback,
-				client,
-				__rrr_socket_client_collection_read_raw_complete_callback,
-				client
-		)
+			collection,
+			client,
+			ret
 	);
 }
 
@@ -1042,20 +1060,7 @@ static void __rrr_socket_client_event_read_array_tree (
 		client
 	);
 
-	// Prevent connection closure upon parse errors. Read session is still cleared by read framework,
-	// and parsing commenses when more data is avilable. For files with finite size, soft error should
-	// propagate instead to force closure.
-	if (ret == RRR_READ_SOFT_ERROR) {
-		if (do_soft_error_propagates) {
-			// Propagate return value
-			RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd);
-		}
-		else {
-			// Ignore any soft error
-			RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);
-			ret = 0;
-		}
-	}
+	PROCESS_SOFT_ERROR_PROPAGATION();
 
 	__rrr_socket_client_return_value_process (
 		collection,
