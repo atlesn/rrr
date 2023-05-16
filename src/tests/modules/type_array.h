@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msg_msg;
 struct rrr_instance_collection;
 struct rrr_instance_runtime_data;
+struct rrr_map;
 
 struct rrr_test_function_data {
 	int do_array_str_to_h_conversion;
@@ -44,7 +45,8 @@ int test_array (
 );
 
 int test_anything (
-		RRR_TEST_FUNCTION_ARGS
+		RRR_TEST_FUNCTION_ARGS,
+		const struct rrr_map *array_check_values
 );
 
 int test_type_array_mysql (
