@@ -1,3 +1,9 @@
+rrr (1.28-10posten1bookworm2) bookworm; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Tue, 27 Jun 2023 03:14:05 -0400
+
 rrr (1.28-10posten1) bullseye; urgency=medium
 
   * Non-maintainer upload.
