@@ -790,6 +790,14 @@ AS_IF([test "x$enable_artnet" = xno], [
 	], [
 		AC_MSG_ERROR([Test of symbols from artnet.h failed, make sure libartnet-dev is installed.])
 	])
+
+	ARTNET_CFLAGS=""
+	ARTNET_LDFLAGS=""
+	ARTNET_LIBS="-lartnet"
+
+	AC_SUBST([ARTNET_CFLAGS])
+	AC_SUBST([ARTNET_LDFLAGS])
+	AC_SUBST([ARTNET_LIBS])
 ])
 
 # Make sure json-c-test does not include any libraries

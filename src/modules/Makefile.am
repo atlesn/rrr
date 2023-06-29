@@ -42,7 +42,7 @@ endif
 if RRR_WITH_ARTNET
 artnet = artnet.la
 artnet_la_SOURCES = p_artnet.c
-artnet_la_LDFLAGS = ${module_ldflags} -lartnet
+artnet_la_LDFLAGS = ${module_ldflags}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la \

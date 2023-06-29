@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/artnet/rrr_artnet.h"
+
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 
@@ -42,13 +44,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct artnet_data {
 	struct rrr_instance_runtime_data *thread_data;
 	rrr_setting_uint message_ttl_seconds;
-	uint64_t message_ttl_us;
 	struct rrr_poll_helper_counters counters;
+	struct rrr_artnet_node *node;
 };
 
-static void artnet_data_init(struct artnet_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int artnet_data_init(struct artnet_data *data, struct rrr_instance_runtime_data *thread_data) {
+	int ret = 0;
+
 	memset(data, '\0', sizeof(*data));
+
+	if ((ret = rrr_artnet_node_new(&data->node)) != 0) {
+		RRR_MSG_0("Failed to create artnet node in artnet instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
 	data->thread_data = thread_data;
+
+	out:
+	return ret;
+}
+
+static void artnet_data_cleanup(void *arg) {
+	struct artnet_data *data = arg;
+
+	if (data->node != NULL) {
+		rrr_artnet_node_destroy(data->node);
+	}
 }
 
 static int artnet_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -60,12 +81,6 @@ static int artnet_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	const struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
-
-	if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(message, data->message_ttl_us)) {
-		RRR_MSG_0("Warning: Received message in artnet instance %s with expired TTL, limit is set to %" PRIrrrbl " seconds. Dropping message.\n",
-				INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
-		goto drop;
-	}
 
 	RRR_DBG_3("artnet instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
@@ -81,7 +96,6 @@ static int artnet_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data);
 
-	drop:
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -99,16 +113,6 @@ static int artnet_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_ttl_seconds", message_ttl_seconds, 0);
-
-	if (data->message_ttl_seconds > UINT32_MAX) {
-		RRR_MSG_0("artnet_ttl_seconds too large in instance %s, maximum is %u\n", config->name, UINT32_MAX);
-		ret = 1;
-		goto out;
-	}
-
-	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
-
 	out:
 	return ret;
 }
@@ -120,10 +124,14 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	artnet_data_init(data, thread_data);
+	if (artnet_data_init(data, thread_data) != 0) {
+		goto out_message;
+	}
+
+	pthread_cleanup_push(artnet_data_cleanup, data);
 
 	if (artnet_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
-		goto out_message;
+		goto out_cleanup;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -138,6 +146,8 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 			thread
 	);
 
+	out_cleanup:
+	pthread_cleanup_pop(1);
 	out_message:
 	RRR_DBG_1 ("Thread artnet %p exiting\n", thread);
 

@@ -42,6 +42,15 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_ARTNET
+libadd_artnet = librrrartnet.la
+librrrartnet_la_SOURCES = artnet/rrr_artnet.c
+librrrartnet_la_CFLAGS = ${ARTNET_CFLAGS} 
+librrrartnet_la_LDFLAGS = ${ARTNET_LDFLAGS}
+librrrartnet_la_LIBS = ${ARTNET_LIBS}
+artnet_extra_ld = ${ARTNET_LDFLAGS} ${ARTNET_LIBS}
+endif
+
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
@@ -143,7 +152,8 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
-                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
+                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} \
+		    ${artnet_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c route.c message_helper.c \
@@ -208,6 +218,7 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
+    ${libadd_artnet}                 \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
