@@ -56,6 +56,7 @@ AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bind
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
+AC_ARG_WITH([artnet],[AS_HELP_STRING([--without-artnet],[build without the libartnet bindings])],[enable_artnet=no],[enable_artnet=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the systemd bindings])],[enable_systemd=no],[enable_systemd=yes])
@@ -155,6 +156,7 @@ AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
@@ -762,6 +764,31 @@ AS_IF([test "x$enable_usb" = xno], [
 		AC_MSG_RESULT([OK])
 	], [
 		AC_MSG_ERROR([Test of symbols from usb.h failed, make sure libusb-dev or libusb-compat is installed.])
+	])
+])
+
+AC_MSG_CHECKING([for ArtNet enabled])
+AS_IF([test "x$enable_artnet" = xno], [
+	AC_MSG_RESULT([Not compiling with ArtNet])
+], [
+	AC_MSG_RESULT([yes])
+	AC_CHECK_HEADERS([artnet/artnet.h])
+	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libusb not found]))
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <artnet/artnet.h>
+			
+			int main (int argc, char *argv[]) {
+				artnet_node node;
+				node = artnet_new("0.0.0.0", 0);
+				artnet_destroy(node);
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([Test of symbols from artnet.h failed, make sure libartnet-dev is installed.])
 	])
 ])
 
