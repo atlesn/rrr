@@ -876,6 +876,8 @@ int rrr_socket_add (
 
 	assert(fd > 0);
 
+	RRR_DBG_7("rrr_socket external add fd %i pid %i\n", fd, getpid());
+
 	pthread_mutex_lock(&socket_lock);
 
 	if ((ret = __rrr_socket_add_unlocked(fd, domain, type, protocol, creator, NULL, 0, 1 /* Is externally opened */)) != 0) {
@@ -892,6 +894,8 @@ int rrr_socket_remove (
 		int fd
 ) {
 	int ret = 0;
+
+	RRR_DBG_7("rrr_socket external remove fd %i pid %i\n", fd, getpid());
 
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		if (node->options.fd == fd) {
