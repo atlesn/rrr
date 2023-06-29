@@ -21,18 +21,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../allocator.h"
 #include "../log.h"
+#include "../socket/rrr_socket.h"
 #include "./rrr_artnet.h"
 
+#include <assert.h>
 #include <artnet/artnet.h>
 
 struct rrr_artnet_node {
 	artnet_node node;
+	artnet_socket_t fd;
 };
 
 int rrr_artnet_node_new (struct rrr_artnet_node **result) {
 	int ret = 0;
 
 	struct rrr_artnet_node *node;
+	int domain, type, protocol;
 
 	*result = NULL;
 
@@ -48,9 +52,42 @@ int rrr_artnet_node_new (struct rrr_artnet_node **result) {
 		goto out_free;
 	}
 
+	if (artnet_start(node->node) != ARTNET_EOK) {
+		RRR_MSG_0("Failed to start artnet in %s: %s\n", __func__, artnet_strerror());
+		ret = 1;
+		goto out_destroy;
+	}
+
+	if ((node->fd = artnet_get_sd(node->node)) < 0) {
+		switch (node->fd) {
+			case ARTNET_EACTION:
+				RRR_MSG_0("Got ARTNET_EACTION while retrieving artnet socket number in %s\n", __func__);
+				break;
+			case -1:
+				RRR_MSG_0("Socket error -1 while retrieving artnet socket number in %s\n", __func__);
+				break;
+			default:
+				RRR_MSG_0("Unknown error %i while retrieving artnet socket number in %s\n", node->fd, __func__);
+				break;
+		};
+		ret = 1;
+		goto out_stop;
+	}
+
+	artnet_get_sockopt(&domain, &type, &protocol);
+
+	if ((ret = rrr_socket_add (node->fd, domain, type, protocol, __func__)) != 0) {
+		RRR_MSG_0("Failed to register socket in %s\n", __func__);
+		goto out_destroy;
+	}
+
 	*result = node;
 
 	goto out;
+	out_stop:
+		artnet_stop(node->node);
+	out_destroy:
+		artnet_destroy(node->node);
 	out_free:
 		rrr_free(node);
 	out:
@@ -58,6 +95,8 @@ int rrr_artnet_node_new (struct rrr_artnet_node **result) {
 }
 
 void rrr_artnet_node_destroy (struct rrr_artnet_node *node) {
+	artnet_stop(node->node);
 	artnet_destroy(node->node);
+	rrr_socket_remove(node->fd);
 	rrr_free(node);
 }
