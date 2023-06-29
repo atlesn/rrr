@@ -159,6 +159,7 @@ AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
+AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
@@ -772,6 +773,7 @@ AS_IF([test "x$enable_artnet" = xno], [
 	AC_MSG_RESULT([Not compiling with ArtNet])
 ], [
 	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_ARTNET], [1], [Compile with libartnet bindings])
 	AC_CHECK_HEADERS([artnet/artnet.h])
 	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libusb not found]))
 	AC_RUN_IFELSE([
