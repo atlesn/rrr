@@ -26,14 +26,14 @@ struct rrr_artnet_node;
 struct rrr_event_queue;
 
 int rrr_artnet_node_new (
-		struct rrr_artnet_node **result,
-		struct rrr_event_queue *event_queue
+		struct rrr_artnet_node **result
 );
 void rrr_artnet_node_destroy (
 		struct rrr_artnet_node *node
 );
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
+		struct rrr_event_queue *event_queue,
 		void (*failure_callback)(void *arg),
 		void *callback_arg
 );

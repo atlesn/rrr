@@ -31,27 +31,88 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 #include <artnet/artnet.h>
 
+#define RRR_ARTNET_UNIVERSE_MAX 16
+#define RRR_ARTNET_CHANNEL_MAX 512
+
+enum rrr_artnet_mode {
+	RRR_ARTNET_MODE_DEMO,
+	RRR_ARTNET_MODE_MANAGED
+};
+
+typedef uint8_t rrr_artnet_dmx_t;
+
+struct rrr_artnet_universe {
+	uint8_t index;
+	rrr_artnet_dmx_t *dmx;
+	uint16_t dmx_count;
+	size_t dmx_size;
+	uint16_t animation_pos;
+};
+
 struct rrr_artnet_node {
 	artnet_node node;
 	artnet_socket_t fd;
 
+	struct rrr_artnet_universe universes[RRR_ARTNET_UNIVERSE_MAX];
+
 	struct rrr_event_queue *event_queue;
 	struct rrr_event_collection events;
 	rrr_event_handle event_periodic_poll;
+	rrr_event_handle event_periodic_update;
 	rrr_event_handle event_read;
 
 	void (*failure_callback)(void *arg);
 	void *callback_arg;
+
+	enum rrr_artnet_mode mode;
 };
 
+#define RRR_ARTNET_UNIVERSE_ITERATE_BEGIN()                      \
+  do { for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {   \
+    struct rrr_artnet_universe *universe = &(node->universes[i])
+
+#define RRR_ARTNET_UNIVERSE_ITERATE_END()                        \
+  }} while(0)
+
+static int __rrr_artnet_universe_init (
+		struct rrr_artnet_universe *universe,
+		uint8_t index,
+		uint16_t dmx_count
+) {
+	int ret = 0;
+
+	assert(universe->dmx == NULL);
+
+	if ((universe->dmx = rrr_allocate_zero(sizeof(*(universe->dmx)) * dmx_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate DMX channels in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	universe->index = index;
+	universe->dmx_count = dmx_count;
+	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
+
+	out:
+	return ret;
+}
+
+static void __rrr_artnet_universe_cleanup (
+		struct rrr_artnet_universe *universe
+) {
+	RRR_FREE_IF_NOT_NULL(universe->dmx);
+	memset(universe, '\0', sizeof(*universe));
+}
+
 int rrr_artnet_node_new (
-		struct rrr_artnet_node **result,
-		struct rrr_event_queue *event_queue
+		struct rrr_artnet_node **result
 ) {
 	int ret = 0;
 
 	struct rrr_artnet_node *node;
 	int domain, type, protocol;
+
+	const int verbose = 0;
 
 	*result = NULL;
 
@@ -61,11 +122,13 @@ int rrr_artnet_node_new (
 		goto out;
 	}
 
-	if ((node->node = artnet_new(NULL, 1 /* Verbose */)) == NULL) {
+	if ((node->node = artnet_new(NULL, verbose)) == NULL) {
 		RRR_MSG_0("Failed to create artnet node in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
+
+	artnet_set_node_type(node->node, ARTNET_RAW);
 
 	if (artnet_start(node->node) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to start artnet in %s: %s\n", __func__, artnet_strerror());
@@ -93,16 +156,25 @@ int rrr_artnet_node_new (
 
 	if ((ret = rrr_socket_add (node->fd, domain, type, protocol, __func__)) != 0) {
 		RRR_MSG_0("Failed to register socket in %s\n", __func__);
-		goto out_destroy;
+		goto out_stop;
 	}
 
-	rrr_event_collection_init(&node->events, event_queue);
-
-	node->event_queue = event_queue;
+	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+		if ((ret = __rrr_artnet_universe_init (universe, i, RRR_ARTNET_CHANNEL_MAX)) != 0) {
+			RRR_MSG_0("Failed to init universe in %s\n", __func__);
+			goto out_cleanup_universes;
+		}
+	RRR_ARTNET_UNIVERSE_ITERATE_END();
 
 	*result = node;
 
 	goto out;
+	out_cleanup_universes:
+		RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+			__rrr_artnet_universe_cleanup (&node->universes[i]);
+		RRR_ARTNET_UNIVERSE_ITERATE_END();
+	//out_remove_socket:
+		rrr_socket_remove(node->fd);
 	out_stop:
 		artnet_stop(node->node);
 	out_destroy:
@@ -111,6 +183,28 @@ int rrr_artnet_node_new (
 		rrr_free(node);
 	out:
 		return ret;
+}
+
+static void __rrr_artnet_dump_nodes (
+	struct rrr_artnet_node *node
+) {
+	if (!RRR_DEBUGLEVEL_3) {
+		return;
+	}
+
+	artnet_node_list nl = artnet_get_nl(node->node);
+
+	for (artnet_node_entry ne = artnet_nl_first(nl); ne != NULL; ne = artnet_nl_next(nl)) {
+		RRR_MSG_3("--------- %d.%d.%d.%d -------------\n", ne->ip[0], ne->ip[1], ne->ip[2], ne->ip[3]);
+		RRR_MSG_3("Short Name:   %s\n", ne->shortname);
+		RRR_MSG_3("Long Name:    %s\n", ne->longname);
+		RRR_MSG_3("Node Report:  %s\n", ne->nodereport);
+		RRR_MSG_3("Subnet:       0x%02x\n", ne->sub);
+		RRR_MSG_3("Numb Ports:   %d\n", ne->numbports);
+		RRR_MSG_3("Input Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->swin[0], ne->swin[1], ne->swin[2], ne->swin[3] );
+		RRR_MSG_3("Output Addrs: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->swout[0], ne->swout[1], ne->swout[2], ne->swout[3] );
+		RRR_MSG_3("----------------------------------\n");
+	}
 }
 
 #define FAIL() \
@@ -130,6 +224,36 @@ void __rrr_artnet_event_periodic_poll (
 		RRR_MSG_0("Failed to send artnet poll in %s\n", __func__);
 		FAIL();
 	}
+
+	__rrr_artnet_dump_nodes(node);
+}
+
+void __rrr_artnet_event_periodic_update (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_artnet_node *node = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	uint8_t dmx_tmp = 0;
+
+	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+		switch (node->mode) {
+			case RRR_ARTNET_MODE_DEMO:
+				memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
+				break;
+			default:
+				break;
+		};
+
+		if (artnet_raw_send_dmx(node->node, universe->index, universe->dmx_count, universe->dmx) != ARTNET_EOK) {
+			RRR_MSG_0("Failed to send DMX data in %s: %s\n", __func__, artnet_strerror());
+			FAIL();
+		}
+	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
 
 void __rrr_artnet_event_read (
@@ -142,8 +266,6 @@ void __rrr_artnet_event_read (
 	(void)(fd);
 	(void)(flags);
 
-	printf("Read\n");
-
 	if (artnet_read(node->node, 0) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to read artnet data in %s\n", __func__);
 		FAIL();
@@ -151,23 +273,30 @@ void __rrr_artnet_event_read (
 }
 
 static int __rrr_artnet_handler_reply (
-		artnet_node _node,
+		artnet_node n,
 		void *pp,
 		void *d
 ) {
 	struct rrr_artnet_node *node = d;
 
-	printf("Reply\n");
+	(void)(node);
+
+	// Poll reply
 
 	return 0;
 }
 
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
+		struct rrr_event_queue *event_queue,
 		void (*failure_callback)(void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
+
+	node->event_queue = event_queue;
+
+	rrr_event_collection_init(&node->events, node->event_queue);
 
 	if ((ret = rrr_event_collection_push_periodic (
 			&node->event_periodic_poll,
@@ -182,6 +311,20 @@ int rrr_artnet_events_register (
 
 	EVENT_ACTIVATE(node->event_periodic_poll);
 	EVENT_ADD(node->event_periodic_poll);
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&node->event_periodic_update,
+			&node->events,
+			__rrr_artnet_event_periodic_update,
+			node,
+			20 * 1000 // 20 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to create periodic update event in %s\n", __func__);
+		goto out_cleanup;
+	}
+
+	EVENT_ACTIVATE(node->event_periodic_update);
+	EVENT_ADD(node->event_periodic_update);
 
 	if ((ret = rrr_event_collection_push_read (
 			&node->event_read,
@@ -212,7 +355,12 @@ int rrr_artnet_events_register (
 void rrr_artnet_node_destroy (
 		struct rrr_artnet_node *node
 ) {
-	rrr_event_collection_clear(&node->events);
+	for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {
+		__rrr_artnet_universe_cleanup (&node->universes[i]);
+	}
+	if (node->event_queue != NULL) {
+		rrr_event_collection_clear(&node->events);
+	}
 	artnet_stop(node->node);
 	artnet_destroy(node->node);
 	rrr_socket_remove(node->fd);

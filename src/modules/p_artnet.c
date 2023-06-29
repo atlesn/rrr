@@ -53,7 +53,7 @@ static int artnet_data_init(struct artnet_data *data, struct rrr_instance_runtim
 
 	memset(data, '\0', sizeof(*data));
 
-	if ((ret = rrr_artnet_node_new(&data->node, INSTANCE_D_EVENTS(thread_data))) != 0) {
+	if ((ret = rrr_artnet_node_new(&data->node)) != 0) {
 		RRR_MSG_0("Failed to create artnet node in artnet instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out;
 	}
@@ -149,6 +149,7 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 
 	if (rrr_artnet_events_register (
 			data->node,
+			INSTANCE_D_EVENTS(thread_data),
 			artnet_failure_callback,
 			data
 	) != 0) {
