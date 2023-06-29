@@ -23,8 +23,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARTNET_H
 
 struct rrr_artnet_node;
+struct rrr_event_queue;
 
-int rrr_artnet_node_new (struct rrr_artnet_node **result);
-void rrr_artnet_node_destroy (struct rrr_artnet_node *node);
+int rrr_artnet_node_new (
+		struct rrr_artnet_node **result,
+		struct rrr_event_queue *event_queue
+);
+void rrr_artnet_node_destroy (
+		struct rrr_artnet_node *node
+);
+int rrr_artnet_events_register (
+		struct rrr_artnet_node *node,
+		void (*failure_callback)(void *arg),
+		void *callback_arg
+);
 
 #endif /* RRR_ARTNET_H */

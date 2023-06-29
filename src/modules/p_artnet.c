@@ -53,7 +53,7 @@ static int artnet_data_init(struct artnet_data *data, struct rrr_instance_runtim
 
 	memset(data, '\0', sizeof(*data));
 
-	if ((ret = rrr_artnet_node_new(&data->node)) != 0) {
+	if ((ret = rrr_artnet_node_new(&data->node, INSTANCE_D_EVENTS(thread_data))) != 0) {
 		RRR_MSG_0("Failed to create artnet node in artnet instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out;
 	}
@@ -117,6 +117,14 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 	return ret;
 }
 
+static void artnet_failure_callback (void *arg) {
+	struct artnet_data *data = arg;
+
+	RRR_MSG_0("An artnet library function failed in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
+
+	rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+}
+
 static void *thread_entry_artnet (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct artnet_data *data = thread_data->private_data = thread_data->private_memory;
@@ -138,6 +146,15 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("artnet instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
+
+	if (rrr_artnet_events_register (
+			data->node,
+			artnet_failure_callback,
+			data
+	) != 0) {
+		RRR_MSG_0("Failed to register artnet events in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_cleanup;
+	}
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
