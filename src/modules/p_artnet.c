@@ -44,7 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define ARTNET_MAX_UNIVERSES 15
 #define ARTNET_DEFAULT_UNIVERSES 1
-#define RRR_ARTNET_DATA_TIMEOUT_S 10
+#define ARTNET_DATA_TIMEOUT_S 10
+#define ARTNET_DEFAULT_UPDATE_INTERVAL_MS 20
 
 #define ARTNET_TAG_CMD "artnet_cmd"
 #define ARTNET_TAG_UNIVERSE "artnet_universe"
@@ -66,6 +67,7 @@ struct artnet_data {
 	struct rrr_artnet_node *node;
 
 	rrr_setting_uint universes;
+	rrr_setting_uint update_interval_ms;
 
 	int do_demo;
 
@@ -215,7 +217,7 @@ static int artnet_process_cmd (
 		}
 	}
 
-	if (rrr_artnet_check_range(data->node, (uint8_t) universe, dmx_channel, dmx_count) != 0) {
+	if (rrr_artnet_universe_check_range(data->node, (uint8_t) universe, dmx_channel, dmx_count) != 0) {
 		RRR_MSG_0("Warning: Range check failed for fields " ARTNET_TAG_DMX_CHANNEL " and/or " ARTNET_TAG_DMX_DATA " in message to artnet instance %s. Maximum number of channels is %u.\n",
 				INSTANCE_D_NAME(data->thread_data), dmx_count_max);
 		goto out;
@@ -308,7 +310,15 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_universes", universes, ARTNET_DEFAULT_UNIVERSES);
 
 	if (data->universes > ARTNET_MAX_UNIVERSES) {
-		RRR_MSG_0("Setting artnet_universes out of range in artnet instance %s. Valid range is 0-16.\n");
+		RRR_MSG_0("Setting artnet_universes out of range in artnet instance %s. Valid range is 0-16.\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_update_interval_ms", update_interval_ms, ARTNET_DEFAULT_UPDATE_INTERVAL_MS);
+
+	if (data->update_interval_ms < 5 || data->update_interval_ms > 1000) {
+		RRR_MSG_0("Setting artnet_update_interval_ms out of range in artnet instance %s. Valid range is 5-1000.\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -355,7 +365,7 @@ static int artnet_periodic_universe_cb (
 
 	assert(universe != NULL);
 
-	const uint64_t data_timeout_limit = rrr_time_get_64() - RRR_ARTNET_DATA_TIMEOUT_S * 1000 * 1000;
+	const uint64_t data_timeout_limit = rrr_time_get_64() - ARTNET_DATA_TIMEOUT_S * 1000 * 1000;
 
 	if (universe->last_data_time < data_timeout_limit) {
 		universe->active = 0;
@@ -432,6 +442,7 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 	if (rrr_artnet_events_register (
 			data->node,
 			INSTANCE_D_EVENTS(thread_data),
+			data->update_interval_ms,
 			artnet_failure_callback,
 			artnet_incorrect_mode_callback,
 			data

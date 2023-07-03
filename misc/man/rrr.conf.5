@@ -1,4 +1,4 @@
-.Dd 2023-04-26
+.Dd 2023-07-03
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -3290,6 +3290,12 @@ If set to zero, no universes are controlled.
 If set to 'yes', a demo program will run cycling channel values in the configured universes.
 The demo will continue to run as long as no control messages are received from a sender instance.
 Defaults to 'yes'.
+
+.It artnet_update_interval_ms=MILLISECONDS
+Interval for how fast to fade.
+A channel value is incremented or decremented by five steps for every update when fading.
+The minimum value is 5 and maximum value is 1000.
+If left unset, a value of 20 is used.
 
 .El
 

@@ -255,14 +255,11 @@ static void __rrr_artnet_dump_nodes (
 static void __rrr_artnet_universe_fade_interpolate (
 		struct rrr_artnet_universe *universe
 ) {
-	const __m128i step_size_vec = _mm_set1_epi8(1);
+	const __m128i step_size_vec = _mm_set1_epi8(5);
 
 	assert(universe->dmx_size % 16 == 0);
 	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
 	RRR_ASSERT(sizeof(*(universe->dmx_fade_target) == 1),dmx_size_is_a_byte);
-
-//	printf("Universe %u channel 0 value %u target %u\n",
-//			universe->index, universe->dmx[0], universe->dmx_fade_target[0]);
 
 #ifdef RRR_HAVE_SIMD_128
 	for (int i = 0; i < universe->dmx_size; i += 16) {
@@ -441,6 +438,7 @@ int rrr_artnet_universe_iterate (
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
+		uint64_t update_interval_ms,
 		void (*failure_callback)(void *arg),
 		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg
@@ -470,7 +468,7 @@ int rrr_artnet_events_register (
 			&node->events,
 			__rrr_artnet_event_periodic_update,
 			node,
-			20 * 1000 // 20 ms
+			update_interval_ms * 1000
 	)) != 0) {
 		RRR_MSG_0("Failed to create periodic update event in %s\n", __func__);
 		goto out_cleanup;
@@ -614,7 +612,7 @@ void rrr_artnet_universe_update (
 	__rrr_artnet_universe_update(universe);
 }
 
-int rrr_artnet_check_range (
+int rrr_artnet_universe_check_range (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
 		uint64_t dmx_pos,

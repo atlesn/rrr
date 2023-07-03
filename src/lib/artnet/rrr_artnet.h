@@ -62,6 +62,7 @@ int rrr_artnet_universe_iterate (
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
+		uint64_t update_interval_ms,
 		void (*failure_callback)(void *arg),
 		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg
@@ -109,7 +110,7 @@ void rrr_artnet_universe_update (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i
 );
-int rrr_artnet_check_range (
+int rrr_artnet_universe_check_range (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
 		uint64_t dmx_pos,
