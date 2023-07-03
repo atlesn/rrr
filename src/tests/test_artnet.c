@@ -47,13 +47,24 @@ int rrr_test_artnet (void) {
 		assert(*(dmx + i) == 0);
 	}
 
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+
+	TEST_MSG("Check artnet set...\n");
+	rrr_artnet_universe_set_dmx_abs(node, 0, target, 0, sizeof(target), 2);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 2);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
 	// Run one animation step incrementing first 16 channels by 1
 	TEST_MSG("Check artnet fade...\n");
 	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
 	rrr_artnet_universe_set_dmx_fade(node, 0, target, 0, sizeof(target), 255);
 	rrr_artnet_universe_update(node, 0);
 	for (uint16_t i = 0; i < 16; i++) {
-		assert(*(dmx + i) == 1);
+		assert(*(dmx + i) == 3);
 	}
 	for (uint16_t i = 16; i < dmx_count; i++) {
 		assert(*(dmx + i) == 0);

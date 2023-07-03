@@ -493,6 +493,28 @@ int rrr_artnet_events_register (
 		return ret;
 }
 
+#define CHECK_DMX_POS()                                  \
+    assert(dmx_pos < universe->dmx_size);                \
+    assert(dmx_count <= universe->dmx_size);             \
+    assert(dmx_pos + dmx_count <= universe->dmx_size);
+
+void rrr_artnet_universe_set_dmx_abs (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		rrr_artnet_dmx_t *dmx,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		uint8_t value
+) {
+	SET_UNIVERSE();
+	CHECK_DMX_POS();
+
+	RRR_DBG_3("artnet universe %u set absolute value for channel %u through %u to %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos, value);
+
+	memset(universe->dmx + dmx_pos, value, dmx_count);
+}
+
 void rrr_artnet_universe_set_dmx_fade (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
@@ -502,9 +524,7 @@ void rrr_artnet_universe_set_dmx_fade (
 		uint8_t value
 ) {
 	SET_UNIVERSE();
-	assert(dmx_pos < universe->dmx_size);
-	assert(dmx_count <= universe->dmx_size);
-	assert(dmx_pos + dmx_count <= universe->dmx_size);
+	CHECK_DMX_POS();
 
 	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, value);

@@ -65,6 +65,14 @@ int rrr_artnet_events_register (
 		void (*failure_callback)(void *arg),
 		void *callback_arg
 );
+void rrr_artnet_universe_set_dmx_abs (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		rrr_artnet_dmx_t *dmx,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		uint8_t value
+);
 void rrr_artnet_universe_set_dmx_fade (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
