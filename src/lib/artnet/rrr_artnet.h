@@ -25,11 +25,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_artnet_node;
 struct rrr_event_queue;
 
+enum rrr_artnet_mode {
+	RRR_ARTNET_MODE_IDLE,
+	RRR_ARTNET_MODE_DEMO,
+	RRR_ARTNET_MODE_MANAGED
+};
+
 int rrr_artnet_node_new (
 		struct rrr_artnet_node **result
 );
 void rrr_artnet_node_destroy (
 		struct rrr_artnet_node *node
+);
+void rrr_artnet_set_mode (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		enum rrr_artnet_mode mode
+);
+enum rrr_artnet_mode rrr_artnet_get_mode (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+);
+void rrr_artnet_set_private_data (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		void *data,
+		void (*destroy)(void *data)
+);
+int rrr_artnet_universe_iterate (
+		struct rrr_artnet_node *node,
+		int (*cb)(uint8_t universe_i, enum rrr_artnet_mode mode, void *private_data, void *private_arg),
+		void *private_arg
 );
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,

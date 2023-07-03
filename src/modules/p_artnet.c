@@ -41,14 +41,52 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 
+#define ARTNET_MAX_UNIVERSES 15
+#define ARTNET_DEFAULT_UNIVERSES 1
+#define RRR_ARTNET_DATA_TIMEOUT_S 10
+
+struct artnet_universe {
+	int active;
+	uint64_t last_data_time;
+};
+
 struct artnet_data {
 	struct rrr_instance_runtime_data *thread_data;
 	rrr_setting_uint message_ttl_seconds;
 	struct rrr_poll_helper_counters counters;
 	struct rrr_artnet_node *node;
+
+	rrr_setting_uint universes;
+
+	int do_demo;
+
+	struct artnet_universe artnet_universe_states[ARTNET_MAX_UNIVERSES];
 };
 
-static int artnet_data_init(struct artnet_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int artnet_universe_new (struct artnet_universe **result) {
+	int ret = 0;
+
+	*result = NULL;
+
+	struct artnet_universe *universe;
+
+	if ((universe = rrr_allocate_zero (sizeof(*universe))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	*result = universe;
+
+	out:
+	return ret;
+}
+
+static void artnet_universe_destroy (void *universe) {
+	rrr_free(universe);
+}
+
+static int artnet_data_init (struct artnet_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 
 	memset(data, '\0', sizeof(*data));
@@ -59,6 +97,30 @@ static int artnet_data_init(struct artnet_data *data, struct rrr_instance_runtim
 	}
 
 	data->thread_data = thread_data;
+
+	out:
+	return ret;
+}
+
+static int artnet_universes_init (
+		struct artnet_data *data
+) {
+	int ret = 0;
+
+	for (uint8_t i = 0; i < data->universes; i++) {
+		struct artnet_universe *universe;
+
+		if ((ret = artnet_universe_new (&universe)) != 0) {
+			goto out;
+		}
+
+		rrr_artnet_set_private_data (
+				data->node,
+				i,
+				universe,
+				artnet_universe_destroy
+		);
+	}
 
 	out:
 	return ret;
@@ -113,6 +175,16 @@ static int artnet_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_universes", universes, ARTNET_DEFAULT_UNIVERSES);
+
+	if (data->universes > ARTNET_MAX_UNIVERSES) {
+		RRR_MSG_0("Setting artnet_universes out of range in artnet instance %s. Valid range is 0-16.\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("artnet_demo", do_demo, 1 /* Default is enabled */);
+
 	out:
 	return ret;
 }
@@ -123,6 +195,76 @@ static void artnet_failure_callback (void *arg) {
 	RRR_MSG_0("An artnet library function failed in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
 
 	rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+}
+
+#define ARTNET_ITERATE_STOP RRR_READ_SOFT_ERROR
+
+static int artnet_periodic_universe_cb (
+		uint8_t universe_i,
+		enum rrr_artnet_mode mode,
+		void *private_data,
+		void *private_arg
+) {
+	struct artnet_universe *universe = private_data;
+	struct artnet_data *data = private_arg;
+
+	if (universe_i >= data->universes) {
+		assert(universe == NULL);
+		return ARTNET_ITERATE_STOP;
+	}
+
+	assert(universe != NULL);
+
+	const uint64_t data_timeout_limit = rrr_time_get_64() - RRR_ARTNET_DATA_TIMEOUT_S * 1000 * 1000;
+
+	if (universe->last_data_time < data_timeout_limit) {
+		universe->active = 0;
+	}
+	else {
+		universe->active = 1;
+	}
+
+	if (data->do_demo && !universe->active && mode != RRR_ARTNET_MODE_DEMO) {
+		RRR_DBG_1("artnet instance %s set mode DEMO on universe %u\n",
+				INSTANCE_D_NAME(data->thread_data), universe_i);
+		rrr_artnet_set_mode(data->node, universe_i, RRR_ARTNET_MODE_DEMO);
+	}
+	else if (universe->active && mode != RRR_ARTNET_MODE_MANAGED) {
+		RRR_DBG_1("artnet instance %s set mode MANAGED on universe %u\n",
+				INSTANCE_D_NAME(data->thread_data), universe_i);
+		rrr_artnet_set_mode(data->node, universe_i, RRR_ARTNET_MODE_MANAGED);
+	}
+
+	return 0;
+}
+
+static int artnet_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct artnet_data *data = thread_data->private_data;
+
+	int ret = 0;
+
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
+		ret = RRR_EVENT_EXIT;
+		goto out;
+	}
+	rrr_thread_watchdog_time_update(thread);
+
+	if ((ret = rrr_artnet_universe_iterate (
+			data->node,
+			artnet_periodic_universe_cb,
+			data
+	)) != 0) {
+		if (ret != ARTNET_ITERATE_STOP) {
+			ret = RRR_EVENT_EXIT;
+			goto out;
+		}
+		ret = 0;
+	}
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_artnet (struct rrr_thread *thread) {
@@ -157,10 +299,15 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 		goto out_cleanup;
 	}
 
+	if (artnet_universes_init (data) != 0) {
+		RRR_MSG_0("Failed to initialize universes in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_cleanup;
+	}
+
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			artnet_periodic,
 			thread
 	);
 

@@ -34,19 +34,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARTNET_UNIVERSE_MAX 16
 #define RRR_ARTNET_CHANNEL_MAX 512
 
-enum rrr_artnet_mode {
-	RRR_ARTNET_MODE_DEMO,
-	RRR_ARTNET_MODE_MANAGED
-};
+#define SET_UNIVERSE()                                                   \
+    assert(universe_i < RRR_ARTNET_UNIVERSE_MAX);                        \
+    struct rrr_artnet_universe *universe = &node->universes[universe_i]
+
 
 typedef uint8_t rrr_artnet_dmx_t;
 
 struct rrr_artnet_universe {
 	uint8_t index;
+
 	rrr_artnet_dmx_t *dmx;
 	uint16_t dmx_count;
 	size_t dmx_size;
+
+	enum rrr_artnet_mode mode;
 	uint16_t animation_pos;
+
+	void *private_data;
+	void (*private_data_destroy)(void *data);
 };
 
 struct rrr_artnet_node {
@@ -63,8 +69,6 @@ struct rrr_artnet_node {
 
 	void (*failure_callback)(void *arg);
 	void *callback_arg;
-
-	enum rrr_artnet_mode mode;
 };
 
 #define RRR_ARTNET_UNIVERSE_ITERATE_BEGIN()                      \
@@ -92,15 +96,27 @@ static int __rrr_artnet_universe_init (
 	universe->index = index;
 	universe->dmx_count = dmx_count;
 	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
+	universe->mode = RRR_ARTNET_MODE_IDLE;
 
 	out:
 	return ret;
+}
+
+static void __rrr_artnet_universe_private_data_cleanup (
+		struct rrr_artnet_universe *universe
+) {
+	if (universe->private_data != NULL) {
+		universe->private_data_destroy(universe->private_data);
+		universe->private_data = NULL;
+		universe->private_data_destroy = NULL;
+	}
 }
 
 static void __rrr_artnet_universe_cleanup (
 		struct rrr_artnet_universe *universe
 ) {
 	RRR_FREE_IF_NOT_NULL(universe->dmx);
+	__rrr_artnet_universe_private_data_cleanup(universe);
 	memset(universe, '\0', sizeof(*universe));
 }
 
@@ -210,7 +226,7 @@ static void __rrr_artnet_dump_nodes (
 #define FAIL() \
 	node->failure_callback(node->callback_arg)
 
-void __rrr_artnet_event_periodic_poll (
+static void __rrr_artnet_event_periodic_poll (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -228,7 +244,7 @@ void __rrr_artnet_event_periodic_poll (
 	__rrr_artnet_dump_nodes(node);
 }
 
-void __rrr_artnet_event_periodic_update (
+static void __rrr_artnet_event_periodic_update (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -241,11 +257,16 @@ void __rrr_artnet_event_periodic_update (
 	uint8_t dmx_tmp = 0;
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		switch (node->mode) {
+		switch (universe->mode) {
+			case RRR_ARTNET_MODE_IDLE:
+				RRR_LL_ITERATE_NEXT();
+				break;
 			case RRR_ARTNET_MODE_DEMO:
 				memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
 				break;
 			default:
+				// TODO : Set managed data
+				memset(universe->dmx, 0, universe->dmx_size);
 				break;
 		};
 
@@ -256,7 +277,7 @@ void __rrr_artnet_event_periodic_update (
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
 
-void __rrr_artnet_event_read (
+static void __rrr_artnet_event_read (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -284,6 +305,53 @@ static int __rrr_artnet_handler_reply (
 	// Poll reply
 
 	return 0;
+}
+
+void rrr_artnet_set_mode (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		enum rrr_artnet_mode mode
+) {
+	SET_UNIVERSE();
+	assert (mode <= RRR_ARTNET_MODE_MANAGED);
+	universe->mode = mode;
+}
+
+enum rrr_artnet_mode rrr_artnet_get_mode (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+) {
+	SET_UNIVERSE();
+	return universe->mode;
+}
+
+void rrr_artnet_set_private_data (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		void *data,
+		void (*destroy)(void *data)
+) {
+	SET_UNIVERSE();
+	__rrr_artnet_universe_private_data_cleanup(universe);
+	universe->private_data = data;
+	universe->private_data_destroy = destroy;
+}
+
+int rrr_artnet_universe_iterate (
+		struct rrr_artnet_node *node,
+		int (*cb)(uint8_t universe_i, enum rrr_artnet_mode mode, void *private_data, void *private_arg),
+		void *private_arg
+) {
+	int ret = 0;
+
+	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+		if ((ret = cb (i, universe->mode, universe->private_data, private_arg)) != 0) {
+			goto out;
+		}
+	RRR_ARTNET_UNIVERSE_ITERATE_END();
+
+	out:
+	return ret;
 }
 
 int rrr_artnet_events_register (
