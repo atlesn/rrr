@@ -259,7 +259,7 @@ static void __rrr_artnet_event_periodic_update (
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
 		switch (universe->mode) {
 			case RRR_ARTNET_MODE_IDLE:
-				RRR_LL_ITERATE_NEXT();
+				goto next;
 				break;
 			case RRR_ARTNET_MODE_DEMO:
 				memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
@@ -274,6 +274,8 @@ static void __rrr_artnet_event_periodic_update (
 			RRR_MSG_0("Failed to send DMX data in %s: %s\n", __func__, artnet_strerror());
 			FAIL();
 		}
+
+		next:
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
 
