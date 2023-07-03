@@ -54,6 +54,10 @@ void rrr_artnet_set_private_data (
 		void *data,
 		void (*destroy)(void *data)
 );
+void rrr_artnet_set_fade_speed (
+		struct rrr_artnet_node *node,
+		uint8_t fade_speed
+);
 int rrr_artnet_universe_iterate (
 		struct rrr_artnet_node *node,
 		int (*cb)(uint8_t universe_i, enum rrr_artnet_mode mode, void *private_data, void *private_arg),
@@ -62,7 +66,6 @@ int rrr_artnet_universe_iterate (
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
-		uint64_t update_interval_ms,
 		void (*failure_callback)(void *arg),
 		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg

@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define ARTNET_MAX_UNIVERSES 15
 #define ARTNET_DEFAULT_UNIVERSES 1
 #define ARTNET_DATA_TIMEOUT_S 10
-#define ARTNET_DEFAULT_UPDATE_INTERVAL_MS 20
+#define ARTNET_DEFAULT_FADE_SPEED 5
 
 #define ARTNET_TAG_CMD "artnet_cmd"
 #define ARTNET_TAG_UNIVERSE "artnet_universe"
@@ -67,7 +67,7 @@ struct artnet_data {
 	struct rrr_artnet_node *node;
 
 	rrr_setting_uint universes;
-	rrr_setting_uint update_interval_ms;
+	rrr_setting_uint fade_speed;
 
 	int do_demo;
 
@@ -315,10 +315,10 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_update_interval_ms", update_interval_ms, ARTNET_DEFAULT_UPDATE_INTERVAL_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_fade_speed", fade_speed, ARTNET_DEFAULT_FADE_SPEED);
 
-	if (data->update_interval_ms < 5 || data->update_interval_ms > 1000) {
-		RRR_MSG_0("Setting artnet_update_interval_ms out of range in artnet instance %s. Valid range is 5-1000.\n", config->name);
+	if (data->fade_speed < 1 || data->fade_speed > 10) {
+		RRR_MSG_0("Setting artnet_fade_speed out of range in artnet instance %s. Valid range is 5-1000.\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -442,7 +442,6 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 	if (rrr_artnet_events_register (
 			data->node,
 			INSTANCE_D_EVENTS(thread_data),
-			data->update_interval_ms,
 			artnet_failure_callback,
 			artnet_incorrect_mode_callback,
 			data
@@ -450,6 +449,8 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to register artnet events in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_cleanup;
 	}
+
+	rrr_artnet_set_fade_speed(data->node, (uint8_t) data->fade_speed);
 
 	if (artnet_universes_init (data) != 0) {
 		RRR_MSG_0("Failed to initialize universes in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));

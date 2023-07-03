@@ -3291,11 +3291,9 @@ If set to 'yes', a demo program will run cycling channel values in the configure
 The demo will continue to run as long as no control messages are received from a sender instance.
 Defaults to 'yes'.
 
-.It artnet_update_interval_ms=MILLISECONDS
-Interval for how fast to fade.
-A channel value is incremented or decremented by five steps for every update when fading.
-The minimum value is 5 and maximum value is 1000.
-If left unset, a value of 20 is used.
+.It artnet_fade_speed=UNSIGNED INTEGER
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, a value of 5 is used.
 
 .El
 

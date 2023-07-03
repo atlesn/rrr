@@ -54,6 +54,8 @@ struct rrr_artnet_universe {
 	enum rrr_artnet_mode mode;
 	uint16_t animation_pos;
 
+	uint8_t fade_speed;
+
 	void *private_data;
 	void (*private_data_destroy)(void *data);
 };
@@ -70,6 +72,8 @@ struct rrr_artnet_node {
 	rrr_event_handle event_periodic_update;
 	rrr_event_handle event_read;
 
+	uint8_t fade_speed;
+
 	void (*failure_callback)(void *arg);
 	void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode);
 	void *callback_arg;
@@ -85,7 +89,8 @@ struct rrr_artnet_node {
 static int __rrr_artnet_universe_init (
 		struct rrr_artnet_universe *universe,
 		uint8_t index,
-		uint16_t dmx_count
+		uint16_t dmx_count,
+		uint8_t fade_speed
 ) {
 	int ret = 0;
 
@@ -107,6 +112,7 @@ static int __rrr_artnet_universe_init (
 	universe->dmx_count = dmx_count;
 	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
 	universe->mode = RRR_ARTNET_MODE_IDLE;
+	universe->fade_speed = fade_speed;
 
 	goto out;
 	out_free_dmx:
@@ -190,7 +196,7 @@ int rrr_artnet_node_new (
 	}
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		if ((ret = __rrr_artnet_universe_init (universe, i, RRR_ARTNET_CHANNEL_MAX)) != 0) {
+		if ((ret = __rrr_artnet_universe_init (universe, i, RRR_ARTNET_CHANNEL_MAX, 1 /* Default fade speed */)) != 0) {
 			RRR_MSG_0("Failed to init universe in %s\n", __func__);
 			goto out_cleanup_universes;
 		}
@@ -255,7 +261,7 @@ static void __rrr_artnet_dump_nodes (
 static void __rrr_artnet_universe_fade_interpolate (
 		struct rrr_artnet_universe *universe
 ) {
-	const __m128i step_size_vec = _mm_set1_epi8(5);
+	const __m128i step_size_vec = _mm_set1_epi8(universe->fade_speed);
 
 	assert(universe->dmx_size % 16 == 0);
 	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
@@ -418,6 +424,19 @@ void rrr_artnet_set_private_data (
 	universe->private_data_destroy = destroy;
 }
 
+void rrr_artnet_set_fade_speed (
+		struct rrr_artnet_node *node,
+		uint8_t fade_speed
+) {
+	assert(fade_speed > 0);
+
+	RRR_DBG_3("artnet set fade speed %u all universes\n", fade_speed);
+
+	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+		universe->fade_speed = fade_speed;
+	RRR_ARTNET_UNIVERSE_ITERATE_END();
+}
+
 int rrr_artnet_universe_iterate (
 		struct rrr_artnet_node *node,
 		int (*cb)(uint8_t universe_i, enum rrr_artnet_mode mode, void *private_data, void *private_arg),
@@ -438,7 +457,6 @@ int rrr_artnet_universe_iterate (
 int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
-		uint64_t update_interval_ms,
 		void (*failure_callback)(void *arg),
 		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg
@@ -468,7 +486,7 @@ int rrr_artnet_events_register (
 			&node->events,
 			__rrr_artnet_event_periodic_update,
 			node,
-			update_interval_ms * 1000
+			20 * 1000 // 20ms
 	)) != 0) {
 		RRR_MSG_0("Failed to create periodic update event in %s\n", __func__);
 		goto out_cleanup;
