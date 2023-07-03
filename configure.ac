@@ -224,7 +224,32 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
-		
+
+AC_MSG_CHECKING([for 128 bit SIMD])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <immintrin.h>
+		int main(int argc, char *argv[]) {
+			unsigned char data[16];
+			__m128i a;
+			_mm_loadu_si128(data);
+			_mm_cmplt_epi8(a, a);
+			_mm_cmpgt_epi8(a, a);
+			_mm_set1_epi8(1);
+			_mm_and_si128(a, a);
+			_mm_add_epi8(a, a);
+			_mm_sub_epi8(a, a);
+			_mm_storeu_si128(data, a);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_SIMD_128], [1], [128 bit SIMD instructions are available])
+], [
+	AC_MSG_RESULT([no])
+])
+
 AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])

@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_artnet_node;
 struct rrr_event_queue;
 
+typedef uint8_t rrr_artnet_dmx_t;
+
 enum rrr_artnet_mode {
 	RRR_ARTNET_MODE_IDLE,
 	RRR_ARTNET_MODE_DEMO,
@@ -37,12 +39,12 @@ int rrr_artnet_node_new (
 void rrr_artnet_node_destroy (
 		struct rrr_artnet_node *node
 );
-void rrr_artnet_set_mode (
+void rrr_artnet_universe_set_mode (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
 		enum rrr_artnet_mode mode
 );
-enum rrr_artnet_mode rrr_artnet_get_mode (
+enum rrr_artnet_mode rrr_artnet_universe_get_mode (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i
 );
@@ -62,6 +64,24 @@ int rrr_artnet_events_register (
 		struct rrr_event_queue *event_queue,
 		void (*failure_callback)(void *arg),
 		void *callback_arg
+);
+void rrr_artnet_universe_set_dmx_fade (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		rrr_artnet_dmx_t *dmx,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		uint8_t value
+);
+void rrr_artnet_universe_get_dmx (
+		const rrr_artnet_dmx_t **dmx,
+		uint16_t *dmx_count,
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+);
+void rrr_artnet_universe_update (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
 );
 
 #endif /* RRR_ARTNET_H */

@@ -31,6 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 #include <artnet/artnet.h>
 
+#ifdef RRR_HAVE_SIMD_128
+#include <immintrin.h>
+#endif
+
 #define RRR_ARTNET_UNIVERSE_MAX 16
 #define RRR_ARTNET_CHANNEL_MAX 512
 
@@ -39,12 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_artnet_universe *universe = &node->universes[universe_i]
 
 
-typedef uint8_t rrr_artnet_dmx_t;
-
 struct rrr_artnet_universe {
 	uint8_t index;
 
 	rrr_artnet_dmx_t *dmx;
+	rrr_artnet_dmx_t *dmx_fade_target;
 	uint16_t dmx_count;
 	size_t dmx_size;
 
@@ -93,13 +96,22 @@ static int __rrr_artnet_universe_init (
 		goto out;
 	}
 
+	if ((universe->dmx_fade_target = rrr_allocate_zero(sizeof(*(universe->dmx_fade_target)) * dmx_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate DMX channels in %s\n", __func__);
+		ret = 1;
+		goto out_free_dmx;
+	}
+
 	universe->index = index;
 	universe->dmx_count = dmx_count;
 	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
 	universe->mode = RRR_ARTNET_MODE_IDLE;
 
+	goto out;
+	out_free_dmx:
+		rrr_free(universe->dmx);
 	out:
-	return ret;
+		return ret;
 }
 
 static void __rrr_artnet_universe_private_data_cleanup (
@@ -116,6 +128,7 @@ static void __rrr_artnet_universe_cleanup (
 		struct rrr_artnet_universe *universe
 ) {
 	RRR_FREE_IF_NOT_NULL(universe->dmx);
+	RRR_FREE_IF_NOT_NULL(universe->dmx_fade_target);
 	__rrr_artnet_universe_private_data_cleanup(universe);
 	memset(universe, '\0', sizeof(*universe));
 }
@@ -201,8 +214,23 @@ int rrr_artnet_node_new (
 		return ret;
 }
 
+void rrr_artnet_node_destroy (
+		struct rrr_artnet_node *node
+) {
+	for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {
+		__rrr_artnet_universe_cleanup (&node->universes[i]);
+	}
+	if (node->event_queue != NULL) {
+		rrr_event_collection_clear(&node->events);
+	}
+	artnet_stop(node->node);
+	artnet_destroy(node->node);
+	rrr_socket_remove(node->fd);
+	rrr_free(node);
+}
+
 static void __rrr_artnet_dump_nodes (
-	struct rrr_artnet_node *node
+		struct rrr_artnet_node *node
 ) {
 	if (!RRR_DEBUGLEVEL_3) {
 		return;
@@ -221,6 +249,58 @@ static void __rrr_artnet_dump_nodes (
 		RRR_MSG_3("Output Addrs: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->swout[0], ne->swout[1], ne->swout[2], ne->swout[3] );
 		RRR_MSG_3("----------------------------------\n");
 	}
+}
+
+static void __rrr_artnet_universe_fade_interpolate (
+		struct rrr_artnet_universe *universe
+) {
+	const __m128i step_size_vec = _mm_set1_epi8(1);
+
+	assert(universe->dmx_size % 16 == 0);
+	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
+	RRR_ASSERT(sizeof(*(universe->dmx_fade_target) == 1),dmx_size_is_a_byte);
+
+#ifdef RRR_HAVE_SIMD_128
+	for (int i = 0; i < universe->dmx_size; i += 16) {
+		__m128i current_vec = _mm_loadu_si128((__m128i*) (universe->dmx + i));
+		__m128i target_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_target + i));
+
+		__m128i cmp_less = _mm_cmplt_epi8(target_vec, current_vec);
+		__m128i cmp_greater = _mm_cmpgt_epi8(target_vec, current_vec);
+
+		__m128i inc_vec = _mm_and_si128(cmp_less, step_size_vec);
+		__m128i dec_vec = _mm_and_si128(cmp_greater, step_size_vec);
+
+		current_vec = _mm_add_epi8(current_vec, inc_vec);
+		current_vec = _mm_sub_epi8(current_vec, dec_vec);
+
+		_mm_storeu_si128((__m128i*) (universe->dmx + i), current_vec);
+	}
+#else
+    for (int i = 0; i < universe->dmx_size; i += 1) {
+	    if (universe->dmx[i] < universe->dmx_fade_target[i])
+		    universe->dmx[i] += 1;
+	    else if (universe->dmx[i] > universe->dmx_fade_target[i])
+		    universe->dmx[i] -= 1;
+    }
+#endif
+}
+
+static void __rrr_artnet_universe_update (
+		struct rrr_artnet_universe *universe
+) {
+	switch (universe->mode) {
+		case RRR_ARTNET_MODE_IDLE:
+			break;
+		case RRR_ARTNET_MODE_DEMO:
+			memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
+			break;
+		default:
+			// TODO : Set managed data
+		//	memset(universe->dmx, 0, universe->dmx_size);
+			__rrr_artnet_universe_fade_interpolate(universe);
+			break;
+	};
 }
 
 #define FAIL() \
@@ -257,25 +337,16 @@ static void __rrr_artnet_event_periodic_update (
 	uint8_t dmx_tmp = 0;
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		switch (universe->mode) {
-			case RRR_ARTNET_MODE_IDLE:
-				goto next;
-				break;
-			case RRR_ARTNET_MODE_DEMO:
-				memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
-				break;
-			default:
-				// TODO : Set managed data
-				memset(universe->dmx, 0, universe->dmx_size);
-				break;
-		};
+		__rrr_artnet_universe_update(universe);
+
+		if (universe->mode == RRR_ARTNET_MODE_IDLE) {
+			RRR_LL_ITERATE_NEXT();
+		}
 
 		if (artnet_raw_send_dmx(node->node, universe->index, universe->dmx_count, universe->dmx) != ARTNET_EOK) {
 			RRR_MSG_0("Failed to send DMX data in %s: %s\n", __func__, artnet_strerror());
 			FAIL();
 		}
-
-		next:
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
 
@@ -309,7 +380,7 @@ static int __rrr_artnet_handler_reply (
 	return 0;
 }
 
-void rrr_artnet_set_mode (
+void rrr_artnet_universe_set_mode (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
 		enum rrr_artnet_mode mode
@@ -319,7 +390,7 @@ void rrr_artnet_set_mode (
 	universe->mode = mode;
 }
 
-enum rrr_artnet_mode rrr_artnet_get_mode (
+enum rrr_artnet_mode rrr_artnet_universe_get_mode (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i
 ) {
@@ -422,17 +493,40 @@ int rrr_artnet_events_register (
 		return ret;
 }
 
-void rrr_artnet_node_destroy (
-		struct rrr_artnet_node *node
+void rrr_artnet_universe_set_dmx_fade (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		rrr_artnet_dmx_t *dmx,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		uint8_t value
 ) {
-	for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {
-		__rrr_artnet_universe_cleanup (&node->universes[i]);
-	}
-	if (node->event_queue != NULL) {
-		rrr_event_collection_clear(&node->events);
-	}
-	artnet_stop(node->node);
-	artnet_destroy(node->node);
-	rrr_socket_remove(node->fd);
-	rrr_free(node);
+	SET_UNIVERSE();
+	assert(dmx_pos < universe->dmx_size);
+	assert(dmx_count <= universe->dmx_size);
+	assert(dmx_pos + dmx_count <= universe->dmx_size);
+
+	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos, value);
+
+	memset(universe->dmx_fade_target + dmx_pos, value, dmx_count);
+}
+
+void rrr_artnet_universe_get_dmx (
+		const rrr_artnet_dmx_t **dmx,
+		uint16_t *dmx_count,
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+) {
+	SET_UNIVERSE();
+	*dmx = universe->dmx;
+	*dmx_count = universe->dmx_count;
+}
+
+void rrr_artnet_universe_update (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+) {
+	SET_UNIVERSE();
+	__rrr_artnet_universe_update(universe);
 }

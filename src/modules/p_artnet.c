@@ -227,12 +227,12 @@ static int artnet_periodic_universe_cb (
 	if (data->do_demo && !universe->active && mode != RRR_ARTNET_MODE_DEMO) {
 		RRR_DBG_1("artnet instance %s set mode DEMO on universe %u\n",
 				INSTANCE_D_NAME(data->thread_data), universe_i);
-		rrr_artnet_set_mode(data->node, universe_i, RRR_ARTNET_MODE_DEMO);
+		rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_DEMO);
 	}
 	else if (universe->active && mode != RRR_ARTNET_MODE_MANAGED) {
 		RRR_DBG_1("artnet instance %s set mode MANAGED on universe %u\n",
 				INSTANCE_D_NAME(data->thread_data), universe_i);
-		rrr_artnet_set_mode(data->node, universe_i, RRR_ARTNET_MODE_MANAGED);
+		rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_MANAGED);
 	}
 
 	return 0;

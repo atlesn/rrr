@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "test.h"
 #include "../lib/log.h"
 
 #include "../lib/artnet/rrr_artnet.h"
@@ -33,7 +34,33 @@ int rrr_test_artnet (void) {
 		goto out;
 	}
 
+	rrr_artnet_dmx_t target[16];
+	const rrr_artnet_dmx_t *dmx;
+	uint16_t dmx_count;
+
+	TEST_MSG("Check DMX channel size...\n");
+	rrr_artnet_universe_get_dmx(&dmx, &dmx_count, node, 0);
+	assert(dmx_count == 512);
+
+	TEST_MSG("Check zero initialized...\n");
+	for (uint16_t i = 0; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	// Run one animation step incrementing first 16 channels by 1
+	TEST_MSG("Check artnet fade...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, target, 0, sizeof(target), 255);
+	rrr_artnet_universe_update(node, 0);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 1);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
 	rrr_artnet_node_destroy(node);
+
 	out:
 	return ret;
 }
