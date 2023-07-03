@@ -431,7 +431,7 @@ int rrr_array_push_value_str_with_tag (
 
 static int __rrr_array_get_value_64_by_tag (
 		void *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index,
 		int do_signed
@@ -477,7 +477,7 @@ static int __rrr_array_get_value_64_by_tag (
 
 int rrr_array_get_value_unsigned_64_by_tag (
 		uint64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
@@ -486,16 +486,43 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 int rrr_array_get_value_signed_64_by_tag (
 		int64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
 	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
 }
 
+int rrr_array_get_value_ull_by_tag (
+		unsigned long long *result,
+		const struct rrr_array *array,
+		const char *tag
+) {
+	int ret = 0;
+
+	const struct rrr_type_value *value = NULL;
+
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
+		RRR_MSG_0("Could not find value '%s' in array while getting ull-value with conversion\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (value->definition->to_ull == NULL) {
+		RRR_MSG_0("Value '%s' of type '%s' can't be converted to unsigned\n", tag, value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+
+	*result = value->definition->to_ull(value);
+
+	out:
+	return ret;
+}
+
 int rrr_array_get_value_str_by_tag (
 		char **result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag
 ) {
 	int ret = 0;

@@ -63,12 +63,17 @@ int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
 		void (*failure_callback)(void *arg),
+		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg
+);
+void rrr_artnet_universe_get_private_data (
+		void **private_data,
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
 );
 void rrr_artnet_universe_set_dmx_abs (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
-		rrr_artnet_dmx_t *dmx,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
 		uint8_t value
@@ -76,10 +81,23 @@ void rrr_artnet_universe_set_dmx_abs (
 void rrr_artnet_universe_set_dmx_fade (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
-		rrr_artnet_dmx_t *dmx,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
 		uint8_t value
+);
+void rrr_artnet_universe_set_dmx_abs_raw (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		const rrr_artnet_dmx_t *dmx
+);
+void rrr_artnet_universe_set_dmx_fade_raw (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		const rrr_artnet_dmx_t *dmx
 );
 void rrr_artnet_universe_get_dmx (
 		const rrr_artnet_dmx_t **dmx,
@@ -90,6 +108,12 @@ void rrr_artnet_universe_get_dmx (
 void rrr_artnet_universe_update (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i
+);
+int rrr_artnet_check_range (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint64_t dmx_pos,
+		uint64_t dmx_count
 );
 
 #endif /* RRR_ARTNET_H */

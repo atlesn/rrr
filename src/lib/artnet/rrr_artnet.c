@@ -71,6 +71,7 @@ struct rrr_artnet_node {
 	rrr_event_handle event_read;
 
 	void (*failure_callback)(void *arg);
+	void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode);
 	void *callback_arg;
 };
 
@@ -260,13 +261,19 @@ static void __rrr_artnet_universe_fade_interpolate (
 	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
 	RRR_ASSERT(sizeof(*(universe->dmx_fade_target) == 1),dmx_size_is_a_byte);
 
+//	printf("Universe %u channel 0 value %u target %u\n",
+//			universe->index, universe->dmx[0], universe->dmx_fade_target[0]);
+
 #ifdef RRR_HAVE_SIMD_128
 	for (int i = 0; i < universe->dmx_size; i += 16) {
 		__m128i current_vec = _mm_loadu_si128((__m128i*) (universe->dmx + i));
 		__m128i target_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_target + i));
 
-		__m128i cmp_less = _mm_cmplt_epi8(target_vec, current_vec);
-		__m128i cmp_greater = _mm_cmpgt_epi8(target_vec, current_vec);
+		__m128i cmp_less = _mm_cmplt_epi8(_mm_xor_si128(current_vec, _mm_set1_epi8(0x80)), _mm_xor_si128(target_vec, _mm_set1_epi8(0x80)));
+	        cmp_less = _mm_xor_si128(cmp_less, _mm_set1_epi8(0x80));
+
+	        __m128i cmp_greater = _mm_cmpgt_epi8(_mm_xor_si128(current_vec, _mm_set1_epi8(0x80)), _mm_xor_si128(target_vec, _mm_set1_epi8(0x80)));
+		cmp_greater = _mm_xor_si128(cmp_greater, _mm_set1_epi8(0x80));
 
 		__m128i inc_vec = _mm_and_si128(cmp_less, step_size_vec);
 		__m128i dec_vec = _mm_and_si128(cmp_greater, step_size_vec);
@@ -387,6 +394,10 @@ void rrr_artnet_universe_set_mode (
 ) {
 	SET_UNIVERSE();
 	assert (mode <= RRR_ARTNET_MODE_MANAGED);
+
+	RRR_DBG_3("artnet universe %u set mode to %i\n",
+			universe_i, mode);
+
 	universe->mode = mode;
 }
 
@@ -431,6 +442,7 @@ int rrr_artnet_events_register (
 		struct rrr_artnet_node *node,
 		struct rrr_event_queue *event_queue,
 		void (*failure_callback)(void *arg),
+		void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -484,6 +496,7 @@ int rrr_artnet_events_register (
 	assert (artnet_set_handler(node->node, ARTNET_REPLY_HANDLER, __rrr_artnet_handler_reply, node) == ARTNET_EOK);
 
 	node->failure_callback = failure_callback;
+	node->incorrect_mode_callback = incorrect_mode_callback;
 	node->callback_arg = callback_arg;
 
 	goto out;
@@ -498,38 +511,88 @@ int rrr_artnet_events_register (
     assert(dmx_count <= universe->dmx_size);             \
     assert(dmx_pos + dmx_count <= universe->dmx_size);
 
+#define CHECK_MODE(_mode)                                                        \
+    do { if (universe->mode != _mode) {                                          \
+        node->incorrect_mode_callback(node, universe_i, universe->mode, _mode);  \
+    }} while(0)
+
+void rrr_artnet_universe_get_private_data (
+		void **private_data,
+		struct rrr_artnet_node *node,
+		uint8_t universe_i
+) {
+	SET_UNIVERSE();
+	*private_data = universe->private_data;
+}
+
 void rrr_artnet_universe_set_dmx_abs (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
-		rrr_artnet_dmx_t *dmx,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
 		uint8_t value
 ) {
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
+	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
 
 	RRR_DBG_3("artnet universe %u set absolute value for channel %u through %u to %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, value);
 
 	memset(universe->dmx + dmx_pos, value, dmx_count);
+	memset(universe->dmx_fade_target + dmx_pos, value, dmx_count);
 }
 
 void rrr_artnet_universe_set_dmx_fade (
 		struct rrr_artnet_node *node,
 		uint8_t universe_i,
-		rrr_artnet_dmx_t *dmx,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
 		uint8_t value
 ) {
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
+	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
 
 	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, value);
 
 	memset(universe->dmx_fade_target + dmx_pos, value, dmx_count);
+}
+
+void rrr_artnet_universe_set_dmx_abs_raw (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		const rrr_artnet_dmx_t *dmx
+) {
+	SET_UNIVERSE();
+	CHECK_DMX_POS();
+	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+
+	RRR_DBG_3("artnet universe %u set absolute value for channel %u through %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos);
+
+	memcpy(universe->dmx + dmx_pos, dmx, dmx_count);
+	memcpy(universe->dmx_fade_target + dmx_pos, dmx, dmx_count);
+}
+
+void rrr_artnet_universe_set_dmx_fade_raw (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint16_t dmx_pos,
+		uint16_t dmx_count,
+		const rrr_artnet_dmx_t *dmx
+) {
+	SET_UNIVERSE();
+	CHECK_DMX_POS();
+	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+
+	RRR_DBG_3("artnet universe %u set fade value for channel %u through %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos);
+
+	memcpy(universe->dmx_fade_target + dmx_pos, dmx, dmx_count);
 }
 
 void rrr_artnet_universe_get_dmx (
@@ -549,4 +612,35 @@ void rrr_artnet_universe_update (
 ) {
 	SET_UNIVERSE();
 	__rrr_artnet_universe_update(universe);
+}
+
+int rrr_artnet_check_range (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		uint64_t dmx_pos,
+		uint64_t dmx_count
+) {
+	int ret = 0;
+
+	SET_UNIVERSE();
+
+	if (!(dmx_pos < universe->dmx_size)) {
+		RRR_MSG_0("artnet universe %u DMX position %" PRIu64 " exceeds maximum of %u\n",
+				universe_i, dmx_pos, universe->dmx_size - 1);
+		ret = 1;
+	}
+
+	if (!(dmx_count <= universe->dmx_size)) {
+		RRR_MSG_0("artnet universe %u DMX count %" PRIu64 " exceeds maximum of %u\n",
+				universe_i, dmx_count, universe->dmx_size);
+		ret = 1;
+	}
+
+	if (!(dmx_pos + dmx_count <= universe->dmx_size)) {
+		RRR_MSG_0("artnet universe %u DMX pos+count %" PRIu64 "+%" PRIu64 " exceeds maximum of %u\n",
+				universe_i, dmx_pos, dmx_count, universe->dmx_size);
+		ret = 1;
+	}
+
+	return ret;
 }

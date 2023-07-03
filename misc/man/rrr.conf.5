@@ -3251,7 +3251,30 @@ MQTT topic to apply to generated messages and any forwarded point messages.
 The artnet module allows for DMX devices to be controlled using ArtNet.
 The module reads messages from another module creating specific control messages, possibly an instance of perl5 or python3 running a custom controller script.
 .PP
+In messages from sender instances, the following array values used for changing DMX values may be present:
+.PP
+.Bl -tag -width -indent
+.It artnet_cmd
+Must contain one of the string values
+.B set
+or
+.B fade.
 
+.It artnet_universe
+The index of the universe to manipulate.
+If not given, universe 0 is used.
+
+.It artnet_dmx_channel
+The first channel to manipulate.
+If not given, manipulation starts at channel 0.
+
+.It artnet_dmx_data
+The DMX data to use.
+May contain one or more channels with one byte each.
+The total length must not exceed 512 bytes or 512 minus the number of channels before the start channel.
+If not given, zeros are written to all channels.
+
+.El
 .PP
 The following configuration parameters are available in the
 .B artnet

@@ -40,10 +40,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
+#include "../lib/array.h"
 
 #define ARTNET_MAX_UNIVERSES 15
 #define ARTNET_DEFAULT_UNIVERSES 1
 #define RRR_ARTNET_DATA_TIMEOUT_S 10
+
+#define ARTNET_TAG_CMD "artnet_cmd"
+#define ARTNET_TAG_UNIVERSE "artnet_universe"
+#define ARTNET_TAG_DMX_DATA "artnet_dmx_data"
+#define ARTNET_TAG_DMX_CHANNEL "artnet_dmx_channel"
+
+#define ARTNET_CMD_SET "set"
+#define ARTNET_CMD_FADE "fade"
 
 struct artnet_universe {
 	int active;
@@ -134,31 +143,152 @@ static void artnet_data_cleanup(void *arg) {
 	}
 }
 
+static int artnet_process_cmd (
+		struct artnet_data *data,
+		const struct rrr_array *array
+) {
+	char *cmd = NULL;
+	unsigned long long universe = 0;
+	unsigned long long dmx_channel = 0;
+	uint64_t dmx_count = 0;
+	const struct rrr_type_value *dmx_data;
+
+	struct artnet_universe *universe_data;
+	const rrr_artnet_dmx_t *dmx_dummy;
+	uint16_t dmx_count_max = 0;
+
+	int ret = 0;
+
+	if ((ret = rrr_array_get_value_str_by_tag (&cmd, array, ARTNET_TAG_CMD)) != 0) {
+		RRR_MSG_0("Warning: Failed to get value " ARTNET_TAG_CMD " in message to artnet instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
+		goto out;
+	}
+
+	if (rrr_array_has_tag (array, ARTNET_TAG_UNIVERSE) && (ret = rrr_array_get_value_ull_by_tag (&universe, array, ARTNET_TAG_UNIVERSE)) != 0) {
+		RRR_MSG_0("Warning: Failed to get value " ARTNET_TAG_UNIVERSE " in message to artnet instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
+		goto out;
+	}
+
+	if (rrr_array_has_tag (array, ARTNET_TAG_DMX_CHANNEL) && (ret = rrr_array_get_value_ull_by_tag (&dmx_channel, array, ARTNET_TAG_DMX_CHANNEL)) != 0) {
+		RRR_MSG_0("Warning: Failed to get value " ARTNET_TAG_DMX_CHANNEL " in message to artnet instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
+		goto out;
+	}
+
+	RRR_DBG_3("artnet instance %s received command '%s' for universe %" PRIu64 " manipulate channel %" PRIu64 "\n",
+			INSTANCE_D_NAME(data->thread_data),
+			cmd,
+			universe,
+			dmx_channel
+	);
+
+	if (universe > ARTNET_MAX_UNIVERSES) {
+		RRR_MSG_0("Warning: Value " PRIu64 " in field " ARTNET_TAG_UNIVERSE " in message to artnet instance %s exceeds maximum of %u\n",
+				universe, INSTANCE_D_NAME(data->thread_data), ARTNET_MAX_UNIVERSES);
+		ret = 0;
+		goto out;
+	}
+
+	rrr_artnet_universe_get_dmx(&dmx_dummy, &dmx_count_max, data->node, (uint8_t) universe);
+	rrr_artnet_universe_get_private_data ((void **) &universe_data, data->node, (uint8_t) universe);
+
+	dmx_count = dmx_count_max;
+
+	if ((dmx_data = rrr_array_value_get_by_tag_const (array, ARTNET_TAG_DMX_DATA)) != NULL) {
+		if (dmx_data->total_stored_length == 0) {
+			RRR_DBG_3("DMX data length is zero in field " ARTNET_TAG_DMX_DATA " in message to artnet instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			data = NULL;
+		}
+		else {
+			if (dmx_data->total_stored_length > dmx_count_max) {
+				RRR_MSG_0("Warning: DMX length %" PRIrrrl " exceeds maximum of %u in field " ARTNET_TAG_DMX_DATA " in message to artnet instance %s\n",
+						dmx_data->total_stored_length, dmx_count_max, INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+			dmx_count = (uint16_t) dmx_data->total_stored_length;
+		}
+	}
+
+	if (rrr_artnet_check_range(data->node, (uint8_t) universe, dmx_channel, dmx_count) != 0) {
+		RRR_MSG_0("Warning: Range check failed for fields " ARTNET_TAG_DMX_CHANNEL " and/or " ARTNET_TAG_DMX_DATA " in message to artnet instance %s. Maximum number of channels is %u.\n",
+				INSTANCE_D_NAME(data->thread_data), dmx_count_max);
+		goto out;
+	}
+
+	if (strcmp(cmd, ARTNET_CMD_SET) == 0) {
+		if (dmx_data) {
+			rrr_artnet_universe_set_dmx_abs_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (rrr_artnet_dmx_t *) dmx_data->data);
+		}
+		else {
+			rrr_artnet_universe_set_dmx_abs(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, 0);
+		}
+	}
+	else if (strcmp(cmd, ARTNET_CMD_FADE) == 0) {
+		if (dmx_data) {
+			rrr_artnet_universe_set_dmx_fade_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (rrr_artnet_dmx_t *) dmx_data->data);
+		}
+		else {
+			rrr_artnet_universe_set_dmx_fade(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, 0);
+		}
+	}
+	else {
+		RRR_MSG_0("Warning: Invalid value %s for field " ARTNET_TAG_CMD " in message to artnet instance %s\n",
+				cmd, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	universe_data->last_data_time = rrr_time_get_64();
+
+	out:
+	RRR_FREE_IF_NOT_NULL(cmd);
+	return ret;
+}
+
 static int artnet_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct artnet_data *data = thread_data->private_data;
 
-	(void)(data);
-
 	const struct rrr_msg_msg *message = entry->message;
+	struct rrr_array array_tmp = {0};
 
 	int ret = 0;
 
-	RRR_DBG_3("artnet instance %s received a message with timestamp %llu\n",
+	if (!MSG_IS_ARRAY(message)) {
+		RRR_MSG_0("Warning: artnet instance %s received a message which was not an array message. Dropping it.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	uint16_t array_version;
+	if ((ret = rrr_array_message_append_to_array (
+			&array_version,
+			&array_tmp,
+			message
+	)) != 0) {
+		RRR_MSG_0("Failed to get array from message in artnet instance %s.\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	RRR_DBG_2("artnet instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(long long unsigned int) message->timestamp
 	);
 
-	ret = rrr_message_broker_incref_and_write_entry_unsafe (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry,
-			NULL,
-			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-	);
+	if ((ret = artnet_process_cmd (data, &array_tmp)) != 0) {
+		goto out;
+	}
 
+	out:
 	RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data);
-
 	rrr_msg_holder_unlock(entry);
+	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
@@ -195,6 +325,16 @@ static void artnet_failure_callback (void *arg) {
 	RRR_MSG_0("An artnet library function failed in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
 
 	rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+}
+
+static void artnet_incorrect_mode_callback (
+		struct rrr_artnet_node *node,
+		uint8_t universe_i,
+		enum rrr_artnet_mode current_mode,
+		enum rrr_artnet_mode required_mode
+) {
+	(void)(current_mode);
+	rrr_artnet_universe_set_mode(node, universe_i, required_mode);
 }
 
 #define ARTNET_ITERATE_STOP RRR_READ_SOFT_ERROR
@@ -293,6 +433,7 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 			data->node,
 			INSTANCE_D_EVENTS(thread_data),
 			artnet_failure_callback,
+			artnet_incorrect_mode_callback,
 			data
 	) != 0) {
 		RRR_MSG_0("Failed to register artnet events in artnet instance %s\n", INSTANCE_D_NAME(data->thread_data));
