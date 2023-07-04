@@ -46,11 +46,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define ARTNET_DEFAULT_UNIVERSES 1
 #define ARTNET_DATA_TIMEOUT_S 10
 #define ARTNET_DEFAULT_FADE_SPEED 5
+#define ARTNET_MIN_FADE_SPEED 1
+#define ARTNET_MAX_FADE_SPEED 10
 
 #define ARTNET_TAG_CMD "artnet_cmd"
 #define ARTNET_TAG_UNIVERSE "artnet_universe"
 #define ARTNET_TAG_DMX_DATA "artnet_dmx_data"
 #define ARTNET_TAG_DMX_CHANNEL "artnet_dmx_channel"
+#define ARTNET_TAG_FADE_SPEED "artnet_fade_speed"
 
 #define ARTNET_CMD_SET "set"
 #define ARTNET_CMD_FADE "fade"
@@ -152,6 +155,7 @@ static int artnet_process_cmd (
 	char *cmd = NULL;
 	unsigned long long universe = 0;
 	unsigned long long dmx_channel = 0;
+	unsigned long long fade_speed = data->fade_speed;
 	uint64_t dmx_count = 0;
 	const struct rrr_type_value *dmx_data;
 
@@ -182,11 +186,19 @@ static int artnet_process_cmd (
 		goto out;
 	}
 
-	RRR_DBG_3("artnet instance %s received command '%s' for universe %" PRIu64 " manipulate channel %" PRIu64 "\n",
+	if (rrr_array_has_tag (array, ARTNET_TAG_FADE_SPEED) && (ret = rrr_array_get_value_ull_by_tag (&fade_speed, array, ARTNET_TAG_FADE_SPEED)) != 0) {
+		RRR_MSG_0("Warning: Failed to get value " ARTNET_TAG_FADE_SPEED " in message to artnet instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
+		goto out;
+	}
+
+	RRR_DBG_3("artnet instance %s received command '%s' for universe %llu manipulate channel %llu fade speed %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			cmd,
 			universe,
-			dmx_channel
+			dmx_channel,
+			fade_speed
 	);
 
 	if (universe > ARTNET_MAX_UNIVERSES) {
@@ -223,6 +235,12 @@ static int artnet_process_cmd (
 		goto out;
 	}
 
+	if (fade_speed < ARTNET_MIN_FADE_SPEED || fade_speed > ARTNET_MAX_FADE_SPEED) {
+		RRR_MSG_0("Warning: Range check failed for field " ARTNET_TAG_FADE_SPEED " in artnet instance %s. Valid range is %i-%i.\n",
+				INSTANCE_D_NAME(data->thread_data), ARTNET_MIN_FADE_SPEED, ARTNET_MAX_FADE_SPEED);
+		goto out;
+	}
+
 	if (strcmp(cmd, ARTNET_CMD_SET) == 0) {
 		if (dmx_data) {
 			rrr_artnet_universe_set_dmx_abs_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (rrr_artnet_dmx_t *) dmx_data->data);
@@ -233,10 +251,10 @@ static int artnet_process_cmd (
 	}
 	else if (strcmp(cmd, ARTNET_CMD_FADE) == 0) {
 		if (dmx_data) {
-			rrr_artnet_universe_set_dmx_fade_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (rrr_artnet_dmx_t *) dmx_data->data);
+			rrr_artnet_universe_set_dmx_fade_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (uint8_t) fade_speed, (rrr_artnet_dmx_t *) dmx_data->data);
 		}
 		else {
-			rrr_artnet_universe_set_dmx_fade(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, 0);
+			rrr_artnet_universe_set_dmx_fade(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (uint8_t) fade_speed, 0);
 		}
 	}
 	else {
@@ -317,7 +335,7 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_fade_speed", fade_speed, ARTNET_DEFAULT_FADE_SPEED);
 
-	if (data->fade_speed < 1 || data->fade_speed > 10) {
+	if (data->fade_speed < ARTNET_MIN_FADE_SPEED || data->fade_speed > ARTNET_MAX_FADE_SPEED) {
 		RRR_MSG_0("Setting artnet_fade_speed out of range in artnet instance %s. Valid range is 5-1000.\n", config->name);
 		ret = 1;
 		goto out;

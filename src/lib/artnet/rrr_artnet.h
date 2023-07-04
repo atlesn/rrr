@@ -87,6 +87,7 @@ void rrr_artnet_universe_set_dmx_fade (
 		uint8_t universe_i,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
+		uint8_t fade_speed,
 		uint8_t value
 );
 void rrr_artnet_universe_set_dmx_abs_raw (
@@ -101,6 +102,7 @@ void rrr_artnet_universe_set_dmx_fade_raw (
 		uint8_t universe_i,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
+		uint8_t fade_speed,
 		const rrr_artnet_dmx_t *dmx
 );
 void rrr_artnet_universe_get_dmx (

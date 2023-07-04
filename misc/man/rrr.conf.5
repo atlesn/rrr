@@ -3274,6 +3274,12 @@ May contain one or more channels with one byte each.
 The total length must not exceed 512 bytes or 512 minus the number of channels before the start channel.
 If not given, zeros are written to all channels.
 
+.It artnet_fade_speed
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, the value set in the
+.B artnet_fade_speed
+configuration parameter is used.
+
 .El
 .PP
 The following configuration parameters are available in the

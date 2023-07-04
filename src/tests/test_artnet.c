@@ -60,7 +60,7 @@ int rrr_test_artnet (void) {
 	// Run one animation step incrementing first 16 channels by 1
 	TEST_MSG("Check artnet fade...\n");
 	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
-	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 255);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 1, 255);
 	rrr_artnet_universe_update(node, 0);
 	for (uint16_t i = 0; i < 16; i++) {
 		assert(*(dmx + i) == 3);

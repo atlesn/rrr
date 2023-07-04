@@ -42,19 +42,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     assert(universe_i < RRR_ARTNET_UNIVERSE_MAX);                        \
     struct rrr_artnet_universe *universe = &node->universes[universe_i]
 
-
 struct rrr_artnet_universe {
 	uint8_t index;
 
 	rrr_artnet_dmx_t *dmx;
 	rrr_artnet_dmx_t *dmx_fade_target;
+	rrr_artnet_dmx_t *dmx_fade_speed;
+
 	uint16_t dmx_count;
 	size_t dmx_size;
 
 	enum rrr_artnet_mode mode;
 	uint16_t animation_pos;
-
-	uint8_t fade_speed;
 
 	void *private_data;
 	void (*private_data_destroy)(void *data);
@@ -108,13 +107,22 @@ static int __rrr_artnet_universe_init (
 		goto out_free_dmx;
 	}
 
+	if ((universe->dmx_fade_speed = rrr_allocate_zero(sizeof(*(universe->dmx_fade_speed)) * dmx_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate DMX channels in %s\n", __func__);
+		ret = 1;
+		goto out_free_fade_target;
+	}
+
 	universe->index = index;
 	universe->dmx_count = dmx_count;
 	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
 	universe->mode = RRR_ARTNET_MODE_IDLE;
-	universe->fade_speed = fade_speed;
 
 	goto out;
+//	out_free_fade_speed:
+//		rrr_free(universe->dmx_fade_speed);
+	out_free_fade_target:
+		rrr_free(universe->dmx_fade_target);
 	out_free_dmx:
 		rrr_free(universe->dmx);
 	out:
@@ -136,6 +144,7 @@ static void __rrr_artnet_universe_cleanup (
 ) {
 	RRR_FREE_IF_NOT_NULL(universe->dmx);
 	RRR_FREE_IF_NOT_NULL(universe->dmx_fade_target);
+	RRR_FREE_IF_NOT_NULL(universe->dmx_fade_speed);
 	__rrr_artnet_universe_private_data_cleanup(universe);
 	memset(universe, '\0', sizeof(*universe));
 }
@@ -258,42 +267,86 @@ static void __rrr_artnet_dump_nodes (
 	}
 }
 
+/*
+#ifdef RRR_HAVE_SIMD_128
+__m128i _mm_blend(__m128i a, __m128i b, __m128i mask)
+{
+	__m128i mask_inverse = _mm_andnot_si128(mask, _mm_set1_epi8(0xFF));
+	__m128i blended = _mm_or_si128(_mm_and_si128(a, mask_inverse), _mm_and_si128(b, mask));
+	return blended;
+}
+#define _mm_cmpge_epu8(a, b) \
+	        _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+
+#define _mm_cmpgt_epu8(a, b) \
+	        _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+#endif
+*/
+
 static void __rrr_artnet_universe_fade_interpolate (
 		struct rrr_artnet_universe *universe
 ) {
-	const __m128i step_size_vec = _mm_set1_epi8(universe->fade_speed);
-
 	assert(universe->dmx_size % 16 == 0);
 	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
 	RRR_ASSERT(sizeof(*(universe->dmx_fade_target) == 1),dmx_size_is_a_byte);
 
+/*
+ * SIMD 128 NOT BENEFITIAL. CONSIDER 512 LATER.
+ *
 #ifdef RRR_HAVE_SIMD_128
 	for (int i = 0; i < universe->dmx_size; i += 16) {
+		__m128i step_size_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_speed + i));
 		__m128i current_vec = _mm_loadu_si128((__m128i*) (universe->dmx + i));
+		__m128i orig_vec = current_vec;
 		__m128i target_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_target + i));
 
-		__m128i cmp_less = _mm_cmplt_epi8(_mm_xor_si128(current_vec, _mm_set1_epi8(0x80)), _mm_xor_si128(target_vec, _mm_set1_epi8(0x80)));
-	        cmp_less = _mm_xor_si128(cmp_less, _mm_set1_epi8(0x80));
+		__m128i shall_increment = _mm_cmplt_epu8(current_vec, target_vec);
+		__m128i shall_decrement = _mm_cmpgt_epu8(current_vec, target_vec);
 
-	        __m128i cmp_greater = _mm_cmpgt_epi8(_mm_xor_si128(current_vec, _mm_set1_epi8(0x80)), _mm_xor_si128(target_vec, _mm_set1_epi8(0x80)));
-		cmp_greater = _mm_xor_si128(cmp_greater, _mm_set1_epi8(0x80));
-
-		__m128i inc_vec = _mm_and_si128(cmp_less, step_size_vec);
-		__m128i dec_vec = _mm_and_si128(cmp_greater, step_size_vec);
+		__m128i inc_vec = _mm_and_si128(shall_increment, step_size_vec);
+		__m128i dec_vec = _mm_and_si128(shall_decrement, step_size_vec);
 
 		current_vec = _mm_add_epi8(current_vec, inc_vec);
 		current_vec = _mm_sub_epi8(current_vec, dec_vec);
 
+		__m128i result_cmp_less = _mm_cmplt_epu8(current_vec, orig_vec);
+		__m128i result_cmp_greater = _mm_cmpgt_epu8(current_vec, orig_vec);
+
+		__m128i overflow_decrement = _mm_and_si128(result_cmp_greater, shall_decrement);
+		__m128i overflow_increment = _mm_and_si128(result_cmp_less, shall_increment);
+
+		current_vec = _mm_blend(current_vec, target_vec, overflow_decrement);
+		current_vec = _mm_blend(current_vec, target_vec, overflow_increment);
+
 		_mm_storeu_si128((__m128i*) (universe->dmx + i), current_vec);
 	}
 #else
-    for (int i = 0; i < universe->dmx_size; i += 1) {
-	    if (universe->dmx[i] < universe->dmx_fade_target[i])
-		    universe->dmx[i] += 1;
-	    else if (universe->dmx[i] > universe->dmx_fade_target[i])
-		    universe->dmx[i] -= 1;
-    }
+*/
+	for (int i = 0; i < universe->dmx_size; i += 1) {
+		const rrr_artnet_dmx_t dmx_orig = universe->dmx[i];
+		const rrr_artnet_dmx_t dmx_fade_speed = universe->dmx_fade_speed[i];
+		const rrr_artnet_dmx_t dmx_target = universe->dmx_fade_target[i];
+
+		if (universe->dmx[i] < dmx_target) {
+			rrr_artnet_dmx_t dmx_new = dmx_orig + dmx_fade_speed;
+			if (dmx_new < dmx_orig)
+				dmx_new = dmx_target;
+			universe->dmx[i] = dmx_new;
+		}
+		else if (universe->dmx[i] > dmx_target) {
+			rrr_artnet_dmx_t dmx_new = dmx_orig - dmx_fade_speed;
+			if (dmx_new > dmx_orig)
+				dmx_new = dmx_target;
+			universe->dmx[i] = dmx_new;
+		}
+	}
+/*
 #endif
+*/
 }
 
 static void __rrr_artnet_universe_update (
@@ -306,8 +359,6 @@ static void __rrr_artnet_universe_update (
 			memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
 			break;
 		default:
-			// TODO : Set managed data
-		//	memset(universe->dmx, 0, universe->dmx_size);
 			__rrr_artnet_universe_fade_interpolate(universe);
 			break;
 	};
@@ -433,7 +484,7 @@ void rrr_artnet_set_fade_speed (
 	RRR_DBG_3("artnet set fade speed %u all universes\n", fade_speed);
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		universe->fade_speed = fade_speed;
+		memset(universe->dmx_fade_speed, fade_speed, sizeof(*(universe->dmx_fade_speed)));
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
 
@@ -564,16 +615,18 @@ void rrr_artnet_universe_set_dmx_fade (
 		uint8_t universe_i,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
+		uint8_t fade_speed,
 		uint8_t value
 ) {
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
 
-	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u\n",
-			universe_i, dmx_pos, dmx_count + dmx_pos, value);
+	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u speed %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos, value, fade_speed);
 
 	memset(universe->dmx_fade_target + dmx_pos, value, dmx_count);
+	memset(universe->dmx_fade_speed + dmx_pos, fade_speed, dmx_count);
 }
 
 void rrr_artnet_universe_set_dmx_abs_raw (
@@ -599,16 +652,18 @@ void rrr_artnet_universe_set_dmx_fade_raw (
 		uint8_t universe_i,
 		uint16_t dmx_pos,
 		uint16_t dmx_count,
+		uint8_t fade_speed,
 		const rrr_artnet_dmx_t *dmx
 ) {
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
 
-	RRR_DBG_3("artnet universe %u set fade value for channel %u through %u\n",
-			universe_i, dmx_pos, dmx_count + dmx_pos);
+	RRR_DBG_3("artnet universe %u set fade value for channel %u through %u speed %u\n",
+			universe_i, dmx_pos, dmx_count + dmx_pos, fade_speed);
 
 	memcpy(universe->dmx_fade_target + dmx_pos, dmx, dmx_count);
+	memset(universe->dmx_fade_speed + dmx_pos, fade_speed, dmx_count);
 }
 
 void rrr_artnet_universe_get_dmx (
