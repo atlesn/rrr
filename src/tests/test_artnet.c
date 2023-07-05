@@ -58,12 +58,34 @@ int rrr_test_artnet (void) {
 	}
 
 	// Run one animation step incrementing first 16 channels by 1
-	TEST_MSG("Check artnet fade...\n");
+	TEST_MSG("Check artnet fade up by 1...\n");
 	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
 	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 1, 255);
 	rrr_artnet_universe_update(node, 0);
 	for (uint16_t i = 0; i < 16; i++) {
 		assert(*(dmx + i) == 3);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	TEST_MSG("Check artnet fade up by 2...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 2, 255);
+	rrr_artnet_universe_update(node, 0);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 5);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	TEST_MSG("Check artnet fade down by 10 (underflow)...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 10, 0);
+	rrr_artnet_universe_update(node, 0);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 0);
 	}
 	for (uint16_t i = 16; i < dmx_count; i++) {
 		assert(*(dmx + i) == 0);

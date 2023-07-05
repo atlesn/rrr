@@ -30,8 +30,8 @@ sub source {
 		$message->push_tag_str("artnet_dmx_channel", "0");
 
 		if ($state % 2 == 0)  {
-			$debug->msg(1, "Set red\n");
-			$message->push_tag_blob("artnet_dmx_data", pack('C*', 255, 0, 0, 0), 4);
+			$debug->msg(1, "Set green\n");
+			$message->push_tag_blob("artnet_dmx_data", pack('C*', 0, 255, 0, 0), 4);
 			$message->push_tag_str("artnet_fade_speed", "1");
 		}
 		else {
