@@ -52,3 +52,5 @@ usr/lib/rrr/mangler.la
 usr/lib/rrr/mangler.so
 usr/lib/rrr/js.la
 usr/lib/rrr/js.so
+usr/lib/rrr/artnet.la
+usr/lib/rrr/artnet.so
