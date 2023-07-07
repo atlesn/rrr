@@ -48,7 +48,7 @@ Depends: ${misc:Depends},
          libjson-c5,
          libnghttp2-14,
 	 libnode | libnode72,
-	 libartnet
+	 libartnet1
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: librrr-dev
