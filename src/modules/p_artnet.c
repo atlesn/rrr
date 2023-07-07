@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/array.h"
 
-#define ARTNET_MAX_UNIVERSES 15
+#define ARTNET_MAX_UNIVERSES 16
 #define ARTNET_DEFAULT_UNIVERSES 1
 #define ARTNET_DATA_TIMEOUT_S 10
 #define ARTNET_DEFAULT_FADE_SPEED 5
@@ -203,9 +203,9 @@ static int artnet_process_cmd (
 			fade_speed
 	);
 
-	if (universe > ARTNET_MAX_UNIVERSES) {
+	if (universe > ARTNET_MAX_UNIVERSES - 1) {
 		RRR_MSG_0("Warning: Value " PRIu64 " in field " ARTNET_TAG_UNIVERSE " in message to artnet instance %s exceeds maximum of %u\n",
-				universe, INSTANCE_D_NAME(data->thread_data), ARTNET_MAX_UNIVERSES);
+				universe, INSTANCE_D_NAME(data->thread_data), ARTNET_MAX_UNIVERSES - 1);
 		ret = 0;
 		goto out;
 	}
