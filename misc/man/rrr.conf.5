@@ -3256,9 +3256,22 @@ In messages from sender instances, the following array values used for changing 
 .Bl -tag -width -indent
 .It artnet_cmd
 Must contain one of the string values
-.B set
+.B set,
+.B fade,
+.B start
 or
-.B fade.
+.B stop.
+The
+.B set
+and
+.B fade
+commands will either set DMX values or fade them gradually from the current value.
+The
+.B start
+and
+.B stop
+command commands will control whether or not the sending of control packets to the universe is active or not.
+By default, control packets are sent.
 
 .It artnet_universe
 The index of the universe to manipulate.

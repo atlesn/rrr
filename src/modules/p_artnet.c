@@ -55,6 +55,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define ARTNET_TAG_DMX_CHANNEL "artnet_dmx_channel"
 #define ARTNET_TAG_FADE_SPEED "artnet_fade_speed"
 
+#define ARTNET_CMD_START "start"
+#define ARTNET_CMD_STOP "stop"
 #define ARTNET_CMD_SET "set"
 #define ARTNET_CMD_FADE "fade"
 
@@ -241,7 +243,13 @@ static int artnet_process_cmd (
 		goto out;
 	}
 
-	if (strcmp(cmd, ARTNET_CMD_SET) == 0) {
+	if (strcmp(cmd, ARTNET_CMD_START) == 0) {
+		rrr_artnet_universe_set_mode(data->node, (uint8_t) universe, RRR_ARTNET_MODE_MANAGED);
+	}
+	else if (strcmp(cmd, ARTNET_CMD_STOP) == 0) {
+		rrr_artnet_universe_set_mode(data->node, (uint8_t) universe, RRR_ARTNET_MODE_STOPPED);
+	}
+	else if (strcmp(cmd, ARTNET_CMD_SET) == 0) {
 		if (dmx_data) {
 			rrr_artnet_universe_set_dmx_abs_raw(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (rrr_artnet_dmx_t *) dmx_data->data);
 		}
@@ -361,7 +369,10 @@ static void artnet_incorrect_mode_callback (
 		enum rrr_artnet_mode current_mode,
 		enum rrr_artnet_mode required_mode
 ) {
-	(void)(current_mode);
+	if (current_mode == RRR_ARTNET_MODE_STOPPED) {
+		/* We will not switch mode to managed until a start command is received */
+		return;
+	}
 	rrr_artnet_universe_set_mode(node, universe_i, required_mode);
 }
 

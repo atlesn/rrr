@@ -354,6 +354,7 @@ static void __rrr_artnet_universe_update (
 ) {
 	switch (universe->mode) {
 		case RRR_ARTNET_MODE_IDLE:
+		case RRR_ARTNET_MODE_STOPPED:
 			break;
 		case RRR_ARTNET_MODE_DEMO:
 			memset(universe->dmx, (universe->animation_pos += 5) % 256, universe->dmx_size);
@@ -395,16 +396,16 @@ static void __rrr_artnet_event_periodic_update (
 	(void)(fd);
 	(void)(flags);
 
-	uint8_t dmx_tmp = 0;
-
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
 		__rrr_artnet_universe_update(universe);
 
-		if (universe->mode == RRR_ARTNET_MODE_IDLE) {
+		if (universe->mode == RRR_ARTNET_MODE_IDLE || universe->mode == RRR_ARTNET_MODE_STOPPED) {
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (artnet_raw_send_dmx(node->node, universe->index, universe->dmx_count, universe->dmx) != ARTNET_EOK) {
+		assert(universe->dmx_count <= 512);
+
+		if (artnet_raw_send_dmx(node->node, universe->index, (int16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
 			RRR_MSG_0("Failed to send DMX data in %s: %s\n", __func__, artnet_strerror());
 			FAIL();
 		}

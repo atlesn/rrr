@@ -28,9 +28,10 @@ struct rrr_event_queue;
 typedef uint8_t rrr_artnet_dmx_t;
 
 enum rrr_artnet_mode {
-	RRR_ARTNET_MODE_IDLE,
-	RRR_ARTNET_MODE_DEMO,
-	RRR_ARTNET_MODE_MANAGED
+	RRR_ARTNET_MODE_IDLE,      // Sending of DMX data inactive. Application should switch to MANAGED when incorrect_mode_callback is called.
+	RRR_ARTNET_MODE_STOPPED,   // Sending of DMX data inactive. Application should not switch mode in incorrect_mode_callback.
+	RRR_ARTNET_MODE_DEMO,      // A demo is running where all channels are faded continously.
+	RRR_ARTNET_MODE_MANAGED    // Fading and setting is being controlled
 };
 
 int rrr_artnet_node_new (
