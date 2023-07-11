@@ -69,7 +69,7 @@ endif
 
 if RRR_WITH_NODE
 libadd_js = librrrjs.la
-librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/EventQueue.cxx js/Persistent.cxx
+librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
 librrrjs_la_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
 librrrjs_la_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
 js_extra_ld = ${NODE_LDFLAGS} ${NODE_LIBS}
