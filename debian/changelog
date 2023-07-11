@@ -1,4 +1,4 @@
-rrr (1.28-12) bullseye; urgency=medium
+rrr (1.28-13) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -15,6 +15,8 @@ rrr (1.28-12) bullseye; urgency=medium
     * New conversion type "hchar2str" in mangler module to convert individual
       bytes to strings
     * New module artnet for controlling DMX devices over ArtNet protocol
+    * New OS object in javascript (operating-system) and ability to obtain
+      hostname
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
