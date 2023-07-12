@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/js/Message.hxx"
 #include "../../lib/js//Persistent.hxx"
 
-#include "testjs.hxx"
+#include "testjs.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +38,9 @@ extern "C" {
 #include "../../lib/messages/Messages.hxx"
 #include "../test.h"
 
+static const char topic[] = "topic";
+static const char data[] = "0123456789";
+
 template<typename T> static void run(RRR::JS::Isolate &isolate, RRR::JS::CTX &ctx, const std::string &in, T action) {
 	using namespace RRR::JS;
 
@@ -47,7 +50,6 @@ template<typename T> static void run(RRR::JS::Isolate &isolate, RRR::JS::CTX &ct
 	})();
 
 	if (program->is_compiled()) {
-		printf("Compiled script %s, running\n", in.c_str());
 		program->run(ctx);
 	}
 
@@ -61,8 +63,19 @@ template<typename T> static void run(RRR::JS::Isolate &isolate, RRR::JS::CTX &ct
 }
 
 static void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
-	printf("DROP!!!!\n");
+	if (MSG_DATA_LENGTH(msg) != strlen(data)) {
+		const auto error = std::string("Data length mismatch got ") + std::to_string(MSG_DATA_LENGTH(msg)) + " expected " + std::to_string(strlen(data));
+		TEST_MSG("Failed in message drop: %s\n", error.c_str());
+		throw RRR::util::E(error);
+	}
+	if (memcmp(data, MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg)) != 0) {
+		const auto error = std::string("Data mismatch");
+		TEST_MSG("Failed in message drop: %s\n", error.c_str());
+		throw RRR::util::E(error);
+	}
 }
+
+extern "C" {
 
 int rrr_test_js (void) {
 	using namespace RRR::JS;
@@ -79,8 +92,6 @@ int rrr_test_js (void) {
 		auto message_drop = MessageDrop(drop, nullptr);
 		auto message_factory = MessageFactory(ctx, persistent_storage, message_drop);
 
-		const char topic[] = "topic";
-		const char data[] = "0123456789";
 		auto msg = RRR::Messages::new_with_data (
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -90,14 +101,13 @@ int rrr_test_js (void) {
 			data,
 			(rrr_u32) strlen(data)
 		);
-		auto code = std::string("function func(message) { message.send(); }");
+		auto code = std::string("export function func(message) { message.send(); }");
 
 		run(isolate, ctx, code, [&ret,&ctx,&message_factory,&msg](auto program){
 			auto func = program->get_function(ctx, "func");
 			auto message = message_factory.new_external(ctx, msg.get(), nullptr);
 			auto arg = Value(message.first());
 
-			printf("Riun function\n");
 			func.run(ctx, 1, &arg);
 
 			ctx.trycatch_ok([](std::string msg) {
@@ -116,3 +126,5 @@ int rrr_test_js (void) {
 
 	return ret;
 }
+
+} // extern "C"
