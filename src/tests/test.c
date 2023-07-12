@@ -52,13 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
-<<<<<<< HEAD
 #ifdef RRR_WITH_ARTNET
 #	include "test_artnet.h"
-=======
+#endif
 #ifdef RRR_WITH_NODE
 #	include "lib/testjs.h"
->>>>>>> development
 #endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
