@@ -87,7 +87,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 1) != 0) {
 		goto out_cleanup_cmd;
 	}
 

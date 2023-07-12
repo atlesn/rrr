@@ -10,6 +10,7 @@ endif
 
 if RRR_WITH_NODE
 js_extra_ldflags=-L./lib/.libs -ltestjs
+js_extra_libraries = ${NODE_LDFLAGS} ${NODE_LIBS}
 endif
 
 if RRR_WITH_CXX
@@ -17,8 +18,8 @@ testcxx = testcxx
 testcxx_SOURCES = testcxx.cxx \
 	../main.c 
 testcxx_CXXFLAGS = ${AM_CXXFLAGS} -O0 -fpie \
-	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/test\""
-testcxx_LDFLAGS = ${JEMALLOC_LIBS} ${js_extra_ldflags} -lrrr -lrrrcxx -pie
+	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
+testcxx_LDFLAGS = ${JEMALLOC_LIBS} ${js_extra_ldflags} -lrrr -lrrrcxx ${js_extra_libraries} -pie
 testcxx_test = testcxx
 endif
 
