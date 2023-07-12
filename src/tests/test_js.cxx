@@ -18,15 +18,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "test_js.hxx"
+
+extern "C" {
 #include <stdio.h>
 #include <string.h>
 
 #include "../lib/log.h"
 #include "test.h"
-#include "test_js.h"
 
 int rrr_test_js (void) {
 	int ret = 0;
 
 	return ret;
 }
+
+} // extern "C"

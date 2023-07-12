@@ -21,6 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TEST_JS_H
 #define RRR_TEST_JS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int rrr_test_js(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* RRR_TEST_JS_H */

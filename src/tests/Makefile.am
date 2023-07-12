@@ -17,7 +17,10 @@ test_zlib = test_zlib.c
 endif
 
 if RRR_WITH_NODE
-test_js = test_js.c
+test_js = test_js.cxx
+test_js_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
+test_js_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
+js_extra_ld = ${NODE_LDFLAGS} ${NODE_LIBS}
 endif
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
@@ -50,7 +53,7 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
-test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
+test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} ${js_extra_ld} -pie
 test_LDADD = -ldl -lpthread -lm -L../lib/.libs
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
