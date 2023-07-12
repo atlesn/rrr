@@ -52,9 +52,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
-#ifdef RRR_WITH_NODE
-#	include "test_js.hxx"
-#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
@@ -188,14 +185,6 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {
 		ret_tmp = rrr_test_zlib();
-	} TEST_RESULT(ret_tmp == 0);
-
-	ret |= ret_tmp;
-#endif
-
-#ifdef RRR_WITH_NODE
-	TEST_BEGIN("js library functions") {
-		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

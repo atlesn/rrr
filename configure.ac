@@ -1045,6 +1045,7 @@ AC_CONFIG_FILES(
 	src/modules/Makefile
 	src/lib/Makefile
 	src/tests/Makefile
+	src/tests/lib/Makefile
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile

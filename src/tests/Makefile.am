@@ -1,12 +1,4 @@
-SUBDIRS = modules
-
-#if RRR_WITH_PYTHON3
-#isolated_python_SOURCES = isolated_python.c ../global.c
-#isolated_python_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\" \
-#	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" -O0
-#isolated_python_LDFLAGS = ${PYTHON3_LDFLAGS} -ldl -lpthread -L../lib ${ldflags} -O0
-#python = isolated_python
-#endif
+SUBDIRS = modules lib
 
 if RRR_WITH_JSONC
 test_jsonc = test_json.c
@@ -17,15 +9,22 @@ test_zlib = test_zlib.c
 endif
 
 if RRR_WITH_NODE
-test_js = test_js.cxx
-test_js_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
-test_js_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
-js_extra_ld = ${NODE_LDFLAGS} ${NODE_LIBS}
+js_extra_ldflags=-L./lib/.libs -ltestjs
 endif
 
-noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
+if RRR_WITH_CXX
+testcxx = testcxx
+testcxx_SOURCES = testcxx.cxx \
+	../main.c 
+testcxx_CXXFLAGS = ${AM_CXXFLAGS} -O0 -fpie \
+	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/test\""
+testcxx_LDFLAGS = ${JEMALLOC_LIBS} ${js_extra_ldflags} -lrrr -lrrrcxx -pie
+testcxx_test = testcxx
+endif
 
-ldflags = ${JEMALLOC_LIBS} -L../lib -lrrr
+noinst_PROGRAMS = ${testcxx} test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
+
+ldflags = -lrrr
 
 test_SOURCES = test.c \
 	../main.c \
@@ -36,7 +35,6 @@ test_SOURCES = test.c \
 	test_condition.c \
 	${test_jsonc} \
 	${test_zlib} \
-	${test_js} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
@@ -52,8 +50,8 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
-test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} ${js_extra_ld} -pie
-test_LDADD = -ldl -lpthread -lm -L../lib/.libs
+test_LDFLAGS = ${JEMALLOC_LIBS} ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
+test_LDADD = -ldl -lpthread -lm -L../lib/.libs 
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
@@ -79,4 +77,4 @@ sha256_shatest_SOURCES = sha256/shatest.c
 sha256_shatest_CFLAGS = -fpie
 sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
-TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest
+TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test}

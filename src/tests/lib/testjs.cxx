@@ -18,19 +18,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "test_js.hxx"
+#include "../../lib/js/Js.hxx"
+#include "../../lib/js/Message.hxx"
+#include "../../lib/js//Persistent.hxx"
+#include "../../lib/messages/msg_msg.h"
 
-extern "C" {
+#include "testjs.hxx"
+
 #include <stdio.h>
 #include <string.h>
 
-#include "../lib/log.h"
-#include "test.h"
+#include "../../lib/log.h"
+#include "../test.h"
+
+static void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
+}
 
 int rrr_test_js (void) {
+	using namespace RRR::JS;
+
+	auto env = ENV("js-test");
+	auto isolate = Isolate(env);
+	auto ctx = CTX(env, std::string(__FILE__));
+	auto persistent_storage = PersistentStorage(ctx);
+
+	auto message_drop = MessageDrop(drop, nullptr);
+	auto message_factory = MessageFactory(ctx, persistent_storage, message_drop);
+
 	int ret = 0;
 
 	return ret;
 }
-
-} // extern "C"
