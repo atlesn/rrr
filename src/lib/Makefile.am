@@ -81,7 +81,8 @@ libadd_js = librrrjs.la
 librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
 librrrjs_la_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
 librrrjs_la_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
-js_extra_ld = ${NODE_LDFLAGS} ${NODE_LIBS}
+js_extra_ldflags = ${NODE_LDFLAGS}
+js_extra_libadd = $(NODE_LIBS)
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -145,7 +146,7 @@ util_cxx = util/Readfile.cxx
 
 event_cxx = event/Event.cxx
 
-librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs -lrrr ${js_extra_ld}
+librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs ${js_extra_ldflags}
 librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
 endif
@@ -241,5 +242,5 @@ noinst_LTLIBRARIES = ${libadd_all} ${libadd_all_cxx}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
 
 if RRR_WITH_CXX
-librrrcxx_la_LIBADD = ${libadd_all_cxx} -lpthread -ldl -lm -levent -levent_pthreads
+librrrcxx_la_LIBADD = ${libadd_all_cxx} ${js_extra_libadd} -lpthread -ldl -lm -levent -levent_pthreads
 endif

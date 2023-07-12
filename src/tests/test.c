@@ -52,8 +52,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+<<<<<<< HEAD
 #ifdef RRR_WITH_ARTNET
 #	include "test_artnet.h"
+=======
+#ifdef RRR_WITH_NODE
+#	include "lib/testjs.h"
+>>>>>>> development
 #endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
@@ -196,6 +201,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 #ifdef RRR_WITH_ARTNET
 	TEST_BEGIN("artnet library") {
 		ret_tmp = rrr_test_artnet();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_NODE
+	TEST_BEGIN("js library functions") {
+		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
