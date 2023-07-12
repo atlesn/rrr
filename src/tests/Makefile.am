@@ -51,8 +51,7 @@ test_SOURCES = test.c \
 test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
-	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
-	-fprofile-arcs -ftest-coverage
+	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
 test_LDFLAGS = ${ldflags} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} ${js_extra_ld} -pie
 test_LDADD = -ldl -lpthread -lm -L../lib/.libs
 
