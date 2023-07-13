@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_artnet_universe *universe = &node->universes[universe_i]
 
 struct rrr_artnet_universe {
+	uint16_t subnet;
 	uint8_t index;
 
 	rrr_artnet_dmx_t *dmx;
@@ -113,10 +114,12 @@ static int __rrr_artnet_universe_init (
 		goto out_free_fade_target;
 	}
 
+	universe->subnet = 0;
 	universe->index = index;
 	universe->dmx_count = dmx_count;
 	universe->dmx_size = sizeof(*(universe->dmx)) * dmx_count;
 	universe->mode = RRR_ARTNET_MODE_IDLE;
+	memset(universe->dmx_fade_speed, fade_speed, sizeof(*(universe->dmx_fade_speed)) * dmx_count);
 
 	goto out;
 //	out_free_fade_speed:
@@ -266,8 +269,8 @@ static void __rrr_artnet_dump_nodes (
 			RRR_MSG_3("   Bind index:    %d\n", ne->_bindindexes[i]);
 			RRR_MSG_3("   Port count:    %d\n", ne->_numbports[i]);
 			RRR_MSG_3("   Types:         0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_porttypes[i][0], ne->_porttypes[i][1], ne->_porttypes[i][2], ne->_porttypes[i][3] );
-			RRR_MSG_3("   Input Status:  %d, %d, %d, %d\n", ne->_goodinput[i][0], ne->_goodinput[i][1], ne->_goodinput[i][2], ne->_goodinput[i][3] );
-			RRR_MSG_3("   Output Status: %d, %d, %d, %d\n", ne->_goodoutput[i][0], ne->_goodoutput[i][1], ne->_goodoutput[i][2], ne->_goodoutput[i][3] );
+			RRR_MSG_3("   Input Status:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_goodinput[i][0], ne->_goodinput[i][1], ne->_goodinput[i][2], ne->_goodinput[i][3] );
+			RRR_MSG_3("   Output Status: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_goodoutput[i][0], ne->_goodoutput[i][1], ne->_goodoutput[i][2], ne->_goodoutput[i][3] );
 			RRR_MSG_3("   Input Addrs:   0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swin[i][0], ne->_swin[i][1], ne->_swin[i][2], ne->_swin[i][3] );
 			RRR_MSG_3("   Output Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swout[i][0], ne->_swout[i][1], ne->_swout[i][2], ne->_swout[i][3] );
 		}
