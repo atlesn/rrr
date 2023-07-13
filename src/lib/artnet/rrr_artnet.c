@@ -260,9 +260,17 @@ static void __rrr_artnet_dump_nodes (
 		RRR_MSG_3("Long Name:    %s\n", ne->longname);
 		RRR_MSG_3("Node Report:  %s\n", ne->nodereport);
 		RRR_MSG_3("Subnet:       0x%02x\n", ne->sub);
-		RRR_MSG_3("Numb Ports:   %d\n", ne->numbports);
-		RRR_MSG_3("Input Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->swin[0], ne->swin[1], ne->swin[2], ne->swin[3] );
-		RRR_MSG_3("Output Addrs: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->swout[0], ne->swout[1], ne->swout[2], ne->swout[3] );
+		RRR_MSG_3("Page count:   %d\n", ne->_numpages);
+		for (int i = 0; i < ne->_numpages; i++) {
+			RRR_MSG_3("   ------------- Page %d -------------\n", i);
+			RRR_MSG_3("   Bind index:    %d\n", ne->_bindindexes[i]);
+			RRR_MSG_3("   Port count:    %d\n", ne->_numbports[i]);
+			RRR_MSG_3("   Types:         0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_porttypes[i][0], ne->_porttypes[i][1], ne->_porttypes[i][2], ne->_porttypes[i][3] );
+			RRR_MSG_3("   Input Status:  %d, %d, %d, %d\n", ne->_goodinput[i][0], ne->_goodinput[i][1], ne->_goodinput[i][2], ne->_goodinput[i][3] );
+			RRR_MSG_3("   Output Status: %d, %d, %d, %d\n", ne->_goodoutput[i][0], ne->_goodoutput[i][1], ne->_goodoutput[i][2], ne->_goodoutput[i][3] );
+			RRR_MSG_3("   Input Addrs:   0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swin[i][0], ne->_swin[i][1], ne->_swin[i][2], ne->_swin[i][3] );
+			RRR_MSG_3("   Output Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swout[i][0], ne->_swout[i][1], ne->_swout[i][2], ne->_swout[i][3] );
+		}
 		RRR_MSG_3("----------------------------------\n");
 	}
 }
