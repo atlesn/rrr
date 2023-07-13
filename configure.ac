@@ -814,7 +814,7 @@ AS_IF([test "x$enable_artnet" = xno], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_ARTNET], [1], [Compile with libartnet bindings])
 	AC_CHECK_HEADERS([artnet/artnet.h])
-	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libusb not found]))
+	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libartnet not found]))
 	AC_RUN_IFELSE([
 		AC_LANG_SOURCE([[
 			#include <artnet/artnet.h>
