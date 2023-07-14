@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
 #include "../event/event_handle_struct.h"
+#include "../lib/util/rrr_time.h"
 
 #include <assert.h>
 #include <artnet/artnet.h>
@@ -37,18 +38,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_ARTNET_UNIVERSE_MAX 16
 #define RRR_ARTNET_CHANNEL_MAX 512
+#define RRR_ARTNET_PORT_MAX 4
+#define RRR_ARTNET_PORT_TIMEOUT_S 5
+#define RRR_ARTNET_BCAST_LIMIT 8
 
 #define SET_UNIVERSE()                                                   \
     assert(universe_i < RRR_ARTNET_UNIVERSE_MAX);                        \
     struct rrr_artnet_universe *universe = &node->universes[universe_i]
 
+struct rrr_artnet_target {
+	uint8_t bindindex;
+	uint8_t port;
+	uint64_t last_seen;
+};
+
 struct rrr_artnet_universe {
-	uint16_t subnet;
+	uint8_t net;
+	uint8_t subnet;
 	uint8_t index;
 
 	rrr_artnet_dmx_t *dmx;
 	rrr_artnet_dmx_t *dmx_fade_target;
 	rrr_artnet_dmx_t *dmx_fade_speed;
+
+	struct rrr_artnet_target target;
 
 	uint16_t dmx_count;
 	size_t dmx_size;
@@ -114,6 +127,7 @@ static int __rrr_artnet_universe_init (
 		goto out_free_fade_target;
 	}
 
+	universe->net = 0;
 	universe->subnet = 0;
 	universe->index = index;
 	universe->dmx_count = dmx_count;
@@ -150,6 +164,16 @@ static void __rrr_artnet_universe_cleanup (
 	RRR_FREE_IF_NOT_NULL(universe->dmx_fade_speed);
 	__rrr_artnet_universe_private_data_cleanup(universe);
 	memset(universe, '\0', sizeof(*universe));
+}
+
+static void __rrr_artnet_universe_port_set (
+		struct rrr_artnet_universe *universe,
+		uint8_t bindindex,
+		uint8_t port
+) {
+	universe->target.bindindex = bindindex;
+	universe->target.port = port;
+	universe->target.last_seen = rrr_time_get_64();
 }
 
 int rrr_artnet_node_new (
@@ -248,33 +272,62 @@ void rrr_artnet_node_destroy (
 	rrr_free(node);
 }
 
-static void __rrr_artnet_dump_nodes (
-		struct rrr_artnet_node *node
+static uint16_t __rrr_artnet_make_addr (
+		uint8_t net, uint8_t sub, uint8_t addr
 ) {
-	if (!RRR_DEBUGLEVEL_3) {
-		return;
+	return ((uint16_t) net << 8) | ((uint16_t) sub << 4) | ((uint16_t) (addr & 0x0f));
+}
+
+static void __rrr_artnet_process_node_entry (
+		struct rrr_artnet_node *node,
+		artnet_node_entry ne,
+		uint8_t page_index
+) {
+	uint8_t bind_index = ne->page_bindindexes[page_index];
+	artnet_node_data_t *d = &ne->pages[page_index];
+
+	for (int j = 0; j < RRR_ARTNET_PORT_MAX && j < d->numbports; j++) {
+		// For now, we only support up to 16 universes
+		// uint16_t index = __rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[j]);
+		uint16_t index = d->swout[j];
+
+		int was_set;
+		RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
+			if (universe->index != index) {
+				RRR_LL_ITERATE_NEXT();
+			}
+			was_set = 1;
+			__rrr_artnet_universe_port_set (universe, bind_index, j);
+			RRR_DBG_3("Set universe %d to bindindex %i port %i\n", index, bind_index, j);
+		RRR_ARTNET_UNIVERSE_ITERATE_END();
+
+		if (!was_set) {
+			RRR_DBG_3("No universe for bindindex %i port %i\n", bind_index, j);
+		}
+
 	}
 
-	artnet_node_list nl = artnet_get_nl(node->node);
-
-	for (artnet_node_entry ne = artnet_nl_first(nl); ne != NULL; ne = artnet_nl_next(nl)) {
-		RRR_MSG_3("--------- %d.%d.%d.%d -------------\n", ne->ip[0], ne->ip[1], ne->ip[2], ne->ip[3]);
-		RRR_MSG_3("Short Name:   %s\n", ne->shortname);
-		RRR_MSG_3("Long Name:    %s\n", ne->longname);
-		RRR_MSG_3("Node Report:  %s\n", ne->nodereport);
-		RRR_MSG_3("Subnet:       0x%02x\n", ne->sub);
-		RRR_MSG_3("Page count:   %d\n", ne->_numpages);
-		for (int i = 0; i < ne->_numpages; i++) {
-			RRR_MSG_3("   ------------- Page %d -------------\n", i);
-			RRR_MSG_3("   Bind index:    %d\n", ne->_bindindexes[i]);
-			RRR_MSG_3("   Port count:    %d\n", ne->_numbports[i]);
-			RRR_MSG_3("   Types:         0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_porttypes[i][0], ne->_porttypes[i][1], ne->_porttypes[i][2], ne->_porttypes[i][3] );
-			RRR_MSG_3("   Input Status:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_goodinput[i][0], ne->_goodinput[i][1], ne->_goodinput[i][2], ne->_goodinput[i][3] );
-			RRR_MSG_3("   Output Status: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_goodoutput[i][0], ne->_goodoutput[i][1], ne->_goodoutput[i][2], ne->_goodoutput[i][3] );
-			RRR_MSG_3("   Input Addrs:   0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swin[i][0], ne->_swin[i][1], ne->_swin[i][2], ne->_swin[i][3] );
-			RRR_MSG_3("   Output Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", ne->_swout[i][0], ne->_swout[i][1], ne->_swout[i][2], ne->_swout[i][3] );
-		}
-		RRR_MSG_3("----------------------------------\n");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_MSG_3("--------- %d.%d.%d.%d page %d ------\n", ne->ip[0], ne->ip[1], ne->ip[2], ne->ip[3], page_index);
+		RRR_MSG_3("   Bind index:    %d\n", bind_index);
+		RRR_MSG_3("   Short Name:    %s\n", d->shortname);
+		RRR_MSG_3("   Long Name:     %s\n", d->longname);
+		RRR_MSG_3("   Node Report:   %s\n", d->nodereport);
+		RRR_MSG_3("   Net:           0x%02x\n", d->net_switch);
+		RRR_MSG_3("   Subnet:        0x%02x\n", d->sub_switch);
+		RRR_MSG_3("   Port count:    %d\n", d->numbports);
+		RRR_MSG_3("   Types:         0x%02x, 0x%02x, 0x%02x, 0x%02x\n", d->porttypes[0], d->porttypes[1], d->porttypes[2], d->porttypes[3] );
+		RRR_MSG_3("   Input Status:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", d->goodinput[0], d->goodinput[1], d->goodinput[2], d->goodinput[3] );
+		RRR_MSG_3("   Output Status: 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", d->goodoutput[0], d->goodoutput[1], d->goodoutput[2], d->goodoutput[3] );
+		RRR_MSG_3("   Input Addrs:   0x%02x, 0x%02x, 0x%02x, 0x%02x\n", d->swin[0], d->swin[1], d->swin[2], d->swin[3] );
+		RRR_MSG_3("   Output Addrs:  0x%02x, 0x%02x, 0x%02x, 0x%02x\n", d->swout[0], d->swout[1], d->swout[2], d->swout[3] );
+		RRR_MSG_3("   Output Addrs:  %d, %d, %d, %d\n",
+			__rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[0]),
+			__rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[1]),
+			__rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[2]),
+			__rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[3])
+		);
+		RRR_MSG_3("-----------------------------------\n");
 	}
 }
 
@@ -393,8 +446,6 @@ static void __rrr_artnet_event_periodic_poll (
 		RRR_MSG_0("Failed to send artnet poll in %s\n", __func__);
 		FAIL();
 	}
-
-	__rrr_artnet_dump_nodes(node);
 }
 
 static void __rrr_artnet_event_periodic_update (
@@ -407,6 +458,8 @@ static void __rrr_artnet_event_periodic_update (
 	(void)(fd);
 	(void)(flags);
 
+	const uint64_t port_time_limit = rrr_time_get_64() - RRR_ARTNET_PORT_TIMEOUT_S * 1000 * 1000;
+
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
 		__rrr_artnet_universe_update(universe);
 
@@ -416,9 +469,25 @@ static void __rrr_artnet_event_periodic_update (
 
 		assert(universe->dmx_count <= 512);
 
-		if (artnet_raw_send_dmx(node->node, universe->index, (int16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
-			RRR_MSG_0("Failed to send DMX data in %s: %s\n", __func__, artnet_strerror());
-			FAIL();
+		if (universe->target.last_seen > 0 && universe->target.last_seen < port_time_limit) {
+			RRR_MSG_0("Warning: No status update for %i seconds from any artnet node accepting universe %u. Starting multicast.\n", RRR_ARTNET_PORT_TIMEOUT_S, universe->index);
+			universe->target.last_seen = 0;
+		}
+
+		if (universe->target.last_seen > 0) {
+			RRR_DBG_7("artnet dmx unicast bindindex %u port %u\n", universe->target.bindindex, universe->target.port);
+			if (artnet_send_dmx(node->node, universe->target.bindindex, universe->target.port, (uint16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
+				RRR_MSG_0("Warning: Failed to send unicast DMX data in %s: %s\n", __func__, artnet_strerror());
+				universe->target.last_seen = 0;
+				// Try again with multicast
+			}
+		}
+		else {
+			RRR_DBG_7("artnet dmx multicast universe %u\n", universe->index);
+			if (artnet_raw_send_dmx(node->node, universe->index, (int16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
+				RRR_MSG_0("Failed to send multicast DMX data in %s: %s\n", __func__, artnet_strerror());
+				FAIL();
+			}
 		}
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
@@ -446,11 +515,23 @@ static int __rrr_artnet_handler_reply (
 ) {
 	struct rrr_artnet_node *node = d;
 
-	(void)(node);
-
 	// Poll reply
 
-	return 0;
+	return ARTNET_EOK;
+}
+
+static int __rrr_artnet_hook_reply_node (
+		artnet_node_entry ne,
+		uint8_t page_index,
+		void *data
+) {
+	struct rrr_artnet_node *node = data;
+
+	// Node entry found in poll reply
+
+	__rrr_artnet_process_node_entry(node, ne, page_index);
+
+	return ARTNET_EOK;
 }
 
 void rrr_artnet_universe_set_mode (
@@ -572,7 +653,9 @@ int rrr_artnet_events_register (
 
 	EVENT_ADD(node->event_read);
 
+	assert(artnet_set_reply_node_hook (node->node, __rrr_artnet_hook_reply_node, node) == ARTNET_EOK);
 	assert (artnet_set_handler(node->node, ARTNET_REPLY_HANDLER, __rrr_artnet_handler_reply, node) == ARTNET_EOK);
+	assert (artnet_set_bcast_limit(node->node, RRR_ARTNET_BCAST_LIMIT) == ARTNET_EOK);
 
 	node->failure_callback = failure_callback;
 	node->incorrect_mode_callback = incorrect_mode_callback;
