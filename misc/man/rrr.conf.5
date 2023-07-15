@@ -1451,6 +1451,12 @@ const timeout = new Timeout(function, timeout_ms = 0, arg1 = undefined, ...)
 // Prevent the timeout from ever running (regret)
 timeout.clear();
 
+// Create an operating system object
+const os = new OS();
+
+// Retrieve the hostname of the host on which the script runs
+const hostname = os.hostname();
+
 .fi
 
 .SS cmodule (P)

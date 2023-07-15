@@ -57,6 +57,7 @@ extern "C" {
 #include "../lib/js/Message.hxx"
 #include "../lib/js/Config.hxx"
 #include "../lib/js/Timeout.hxx"
+#include "../lib/js/OS.hxx"
 #include "../lib/js/Js.hxx"
 
 extern "C" {
@@ -112,6 +113,7 @@ class js_run_data {
 	RRR::JS::MessageFactory msg_factory;
 	RRR::JS::ConfigFactory cfg_factory;
 	RRR::JS::TimeoutFactory timeout_factory;
+	RRR::JS::OSFactory os_factory;
 	RRR::JS::EventQueue event_queue;
 	std::shared_ptr<RRR::JS::Program> program;
 
@@ -243,12 +245,14 @@ class js_run_data {
 		msg_factory(ctx, persistent_storage, message_drop),
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
+		os_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
 		program(make_program())
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
 		timeout_factory.register_as_global(ctx);
+		os_factory.register_as_global(ctx);
 
 		if (!program->is_compiled()) {
 			ctx.trycatch_ok([](std::string &&msg){
