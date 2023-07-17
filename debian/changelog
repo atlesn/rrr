@@ -1,4 +1,4 @@
-rrr (1.28-14) bullseye; urgency=medium
+rrr (1.28-15) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -32,6 +32,7 @@ rrr (1.28-14) bullseye; urgency=medium
 
   * Fixes:
     * Raw data messages in JS module now working properly
+    * Crash in JS module upon GC due to null pointer access
 
   * Under the hood:
     * Use events in file module
