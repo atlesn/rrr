@@ -28,35 +28,33 @@ extern "C" {
 
 #include <v8.h>
 
+// #define RRR_JS_PERSISTENT_DEBUG_GC
+
 namespace RRR::JS {
-	int Persistable::push_persistent(v8::Local<v8::Value> value) {
+	unsigned long Persistable::push_persistent(v8::Local<v8::Value> value) {
 		return holder->push_value(value);
 	}
 
-	v8::Local<v8::Value> Persistable::pull_persistent(int i) {
+	v8::Local<v8::Value> Persistable::pull_persistent(unsigned long i) {
 		return holder->pull_value(i);
 	}
 
-	PersistableHolder::DoneState::DoneState() :
+	PersistableHolder::ValueHolder::ValueHolder(v8::Isolate *isolate, v8::Local<v8::Value> value) :
 		done(false),
-		persistent(nullptr)
+		value(new v8::Persistent<v8::Value>(isolate, value))
 	{
 	}
 
-	PersistableHolder::DoneState::DoneState(bool done, v8::Persistent<v8::Value> *persistent) :
-		done(done),
-		persistent(persistent)
-	{
+	unsigned long PersistableHolder::push_value(v8::Local<v8::Value> value) {
+		values.emplace_back(isolate, value);
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		RRR_MSG_1("%s %p ValueHolder created index %llu\n", __PRETTY_FUNCTION__, &values.back(), (unsigned long long) values.size() - 1);
+#endif
+		return values.size() - 1;
 	}
 
-	int PersistableHolder::push_value(v8::Local<v8::Value> value) {
-		values.emplace(std::pair(value_pos, new v8::Persistent<v8::Value>(isolate, value)));
-		values_done.emplace(std::pair(value_pos, DoneState(value_pos, values[value_pos].get())));
-		return value_pos++;
-	}
-
-	v8::Local<v8::Value> PersistableHolder::pull_value(int i) {
-		return (*values[i]).Get(isolate);
+	v8::Local<v8::Value> PersistableHolder::pull_value(unsigned long i) {
+		return (*values[i].value).Get(isolate);
 	}
 
 	void PersistableHolder::pass(const char *identifier, void *arg) {
@@ -72,27 +70,36 @@ namespace RRR::JS {
 	}
 
 	bool PersistableHolder::is_done() const {
-		int done_pos = 0;
-		std::for_each(values_done.begin(), values_done.end(), [&done_pos](auto &pair){
-			if (pair.second.done)
-				done_pos++;
+		bool all_done = true;
+		std::for_each(values.begin(), values.end(), [&all_done](auto &holder){
+			if (!holder.done)
+				all_done = false;
 		});
-		return value_pos == done_pos;
+		return all_done;
 	}
 
 	void PersistableHolder::check_complete() {
 		if (!is_weak && t->is_complete()) {
-			std::for_each(values.begin(), values.end(), [this](auto &pair){
-				(*pair.second).template SetWeak<void>(&values_done[pair.first], gc, v8::WeakCallbackType::kParameter);
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values\n", __PRETTY_FUNCTION__, this);
+#endif
+			std::for_each(values.begin(), values.end(), [this](auto &holder){
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+				RRR_MSG_1("%s %p ValueHolder SetWeak\n", __PRETTY_FUNCTION__, &holder);
+#endif
+				holder.value.get()->template SetWeak<void>(&holder, gc, v8::WeakCallbackType::kParameter);
 			});
 			is_weak = true;
 		}
 	}
 
 	void PersistableHolder::gc(const v8::WeakCallbackInfo<void> &info) {
-		auto done_info = (DoneState *) info.GetParameter();
-		done_info->done = true;
-		done_info->persistent->Reset();
+		auto holder = (ValueHolder *) info.GetParameter();
+		holder->done = true;
+		holder->value->Reset();
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		RRR_MSG_1("%s %p ValueHolder Now GCed by V8\n", __PRETTY_FUNCTION__, holder);
+#endif
 	}
 
 	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
@@ -100,7 +107,6 @@ namespace RRR::JS {
 		isolate(isolate),
 		values(),
 		bus(bus),
-		value_pos(0),
 		is_weak(false)
 	{
 		push_value(obj);
@@ -124,6 +130,9 @@ namespace RRR::JS {
 	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
 		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
 		entries++;
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		RRR_MSG_1("%s %p Persistent is pushed, %lli entries now in storeage\n", __PRETTY_FUNCTION__, persistents.front().get(), entries);
+#endif
 	}
 
 	void PersistentStorage::register_sniffer(PersistentSniffer *sniffer) {
@@ -141,6 +150,9 @@ namespace RRR::JS {
 		persistents.remove_if([this](auto &p){
 			if (p->is_done()) {
 				entries--;
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+				RRR_MSG_1("%s %p Persistent is done, %lli entries left in storage\n", __PRETTY_FUNCTION__, p.get(), entries);
+#endif
 				// Report negative value as memory is now being freed up
 				report_memory(-p->get_total_memory_finalize());
 			}
