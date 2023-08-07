@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -52,12 +52,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+#ifdef RRR_WITH_NODE
+#	include "lib/testjs.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
 #include "test_increment.h"
+#include "test_route_definition.h"
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
+#include "test_linked_list.h"
+#include "test_hdlc.h"
+#include "test_readdir.h"
+#include "test_send_loop.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -185,6 +193,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	ret |= ret_tmp;
 #endif
 
+#ifdef RRR_WITH_NODE
+	TEST_BEGIN("js library functions") {
+		ret_tmp = rrr_test_js();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
 	TEST_BEGIN("type conversion") {
 		ret_tmp = rrr_test_conversion();
 	} TEST_RESULT(ret_tmp == 0);
@@ -205,6 +221,36 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("increment") {
 		ret_tmp = rrr_test_increment();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("route definition parsing") {
+		ret_tmp = rrr_test_route_definition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("linked list") {
+		ret_tmp = rrr_test_linked_list();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("HDLC frames") {
+		ret_tmp = rrr_test_hdlc();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Readdir") {
+		ret_tmp = rrr_test_readdir();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Send loop") {
+		ret_tmp = rrr_test_send_loop();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -321,7 +367,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (rrr_main_create_and_start_threads (
+		if (rrr_instances_create_and_start_threads (
 				&collection,
 				&instances,
 				config,
@@ -359,8 +405,11 @@ int main (int argc, const char **argv, const char **env) {
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
-
-		rrr_main_threads_stop_and_destroy(collection);
+		int ghost_count = 0;
+		rrr_thread_collection_destroy(&ghost_count, collection);
+		if (ghost_count > 0) {
+			RRR_MSG_0("%i threads were ghost during cleanup\n", ghost_count);
+		}
 	} TEST_RESULT(ret == 0);
 
 	out_cleanup_instances:

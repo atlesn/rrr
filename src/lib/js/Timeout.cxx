@@ -54,6 +54,7 @@ namespace RRR::JS {
 		assert(argc >= 0);
 		auto value = function.As<v8::Function>()->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), argc, argc > 0 ? argv.data() : nullptr);
 		// Don't check return value. Let EventQueue deal with any exception.
+		RRR_UNUSED(value);
 	}
 
 	bool Timeout::is_complete() const {
@@ -61,14 +62,11 @@ namespace RRR::JS {
 	}
 
 	void Timeout::cb_clear(const v8::FunctionCallbackInfo<v8::Value> &info) {
-		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto timeout = self(info);
 		timeout->cleared = true;
 	}
 
 	void TimeoutFactory::construct (Timeout *timeout, const v8::FunctionCallbackInfo<v8::Value> &info) {
-		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 
 		if (info.Length() == 0) {

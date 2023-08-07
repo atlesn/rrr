@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.26-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.26-1", [Full version])
+AC_INIT([Read Route Record],[1.27-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.27-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 26, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 27, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -46,7 +46,6 @@ echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
-AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
@@ -84,16 +83,6 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([yes])
 ])
 
-CFLAGS_CODECOV=""
-AC_MSG_CHECKING([for code coverage compilation])
-AS_IF([test "x$enable_codecov" = xyes], [
-	CFLAGS_CODECOV="-ftest-coverage -fprofile-arcs"
-	AC_MSG_RESULT([$CFLAGS_CODECOV])
-], [
-	AC_MSG_RESULT([no])
-])
-AC_SUBST([CFLAGS_CODECOV])
-
 AC_MSG_CHECKING([for development environment compiler warnings])
 AS_IF([ test -f ".development" ], [
 	RRR_EXTRA_WARNINGS="-Wconversion"
@@ -104,7 +93,7 @@ AS_IF([ test -f ".development" ], [
 ])
 
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
-CFLAGS_COMMON="$CFLAGS_CODECOV -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
+CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
 AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
 
@@ -1060,6 +1049,7 @@ AC_CONFIG_FILES(
 	src/modules/Makefile
 	src/lib/Makefile
 	src/tests/Makefile
+	src/tests/lib/Makefile
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile

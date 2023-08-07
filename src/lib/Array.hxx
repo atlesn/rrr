@@ -21,13 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <cassert>
+#include <string>
+
 extern "C" {
 #include "array.h"
 #include "messages/msg.h"
 };
-
-#include <string>
-#include <cassert>
 
 #include "util/E.hxx"
 #include "util/ExtVector.hxx"
@@ -111,13 +111,13 @@ namespace RRR {
 				case RRR_TYPE_MSG:
 					msg_split(m);
 					break;
-				case RRR_TYPE_BLOB:
+				RRR_TYPE_CASE_BLOB:
 					blob_split<const uint8_t>(b);
 					break;
 				case RRR_TYPE_FIXP:
 					primitive_split<rrr_fixp>(h);
 					break;
-				case RRR_TYPE_STR:
+				RRR_TYPE_CASE_STR:
 					blob_split<const char>(s);
 					break;
 				case RRR_TYPE_VAIN:

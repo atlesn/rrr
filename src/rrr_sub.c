@@ -367,11 +367,11 @@ static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			RRR_DBG_1("| Sending subscriptions...\n");
 			data->subscriptions_send_time = rrr_time_get_64();
 
-			if ((ret_tmp = rrr_mqtt_client_subscribe (
+			if (rrr_mqtt_client_subscribe (
 					data->mqtt_client,
 					&data->session,
 					&data->topics
-			)) != 0) {
+			) != 0) {
 				return RRR_EVENT_ERR;
 			}
 		}

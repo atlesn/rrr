@@ -66,28 +66,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		
 #define RRR_THREAD_WATCHDOG_SLEEPTIME_MS 500
 
-// On some systems pthread_t is an int and on others it's a pointer
-static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
-	return (unsigned long long int) t;
-}
-
-#define RRR_PTHREAD_T_TO_LLU(t) \
-	__rrr_pthread_t_to_llu(t)
-
 #ifdef RRR_THREAD_DEBUG_MUTEX
 #	define RRR_THREAD_MUTEX_INIT_FLAGS RRR_POSIX_MUTEX_IS_ERRORCHECK
 #else
 #	define RRR_THREAD_MUTEX_INIT_FLAGS 0
 #endif
-
-struct rrr_thread_postponed_cleanup_node {
-	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
-	struct rrr_thread *thread;
-};
-
-struct rrr_ghost_postponed_cleanup_collection {
-	RRR_LL_HEAD(struct rrr_thread_postponed_cleanup_node);
-};
 
 static int __rrr_thread_destroy (
 		struct rrr_thread *thread
@@ -98,48 +81,12 @@ static int __rrr_thread_destroy (
 	return 0;
 }
 
-// It is safe to have these dynamically allocated, a thread may wake up after
-// such memory has been freed and attempt to use it.
-static struct rrr_ghost_postponed_cleanup_collection postponed_cleanup_collection = {0};
-static pthread_mutex_t postponed_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
-
 /* If a ghost becomes ghost (tagged by the watchdog as such):
- * - Main will remove reference to the pointer of the threads rrr_thread struct
- * - If waking up, and prior to exiting, the thread will check if it has been tagged
- *   and will push to this list
- * - At a suitable time, main will call cleanup_run routine and free memory and possibly
- *   run poststop
+ * - Parent process should usually exit at the thread, if it wakes up, may try
+ *   to use resources which are not longer available.
+ * - Parent should shutdown other threads normally and then do an abort() or assert(0)
+ *   to produce a useful core dump of the ghost situation.
  */
-
-// Called from threads
-static void __rrr_thread_cleanup_postponed_push (
-		struct rrr_thread *thread
-) {
-	struct rrr_thread_postponed_cleanup_node *node = rrr_allocate(sizeof(*node));
-	memset(node, '\0', sizeof(*node));
-
-	node->thread = thread;
-
-	pthread_mutex_lock(&postponed_cleanup_lock);
-	RRR_LL_APPEND(&postponed_cleanup_collection, node);
-	pthread_mutex_unlock(&postponed_cleanup_lock);
-}
-
-// Called from main
-void rrr_thread_cleanup_postponed_run (
-		int *count
-) {
-	*count = 0;
-	pthread_mutex_lock(&postponed_cleanup_lock);
-	RRR_LL_ITERATE_BEGIN(&postponed_cleanup_collection, struct rrr_thread_postponed_cleanup_node);
-		if (node->thread->poststop_routine) {
-			node->thread->poststop_routine(node->thread);
-		}
-		RRR_LL_ITERATE_SET_DESTROY();
-		(*count)++;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&postponed_cleanup_collection, __rrr_thread_destroy(node->thread); rrr_free(node));
-	pthread_mutex_unlock(&postponed_cleanup_lock);
-}
 
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
@@ -454,33 +401,16 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 			RRR_DBG_8 ("Joined with thread watchdog %s\n", node->name);
 		}
 	RRR_LL_ITERATE_END();
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		if (node->is_watchdog) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		rrr_thread_lock(node);
-		if (node->poststop_routine != NULL) {
-			if (node->state == RRR_THREAD_STATE_STOPPED) {
-				RRR_DBG_8 ("Running post stop routine for %s\n", node->name);
-				node->poststop_routine(node);
-			}
-			else {
-				RRR_MSG_0 ("Cannot run post stop for thread %s as it is not in STOPPED state\n", node->name);
-				if (!node->is_ghost) {
-					RRR_BUG ("Bug: Thread was not STOPPED nor ghost after join attempt\n");
-				}
-				RRR_MSG_0 ("Running post stop later if thread wakes up\n");
-			}
-		}
-		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END();
 }
 
 void rrr_thread_collection_destroy (
+		int *ghost_count,
 		struct rrr_thread_collection *collection
 ) {
+	*ghost_count = 0;
+
+	// No errors allowed in this function
+
 	pthread_mutex_lock(&collection->threads_mutex);
 
 	__rrr_thread_collection_stop_and_join_all_nolock(collection);
@@ -488,9 +418,9 @@ void rrr_thread_collection_destroy (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
 		if (node->is_ghost == 1) {
-			// Note that __rrr_thread_destroy() does not lock, race condition with is_ghost and ghost_cleanup_pointer possible
-			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. It will add itself to cleanup list if it wakes up.\n",
+			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. Not freeing memory.\n",
 					node->name);
+			(*ghost_count)++;
 		}
 		else {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -932,14 +862,7 @@ static void *__rrr_thread_watchdog_entry (
 		else if (nowtime > killtime) {
 			RRR_MSG_0 ("Watchdog %p for %s/%p, thread not responding to encourage stop. State is now %i. Trying to cancel it.\n",
 				self_thread, thread->name, thread, thread->state);
-			if (thread->cancel_function != NULL) {
-				int res = thread->cancel_function(thread);
-				RRR_MSG_0 ("Watchdog %p for %s/%p, result from custom cancel function: %i\n", self_thread, thread->name, thread, res);
-				rrr_posix_usleep(1000000); // 1 s
-			}
-			else {
-				pthread_cancel(thread->thread);
-			}
+			pthread_cancel(thread->thread);
 			break;
 		}
 
@@ -997,8 +920,7 @@ static void __rrr_thread_cleanup (
 ) {
 	struct rrr_thread *thread = arg;
 	if (rrr_thread_ghost_check(thread)) {
-		RRR_MSG_0 ("Thread %s waking up after being ghost, telling parent to clean up now.\n", thread->name);
-		__rrr_thread_cleanup_postponed_push(thread);
+		RRR_MSG_0 ("Thread %s waking up after being ghost\n", thread->name);
 	}
 }
 
@@ -1122,8 +1044,6 @@ static int __rrr_thread_allocate_and_start (
 		struct rrr_thread **target_wd,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		void (*poststop_routine) (const struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1152,8 +1072,6 @@ static int __rrr_thread_allocate_and_start (
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->signal = 0;
 
-	thread->cancel_function = cancel_function;
-	thread->poststop_routine = poststop_routine;
 	thread->start_routine = start_routine;
 	thread->private_data = private_data;
 	thread->state = RRR_THREAD_STATE_NEW;
@@ -1221,8 +1139,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		void (*poststop_routine) (const struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1235,8 +1151,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		&thread_wd,
 		start_routine,
 		preload_routine,
-		poststop_routine,
-		cancel_function,
 		name,
 		watchdog_timeout_us,
 		private_data
@@ -1264,78 +1178,6 @@ int rrr_thread_collection_check_any_stopped (
 		}
 	RRR_LL_ITERATE_END();
 	return ret;
-}
-
-void rrr_thread_collection_join_and_destroy_stopped_threads (
-		int *count,
-		struct rrr_thread_collection *collection
-) {
-	*count = 0;
-
-	pthread_mutex_lock(&collection->threads_mutex);
-
-	// FIRST LOOP - Ghost handling, remove ghosts from list without freeing memory
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
-		if (node->is_ghost == 1) {
-			// Watchdog has tagged thread as ghost. Make sure the watchdog has exited.
-			rrr_thread_lock(node->watchdog);
-			if (node->watchdog->state == RRR_THREAD_STATE_STOPPED) {
-				// The second loop won't be able to find the watchdog anymore, tag the
-				// watchdog for destruction in the third loop now
-				node->watchdog->ready_to_destroy = 1;
-
-				// Does not free memory, which is now handled by ghost framework
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-			rrr_thread_unlock(node->watchdog);
-		}
-		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
-
-	// SECOND LOOP - Check for both thread and watchdog STOPPED, tag to destroy
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
-		if (!node->is_watchdog) {
-			if (node->watchdog == NULL) {
-				RRR_BUG("BUG: No watchdog set for thread in second loop of rrr_thread_collection_join_and_destroy_stopped_threads, initialization function must not produce this state.\n");
-			}
-
-			rrr_thread_lock(node->watchdog);
-
-			if (node->watchdog->state == RRR_THREAD_STATE_STOPPED && node->state == RRR_THREAD_STATE_STOPPED) {
-				node->watchdog->ready_to_destroy = 1;
-				node->ready_to_destroy = 1;
-			}
-
-			rrr_thread_unlock(node->watchdog);
-		}
-		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END();
-
-	// THIRD LOOP - Destroy tagged threads
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
-
-		if (node->ready_to_destroy) {
-			if (node->poststop_routine != NULL) {
-				RRR_BUG("BUG: poststop_routine was set for a thread which was attemted to be stopped using rrr_thread_collection_join_and_destroy_stopped_threads, this is not allowed\n");
-			}
-			(*count)++;
-			void *thread_ret;
-			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %llu\n",
-					node, node->is_watchdog, RRR_PTHREAD_T_TO_LLU(node->thread));
-			if (node->is_watchdog) {
-				// Non-watchdogs are already detatched, only join watchdogs
-				pthread_join(node->thread, &thread_ret);
-			}
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-
-		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
-
-	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
 int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (

@@ -51,12 +51,14 @@ extern "C" {
 
 }; // extern "C"
 
+#include <filesystem>
+
 #include "../lib/event/Event.hxx"
 #include "../lib/js/Message.hxx"
 #include "../lib/js/Config.hxx"
 #include "../lib/js/Timeout.hxx"
+#include "../lib/js/OS.hxx"
 #include "../lib/js/Js.hxx"
-#include "../lib/util/Readfile.hxx"
 
 extern "C" {
 
@@ -111,6 +113,7 @@ class js_run_data {
 	RRR::JS::MessageFactory msg_factory;
 	RRR::JS::ConfigFactory cfg_factory;
 	RRR::JS::TimeoutFactory timeout_factory;
+	RRR::JS::OSFactory os_factory;
 	RRR::JS::EventQueue event_queue;
 	std::shared_ptr<RRR::JS::Program> program;
 
@@ -242,19 +245,14 @@ class js_run_data {
 		msg_factory(ctx, persistent_storage, message_drop),
 		cfg_factory(ctx, persistent_storage),
 		timeout_factory(ctx, persistent_storage),
+		os_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
-		program(make_program(ctx))
+		program(make_program())
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
 		timeout_factory.register_as_global(ctx);
-
-		try {
-			program->compile(ctx);
-		}
-		catch (E e) {
-			throw e;
-		}
+		os_factory.register_as_global(ctx);
 
 		if (!program->is_compiled()) {
 			ctx.trycatch_ok([](std::string &&msg){
@@ -294,7 +292,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, std::string(data->js_file));
 		auto persistent_storage = PersistentStorage(ctx);
-		auto source = std::string(RRR::util::Readfile(std::string(data->js_file), 0, 0));
 
 		js_run_data run_data (
 				data,
@@ -302,13 +299,17 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				isolate,
 				ctx,
 				persistent_storage,
-				data->js_module_name != NULL
-					? std::function([data,source](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Module(std::string(data->js_file), source);
-					})
-					: std::function([data,source](CTX &ctx){
-						return (RRR::JS::Program*) new RRR::JS::Script(std::string(data->js_file), source);
-					})
+				[&](){
+					const auto absolute_path = std::filesystem::absolute(std::string(data->js_file)).string();
+
+					if (data->js_module_name != NULL) {
+						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.make_module<Module>(ctx, absolute_path));
+					}
+
+					auto script = RRR::JS::Script::make_shared(absolute_path);
+					script->compile(ctx);
+					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
+				}
 		);
 
 		callbacks->ping_callback_arg = (void *) &run_data;
@@ -322,11 +323,6 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			RRR_MSG_0("Error from worker loop in %s\n", __func__);
 				goto out;
 		}
-	}
-	catch (RRR::util::Readfile::E e) {
-		RRR_MSG_0("Failed while reading script %s: %s\n", data->js_file, *e);
-		ret = 1;
-		goto out;
 	}
 	catch (RRR::util::E e) {
 		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
@@ -504,8 +500,6 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_js,
-		NULL,
-		NULL,
 		NULL
 };
 

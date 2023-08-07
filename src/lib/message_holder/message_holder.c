@@ -131,6 +131,24 @@ void rrr_msg_holder_private_data_set (
 	entry->private_data_destroy = private_data_destroy;
 }
 
+uint64_t rrr_msg_holder_send_time (
+		const struct rrr_msg_holder *entry
+) {
+	return entry->send_time;
+}
+
+uint64_t rrr_msg_holder_send_index (
+		const struct rrr_msg_holder *entry
+) {
+	return entry->send_index;
+}
+
+int rrr_msg_holder_usercount (
+		const struct rrr_msg_holder *entry
+) {
+	return entry->usercount;
+}
+
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {
@@ -352,6 +370,12 @@ int rrr_msg_holder_nexthop_ok (
 ) {
 	return rrr_instance_friend_collection_check_empty (&entry->nexthops) ||
 	       rrr_instance_friend_collection_check_exists (&entry->nexthops, instance);
+}
+
+int rrr_msg_holder_nexthop_count (
+	const struct rrr_msg_holder *entry
+) {
+	return rrr_instance_friend_collection_count(&entry->nexthops);
 }
 
 void rrr_msg_holder_set_data_unlocked (

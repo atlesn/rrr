@@ -709,6 +709,8 @@ int main (int argc, const char **argv, const char **env) {
 			NULL,
 			NULL,
 			NULL,
+			NULL,
+			NULL,
 			(data.do_print_journal
 				? __rrr_stats_print_journal_message
 				: __rrr_stats_process_message

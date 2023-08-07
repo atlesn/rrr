@@ -513,8 +513,6 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 	journal_preload,
 	thread_entry_journal,
-	NULL,
-	NULL,
 	NULL
 };
 

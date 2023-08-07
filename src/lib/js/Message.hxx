@@ -70,6 +70,7 @@ namespace RRR::JS {
 		void clear_array();
 		void clear_tag(std::string tag);
 		rrr_msg_msg_class get_class();
+		void set_data(const char *new_data, size_t new_data_size);
 		void set_from_msg_msg(const struct rrr_msg_msg *msg);
 		void set_from_msg_addr(const struct rrr_msg_addr *msg_addr);
 		void send();

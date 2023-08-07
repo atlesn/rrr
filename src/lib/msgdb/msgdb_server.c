@@ -236,7 +236,7 @@ static int __rrr_msgdb_server_put (
 	RRR_DBG_3("msgdb write to '%s' topic '%s' size %llu\n", sha256_str, topic, (long long unsigned) MSG_TOTAL_SIZE(msg));
 
 	if ((msg_tmp = rrr_allocate(MSG_TOTAL_SIZE(msg))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for temporary message in __rrr_msgdb_server_put\n");
+		RRR_MSG_0("Could not allocate memory for temporary message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -1329,7 +1329,7 @@ int rrr_msgdb_server_new (
 	}
 
 	if ((server = rrr_allocate(sizeof(*server))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
+		RRR_MSG_0("Could not allocate memory for server in %s\n", __func__);
 		ret = 1;
 		goto out_close;
 	}
@@ -1337,7 +1337,7 @@ int rrr_msgdb_server_new (
 	memset(server, '\0', sizeof(*server));
 
 	if ((server->directory = rrr_strdup(directory)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
+		RRR_MSG_0("Could not allocate memory for directory in %S\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -1353,6 +1353,8 @@ int rrr_msgdb_server_new (
 			server,
 			1 * 1024 * 1024, // 1 MB
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_READ_MESSAGE_FLUSH_OVERSHOOT,
+			NULL,
+			NULL,
 			__rrr_msgdb_server_read_msg_msg_callback,
 			NULL,
 			NULL,
@@ -1362,7 +1364,7 @@ int rrr_msgdb_server_new (
 	);
 
 	if ((ret = rrr_socket_client_collection_listen_fd_push (server->clients, fd)) != 0) {
-		RRR_MSG_0("Could not push listen handle to client collection in rrr_msgdb_server_new\n");
+		RRR_MSG_0("Could not push listen handle to client collection in %s\n", __func__);
 		goto out_destroy_client_collection;
 	}
 

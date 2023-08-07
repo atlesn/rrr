@@ -68,7 +68,9 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
-		int no_buffer
+		int no_buffer,
+		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
+		void *callback_arg
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
@@ -143,6 +145,12 @@ int rrr_message_broker_with_ctx_and_buffer_lock_do (
 int rrr_message_broker_sender_add (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_message_broker_costumer *listener_costumer
+);
+void rrr_message_broker_report_buffers (
+		struct rrr_message_broker *broker,
+		void (*callback_buffer)(const char *name, rrr_length count, void *arg),
+		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */

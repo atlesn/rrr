@@ -73,6 +73,11 @@ namespace RRR::JS {
 		;
 	}
 
+	void Message::set_data(const char *new_data, size_t new_data_size) {
+		data.clear();
+		data.insert(data.end(), new_data, new_data + new_data_size);
+	}
+
 	void Message::set_from_msg_msg(const struct rrr_msg_msg *msg) {
 		array.clear();
 		data.clear();
@@ -88,9 +93,7 @@ namespace RRR::JS {
 			array.add_from_message(&array_version_dummy, msg);
 		}
 		else if (MSG_DATA_LENGTH(msg) > 0) {
-			data.clear();
-			data.reserve((size_t) MSG_DATA_LENGTH(msg));
-			memcpy(data.data(), MSG_DATA_PTR(msg), (size_t) MSG_DATA_LENGTH(msg));
+			set_data(MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg));
 		}
 
 		topic = MSG_TOPIC_LENGTH(msg) > 0
@@ -108,7 +111,7 @@ namespace RRR::JS {
 		if (msg_addr == nullptr || RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr) == 0)
 			return;
 
-		memcpy(&ip_addr, &msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+		memcpy(&ip_addr, msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
 		ip_addr_len = (socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr);
 		switch (msg_addr->protocol) {
 			case RRR_IP_UDP:
@@ -346,7 +349,6 @@ namespace RRR::JS {
 
 	void Message::cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		auto result = String(isolate, message->ip_so_type.c_str());
 		info.GetReturnValue().Set((v8::Local<v8::String>) result);
@@ -381,11 +383,11 @@ namespace RRR::JS {
 		rrr_ip_to_str(ip_str, sizeof(ip_str), (const sockaddr *) &message->ip_addr, message->ip_addr_len);
 
 		if (rrr_ip_check((const struct sockaddr *) &message->ip_addr, message->ip_addr_len) != 0) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "No valid IP address in address field")));
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("No valid IP address in address field (") + ip_str + ")")));
 			return;
 		}
 		if (rrr_ip_to_str_and_port(&port, ip_str, sizeof(ip_str), (const struct sockaddr *) &message->ip_addr, message->ip_addr_len) != 0) {
-			isolate->ThrowException(v8::Exception::Error(String(isolate, "Conversion of IP address failed")));
+			isolate->ThrowException(v8::Exception::Error(String(isolate, std::string("Conversion of IP address failed (") + ip_str + ")")));
 			return;
 		}
 
@@ -465,7 +467,6 @@ namespace RRR::JS {
 
 	void Message::cb_push_tag_blob(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 
@@ -535,7 +536,6 @@ namespace RRR::JS {
 
 	void Message::cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 		GET_VALUE_ARG();
@@ -555,7 +555,6 @@ namespace RRR::JS {
 
 	void Message::cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 	
@@ -564,7 +563,6 @@ namespace RRR::JS {
 
 	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		GET_KEY_ARG();
 
@@ -708,7 +706,6 @@ namespace RRR::JS {
 
 	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		auto store = BackingStore::create(isolate, message->data.data(), message->data.size());
 		info.GetReturnValue().Set(store.second());
@@ -721,38 +718,30 @@ namespace RRR::JS {
 
 		if (value->IsNullOrUndefined()) {
 			message->data.clear();
-			return;
 		}
-		if (value->IsArrayBuffer()) {
+		else if (value->IsArrayBuffer()) {
 			auto contents = BackingStore::create(isolate, value.As<v8::ArrayBuffer>());
 			if (contents->size() > RRR_MSG_DATA_MAX) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
 				return;
 			}
-			message->data.clear();
-			message->data.reserve(contents->size());
-			memcpy(message->data.data(), contents->data(), contents->size());
-			return;
+			message->set_data(static_cast<const char *>(contents->data()), contents->size());
 		}
-		if (value->IsString()) {
+		else if (value->IsString()) {
 			String data(isolate, value->ToString(ctx).ToLocalChecked());
 			if ((unsigned int) data.length() > RRR_MSG_DATA_MAX) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
 				return;
 			}
-			message->data.clear();
-			message->data.reserve((size_t) data.length());
-			memcpy(message->data.data(), *data, (size_t) data.length());
-			return;
+			message->set_data(static_cast<const char *>(*data), (size_t) data.length());
 		}
-
-		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was not null, undefined, ArrayBuffer or a string")));
-		return;
+		else {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was not null, undefined, ArrayBuffer or a string")));
+		}
 	}
 
 	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->type));
 	}
@@ -783,7 +772,6 @@ namespace RRR::JS {
 
 	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
-		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->get_class()));
 	}

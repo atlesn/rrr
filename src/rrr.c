@@ -109,6 +109,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            's',    "stats",                 "[-s|--stats]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
 		{0,                            'b',    "banner",                "[-b|--banner]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -238,6 +239,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 }
 
 struct main_loop_event_callback_data {
+	uint64_t prev_periodic_time;
 	struct rrr_thread_collection **collection;
 	struct rrr_instance_collection *instances;
 	struct rrr_instance_config_collection *config;
@@ -269,7 +271,7 @@ static int main_loop_threads_restart (
 
 	main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
 
-	if ((ret = rrr_main_create_and_start_threads (
+	if ((ret = rrr_instances_create_and_start_threads (
 			callback_data->collection,
 			callback_data->instances,
 			callback_data->config,
@@ -316,37 +318,93 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 	return ret;
 }
 
-static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
-	if (!main_running) {
-		return RRR_EVENT_EXIT;
+static void main_loop_periodic_message_broker_report_buffer_callback (const char *name, rrr_length count, void *arg) {
+	struct main_loop_event_callback_data *callback_data = arg;
+	struct stats_data *stats_data = callback_data->stats_data;
+
+	if (rrr_config_global.output_buffer_warn_limit > 0 && count > rrr_config_global.output_buffer_warn_limit) {
+		RRR_MSG_0("Warning: Output buffer of instance %s has %" PRIrrrl " entries\n",
+			name, count);
 	}
 
+	if (stats_data != NULL && stats_data->handle != 0) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "message_broker/costumers/%s/buffer/count", name);
+		main_stats_post_unsigned_message (stats_data, buf, count, 0);
+	}
+}
+
+static void main_loop_periodic_message_broker_report_buffer_split_buffer_callback (const char *name, const char *receiver_name, rrr_length count, void *arg) {
+	struct main_loop_event_callback_data *callback_data = arg;
+	struct stats_data *stats_data = callback_data->stats_data;
+
+	if (rrr_config_global.output_buffer_warn_limit > 0 && count > rrr_config_global.output_buffer_warn_limit) {
+		RRR_MSG_0("Warning: Split output buffer of instance %s to receiver %s has %" PRIrrrl " entries\n",
+			name, receiver_name, count);
+	}
+
+	if (stats_data != NULL && stats_data->handle != 0) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "message_broker/costumers/%s/split_buffer/%s/count", name, receiver_name);
+		main_stats_post_unsigned_message (stats_data, buf, count, 0);
+	}
+}
+
+static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct main_loop_event_callback_data *callback_data = arg;
 
 	rrr_config_set_debuglevel_orig();
 
 	if (*(callback_data->collection) == NULL) {
 		if (main_loop_threads_restart (callback_data) != 0) {
+			rrr_config_set_debuglevel_on_exit();
 			return RRR_EVENT_EXIT;
 		}
+	}
+
+	if (!main_running) {
+		int ghost_count = 0;
+
+		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
+
+		rrr_config_set_debuglevel_on_exit();
+
+		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
+		if (ghost_count > 0) {
+			// Bug here to produce a possibly useful coredump about ghost situation
+			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
+		}
+		*(callback_data->collection) = NULL;
+
+		return RRR_EVENT_EXIT;
 	}
 
 	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
 
 	if (rrr_instance_check_threads_stopped(callback_data->instances) == 1) {
+		int ghost_count = 0;
+
 		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
 
 		rrr_config_set_debuglevel_on_exit();
-		rrr_main_threads_stop_and_destroy(*(callback_data->collection));
+
+		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
+		if (ghost_count > 0) {
+			// We cannot continue in ghost situations as the ghosts may
+			// occupy split buffer slots causing a crash on assertion in
+			// the message broker if we restart as not enough slots are
+			// available.
+			//
+			// It is also useful to get a coredump showing the state of
+			// the ghost thread, hence we abort here.
+			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
+		}
 		*(callback_data->collection) = NULL;
 
-		// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
-		// as the handle usercount will be > 1. This handle will not be destroyed untill the
-		// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
-		// to find the handle as it will be removed from the costumer handle list.
-		rrr_message_broker_unregister_all(callback_data->message_broker);
-
+		// If main is still supposed to be active and restart is active, sleep
+		// for one second and continue.
 		if (main_running && rrr_config_global.no_thread_restart == 0) {
+			rrr_message_broker_unregister_all(callback_data->message_broker);
 			rrr_posix_usleep(1000000); // 1s
 		}
 		else {
@@ -354,10 +412,16 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		}
 	}
 
-	int count;
-	rrr_thread_cleanup_postponed_run(&count);
-	if (count > 0) {
-		RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, callback_data->config_file);
+	const uint64_t now_time = rrr_time_get_64();
+	if (now_time - callback_data->prev_periodic_time >= 1000000) {
+		// One second interval tasks
+		rrr_message_broker_report_buffers (
+			callback_data->message_broker,
+			main_loop_periodic_message_broker_report_buffer_callback,
+			main_loop_periodic_message_broker_report_buffer_split_buffer_callback,
+			callback_data
+		);
+		callback_data->prev_periodic_time = now_time;
 	}
 
 	return main_mmap_periodic(callback_data->stats_data);
@@ -426,6 +490,7 @@ static int main_loop (
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	struct main_loop_event_callback_data event_callback_data = {
+		0,
 		&collection,
 		&instances,
 		config,
@@ -447,20 +512,14 @@ static int main_loop (
 	RRR_DBG_1 ("Main loop finished\n");
 
 	if (collection != NULL) {
-		rrr_main_threads_stop_and_destroy(collection);
+		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
 	}
 
 	if (stats_data.handle != 0) {
 		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 	}
-	rrr_config_set_debuglevel_on_exit();
-	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-	int count;
 
-	rrr_thread_cleanup_postponed_run(&count);
-	if (count > 0) {
-		RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
-	}
+	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 
 #ifndef RRR_NO_MODULE_UNLOAD
 	rrr_instance_unload_all(&instances);

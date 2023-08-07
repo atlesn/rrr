@@ -643,8 +643,6 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_incrementer,
-		NULL,
-		NULL,
 		NULL
 };
 

@@ -952,7 +952,7 @@ static int __rrr_net_transport_openssl_handshake (
 			return RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 		}
 		if (ret_tmp < 0) {
-			RRR_MSG_0("Fatal error during handshake: %i\n", SSL_get_error(ssl, ret_tmp));
+			RRR_MSG_0("Fatal error during handshake (possible certificate expiration): %i\n", SSL_get_error(ssl, ret_tmp));
 		}
 		else {
 			RRR_SSL_ERR("Handshake failure");

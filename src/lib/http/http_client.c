@@ -48,6 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS 1000
+
 struct rrr_http_client {
 	struct rrr_event_queue *events;
 
@@ -469,7 +471,7 @@ static int __rrr_http_client_receive_http_part_callback (
 				data_use,
 				encoding->value
 		) != 0)) {
-			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			RRR_MSG_0("Error %i while decoding in response in %s\n", ret, __func__);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
@@ -842,6 +844,19 @@ static int __rrr_http_client_request_send_intermediate_connect (
 		);
 
 		if (keepalive_handle == 0) {
+			// Prevent multiple simultaneous connection attempts
+			// to the same host which would cause delays.
+			if (rrr_net_transport_graylist_exists (
+					transport_keepalive,
+					server_to_use,
+					port_to_use
+			)) {
+				RRR_DBG_3("HTTP client not making connection to %s:%" PRIu16 " due to destination being graylisted\n",
+						server_to_use, port_to_use);
+				ret = RRR_HTTP_BUSY;
+				goto out;
+			}
+
 			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
 					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
 
@@ -852,6 +867,15 @@ static int __rrr_http_client_request_send_intermediate_connect (
 					__rrr_http_client_request_send_connect_callback,
 					&keepalive_handle
 			) != 0) {
+				if ((ret = rrr_net_transport_graylist_push (
+							transport_keepalive,
+							server_to_use,
+							port_to_use,
+							RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS * 1000
+				)) != 0) {
+					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+					goto out;
+				}
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}

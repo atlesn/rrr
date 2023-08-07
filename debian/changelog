@@ -1,6 +1,50 @@
-rrr (1.26-4) bullseye; urgency=medium
+rrr (1.28-14) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * Match generated messages in httpclient with their corresponding message
+      triggering the query by using a report tag
+    * Route messages leaving an instance to specific reader instances by topic
+      or array tags
+    * New parameter in httpclient to control timeout of low priority messages
+      specifically
+    * New array value "hdlc" for parsing HDLC messages
+    * Ability in file module to write to files and devices among other new
+      configuration parameters
+    * New conversion type "hchar2str" in mangler module to convert individual
+      bytes to strings
+    * New OS object in javascript (operating-system) and ability to obtain
+      hostname
+ 
+  * Improvements:
+    * Timeout changes in httpclient and rotate deferred to msgdb PUT
+      messages to ensure all are attempted and not the same messages time out
+      repeatedly.
+    * In JS, refuse bare name module imports (require prefix like ./) and
+      process relative paths correctly with respect to directory of importing
+      script.
+    * In httpclient, print stats about dropped messages in periodic function
+      instead of once for every message.
+    * Add warning when buffer entry count exceeds a certain configurable limit
+    * Add statistics data for message broker costumer buffers
+
+  * Fixes:
+    * Raw data messages in JS module now working properly
+
+  * Under the hood:
+    * Use events in file module
+    * Common send loop for file and ip modules
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Feb 2023 08:30:08 +0100
+
+rrr (1.27-1) bullseye; urgency=medium
+
+  * Features:
+    * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
 
   * Improvements:
     * Clarified inconsitency of manual with respect to configuration
@@ -13,14 +57,10 @@ rrr (1.26-4) bullseye; urgency=medium
     * Handling of websocket topic filters in httpserver
     * Crash in httpclient when content-encoding: gzip was set from server with
       zero length body
+    * Build with new major release of OpenSSL
+    * Build with Python 3.11
 
-  * Features
-    * New module to run JavaScript programs
-    * New parameter in ip module to generate empty messages when new
-      TCP connections are accepted.
-    * New parameter in httpclient to disable HTTP/2 upgrade headers
-
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 23 Jan 2023 23:59:34 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Feb 2023 08:59:28 +0100
 
 rrr (1.25-2) bullseye; urgency=medium
 

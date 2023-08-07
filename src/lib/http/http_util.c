@@ -1368,7 +1368,9 @@ int rrr_http_util_decode (
 	/* Only one single gzip encoding is supported, and parsing 
 	 * of multiple encodings is not performed. */
 
-	RRR_ASSERT(rrr_nullsafe_str_len(input) > 0,input_is_nonzero_length);
+	if (!(rrr_nullsafe_str_len(input) > 0)) {
+		RRR_BUG("Input had zero length in %s\n", __func__);
+	}
 
 #ifdef RRR_WITH_ZLIB
 	if (rrr_nullsafe_str_cmpto_case(encoding, "gzip") == 0) {

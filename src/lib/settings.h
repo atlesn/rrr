@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -175,6 +175,12 @@ int rrr_settings_check_yesno (
 );
 int rrr_settings_check_all_used (
 		struct rrr_instance_settings *settings
+);
+int rrr_settings_cmpto (
+		int *result,
+		struct rrr_instance_settings *settings,
+		const char *name,
+		const char *value
 );
 int rrr_settings_dump (
 		struct rrr_instance_settings *settings

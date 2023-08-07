@@ -81,12 +81,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_OK     RRR_READ_OK
 #define RRR_THREAD_STOP   RRR_READ_EOF
 
-struct rrr_thread_ghost_data {
-	struct rrr_thread_ghost_data *next;
-	struct rrr_thread *thread;
-	void (*poststop_routine)(const struct rrr_thread *);
-};
-
 struct rrr_thread {
 	RRR_LL_NODE(struct rrr_thread);
 	pthread_t thread;
@@ -112,9 +106,7 @@ struct rrr_thread {
 	// tagging them to be freed.
 	int ready_to_destroy;
 
-	// Start/stop routines
-	int (*cancel_function)(struct rrr_thread *);
-	void (*poststop_routine)(const struct rrr_thread *);
+	// Start routines
 	void *(*start_routine) (struct rrr_thread *);
 
 	// Pointer to watchdog thread
@@ -230,9 +222,6 @@ void rrr_thread_state_set (
 		struct rrr_thread *thread,
 		int state
 );
-void rrr_thread_cleanup_postponed_run (
-		int *count
-);
 int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection
 );
@@ -240,6 +229,7 @@ int rrr_thread_collection_new (
 		struct rrr_thread_collection **target
 );
 void rrr_thread_collection_destroy (
+		int *ghost_count,
 		struct rrr_thread_collection *collection
 );
 void rrr_thread_start_condition_helper_nofork (
@@ -273,17 +263,11 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
-		void (*poststop_routine) (const struct rrr_thread *),
-		int (*cancel_function) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
 );
 int rrr_thread_collection_check_any_stopped (
-		struct rrr_thread_collection *collection
-);
-void rrr_thread_collection_join_and_destroy_stopped_threads (
-		int *count,
 		struct rrr_thread_collection *collection
 );
 int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
