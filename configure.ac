@@ -62,7 +62,7 @@ AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bind
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS bindings])],[enable_node=no],[enable_node=yes])
-AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 bindings (instead of NodeJS)])],[],[enable_v8=no])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 bindings (instead of NodeJS)])],[],[enable_v8=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
