@@ -38,8 +38,8 @@ namespace RRR::JS {
 
 		v8::Isolate *isolate;
 
-		int func_pos = 0;
-		std::vector<int> args_pos;
+		unsigned long func_pos = 0;
+		std::vector<unsigned long> args_pos;
 
 		int64_t timeout_us = 0;
 
