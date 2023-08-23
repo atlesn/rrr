@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
 #include "test_inet.h"
+#include "test_modbus.h"
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
 #endif
@@ -251,6 +252,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("Send loop") {
 		ret_tmp = rrr_test_send_loop();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("modbus functions") {
+		ret_tmp = rrr_test_modbus();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

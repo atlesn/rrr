@@ -22,6 +22,7 @@ test_SOURCES = test.c \
 	test_msleep_signal_safe.c \
 	test_fixp.c \
 	test_inet.c \
+	test_modbus.c \
 	test_condition.c \
 	${test_jsonc} \
 	${test_zlib} \
