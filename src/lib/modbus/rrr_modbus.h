@@ -54,10 +54,9 @@ void rrr_modbus_client_callbacks_set (
 		const struct rrr_modbus_client_callbacks *callbacks
 );
 int rrr_modbus_client_read (
-		rrr_length *data_read,
 		struct rrr_modbus_client *client,
 		const uint8_t *data,
-		rrr_length data_size
+		rrr_length *data_size
 );
 int rrr_modbus_client_write (
 		struct rrr_modbus_client *client,

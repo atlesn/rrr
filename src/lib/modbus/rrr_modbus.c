@@ -170,6 +170,8 @@ static int __rrr_modbus_client_receive_01_read_coils (
 		const struct rrr_modbus_res_01_read_coils *pdu,
 		uint16_t pdu_size
 ) {
+	printf("Byte count %d\n", pdu->byte_count);
+
 	if (pdu->byte_count == 0) {
 		RRR_MSG_0("Invalid size 0 of bytes field in %s\n",
 			__func__);
@@ -183,7 +185,7 @@ static int __rrr_modbus_client_receive_01_read_coils (
 	}
 
 	const uint16_t expected_coils = rrr_be16toh(transaction->req.req_01_read_coils.quantity_of_coils);
-	const uint16_t expected_bytes = expected_coils - (expected_coils % 8) + 1;
+	const uint16_t expected_bytes = (expected_coils - (expected_coils % 8) + 1) / 8;
 
 	if (pdu->byte_count != expected_bytes) {
 		RRR_MSG_0("Unexpected size of bytes field %d<>%d for coil count %d in %s\n",
@@ -219,6 +221,8 @@ static int __rrr_modbus_client_receive (
 ) {
 	struct rrr_modbus_client_transaction transaction;
 
+	RRR_DBG_3("Receive frame of size %" PRIrrrl "\n", frame_size);
+
 	if (__rrr_modbus_client_transaction_find_and_consume (
 			&transaction,
 			client,
@@ -242,6 +246,8 @@ static int __rrr_modbus_client_receive (
 
 	const uint16_t pdu_size = frame_size - sizeof(frame->mbap);
 
+	printf("PDU size %d\n", pdu_size);
+
 	switch (frame->res.function_code) {
 		case 0x01:
 			VALIDATE_FRAME_SIZE(res_01_read_coils);
@@ -254,18 +260,21 @@ static int __rrr_modbus_client_receive (
 }
 
 int rrr_modbus_client_read (
-		rrr_length *data_read,
 		struct rrr_modbus_client *client,
 		const uint8_t *data,
-		rrr_length data_size
+		rrr_length *data_size
 ) {
+	int ret = 0;
+
 	rrr_length data_pos = 0;
 	struct rrr_modbus_frame frame;
 
-	*data_read = 0;
+	RRR_DBG_3("Read data of size %" PRIrrrl "\n", *data_size);
 
-	if (data_size < sizeof(frame.mbap)) {
-		return RRR_MODBUS_INCOMPLETE;
+	if (*data_size < sizeof(frame.mbap)) {
+		printf("A\n");
+		ret = RRR_MODBUS_INCOMPLETE;
+		goto out;
 	}
 
 	memcpy(&frame.mbap, data, sizeof(frame.mbap));
@@ -277,16 +286,43 @@ int rrr_modbus_client_read (
 
 	const rrr_length frame_size = data_pos + frame.mbap.length;
 
-	if (data_size < frame_size) {
-		return RRR_MODBUS_INCOMPLETE;
+	if (frame.mbap.length < 1) {
+		RRR_MSG_0("Received frame with zero in length field\n");
+		ret = RRR_MODBUS_SOFT_ERROR;
+		goto out;
+	}
+
+	if (*data_size < frame_size) {
+		printf("B %" PRIrrrl "<>%" PRIrrrl "\n", *data_size, frame_size);
+		ret = RRR_MODBUS_INCOMPLETE;
+		goto out;
 	}
 
 	// Unit identifier (ignored)
 	data_pos += 1;
 
+	const rrr_length pdu_size = frame_size - data_pos;
+
+	if (pdu_size < 1) {
+		RRR_MSG_0("Received frame with zero PDU length\n");
+		ret = RRR_MODBUS_SOFT_ERROR;
+		goto out;
+	}
+
+	printf("Copy from %d, %d bytes frame size %d\n", data_pos, frame_size - data_pos, frame_size);
+
 	memcpy(&frame.res, data + data_pos, frame_size - data_pos);
 
-	return __rrr_modbus_client_receive (client, &frame, frame_size);
+	if ((ret = __rrr_modbus_client_receive (client, &frame, frame_size)) != RRR_MODBUS_OK) {
+		goto out;
+	}
+
+	data_pos += frame_size;
+
+	*data_size = data_pos;
+
+	out:
+	return ret;
 }
 
 int rrr_modbus_client_write (
