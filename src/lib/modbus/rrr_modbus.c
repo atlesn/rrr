@@ -40,6 +40,11 @@ struct rrr_modbus_mbap {
 	uint8_t unit_identifier;
 } __attribute((__packed__));
 
+struct rrr_modbus_req_01_read_coils {
+	uint16_t starting_address;
+	uint16_t quantity_of_coils;
+} __attribute((__packed__));
+
 struct rrr_modbus_req {
 	uint8_t function_code;
 	union {
@@ -48,6 +53,15 @@ struct rrr_modbus_req {
 } __attribute((__packed__));
 
 #define RRR_MODBUS_REQ_SIZE(function) (sizeof(function) + 1)
+
+struct rrr_modbus_res_error {
+	uint8_t exception_code;
+} __attribute((__packed__));
+
+struct rrr_modbus_res_01_read_coils {
+	uint8_t byte_count;
+	uint8_t coil_status[256];
+} __attribute((__packed__));
 
 struct rrr_modbus_res {
 	uint8_t function_code;
@@ -126,11 +140,153 @@ void rrr_modbus_client_callbacks_set (
 	client->callbacks = *callbacks;
 }
 
-int rrr_modbus_client_read (
+static int __rrr_modbus_client_transaction_find_and_consume (
+		struct rrr_modbus_client_transaction *transaction,
 		struct rrr_modbus_client *client,
-		const uint8_t data,
+		uint16_t transaction_id
+) {
+	for (int i = 0; i < RRR_MODBUS_CLIENT_TRANSACTION_MAX; i++) {
+		struct rrr_modbus_client_transaction *transaction_check = &client->transactions[i];
+
+		if (transaction_check->transmit_time == 0) {
+			continue;
+		}
+
+		if (transaction_id == transaction_check->transaction_id) {
+			*transaction = *transaction_check;
+			memset(transaction_check, '\0', sizeof(*transaction_check));
+			return 0;
+		}
+	}
+
+	RRR_MSG_0("Transaction with id %d not found\n", transaction_id);
+
+	return 1;
+}
+
+static int __rrr_modbus_client_receive_01_read_coils (
+		struct rrr_modbus_client *client,
+		const struct rrr_modbus_client_transaction *transaction,
+		const struct rrr_modbus_res_01_read_coils *pdu,
+		uint16_t pdu_size
+) {
+	if (pdu->byte_count == 0) {
+		RRR_MSG_0("Invalid size 0 of bytes field in %s\n",
+			__func__);
+		return RRR_MODBUS_SOFT_ERROR;
+	}
+
+	if (pdu->byte_count != pdu_size - 1) {
+		RRR_MSG_0("Invalid size of bytes field %d<>%d in %s\n",
+			pdu->byte_count, pdu_size - 1, __func__);
+		return RRR_MODBUS_SOFT_ERROR;
+	}
+
+	const uint16_t expected_coils = rrr_be16toh(transaction->req.req_01_read_coils.quantity_of_coils);
+	const uint16_t expected_bytes = expected_coils - (expected_coils % 8) + 1;
+
+	if (pdu->byte_count != expected_bytes) {
+		RRR_MSG_0("Unexpected size of bytes field %d<>%d for coil count %d in %s\n",
+			pdu->byte_count, expected_bytes, expected_coils, __func__);
+		return RRR_MODBUS_SOFT_ERROR;
+	}
+
+	return client->callbacks.cb_res_01_read_coils (
+			transaction->transaction_id,
+			pdu->byte_count,
+			pdu->coil_status,
+			client->callbacks.arg
+	);
+}
+
+#define VALIDATE_FRAME_SIZE(type)                                                           \
+    do {if (frame_size > sizeof(frame->mbap) + sizeof(frame->res.type)) {                   \
+        RRR_MSG_0("Max frame size exceeded %" PRIrrrl " for received frame\n", frame_size); \
+        return RRR_MODBUS_SOFT_ERROR;                                                       \
+    }} while(0)
+
+#define VALIDATE_TRANSACTION_FUNCTION_CODE(code)                                       \
+    do {if (code != transaction.req.function_code) {                                   \
+        RRR_MSG_0("Function code mismatch for received frame %d<>%d\n",                \
+            frame->res.function_code - 0x80, transaction.req.function_code);           \
+        return RRR_MODBUS_SOFT_ERROR;                                                  \
+    }} while(0)
+
+static int __rrr_modbus_client_receive (
+		struct rrr_modbus_client *client,
+		struct rrr_modbus_frame *frame,
+		rrr_length frame_size
+) {
+	struct rrr_modbus_client_transaction transaction;
+
+	if (__rrr_modbus_client_transaction_find_and_consume (
+			&transaction,
+			client,
+			frame->mbap.transaction_identifier
+	) != 0) {
+		return RRR_MODBUS_SOFT_ERROR;
+	}
+
+	if (frame->res.function_code > 0x80) {
+		VALIDATE_FRAME_SIZE(error);
+		VALIDATE_TRANSACTION_FUNCTION_CODE(frame->res.function_code - 0x80);
+		return client->callbacks.cb_res_error (
+				transaction.transaction_id,
+				frame->res.function_code - 0x80,
+				frame->res.error.exception_code,
+				client->callbacks.arg
+		);
+	}
+
+	VALIDATE_TRANSACTION_FUNCTION_CODE(frame->res.function_code);
+
+	const uint16_t pdu_size = frame_size - sizeof(frame->mbap);
+
+	switch (frame->res.function_code) {
+		case 0x01:
+			VALIDATE_FRAME_SIZE(res_01_read_coils);
+			return __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.res_01_read_coils, pdu_size);
+		default:
+			RRR_BUG("Function code %d not implemented in %s\n", frame->res.function_code, __func__);
+	};
+
+	return RRR_MODBUS_SOFT_ERROR;
+}
+
+int rrr_modbus_client_read (
+		rrr_length *data_read,
+		struct rrr_modbus_client *client,
+		const uint8_t *data,
 		rrr_length data_size
 ) {
+	rrr_length data_pos = 0;
+	struct rrr_modbus_frame frame;
+
+	*data_read = 0;
+
+	if (data_size < sizeof(frame.mbap)) {
+		return RRR_MODBUS_INCOMPLETE;
+	}
+
+	memcpy(&frame.mbap, data, sizeof(frame.mbap));
+
+	frame.mbap.transaction_identifier = rrr_be16toh(frame.mbap.transaction_identifier);
+	frame.mbap.protocol_identifier = rrr_be16toh(frame.mbap.protocol_identifier);
+	frame.mbap.length = rrr_be16toh(frame.mbap.length);
+	data_pos += 6;
+
+	const rrr_length frame_size = data_pos + frame.mbap.length;
+
+	if (data_size < frame_size) {
+		return RRR_MODBUS_INCOMPLETE;
+	}
+
+	// Unit identifier (ignored)
+	data_pos += 1;
+
+	memcpy(&frame.res, data + data_pos, frame_size - data_pos);
+
+	return __rrr_modbus_client_receive (client, &frame, frame_size);
 }
 
 int rrr_modbus_client_write (
@@ -141,14 +297,15 @@ int rrr_modbus_client_write (
 	int ret = RRR_MODBUS_OK;
 
 	struct rrr_modbus_frame frame = {0};
-	const struct rrr_modbus_client_transaction *transaction = &client->transactions[client->transaction_transmit_pos];
+	struct rrr_modbus_client_transaction *transaction = &client->transactions[client->transaction_transmit_pos];
 
-	if (transaction->req_size == 0) {
+	if (transaction->req_size == 0 || transaction->transmit_time != 0) {
 		ret = RRR_MODBUS_DONE;
 		goto out;
 	}
 
-	assert(transaction->transmit_time == 0);
+	RRR_DBG_3("Transmitting transaction %d function code %d from position %d\n",
+			transaction->transaction_id, transaction->req.function_code, client->transaction_transmit_pos);
 
 	frame.mbap.transaction_identifier = rrr_htobe16(transaction->transaction_id);
 	frame.mbap.protocol_identifier = rrr_htobe16(0);
@@ -166,6 +323,8 @@ int rrr_modbus_client_write (
 	if (client->transaction_transmit_pos == RRR_MODBUS_CLIENT_TRANSACTION_MAX) {
 		client->transaction_transmit_pos = 0;
 	}
+
+	transaction->transmit_time = rrr_time_get_64();
 
 	out:
 	return ret;
@@ -238,6 +397,8 @@ int rrr_modbus_client_req_01_read_coils (
 ) {
 	struct rrr_modbus_req req;
 
+	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
+
 	__rrr_modbus_req_init (&req, RRR_MODBUS_FUNCTION_CODE_01_READ_COILS);
 
 	req.req_01_read_coils.starting_address = rrr_htobe16(starting_address);
@@ -253,7 +414,7 @@ int rrr_modbus_server_new (struct rrr_modbus_server **target) {
 
 	*target = NULL;
 
-	if ((server = rrr_allocate_zero(sizeof(*server)) == NULL)) {
+	if ((server = rrr_allocate_zero(sizeof(*server))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;

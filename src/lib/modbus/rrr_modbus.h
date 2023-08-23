@@ -29,26 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MODBUS_OK          RRR_READ_OK
 #define RRR_MODBUS_HARD_ERROR  RRR_READ_HARD_ERROR
+#define RRR_MODBUS_SOFT_ERROR  RRR_READ_SOFT_ERROR
 #define RRR_MODBUS_BUSY        RRR_READ_BUSY
 #define RRR_MODBUS_DONE        RRR_READ_EOF
-
-struct rrr_modbus_req_01_read_coils {
-	uint16_t starting_address;
-	uint16_t quantity_of_coils;
-} __attribute((__packed__));
-
-struct rrr_modbus_res_01_read_coils {
-	uint8_t byte_count;
-	uint8_t coil_status[1];
-} __attribute((__packed__));
-
-struct rrr_modbus_res_error {
-	uint8_t exception_code;
-};
+#define RRR_MODBUS_INCOMPLETE  RRR_READ_INCOMPLETE
 
 struct rrr_modbus_client_callbacks {
-	int (*cb_res_error)(uint8_t function_code, uint8_t error_code);
-	int (*cb_res_01_read_coils)(uint16_t transaction_id, const struct rrr_modbus_res_01_read_coils *pdu, void *arg);
+	int (*cb_res_error)(uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *arg);
+	int (*cb_res_01_read_coils)(uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg);
 	int *arg;
 };
 
@@ -66,8 +54,9 @@ void rrr_modbus_client_callbacks_set (
 		const struct rrr_modbus_client_callbacks *callbacks
 );
 int rrr_modbus_client_read (
+		rrr_length *data_read,
 		struct rrr_modbus_client *client,
-		const uint8_t data,
+		const uint8_t *data,
 		rrr_length data_size
 );
 int rrr_modbus_client_write (
