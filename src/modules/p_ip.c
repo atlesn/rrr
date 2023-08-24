@@ -1078,7 +1078,9 @@ static int ip_push_raw_default_target (
 				ip_resolve_callback,
 				&resolve_callback_data,
 				ip_connect_raw_callback,
-				ip_data
+				ip_data,
+				NULL,
+				NULL
 		);
 
 		int send_chunk_count_limit_reached = (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT);
