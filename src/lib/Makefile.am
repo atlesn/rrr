@@ -96,6 +96,8 @@ http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 
 websocket = websocket/websocket.c
 
+modbus = modbus/rrr_modbus.c
+
 cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
@@ -158,7 +160,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
-                    ${input} ${input_system} ${helpers} ${websocket} \
+                    ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
