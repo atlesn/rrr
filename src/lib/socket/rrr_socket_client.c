@@ -2000,6 +2000,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 	return ret;
 }
 
+
 int rrr_socket_client_collection_sendto_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
