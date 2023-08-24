@@ -73,6 +73,11 @@ namespace RRR::JS {
 		;
 	}
 
+	void Message::set_data(const char *new_data, size_t new_data_size) {
+		data.clear();
+		data.insert(data.end(), new_data, new_data + new_data_size);
+	}
+
 	void Message::set_from_msg_msg(const struct rrr_msg_msg *msg) {
 		array.clear();
 		data.clear();
@@ -88,9 +93,7 @@ namespace RRR::JS {
 			array.add_from_message(&array_version_dummy, msg);
 		}
 		else if (MSG_DATA_LENGTH(msg) > 0) {
-			data.clear();
-			data.reserve((size_t) MSG_DATA_LENGTH(msg));
-			memcpy(data.data(), MSG_DATA_PTR(msg), (size_t) MSG_DATA_LENGTH(msg));
+			set_data(MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg));
 		}
 
 		topic = MSG_TOPIC_LENGTH(msg) > 0
@@ -715,33 +718,26 @@ namespace RRR::JS {
 
 		if (value->IsNullOrUndefined()) {
 			message->data.clear();
-			return;
 		}
-		if (value->IsArrayBuffer()) {
+		else if (value->IsArrayBuffer()) {
 			auto contents = BackingStore::create(isolate, value.As<v8::ArrayBuffer>());
 			if (contents->size() > RRR_MSG_DATA_MAX) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
 				return;
 			}
-			message->data.clear();
-			message->data.reserve(contents->size());
-			memcpy(message->data.data(), contents->data(), contents->size());
-			return;
+			message->set_data(static_cast<const char *>(contents->data()), contents->size());
 		}
-		if (value->IsString()) {
+		else if (value->IsString()) {
 			String data(isolate, value->ToString(ctx).ToLocalChecked());
 			if ((unsigned int) data.length() > RRR_MSG_DATA_MAX) {
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was too long")));
 				return;
 			}
-			message->data.clear();
-			message->data.reserve((size_t) data.length());
-			memcpy(message->data.data(), *data, (size_t) data.length());
-			return;
+			message->set_data(static_cast<const char *>(*data), (size_t) data.length());
 		}
-
-		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was not null, undefined, ArrayBuffer or a string")));
-		return;
+		else {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for data was not null, undefined, ArrayBuffer or a string")));
+		}
 	}
 
 	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {

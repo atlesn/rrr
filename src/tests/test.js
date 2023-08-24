@@ -42,11 +42,11 @@ function check_array_buffer(buffer, check_buffer) {
 	}
 }
 
-function function_tests() {
+function message_tests() {
 	const message = new Message();
 
 	Object.keys(message).forEach((key) => {
-		console.log("Key: " + key + "\n");
+		console.log("Message member: " + key + "\n");
 	});
 
 	// Let any exceptions propagate causing test to fail unless
@@ -361,10 +361,24 @@ function function_tests() {
 	console.log("Values cleared\n");
 }
 
+function os_tests() {
+	const os = new OS();
+	Object.keys(os).forEach((key) => {
+		console.log("OS member: " + key + "\n");
+	});
+
+	const hostname = os.hostname();
+	console.log("Hostname is '" + hostname + "'\n");
+	if (hostname.length < 1) {
+		throw("Hostname length was 0");
+	}
+}
+
 function process(message) {
 	console.log("Process function\n");
 
-	function_tests();
+	message_tests();
+	os_tests();
 
 	// Timeouts
 	let done = {
