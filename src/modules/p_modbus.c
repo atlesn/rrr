@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/socket/rrr_socket_client.h"
 
 #define MODBUS_DEFAULT_SERVER "localhost"
 #define MODBUS_DEFAULT_PORT 502
@@ -51,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_QUANTITY 8
 #define MODBUS_DEFAULT_INTERVAL_MS 0
 
+#define MODBUS_COMMAND_TIMEOUT_S 2 /* Update man pages if this changes */
+
 #define MODBUS_SERVER_MAX 256
 #define MODBUS_STARTING_ADDRESS_MAX 0xffff
 #define MODBUS_QUANTITY_MIN 1
@@ -58,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct modbus_data;
 
-static void modbus_command_cb (evutil_socket_t fd, short flags, void *arg);
+static void modbus_event_command (evutil_socket_t fd, short flags, void *arg);
 
 struct modbus_command {
 	char server[MODBUS_SERVER_MAX];
@@ -84,8 +87,17 @@ struct modbus_command_collection {
 
 struct modbus_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_modbus_client *client;
+	struct rrr_socket_client_collection *collection_tcp;
 	struct modbus_command_collection commands;
+	struct rrr_event_collection events;
+	rrr_event_handle event_process;
+};
+
+struct modbus_client_data {
+	struct modbus_data *data;
+	char server[MODBUS_SERVER_MAX];
+	uint16_t port;
+	struct rrr_modbus_client *client;
 };
 
 static void modbus_command_node_destroy (struct modbus_command_node *node) {
@@ -117,7 +129,7 @@ static int modbus_command_node_new (
 	if ((ret = rrr_event_collection_push_periodic (
 			&node->event,
 			&node->events,
-			modbus_command_cb,
+			modbus_event_command,
 			node,
 			50000 /* dummy interval 50 ms */
 	)) != 0) {
@@ -245,12 +257,139 @@ static void modbus_data_init(struct modbus_data *data, struct rrr_instance_runti
 }
 
 static void modbus_data_cleanup(struct modbus_data *data) {
+	rrr_event_collection_clear(&data->events);
+	if (data->collection_tcp != NULL) {
+		rrr_socket_client_collection_destroy(data->collection_tcp);
+	}
 	modbus_command_collection_destroy(&data->commands);
 }
 
-static void modbus_command_cb (evutil_socket_t fd, short flags, void *arg) {
+static int modbus_callback_resolve (
+		size_t *address_count,
+		struct sockaddr ***addresses,
+		socklen_t **address_lengths,
+		void *callback_data
+) {
+	struct modbus_data *data = callback_data;
 
+}
 
+static int modbus_callback_connect (
+		int *fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		void *callback_data
+) {
+	struct modbus_data *data = callback_data;
+
+}
+
+static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
+	(void)(fd);
+	(void)(flags);
+
+	const struct modbus_command_node *node = arg;
+	const struct modbus_command *command = &node->command;
+	const struct modbus_data *data = node->data;
+
+	int ret_tmp;
+	uint8_t buf[2048];
+	char addr_string[sizeof(command->server) + 16];
+	rrr_length buf_size;
+
+	sprintf(addr_string, "%s:%u", command->server, command->port);
+
+	RRR_DBG_3("Modbus instance %s send command server %s function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
+		INSTANCE_D_NAME(data->thread_data),
+		addr_string,
+		command->function,
+		command->starting_address,
+		command->quantity,
+		node->interval_ms
+	);
+
+	switch (command->function) {
+		case 0x01: // Read Coils
+			if (rrr_modbus_client_req_01_read_coils (
+					data->
+			) != 0) {
+				goto fail_function;
+			}
+			break;
+		default:
+			assert(0);
+	};
+
+	again:
+		buf_size = sizeof(buf);
+		if ((ret_tmp = rrr_modbus_client_write (
+				data->client,
+				buf,
+				&buf_size
+		)) == RRR_MODBUS_OK) {
+			rrr_length send_chunk_count;
+			if ((ret_tmp = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+					&send_chunk_count,
+					data->collection_tcp,
+					addr_string,
+					buf,
+					buf_size,
+					NULL,
+					NULL,
+					NULL,
+					modbus_callback_resolve,
+					data,
+					modbus_callback_connect,
+					data
+			)) != 0) {
+				goto fail_send;
+			}
+			goto again;
+		}
+		else if (ret_tmp != RRR_MOBUS_DONE) {
+			goto fail_write;
+		}
+
+	return;
+	fail_function:
+		RRR_MSG_0("Command 0x%u failed in modbus instance %s\n",
+			command->function, INSTANCE_D_NAME(data->thread_data));
+		goto fail;
+	fail_write:
+		RRR_MSG_0("Write failed in modbus instance %s\n",
+			command->function);
+		goto fail;
+	fail_send:
+		RRR_MSG_0("Send failed in modbus instance %s\n",
+			command->function);
+		goto fail;
+	fail:
+	rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+}
+
+static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
+	(void)(fd);
+	(void)(flags);
+
+	struct modbus_data *data = arg;
+
+	uint64_t time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
+
+	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
+		if (node->last_seen < time_limit) {
+			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
+				INSTANCE_D_NAME(data->thread_data),
+				node->command.server,
+				node->command.port,
+				node->command.function,
+				node->command.starting_address,
+				node->command.quantity,
+				node->interval_ms
+			);
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_NEXT();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->commands, 0; modbus_command_node_destroy(node));
 }
 
 #define GET_VALUE(name,type)                                                                                     \
@@ -367,6 +506,57 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
+static int modbus_callback_private_data_new (void **target, int fd, void *private_arg) {
+	(void)(fd);
+
+	struct modbus_data *data = private_arg;
+
+	int ret = 0;
+
+	struct modbus_client_data *client_data;
+
+	if ((client_data = rrr_allocate_zero(sizeof(*client_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_modbus_client_new (&client_data->client)) != 0) {
+		RRR_MSG_0("Failed to create client in %s\n", __func__);
+		goto out_free;
+	}
+
+	client_data->data = data;
+
+	*target = client_data;
+
+	goto out;
+//	out_destroy_client:
+//		rrr_modbus_client_destroy(client_data->client);
+	out_free:
+		rrr_free(client_data);
+	out:
+		return ret;
+}
+
+static void modbus_callback_private_data_destroy (void *private_data) {
+	struct modbus_client_data *client_data = private_data;
+	rrr_modbus_client_destroy(client_data->client);
+	rrr_free(client_data);
+}
+
+static void modbus_callback_set_read_flags (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
+}
+
+static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
+}
+
+static void modbus_callback_error (RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+}
+
+static int modbus_callback_complete (RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) {
+}
+
 static int modbus_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -392,6 +582,11 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	modbus_data_init(data, thread_data);
 
+	if (rrr_socket_client_collection_new (&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
+		RRR_MSG_0("Failed to create TCP client collection in modbus instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
 	if (modbus_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
 		goto out_message;
 	}
@@ -400,6 +595,36 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("modbus instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
+
+	if (rrr_event_collection_push_periodic (
+			&data->event_process,
+			&data->events,
+			modbus_event_process,
+			data,
+			50000 // 50 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create event in %s\n", __func__);
+		goto out_message;
+	}
+
+	EVENT_ADD(data->event_process);
+
+	rrr_socket_client_collection_event_setup_raw (
+			data->collection_tcp,
+			modbus_callback_private_data_new,
+			modbus_callback_private_data_destroy,
+			data,
+			2048, /* Read step max size */
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK,
+			modbus_callback_set_read_flags,
+			data,
+			modbus_callback_get_target_size,
+			data,
+			modbus_callback_error,
+			data,
+			modbus_callback_complete,
+			data
+	);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
