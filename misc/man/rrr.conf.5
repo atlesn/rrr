@@ -393,6 +393,9 @@ Buffers messages, may be used to duplicate messages to multiple readers.
 .It ipclient (PI)
 Implements the RRR assured single delivery protocol on UDP for unstable connections.
 
+.It modbus (PAI)
+Implements a modbus client capable of getting coil status from a remote modbus server.
+
 .It python3 (PAI)
 Processes and generates messages with custom Python3 scripts.
 
@@ -824,6 +827,42 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
+.SS modbus (PAI)
+This module implements a modbus client capable of getting coil status from a remote modbus server.
+.PP
+The module is controlled using array command messages from sender instances, and there are no configuration parameters.
+.PP
+When a command is received, a connection is established with the specified modbus server and polling starts.
+The command may be repeated at a specified interval, and stops when an equal command has not been received for two seconds.
+.PP
+The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+.PP
+If different commands are used on the same server, they will share connection.
+.PP
+The following array fields may be used in the command messages:
+.PP
+.Bl -tag -width -indent
+.It modbus_server
+The IP address of the modbus server to use. If not given,
+.B localhost
+is used. The maximum length of this field is 255 characters.
+.It modbus_port
+The port on the modbus server. If not given,
+.B 502
+is used.
+.It modbus_function
+The modbus command to send. Currently only function
+.B 0x01 Read Coils
+is supported, and this is also used if the field is not given.
+The function code is given in decimal form.
+.It modbus_starting_address
+The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
+.It modbus_quantity
+The quantity (e.g. number of coils) to use. Defaults to 8, and must be in the range 1 - 2000.
+.It modbus_interval_ms
+If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is performed.
+.El
+
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
 All messages read from the senders are sent to the python program to the process function specified.
