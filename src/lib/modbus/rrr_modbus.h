@@ -40,7 +40,6 @@ struct rrr_modbus_client_callbacks {
 	int *arg;
 };
 
-struct rrr_modbus_server;
 struct rrr_modbus_client;
 
 int rrr_modbus_client_new (
@@ -68,9 +67,6 @@ int rrr_modbus_client_req_01_read_coils (
 		uint16_t starting_address,
 		uint16_t quantity_of_coils
 );
-
-int rrr_modbus_server_new (struct rrr_modbus_server **target);
-void rrr_modbus_server_destroy (struct rrr_modbus_server *target);
 
 #endif /* RRR_MODBUS_H */
 

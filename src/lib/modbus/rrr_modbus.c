@@ -79,10 +79,6 @@ struct rrr_modbus_frame {
 	};
 } __attribute((__packed__));
 
-struct rrr_modbus_server {
-	uint8_t dummy;
-};
-
 struct rrr_modbus_client_transaction {
 	uint16_t transaction_id;
 	struct rrr_modbus_req req;
@@ -441,28 +437,5 @@ int rrr_modbus_client_req_01_read_coils (
 	req.req_01_read_coils.quantity_of_coils = rrr_htobe16(quantity_of_coils);
 
 	return __rrr_modbus_client_req_push(client, &req, RRR_MODBUS_REQ_SIZE(req.req_01_read_coils));
-}
-
-int rrr_modbus_server_new (struct rrr_modbus_server **target) {
-	int ret = 0;
-
-	struct rrr_modbus_server *server;
-
-	*target = NULL;
-
-	if ((server = rrr_allocate_zero(sizeof(*server))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	*target = server;
-
-	out:
-	return ret;
-}
-
-void rrr_modbus_server_destroy (struct rrr_modbus_server *target) {
-	rrr_free(target);
 }
 
