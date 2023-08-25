@@ -2016,7 +2016,6 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 			/* Propagate return value */
 			goto out;
 		}
-		goto out;
 	}
 
 	if ((ret = __rrr_socket_client_send_push_const_with_private_data (

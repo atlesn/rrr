@@ -56,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_INTERVAL_MS 0
 
 #define MODBUS_COMMAND_TIMEOUT_S 2 /* Update man pages if this changes */
+#define MODBUS_COMMAND_SEND_TIMEOUT_S 4
 
 #define MODBUS_SERVER_MAX 256
 #define MODBUS_STARTING_ADDRESS_MAX 0xffff
@@ -77,7 +78,9 @@ struct modbus_command {
 struct modbus_command_node {
 	RRR_LL_NODE(struct modbus_command_node);
 	struct modbus_data *data;
-	uint64_t last_seen;
+	uint64_t last_seen_time;
+	uint64_t create_time;
+	uint64_t send_time;
 	uint64_t interval_ms;
 	struct modbus_command command;
 	struct rrr_event_collection events;
@@ -142,6 +145,7 @@ static int modbus_command_node_new (
 
 	node->data = data;
 	node->command = *command;
+	node->create_time = rrr_time_get_64();
 
 	*target = node;
 
@@ -159,7 +163,7 @@ static void modbus_command_node_update (
 		uint64_t interval_ms,
 		int first
 ) {
-	node->last_seen = rrr_time_get_64();
+	node->last_seen_time = rrr_time_get_64();
 
 	if (interval_ms == node->interval_ms && interval_ms > 0 && !first) {
 		return;
@@ -332,7 +336,8 @@ static int modbus_callback_data_prepare (
 ) {
 	struct modbus_data_prepare_callback_data *callback_data = callback_arg;
 	struct modbus_client_data *client_data = private_data;
-	struct modbus_command *command = &callback_data->node->command;
+	struct modbus_command_node *node = callback_data->node;
+	struct modbus_command *command = &node->command;
 	struct modbus_data *data = callback_data->data;
 
 	int ret = 0;
@@ -340,7 +345,7 @@ static int modbus_callback_data_prepare (
 	/* NOTE : Buf pointers in callback data and argument point to same memory */
 
 	uint8_t *buf = callback_data->buf;
-	rrr_length buf_size;
+	rrr_length buf_size = rrr_length_from_biglength_bug_const(callback_data->buf_size_orig);
 
 	if (client_data == NULL) {
 		printf("Not ready\n");
@@ -380,25 +385,25 @@ static int modbus_callback_data_prepare (
 			assert(0);
 	};
 
-	again:
-		buf_size = callback_data->buf_size_orig;
-		if ((ret = rrr_modbus_client_write (
-				client_data->client,
-				buf,
-				&buf_size
-		)) == RRR_MODBUS_OK) {
-			*_buf_size = buf_size;
-			goto again;
-		}
-		else if (ret != RRR_MODBUS_DONE) {
-			RRR_MSG_0("Write failed in modbus instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto out;
-		}
-		ret &= ~(RRR_MODBUS_DONE);
+	if ((ret = rrr_modbus_client_write (
+			client_data->client,
+			buf,
+			&buf_size
+	)) == RRR_MODBUS_OK) {
+		*_buf_size = buf_size;
+	}
+	else if (ret == RRR_MODBUS_DONE) {
+		ret = 0;
+	}
+	else {
+		RRR_MSG_0("Write failed in modbus instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	out:
-		return ret;
+	return ret;
 
 }
 
@@ -450,16 +455,22 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 			RRR_DBG_2("Modbus instance %s connection to %s:%u not yet ready\n",
 				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
 		}
-		else if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
-				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
-		}
 		else {
-			goto fail_send;
+			node->send_time = 0;
+			if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
+				RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
+					INSTANCE_D_NAME(data->thread_data), command->server, command->port);
+			}
+			else {
+				goto fail_send;
+			}
 		}
 	}
-	else if (node->interval_ms == 0) {
-		EVENT_REMOVE(node->event);
+	else {
+		node->send_time = rrr_time_get_64();
+		if (node->interval_ms == 0) {
+			EVENT_REMOVE(node->event);
+		}
 	}
 
 	return;
@@ -477,10 +488,11 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 
 	struct modbus_data *data = arg;
 
-	uint64_t time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
+	uint64_t command_time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
+	uint64_t create_time_limit = rrr_time_get_64() - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
 
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
-		if (node->last_seen < time_limit) {
+		if (node->last_seen_time < command_time_limit) {
 			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
@@ -491,7 +503,18 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 				node->interval_ms
 			);
 			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_NEXT();
+		}
+		else if (node->send_time == 0 && node->create_time < create_time_limit) {
+			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ", server is not reachable.\n",
+				INSTANCE_D_NAME(data->thread_data),
+				node->command.server,
+				node->command.port,
+				node->command.function,
+				node->command.starting_address,
+				node->command.quantity,
+				node->interval_ms
+			);
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->commands, 0; modbus_command_node_destroy(node));
 }
