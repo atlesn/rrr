@@ -8,18 +8,21 @@
 
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
+#include "lib/util/rrr_endian.h"
 
 #define RRR_MODBUS_PORT 502
 #define RRR_MODBUS_BUFFER_SIZE 1024
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_modbus_server");
 
-static void __make_response (
+static int __make_response (
 		char *dst_buf,
 		size_t *dst_buf_size,
 		const char *src_buf,
 		const size_t *src_buf_size
 ) {
+	int ret = 0;
+
 	assert(*dst_buf_size >= *src_buf_size);
 
 	memcpy(dst_buf, src_buf, *src_buf_size);
@@ -27,32 +30,51 @@ static void __make_response (
 
 	uint8_t exception = 0x01; /* Illegal function */
 
+	if (*src_buf_size < 7) {
+		printf("Frame too short\n");
+		ret = 1;
+		goto out;
+	}
 	printf("Request %u received, making response.\n", dst_buf[7]);
+
+	uint16_t length = rrr_be16toh(*((uint16_t *) &dst_buf[4]));
 
 	switch(dst_buf[7]) { // Function code
 		case 0x01:
-			if (dst_buf[10] == 0 && dst_buf[11] == 16) {
-				dst_buf[4] = 0;     // Length high
-				dst_buf[5] = 4;     // Length low
-				dst_buf[8] = 2;     // Byte count
-				dst_buf[9] = 0x01;  // Coil status 0
-				dst_buf[10] = 0x01; // Coil status 1
-				(*dst_buf_size)--;
-				break;
+			if (dst_buf[10] != 0 || dst_buf[11] != 16) {
+				printf("Illegal address/quantity %u/%u for function 0x01\n", dst_buf[10], dst_buf[11]);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
 			}
-			printf("Illegal address/quantity %u/%u for function 0x01\n", dst_buf[10], dst_buf[11]);
-			exception = 0x02; /* Illegal data address */
-			goto exception;
+			if (length < 6) {
+				printf("Length %u too short function 0x01\n", length);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
+			}
+			if ((size_t) length + 6 < *dst_buf_size) {
+				printf("Reported length %lu less than buffer size %lu for function 0x01\n", (size_t) length + 6, *dst_buf_size);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
+			}
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 4;     // Length low
+			dst_buf[8] = 2;     // Byte count
+			dst_buf[9] = 0x01;  // Coil status 0
+			dst_buf[10] = 0x01; // Coil status 1
+			(*dst_buf_size)--;
+			break;
 		default:
 			printf("Illegal function 0x%u\n", dst_buf[7]);
 			goto exception;
 	}
 
-	return;
+	goto out;
 	exception:
 		dst_buf[7] += 0x80;
 		dst_buf[8] = exception;
 		(*dst_buf_size) -= 3;
+	out:
+		return ret;
 }
 
 int main(int argc, const char **argv) {
@@ -113,15 +135,19 @@ int main(int argc, const char **argv) {
 			buf_size = bytes;
 			buf2_size = sizeof(buf2);
 
-			__make_response(buf2, &buf2_size, buf, &buf_size);
+			if (__make_response(buf2, &buf2_size, buf, &buf_size) != 0) {
+				break;
+			}
 
 			printf("Write response size %lu\n", buf2_size);
 
 			if (write(client_fd, buf2, buf2_size) != (ssize_t) buf2_size) {
 				fprintf(stderr, "Write to client failed: %s\n", rrr_strerror(errno));
-				continue;
+				break;
 			}
 		}
+
+		close(client_fd);
 	}
 
 	goto out;

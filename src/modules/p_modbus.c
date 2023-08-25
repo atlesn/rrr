@@ -695,7 +695,7 @@ static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZ
 	struct modbus_client_data *client_data = private_data;
 	struct modbus_data *data = arg;
 
-	printf("Get target size\n");
+	printf("Get target size rx buf wpos %lu\n", read_session->rx_buf_wpos);
 
 	rrr_length data_size = rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos);
 
