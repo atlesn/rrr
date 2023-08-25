@@ -676,7 +676,8 @@ static void modbus_callback_set_read_flags (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CAL
 }
 
 static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
-	assert(1);
+	printf("Get target size\n");
+	return RRR_READ_INCOMPLETE;
 }
 
 static void modbus_callback_error (RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
