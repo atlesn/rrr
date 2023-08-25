@@ -373,12 +373,14 @@ static int __rrr_modbus_client_transaction_reserve (
 		if (transaction->transmit_time > 0 &&
 		    transaction->transmit_time < rrr_time_get_64() - RRR_MODBUS_CLIENT_TRANSACTION_TIMEOUT_S * 1000 * 1000
 		) {
-			RRR_MSG_0("Modbus client transaction timeout for function code %d transaction id %s. No response from server within %d seconds.\n",
+			uint64_t time_since_transmit_ms = (rrr_time_get_64() - transaction->transmit_time) / 1000;
+			RRR_MSG_0("Modbus client transaction timeout for function code %d transaction id %s. No response from server within %" PRIu64 " ms while the limit is %d s.\n",
 					transaction->req.function_code,
 					transaction->transaction_id,
+					time_since_transmit_ms,
 					RRR_MODBUS_CLIENT_TRANSACTION_TIMEOUT_S
 			);
-			ret = RRR_MODBUS_HARD_ERROR;
+			ret = RRR_MODBUS_SOFT_ERROR;
 			goto out;
 		}
 

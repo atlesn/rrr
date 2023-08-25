@@ -32,6 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/modbus/rrr_modbus.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/event/event_collection_struct.h"
+#include "../lib/ip/ip.h"
+#include "../lib/ip/ip_helper.h"
+#include "../lib/ip/ip_util.h"
 #include "../lib/array.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -131,13 +134,11 @@ static int modbus_command_node_new (
 			&node->events,
 			modbus_event_command,
 			node,
-			50000 /* dummy interval 50 ms */
+			50000 // 25 ms
 	)) != 0) {
 		RRR_MSG_0("Failed to create event in %s\n", __func__);
 		goto out_clear_event_collection;
 	}
-
-	/* Do not add or activate the event! This is done in the update function. */
 
 	node->data = data;
 	node->command = *command;
@@ -155,20 +156,30 @@ static int modbus_command_node_new (
 
 static void modbus_command_node_update (
 		struct modbus_command_node *node,
-		uint64_t interval_ms
+		uint64_t interval_ms,
+		int first
 ) {
 	node->last_seen = rrr_time_get_64();
 
-	if (interval_ms == node->interval_ms) {
+	if (interval_ms == node->interval_ms && interval_ms > 0 && !first) {
 		return;
 	}
 
-	EVENT_REMOVE(node->event);
+	if (first) {
+		EVENT_ADD(node->event);
+	}
+	EVENT_ACTIVATE(node->event);
+
 	if (interval_ms > 0) {
 		EVENT_INTERVAL_SET(node->event, interval_ms * 1000);
 		EVENT_ADD(node->event);
-		EVENT_ACTIVATE(node->event);
 	}
+	else {
+		/* If interval is zero, the event is removed in the command event
+		 * callback. We must call this functionon repeatedly in the beginning
+		 * to wait for the connection to be established. */
+	}
+
 	node->interval_ms = interval_ms;
 }
 
@@ -220,7 +231,7 @@ static int modbus_command_collection_push_or_replace (
 			interval_ms
 		);
 
-		modbus_command_node_update(node, interval_ms);
+		modbus_command_node_update(node, interval_ms, 0 /* Not first */);
 
 		goto out;
 	RRR_LL_ITERATE_END();
@@ -245,7 +256,7 @@ static int modbus_command_collection_push_or_replace (
 
 	RRR_LL_PUSH(&data->commands, node);
 
-	modbus_command_node_update(node, interval_ms);
+	modbus_command_node_update(node, interval_ms, 1 /* First */);
 
 	out:
 	return ret;
@@ -264,16 +275,6 @@ static void modbus_data_cleanup(struct modbus_data *data) {
 	modbus_command_collection_destroy(&data->commands);
 }
 
-static int modbus_callback_resolve (
-		size_t *address_count,
-		struct sockaddr ***addresses,
-		socklen_t **address_lengths,
-		void *callback_data
-) {
-	struct modbus_data *data = callback_data;
-
-}
-
 static int modbus_callback_connect (
 		int *fd,
 		const struct sockaddr *addr,
@@ -282,38 +283,97 @@ static int modbus_callback_connect (
 ) {
 	struct modbus_data *data = callback_data;
 
+	(void)(fd);
+
+	int ret = 0;
+
+	char buf[256];
+	uint16_t port;
+
+	if (rrr_ip_to_str_and_port(&port, buf, sizeof(buf), addr, addr_len) != 0) {
+		RRR_MSG_0("Warning: Address to string failed in %s\n", __func__);
+		goto out;
+	}
+
+	RRR_DBG_2("Connect to server %s:%u in modbus instance %s\n", buf, port, INSTANCE_D_NAME(data->thread_data));
+
+	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
+			fd,
+			addr,
+			addr_len
+	)) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			RRR_MSG_0("Failed to connect to server %s:%u in modbus instance %s\n",
+				buf, port, INSTANCE_D_NAME(data->thread_data));
+		}
+		else {
+			RRR_MSG_0("Hard error during connect in modbus instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
-static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
-	(void)(fd);
-	(void)(flags);
+struct modbus_data_prepare_callback_data {
+	struct modbus_data *data;
+	struct modbus_command_node *node;
+	uint8_t *buf;
+	rrr_biglength buf_size_orig;
+};
 
-	const struct modbus_command_node *node = arg;
-	const struct modbus_command *command = &node->command;
-	const struct modbus_data *data = node->data;
+static int modbus_callback_data_prepare (
+		const void **_buf,
+		rrr_biglength *_buf_size,
+		void *callback_arg,
+		void *private_data
+) {
+	struct modbus_data_prepare_callback_data *callback_data = callback_arg;
+	struct modbus_client_data *client_data = private_data;
+	struct modbus_command *command = &callback_data->node->command;
+	struct modbus_data *data = callback_data->data;
 
-	int ret_tmp;
-	uint8_t buf[2048];
-	char addr_string[sizeof(command->server) + 16];
+	int ret = 0;
+
+	/* NOTE : Buf pointers in callback data and argument point to same memory */
+
+	uint8_t *buf = callback_data->buf;
 	rrr_length buf_size;
 
-	sprintf(addr_string, "%s:%u", command->server, command->port);
+	if (client_data == NULL) {
+		printf("Not ready\n");
+		ret = RRR_SOCKET_NOT_READY;
+		goto out;
+	}
 
-	RRR_DBG_3("Modbus instance %s send command server %s function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
-		INSTANCE_D_NAME(data->thread_data),
-		addr_string,
-		command->function,
-		command->starting_address,
-		command->quantity,
-		node->interval_ms
-	);
+	assert(callback_data->buf == *_buf);
+	assert(*_buf_size == callback_data->buf_size_orig);
 
 	switch (command->function) {
 		case 0x01: // Read Coils
-			if (rrr_modbus_client_req_01_read_coils (
-					data->
-			) != 0) {
-				goto fail_function;
+			if ((ret = rrr_modbus_client_req_01_read_coils (
+					client_data->client,
+					command->starting_address,
+					command->quantity
+			)) != 0) {
+				if (ret == RRR_MODBUS_BUSY) {
+					RRR_MSG_0("Warning: Failed to create command packet for function 0x%02x in modbus instance %s, possible full send buffer.\n",
+						command->function, INSTANCE_D_NAME(data->thread_data));
+					ret = 0; /* Mask error and try to write */
+				}
+				else if (ret == RRR_MODBUS_SOFT_ERROR) {
+					RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, possible command timeout.\n",
+						command->function, INSTANCE_D_NAME(data->thread_data));
+					goto out; /* Return error to make client collection close the connection */
+				}
+				else {
+					RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, return was %i\n",
+						command->function, INSTANCE_D_NAME(data->thread_data), ret);
+					ret = 1;
+					goto out;
+				}
 			}
 			break;
 		default:
@@ -321,50 +381,94 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 	};
 
 	again:
-		buf_size = sizeof(buf);
-		if ((ret_tmp = rrr_modbus_client_write (
-				data->client,
+		buf_size = callback_data->buf_size_orig;
+		if ((ret = rrr_modbus_client_write (
+				client_data->client,
 				buf,
 				&buf_size
 		)) == RRR_MODBUS_OK) {
-			rrr_length send_chunk_count;
-			if ((ret_tmp = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
-					&send_chunk_count,
-					data->collection_tcp,
-					addr_string,
-					buf,
-					buf_size,
-					NULL,
-					NULL,
-					NULL,
-					modbus_callback_resolve,
-					data,
-					modbus_callback_connect,
-					data
-			)) != 0) {
-				goto fail_send;
-			}
+			*_buf_size = buf_size;
 			goto again;
 		}
-		else if (ret_tmp != RRR_MOBUS_DONE) {
-			goto fail_write;
+		else if (ret != RRR_MODBUS_DONE) {
+			RRR_MSG_0("Write failed in modbus instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
 		}
+		ret &= ~(RRR_MODBUS_DONE);
+	out:
+		return ret;
+
+}
+
+static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
+	(void)(fd);
+	(void)(flags);
+
+	struct modbus_command_node *node = arg;
+	struct modbus_command *command = &node->command;
+	struct modbus_data *data = node->data;
+
+	int ret_tmp;
+	uint8_t buf[2048];
+
+	RRR_DBG_3("Modbus instance %s send command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
+		INSTANCE_D_NAME(data->thread_data),
+		command->server,
+		command->port,
+		command->function,
+		command->starting_address,
+		command->quantity,
+		node->interval_ms
+	);
+
+	struct modbus_data_prepare_callback_data prepare_callback_data = {
+		data,
+		node,
+		buf,
+		sizeof(buf)
+	};
+
+	rrr_length send_chunk_count;
+	if ((ret_tmp = rrr_ip_socket_client_collection_send_push_const_by_host_and_port_connect_as_needed (
+			&send_chunk_count,
+			data->collection_tcp,
+			command->server,
+			command->port,
+			buf,
+			sizeof(buf),
+			NULL,
+			NULL,
+			NULL,
+			modbus_callback_connect,
+			data,
+			modbus_callback_data_prepare,
+			&prepare_callback_data
+	)) != 0) {
+		if (ret_tmp == RRR_SOCKET_NOT_READY) {
+			RRR_DBG_2("Modbus instance %s connection to %s:%u not yet ready\n",
+				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
+		}
+		else if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
+			RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
+				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
+		}
+		else {
+			goto fail_send;
+		}
+	}
+	else if (node->interval_ms == 0) {
+		EVENT_REMOVE(node->event);
+	}
 
 	return;
-	fail_function:
-		RRR_MSG_0("Command 0x%u failed in modbus instance %s\n",
-			command->function, INSTANCE_D_NAME(data->thread_data));
-		goto fail;
-	fail_write:
-		RRR_MSG_0("Write failed in modbus instance %s\n",
-			command->function);
-		goto fail;
 	fail_send:
-		RRR_MSG_0("Send failed in modbus instance %s\n",
-			command->function);
+		RRR_MSG_0("Send or connection failed in modbus instance %s, return was %i\n",
+			INSTANCE_D_NAME(data->thread_data), ret_tmp);
 		goto fail;
 	fail:
-	rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 }
 
 static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
@@ -549,12 +653,14 @@ static void modbus_callback_set_read_flags (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CAL
 }
 
 static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
+	assert(1);
 }
 
 static void modbus_callback_error (RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
 }
 
 static int modbus_callback_complete (RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) {
+	assert(1);
 }
 
 static int modbus_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -595,6 +701,8 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("modbus instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
+
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(data->thread_data));
 
 	if (rrr_event_collection_push_periodic (
 			&data->event_process,

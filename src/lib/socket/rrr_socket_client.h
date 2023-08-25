@@ -228,7 +228,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		void *resolve_callback_data,
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
 		void *connect_callback_data,
-		void (*data_prepare_callback)(const void **data, rrr_biglength *size, void *callback_data, void *private_data),
+		int (*data_prepare_callback)(const void **data, rrr_biglength *size, void *callback_data, void *private_data),
 		void *data_prepare_callback_data
 );
 int rrr_socket_client_collection_send_push_const_by_host_and_port_connect_as_needed (
