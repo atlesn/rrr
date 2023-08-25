@@ -31,7 +31,7 @@ static void __make_response (
 
 	switch(dst_buf[7]) { // Function code
 		case 0x01:
-			if (dst_buf[10] == 0 || dst_buf[11] == 16) {
+			if (dst_buf[10] == 0 && dst_buf[11] == 16) {
 				dst_buf[4] = 0;     // Length high
 				dst_buf[5] = 4;     // Length low
 				dst_buf[8] = 2;     // Byte count
@@ -40,9 +40,11 @@ static void __make_response (
 				(*dst_buf_size)--;
 				break;
 			}
+			printf("Illegal address/quantity %u/%u for function 0x01\n", dst_buf[10], dst_buf[11]);
 			exception = 0x02; /* Illegal data address */
 			goto exception;
 		default:
+			printf("Illegal function 0x%u\n", dst_buf[7]);
 			goto exception;
 	}
 
@@ -112,6 +114,8 @@ int main(int argc, const char **argv) {
 			buf2_size = sizeof(buf2);
 
 			__make_response(buf2, &buf2_size, buf, &buf_size);
+
+			printf("Write response size %lu\n", buf2_size);
 
 			if (write(client_fd, buf2, buf2_size) != (ssize_t) buf2_size) {
 				fprintf(stderr, "Write to client failed: %s\n", rrr_strerror(errno));

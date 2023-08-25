@@ -353,6 +353,11 @@ static int modbus_callback_data_prepare (
 		goto out;
 	}
 
+	if (*(client_data->server) == '\0') {
+		strcpy(client_data->server, command->server);
+		client_data->port = command->port;
+	}
+
 	assert(callback_data->buf == *_buf);
 	assert(*_buf_size == callback_data->buf_size_orig);
 
@@ -655,6 +660,8 @@ static int modbus_callback_private_data_new (void **target, int fd, void *privat
 
 	client_data->data = data;
 
+	/* Other members must be initialized in get_target_size */
+
 	*target = client_data;
 
 	goto out;
@@ -673,18 +680,69 @@ static void modbus_callback_private_data_destroy (void *private_data) {
 }
 
 static void modbus_callback_set_read_flags (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
+	(void)(socket_read_flags);
+	(void)(do_soft_error_propagates);
+	(void)(private_data);
+	(void)(arg);
 }
 
 static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS) {
+	int ret = RRR_READ_OK;
+
+	(void)(addr);
+	(void)(addr_len);
+
+	struct modbus_client_data *client_data = private_data;
+	struct modbus_data *data = arg;
+
 	printf("Get target size\n");
-	return RRR_READ_INCOMPLETE;
+
+	rrr_length data_size = rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos);
+
+	if ((ret = rrr_modbus_client_read (
+			client_data->client,
+			(uint8_t *) read_session->rx_buf_ptr,
+			&data_size
+	)) != 0) {
+		if (ret != RRR_READ_INCOMPLETE) {
+			RRR_MSG_0("Error %i from modbus client in %s in modbus instance %s\n",
+				ret, __func__, INSTANCE_D_NAME(data->thread_data));
+		}
+		goto out;
+	}
+
+	printf("Read complete");
+
+	read_session->target_size = data_size;
+
+	out:
+	return ret;
 }
 
 static void modbus_callback_error (RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS) {
+	(void)(read_session);
+	(void)(addr);
+	(void)(addr_len);
+
+	struct modbus_client_data *client_data = private_data;
+	struct modbus_data *data = arg;
+
+	RRR_MSG_0("Error %s for server %s:%u in modbus instance %s\n",
+		(is_hard_err ? "hard" : "soft"), client_data->server, client_data->port, INSTANCE_D_NAME(data->thread_data));
+
+	if (is_hard_err) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
 }
 
 static int modbus_callback_complete (RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARGS) {
-	assert(1);
+	(void)(read_session);
+	(void)(addr);
+	(void)(addr_len);
+	(void)(private_data);
+	(void)(arg);
+	printf("Callback complete\n");
+	return RRR_READ_OK;
 }
 
 static int modbus_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
