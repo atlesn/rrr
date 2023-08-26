@@ -63,6 +63,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_QUANTITY_MIN 1
 #define MODBUS_QUANTITY_MAX 2000
 
+static const char *modbus_field_server            = "modbus_server";
+static const char *modbus_field_port              = "modbus_port";
+static const char *modbus_field_function          = "modbus_function";
+static const char *modbus_field_exception_code    = "modbus_exception_code";
+static const char *modbus_field_starting_address  = "modbus_starting_address";
+static const char *modbus_field_quantity          = "modbus_quantity";
+static const char *modbus_field_interval_ms       = "modbus_interval_ms";
+static const char *modbus_field_bytes             = "modbus_bytes";
+static const char *modbus_field_status            = "modbus_status";
+
 struct modbus_data;
 
 static void modbus_event_command (evutil_socket_t fd, short flags, void *arg);
@@ -278,6 +288,61 @@ static void modbus_data_cleanup(struct modbus_data *data) {
 	modbus_command_collection_destroy(&data->commands);
 }
 
+static int modbus_output_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	const struct rrr_array *array = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_array_new_message_from_array (
+			(struct rrr_msg_msg **) &new_entry->message,
+			array,
+			rrr_time_get_64(),
+			NULL,
+			0
+	)) != 0) {
+		RRR_MSG_0("Failed to create message in %s\n", __func__);
+		goto out;
+	}
+
+	new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) new_entry->message);
+
+	out:
+	rrr_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+static int modbus_output (
+		struct modbus_data *data,
+		struct rrr_array *array,
+		uint8_t function_code
+) {
+	int ret = 0;
+
+	if ((ret = rrr_array_push_value_u64_with_tag (array, modbus_field_function, function_code)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			NULL,
+			modbus_output_callback,
+			array,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int modbus_callback_res_01_read_coils (
 		uint16_t transaction_id,
 		uint8_t byte_count,
@@ -290,6 +355,8 @@ static int modbus_callback_res_01_read_coils (
 
 	int ret = 0;
 
+	struct rrr_array array = {0};
+
 	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function 0x01 byte count %u\n",
 		client_data->server,
 		client_data->port,
@@ -297,7 +364,24 @@ static int modbus_callback_res_01_read_coils (
 		transaction_id,
 		byte_count);
 
-	return ret;
+	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_bytes, byte_count)) != 0) {
+		goto push_fail;
+	}
+
+	if ((ret = rrr_array_push_value_blob_with_tag_with_size (&array, modbus_field_status, (const char *) coil_status, byte_count)) != 0) {
+		goto push_fail;
+	}
+
+	if ((ret = modbus_output(client_data->data, &array, 0x01)) != 0) {
+		goto out;
+	}
+
+	goto out;
+	push_fail:
+		RRR_MSG_0("Failed to push array value in %s\n", __func__);
+	out:
+		rrr_array_clear(&array);
+		return ret;
 }
 static int modbus_callback_res_error (
 		uint16_t transaction_id,
@@ -309,6 +393,8 @@ static int modbus_callback_res_error (
 
 	int ret = 0;
 
+	struct rrr_array array = {0};
+
 	RRR_MSG_0("Error response from server %s:%u in modbus instance %s: Transaction %u function 0x%02x exception %u\n",
 		client_data->server,
 		client_data->port,
@@ -318,7 +404,20 @@ static int modbus_callback_res_error (
 		error_code
 	);
 
-	return ret;
+	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_exception_code, error_code)) != 0) {
+		goto push_fail;
+	}
+
+	if ((ret = modbus_output(client_data->data, &array, function_code)) != 0) {
+		goto out;
+	}
+
+	goto out;
+	push_fail:
+		RRR_MSG_0("Failed to push array value in %s\n", __func__);
+	out:
+		rrr_array_clear(&array);
+		return ret;
 }
 
 static int modbus_callback_connect (
@@ -572,8 +671,8 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 }
 
 #define GET_VALUE(name,type)                                                                                     \
-    do {if (rrr_array_has_tag(&array, RRR_QUOTE(name))) {                                                        \
-        if ((ret = RRR_PASTE_3(rrr_array_get_value_first_,type,_by_tag) (&name, &array, RRR_QUOTE(name))) != 0) {\
+    do {if (rrr_array_has_tag(&array, RRR_PASTE(modbus_field_,name))) {                                          \
+        if ((ret = RRR_PASTE_3(rrr_array_get_value_first_,type,_by_tag) (&RRR_PASTE(modbus_,name), &array, RRR_PASTE(modbus_field_,name))) != 0) {\
             RRR_MSG_0("Warning: Failed to get value of field %s of command message to modbus instance %s\n",     \
                 RRR_QUOTE(name), INSTANCE_D_NAME(data->thread_data));                                            \
             ret = 0; /* Non-critical, probably user error */                                                     \
@@ -627,12 +726,12 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto drop;
 	}
 
-	GET_VALUE_STR(modbus_server);
-	GET_VALUE_UNSIGNED_64(modbus_port);
-	GET_VALUE_UNSIGNED_64(modbus_function);
-	GET_VALUE_UNSIGNED_64(modbus_starting_address);
-	GET_VALUE_UNSIGNED_64(modbus_quantity);
-	GET_VALUE_UNSIGNED_64(modbus_interval_ms);
+	GET_VALUE_STR(server);
+	GET_VALUE_UNSIGNED_64(port);
+	GET_VALUE_UNSIGNED_64(function);
+	GET_VALUE_UNSIGNED_64(starting_address);
+	GET_VALUE_UNSIGNED_64(quantity);
+	GET_VALUE_UNSIGNED_64(interval_ms);
 
 	if (modbus_server != NULL && strlen(modbus_server) > MODBUS_SERVER_MAX - 1) {
 		RRR_MSG_0("Field 'modbus_server' exceeds maximum length in command message to modbus instance %s, dropping it.\n",

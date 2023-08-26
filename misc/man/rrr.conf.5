@@ -862,7 +862,33 @@ The quantity (e.g. number of coils) to use. Defaults to 8, and must be in the ra
 .It modbus_interval_ms
 If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is performed.
 .El
-
+.PP
+The following response messages and array fields are generated as a result of the modbus server
+responding to commands, and these must be read by reader instances:
+.PP
+.Bl -tag -width "a" -indent
+.It Error
+.LI
+.B modbus_function_code, modbus_exception_code
+.It Read Coils (function code 0x01)
+.LI
+.B modbus_function_code, modbus_bytes, modbus_status
+.El
+.PP
+The array fields have the following contents:
+.PP
+.Bl -tag -width -indent
+.It modbus_function_code
+A one byte unsigned integer indicating a function code
+.It modbus_exception_code
+A one byte unsigned integer indicating an exception code
+.It modbus_bytes
+A one byte unsigned integer indicating the size of a data field
+.It modbus_status
+A blob containing response data of a length indicated by
+.B modbus_bytes
+.El
+.PP
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
 All messages read from the senders are sent to the python program to the process function specified.

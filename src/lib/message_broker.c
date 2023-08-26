@@ -821,7 +821,7 @@ static int __rrr_message_broker_write_entry_intermediate_postprocess (
 	}
 
 	if (entry->message != NULL && entry->data_length == 0) {
-		RRR_BUG("BUG: Entry message was set but data length was left being + in %s, callback must set data length\n", __func__);
+		RRR_BUG("BUG: Entry message was set but data length was left being 0 in %s, callback must set data length\n", __func__);
 	}
 
 	if (__rrr_message_broker_pre_buffer_hook (
