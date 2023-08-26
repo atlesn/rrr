@@ -440,19 +440,11 @@ static int __rrr_array_get_value_64_by_tag (
 
 	const struct rrr_type_value *value = NULL;
 
+	int64_t signed_result;
+	uint64_t unsigned_result;
+
 	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
-		ret = 1;
-		goto out;
-	}
-
-	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && !do_signed) {
-		RRR_MSG_0("Value '%s' in array was signed but unsigned value was expected\n", tag);
-		ret = 1;
-		goto out;
-	}
-	else if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && do_signed) {
-		RRR_MSG_0("Value '%s' in array was unsigned but signed value was expected\n", tag);
 		ret = 1;
 		goto out;
 	}
@@ -464,11 +456,24 @@ static int __rrr_array_get_value_64_by_tag (
 		goto out;
 	}
 
+	signed_result = *((int64_t*) value->data + (sizeof(int64_t) * index));
+	unsigned_result = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+
 	if (do_signed) {
-		*((int64_t *) result) = *((int64_t*) value->data + (sizeof(int64_t) * index));
+		if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && unsigned_result > INT64_MAX) {
+			RRR_MSG_0("Value '%s' in array was unsigned and would overflow (%" PRIu64") as signed value was expected\n", tag, unsigned_result);
+			ret = 1;
+			goto out;
+		}
+		*((int64_t *) result) = signed_result;
 	}
 	else {
-		*((uint64_t *) result) = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+		if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && signed_result < 0) {
+			RRR_MSG_0("Value '%s' in array was signed and negative (%" PRIi64 ") while unsigned value was expected\n", tag, signed_result);
+			ret = 1;
+			goto out;
+		}
+		*((uint64_t *) result) = unsigned_result;
 	}
 
 	out:
