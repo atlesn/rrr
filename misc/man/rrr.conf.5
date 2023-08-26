@@ -1,4 +1,4 @@
-.Dd 2023-04-26
+.Dd 2023-08-26
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -393,7 +393,7 @@ Buffers messages, may be used to duplicate messages to multiple readers.
 .It ipclient (PI)
 Implements the RRR assured single delivery protocol on UDP for unstable connections.
 
-.It modbus (PAI)
+.It modbus (PA)
 Implements a modbus client capable of getting coil status from a remote modbus server.
 
 .It python3 (PAI)
@@ -827,7 +827,7 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
-.SS modbus (PAI)
+.SS modbus (PA)
 This module implements a modbus client capable of getting coil status from a remote modbus server.
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
