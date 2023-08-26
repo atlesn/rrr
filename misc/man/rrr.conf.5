@@ -851,9 +851,13 @@ The port on the modbus server. If not given,
 .B 502
 is used.
 .It modbus_function
-The modbus command to send. Currently only function
-.B 0x01 Read Coils
-is supported, and this is also used if the field is not given.
+The modbus command to send.
+.PP
+The following functions are supported:
+.B 0x01 Read Coils, 0x02 Read Discrete Inputs
+is supported. If not given,
+.B 0x01
+is used.
 The function code is given in decimal form.
 .It modbus_starting_address
 The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
@@ -870,7 +874,7 @@ responding to commands, and these must be read by reader instances:
 .It Error
 .LI
 .B modbus_function_code, modbus_exception_code
-.It Read Coils (function code 0x01)
+.It Read Coils (function code 0x01), Read Discrete Inputs (function code 0x02)
 .LI
 .B modbus_function_code, modbus_bytes, modbus_status
 .El

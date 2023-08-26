@@ -39,6 +39,7 @@ static void __rrr_test_modbus_make_response (
 
 	switch(dst_buf[7]) { // Function code
 		case 0x01:
+		case 0x02:
 			assert(dst_buf[10] == 0 && dst_buf[11] == 16); // Quantity
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 5;     // Length low
@@ -84,7 +85,13 @@ int __rrr_test_modbus_cb_res_error (
 		void *arg
 ) {
 	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(function_code);
+	(void)(error_code);
+
 	*status = 1;
+
 	return 0;
 }
 
@@ -95,7 +102,30 @@ int __rrr_test_modbus_cb_res_01_read_coils (
 		void *arg
 ) {
 	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(byte_count);
+	(void)(coil_status);
+
 	*status = 1;
+
+	return 0;
+}
+
+int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
+		uint16_t transaction_id,
+		uint8_t byte_count,
+		const uint8_t *coil_status,
+		void *arg
+) {
+	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(byte_count);
+	(void)(coil_status);
+
+	*status = 1;
+
 	return 0;
 }
 
@@ -112,12 +142,12 @@ int rrr_test_modbus (void) {
 	const struct rrr_modbus_client_callbacks callbacks = {
 		.cb_res_error = __rrr_test_modbus_cb_res_error,
 		.cb_res_01_read_coils = __rrr_test_modbus_cb_res_01_read_coils,
+		.cb_res_02_read_discrete_inputs = __rrr_test_modbus_cb_res_02_read_discrete_inputs,
 		.arg = &arg
 	};
 
 	if ((ret = rrr_modbus_client_new (&client)) != 0) {
 		TEST_MSG("Failed to create modbus client\n");
-		ret = 1;
 		goto out_final;
 	}
 
@@ -126,7 +156,6 @@ int rrr_test_modbus (void) {
 	TEST_MSG("Testing request function 01 'read coils'\n");
 	if ((ret = rrr_modbus_client_req_01_read_coils (client, 0x1234, 16)) != 0) {
 		TEST_MSG("Failed to create modbus read coil package\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -153,8 +182,9 @@ int rrr_test_modbus (void) {
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
 
-	TEST_MSG("Testing transaction ID increment\n");
-	if ((ret = rrr_modbus_client_req_01_read_coils (client, 0x1234, 16)) != 0) {
+	TEST_MSG("Testing request function 02 'read discrete inputs'\n");
+
+	if ((ret = rrr_modbus_client_req_02_read_discrete_inputs (client, 0x1234, 16)) != 0) {
 		TEST_MSG("Failed to create modbus read coil package\n");
 		ret = 1;
 		goto out;
@@ -162,8 +192,16 @@ int rrr_test_modbus (void) {
 
 	WRITE();
 
+	// Nothing more to write, must return DONE
+	assert(rrr_modbus_client_write (client, buf, &buf_size) == RRR_MODBUS_DONE);
+
 	VERIFY_BYTE(0, 0);     // Transaction ID high
 	VERIFY_BYTE(1, 1);     // Transaction ID low
+	VERIFY_BYTE(7, 2);     // Function code
+	VERIFY_BYTE(8, 0x12);  // Starting address high
+	VERIFY_BYTE(9, 0x34);  // Starting address low
+	VERIFY_BYTE(10, 0x00); // Quantity high
+	VERIFY_BYTE(11, 0x10); // Quantity low
 
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
