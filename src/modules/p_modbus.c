@@ -326,6 +326,9 @@ static int modbus_output (
 		goto out;
 	}
 
+	/* Have the function code first in the array */
+	rrr_array_rotate_forward(array);
+
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
