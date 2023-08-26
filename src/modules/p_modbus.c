@@ -79,7 +79,6 @@ struct modbus_command_node {
 	RRR_LL_NODE(struct modbus_command_node);
 	struct modbus_data *data;
 	uint64_t last_seen_time;
-	uint64_t create_time;
 	uint64_t send_time;
 	uint64_t interval_ms;
 	struct modbus_command command;
@@ -94,6 +93,7 @@ struct modbus_command_collection {
 struct modbus_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_socket_client_collection *collection_tcp;
+	struct rrr_modbus_client_callbacks modbus_client_callbacks;
 	struct modbus_command_collection commands;
 	struct rrr_event_collection events;
 	rrr_event_handle event_process;
@@ -145,7 +145,6 @@ static int modbus_command_node_new (
 
 	node->data = data;
 	node->command = *command;
-	node->create_time = rrr_time_get_64();
 
 	*target = node;
 
@@ -279,6 +278,49 @@ static void modbus_data_cleanup(struct modbus_data *data) {
 	modbus_command_collection_destroy(&data->commands);
 }
 
+static int modbus_callback_res_01_read_coils (
+		uint16_t transaction_id,
+		uint8_t byte_count,
+		const uint8_t *coil_status,
+		void *arg
+) {
+	struct modbus_client_data *client_data = arg;
+
+	(void)(coil_status);
+
+	int ret = 0;
+
+	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function 0x01 byte count %u\n",
+		client_data->server,
+		client_data->port,
+		INSTANCE_D_NAME(client_data->data->thread_data),
+		transaction_id,
+		byte_count);
+
+	return ret;
+}
+static int modbus_callback_res_error (
+		uint16_t transaction_id,
+		uint8_t function_code,
+		uint8_t error_code,
+		void *arg
+) {
+	struct modbus_client_data *client_data = arg;
+
+	int ret = 0;
+
+	RRR_MSG_0("Error response from server %s:%u in modbus instance %s: Transaction %u function 0x%02x exception %u\n",
+		client_data->server,
+		client_data->port,
+		INSTANCE_D_NAME(client_data->data->thread_data),
+		transaction_id,
+		function_code,
+		error_code
+	);
+
+	return ret;
+}
+
 static int modbus_callback_connect (
 		int *fd,
 		const struct sockaddr *addr,
@@ -339,6 +381,8 @@ static int modbus_callback_data_prepare (
 	struct modbus_command_node *node = callback_data->node;
 	struct modbus_command *command = &node->command;
 	struct modbus_data *data = callback_data->data;
+
+	(void)(_buf);
 
 	int ret = 0;
 
@@ -440,6 +484,10 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		sizeof(buf)
 	};
 
+	if (node->send_time == 0) {
+		node->send_time = rrr_time_get_64();
+	}
+
 	rrr_length send_chunk_count;
 	if ((ret_tmp = rrr_ip_socket_client_collection_send_push_const_by_host_and_port_connect_as_needed (
 			&send_chunk_count,
@@ -461,7 +509,6 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
 		}
 		else {
-			node->send_time = 0;
 			if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
 				RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
 					INSTANCE_D_NAME(data->thread_data), command->server, command->port);
@@ -472,7 +519,7 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		}
 	}
 	else {
-		node->send_time = rrr_time_get_64();
+		node->send_time = 0;
 		if (node->interval_ms == 0) {
 			EVENT_REMOVE(node->event);
 		}
@@ -494,7 +541,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	struct modbus_data *data = arg;
 
 	uint64_t command_time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
-	uint64_t create_time_limit = rrr_time_get_64() - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
+	uint64_t send_time_limit = rrr_time_get_64() - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
 
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
 		if (node->last_seen_time < command_time_limit) {
@@ -509,7 +556,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 			);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (node->send_time == 0 && node->create_time < create_time_limit) {
+		else if (node->send_time > 0 && node->send_time < send_time_limit) {
 			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ", server is not reachable.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
@@ -658,6 +705,10 @@ static int modbus_callback_private_data_new (void **target, int fd, void *privat
 		goto out_free;
 	}
 
+	struct rrr_modbus_client_callbacks callbacks = data->modbus_client_callbacks;
+	callbacks.arg = client_data;
+	rrr_modbus_client_callbacks_set(client_data->client, &callbacks);
+
 	client_data->data = data;
 
 	/* Other members must be initialized in get_target_size */
@@ -769,6 +820,9 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	rrr_thread_start_condition_helper_nofork(thread);
 
 	modbus_data_init(data, thread_data);
+
+	data->modbus_client_callbacks.cb_res_01_read_coils = modbus_callback_res_01_read_coils;
+	data->modbus_client_callbacks.cb_res_error = modbus_callback_res_error;
 
 	if (rrr_socket_client_collection_new (&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create TCP client collection in modbus instance %s\n", INSTANCE_D_NAME(thread_data));

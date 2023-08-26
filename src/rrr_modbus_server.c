@@ -8,6 +8,7 @@
 
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
+#include "lib/random.h"
 #include "lib/util/rrr_endian.h"
 
 #define RRR_MODBUS_PORT 502
@@ -22,6 +23,15 @@ static int __make_response (
 		const size_t *src_buf_size
 ) {
 	int ret = 0;
+
+	if (rrr_rand() % 100 > 90) {
+		rrr_random_string(dst_buf, *dst_buf_size);
+		size_t size = ((size_t) rrr_rand()) % 10 + 1;
+		assert(*dst_buf_size >= size);
+		*dst_buf_size = size;
+		printf("Generated random junk data size %llu\n", (unsigned long long) size);
+		goto out;
+	}
 
 	assert(*dst_buf_size >= *src_buf_size);
 
@@ -41,7 +51,7 @@ static int __make_response (
 
 	switch(dst_buf[7]) { // Function code
 		case 0x01:
-			if (dst_buf[10] != 0 || dst_buf[11] != 16) {
+			if (dst_buf[10] != 0 || dst_buf[11] != 8) {
 				printf("Illegal address/quantity %u/%u for function 0x01\n", dst_buf[10], dst_buf[11]);
 				exception = 0x02; /* Illegal data address */
 				goto exception;
@@ -58,9 +68,9 @@ static int __make_response (
 			}
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 4;     // Length low
-			dst_buf[8] = 2;     // Byte count
+			dst_buf[8] = 1;     // Byte count
 			dst_buf[9] = 0x01;  // Coil status 0
-			dst_buf[10] = 0x01; // Coil status 1
+			(*dst_buf_size)--;
 			(*dst_buf_size)--;
 			break;
 		default:
@@ -70,6 +80,8 @@ static int __make_response (
 
 	goto out;
 	exception:
+		dst_buf[4] = 0;     // Length high
+		dst_buf[5] = 3;     // Length low
 		dst_buf[7] += 0x80;
 		dst_buf[8] = exception;
 		(*dst_buf_size) -= 3;

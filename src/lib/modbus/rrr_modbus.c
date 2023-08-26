@@ -174,7 +174,7 @@ static int __rrr_modbus_client_receive_01_read_coils (
 		return RRR_MODBUS_SOFT_ERROR;
 	}
 
-	if (pdu->byte_count != pdu_size - 1) {
+	if (pdu->byte_count != pdu_size - 2) {
 		RRR_MSG_0("Invalid size of bytes field %d<>%d in %s\n",
 			pdu->byte_count, pdu_size - 1, __func__);
 		return RRR_MODBUS_SOFT_ERROR;
@@ -189,6 +189,10 @@ static int __rrr_modbus_client_receive_01_read_coils (
 		return RRR_MODBUS_SOFT_ERROR;
 	}
 
+	if (client->callbacks.cb_res_01_read_coils == NULL) {
+		RRR_BUG("Read coils callback not set in %s\n", __func__);
+	}
+
 	return client->callbacks.cb_res_01_read_coils (
 			transaction->transaction_id,
 			pdu->byte_count,
@@ -197,10 +201,11 @@ static int __rrr_modbus_client_receive_01_read_coils (
 	);
 }
 
-#define VALIDATE_FRAME_SIZE(type)                                                           \
-    do {if (frame_size > sizeof(frame->mbap) + sizeof(frame->res.type)) {                   \
-        RRR_MSG_0("Max frame size exceeded %" PRIrrrl " for received frame\n", frame_size); \
-        return RRR_MODBUS_SOFT_ERROR;                                                       \
+#define VALIDATE_FRAME_SIZE(type)                                                                             \
+    do {if (frame_size > sizeof(frame->mbap) + sizeof(frame->res.type) + sizeof(frame->res.function_code)) {  \
+        RRR_MSG_0("Max frame size exceeded for received frame %" PRIrrrl ">%llu\n",                           \
+	    frame_size, (unsigned long long) (sizeof(frame->mbap) + sizeof(frame->res.type)));                \
+        return RRR_MODBUS_SOFT_ERROR;                                                                         \
     }} while(0)
 
 #define VALIDATE_TRANSACTION_FUNCTION_CODE(code)                                       \
@@ -230,6 +235,9 @@ static int __rrr_modbus_client_receive (
 	if (frame->res.function_code > 0x80) {
 		VALIDATE_FRAME_SIZE(error);
 		VALIDATE_TRANSACTION_FUNCTION_CODE(frame->res.function_code - 0x80);
+		if (client->callbacks.cb_res_error == NULL) {
+			RRR_BUG("Error callback not set in %s\n", __func__);
+		}
 		return client->callbacks.cb_res_error (
 				transaction.transaction_id,
 				frame->res.function_code - 0x80,
@@ -240,14 +248,13 @@ static int __rrr_modbus_client_receive (
 
 	VALIDATE_TRANSACTION_FUNCTION_CODE(frame->res.function_code);
 
-	const uint16_t pdu_size = frame_size - sizeof(frame->mbap);
-
-	printf("PDU size %d\n", pdu_size);
+	const rrr_length pdu_size = frame_size - sizeof(frame->mbap);
+	assert (pdu_size <= 0xfffe); /* Data length in mbap minus 1 byte for unit identifier */
 
 	switch (frame->res.function_code) {
 		case 0x01:
 			VALIDATE_FRAME_SIZE(res_01_read_coils);
-			return __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.res_01_read_coils, pdu_size);
+			return __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.res_01_read_coils, (uint16_t) pdu_size);
 		default:
 			RRR_BUG("Function code %d not implemented in %s\n", frame->res.function_code, __func__);
 	};
@@ -266,6 +273,10 @@ int rrr_modbus_client_read (
 	struct rrr_modbus_frame frame;
 
 	RRR_DBG_3("Read data of size %" PRIrrrl "\n", *data_size);
+
+	for (size_t i = 0; i < *data_size; i++) {
+		printf("Buf 0x%01x\n", data[i]);
+	}
 
 	if (*data_size < sizeof(frame.mbap)) {
 		printf("A\n");
@@ -294,7 +305,7 @@ int rrr_modbus_client_read (
 		goto out;
 	}
 
-	// Unit identifier (ignored)
+	// Unit identifier (value ignored)
 	data_pos += 1;
 
 	const rrr_length pdu_size = frame_size - data_pos;
@@ -313,7 +324,8 @@ int rrr_modbus_client_read (
 		goto out;
 	}
 
-	data_pos += frame_size;
+	data_pos += pdu_size;
+	assert(frame_size == data_pos);
 
 	*data_size = data_pos;
 
@@ -338,10 +350,13 @@ int rrr_modbus_client_write (
 
 	RRR_DBG_3("Transmitting transaction %d function code %d from position %d\n",
 			transaction->transaction_id, transaction->req.function_code, client->transaction_transmit_pos);
+	
+	const rrr_biglength frame_mbap_length = transaction->req_size + sizeof(frame.mbap.unit_identifier);
+	assert(frame_mbap_length <= 0xffff && frame_mbap_length > 1);
 
 	frame.mbap.transaction_identifier = rrr_htobe16(transaction->transaction_id);
 	frame.mbap.protocol_identifier = rrr_htobe16(0);
-	frame.mbap.length = rrr_htobe16(transaction->req_size + sizeof(frame.mbap.unit_identifier));
+	frame.mbap.length = rrr_htobe16((uint16_t) frame_mbap_length);
 	frame.mbap.unit_identifier = 0xff;
 
 	rrr_biglength size_total = sizeof(frame.mbap) + transaction->req_size;
@@ -363,7 +378,7 @@ int rrr_modbus_client_write (
 }
 
 static int __rrr_modbus_client_transaction_reserve (
-		uint8_t *transaction_write_pos,
+		uint16_t *transaction_write_pos,
 		struct rrr_modbus_client *client
 ) {
 	int ret = 0;
@@ -374,7 +389,7 @@ static int __rrr_modbus_client_transaction_reserve (
 		    transaction->transmit_time < rrr_time_get_64() - RRR_MODBUS_CLIENT_TRANSACTION_TIMEOUT_S * 1000 * 1000
 		) {
 			uint64_t time_since_transmit_ms = (rrr_time_get_64() - transaction->transmit_time) / 1000;
-			RRR_MSG_0("Modbus client transaction timeout for function code %d transaction id %s. No response from server within %" PRIu64 " ms while the limit is %d s.\n",
+			RRR_MSG_0("Modbus client transaction timeout for function code %d transaction id %u. No response from server within %" PRIu64 " ms while the limit is %d s.\n",
 					transaction->req.function_code,
 					transaction->transaction_id,
 					time_since_transmit_ms,
@@ -404,7 +419,7 @@ static int __rrr_modbus_client_req_push (
 ) {
 	int ret = 0;
 
-	uint8_t transaction_write_pos;
+	uint16_t transaction_write_pos;
 
 	if ((ret = __rrr_modbus_client_transaction_reserve (&transaction_write_pos, client)) != 0) {
 		goto out;

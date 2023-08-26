@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_modbus_client_callbacks {
 	int (*cb_res_error)(uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *arg);
 	int (*cb_res_01_read_coils)(uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg);
-	int *arg;
+	void *arg;
 };
 
 struct rrr_modbus_client;
