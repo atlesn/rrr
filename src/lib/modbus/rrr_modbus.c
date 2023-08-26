@@ -217,6 +217,7 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 	}
 
 	return callback (
+			function_code,
 			transaction->transaction_id,
 			pdu->byte_count,
 			pdu->status,

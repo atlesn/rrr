@@ -52,7 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_PORT 502
 #define MODBUS_DEFAULT_FUNCTION 1 /* Read Coils */
 #define MODBUS_DEFAULT_STARTING_ADDRESS 0
-#define MODBUS_DEFAULT_QUANTITY 8
+#define MODBUS_DEFAULT_QUANTITY_COIL 8
+#define MODBUS_DEFAULT_QUANTITY_REGISTER 1
 #define MODBUS_DEFAULT_INTERVAL_MS 0
 
 #define MODBUS_COMMAND_TIMEOUT_S 2 /* Update man pages if this changes */
@@ -60,8 +61,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MODBUS_SERVER_MAX 256
 #define MODBUS_STARTING_ADDRESS_MAX 0xffff
-#define MODBUS_QUANTITY_MIN 1
-#define MODBUS_QUANTITY_MAX 2000
+#define MODBUS_QUANTITY_COIL_MIN 1
+#define MODBUS_QUANTITY_COIL_MAX 2000
+#define MODBUS_QUANTITY_REGISTER_MIN 1
+#define MODBUS_QUANTITY_REGISTER_MAX 125
 
 static const char *modbus_field_server            = "modbus_server";
 static const char *modbus_field_port              = "modbus_port";
@@ -212,8 +215,6 @@ static int modbus_command_collection_push_or_replace (
 
 	assert(server != NULL && *server != '\0');
 	assert(port != 0);
-	assert(function == 1);
-	assert(quantity < MODBUS_QUANTITY_MAX && quantity > MODBUS_QUANTITY_MIN);
 
 	if (strlen(server) > sizeof(command.server) - 1) {
 		RRR_MSG_0("Length of server exceeds maximum in %s of modbus instance %s\n",
@@ -346,25 +347,21 @@ static int modbus_output (
 	return ret;
 }
 
-static int modbus_callback_res_01_read_coils (
-		uint16_t transaction_id,
-		uint8_t byte_count,
-		const uint8_t *coil_status,
-		void *arg
+static int modbus_callback_res_byte_count_and_values (
+		RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS
 ) {
 	struct modbus_client_data *client_data = arg;
-
-	(void)(coil_status);
 
 	int ret = 0;
 
 	struct rrr_array array = {0};
 
-	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function 0x01 byte count %u\n",
+	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function %u byte count %u\n",
 		client_data->server,
 		client_data->port,
 		INSTANCE_D_NAME(client_data->data->thread_data),
 		transaction_id,
+		function_code,
 		byte_count);
 
 	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_bytes, byte_count)) != 0) {
@@ -375,7 +372,7 @@ static int modbus_callback_res_01_read_coils (
 		goto push_fail;
 	}
 
-	if ((ret = modbus_output(client_data->data, &array, 0x01)) != 0) {
+	if ((ret = modbus_output(client_data->data, &array, function_code)) != 0) {
 		goto out;
 	}
 
@@ -386,6 +383,7 @@ static int modbus_callback_res_01_read_coils (
 		rrr_array_clear(&array);
 		return ret;
 }
+
 static int modbus_callback_res_error (
 		uint16_t transaction_id,
 		uint8_t function_code,
@@ -508,32 +506,48 @@ static int modbus_callback_data_prepare (
 
 	switch (command->function) {
 		case 0x01: // Read Coils
-			if ((ret = rrr_modbus_client_req_01_read_coils (
+			ret = rrr_modbus_client_req_01_read_coils (
 					client_data->client,
 					command->starting_address,
 					command->quantity
-			)) != 0) {
-				if (ret == RRR_MODBUS_BUSY) {
-					RRR_MSG_0("Warning: Failed to create command packet for function 0x%02x in modbus instance %s, possible full send buffer.\n",
-						command->function, INSTANCE_D_NAME(data->thread_data));
-					ret = 0; /* Mask error and try to write */
-				}
-				else if (ret == RRR_MODBUS_SOFT_ERROR) {
-					RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, possible command timeout.\n",
-						command->function, INSTANCE_D_NAME(data->thread_data));
-					goto out; /* Return error to make client collection close the connection */
-				}
-				else {
-					RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, return was %i\n",
-						command->function, INSTANCE_D_NAME(data->thread_data), ret);
-					ret = 1;
-					goto out;
-				}
-			}
+			);
+			break;
+		case 0x02: // Read Discrete Inputs
+			ret = rrr_modbus_client_req_02_read_discrete_inputs (
+					client_data->client,
+					command->starting_address,
+					command->quantity
+			);
+			break;
+		case 0x03: // Read Holding Registers
+			ret = rrr_modbus_client_req_03_read_holding_registers (
+					client_data->client,
+					command->starting_address,
+					command->quantity
+			);
 			break;
 		default:
 			assert(0);
 	};
+
+	if (ret != 0) {
+		if (ret == RRR_MODBUS_BUSY) {
+			RRR_MSG_0("Warning: Failed to create command packet for function 0x%02x in modbus instance %s, possible full send buffer.\n",
+				command->function, INSTANCE_D_NAME(data->thread_data));
+			ret = 0; /* Mask error and try to write */
+		}
+		else if (ret == RRR_MODBUS_SOFT_ERROR) {
+			RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, possible command timeout.\n",
+				command->function, INSTANCE_D_NAME(data->thread_data));
+			goto out; /* Return error to make client collection close the connection */
+		}
+		else {
+			RRR_MSG_0("Failed to create command packet for function 0x%02x in modbus instance %s, return was %i\n",
+				command->function, INSTANCE_D_NAME(data->thread_data), ret);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	if ((ret = rrr_modbus_client_write (
 			client_data->client,
@@ -704,8 +718,8 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	char *modbus_server = NULL;
 	uint64_t modbus_port = MODBUS_DEFAULT_PORT;
 	uint64_t modbus_function = MODBUS_DEFAULT_FUNCTION;
+	uint64_t modbus_quantity; // Default is set after we are sure about the function
 	uint64_t modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
-	uint64_t modbus_quantity = MODBUS_DEFAULT_QUANTITY;
 	uint64_t modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
 
 	RRR_DBG_2("modbus instance %s received a message with timestamp %llu\n",
@@ -731,6 +745,12 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	GET_VALUE_STR(server);
 	GET_VALUE_UNSIGNED_64(port);
 	GET_VALUE_UNSIGNED_64(function);
+
+	// Default value of quantity depend on function
+	modbus_quantity = modbus_function == 0x03 // Read Holding Registers
+		? MODBUS_DEFAULT_QUANTITY_REGISTER
+		: MODBUS_DEFAULT_QUANTITY_COIL;
+
 	GET_VALUE_UNSIGNED_64(starting_address);
 	GET_VALUE_UNSIGNED_64(quantity);
 	GET_VALUE_UNSIGNED_64(interval_ms);
@@ -747,8 +767,8 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto drop;
 	}
 
-	if (modbus_function != 1) {
-		RRR_MSG_0("Invalid value for field 'modbus_function' %" PRIu64 " to modbus instance %s, only a value of 1 is allowed. Dropping it.\n",
+	if (modbus_function < 1 || modbus_function > 3) {
+		RRR_MSG_0("Invalid value for field 'modbus_function' %" PRIu64 " to modbus instance %s, only a value between 1 and 3 is allowed. Dropping it.\n",
 			modbus_function, INSTANCE_D_NAME(data->thread_data));
 		goto drop;
 	}
@@ -759,10 +779,27 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto drop;
 	}
 
-	if (MODBUS_QUANTITY_MIN < 1 || modbus_quantity > MODBUS_QUANTITY_MAX) {
-		RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u while %" PRIu64 " was given, dropping it.\n",
-			INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_MIN, MODBUS_QUANTITY_MAX, modbus_quantity);
-		goto drop;
+	switch (modbus_function) {
+		case 1:
+		case 2:
+			if (MODBUS_QUANTITY_COIL_MIN < 1 || modbus_quantity > MODBUS_QUANTITY_COIL_MAX) {
+				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
+					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_COIL_MIN, MODBUS_QUANTITY_COIL_MAX, modbus_function, modbus_quantity);
+				goto drop;
+			}
+			break;
+		case 3:
+			if (MODBUS_QUANTITY_REGISTER_MIN < 1 || modbus_quantity > MODBUS_QUANTITY_REGISTER_MAX) {
+				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
+					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_REGISTER_MIN, MODBUS_QUANTITY_REGISTER_MAX, modbus_function, modbus_quantity);
+				goto drop;
+			}
+			break;
+		default:
+			assert(0);
+	};
+
+	if (modbus_function == 1 || modbus_function == 2) {
 	}
 
 	if ((ret = modbus_command_collection_push_or_replace (
@@ -920,7 +957,9 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	modbus_data_init(data, thread_data);
 
-	data->modbus_client_callbacks.cb_res_01_read_coils = modbus_callback_res_01_read_coils;
+	data->modbus_client_callbacks.cb_res_01_read_coils = modbus_callback_res_byte_count_and_values;
+	data->modbus_client_callbacks.cb_res_02_read_discrete_inputs = modbus_callback_res_byte_count_and_values;
+	data->modbus_client_callbacks.cb_res_03_read_holding_registers = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_error = modbus_callback_res_error;
 
 	if (rrr_socket_client_collection_new (&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {

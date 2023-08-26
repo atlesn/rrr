@@ -35,10 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODBUS_INCOMPLETE  RRR_READ_INCOMPLETE
 
 #define RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS \
-    uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg
+    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg
 
 #define RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS \
-    uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *arg
+    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *arg
 
 struct rrr_modbus_client_callbacks {
 	int (*cb_res_error)(uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *arg);

@@ -72,6 +72,7 @@ static int __make_response (
 
 	switch(dst_buf[7]) { // Function code
 		case 0x01:
+		case 0x02:
 			if (dst_buf[10] != 0 || dst_buf[11] != 8) {
 				printf("Illegal address/quantity %u/%u for function 0x01\n", dst_buf[10], dst_buf[11]);
 				exception = 0x02; /* Illegal data address */
@@ -83,7 +84,7 @@ static int __make_response (
 				goto exception;
 			}
 			if ((size_t) length + 6 < *dst_buf_size) {
-				printf("Reported length %lu less than buffer size %lu for function 0x01\n", (size_t) length + 6, *dst_buf_size);
+				printf("Reported length %lu less than buffer size %lu for function 0x01/0x02\n", (size_t) length + 6, *dst_buf_size);
 				exception = 0x02; /* Illegal data address */
 				goto exception;
 			}
@@ -92,6 +93,29 @@ static int __make_response (
 			dst_buf[8] = 1;     // Byte count
 			dst_buf[9] = 0x01;  // Coil status 0
 			*dst_buf_size = 10;
+			break;
+		case 0x03:
+			if (dst_buf[10] != 0 || dst_buf[11] != 1) {
+				printf("Illegal address/quantity %u/%u for function 0x03\n", dst_buf[10], dst_buf[11]);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
+			}
+			if (length < 6) {
+				printf("Length %u too short function 0x03\n", length);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
+			}
+			if ((size_t) length + 6 < *dst_buf_size) {
+				printf("Reported length %lu less than buffer size %lu for function 0x03\n", (size_t) length + 6, *dst_buf_size);
+				exception = 0x02; /* Illegal data address */
+				goto exception;
+			}
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 5;     // Length low
+			dst_buf[8] = 2;     // Byte count
+			dst_buf[9] = 0x01;  // Register high
+			dst_buf[10] = 0x01;  // Register low
+			*dst_buf_size = 11;
 			break;
 		default:
 			printf("Illegal function 0x%u\n", dst_buf[7]);

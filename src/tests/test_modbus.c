@@ -115,6 +115,8 @@ static int __rrr_test_modbus_cb_res_01_read_coils (
 	(void)(byte_count);
 	(void)(coil_status);
 
+	assert(function_code == 1);
+
 	*status = 1;
 
 	return 0;
@@ -129,6 +131,8 @@ static int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
 	(void)(byte_count);
 	(void)(coil_status);
 
+	assert(function_code == 2);
+
 	*status = 2;
 
 	return 0;
@@ -142,6 +146,8 @@ static int __rrr_test_modbus_cb_res_03_read_holding_registers (
 	(void)(transaction_id);
 	(void)(byte_count);
 	(void)(register_value);
+
+	assert(function_code == 3);
 
 	*status = 3;
 
