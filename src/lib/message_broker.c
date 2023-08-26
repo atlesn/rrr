@@ -120,10 +120,17 @@ static void __rrr_message_broker_costumer_incref_all (
 ) {
 	pthread_mutex_lock(&broker->lock);
 
-	if ((*costumers = rrr_allocate(sizeof(void *) * (unsigned long) RRR_LL_COUNT(broker))) == NULL) {
-		RRR_BUG("Allocation failure in %s\n", __func__);
+	if (RRR_LL_COUNT(broker) > 0) {
+		if ((*costumers = rrr_allocate(sizeof(void *) * (unsigned long) RRR_LL_COUNT(broker))) == NULL) {
+			RRR_BUG("Allocation failure in %s\n", __func__);
+		}
+		*costumer_count = RRR_LL_COUNT(broker);
 	}
-	*costumer_count = RRR_LL_COUNT(broker);
+	else {
+		*costumers = NULL;
+		*costumer_count = 0;
+		goto no_costumers;
+	}
 
 	int pos = 0;
 	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
@@ -131,6 +138,7 @@ static void __rrr_message_broker_costumer_incref_all (
 		(*costumers)[pos++] = node;
 	RRR_LL_ITERATE_END();
 
+	no_costumers:
 	pthread_mutex_unlock(&broker->lock);
 }
 
@@ -1731,6 +1739,9 @@ void rrr_message_broker_report_buffers (
 	int costumer_count;
 	__rrr_message_broker_costumer_incref_all(&costumers, &costumer_count, broker);
 
+	if (costumers == NULL)
+		goto no_costumers;
+
 	for (int i = 0; i < costumer_count; i++) {
 		struct rrr_message_broker_costumer *costumer = costumers[i];
 		const rrr_length count = rrr_fifo_protected_get_entry_count(&costumer->main_queue);
@@ -1754,5 +1765,7 @@ void rrr_message_broker_report_buffers (
 	}
 
 	rrr_free(costumers);
+
+	no_costumers:
 	__rrr_message_broker_costumer_decref_all(broker);
 }
