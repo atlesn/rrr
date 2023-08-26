@@ -839,6 +839,10 @@ The interval for a command may be changed by passing a command message with all 
 .PP
 If different commands are used on the same server, they will share connection.
 .PP
+Please refer to the
+.B Modbus Application Protocol
+for details on the different modbus commands and responses.
+.PP
 The following array fields may be used in the command messages:
 .PP
 .Bl -tag -width -indent
@@ -854,7 +858,7 @@ is used.
 The modbus command to send.
 .PP
 The following functions are supported:
-.B 0x01 Read Coils, 0x02 Read Discrete Inputs
+.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
 is supported. If not given,
 .B 0x01
 is used.
@@ -868,13 +872,16 @@ If given, the command is repeated at the given interval for two seconds. Default
 .El
 .PP
 The following response messages and array fields are generated as a result of the modbus server
-responding to commands, and these must be read by reader instances:
+responding to commands, and these must be read by reader instances.
+.PP
+Data fields are in big endian where applicable (it is not manipulated in any way by the modbus module),
+and they correspond to fields given in the protocol standard.
 .PP
 .Bl -tag -width "a" -indent
 .It Error
 .LI
 .B modbus_function_code, modbus_exception_code
-.It Read Coils (function code 0x01), Read Discrete Inputs (function code 0x02)
+.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
 .LI
 .B modbus_function_code, modbus_bytes, modbus_status
 .El

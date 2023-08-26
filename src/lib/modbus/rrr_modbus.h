@@ -37,10 +37,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS \
     uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg
 
+#define RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS \
+    uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *arg
+
 struct rrr_modbus_client_callbacks {
 	int (*cb_res_error)(uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *arg);
 	int (*cb_res_01_read_coils)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
 	int (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
+	int (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
 	void *arg;
 };
 
@@ -75,6 +79,11 @@ int rrr_modbus_client_req_02_read_discrete_inputs (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
 		uint16_t quantity_of_coils
+);
+int rrr_modbus_client_req_03_read_holding_registers (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint16_t quantity_of_registers
 );
 
 #endif /* RRR_MODBUS_H */

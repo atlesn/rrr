@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MODBUS_FUNCTION_CODE_01_READ_COILS               0x01
 #define RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS     0x02
+#define RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS   0x03
 
 struct rrr_modbus_mbap {
 	uint16_t transaction_identifier;
@@ -42,19 +43,21 @@ struct rrr_modbus_mbap {
 	uint8_t unit_identifier;
 } __attribute((__packed__));
 
-struct rrr_modbus_req_address_and_coils {
+struct rrr_modbus_req_address_and_amount {
 	uint16_t starting_address;
-	uint16_t quantity_of_coils;
+	uint16_t amount;
 } __attribute((__packed__));
 
-typedef struct rrr_modbus_req_address_and_coils rrr_modbus_req_01_read_coils;
-typedef struct rrr_modbus_req_address_and_coils rrr_modbus_req_02_read_discrete_inputs;
+typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_01_read_coils;
+typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_02_read_discrete_inputs;
+typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_03_read_holding_registers;
 
 struct rrr_modbus_req {
 	uint8_t function_code;
 	union {
 		rrr_modbus_req_01_read_coils               read_coils;
 		rrr_modbus_req_02_read_discrete_inputs     read_discrete_inputs;
+		rrr_modbus_req_03_read_holding_registers   read_holding_registers;
 	};
 } __attribute((__packed__));
 
@@ -64,13 +67,14 @@ struct rrr_modbus_res_error {
 	uint8_t exception_code;
 } __attribute((__packed__));
 
-struct rrr_modbus_res_byte_count_and_coils {
+struct rrr_modbus_res_byte_count_and_status {
 	uint8_t byte_count;
-	uint8_t coil_status[256];
+	uint8_t status[250];
 } __attribute((__packed__));
 
-typedef struct rrr_modbus_res_byte_count_and_coils rrr_modbus_res_01_read_coils;
-typedef struct rrr_modbus_res_byte_count_and_coils rrr_modbus_res_02_read_discrete_inputs;
+typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_01_read_coils;
+typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_02_read_discrete_inputs;
+typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_03_read_holding_registers;
 
 struct rrr_modbus_res {
 	uint8_t function_code;
@@ -78,6 +82,7 @@ struct rrr_modbus_res {
 		struct rrr_modbus_res_error error;
 		rrr_modbus_res_01_read_coils               read_coils;
 		rrr_modbus_res_02_read_discrete_inputs     read_discrete_inputs;
+		rrr_modbus_res_03_read_holding_registers   read_holding_registers;
 	};
 } __attribute((__packed__));
 
@@ -173,8 +178,9 @@ static int __rrr_modbus_client_transaction_find_and_consume (
 static int __rrr_modbus_client_receive_byte_count_and_status (
 		struct rrr_modbus_client *client,
 		uint8_t function_code,
+		int is_register,
 		const struct rrr_modbus_client_transaction *transaction,
-		const struct rrr_modbus_res_byte_count_and_coils *pdu,
+		const struct rrr_modbus_res_byte_count_and_status *pdu,
 		uint16_t pdu_size,
 		int (*callback)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS)
 ) {
@@ -190,12 +196,19 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 		return RRR_MODBUS_SOFT_ERROR;
 	}
 
-	const uint16_t expected_coils = rrr_be16toh(transaction->req.read_coils.quantity_of_coils);
-	const uint16_t expected_bytes = (expected_coils - (expected_coils % 8) + 1) / 8;
+	const uint16_t expected_amount = rrr_be16toh(transaction->req.read_coils.amount);
+	const uint16_t expected_bytes  = is_register
+		? expected_amount * 2
+		: (expected_amount - (expected_amount % 8) + 1) / 8
+	;
 
 	if (pdu->byte_count != expected_bytes) {
-		RRR_MSG_0("Unexpected size of bytes field %d<>%d for coil count %d in %s\n",
-			pdu->byte_count, expected_bytes, expected_coils, __func__);
+		RRR_MSG_0("Unexpected size of bytes field %d<>%d for amount %d of %s in %s\n",
+			pdu->byte_count,
+			expected_bytes,
+			expected_amount,
+			(is_register ? "registers" : "coils"),
+			__func__);
 		return RRR_MODBUS_SOFT_ERROR;
 	}
 
@@ -206,7 +219,7 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 	return callback (
 			transaction->transaction_id,
 			pdu->byte_count,
-			pdu->coil_status,
+			pdu->status,
 			client->callbacks.arg
 	);
 }
@@ -220,6 +233,7 @@ static int __rrr_modbus_client_receive_01_read_coils (
 	return __rrr_modbus_client_receive_byte_count_and_status (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_01_READ_COILS,
+			0, /* Not register */
 			transaction,
 			pdu,
 			pdu_size,
@@ -230,16 +244,34 @@ static int __rrr_modbus_client_receive_01_read_coils (
 static int __rrr_modbus_client_receive_02_read_discrete_inputs (
 		struct rrr_modbus_client *client,
 		const struct rrr_modbus_client_transaction *transaction,
-		const rrr_modbus_res_01_read_coils *pdu,
+		const rrr_modbus_res_02_read_discrete_inputs *pdu,
 		uint16_t pdu_size
 ) {
 	return __rrr_modbus_client_receive_byte_count_and_status (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS,
+			0, /* Not register */
 			transaction,
 			pdu,
 			pdu_size,
 			client->callbacks.cb_res_02_read_discrete_inputs
+	);
+}
+
+static int __rrr_modbus_client_receive_03_read_holding_registers (
+		struct rrr_modbus_client *client,
+		const struct rrr_modbus_client_transaction *transaction,
+		const rrr_modbus_res_03_read_holding_registers *pdu,
+		uint16_t pdu_size
+) {
+	return __rrr_modbus_client_receive_byte_count_and_status (
+			client,
+			RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS,
+			1, /* Is register */
+			transaction,
+			pdu,
+			pdu_size,
+			client->callbacks.cb_res_03_read_holding_registers
 	);
 }
 
@@ -299,7 +331,10 @@ static int __rrr_modbus_client_receive (
 			return __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.read_coils, (uint16_t) pdu_size);
 		case 0x02:
 			VALIDATE_FRAME_SIZE(read_discrete_inputs);
-			return __rrr_modbus_client_receive_02_read_discrete_inputs (client, &transaction, &frame->res.read_coils, (uint16_t) pdu_size);
+			return __rrr_modbus_client_receive_02_read_discrete_inputs (client, &transaction, &frame->res.read_discrete_inputs, (uint16_t) pdu_size);
+		case 0x03:
+			VALIDATE_FRAME_SIZE(read_holding_registers);
+			return __rrr_modbus_client_receive_03_read_holding_registers (client, &transaction, &frame->res.read_holding_registers, (uint16_t) pdu_size);
 		default:
 			RRR_BUG("Function code %d not implemented in %s\n", frame->res.function_code, __func__);
 	};
@@ -494,20 +529,18 @@ static int __rrr_modbus_client_req_push (
 	return ret;
 }
 
-static int __rrr_modbus_client_req_address_and_coils (
+static int __rrr_modbus_client_req_address_and_amount (
 		struct rrr_modbus_client *client,
 		uint8_t function_code,
 		uint16_t starting_address,
-		uint16_t quantity_of_coils
+		uint16_t amount
 ) {
 	struct rrr_modbus_req req;
-
-	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
 
 	__rrr_modbus_req_init (&req, function_code);
 
 	req.read_coils.starting_address = rrr_htobe16(starting_address);
-	req.read_coils.quantity_of_coils = rrr_htobe16(quantity_of_coils);
+	req.read_coils.amount = rrr_htobe16(amount);
 
 	return __rrr_modbus_client_req_push(client, &req, RRR_MODBUS_REQ_SIZE(req.read_coils));
 }
@@ -517,7 +550,9 @@ int rrr_modbus_client_req_01_read_coils (
 		uint16_t starting_address,
 		uint16_t quantity_of_coils
 ) {
-	return __rrr_modbus_client_req_address_and_coils(
+	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
+
+	return __rrr_modbus_client_req_address_and_amount (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_01_READ_COILS,
 			starting_address,
@@ -530,10 +565,27 @@ int rrr_modbus_client_req_02_read_discrete_inputs (
 		uint16_t starting_address,
 		uint16_t quantity_of_coils
 ) {
-	return __rrr_modbus_client_req_address_and_coils(
+	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
+
+	return __rrr_modbus_client_req_address_and_amount (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS,
 			starting_address,
 			quantity_of_coils
+	);
+}
+
+int rrr_modbus_client_req_03_read_holding_registers (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint16_t quantity_of_registers
+) {
+	assert(quantity_of_registers >= 1 && quantity_of_registers <= 125);
+
+	return __rrr_modbus_client_req_address_and_amount (
+			client,
+			RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS,
+			starting_address,
+			quantity_of_registers
 	);
 }

@@ -48,6 +48,17 @@ static void __rrr_test_modbus_make_response (
 			dst_buf[10] = 0x01; // Coil status 1
 			*dst_buf_size = 11;
 			break;
+		case 0x03:
+			assert(dst_buf[10] == 0 && dst_buf[11] == 2); // Quantity
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 7;     // Length low
+			dst_buf[8] = 4;     // Byte count
+			dst_buf[9] = 0x01;  // Register a high
+			dst_buf[10] = 0x01; // Register a low
+			dst_buf[11] = 0x01; // Register b high
+			dst_buf[12] = 0x01; // Register b low
+			*dst_buf_size = 13;
+			break;
 		default:
 			assert(0);
 	}
@@ -78,7 +89,7 @@ static void __rrr_test_modbus_make_response (
         goto out;                                                                               \
     }} while(0)
 
-int __rrr_test_modbus_cb_res_error (
+static int __rrr_test_modbus_cb_res_error (
 		uint16_t transaction_id,
 		uint8_t function_code,
 		uint8_t error_code,
@@ -90,16 +101,13 @@ int __rrr_test_modbus_cb_res_error (
 	(void)(function_code);
 	(void)(error_code);
 
-	*status = 1;
+	*status = 0;
 
 	return 0;
 }
 
-int __rrr_test_modbus_cb_res_01_read_coils (
-		uint16_t transaction_id,
-		uint8_t byte_count,
-		const uint8_t *coil_status,
-		void *arg
+static int __rrr_test_modbus_cb_res_01_read_coils (
+		RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS
 ) {
 	int *status = arg;
 
@@ -112,11 +120,8 @@ int __rrr_test_modbus_cb_res_01_read_coils (
 	return 0;
 }
 
-int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
-		uint16_t transaction_id,
-		uint8_t byte_count,
-		const uint8_t *coil_status,
-		void *arg
+static int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
+		RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS
 ) {
 	int *status = arg;
 
@@ -124,7 +129,21 @@ int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
 	(void)(byte_count);
 	(void)(coil_status);
 
-	*status = 1;
+	*status = 2;
+
+	return 0;
+}
+
+static int __rrr_test_modbus_cb_res_03_read_holding_registers (
+		RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS
+) {
+	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(byte_count);
+	(void)(register_value);
+
+	*status = 3;
 
 	return 0;
 }
@@ -137,13 +156,14 @@ int rrr_test_modbus (void) {
 	uint8_t buf2[256];
 	rrr_length buf_size;
 	rrr_length buf_size2;
-	int arg;
+	int cb_status = -1;
 
 	const struct rrr_modbus_client_callbacks callbacks = {
 		.cb_res_error = __rrr_test_modbus_cb_res_error,
 		.cb_res_01_read_coils = __rrr_test_modbus_cb_res_01_read_coils,
 		.cb_res_02_read_discrete_inputs = __rrr_test_modbus_cb_res_02_read_discrete_inputs,
-		.arg = &arg
+		.cb_res_03_read_holding_registers = __rrr_test_modbus_cb_res_03_read_holding_registers,
+		.arg = &cb_status
 	};
 
 	if ((ret = rrr_modbus_client_new (&client)) != 0) {
@@ -181,11 +201,12 @@ int rrr_test_modbus (void) {
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 1);
 
 	TEST_MSG("Testing request function 02 'read discrete inputs'\n");
 
 	if ((ret = rrr_modbus_client_req_02_read_discrete_inputs (client, 0x1234, 16)) != 0) {
-		TEST_MSG("Failed to create modbus read coil package\n");
+		TEST_MSG("Failed to create modbus read discrete inputs package\n");
 		ret = 1;
 		goto out;
 	}
@@ -206,6 +227,33 @@ int rrr_test_modbus (void) {
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 2);
+
+	TEST_MSG("Testing request function 03 'read holding registers'\n");
+
+	if ((ret = rrr_modbus_client_req_03_read_holding_registers (client, 0x1234, 2)) != 0) {
+		TEST_MSG("Failed to create modbus read holding registers package\n");
+		ret = 1;
+		goto out;
+	}
+
+	WRITE();
+
+	// Nothing more to write, must return DONE
+	assert(rrr_modbus_client_write (client, buf, &buf_size) == RRR_MODBUS_DONE);
+
+	VERIFY_BYTE(0, 0);     // Transaction ID high
+	VERIFY_BYTE(1, 2);     // Transaction ID low
+	VERIFY_BYTE(7, 3);     // Function code
+	VERIFY_BYTE(8, 0x12);  // Starting address high
+	VERIFY_BYTE(9, 0x34);  // Starting address low
+	VERIFY_BYTE(10, 0x00); // Quantity high
+	VERIFY_BYTE(11, 0x02); // Quantity low
+
+	buf_size2 = sizeof(buf2);
+	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
+	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 3);
 
 	TEST_MSG("Testing malformed responses for function 01 'read_coils'\n");
 
