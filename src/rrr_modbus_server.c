@@ -70,8 +70,7 @@ static int __make_response (
 			dst_buf[5] = 4;     // Length low
 			dst_buf[8] = 1;     // Byte count
 			dst_buf[9] = 0x01;  // Coil status 0
-			(*dst_buf_size)--;
-			(*dst_buf_size)--;
+			*dst_buf_size = 10;
 			break;
 		default:
 			printf("Illegal function 0x%u\n", dst_buf[7]);
@@ -83,8 +82,8 @@ static int __make_response (
 		dst_buf[4] = 0;     // Length high
 		dst_buf[5] = 3;     // Length low
 		dst_buf[7] += 0x80;
-		dst_buf[8] = exception;
-		(*dst_buf_size) -= 3;
+		dst_buf[8] = (char) exception;
+		*dst_buf_size = 9;
 	out:
 		return ret;
 }

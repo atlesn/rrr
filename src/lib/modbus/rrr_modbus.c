@@ -316,9 +316,15 @@ int rrr_modbus_client_read (
 		goto out;
 	}
 
+	if (pdu_size > sizeof(frame.res)) {
+		RRR_MSG_0("Received PDU frame exceeding maximum length\n");
+		ret = RRR_MODBUS_SOFT_ERROR;
+		goto out;
+	}
+
 	printf("Copy from %d, %d bytes frame size %d\n", data_pos, frame_size - data_pos, frame_size);
 
-	memcpy(&frame.res, data + data_pos, frame_size - data_pos);
+	memcpy(&frame.res, data + data_pos, pdu_size);
 
 	if ((ret = __rrr_modbus_client_receive (client, &frame, frame_size)) != RRR_MODBUS_OK) {
 		goto out;
