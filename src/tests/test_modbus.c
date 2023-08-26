@@ -41,11 +41,11 @@ static void __rrr_test_modbus_make_response (
 		case 0x01:
 			assert(dst_buf[10] == 0 && dst_buf[11] == 16); // Quantity
 			dst_buf[4] = 0;     // Length high
-			dst_buf[5] = 4;     // Length low
+			dst_buf[5] = 5;     // Length low
 			dst_buf[8] = 2;     // Byte count
 			dst_buf[9] = 0x01;  // Coil status 0
 			dst_buf[10] = 0x01; // Coil status 1
-			(*dst_buf_size)--;
+			*dst_buf_size = 11;
 			break;
 		default:
 			assert(0);

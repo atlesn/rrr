@@ -175,7 +175,7 @@ static int __rrr_modbus_client_receive_01_read_coils (
 
 	if (pdu->byte_count != pdu_size - 2) {
 		RRR_MSG_0("Invalid size of bytes field %d<>%d in %s\n",
-			pdu->byte_count, pdu_size - 1, __func__);
+			pdu->byte_count, pdu_size - 2, __func__);
 		return RRR_MODBUS_SOFT_ERROR;
 	}
 
