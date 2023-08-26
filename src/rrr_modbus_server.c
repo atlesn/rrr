@@ -23,7 +23,7 @@ static int __make_response (
 		const size_t *src_buf_size
 ) {
 	int ret = 0;
-
+/*
 	if (rrr_rand() % 100 > 90) {
 		rrr_random_string(dst_buf, *dst_buf_size);
 		size_t size = ((size_t) rrr_rand()) % 10 + 1;
@@ -32,7 +32,7 @@ static int __make_response (
 		printf("Generated random junk data size %llu\n", (unsigned long long) size);
 		goto out;
 	}
-
+*/
 	assert(*dst_buf_size >= *src_buf_size);
 
 	memcpy(dst_buf, src_buf, *src_buf_size);

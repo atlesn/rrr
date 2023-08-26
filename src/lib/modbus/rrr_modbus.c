@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 #include "../util/rrr_endian.h"
 #include "../util/rrr_time.h"
+#include "../helpers/string_builder.h"
 
 #define RRR_MODBUS_CLIENT_TRANSACTION_MAX 32
 #define RRR_MODBUS_CLIENT_TRANSACTION_TIMEOUT_S 1
@@ -166,8 +167,6 @@ static int __rrr_modbus_client_receive_01_read_coils (
 		const struct rrr_modbus_res_01_read_coils *pdu,
 		uint16_t pdu_size
 ) {
-	printf("Byte count %d\n", pdu->byte_count);
-
 	if (pdu->byte_count == 0) {
 		RRR_MSG_0("Invalid size 0 of bytes field in %s\n",
 			__func__);
@@ -274,12 +273,19 @@ int rrr_modbus_client_read (
 
 	RRR_DBG_3("Read data of size %" PRIrrrl "\n", *data_size);
 
-	for (size_t i = 0; i < *data_size; i++) {
-		printf("Buf 0x%01x\n", data[i]);
+	if (RRR_DEBUGLEVEL_6) {
+		struct rrr_string_builder string = {0};
+		for (size_t i = 0; i < *data_size; i++) {
+			if (i % 16 == 0) {
+				rrr_string_builder_append_format(&string, "\n   ");
+			}
+			rrr_string_builder_append_format(&string, " 0x%02x", data[i]);
+		}
+		RRR_DBG_6("Read data of size %" PRIrrrl ":%s\n", *data_size, rrr_string_builder_buf(&string));
+		rrr_string_builder_clear(&string);
 	}
 
 	if (*data_size < sizeof(frame.mbap)) {
-		printf("A\n");
 		ret = RRR_MODBUS_INCOMPLETE;
 		goto out;
 	}
@@ -300,7 +306,6 @@ int rrr_modbus_client_read (
 	}
 
 	if (*data_size < frame_size) {
-		printf("B %" PRIrrrl "<>%" PRIrrrl "\n", *data_size, frame_size);
 		ret = RRR_MODBUS_INCOMPLETE;
 		goto out;
 	}
@@ -321,8 +326,6 @@ int rrr_modbus_client_read (
 		ret = RRR_MODBUS_SOFT_ERROR;
 		goto out;
 	}
-
-	printf("Copy from %d, %d bytes frame size %d\n", data_pos, frame_size - data_pos, frame_size);
 
 	memcpy(&frame.res, data + data_pos, pdu_size);
 

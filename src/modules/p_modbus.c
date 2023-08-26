@@ -491,7 +491,6 @@ static int modbus_callback_data_prepare (
 	rrr_length buf_size = rrr_length_from_biglength_bug_const(callback_data->buf_size_orig);
 
 	if (client_data == NULL) {
-		printf("Not ready\n");
 		ret = RRR_SOCKET_NOT_READY;
 		goto out;
 	}
@@ -845,8 +844,6 @@ static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZ
 	struct modbus_client_data *client_data = private_data;
 	struct modbus_data *data = arg;
 
-	printf("Get target size rx buf wpos %lu\n", read_session->rx_buf_wpos);
-
 	rrr_length data_size = rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos);
 
 	if ((ret = rrr_modbus_client_read (
@@ -860,8 +857,6 @@ static int modbus_callback_get_target_size (RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZ
 		}
 		goto out;
 	}
-
-	printf("Read complete");
 
 	read_session->target_size = data_size;
 
@@ -891,7 +886,9 @@ static int modbus_callback_complete (RRR_SOCKET_CLIENT_RAW_COMPLETE_CALLBACK_ARG
 	(void)(addr_len);
 	(void)(private_data);
 	(void)(arg);
-	printf("Callback complete\n");
+
+	/* Everything is done in get_target_size callback, nothing to do here */
+
 	return RRR_READ_OK;
 }
 
