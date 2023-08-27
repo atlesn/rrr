@@ -99,6 +99,7 @@ struct rrr_modbus_client_transaction {
 	struct rrr_modbus_req req;
 	rrr_length req_size;
 	uint64_t transmit_time;
+	void *transaction_private_data;
 };
 
 struct rrr_modbus_client {
@@ -115,6 +116,27 @@ static void __rrr_modbus_req_init (
 ) {
 	memset(req, '\0', sizeof(*req));
 	req->function_code = function_code;
+}
+
+static void __rrr_modbus_client_transaction_migrate (
+		struct rrr_modbus_client_transaction *target,
+		struct rrr_modbus_client_transaction *source
+) {
+	*target = *source;
+
+	// Don't free private data in transaction, transfer ownership to target
+
+	memset(source, '\0', sizeof(*source));
+}
+
+static void __rrr_modbus_client_transaction_reset (
+		struct rrr_modbus_client *client,
+		struct rrr_modbus_client_transaction *transaction
+) {
+	if (transaction->transaction_private_data == NULL)
+		return;
+	client->callbacks.cb_req_transaction_private_data_destroy(transaction->transaction_private_data);
+	memset(transaction, '\0', sizeof(*transaction));
 }
 
 int rrr_modbus_client_new (
@@ -139,9 +161,14 @@ int rrr_modbus_client_new (
 }
 
 void rrr_modbus_client_destroy (
-		struct rrr_modbus_client *target
+		struct rrr_modbus_client *client
 ) {
-	rrr_free(target);
+	for (int i = 0; i < RRR_MODBUS_CLIENT_TRANSACTION_MAX; i++) {
+		struct rrr_modbus_client_transaction *transaction = &client->transactions[i];
+		__rrr_modbus_client_transaction_reset(client, transaction);
+	}
+	
+	rrr_free(client);
 }
 
 void rrr_modbus_client_callbacks_set (
@@ -164,8 +191,7 @@ static int __rrr_modbus_client_transaction_find_and_consume (
 		}
 
 		if (transaction_id == transaction_check->transaction_id) {
-			*transaction = *transaction_check;
-			memset(transaction_check, '\0', sizeof(*transaction_check));
+			__rrr_modbus_client_transaction_migrate(transaction, transaction_check);
 			return 0;
 		}
 	}
@@ -221,6 +247,7 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 			transaction->transaction_id,
 			pdu->byte_count,
 			pdu->status,
+			transaction->transaction_private_data,
 			client->callbacks.arg
 	);
 }
@@ -295,7 +322,9 @@ static int __rrr_modbus_client_receive (
 		struct rrr_modbus_frame *frame,
 		rrr_length frame_size
 ) {
-	struct rrr_modbus_client_transaction transaction;
+	int ret = RRR_MODBUS_OK;
+
+	struct rrr_modbus_client_transaction transaction = {0};
 
 	RRR_DBG_3("Receive frame of size %" PRIrrrl "\n", frame_size);
 
@@ -304,7 +333,8 @@ static int __rrr_modbus_client_receive (
 			client,
 			frame->mbap.transaction_identifier
 	) != 0) {
-		return RRR_MODBUS_SOFT_ERROR;
+		ret = RRR_MODBUS_SOFT_ERROR;
+		goto out;
 	}
 
 	if (frame->res.function_code > 0x80) {
@@ -313,12 +343,14 @@ static int __rrr_modbus_client_receive (
 		if (client->callbacks.cb_res_error == NULL) {
 			RRR_BUG("Error callback not set in %s\n", __func__);
 		}
-		return client->callbacks.cb_res_error (
+		ret = client->callbacks.cb_res_error (
 				transaction.transaction_id,
 				frame->res.function_code - 0x80,
 				frame->res.error.exception_code,
+				transaction.transaction_private_data,
 				client->callbacks.arg
 		);
+		goto out;
 	}
 
 	VALIDATE_TRANSACTION_FUNCTION_CODE(frame->res.function_code);
@@ -329,18 +361,27 @@ static int __rrr_modbus_client_receive (
 	switch (frame->res.function_code) {
 		case 0x01:
 			VALIDATE_FRAME_SIZE(read_coils);
-			return __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.read_coils, (uint16_t) pdu_size);
+			ret = __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.read_coils, (uint16_t) pdu_size);
+			break;
 		case 0x02:
 			VALIDATE_FRAME_SIZE(read_discrete_inputs);
-			return __rrr_modbus_client_receive_02_read_discrete_inputs (client, &transaction, &frame->res.read_discrete_inputs, (uint16_t) pdu_size);
+			ret = __rrr_modbus_client_receive_02_read_discrete_inputs (client, &transaction, &frame->res.read_discrete_inputs, (uint16_t) pdu_size);
+			break;
 		case 0x03:
 			VALIDATE_FRAME_SIZE(read_holding_registers);
-			return __rrr_modbus_client_receive_03_read_holding_registers (client, &transaction, &frame->res.read_holding_registers, (uint16_t) pdu_size);
+			ret = __rrr_modbus_client_receive_03_read_holding_registers (client, &transaction, &frame->res.read_holding_registers, (uint16_t) pdu_size);
+			break;
 		default:
 			RRR_BUG("Function code %d not implemented in %s\n", frame->res.function_code, __func__);
 	};
 
-	return RRR_MODBUS_SOFT_ERROR;
+	if (ret != 0) {
+		goto out;
+	}
+
+	out:
+	__rrr_modbus_client_transaction_reset(client, &transaction);
+	return ret;
 }
 
 int rrr_modbus_client_read (
@@ -506,14 +547,24 @@ static int __rrr_modbus_client_transaction_reserve (
 static int __rrr_modbus_client_req_push (
 		struct rrr_modbus_client *client,
 		const struct rrr_modbus_req *req,
-		rrr_length req_size
+		rrr_length req_size,
+		void *private_data_arg
 ) {
 	int ret = 0;
 
 	uint16_t transaction_write_pos;
+	void *transaction_private_data;
+
+	if ((ret = client->callbacks.cb_req_transaction_private_data_create (
+			&transaction_private_data,
+			private_data_arg,
+			client->callbacks.arg
+	)) != 0) {
+		goto out;
+	}
 
 	if ((ret = __rrr_modbus_client_transaction_reserve (&transaction_write_pos, client)) != 0) {
-		goto out;
+		goto out_destroy_transaction_private_data;
 	}
 
 	struct rrr_modbus_client_transaction *transaction = &client->transactions[transaction_write_pos];
@@ -522,19 +573,24 @@ static int __rrr_modbus_client_req_push (
 	transaction->req = *req;
 	transaction->req_size = req_size;
 	transaction->transmit_time = 0;
+	transaction->transaction_private_data = transaction_private_data;
 
 	RRR_DBG_3("Pushed transaction %d function code %d to position %d\n",
 			transaction->transaction_id, transaction->req.function_code, transaction_write_pos);
 
+	goto out;
+	out_destroy_transaction_private_data:
+		client->callbacks.cb_req_transaction_private_data_destroy(transaction_private_data);
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_modbus_client_req_address_and_amount (
 		struct rrr_modbus_client *client,
 		uint8_t function_code,
 		uint16_t starting_address,
-		uint16_t amount
+		uint16_t amount,
+		void *private_data_arg
 ) {
 	struct rrr_modbus_req req;
 
@@ -543,13 +599,14 @@ static int __rrr_modbus_client_req_address_and_amount (
 	req.read_coils.starting_address = rrr_htobe16(starting_address);
 	req.read_coils.amount = rrr_htobe16(amount);
 
-	return __rrr_modbus_client_req_push(client, &req, RRR_MODBUS_REQ_SIZE(req.read_coils));
+	return __rrr_modbus_client_req_push(client, &req, RRR_MODBUS_REQ_SIZE(req.read_coils), private_data_arg);
 }
 
 int rrr_modbus_client_req_01_read_coils (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_coils
+		uint16_t quantity_of_coils,
+		void *private_data_arg
 ) {
 	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
 
@@ -557,14 +614,16 @@ int rrr_modbus_client_req_01_read_coils (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_01_READ_COILS,
 			starting_address,
-			quantity_of_coils
+			quantity_of_coils,
+			private_data_arg
 	);
 }
 
 int rrr_modbus_client_req_02_read_discrete_inputs (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_coils
+		uint16_t quantity_of_coils,
+		void *private_data_arg
 ) {
 	assert(quantity_of_coils >= 1 && quantity_of_coils <= 2000);
 
@@ -572,14 +631,16 @@ int rrr_modbus_client_req_02_read_discrete_inputs (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS,
 			starting_address,
-			quantity_of_coils
+			quantity_of_coils,
+			private_data_arg
 	);
 }
 
 int rrr_modbus_client_req_03_read_holding_registers (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_registers
+		uint16_t quantity_of_registers,
+		void *private_data_arg
 ) {
 	assert(quantity_of_registers >= 1 && quantity_of_registers <= 125);
 
@@ -587,6 +648,7 @@ int rrr_modbus_client_req_03_read_holding_registers (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS,
 			starting_address,
-			quantity_of_registers
+			quantity_of_registers,
+			private_data_arg
 	);
 }

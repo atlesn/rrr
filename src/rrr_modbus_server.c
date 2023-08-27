@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_modbus_server");
 
 static int __make_response (
+		size_t *bytes_consumed,
 		char *dst_buf,
 		size_t *dst_buf_size,
 		const char *src_buf,
@@ -83,16 +84,12 @@ static int __make_response (
 				exception = 0x02; /* Illegal data address */
 				goto exception;
 			}
-			if ((size_t) length + 6 < *dst_buf_size) {
-				printf("Reported length %lu less than buffer size %lu for function 0x01/0x02\n", (size_t) length + 6, *dst_buf_size);
-				exception = 0x02; /* Illegal data address */
-				goto exception;
-			}
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 4;     // Length low
 			dst_buf[8] = 1;     // Byte count
 			dst_buf[9] = 0x01;  // Coil status 0
 			*dst_buf_size = 10;
+			*bytes_consumed = 12;
 			break;
 		case 0x03:
 			if (dst_buf[10] != 0 || dst_buf[11] != 1) {
@@ -105,17 +102,13 @@ static int __make_response (
 				exception = 0x02; /* Illegal data address */
 				goto exception;
 			}
-			if ((size_t) length + 6 < *dst_buf_size) {
-				printf("Reported length %lu less than buffer size %lu for function 0x03\n", (size_t) length + 6, *dst_buf_size);
-				exception = 0x02; /* Illegal data address */
-				goto exception;
-			}
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 5;     // Length low
 			dst_buf[8] = 2;     // Byte count
 			dst_buf[9] = 0x01;  // Register high
 			dst_buf[10] = 0x01;  // Register low
 			*dst_buf_size = 11;
+			*bytes_consumed = 12;
 			break;
 		default:
 			printf("Illegal function 0x%u\n", dst_buf[7]);
@@ -145,7 +138,7 @@ int main(int argc, const char **argv) {
 	ssize_t bytes;
 	char buf[RRR_MODBUS_BUFFER_SIZE];
 	char buf2[RRR_MODBUS_BUFFER_SIZE];
-	size_t buf_size, buf2_size;
+	size_t buf_size, buf2_size, bytes_consumed, bytes_offset;
 
 	rrr_strerror_init();
 
@@ -182,17 +175,32 @@ int main(int argc, const char **argv) {
 		}
 
 		while (1) {
+			bytes_offset = 0;
 			bytes = recv(client_fd, buf, sizeof(buf), 0);
 			if (bytes <= 0) {
-				printf("Connection closed\n");
+				printf("Connection closed: %lli %s\n",
+					(long long int) bytes, rrr_strerror(errno));
 				break;
 			}
 
-			buf_size = (size_t) bytes;
+			again:
+
+			buf_size = (size_t) bytes - bytes_offset;
 			buf2_size = sizeof(buf2);
 
-			if (__make_response(buf2, &buf2_size, buf, &buf_size) != 0) {
+			if (__make_response (
+					&bytes_consumed,
+					buf2,
+					&buf2_size,
+					buf + bytes_offset,
+					&buf_size
+			) != 0) {
 				break;
+			}
+
+			if (bytes_consumed < buf_size) {
+				bytes_offset += bytes_consumed;
+				goto again;
 			}
 
 			printf("Write response size %lu\n", buf2_size);

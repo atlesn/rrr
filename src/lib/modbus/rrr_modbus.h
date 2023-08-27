@@ -34,18 +34,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODBUS_DONE        RRR_READ_EOF
 #define RRR_MODBUS_INCOMPLETE  RRR_READ_INCOMPLETE
 
+#define RRR_MODBUS_ERROR_CALLBACK_ARGS \
+    uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *transaction_private_data, void *arg
+
 #define RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS \
-    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *arg
+    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *coil_status, void *transaction_private_data, void *arg
 
 #define RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS \
-    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *arg
+    uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *transaction_private_data, void *arg
 
 struct rrr_modbus_client_callbacks {
-	int (*cb_res_error)(uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *arg);
-	int (*cb_res_01_read_coils)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
-	int (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
-	int (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
-	void *arg;
+	int  (*cb_req_transaction_private_data_create)(void **result, void *private_data_arg, void *arg);
+	void (*cb_req_transaction_private_data_destroy)(void *transaction_private_data);
+	int  (*cb_res_error)(RRR_MODBUS_ERROR_CALLBACK_ARGS);
+	int  (*cb_res_01_read_coils)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
+	int  (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
+	int  (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
+	void  *arg;
 };
 
 struct rrr_modbus_client;
@@ -54,7 +59,7 @@ int rrr_modbus_client_new (
 		struct rrr_modbus_client **target
 );
 void rrr_modbus_client_destroy (
-		struct rrr_modbus_client *target
+		struct rrr_modbus_client *client
 );
 void rrr_modbus_client_callbacks_set (
 		struct rrr_modbus_client *client,
@@ -73,17 +78,20 @@ int rrr_modbus_client_write (
 int rrr_modbus_client_req_01_read_coils (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_coils
+		uint16_t quantity_of_coils,
+		void *private_data_arg
 );
 int rrr_modbus_client_req_02_read_discrete_inputs (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_coils
+		uint16_t quantity_of_coils,
+		void *private_data_arg
 );
 int rrr_modbus_client_req_03_read_holding_registers (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
-		uint16_t quantity_of_registers
+		uint16_t quantity_of_registers,
+		void *private_data_arg
 );
 
 #endif /* RRR_MODBUS_H */

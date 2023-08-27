@@ -54,7 +54,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_STARTING_ADDRESS 0
 #define MODBUS_DEFAULT_QUANTITY_COIL 8
 #define MODBUS_DEFAULT_QUANTITY_REGISTER 1
+
 #define MODBUS_DEFAULT_INTERVAL_MS 0
+#define MODBUS_DEFAULT_RESPONSE_TOPIC NULL
 
 #define MODBUS_COMMAND_TIMEOUT_S 2 /* Update man pages if this changes */
 #define MODBUS_COMMAND_SEND_TIMEOUT_S 4
@@ -72,9 +74,11 @@ static const char *modbus_field_function          = "modbus_function";
 static const char *modbus_field_exception_code    = "modbus_exception_code";
 static const char *modbus_field_starting_address  = "modbus_starting_address";
 static const char *modbus_field_quantity          = "modbus_quantity";
-static const char *modbus_field_interval_ms       = "modbus_interval_ms";
 static const char *modbus_field_bytes             = "modbus_bytes";
 static const char *modbus_field_status            = "modbus_status";
+
+static const char *modbus_field_interval_ms       = "modbus_interval_ms";
+static const char *modbus_field_response_topic    = "modbus_response_topic";
 
 struct modbus_data;
 
@@ -94,6 +98,8 @@ struct modbus_command_node {
 	uint64_t last_seen_time;
 	uint64_t send_time;
 	uint64_t interval_ms;
+	char *response_topic;
+	rrr_u16 response_topic_length;
 	struct modbus_command command;
 	struct rrr_event_collection events;
 	rrr_event_handle event;
@@ -114,12 +120,20 @@ struct modbus_data {
 
 struct modbus_client_data {
 	struct modbus_data *data;
+	struct modbus_command_node *node;
 	char server[MODBUS_SERVER_MAX];
 	uint16_t port;
 	struct rrr_modbus_client *client;
 };
 
+struct modbus_transaction_data {
+	char *response_topic;
+	rrr_u16 response_topic_length;
+	struct modbus_command command;
+};
+
 static void modbus_command_node_destroy (struct modbus_command_node *node) {
+	RRR_FREE_IF_NOT_NULL(node->response_topic);
 	rrr_event_collection_clear(&node->events);
 	rrr_free(node);
 }
@@ -173,9 +187,22 @@ static int modbus_command_node_new (
 static void modbus_command_node_update (
 		struct modbus_command_node *node,
 		uint64_t interval_ms,
+		char **response_topic,
 		int first
 ) {
 	node->last_seen_time = rrr_time_get_64();
+
+	RRR_FREE_IF_NOT_NULL(node->response_topic);
+	node->response_topic_length = 0;
+
+	if (*response_topic != NULL) {
+		// Consume memory
+		node->response_topic = *response_topic;
+		*response_topic = NULL;
+		size_t length = strlen(node->response_topic);
+		assert(length <= RRR_MSG_TOPIC_MAX);
+		node->response_topic_length = (rrr_u16) length;
+	}
 
 	if (interval_ms == node->interval_ms && interval_ms > 0 && !first) {
 		return;
@@ -206,7 +233,8 @@ static int modbus_command_collection_push_or_replace (
 		uint8_t function,
 		uint16_t starting_address,
 		uint16_t quantity,
-		uint64_t interval_ms
+		uint64_t interval_ms,
+		char **response_topic
 ) {
 	int ret = 0;
 
@@ -234,7 +262,7 @@ static int modbus_command_collection_push_or_replace (
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		RRR_DBG_2("Modbus instance %s updating command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "->%" PRIu64 "\n",
+		RRR_DBG_2("Modbus instance %s updating command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "->%" PRIu64 " response topic '%s'\n",
 			INSTANCE_D_NAME(data->thread_data),
 			server,
 			port,
@@ -242,22 +270,24 @@ static int modbus_command_collection_push_or_replace (
 			starting_address,
 			quantity,
 			node->interval_ms,
-			interval_ms
+			interval_ms,
+			*response_topic
 		);
 
-		modbus_command_node_update(node, interval_ms, 0 /* Not first */);
+		modbus_command_node_update(node, interval_ms, response_topic, 0 /* Not first */);
 
 		goto out;
 	RRR_LL_ITERATE_END();
 
-	RRR_DBG_2("Modbus instance %s new command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
+	RRR_DBG_2("Modbus instance %s new command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 " response topic '%s'\n",
 		INSTANCE_D_NAME(data->thread_data),
 		server,
 		port,
 		function,
 		starting_address,
 		quantity,
-		interval_ms
+		interval_ms,
+		*response_topic
 	);
 
 	if ((ret = modbus_command_node_new (
@@ -270,7 +300,7 @@ static int modbus_command_collection_push_or_replace (
 
 	RRR_LL_PUSH(&data->commands, node);
 
-	modbus_command_node_update(node, interval_ms, 1 /* First */);
+	modbus_command_node_update(node, interval_ms, response_topic, 1 /* First */);
 
 	out:
 	return ret;
@@ -289,20 +319,132 @@ static void modbus_data_cleanup(struct modbus_data *data) {
 	modbus_command_collection_destroy(&data->commands);
 }
 
+static int modbus_client_data_new (
+		struct modbus_client_data **result
+) {
+	int ret = 0;
+
+	struct modbus_client_data *client_data;
+
+	if ((client_data = rrr_allocate_zero(sizeof(*client_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_modbus_client_new (&client_data->client)) != 0) {
+		RRR_MSG_0("Failed to create client in %s\n", __func__);
+		goto out_free;
+	}
+
+	*result = client_data;
+
+	goto out;
+	out_free:
+		rrr_free(client_data);
+	out:
+		return ret;
+}
+
+static void modbus_client_data_destroy (
+		struct modbus_client_data *client_data
+) {
+	rrr_modbus_client_destroy(client_data->client);
+	rrr_free(client_data);
+}
+
+static void modbus_client_data_setup_initial (
+		struct modbus_data *data,
+		struct modbus_client_data *client_data
+) {
+	struct rrr_modbus_client_callbacks callbacks = data->modbus_client_callbacks;
+	callbacks.arg = client_data;
+	rrr_modbus_client_callbacks_set(client_data->client, &callbacks);
+
+	client_data->data = data;
+}
+
+static int modbus_client_data_setup_final (
+		struct modbus_client_data *client_data,
+		const struct modbus_command *command
+) {
+	int ret = 0;
+
+	if (client_data->port != 0) {
+		// Already initialized
+		goto out;
+	}
+
+	strcpy(client_data->server, command->server);
+	client_data->port = command->port;
+
+	out:
+	return ret;
+}
+
+static int modbus_transaction_data_new (
+		struct modbus_transaction_data **result,
+		const struct modbus_command *command,
+		const char *response_topic,
+		rrr_u16 response_topic_length
+) {
+	int ret = 0;
+
+	struct modbus_transaction_data *transaction_data;
+
+	if ((transaction_data = rrr_allocate_zero(sizeof(*transaction_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (response_topic != NULL) {
+		if ((transaction_data->response_topic = rrr_strdup(response_topic)) == NULL) {
+			RRR_MSG_0("Failed to allocate response topic in %s\n", __func__);
+			ret = 1;
+			goto out_free;
+		}
+		transaction_data->response_topic_length = response_topic_length;
+	}
+
+	transaction_data->command = *command;
+
+	*result = transaction_data;
+
+	goto out;
+	out_free:
+		rrr_free(transaction_data);
+	out:
+		return ret;
+}
+
+static void modbus_transaction_data_destroy (
+		struct modbus_transaction_data *transaction_data
+) {
+	RRR_FREE_IF_NOT_NULL(transaction_data->response_topic);
+	rrr_free(transaction_data);
+}
+
+struct modbus_output_callback_data {
+	const struct rrr_array *array;
+	const char *response_topic;
+	rrr_u16 response_topic_length;
+};
+
 static int modbus_output_callback (
 		struct rrr_msg_holder *new_entry,
 		void *arg
 ) {
-	const struct rrr_array *array = arg;
+	struct modbus_output_callback_data *callback_data = arg;
 
 	int ret = 0;
 
 	if ((ret = rrr_array_new_message_from_array (
 			(struct rrr_msg_msg **) &new_entry->message,
-			array,
+			callback_data->array,
 			rrr_time_get_64(),
-			NULL,
-			0
+			callback_data->response_topic,
+			callback_data->response_topic_length
 	)) != 0) {
 		RRR_MSG_0("Failed to create message in %s\n", __func__);
 		goto out;
@@ -318,6 +460,8 @@ static int modbus_output_callback (
 static int modbus_output (
 		struct modbus_data *data,
 		struct rrr_array *array,
+		const char *response_topic,
+		rrr_u16 response_topic_length,
 		uint8_t function_code
 ) {
 	int ret = 0;
@@ -330,6 +474,12 @@ static int modbus_output (
 	/* Have the function code first in the array */
 	rrr_array_rotate_forward(array);
 
+	struct modbus_output_callback_data callback_data = {
+		array,
+		response_topic,
+		response_topic_length
+	};
+
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
@@ -337,7 +487,7 @@ static int modbus_output (
 			0,
 			NULL,
 			modbus_output_callback,
-			array,
+			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
@@ -347,10 +497,48 @@ static int modbus_output (
 	return ret;
 }
 
+struct modbus_transaction_private_data_create_callback_data {
+	const struct modbus_command *command;
+	const char *request_topic;
+	rrr_u16 request_topic_length;
+};
+
+int modbus_callback_req_transaction_private_data_create (void **result, void *private_data_arg, void *arg) {
+	struct modbus_transaction_private_data_create_callback_data *callback_data = private_data_arg;
+	struct modbus_data *data = arg;
+
+	(void)(data);
+
+	int ret = 0;
+
+	struct modbus_transaction_data *transaction_data;
+
+	if ((ret = modbus_transaction_data_new (
+			&transaction_data,
+			callback_data->command,
+			callback_data->request_topic,
+			callback_data->request_topic_length
+	)) != 0) {
+		goto out;
+	}
+
+	*result = transaction_data;
+
+	out:
+	return ret;
+}
+
+void modbus_callback_req_transaction_private_data_destroy (void *private_data) {
+	struct modbus_transaction_data *transaction_data = private_data;
+	modbus_transaction_data_destroy(transaction_data);
+}
+
 static int modbus_callback_res_byte_count_and_values (
 		RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS
 ) {
 	struct modbus_client_data *client_data = arg;
+	struct modbus_transaction_data *transaction_data = transaction_private_data;
+	struct modbus_data *data = client_data->data;
 
 	int ret = 0;
 
@@ -359,7 +547,7 @@ static int modbus_callback_res_byte_count_and_values (
 	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function %u byte count %u\n",
 		client_data->server,
 		client_data->port,
-		INSTANCE_D_NAME(client_data->data->thread_data),
+		INSTANCE_D_NAME(data->thread_data),
 		transaction_id,
 		function_code,
 		byte_count);
@@ -372,7 +560,13 @@ static int modbus_callback_res_byte_count_and_values (
 		goto push_fail;
 	}
 
-	if ((ret = modbus_output(client_data->data, &array, function_code)) != 0) {
+	if ((ret = modbus_output (
+			client_data->data,
+			&array,
+			transaction_data->response_topic,
+			transaction_data->response_topic_length,
+			function_code
+	)) != 0) {
 		goto out;
 	}
 
@@ -385,12 +579,10 @@ static int modbus_callback_res_byte_count_and_values (
 }
 
 static int modbus_callback_res_error (
-		uint16_t transaction_id,
-		uint8_t function_code,
-		uint8_t error_code,
-		void *arg
+		RRR_MODBUS_ERROR_CALLBACK_ARGS
 ) {
 	struct modbus_client_data *client_data = arg;
+	struct modbus_transaction_data *transaction_data = transaction_private_data;
 
 	int ret = 0;
 
@@ -409,7 +601,13 @@ static int modbus_callback_res_error (
 		goto push_fail;
 	}
 
-	if ((ret = modbus_output(client_data->data, &array, function_code)) != 0) {
+	if ((ret = modbus_output (
+			client_data->data,
+			&array,
+			transaction_data->response_topic,
+			transaction_data->response_topic_length,
+			function_code
+	)) != 0) {
 		goto out;
 	}
 
@@ -496,34 +694,42 @@ static int modbus_callback_data_prepare (
 		goto out;
 	}
 
-	if (*(client_data->server) == '\0') {
-		strcpy(client_data->server, command->server);
-		client_data->port = command->port;
+	if ((ret = modbus_client_data_setup_final(client_data, command)) != 0) {
+		goto out;
 	}
 
 	assert(callback_data->buf == *_buf);
 	assert(*_buf_size == callback_data->buf_size_orig);
+
+	struct modbus_transaction_private_data_create_callback_data private_data_create_callback_data = {
+		command,
+		node->response_topic,
+		node->response_topic_length
+	};
 
 	switch (command->function) {
 		case 0x01: // Read Coils
 			ret = rrr_modbus_client_req_01_read_coils (
 					client_data->client,
 					command->starting_address,
-					command->quantity
+					command->quantity,
+					&private_data_create_callback_data
 			);
 			break;
 		case 0x02: // Read Discrete Inputs
 			ret = rrr_modbus_client_req_02_read_discrete_inputs (
 					client_data->client,
 					command->starting_address,
-					command->quantity
+					command->quantity,
+					&private_data_create_callback_data
 			);
 			break;
 		case 0x03: // Read Holding Registers
 			ret = rrr_modbus_client_req_03_read_holding_registers (
 					client_data->client,
 					command->starting_address,
-					command->quantity
+					command->quantity,
+					&private_data_create_callback_data
 			);
 			break;
 		default:
@@ -721,6 +927,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	uint64_t modbus_quantity; // Default is set after we are sure about the function
 	uint64_t modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
 	uint64_t modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
+	char *modbus_response_topic = MODBUS_DEFAULT_RESPONSE_TOPIC;
 
 	RRR_DBG_2("modbus instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
@@ -754,6 +961,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	GET_VALUE_UNSIGNED_64(starting_address);
 	GET_VALUE_UNSIGNED_64(quantity);
 	GET_VALUE_UNSIGNED_64(interval_ms);
+	GET_VALUE_STR(response_topic);
 
 	if (modbus_server != NULL && strlen(modbus_server) > MODBUS_SERVER_MAX - 1) {
 		RRR_MSG_0("Field 'modbus_server' exceeds maximum length in command message to modbus instance %s, dropping it.\n",
@@ -765,6 +973,14 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_MSG_0("Field 'modbus_port' out of range in command message to modbus instance %s. Range is %u-%u while %" PRIu64 " was given, dropping it.\n",
 			INSTANCE_D_NAME(data->thread_data), 1, 65535, modbus_port);
 		goto drop;
+	}
+
+	if (modbus_response_topic != NULL && *modbus_response_topic != '\0') {
+		if (strlen(modbus_response_topic) > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Field 'modbus_response_topic' exceeds maximum length of %u in command message to modbus instance %s, dropping it.\n",
+				RRR_MSG_TOPIC_MAX, INSTANCE_D_NAME(data->thread_data));
+			goto drop;
+		}
 	}
 
 	if (modbus_function < 1 || modbus_function > 3) {
@@ -799,9 +1015,6 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			assert(0);
 	};
 
-	if (modbus_function == 1 || modbus_function == 2) {
-	}
-
 	if ((ret = modbus_command_collection_push_or_replace (
 			data,
 			modbus_server != NULL && *modbus_server != '\0'
@@ -811,12 +1024,14 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			(uint8_t) modbus_function,
 			(uint16_t) modbus_starting_address,
 			(uint16_t) modbus_quantity,
-			(uint64_t) modbus_interval_ms
+			(uint64_t) modbus_interval_ms,
+			&modbus_response_topic /* Memory is consumed upon success */
 	)) != 0) {
 		goto drop;
 	}
 
 	drop:
+	RRR_FREE_IF_NOT_NULL(modbus_response_topic);
 	RRR_FREE_IF_NOT_NULL(modbus_server);
 	rrr_array_clear(&array);
 	rrr_msg_holder_unlock(entry);
@@ -832,40 +1047,24 @@ static int modbus_callback_private_data_new (void **target, int fd, void *privat
 
 	struct modbus_client_data *client_data;
 
-	if ((client_data = rrr_allocate_zero(sizeof(*client_data))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
+	if ((ret = modbus_client_data_new (&client_data)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_modbus_client_new (&client_data->client)) != 0) {
-		RRR_MSG_0("Failed to create client in %s\n", __func__);
-		goto out_free;
-	}
-
-	struct rrr_modbus_client_callbacks callbacks = data->modbus_client_callbacks;
-	callbacks.arg = client_data;
-	rrr_modbus_client_callbacks_set(client_data->client, &callbacks);
-
-	client_data->data = data;
-
-	/* Other members must be initialized in get_target_size */
+	modbus_client_data_setup_initial (
+			data,
+			client_data
+	);
 
 	*target = client_data;
 
-	goto out;
-//	out_destroy_client:
-//		rrr_modbus_client_destroy(client_data->client);
-	out_free:
-		rrr_free(client_data);
 	out:
-		return ret;
+	return ret;
 }
 
 static void modbus_callback_private_data_destroy (void *private_data) {
 	struct modbus_client_data *client_data = private_data;
-	rrr_modbus_client_destroy(client_data->client);
-	rrr_free(client_data);
+	modbus_client_data_destroy (client_data);
 }
 
 static void modbus_callback_set_read_flags (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
@@ -957,6 +1156,8 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	modbus_data_init(data, thread_data);
 
+	data->modbus_client_callbacks.cb_req_transaction_private_data_create = modbus_callback_req_transaction_private_data_create;
+	data->modbus_client_callbacks.cb_req_transaction_private_data_destroy = modbus_callback_req_transaction_private_data_destroy;
 	data->modbus_client_callbacks.cb_res_01_read_coils = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_02_read_discrete_inputs = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_03_read_holding_registers = modbus_callback_res_byte_count_and_values;
