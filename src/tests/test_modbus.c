@@ -89,17 +89,26 @@ static void __rrr_test_modbus_make_response (
         goto out;                                                                               \
     }} while(0)
 
+static int __rrr_test_modbus_cb_req_transaction_private_data_create (void **result, void *private_data_arg, void *arg) {
+	(void)(private_data_arg);
+	(void)(arg);
+	*result = NULL;
+	return 0;
+}
+
+static void __rrr_test_modbus_cb_req_transaction_private_data_destroy (void *transaction_private_data) {
+	(void)(transaction_private_data);
+}
+
 static int __rrr_test_modbus_cb_res_error (
-		uint16_t transaction_id,
-		uint8_t function_code,
-		uint8_t error_code,
-		void *arg
+		RRR_MODBUS_ERROR_CALLBACK_ARGS
 ) {
 	int *status = arg;
 
 	(void)(transaction_id);
 	(void)(function_code);
 	(void)(error_code);
+	(void)(transaction_private_data);
 
 	*status = 0;
 
@@ -114,6 +123,7 @@ static int __rrr_test_modbus_cb_res_01_read_coils (
 	(void)(transaction_id);
 	(void)(byte_count);
 	(void)(coil_status);
+	(void)(transaction_private_data);
 
 	assert(function_code == 1);
 
@@ -130,6 +140,7 @@ static int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
 	(void)(transaction_id);
 	(void)(byte_count);
 	(void)(coil_status);
+	(void)(transaction_private_data);
 
 	assert(function_code == 2);
 
@@ -146,6 +157,7 @@ static int __rrr_test_modbus_cb_res_03_read_holding_registers (
 	(void)(transaction_id);
 	(void)(byte_count);
 	(void)(register_value);
+	(void)(transaction_private_data);
 
 	assert(function_code == 3);
 
@@ -165,6 +177,8 @@ int rrr_test_modbus (void) {
 	int cb_status = -1;
 
 	const struct rrr_modbus_client_callbacks callbacks = {
+		.cb_req_transaction_private_data_create = __rrr_test_modbus_cb_req_transaction_private_data_create,
+		.cb_req_transaction_private_data_destroy = __rrr_test_modbus_cb_req_transaction_private_data_destroy,
 		.cb_res_error = __rrr_test_modbus_cb_res_error,
 		.cb_res_01_read_coils = __rrr_test_modbus_cb_res_01_read_coils,
 		.cb_res_02_read_discrete_inputs = __rrr_test_modbus_cb_res_02_read_discrete_inputs,
@@ -180,7 +194,7 @@ int rrr_test_modbus (void) {
 	rrr_modbus_client_callbacks_set(client, &callbacks);
 
 	TEST_MSG("Testing request function 01 'read coils'\n");
-	if ((ret = rrr_modbus_client_req_01_read_coils (client, 0x1234, 16)) != 0) {
+	if ((ret = rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL)) != 0) {
 		TEST_MSG("Failed to create modbus read coil package\n");
 		goto out;
 	}
@@ -211,7 +225,7 @@ int rrr_test_modbus (void) {
 
 	TEST_MSG("Testing request function 02 'read discrete inputs'\n");
 
-	if ((ret = rrr_modbus_client_req_02_read_discrete_inputs (client, 0x1234, 16)) != 0) {
+	if ((ret = rrr_modbus_client_req_02_read_discrete_inputs (client, 0x1234, 16, NULL)) != 0) {
 		TEST_MSG("Failed to create modbus read discrete inputs package\n");
 		ret = 1;
 		goto out;
@@ -237,7 +251,7 @@ int rrr_test_modbus (void) {
 
 	TEST_MSG("Testing request function 03 'read holding registers'\n");
 
-	if ((ret = rrr_modbus_client_req_03_read_holding_registers (client, 0x1234, 2)) != 0) {
+	if ((ret = rrr_modbus_client_req_03_read_holding_registers (client, 0x1234, 2, NULL)) != 0) {
 		TEST_MSG("Failed to create modbus read holding registers package\n");
 		ret = 1;
 		goto out;
@@ -263,7 +277,7 @@ int rrr_test_modbus (void) {
 
 	TEST_MSG("Testing malformed responses for function 01 'read_coils'\n");
 
-	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == 0);
+	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == 0);
 	WRITE();
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
@@ -271,7 +285,7 @@ int rrr_test_modbus (void) {
 	buf2[5] = 0;     // Length low
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_SOFT_ERROR);
 
-	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == 0);
+	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == 0);
 	WRITE();
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
@@ -279,21 +293,21 @@ int rrr_test_modbus (void) {
 	buf2[5] = 1;     // Length low
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_SOFT_ERROR);
 
-	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == 0);
+	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == 0);
 	WRITE();
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	buf2[8] = 20;     // Byte count
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_SOFT_ERROR);
 
-	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == 0);
+	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == 0);
 	WRITE();
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	buf2[8] = 1;     // Byte count
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_SOFT_ERROR);
 
-	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == 0);
+	assert(rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == 0);
 	WRITE();
 	buf_size2 = sizeof(buf2);
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
@@ -306,12 +320,12 @@ int rrr_test_modbus (void) {
 
 	TEST_MSG("Testing fill up transaction queue\n");
 	for (int i = 0; i < TRANSACTION_MAX; i++) {
-		assert (rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) == RRR_MODBUS_OK);
+		assert (rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) == RRR_MODBUS_OK);
 	}
 
 	// Transaciton queue is now full
 
-	if (rrr_modbus_client_req_01_read_coils (client, 0x1234, 16) != RRR_MODBUS_BUSY) {
+	if (rrr_modbus_client_req_01_read_coils (client, 0x1234, 16, NULL) != RRR_MODBUS_BUSY) {
 		TEST_MSG("Return from request function was not BUSY\n");
 		ret = 1;
 		goto out;
