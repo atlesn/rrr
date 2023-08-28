@@ -34,6 +34,7 @@ extern "C" {
 
 #include <functional>
 #include <set>
+#include <functional>
 
 namespace RRR::JS {
 	class Event {

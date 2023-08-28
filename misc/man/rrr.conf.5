@@ -1,4 +1,4 @@
-.Dd 2023-04-26
+.Dd 2023-08-26
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -392,6 +392,9 @@ Buffers messages, may be used to duplicate messages to multiple readers.
 
 .It ipclient (PI)
 Implements the RRR assured single delivery protocol on UDP for unstable connections.
+
+.It modbus (PA)
+Implements a modbus client capable of getting coil status from a remote modbus server.
 
 .It python3 (PAI)
 Processes and generates messages with custom Python3 scripts.
@@ -824,6 +827,79 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
+.SS modbus (PA)
+This module implements a modbus client capable of getting coil status from a remote modbus server.
+.PP
+The module is controlled using array command messages from sender instances, and there are no configuration parameters.
+.PP
+When a command is received, a connection is established with the specified modbus server and polling starts.
+The command may be repeated at a specified interval, and stops when an equal command has not been received for two seconds.
+.PP
+The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+.PP
+If different commands are used on the same server, they will share connection.
+.PP
+Please refer to the
+.B Modbus Application Protocol
+for details on the different modbus commands and responses.
+.PP
+The following array fields may be used in the command messages:
+.PP
+.Bl -tag -width -indent
+.It modbus_server
+The IP address of the modbus server to use. If not given,
+.B localhost
+is used. The maximum length of this field is 255 characters.
+.It modbus_port
+The port on the modbus server. If not given,
+.B 502
+is used.
+.It modbus_response_topic
+If given, any messages generated as a result of the command will have this topic set.
+.It modbus_function
+The modbus command to send, the commands
+.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
+are supported. If not given,
+.B 0x01
+is used.
+The function code must be stored in the array field in decimal form.
+.It modbus_starting_address
+The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
+.It modbus_quantity
+The quantity (e.g. number of coils or registers) to use. Defaults to 8  and must be in the range 1 - 2000 for coil functions, and defaults to 1 and must be in the range 1 - 125 for register functions.
+.It modbus_interval_ms
+If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
+.El
+.PP
+The following response messages and array fields are generated as a result of the modbus server
+responding to commands, and these must be read by reader instances.
+.PP
+Data fields are in big endian where applicable (it is not manipulated in any way by the modbus module),
+and they correspond to fields given in the protocol standard.
+.PP
+.Bl -tag -width "a" -indent
+.It Error
+.LI
+.B modbus_function_code, modbus_exception_code
+.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
+.LI
+.B modbus_function_code, modbus_bytes, modbus_status
+.El
+.PP
+The array fields have the following contents:
+.PP
+.Bl -tag -width -indent
+.It modbus_function_code
+A one byte unsigned integer indicating a function code
+.It modbus_exception_code
+A one byte unsigned integer indicating an exception code
+.It modbus_bytes
+A one byte unsigned integer indicating the size of a data field
+.It modbus_status
+A blob containing response data of a length indicated by
+.B modbus_bytes
+.El
+.PP
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
 All messages read from the senders are sent to the python program to the process function specified.
@@ -1451,6 +1527,12 @@ const timeout = new Timeout(function, timeout_ms = 0, arg1 = undefined, ...)
 // Prevent the timeout from ever running (regret)
 timeout.clear();
 
+// Create an operating system object
+const os = new OS();
+
+// Retrieve the hostname of the host on which the script runs
+const hostname = os.hostname();
+
 .fi
 
 .SS cmodule (P)
@@ -1733,7 +1815,7 @@ The content type to use for the response. If it is defined but is an empty strin
 If not defined, the content type sent will depend on the type of the
 .B http_body
 field.
-In any case, a content type header will not be sent if there is no request body.
+In any case, a content type header will not be sent if there is no response body.
 
 .It http_body
 The response body to send. The content type set in the response header, unless specified explititly in 

@@ -1,16 +1,4 @@
-rrr (1.28-10posten1bookworm2) bookworm; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Tue, 27 Jun 2023 03:14:05 -0400
-
-rrr (1.28-10posten1) bullseye; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Thu, 11 May 2023 11:59:09 +0200
-
-rrr (1.28-10) bullseye; urgency=medium
+rrr (1.28-15) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -26,6 +14,8 @@ rrr (1.28-10) bullseye; urgency=medium
       configuration parameters
     * New conversion type "hchar2str" in mangler module to convert individual
       bytes to strings
+    * New OS object in javascript (operating-system) and ability to obtain
+      hostname
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
@@ -38,6 +28,10 @@ rrr (1.28-10) bullseye; urgency=medium
       instead of once for every message.
     * Add warning when buffer entry count exceeds a certain configurable limit
     * Add statistics data for message broker costumer buffers
+
+  * Fixes:
+    * Raw data messages in JS module now working properly
+    * Crash in JS module upon GC due to null pointer access
 
   * Under the hood:
     * Use events in file module

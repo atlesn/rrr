@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -806,6 +806,15 @@ static void __rrr_udpstream_read_get_target_size_error (
 	(void)(private_data);
 
 	// Any error message goes here
+}
+
+static void __rrr_udpstream_set_read_flags_callback (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
+	(void)(arg);
+	(void)(socket_read_flags);
+	(void)(private_data);
+
+	// Don't close socket upon parse errors
+	*do_soft_error_propagates = 0;
 }
 
 static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handle (
@@ -2428,7 +2437,7 @@ int rrr_udpstream_init (
 			data,
 			8192,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
-			NULL,
+			__rrr_udpstream_set_read_flags_callback,
 			NULL,
 			__rrr_udpstream_read_get_target_size,
 			NULL,
