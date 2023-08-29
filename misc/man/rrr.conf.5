@@ -860,7 +860,7 @@ The port on the modbus server. If not given,
 is used.
 .It modbus_response_topic
 If given, any messages generated as a result of the command will have this topic set.
-.It modbus_function
+.It modbus_function_code
 The modbus command to send, the commands
 .B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
 are supported. If not given,
@@ -884,10 +884,10 @@ and they correspond to fields given in the protocol standard.
 .Bl -tag -width "a" -indent
 .It Error
 .LI
-.B modbus_function_code, modbus_exception_code
+.B modbus_server, modbus_port, modbus_function_code, modbus_exception_code
 .It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
 .LI
-.B modbus_function_code, modbus_bytes, modbus_status
+.B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_status
 .El
 .PP
 The array fields have the following contents:

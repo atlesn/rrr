@@ -70,7 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static const char *modbus_field_server            = "modbus_server";
 static const char *modbus_field_port              = "modbus_port";
-static const char *modbus_field_function          = "modbus_function";
+static const char *modbus_field_function          = "modbus_function_code";
 static const char *modbus_field_exception_code    = "modbus_exception_code";
 static const char *modbus_field_starting_address  = "modbus_starting_address";
 static const char *modbus_field_quantity          = "modbus_quantity";
@@ -462,10 +462,20 @@ static int modbus_output (
 		struct rrr_array *array,
 		const char *response_topic,
 		rrr_u16 response_topic_length,
+		const char *server,
+		uint16_t port,
 		uint8_t function_code
 ) {
 	int ret = 0;
 
+	if ((ret = rrr_array_push_value_str_with_tag (array, modbus_field_server, server)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+	if ((ret = rrr_array_push_value_u64_with_tag (array, modbus_field_port, port)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
 	if ((ret = rrr_array_push_value_u64_with_tag (array, modbus_field_function, function_code)) != 0) {
 		RRR_MSG_0("Failed to push value in %s\n", __func__);
 		goto out;
@@ -565,6 +575,8 @@ static int modbus_callback_res_byte_count_and_values (
 			&array,
 			transaction_data->response_topic,
 			transaction_data->response_topic_length,
+			client_data->server,
+			client_data->port,
 			function_code
 	)) != 0) {
 		goto out;
@@ -606,6 +618,8 @@ static int modbus_callback_res_error (
 			&array,
 			transaction_data->response_topic,
 			transaction_data->response_topic_length,
+			client_data->server,
+			client_data->port,
 			function_code
 	)) != 0) {
 		goto out;
