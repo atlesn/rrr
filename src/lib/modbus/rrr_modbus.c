@@ -225,7 +225,7 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 	const uint16_t expected_amount = rrr_be16toh(transaction->req.read_coils.amount);
 	const uint16_t expected_bytes  = is_register
 		? expected_amount * 2
-		: (expected_amount - (expected_amount % 8) + 1) / 8
+		: (expected_amount + 7) / 8
 	;
 
 	if (pdu->byte_count != expected_bytes) {
