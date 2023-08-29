@@ -449,6 +449,12 @@ static int __rrr_array_get_value_64_by_tag (
 		goto out;
 	}
 
+	if (!RRR_TYPE_IS_64(value->definition->type)) {
+		RRR_MSG_0("Array value '%s' not a 64 type while getting 64 value", tag);
+		ret = 1;
+		goto out;
+	}
+
 	if (index >= value->element_count) {
 		RRR_MSG_0("Array value '%s' index %i was requested but there are only %i elements in the value",
 				tag, index, value->element_count);
