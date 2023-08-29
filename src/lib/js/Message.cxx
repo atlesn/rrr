@@ -251,6 +251,20 @@ namespace RRR::JS {
 	}
 
 	void Message::push_tag_h(v8::Isolate *isolate, std::string key, std::string string) {
+		std::string string_tmp = string;
+		if (string_tmp.empty()) {
+			throw std::invalid_argument("Input was empty");
+		}
+		else {
+			// Remove any leading dash for validation purposes
+			if (string_tmp[0] == '-') {
+				string_tmp = string_tmp.substr(1);
+			}
+		}
+
+		if (!std::all_of(string_tmp.begin(), string_tmp.end(), ::isdigit)) {
+			throw std::invalid_argument("Input is not all digits");
+		}
 		try {
 			static_assert(sizeof(std::stoll(string)) == sizeof(int64_t));
 			push_tag_h(isolate, String(isolate, key), (int64_t) std::stoll(string));
@@ -304,6 +318,7 @@ namespace RRR::JS {
 				return;
 			}
 			else if (value->ToString(ctx).ToLocal(&value_string)) {
+				// Check if the string contains a number
 				try {
 					push_tag_h(isolate, key_string, String(isolate, value_string));
 					return;

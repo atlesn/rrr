@@ -1,4 +1,4 @@
-rrr (1.28-15) bullseye; urgency=medium
+rrr (1.28-16) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -17,6 +17,7 @@ rrr (1.28-15) bullseye; urgency=medium
     * New module artnet for controlling DMX devices over ArtNet protocol
     * New OS object in javascript (operating-system) and ability to obtain
       hostname
+    * New ModBus TCP modbule
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT

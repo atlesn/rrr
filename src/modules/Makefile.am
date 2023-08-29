@@ -49,7 +49,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
-	msgdb.la incrementer.la cacher.la \
+	msgdb.la incrementer.la cacher.la modbus.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5} ${js} ${artnet}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
@@ -111,5 +111,8 @@ httpserver_la_SOURCES = p_httpserver.c
 
 file_la_LDFLAGS = ${module_ldflags}
 file_la_SOURCES = p_file.c
+
+modbus_la_LDFLAGS = ${module_ldflags}
+modbus_la_SOURCES = p_modbus.c
 
 libdir=${exec_prefix}/lib/rrr

@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
 #include "test_inet.h"
+#include "test_modbus.h"
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
 #endif
@@ -104,21 +105,10 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 	return get_test_result();
 }
 
-static volatile int main_running = 1;
-
-int signal_interrupt (int s, void *arg) {
-    (void)(arg);
-
-    RRR_DBG_SIGNAL("Received signal %i\n", s);
-
-    if (s == SIGINT) {
-    	main_running = 0;
-	signal(SIGTERM, SIG_DFL);
-	signal(SIGINT, SIG_DFL);
-	signal(SIGUSR1, SIG_DFL);
-    }
-    
-    return 0;
+static int some_fork_has_stopped = 0;
+static int main_running = 1;
+int rrr_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -127,8 +117,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
-        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel DEBUGLEVEL]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUGLEVEL]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "library-tests",         "[-l|--library-tests]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "fork-executable",       "[-f|--fork-executable[=]EXECUTABLE]"},
         {0,                           '\0',    NULL,                   ""}
 };
 
@@ -266,7 +257,22 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("modbus functions") {
+		ret_tmp = rrr_test_modbus();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
+}
+
+int rrr_test_fork_executable (const char *fork_executable) {
+	TEST_MSG("Running executable %s in fork\n", fork_executable);
+	// This function does not return unless there is an error
+	if (execl(fork_executable, fork_executable, (char *) NULL) == -1) {
+		TEST_MSG("Failed to execute %s: %s\n", fork_executable, rrr_strerror(errno));
+	}
+	return 1;
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -289,17 +295,21 @@ int main (int argc, const char **argv, const char **env) {
 	}
 	rrr_strerror_init();
 
-	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
+	struct rrr_fork_default_exit_notification_data exit_notification_data = {
+		&some_fork_has_stopped
+	};
+	int is_child = 0;
 
 	struct cmd_data cmd;
+	const char *config_file, *fork_executable;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
-	signal_handler_interrupt = rrr_signal_handler_push(signal_interrupt, NULL);
+	signal_handler_interrupt = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -344,11 +354,36 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	const char *config_file = cmd_get_value(&cmd, "config", 0);
-	if (config_file == NULL) {
+	if ((config_file = cmd_get_value(&cmd, "config", 0)) == NULL) {
 		RRR_MSG_0("No configuration file specified for test program\n");
 		ret = 1;
 		goto out_cleanup_cmd;
+	}
+
+	if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
+		pid_t pid = -1;
+		TEST_MSG("forking and running external executable\n");
+		pid = rrr_fork (
+				fork_handler,
+				rrr_fork_default_exit_notification,
+				&exit_notification_data
+		);
+		if (pid == 0) {
+			rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+			is_child = 1;
+			ret = rrr_test_fork_executable(fork_executable);
+			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
+			while (main_running) {
+				rrr_posix_usleep(50000);
+				rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+			}
+			goto out_cleanup_cmd;
+		}
+		if (pid < 0) {
+			TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out_cleanup_cmd;
+		}
 	}
 
 	TEST_BEGIN("configuration loading") {
@@ -405,8 +440,12 @@ int main (int argc, const char **argv, const char **env) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
+		while (  main_running &&
+		        !some_fork_has_stopped &&
+		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)
+		) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
@@ -423,8 +462,9 @@ int main (int argc, const char **argv, const char **env) {
 		}
 	} TEST_RESULT(ret == 0);
 
+	goto out_cleanup_instances;
+
 	out_cleanup_instances:
-		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite
@@ -436,12 +476,17 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 	out_cleanup_cmd:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		cmd_destroy(&cmd);
 
 	out_cleanup_message_broker:
 		rrr_message_broker_destroy(message_broker);
 
 //	out_cleanup_fork_handler:
+		if (is_child) {
+			// Only main runs fork cleanup stuff
+			goto out_cleanup_signal;
+		}
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
