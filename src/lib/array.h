@@ -149,6 +149,11 @@ int rrr_array_get_value_first_str_by_tag (
 		struct rrr_array *array,
 		const char *tag
 );
+int rrr_array_get_value_first_ull_by_tag (
+		unsigned long long *result,
+		struct rrr_array *array,
+		const char *tag
+);
 void rrr_array_strip_type (
 		struct rrr_array *array,
 		const struct rrr_type_definition *definition
