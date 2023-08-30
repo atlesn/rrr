@@ -133,6 +133,11 @@ int rrr_array_get_value_signed_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_ull_by_tag (
+		unsigned long long *result,
+		const struct rrr_array *array,
+		const char *tag
+);
 int rrr_array_get_value_str_by_tag (
 		char **result,
 		struct rrr_array *array,
