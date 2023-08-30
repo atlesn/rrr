@@ -916,8 +916,8 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
         }                                                                                                        \
     }} while(0)
 
-#define GET_VALUE_UNSIGNED_64(name)  \
-    GET_VALUE(name,unsigned_64)
+#define GET_VALUE_ULL(name)  \
+    GET_VALUE(name,ull)
 
 #define GET_VALUE_STR(name)          \
     GET_VALUE(name,str)
@@ -936,11 +936,11 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_array array = {0};
 
 	char *modbus_server = NULL;
-	uint64_t modbus_port = MODBUS_DEFAULT_PORT;
-	uint64_t modbus_function = MODBUS_DEFAULT_FUNCTION;
-	uint64_t modbus_quantity; // Default is set after we are sure about the function
-	uint64_t modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
-	uint64_t modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
+	unsigned long long modbus_port = MODBUS_DEFAULT_PORT;
+	unsigned long long modbus_function = MODBUS_DEFAULT_FUNCTION;
+	unsigned long long modbus_quantity; // Default is set after we are sure about the function
+	unsigned long long modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
+	unsigned long long modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
 	char *modbus_response_topic = MODBUS_DEFAULT_RESPONSE_TOPIC;
 
 	RRR_DBG_2("modbus instance %s received a message with timestamp %llu\n",
@@ -964,17 +964,17 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	GET_VALUE_STR(server);
-	GET_VALUE_UNSIGNED_64(port);
-	GET_VALUE_UNSIGNED_64(function);
+	GET_VALUE_ULL(port);
+	GET_VALUE_ULL(function);
 
 	// Default value of quantity depend on function
 	modbus_quantity = modbus_function == 0x03 // Read Holding Registers
 		? MODBUS_DEFAULT_QUANTITY_REGISTER
 		: MODBUS_DEFAULT_QUANTITY_COIL;
 
-	GET_VALUE_UNSIGNED_64(starting_address);
-	GET_VALUE_UNSIGNED_64(quantity);
-	GET_VALUE_UNSIGNED_64(interval_ms);
+	GET_VALUE_ULL(starting_address);
+	GET_VALUE_ULL(quantity);
+	GET_VALUE_ULL(interval_ms);
 	GET_VALUE_STR(response_topic);
 
 	if (modbus_server != NULL && strlen(modbus_server) > MODBUS_SERVER_MAX - 1) {
