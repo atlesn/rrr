@@ -228,6 +228,7 @@ if test "x$RRR_WITH_NODE" != 'xno'; then
 	echo "Import tests succeeded"
 
 	do_test_socket test_js.conf
+	do_test_simple test_js_json.conf
 fi
 
 echo "With perl5: $RRR_WITH_PERL5"

@@ -260,12 +260,13 @@ int rrr_array_push_value_i64_with_tag (
 	);
 }
 
-static int __rrr_array_push_value_x_with_tag_with_size (
+static int __rrr_array_push_value_x_with_tag_with_size_with_flags (
 		struct rrr_array *array,
 		const char *tag,
 		const char *value,
 		rrr_length value_size,
-		const struct rrr_type_definition *type
+		const struct rrr_type_definition *type,
+		rrr_type_flags flags
 ) {
 	struct rrr_type_value *new_value = NULL;
 
@@ -276,7 +277,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 	if ((ret = rrr_type_value_new (
 			&new_value,
 			type,
-			0,
+			flags,
 			tag_length,
 			tag,
 			value_size,
@@ -285,7 +286,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			NULL,
 			value_size
 	)) != 0) {
-		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
+		RRR_MSG_0("Could not create value in %s\n", __func__);
 		goto out;
 	}
 
@@ -302,12 +303,13 @@ int rrr_array_push_value_fixp_with_tag (
 		const char *tag,
 		rrr_fixp value
 ) {
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			(const char *) &value,
 			sizeof(value),
-			&rrr_type_definition_fixp
+			&rrr_type_definition_fixp,
+			0
 	);
 }
 
@@ -319,12 +321,32 @@ int rrr_array_push_value_str_with_tag_with_size (
 ) {
 	// Don't use the import function, it reads strings with quotes around it
 
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			value,
 			value_size,
-			&rrr_type_definition_str
+			&rrr_type_definition_str,
+			0
+	);
+}
+
+int rrr_array_push_value_str_with_tag_with_size_with_flags (
+		struct rrr_array *array,
+		const char *tag,
+		const char *value,
+		rrr_length value_size,
+		rrr_type_flags flags
+) {
+	// Don't use the import function, it reads strings with quotes around it
+
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
+			array,
+			tag,
+			value,
+			value_size,
+			&rrr_type_definition_str,
+			flags
 	);
 }
 
@@ -334,12 +356,13 @@ int rrr_array_push_value_blob_with_tag_with_size (
 		const char *value,
 		rrr_length value_size
 ) {
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			value,
 			value_size,
-			&rrr_type_definition_blob
+			&rrr_type_definition_blob,
+			0
 	);
 }
 
@@ -362,12 +385,13 @@ static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 		return 1;
 	}
 
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			callback_data->array,
 			callback_data->tag,
 			str,
 			(rrr_length) len,
-			callback_data->definition
+			callback_data->definition,
+			0
 	);
 }
 
@@ -1437,6 +1461,7 @@ int rrr_array_dump (
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		const char *tag = "-";
 		const char *to_str = "-";
+		const char *flags = "";
 
 		if (node->tag != NULL && *(node->tag) != '\0') {
 			tag = node->tag;
@@ -1452,9 +1477,14 @@ int rrr_array_dump (
 			to_str = tmp;
 		}
 
-		RRR_DBG_2 ("%i - %s - %s - (%i/%i = %i) - %s\n",
+		if (RRR_TYPE_IS_STR_EXCACT(node->definition->type) && RRR_TYPE_FLAG_IS_JSON(node->flags)) {
+			flags = "(json)";
+		}
+
+		RRR_DBG_2 ("%i - %s%s - %s - (%i/%i = %i) - %s\n",
 				i,
 				node->definition->identifier,
+				flags,
 				tag,
 				node->total_stored_length,
 				node->element_count,

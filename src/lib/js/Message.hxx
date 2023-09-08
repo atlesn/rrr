@@ -73,10 +73,11 @@ namespace RRR::JS {
 		void set_data(const char *new_data, size_t new_data_size);
 		void set_from_msg_msg(const struct rrr_msg_msg *msg);
 		void set_from_msg_addr(const struct rrr_msg_addr *msg_addr);
-		void send();
+		void send(v8::Isolate *isolate);
 
 		void push_tag_vain(std::string key);
 		void push_tag_str(std::string key, std::string value);
+		void push_tag_str_json(std::string key, std::string value);
 		void push_tag_blob(std::string key, const char *value, rrr_length size);
 		void push_tag_blob(v8::Isolate *isolate, std::string key, v8::Local<v8::ArrayBuffer> blob);
 		void push_tag_h(v8::Isolate *isolate, std::string key, int64_t i64);
@@ -86,6 +87,7 @@ namespace RRR::JS {
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, int64_t i64);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, v8::BigInt *bigint);
 		void push_tag_fixp(v8::Isolate *isolate, std::string key, std::string string);
+		void push_tag_object(v8::Isolate *isolate, std::string key, v8::Local<v8::Value> object);
 		void push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value);
 
 		protected:
@@ -114,6 +116,7 @@ namespace RRR::JS {
 		template <typename BIGINT, typename STRING> static void cb_push_tag_number(const v8::FunctionCallbackInfo<v8::Value> &info, BIGINT b, STRING s);
 		static void cb_push_tag_h(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag_fixp(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_push_tag_object(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_set_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_tag(const v8::FunctionCallbackInfo<v8::Value> &info);
@@ -135,6 +138,7 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag_str;
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag_h;
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag_fixp;
+		v8::Local<v8::FunctionTemplate> tmpl_push_tag_object;
 		v8::Local<v8::FunctionTemplate> tmpl_push_tag;
 		v8::Local<v8::FunctionTemplate> tmpl_set_tag;
 		v8::Local<v8::FunctionTemplate> tmpl_clear_tag;

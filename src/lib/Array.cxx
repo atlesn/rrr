@@ -54,11 +54,19 @@ namespace RRR {
 		}
 	}
 
-	void Array::push_value_str_with_tag(std::string tag, std::string value) {
+	void Array::push_value_str_with_tag_with_flags(std::string tag, std::string value, rrr_type_flags flags) {
 		verify_tag(tag);
-		if (rrr_array_push_value_str_with_tag_with_size(&array, tag.c_str(), value.c_str(), value.length()) != 0) {
+		if (rrr_array_push_value_str_with_tag_with_size_with_flags(&array, tag.c_str(), value.c_str(), value.length(), flags) != 0) {
 			throw E("Error while pushing string value");
 		}
+	}
+
+	void Array::push_value_str_with_tag_json(std::string tag, std::string value) {
+		push_value_str_with_tag_with_flags(tag, value, RRR_TYPE_FLAG_JSON);
+	}
+
+	void Array::push_value_str_with_tag(std::string tag, std::string value) {
+		push_value_str_with_tag_with_flags(tag, value, 0);
 	}
 
 	void Array::push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size) {
