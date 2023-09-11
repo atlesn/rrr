@@ -128,13 +128,21 @@ enum rrr_type_enum {
 #define RRR_TYPE_ALLOWS_SIGN(type)    ((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)             ((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
+// Flags for integer types
 #define RRR_TYPE_FLAG_SIGNED ((uint8_t) (1<<0))
 
-#define RRR_TYPE_FLAG_IS_SIGNED(flags)     (((flags) & RRR_TYPE_FLAG_SIGNED) == 1)
+// Flags for string types
+#define RRR_TYPE_FLAG_JSON   ((uint8_t) (1<<0))
+
+#define RRR_TYPE_FLAG_IS_SIGNED(flags)     (((flags) & RRR_TYPE_FLAG_SIGNED) == (1<<0))
 #define RRR_TYPE_FLAG_IS_UNSIGNED(flags)   (((flags) & RRR_TYPE_FLAG_SIGNED) == 0)
+#define RRR_TYPE_FLAG_IS_JSON(flags)       (((flags) & RRR_TYPE_FLAG_JSON) == (1<<0))
+#define RRR_TYPE_FLAG_IS_NOT_JSON(flags)   (((flags) & RRR_TYPE_FLAG_JSON) == 0)
 
 #define RRR_TYPE_FLAG_SET_SIGNED(flags)    (flags) |= (RRR_TYPE_FLAG_SIGNED)
 #define RRR_TYPE_FLAG_SET_UNSIGNED(flags)  (flags) &= (uint8_t) ~(RRR_TYPE_FLAG_SIGNED)
+#define RRR_TYPE_FLAG_SET_JSON(flags)      (flags) |= (RRR_TYPE_FLAG_JSON)
+#define RRR_TYPE_FLAG_SET_NOT_JSON(flags)  (flags) &= (uint8_t) ~(RRR_TYPE_FLAG_JSON)
 
 #define RRR_TYPE_CHAR_IS_STX(c)                                \
 	(c >= 1 && c <= 2)                     // SOH, STX

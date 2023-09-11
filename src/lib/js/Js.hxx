@@ -109,6 +109,7 @@ namespace RRR::JS {
 		const char * operator *();
 		operator Value();
 		bool contains(const char *needle);
+		bool begins_with(char c);
 		int length();
 	};
 
@@ -119,7 +120,7 @@ namespace RRR::JS {
 
 	class E : public RRR::util::E {
 		public:
-		E( std::string &&str);
+		E(std::string str);
 	};
 
 	template <class A, class B> class Duple {
@@ -156,9 +157,8 @@ namespace RRR::JS {
 		v8::TryCatch trycatch;
 		std::string script_name;
 
-		std::string make_location_message(v8::Local<v8::Message> msg);
-
 		public:
+		std::string make_location_message(v8::Local<v8::Message> msg);
 		template <class A> bool trycatch_ok(A err) {
 			auto msg = trycatch.Message();
 			auto str = std::string("");
