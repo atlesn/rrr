@@ -98,7 +98,8 @@ static const char *valids[] = {
 	"H a T b\tAND\tPOP",
 	"H a T b\tOR\tPOP",
 	"H a I c\tAPPLY\tPOP # Comment",
-	"H a\tH b I c\tAPPLY\tAND I d\tAPPLY\tPOP"
+	"H a\tH b I c\tAPPLY\tAND I d\tAPPLY\tPOP",
+	"TRUE FALSE POP BAIL"
 };
 
 int rrr_test_route_definition(void) {
@@ -148,6 +149,7 @@ int rrr_test_route_definition(void) {
 		enum rrr_route_fault fault = 0;
 		int ret_tmp = 0;
 		if ((ret_tmp = rrr_route_interpret (&routes, &fault, &pos, valid)) != 0) {
+			printf("fault %i ret %i\n", fault, ret_tmp);
 			assert(fault != 0);
 			TEST_MSG(" -> NOT OK - Test did not succeed as expected, result was %i fault was %i\n",
 					ret_tmp, fault);

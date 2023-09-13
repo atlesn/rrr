@@ -22,12 +22,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 
 #include "route.h"
+#include "read_constants.h"
 
 #include "parse.h"
 #include "allocator.h"
 #include "mqtt/mqtt_topic.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
+
+#define RRR_ROUTE_OK     RRR_READ_OK
+#define RRR_ROUTE_BAIL   RRR_READ_EOF
 
 enum rrr_route_element_type {
 	RRR_ROUTE_E_NONE,
@@ -44,7 +48,8 @@ enum rrr_route_operator_type {
 	RRR_ROUTE_OP_OR,
 	RRR_ROUTE_OP_APPLY,
 	RRR_ROUTE_OP_NOT,
-	RRR_ROUTE_OP_POP
+	RRR_ROUTE_OP_POP,
+	RRR_ROUTE_OP_BAIL
 };
 
 #define OP_ARG_COUNT(op) (op < RRR_ROUTE_OP_AND ? 0 : op > RRR_ROUTE_OP_APPLY ? 1 : 2)
@@ -55,7 +60,8 @@ enum rrr_route_operator_type {
    op == RRR_ROUTE_OP_OR ? "OR" :                   \
    op == RRR_ROUTE_OP_APPLY ? "APPLY" :             \
    op == RRR_ROUTE_OP_NOT ? "NOT" :                 \
-   op == RRR_ROUTE_OP_POP ? "POP" : "UNKNOWN")
+   op == RRR_ROUTE_OP_POP ? "POP" :                 \
+   op == RRR_ROUTE_OP_BAIL ? "BAIL" : "")
 
 struct rrr_route_element {
 	RRR_LL_NODE(struct rrr_route_element);
@@ -100,6 +106,14 @@ static void __rrr_route_list_pop (
 	assert(RRR_LL_COUNT(route) > 0);
 	struct rrr_route_element *e = RRR_LL_POP(route);
 	__rrr_route_element_destroy(e);
+}
+
+static int __rrr_route_list_peek (
+		struct rrr_route_list *route
+) {
+	assert(RRR_LL_COUNT(route) > 0);
+	assert(RRR_LL_LAST(route)->type == RRR_ROUTE_E_BOOL);
+	return *((int *) RRR_LL_LAST(route)->data) != 0;
 }
 
 static int __rrr_route_list_push (
@@ -302,6 +316,10 @@ static int __rrr_route_execute_op_not (int a) {
 	return !a;
 }
 
+static int __rrr_route_execute_op_bail (int a) {
+	return a;
+}
+
 static int __rrr_route_execute_op_bool (
 		enum rrr_route_fault *fault,
 		struct rrr_route_list *stack,
@@ -422,6 +440,7 @@ static int __rrr_route_execute_step (
 					}
 					break;
 				case RRR_ROUTE_E_INSTANCE:
+				case RRR_ROUTE_E_BOOL:
 					if ((ret = __rrr_route_list_push (
 							stack,
 							node->type,
@@ -480,6 +499,22 @@ static int __rrr_route_execute_step (
 		case RRR_ROUTE_OP_POP:
 			__rrr_route_list_pop(stack);
 			break;
+		case RRR_ROUTE_OP_BAIL:
+			if ((ret = __rrr_route_execute_op_bool (
+					fault,
+					stack,
+					__rrr_route_execute_op_bail,
+					NULL
+			)) != 0) {
+				goto out;
+			}
+			int v = __rrr_route_list_peek (stack);
+			__rrr_route_list_pop(stack);
+			if (v) {
+				ret = RRR_ROUTE_BAIL;
+				goto out;
+			}
+			break;
 	};
 
 	out:
@@ -510,6 +545,9 @@ static int __rrr_route_execute (
 				apply_cb,
 				callback_arg
 		)) != 0) {
+			if (ret == RRR_ROUTE_BAIL) {
+				ret = 0;
+			}
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
@@ -581,6 +619,9 @@ static int __rrr_route_parse (
 
 	struct rrr_route_list stack = {0};
 	char *str_tmp = NULL;
+	int bool_tmp;
+	const void *data = NULL;
+	size_t data_size = 0;
 
 	*fault = RRR_ROUTE_FAULT_OK;
 
@@ -599,6 +640,9 @@ static int __rrr_route_parse (
 
 		rrr_parse_ignore_spaces_and_increment_line(pos);
 
+		data = NULL;
+		data_size = 0;
+
 		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
@@ -606,6 +650,14 @@ static int __rrr_route_parse (
 		if (rrr_parse_match_word(pos, "#")) {
 			rrr_parse_comment(pos);
 			continue;
+		}
+		else if (rrr_parse_match_word(pos, "TRUE")) {
+			type = RRR_ROUTE_E_BOOL;
+			bool_tmp = 1;
+		}
+		else if (rrr_parse_match_word(pos, "FALSE")) {
+			type = RRR_ROUTE_E_BOOL;
+			bool_tmp = 0;
 		}
 		else if (rrr_parse_match_word(pos, "T")) {
 			type = RRR_ROUTE_E_TOPIC_FILTER;
@@ -636,6 +688,10 @@ static int __rrr_route_parse (
 			op = RRR_ROUTE_OP_POP;
 			goto push;
 		}
+		else if (rrr_parse_match_word(pos, "BAIL")) {
+			op = RRR_ROUTE_OP_BAIL;
+			goto push;
+		}
 		else {
 			RRR_MSG_0("Syntax error in route definition, expected valid keyword or operator\n");
 			ret = 1;
@@ -648,6 +704,12 @@ static int __rrr_route_parse (
 			ret = 1;
 			*fault = RRR_ROUTE_FAULT_SYNTAX_ERROR;
 			goto out;
+		}
+
+		if (type == RRR_ROUTE_E_BOOL) {
+			data = &bool_tmp;
+			data_size = sizeof(bool_tmp);
+			goto push;
 		}
 
 		// Parse value after keyword
@@ -704,6 +766,8 @@ static int __rrr_route_parse (
 			*fault = RRR_ROUTE_FAULT_CRITICAL;
 			goto out;
 		}
+		data = str_tmp;
+		data_size = rrr_size_t_inc_bug_const(strlen(str_tmp));
 
 		if (type == RRR_ROUTE_E_TOPIC_FILTER && rrr_mqtt_topic_filter_validate_name(str_tmp) != 0) {
 			RRR_MSG_0("Invalid topic filter '%s' in route definition\n", str_tmp);
@@ -716,11 +780,10 @@ static int __rrr_route_parse (
 
 		if ((ret = __rrr_route_list_push (
 				&route->list,
-				type, op,
-				str_tmp,
-				str_tmp != NULL
-					? rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(str_tmp)))
-					: 0
+				type,
+				op,
+				data,
+				rrr_length_from_size_t_bug_const(data_size)
 		)) != 0) {
 			goto out;
 		}
@@ -734,7 +797,12 @@ static int __rrr_route_parse (
 				__rrr_route_parse_execute_apply,
 				NULL
 		)) != 0) {
-			goto out;
+			if (ret == RRR_ROUTE_BAIL) {
+				ret = 0;
+			}
+			else {
+				goto out;
+			}
 		}
 
 		// Parsing is done when stack would have been empty

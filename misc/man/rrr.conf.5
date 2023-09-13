@@ -93,6 +93,8 @@ argument1 = value1
 [INSTANCE_2_NAME]
 module=...
 
+# ##### ARRAY TREE DEFINITIONS
+
 # Any number of named array trees may be specified
 # Modules parsing array data may refer to these instead of having them defined inside each instance block
 {ARRAY_TREE_DEFINITION_A}
@@ -111,6 +113,8 @@ ELSE
 sep1#separator
 ;
 
+# ##### ROUTE DEFINITIONS
+
 # Any number of named route definitions may be specified.
 # Modules with defined output routes may refer to these instead of having them defined inside each instance block.
 # Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
@@ -118,16 +122,21 @@ sep1#separator
 
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
-# Values are pushed to a stack by placing one of the following keywords in front of them:
+# String values are pushed to a stack by placing one of the following keywords in front of them:
 # - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
 #                  spaces are valid characters in topic filters, end the string with newlines or tabs.
 # - H - Has      - Push a boolean value indicating precence of a given array tag in a message
 # - I - Instance - Push an instance name to the stack
 
+# Boolean values may be pushed to the stack:
+# - TRUE    - Push a boolean true to the stack
+# - FALSE   - Push a boolean false to the stack
+
 # Operators are used after pushing elements to the stack. These require one or two values to be present
 # on the stack. After an operator has been run, the values are consumed and the result of the condition is
 # pushed onto the stack. The route definition must be constructed such that no values are present on the stack
-# after processing, which means that a route definition usually ends with one or more POP operators.
+# after processing, which means that a route definition usually ends with one or more POP operators. If BAIL is
+# used, it also counts as a POP.
 
 # The following operators may be used:
 # - AND    - Apply boolean AND on the two preceeding values and push the result.
@@ -136,6 +145,7 @@ sep1#separator
 # - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
 #            and an instance name to be present on the stack. Leaves the boolean value on the stack.
 # - POP    - Remove one value from the stack.
+# - BAIL   - Stop processing if the top value on the stack is true. The value is removed from the stack.
 
 # Comments may be indicated by using #, they may be placed anywhere except from when a value is expected.
 
@@ -155,10 +165,55 @@ sep1#separator
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
-	instance_receiver_2
+	I instance_receiver_2
 		APPLY
 	# Remove the remaining value from the stack
 		POP
+
+# ##### METHOD DEFINITIONS
+
+# Any number of named method definitions may be specified.
+# Modules supporting methods (cmodule, perl5, js and python) may refer to a definition by setting the methods=
+# parameter. The method definition allows messages to be matched depending on their topic or what values they
+# contain. The message is then tagged with a chosen method name which later can be retrieved in the processor
+# function of the module.
+
+# Method definitions are useful when a processor module receives messages from many other modules as they provide
+# a structured way of identifying the type of a message. If the programming language of the module used supports it,
+# the names used in the method definition may map directly to methods or functions inside a processor script.
+
+# Refer to the module-specific documentation on how to use the method tags inside the modules.
+
+# The syntax for a method definition is very much like a route definition. The only difference is that the I
+# operator is replaced with an M operator. The M operator pushes a method name to the stack.
+
+# If a method name is applied multiple times, the last name takes precedence.
+
+# Example:
+
+(METHOD_DEFINITION_A)
+	# Push two topic filters to the stack
+	T my_topic_a/+
+	T my_topic_b/+
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+	OR
+	# Push a method name to the stack and apply the name. Bail out if a method was set.
+	M method_topic
+		APPLY
+		BAIL
+	# Check for an array value being present in the message and push a boolean to the stack.
+	H value_a
+	# Set a method on the message if the value was present
+	M method_value
+		APPLY
+	# Invert the result
+		NOT
+	# Set the method name to be method_b
+	M method_b
+		APPLY
+	# Remove the remaining value from the stack
+		POP
+
 .fi
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
