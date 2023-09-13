@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array_tree.h"
 #include "allocator.h"
 #include "socket/rrr_socket.h"
-#include "route.h"
+#include "discern_stack.h"
 
 int rrr_config_new (struct rrr_config **result) {
 	struct rrr_config *config = NULL;
@@ -265,14 +265,14 @@ static int __rrr_config_parse_route (
 		goto out;
 	}
 
-	if (rrr_route_collection_get(&config->routes, name) != NULL) {
+	if (rrr_discern_stack_collection_get(&config->routes, name) != NULL) {
 		RRR_MSG_0("Duplicate route definition name %s\n", name);
 		ret = 1;
 		goto out;
 	}
 
-	enum rrr_route_fault fault;
-	if (rrr_route_interpret (
+	enum rrr_discern_stack_fault fault;
+	if (rrr_discern_stack_interpret (
 			&config->routes,
 			&fault,
 			pos,
@@ -390,7 +390,7 @@ void rrr_config_destroy (
 		struct rrr_config *target
 ) {
 	rrr_array_tree_list_clear(&target->array_trees);
-	rrr_route_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->routes);
 	rrr_free(target);
 }
 
@@ -447,7 +447,7 @@ const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 	return &config->array_trees;
 }
 
-const struct rrr_route_collection *rrr_config_get_routes (
+const struct rrr_discern_stack_collection *rrr_config_get_routes (
 		struct rrr_config *config
 ) {
 	return &config->routes;

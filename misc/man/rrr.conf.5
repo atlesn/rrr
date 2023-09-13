@@ -1,4 +1,4 @@
-.Dd 2023-08-26
+.Dd 2023-09-13
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -123,10 +123,10 @@ sep1#separator
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
 # String values are pushed to a stack by placing one of the following keywords in front of them:
-# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
-#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
-# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
-# - I - Instance - Push an instance name to the stack
+# - T - Topic      - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                    spaces are valid characters in topic filters, end the string with newlines or tabs.
+# - H - Has         - Push a boolean value indicating precence of a given array tag in a message
+# - D - Destinaton  - Push an instance name to the stack
 
 # Boolean values may be pushed to the stack:
 # - TRUE    - Push a boolean true to the stack
@@ -160,12 +160,12 @@ sep1#separator
 	# Run OR operator on the two stack values, leaves a boolean value on the stack 
 	OR
 	# Set the reader instance_receier_1 to receive messages matching one of the filters
-	I instance_receiver_1
+	D instance_receiver_1
 	APPLY
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
-	I instance_receiver_2
+	D instance_receiver_2
 		APPLY
 	# Remove the remaining value from the stack
 		POP
@@ -184,10 +184,11 @@ sep1#separator
 
 # Refer to the module-specific documentation on how to use the method tags inside the modules.
 
-# The syntax for a method definition is very much like a route definition. The only difference is that the I
-# operator is replaced with an M operator. The M operator pushes a method name to the stack.
+# The syntax for a method definition is very much like a route definition. The only difference is that the D
+# operator pushes a method name to the stack.
 
-# If a method name is applied multiple times, the last name takes precedence.
+# If a method name is applied multiple times, the last name takes precedence. The BAIL operator may be
+# used to bail out once a method has been applied.
 
 # Example:
 
@@ -209,7 +210,7 @@ sep1#separator
 	# Invert the result
 		NOT
 	# Set the method name to be method_b
-	M method_b
+	D method_b
 		APPLY
 	# Remove the remaining value from the stack
 		POP

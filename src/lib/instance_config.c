@@ -67,7 +67,7 @@ static int __rrr_instance_config_new (
 		const char *name,
 		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees,
-		const struct rrr_route_collection *global_routes
+		const struct rrr_discern_stack_collection *global_routes
 ) {
 	int ret = 0;
 
@@ -423,7 +423,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 
 struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data {
 	struct rrr_instance_config_data *config;
-	struct rrr_route_collection *routes;
+	struct rrr_discern_stack_collection *routes;
 };
 
 static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback (
@@ -434,7 +434,7 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 	
 	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
 
-	const struct rrr_route *route = rrr_route_collection_get (
+	const struct rrr_discern_stack *route = rrr_discern_stack_collection_get (
 			callback_data->config->global_routes,
 			name
 	);
@@ -445,7 +445,7 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 		goto out;
 	}
 
-	if ((ret = rrr_route_collection_add_cloned (callback_data->routes, route)) != 0) {
+	if ((ret = rrr_discern_stack_collection_add_cloned (callback_data->routes, route)) != 0) {
 		goto out;
 	}
 
@@ -461,14 +461,14 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 
 	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
 
-	enum rrr_route_fault fault;
+	enum rrr_discern_stack_fault fault;
 	struct rrr_parse_pos pos;
 
 	rrr_parse_pos_init(&pos, str, rrr_length_from_size_t_bug_const(strlen(str)));
 
 	assert(RRR_LL_COUNT(callback_data->routes) == 0);
 
-	if ((ret = rrr_route_interpret (callback_data->routes, &fault, &pos, "anonymous")) != 0) {
+	if ((ret = rrr_discern_stack_interpret (callback_data->routes, &fault, &pos, "anonymous")) != 0) {
 		goto out;
 	}
 
@@ -477,7 +477,7 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 }
 
 int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_route_collection *routes,
+		struct rrr_discern_stack_collection *routes,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 ) {

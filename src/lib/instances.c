@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
-#include "route.h"
+#include "discern_stack.h"
 #include "instance_config.h"
 #include "message_broker.h"
 #include "message_helper.h"
@@ -155,9 +155,9 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 			&nexthops
 	};
 
-	enum rrr_route_fault fault = 0;
+	enum rrr_discern_stack_fault fault = 0;
 
-	if ((ret = rrr_route_collection_execute (
+	if ((ret = rrr_discern_stack_collection_execute (
 			&fault,
 			INSTANCE_D_ROUTES(data),
 			__rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb,
@@ -248,7 +248,7 @@ static void __rrr_instance_destroy (
 ) {
 	rrr_instance_friend_collection_clear(&target->senders);
 	rrr_instance_friend_collection_clear(&target->wait_for);
-	rrr_route_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->routes);
 
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
@@ -409,7 +409,7 @@ static int __rrr_instance_parse_route (
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active route definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
-		rrr_route_collection_iterate_names(
+		rrr_discern_stack_collection_iterate_names(
 				INSTANCE_I_ROUTES(data_final),
 				__rrr_instance_parse_route_name_callback,
 				NULL
@@ -679,7 +679,7 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 	data->init_data = *init_data;
 
 	// Verify that instances mentioned in any routes are readers of this instance
-	if (rrr_route_collection_iterate_instance_names (
+	if (rrr_discern_stack_collection_iterate_destination_names (
 			INSTANCE_D_ROUTES(data),
 			__rrr_instance_iterate_route_instances_callback,
 			data

@@ -120,7 +120,7 @@ enum rrr_instance_config_write_method {
 
 struct rrr_array;
 struct rrr_array_tree;
-struct rrr_route_collection;
+struct rrr_discern_stack_collection;
 struct rrr_map;
 struct rrr_instance_friend_collection;
 struct rrr_instance_collection;
@@ -132,7 +132,7 @@ struct rrr_instance_config_data {
 	char *name;
 	struct rrr_instance_settings *settings;
 	const struct rrr_array_tree_list *global_array_trees;
-	const struct rrr_route_collection *global_routes;
+	const struct rrr_discern_stack_collection *global_routes;
 };
 
 struct rrr_instance_config_collection {
@@ -238,7 +238,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		const char *cmd_key
 );
 int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_route_collection *routes,
+		struct rrr_discern_stack_collection *routes,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );

@@ -21,6 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TEST_ROUTE_DEFINITION_H
 #define RRR_TEST_ROUTE_DEFINITION_H
 
-int rrr_test_route_definition(void);
+int rrr_test_discern_stack(void);
 
 #endif /* RRR_TEST_ROUTE_DEFINITION_H */

@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "modules.h"
 #include "instance_friends.h"
-#include "route.h"
+#include "discern_stack.h"
 #include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
@@ -49,7 +49,7 @@ struct rrr_instance {
 	struct rrr_instance_module_data *module_data;
 	struct rrr_instance_friend_collection senders;
 	struct rrr_instance_friend_collection wait_for;
-	struct rrr_route_collection routes;
+	struct rrr_discern_stack_collection routes;
 	struct rrr_signal_handler *signal_handler;
 	char *topic_filter;
 	struct rrr_mqtt_topic_token *topic_first_token;
