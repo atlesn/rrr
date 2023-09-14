@@ -22,35 +22,76 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "EventQueue.hxx"
 #include "Js.hxx"
 
+//#define RRR_JS_EVENT_QUEUE_DEBUG
+
 namespace RRR::JS {
 	void EventQueue::dispatch() {
-		const int64_t now = RRR::util::time_get_i64();
+		int64_t now = RRR::util::time_get_i64();
 		int64_t next_exec_time = now + (int64_t) default_interval_us;
 
-		for (auto it = timeout_events.begin(); it != timeout_events.end();) {
-			bool erase = false;
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+		RRR_MSG_1("%s there are %llu timeout events\n", __PRETTY_FUNCTION__, (unsigned long long) timeout_events.size());
+
+		int i = 0;
+#endif
+
+		int max = 10;
+
+		// Iterator is set to first element all iterations. The event list must be sorted by execution time.
+
+		for (auto it = timeout_events.begin(); it != timeout_events.end() && --max >= 0; it = timeout_events.begin()) {
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+			RRR_MSG_1("%s - [%i] {%s} exec time %lli (in %lli us)\n",
+				__PRETTY_FUNCTION__, i, it->get_identifier(), (long long) it->get_exec_time(), (long long) it->get_exec_time() - now);
+#endif
+
 			if (!it->is_alive()) {
-				erase = true;
+				timeout_events.erase(it);
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+				RRR_MSG_1("%s - [%i] erase, object is not alive\n", __PRETTY_FUNCTION__, i);
+				goto next;
+#endif
 			}
-			else if (now >= it->get_exec_time()) {
+
+			if (now >= it->get_exec_time()) {
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+				RRR_MSG_1("%s - [%i] acknowledge and erase, exec time has passed\n", __PRETTY_FUNCTION__, i);
+#endif
+				// New elements may be inserted during acknowledgement, and possibly at the beginning
+				// of the event list. Take the event out of the list now to prevent the erase function
+				// erasing any newly event.
+				const auto event = *it;
+				timeout_events.erase(it);
+
 				Scope scope(ctx);
-				it->acknowledge();
+				event.acknowledge();
 				if (ctx.trycatch_ok([](auto msg){
 					throw E(std::string("Error while running event: ") + msg);
 				})) {
 					// OK
 				}
-				erase = true;
+
+				// Get now time again in case callback is slow			
+				now = RRR::util::time_get_i64();
+
+				goto next;
 			}
-			
-			if (erase) {
-				it = timeout_events.erase(it);
-			}
-			else {
-				// List is sorted by execution time, and no more timers has expired
-				next_exec_time = it->get_exec_time();
-				break;
-			}
+
+			// No more timers have possibly expired
+			next_exec_time = it->get_exec_time();
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+			RRR_MSG_1("%s - [%i] set next exec time in %lli us\n", __PRETTY_FUNCTION__, i, next_exec_time - now);
+#endif
+			break;
+
+			next:
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+			i++;
+#endif
+		}
+
+		if (max < 0) {
+			RRR_MSG_0("Warning: Max iterations reached in %s\n", __PRETTY_FUNCTION__);
 		}
 
 		const int64_t next_interval = next_exec_time - now;
@@ -59,12 +100,18 @@ namespace RRR::JS {
 			? default_interval_us
 			: (uint64_t) next_interval
 		);
+
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+		RRR_MSG_1("%s - Next dispatch in %lli us (default is %lli)\n",
+			__PRETTY_FUNCTION__, next_exec_time - now, (long long) default_interval_us);
+#endif
+
 		handle->add();
 	}
 
 	bool EventQueue::accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) {
 		if (strcmp(identifier, MSG_SET_TIMEOUT) == 0) {
-			timeout_events.emplace(object, RRR::util::time_get_i64() + * (int64_t *) arg, arg);
+			timeout_events.emplace(object, RRR::util::time_get_i64() + * (int64_t *) arg, identifier, arg);
 			return true;
 		}
 		return false;
