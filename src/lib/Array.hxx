@@ -39,16 +39,18 @@ namespace RRR {
 
 		template <typename T, typename L> void blob_split(L l) const {
 			const rrr_length element_length = value->total_stored_length / value->element_count;
+			const rrr_type_flags flags = value->flags;
+
 			if (element_length == 0) {
-				l((T *) nullptr, 0);
+				l((T *) nullptr, 0, flags);
 			}
 			else {
 				RRR::util::DynExtVector<T>(
 					(T *) value->data,
 					value->total_stored_length,
 					element_length
-				).iterate([l, element_length] (T *data) {
-					l(data, element_length);
+				).iterate([l, element_length, flags] (T *data) {
+					l(data, element_length, flags);
 				});
 			}
 		}
@@ -169,6 +171,8 @@ namespace RRR {
 		void to_message (struct rrr_msg_msg **final_message, uint64_t time, const char *topic, rrr_u16 topic_length);
 		void add_from_message(uint16_t *version, const struct rrr_msg_msg *msg);
 		void push_value_vain_with_tag(std::string tag);
+		void push_value_str_with_tag_with_flags(std::string tag, std::string value, rrr_type_flags flags);
+		void push_value_str_with_tag_json(std::string tag, std::string value);
 		void push_value_str_with_tag(std::string tag, std::string value);
 		void push_value_blob_with_tag_with_size(std::string tag, const char *value, rrr_length size);
 		void push_value_64_with_tag(std::string tag, uint64_t value);

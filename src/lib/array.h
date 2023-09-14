@@ -100,6 +100,13 @@ int rrr_array_push_value_str_with_tag_with_size (
 		const char *value,
 		rrr_length value_size
 );
+int rrr_array_push_value_str_with_tag_with_size_with_flags (
+		struct rrr_array *array,
+		const char *tag,
+		const char *value,
+		rrr_length value_size,
+		rrr_type_flags flags
+);
 int rrr_array_push_value_blob_with_tag_with_size (
 		struct rrr_array *array,
 		const char *tag,

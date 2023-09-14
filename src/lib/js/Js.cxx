@@ -175,6 +175,13 @@ namespace RRR::JS {
 		return strstr(*utf8, needle) != NULL;
 	}
 
+	bool String::begins_with(char c) {
+		if (utf8.length() == 0)
+			return false;
+		auto str = *utf8;
+		return *str == c;
+	}
+
 	int String::length() {
 		return utf8.length();
 	}
@@ -184,7 +191,7 @@ namespace RRR::JS {
 	{
 	}
 
-	E::E(std::string &&str) :
+	E::E(std::string str) :
 		RRR::util::E(str)
 	{
 	}
@@ -303,7 +310,7 @@ namespace RRR::JS {
 	void CTX::run_function(Function &function, const char *name, int argc = 0, Value argv[] = nullptr) {
 		auto &ctx = *this;
 		function.run(ctx, argc, argv);
-		if (trycatch_ok([&ctx, name](const char *msg) mutable {
+		if (trycatch_ok([&ctx, name](const char *msg) {
 			throw E(std::string("Exception while running function '") + name + "': " + msg + "\n");
 		})) {
 			// OK
