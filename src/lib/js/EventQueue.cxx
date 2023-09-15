@@ -31,15 +31,14 @@ namespace RRR::JS {
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 		RRR_MSG_1("%s there are %llu timeout events\n", __PRETTY_FUNCTION__, (unsigned long long) timeout_events.size());
-
-		int i = 0;
 #endif
 
-		int max = 10;
+		int i = 0;
+		const int max = 10;
 
 		// Iterator is set to first element all iterations. The event list must be sorted by execution time.
 
-		for (auto it = timeout_events.begin(); it != timeout_events.end() && --max >= 0; it = timeout_events.begin()) {
+		for (auto it = timeout_events.begin(); it != timeout_events.end() && i < max; it = timeout_events.begin()) {
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 			RRR_MSG_1("%s - [%i] {%s} exec time %lli (in %lli us)\n",
 				__PRETTY_FUNCTION__, i, it->get_identifier(), (long long) it->get_exec_time(), (long long) it->get_exec_time() - now);
@@ -85,12 +84,10 @@ namespace RRR::JS {
 			break;
 
 			next:
-#ifdef RRR_JS_EVENT_QUEUE_DEBUG
 			i++;
-#endif
 		}
 
-		if (max < 0) {
+		if (i == max < 0) {
 			RRR_MSG_0("Warning: Max iterations reached in %s\n", __PRETTY_FUNCTION__);
 		}
 
