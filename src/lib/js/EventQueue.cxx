@@ -87,7 +87,7 @@ namespace RRR::JS {
 			i++;
 		}
 
-		if (i == max < 0) {
+		if (i >= max) {
 			RRR_MSG_0("Warning: Max iterations reached in %s\n", __PRETTY_FUNCTION__);
 		}
 
