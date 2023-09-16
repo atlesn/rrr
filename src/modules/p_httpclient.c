@@ -1405,9 +1405,12 @@ static int httpclient_session_query_prepare_callback (
 		HTTPCLIENT_OVERRIDE_PREPARE(body);
 		// No verify strlen here, data may be binary which is fine
 
-		if ( (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) &&
-		     (body_to_free != NULL && body_length > 0)
-		) {
+		if ( (transaction->method == RRR_HTTP_METHOD_PUT ||
+		      transaction->method == RRR_HTTP_METHOD_PATCH ||
+		      transaction->method == RRR_HTTP_METHOD_POST
+		) && (
+		     body_to_free != NULL && body_length > 0
+		)) {
 			HTTPCLIENT_OVERRIDE_PREPARE(content_type);
 			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(content_type);
 
