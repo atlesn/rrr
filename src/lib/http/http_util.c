@@ -1181,6 +1181,9 @@ enum rrr_http_method rrr_http_util_method_str_to_enum (
 	else if ( strcasecmp(method_str, "put") == 0) {
 		method = RRR_HTTP_METHOD_PUT;
 	}
+	else if ( strcasecmp(method_str, "patch") == 0) {
+		method = RRR_HTTP_METHOD_PATCH;
+	}
 	else if ( strcasecmp(method_str, "post") == 0) {
 		method = RRR_HTTP_METHOD_POST;
 	}

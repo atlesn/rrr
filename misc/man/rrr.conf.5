@@ -1,4 +1,4 @@
-.Dd 2023-08-26
+.Dd 2023-09-16
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1678,6 +1678,8 @@ POST
 .It
 PUT
 .It
+PATCH
+.It
 HEAD
 .It
 DELETE
@@ -1692,7 +1694,7 @@ Messages will not be generated for the
 .B OPTIONS
 method, only default 204 responses will be sent to these requests.
 
-For PUT and POST request which have a body, value fields will be extracted from bodies with the following content types:
+For PUT, PATCH and POST request which have a body, value fields will be extracted from bodies with the following content types:
 
 .Bl -dash -offset indent -compact
 .It
@@ -1709,7 +1711,7 @@ can be used and the body can then be parsed by a script in the python3 or perl5 
 
 Structural fields set due to
 .B http_server_receive_full_request
-being active, fields from the URI and field from PUT/POST data will all be added to the same array in the following pre-defined order.
+being active, fields from the URI and field from PUT/PATCH/POST data will all be added to the same array in the following pre-defined order.
 Duplicate value field names are allowed.
 
 .Bl -enum -offset indent -compact
@@ -1718,7 +1720,7 @@ Structural fields
 .It
 Fields from request URI
 .It
-Fields from PUT/POST data
+Fields from PUT/PATCH/POST data
 .El
 
 When receiving JSON data, one RRR array message will be generated for every JSON object containing bare associative values regardless of nesting.
@@ -2002,7 +2004,7 @@ Which method to use when sending data to the server. Defaults to
 .B get.
 
 .It http_format={urlencoded|multipart|json|raw}
-Control which body format to use for PUT and POST requests. If the
+Control which body format to use for PUT, PATCH and POST requests. If the
 .B raw
 mode is set, messages which do not contain a body (specified in the tag named in
 .B http_body_tag
@@ -2176,7 +2178,7 @@ is a set of fixed fields to send to the HTTP server, optionally with values. Val
 are sent regardless of the configuration of
 .B http_tags.
 
-If a message is to have it's raw body sent in a PUT or POST request, controlled by
+If a message is to have it's raw body sent in a PUT, PATCH or POST request, controlled by
 .B http_body_tag,
 fields from these parameters will not added to the query.
 
