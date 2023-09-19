@@ -42,13 +42,16 @@ namespace RRR::JS {
 		int64_t exec_time;
 		std::weak_ptr<Persistable> object;
 		void *arg;
+		char identifier[64];
 
 		public:
-		Event(std::weak_ptr<Persistable> object, int64_t exec_time, void *arg) :
+		Event(std::weak_ptr<Persistable> object, int64_t exec_time, const char *identifier, void *arg) :
 			object(object),
 			exec_time(exec_time),
 			arg(arg)
 		{
+			strncpy(this->identifier, identifier, sizeof(this->identifier));
+			this->identifier[sizeof(this->identifier) - 1] = '\0';
 		}
 		bool is_alive() const {
 			return !object.expired();
@@ -60,13 +63,16 @@ namespace RRR::JS {
 		int64_t get_exec_time() const {
 			return exec_time;
 		}
+		const char *get_identifier() const {
+			return identifier;
+		}
 		virtual ~Event() = default;
 	};
 
 	class TimeoutEvent : public Event {
 		public:
-		TimeoutEvent(std::weak_ptr<Persistable> object, int64_t timeout, void *arg) :
-			Event(object, RRR::util::time_get_i64() + timeout, arg)
+		TimeoutEvent(std::weak_ptr<Persistable> object, int64_t timeout, const char *identifier, void *arg) :
+			Event(object, RRR::util::time_get_i64() + timeout, identifier, arg)
 		{
 		}
 	};

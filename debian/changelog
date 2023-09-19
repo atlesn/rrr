@@ -1,4 +1,4 @@
-rrr (1.28-16) bullseye; urgency=medium
+rrr (1.28-19) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -17,6 +17,10 @@ rrr (1.28-16) bullseye; urgency=medium
     * New OS object in javascript (operating-system) and ability to obtain
       hostname
     * New ModBus TCP modbule
+    * New method on Message object in JS push_tag_object which serializes
+      objects into JSON. Receiving JS instances will automatically de-
+      serialize the JSON added to messages this way.
+    * Support PATCH requests in httpclient and httpserver
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT

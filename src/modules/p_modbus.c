@@ -70,7 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static const char *modbus_field_server            = "modbus_server";
 static const char *modbus_field_port              = "modbus_port";
-static const char *modbus_field_function          = "modbus_function";
+static const char *modbus_field_function          = "modbus_function_code";
 static const char *modbus_field_exception_code    = "modbus_exception_code";
 static const char *modbus_field_starting_address  = "modbus_starting_address";
 static const char *modbus_field_quantity          = "modbus_quantity";
@@ -462,10 +462,20 @@ static int modbus_output (
 		struct rrr_array *array,
 		const char *response_topic,
 		rrr_u16 response_topic_length,
+		const char *server,
+		uint16_t port,
 		uint8_t function_code
 ) {
 	int ret = 0;
 
+	if ((ret = rrr_array_push_value_str_with_tag (array, modbus_field_server, server)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+	if ((ret = rrr_array_push_value_u64_with_tag (array, modbus_field_port, port)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
 	if ((ret = rrr_array_push_value_u64_with_tag (array, modbus_field_function, function_code)) != 0) {
 		RRR_MSG_0("Failed to push value in %s\n", __func__);
 		goto out;
@@ -565,6 +575,8 @@ static int modbus_callback_res_byte_count_and_values (
 			&array,
 			transaction_data->response_topic,
 			transaction_data->response_topic_length,
+			client_data->server,
+			client_data->port,
 			function_code
 	)) != 0) {
 		goto out;
@@ -606,6 +618,8 @@ static int modbus_callback_res_error (
 			&array,
 			transaction_data->response_topic,
 			transaction_data->response_topic_length,
+			client_data->server,
+			client_data->port,
 			function_code
 	)) != 0) {
 		goto out;
@@ -902,8 +916,8 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
         }                                                                                                        \
     }} while(0)
 
-#define GET_VALUE_UNSIGNED_64(name)  \
-    GET_VALUE(name,unsigned_64)
+#define GET_VALUE_ULL(name)  \
+    GET_VALUE(name,ull)
 
 #define GET_VALUE_STR(name)          \
     GET_VALUE(name,str)
@@ -922,11 +936,11 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_array array = {0};
 
 	char *modbus_server = NULL;
-	uint64_t modbus_port = MODBUS_DEFAULT_PORT;
-	uint64_t modbus_function = MODBUS_DEFAULT_FUNCTION;
-	uint64_t modbus_quantity; // Default is set after we are sure about the function
-	uint64_t modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
-	uint64_t modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
+	unsigned long long modbus_port = MODBUS_DEFAULT_PORT;
+	unsigned long long modbus_function = MODBUS_DEFAULT_FUNCTION;
+	unsigned long long modbus_quantity; // Default is set after we are sure about the function
+	unsigned long long modbus_starting_address = MODBUS_DEFAULT_STARTING_ADDRESS;
+	unsigned long long modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
 	char *modbus_response_topic = MODBUS_DEFAULT_RESPONSE_TOPIC;
 
 	RRR_DBG_2("modbus instance %s received a message with timestamp %llu\n",
@@ -950,17 +964,17 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	GET_VALUE_STR(server);
-	GET_VALUE_UNSIGNED_64(port);
-	GET_VALUE_UNSIGNED_64(function);
+	GET_VALUE_ULL(port);
+	GET_VALUE_ULL(function);
 
 	// Default value of quantity depend on function
 	modbus_quantity = modbus_function == 0x03 // Read Holding Registers
 		? MODBUS_DEFAULT_QUANTITY_REGISTER
 		: MODBUS_DEFAULT_QUANTITY_COIL;
 
-	GET_VALUE_UNSIGNED_64(starting_address);
-	GET_VALUE_UNSIGNED_64(quantity);
-	GET_VALUE_UNSIGNED_64(interval_ms);
+	GET_VALUE_ULL(starting_address);
+	GET_VALUE_ULL(quantity);
+	GET_VALUE_ULL(interval_ms);
 	GET_VALUE_STR(response_topic);
 
 	if (modbus_server != NULL && strlen(modbus_server) > MODBUS_SERVER_MAX - 1) {
