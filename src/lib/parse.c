@@ -580,6 +580,7 @@ void rrr_parse_make_location_message (
 	rrr_slength end;
 	rrr_slength col_orig;
 	rrr_slength col;
+	rrr_slength line_length;
 	char line_num_str[24];
 	int line_num_chars;
 	char *str_tmp;
@@ -603,19 +604,22 @@ void rrr_parse_make_location_message (
 		RRR_BUG("Allocation failure in %s\n", __func__);
 	}
 
-	if (end - start > 128) {
-		end = start + 128;
+	line_length = end - start;
+
+	if (line_length > 128) {
+		line_length = 128;
+		end = start + line_length;
 		str_tmp[end] = '\0';
 	}
 
-	if (col_orig > end - start) {
-		col = end - start;
+	if (col_orig > line_length) {
+		col = line_length;
 	}
 	else {
 		col = col_orig;
 	}
 
-	for (size_t i = 0; i < (size_t) end - start; i++) {
+	for (size_t i = 0; i < (size_t) line_length; i++) {
 		if (str_tmp[i] == '\t')
 			str_tmp[i] = ' ';
 	}
@@ -625,7 +629,15 @@ void rrr_parse_make_location_message (
 		RRR_BUG("Failed to format string in %s\n", __func__);
 	}
 
-	if (rrr_string_builder_append_format(&string_builder, "  %s | %s\n", line_num_str, str_tmp) != 0) {
+	if (rrr_string_builder_append_format(&string_builder, "  %s | ", line_num_str) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append_raw(&string_builder, str_tmp, (rrr_biglength) line_length) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append(&string_builder, "\n") != 0) {
 		RRR_BUG("Failed to format string in %s\n", __func__);
 	}
 
