@@ -379,8 +379,10 @@ static int __rrr_config_parse_file (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Parsing of configuration file failed at line %" PRIrrrl " position %" PRIrrrl "\n",
-				pos.line, pos.pos - pos.line_begin_pos + 1);
+		char *str_tmp = NULL;
+		rrr_parse_make_location_message(&str_tmp, &pos);
+		RRR_MSG_0("Parsing of configuration file failed\n%s\n", str_tmp);
+		rrr_free(str_tmp);
 	}
 
 	return ret;

@@ -625,7 +625,7 @@ void rrr_parse_make_location_message (
 	}
 
 	if (rrr_string_builder_append_format(&string_builder, "At line %" PRIrrrl " col %" PRIrrrsl "%s\n",
-			pos.line, col_orig, col != col_orig ? " (line preview is truncated at 128 chars)" : "") != 0) {
+			pos.line, col_orig + 1, col != col_orig ? " (line preview is truncated at 128 chars)" : "") != 0) {
 		RRR_BUG("Failed to format string in %s\n", __func__);
 	}
 
