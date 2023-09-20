@@ -578,7 +578,6 @@ void rrr_parse_make_location_message (
 
 	rrr_length start;
 	rrr_slength end;
-	rrr_slength col_orig;
 	rrr_slength col;
 	rrr_slength line_length;
 	char line_num_str[24];
@@ -586,37 +585,41 @@ void rrr_parse_make_location_message (
 	char *str_tmp;
 	struct rrr_string_builder string_builder = {0};
 
-	col_orig = pos.pos - pos.line_begin_pos;
+	col = pos.pos - pos.line_begin_pos;
 	pos.pos = pos.line_begin_pos;
-
-	rrr_parse_non_newline (&pos, &start, &end);
 
 	line_num_chars = sprintf(line_num_str, "%" PRIrrrl "", pos.line);
 
-	assert(end >= 0);
+	rrr_parse_non_newline (&pos, &start, &end);
 
-	if (rrr_parse_str_extract (
-			&str_tmp,
-			&pos,
-			start,
-			end
-	) != 0) {
-		RRR_BUG("Allocation failure in %s\n", __func__);
-	}
+	if (end >= start) {
+		line_length = end - start + 1;
 
-	line_length = end - start;
+		if (rrr_parse_str_extract (
+				&str_tmp,
+				&pos,
+				start,
+				line_length
+		) != 0) {
+			RRR_BUG("Allocation failure in %s\n", __func__);
+		}
 
-	if (line_length > 128) {
-		line_length = 128;
-		end = start + line_length;
-		str_tmp[end] = '\0';
-	}
-
-	if (col_orig > line_length) {
-		col = line_length;
+		if (line_length > 128) {
+			line_length = 128;
+			str_tmp[start + line_length] = '\0';
+		}
 	}
 	else {
-		col = col_orig;
+		if ((str_tmp = strdup(" ")) == NULL) {
+			RRR_BUG("Allocation failure in %s\n", __func__);
+		}
+		line_length = 1;
+	}
+
+	// If the position already was at a newline, we cheat and
+	// move the reported column position back by one to a character
+	if (col > line_length - 1) {
+		col = line_length - 1;
 	}
 
 	for (size_t i = 0; i < (size_t) line_length; i++) {
@@ -625,7 +628,7 @@ void rrr_parse_make_location_message (
 	}
 
 	if (rrr_string_builder_append_format(&string_builder, "At line %" PRIrrrl " col %" PRIrrrsl "%s\n",
-			pos.line, col_orig + 1, col != col_orig ? " (line preview is truncated at 128 chars)" : "") != 0) {
+			pos.line, col + 1, line_length == 128 ? " (line preview is truncated at 128 chars)" : "") != 0) {
 		RRR_BUG("Failed to format string in %s\n", __func__);
 	}
 

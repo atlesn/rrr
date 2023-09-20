@@ -263,7 +263,7 @@ static int __rrr_config_parse_discern_stack (
 	}
 
 	if (name == NULL) {
-		RRR_MSG_0("Definition name for %s missing after %s\n",
+		RRR_MSG_0("Definition name for %s missing after %c\n",
 			type_name, delimeters[0]);
 		goto out;
 	}
