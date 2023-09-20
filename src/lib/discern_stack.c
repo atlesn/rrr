@@ -821,6 +821,11 @@ static int __rrr_discern_stack_parse (
 
 	goto out;
 	out:
+		if (ret != 0) {
+			RRR_FREE_IF_NOT_NULL(str_tmp);
+			rrr_parse_make_location_message(&str_tmp, pos);
+			printf("%s", str_tmp);
+		}
 		__rrr_discern_stack_list_clear(&stack);
 		RRR_FREE_IF_NOT_NULL(str_tmp);
 		return ret;

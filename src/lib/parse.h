@@ -190,5 +190,9 @@ void rrr_parse_str_strip_newlines (
 void rrr_parse_str_trim (
 		char *str
 );
+void rrr_parse_make_location_message (
+		char **result,
+		const struct rrr_parse_pos *pos
+);
 
 #endif /* RRR_PARSE_H */

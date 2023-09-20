@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "parse.h"
 #include "allocator.h"
 #include "util/macro_utils.h"
+#include "helpers/string_builder.h"
 
 void rrr_parse_pos_init (
 		struct rrr_parse_pos *target,
@@ -567,4 +568,76 @@ void rrr_parse_str_trim (
 			break;
 		}
 	}
+}
+
+void rrr_parse_make_location_message (
+		char **result,
+		const struct rrr_parse_pos *pos_orig
+) {
+	struct rrr_parse_pos pos = *pos_orig;
+
+	rrr_length start;
+	rrr_slength end;
+	rrr_slength col_orig;
+	rrr_slength col;
+	char line_num_str[24];
+	int line_num_chars;
+	char *str_tmp;
+	struct rrr_string_builder string_builder = {0};
+
+	col_orig = pos.pos - pos.line_begin_pos;
+	pos.pos = pos.line_begin_pos;
+
+	rrr_parse_non_newline (&pos, &start, &end);
+
+	line_num_chars = sprintf(line_num_str, "%" PRIrrrl "", pos.line);
+
+	assert(end >= 0);
+
+	if (rrr_parse_str_extract (
+			&str_tmp,
+			&pos,
+			start,
+			end
+	) != 0) {
+		RRR_BUG("Allocation failure in %s\n", __func__);
+	}
+
+	if (end - start > 128) {
+		end = start + 128;
+		str_tmp[end] = '\0';
+	}
+
+	if (col_orig > end - start) {
+		col = end - start;
+	}
+	else {
+		col = col_orig;
+	}
+
+	for (size_t i = 0; i < (size_t) end - start; i++) {
+		if (str_tmp[i] == '\t')
+			str_tmp[i] = ' ';
+	}
+
+	if (rrr_string_builder_append_format(&string_builder, "At line %" PRIrrrl " col %" PRIrrrsl "%s\n",
+			pos.line, col_orig, col != col_orig ? " (line preview is truncated at 128 chars)" : "") != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append_format(&string_builder, "  %s | %s\n", line_num_str, str_tmp) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	memset(line_num_str, ' ', line_num_chars);
+	memset(str_tmp, ' ', (rrr_length) col);
+	str_tmp[col] = '\0';
+
+	if (rrr_string_builder_append_format(&string_builder, "  %s %s~-^-~ <= HERE\n", line_num_str, str_tmp) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	*result = rrr_string_builder_buffer_takeover(&string_builder);
+
+	rrr_free(str_tmp);
 }
