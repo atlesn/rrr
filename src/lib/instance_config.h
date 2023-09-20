@@ -133,6 +133,7 @@ struct rrr_instance_config_data {
 	struct rrr_instance_settings *settings;
 	const struct rrr_array_tree_list *global_array_trees;
 	const struct rrr_discern_stack_collection *global_routes;
+	const struct rrr_discern_stack_collection *global_methods;
 };
 
 struct rrr_instance_config_collection {
@@ -238,7 +239,12 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		const char *cmd_key
 );
 int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_discern_stack_collection *routes,
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+);
+int rrr_instance_config_parse_method_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );

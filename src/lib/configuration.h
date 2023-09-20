@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_config {
 	struct rrr_array_tree_list array_trees;
 	struct rrr_discern_stack_collection routes;
+	struct rrr_discern_stack_collection methods;
 };
 
 int rrr_config_new (
@@ -58,6 +59,9 @@ const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config
 );
 const struct rrr_discern_stack_collection *rrr_config_get_routes (
+		struct rrr_config *config
+);
+const struct rrr_discern_stack_collection *rrr_config_get_methods (
 		struct rrr_config *config
 );
 

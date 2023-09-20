@@ -127,8 +127,6 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	// OR all the return values, don't stop if a test fails
 
-goto parse;
-
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -164,14 +162,12 @@ goto parse;
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-parse:
+
 	TEST_BEGIN("parsing") {
 		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-
-	return ret;
 
 	TEST_BEGIN("inet functions") {
 		ret_tmp = rrr_test_inet();

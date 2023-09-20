@@ -311,7 +311,7 @@ static int __rrr_config_parse_method_definition (
 		struct rrr_parse_pos *pos
 ) {
 	const char delimeters[2] = {'(', ')'};
-	return __rrr_config_parse_discern_stack(&config->routes, "method", delimeters, pos);
+	return __rrr_config_parse_discern_stack(&config->methods, "method", delimeters, pos);
 }
 
 static int __rrr_config_parse_any (
@@ -417,6 +417,7 @@ void rrr_config_destroy (
 ) {
 	rrr_array_tree_list_clear(&target->array_trees);
 	rrr_discern_stack_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->methods);
 	rrr_free(target);
 }
 
@@ -477,4 +478,10 @@ const struct rrr_discern_stack_collection *rrr_config_get_routes (
 		struct rrr_config *config
 ) {
 	return &config->routes;
+}
+
+const struct rrr_discern_stack_collection *rrr_config_get_methods (
+		struct rrr_config *config
+) {
+	return &config->methods;
 }

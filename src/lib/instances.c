@@ -249,6 +249,7 @@ static void __rrr_instance_destroy (
 	rrr_instance_friend_collection_clear(&target->senders);
 	rrr_instance_friend_collection_clear(&target->wait_for);
 	rrr_discern_stack_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->methods);
 
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
@@ -387,7 +388,7 @@ static int __rrr_instance_parse_topic_filter (
 	);
 }
 
-void __rrr_instance_parse_route_name_callback (
+void __rrr_instance_parse_discern_stack_name_callback (
 		const char *name,
 		void *arg
 ) {
@@ -411,10 +412,38 @@ static int __rrr_instance_parse_route (
 		RRR_DBG_1("Active route definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
 		rrr_discern_stack_collection_iterate_names(
 				INSTANCE_I_ROUTES(data_final),
-				__rrr_instance_parse_route_name_callback,
+				__rrr_instance_parse_discern_stack_name_callback,
 				NULL
 		);
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_parse_method (
+		struct rrr_instance *data_final
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_parse_method_definition_from_config_silent_fail(&data_final->methods, data_final->config, "methods")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_1) {
+		RRR_DBG_1("Active method definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
+		rrr_discern_stack_collection_iterate_names(
+				INSTANCE_I_METHODS(data_final),
+				__rrr_instance_parse_discern_stack_name_callback,
+				NULL
+		);
+	}
+
+	// TODO : Implement methods on messages from senders
+	assert(0);
 
 	out:
 	return ret;
@@ -1222,6 +1251,12 @@ int rrr_instances_create_from_config (
 		ret = __rrr_instance_parse_route(instance);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing of route parameter failed for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			goto out;
+		}
+		ret = __rrr_instance_parse_method(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing of method parameter failed for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			goto out;
 		}
