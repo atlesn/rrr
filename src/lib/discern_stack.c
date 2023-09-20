@@ -693,7 +693,7 @@ static int __rrr_discern_stack_parse (
 			goto push;
 		}
 		else {
-			RRR_MSG_0("Syntax error in discern_stack definition, expected valid keyword or operator\n");
+			RRR_MSG_0("Syntax error in discern stack definition, expected valid keyword or operator\n");
 			ret = 1;
 			*fault = RRR_DISCERN_STACK_FAULT_SYNTAX_ERROR;
 			goto out;

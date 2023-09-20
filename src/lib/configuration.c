@@ -248,37 +248,42 @@ static int __rrr_config_parse_array_tree (
 		return ret;
 }
 
-static int __rrr_config_parse_route (
-		struct rrr_config *config,
+static int __rrr_config_parse_discern_stack (
+		struct rrr_discern_stack_collection *target,
+		const char *type_name,
+		const char delimeters[2],
 		struct rrr_parse_pos *pos
 ) {
 	int ret = 0;
 
 	char *name = NULL;
 
-	if ((ret = rrr_parse_str_extract_name (&name, pos, '>')) != 0) {
+	if ((ret = rrr_parse_str_extract_name (&name, pos, delimeters[1])) != 0) {
 		goto out;
 	}
 
 	if (name == NULL) {
-		RRR_MSG_0("Route definition name missing after [\n");
+		RRR_MSG_0("Definition name for %s missing after %s\n",
+			type_name, delimeters[0]);
 		goto out;
 	}
 
-	if (rrr_discern_stack_collection_get(&config->routes, name) != NULL) {
-		RRR_MSG_0("Duplicate route definition name %s\n", name);
+	if (rrr_discern_stack_collection_get(target, name) != NULL) {
+		RRR_MSG_0("Duplicate %s definition name %s\n",
+				type_name, name);
 		ret = 1;
 		goto out;
 	}
 
 	enum rrr_discern_stack_fault fault;
 	if (rrr_discern_stack_interpret (
-			&config->routes,
+			target,
 			&fault,
 			pos,
 			name
 	) != 0) {
-		RRR_MSG_0("Failed to parse route definition, error code was %u\n", fault);
+		RRR_MSG_0("Failed to parse %s definition %s, error code was %u\n",
+			type_name, name, fault);
 		ret = 1;
 		goto out;
 	}
@@ -291,6 +296,22 @@ static int __rrr_config_parse_route (
 	out:
 		RRR_FREE_IF_NOT_NULL(name);
 		return ret;
+}
+
+static int __rrr_config_parse_route_definition (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos
+) {
+	const char delimeters[2] = {'<', '>'};
+	return __rrr_config_parse_discern_stack(&config->routes, "route", delimeters, pos);
+}
+
+static int __rrr_config_parse_method_definition (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos
+) {
+	const char delimeters[2] = {'(', ')'};
+	return __rrr_config_parse_discern_stack(&config->routes, "method", delimeters, pos);
 }
 
 static int __rrr_config_parse_any (
@@ -318,7 +339,10 @@ static int __rrr_config_parse_any (
 			ret = __rrr_config_parse_array_tree(config, pos);
 		}
 		else if (c == '<') {
-			ret = __rrr_config_parse_route(config, pos);
+			ret = __rrr_config_parse_route_definition(config, pos);
+		}
+		else if (c == '(') {
+			ret = __rrr_config_parse_method_definition(config, pos);
 		}
 		else if (c == '[') {
 			int did_parse;
