@@ -79,6 +79,8 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
+			0,
+			0,
 			message,
 			message_addr,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -188,8 +190,8 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			break;
 		}
 		else {
-			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				ret, worker->name);
+			RRR_MSG_0("Warning: Error %i while writing to mmap channel in %s for worker %s in log hook\n",
+				ret, __func__, worker->name);
 			break;
 		}
 
@@ -197,8 +199,8 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 	}
 
 	if (ret == RRR_MMAP_CHANNEL_FULL) {
-		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				worker->name);
+		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in log hook\n",
+				__func__, worker->name);
 	}
 
 	out:
@@ -228,7 +230,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			// OK, propagate
 		}
 		else {
-			RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
+			RRR_MSG_0("Error while writing settings to mmap channel in %s\n", __func__);
 			ret = 1;
 		}
 		goto out;
@@ -276,8 +278,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
 
 		if (MSG_TOTAL_SIZE(msg_msg) + sizeof(*msg_addr) != data_size) {
-			RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %llu+%llu != %llu\n",
-					(unsigned long long) MSG_TOTAL_SIZE(msg_msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
+			RRR_BUG("BUG: Size mismatch in %s %llu+%llu != %llu\n",
+					__func__, (unsigned long long) MSG_TOTAL_SIZE(msg_msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 		}
 
 		callback_data->worker->total_msg_mmap_to_fork++;
@@ -367,8 +369,8 @@ static int __rrr_cmodule_worker_spawn_message (
 			0,
 			0
 	) != 0) {
-		RRR_MSG_0("Could not initialize message in __rrr_cmodule_worker_spawn_message of worker %s\n",
-				worker->name);
+		RRR_MSG_0("Could not initialize message in %s of worker %s\n",
+				__func__, worker->name);
 		ret = 1;
 		goto out;
 	}
@@ -383,7 +385,7 @@ static int __rrr_cmodule_worker_spawn_message (
 			1, // <-- is spawn context
 			process_callback_arg
 	)) != 0) {
-		RRR_MSG_0("Error %i from spawn callback in __rrr_cmodule_worker_spawn_message %s\n", ret, worker->name);
+		RRR_MSG_0("Error %i from spawn callback in %s %s\n", ret, __func__, worker->name);
 		ret = 1;
 		goto out;
 	}
@@ -503,7 +505,7 @@ static int __rrr_cmodule_worker_loop (
 	int ret_tmp;
 
 	if (worker->do_spawning == 0 && worker->do_processing == 0 && callbacks->custom_tick_callback == NULL) {
-		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
+		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in %s\n", __func__);
 	}
 
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
@@ -534,7 +536,7 @@ static int __rrr_cmodule_worker_loop (
 			&callback_data,
 			worker->spawn_interval_us
 	) != 0) {
-		RRR_MSG_0("Failed to create spawn event in  __rrr_cmodule_worker_loop\n");
+		RRR_MSG_0("Failed to create spawn event in  %s\n", __func__);
 		goto out_cleanup_events;
 	}
 
@@ -578,7 +580,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if (callbacks->configuration_callback != NULL) {
 		if ((ret = callbacks->configuration_callback(worker, callbacks->configuration_callback_arg)) != 0) {
-			RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
+			RRR_MSG_0("Error from configuration in %s\n", __func__);
 			goto out;
 		}
 
@@ -608,7 +610,7 @@ int rrr_cmodule_worker_loop_start (
 		if (ret == RRR_EVENT_EXIT) {
 			goto out;
 		}
-		RRR_MSG_0("Error %i while writing config complete control message to mmap channel in rrr_cmodule_worker_loop_start\n", ret);
+		RRR_MSG_0("Error %i while writing config complete control message to mmap channel in %s\n", ret, __func__);
 		goto out;
 	}
 
@@ -616,7 +618,7 @@ int rrr_cmodule_worker_loop_start (
 			worker,
 			callbacks
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_start\n");
+		RRR_MSG_0("Error from worker loop in %s\n", __func__);
 		goto out;
 	}
 
@@ -643,7 +645,7 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 			worker,
 			callbacks
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
+		RRR_MSG_0("Error from worker loop in %s\n", __func__);
 		// Don't goto out, run cleanup functions
 	}
 
@@ -681,7 +683,7 @@ int rrr_cmodule_worker_main (
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
-		RRR_MSG_0("Re-init of event queue failed in rrr_cmodule_worker_main\n");
+		RRR_MSG_0("Re-init of event queue failed in %s\n", __func__);
 		goto out;
 	}
 
@@ -694,7 +696,7 @@ int rrr_cmodule_worker_main (
 		int was_found = 0;
 		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
 		if (was_found == 0) {
-			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_main, should have been added in main()\n");
+			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in %s, should have been added in main()\n", __func__);
 		}
 
 		rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
@@ -764,23 +766,23 @@ int rrr_cmodule_worker_init (
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
 		goto out_free;
 	}
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, to_parent_name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
 		goto out_destroy_channel_to_fork;
 	}
 
 	if ((worker->name = rrr_strdup(name)) == NULL) {
-		RRR_MSG_0("Could not allocate name in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not allocate name in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_channel_to_parent;
 	}
 
 	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not initialize lock in %s\n", __func__);
 		ret = 1;
 		goto out_free_name;
 	}
