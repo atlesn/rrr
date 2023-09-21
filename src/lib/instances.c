@@ -442,9 +442,6 @@ static int __rrr_instance_parse_method (
 		);
 	}
 
-	// TODO : Implement methods on messages from senders
-	assert(0);
-
 	out:
 	return ret;
 }

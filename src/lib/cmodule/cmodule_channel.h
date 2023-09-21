@@ -23,7 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_CHANNEL_H
 
 #include <sys/types.h>
-#include <stdint.h>
+
+#include "../rrr_inttypes.h"
 
 struct rrr_msg;
 struct rrr_msg_msg;

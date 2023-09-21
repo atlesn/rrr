@@ -205,8 +205,6 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
-			0,
-			0,
 			message,
 			&addr_msg,
 			0, // No waiting
@@ -866,6 +864,7 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 			INSTANCE_D_NAME(thread_data),
 			INSTANCE_D_SETTINGS(thread_data),
 			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
 			callbacks

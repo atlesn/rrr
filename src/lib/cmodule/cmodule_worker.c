@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../fork.h"
 #include "../mmap_channel.h"
+#include "../discern_stack.h"
 #include "../common.h"
 #include "../read_constants.h"
 #include "../rrr_shm.h"
@@ -79,8 +80,6 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			0,
-			0,
 			message,
 			message_addr,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -240,6 +239,42 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 	return ret;
 }
 
+static int __rrr_cmodule_worker_loop_process (
+	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+	void *process_callback_arg,
+        struct rrr_cmodule_worker *worker,
+        const struct rrr_msg_msg *msg_msg,
+        const struct rrr_msg_addr *msg_addr
+) {
+	return process_callback (
+			worker,
+			msg_msg,
+			msg_addr,
+			0, // <-- Not in spawn context
+			process_callback_arg
+	);
+}
+
+struct rrr_cmodule_process_method_callback_data {
+	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
+	void *process_callback_arg;
+        struct rrr_cmodule_worker *worker;
+        const struct rrr_msg_msg *message;
+        const struct rrr_msg_addr *message_addr;
+};
+
+static int __rrr_cmodule_worker_loop_discern_resolve_topic_filter_cb (int *result, const char *topic_filter, void *arg) {
+	assert(0);
+}
+
+static int __rrr_cmodule_worker_loop_discern_resolve_array_tag_cb (int *result, const char *tag, void *arg) {
+	assert(0);
+}
+
+static int __rrr_cmodule_worker_loop_discern_apply_cb (int result, const char *destination, void *arg) {
+	assert(0);
+}
+
 struct rrr_cmodule_process_callback_data {
 	struct rrr_cmodule_worker *worker;
 	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
@@ -289,13 +324,36 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		RRR_DBG_5("cmodule worker %s received message of size %" PRIrrrl ", calling processor function\n",
 				callback_data->worker->name, MSG_TOTAL_SIZE(msg_msg));
 
-		ret = callback_data->process_callback (
+		if (RRR_LL_COUNT(callback_data->worker->methods) > 0) {
+			struct rrr_cmodule_process_method_callback_data discern_callback_data = {
+				callback_data->process_callback,
+				callback_data->process_callback_arg,
 				callback_data->worker,
 				msg_msg,
-				msg_addr,
-				0, // <-- Not in spawn context
-				callback_data->process_callback_arg
-		);
+				msg_addr
+			};
+
+			enum rrr_discern_stack_fault fault;
+			if ((ret = rrr_discern_stack_collection_execute (
+					&fault,
+					callback_data->worker->methods,
+					__rrr_cmodule_worker_loop_discern_resolve_topic_filter_cb,
+					__rrr_cmodule_worker_loop_discern_resolve_array_tag_cb,
+					__rrr_cmodule_worker_loop_discern_apply_cb,
+					&discern_callback_data
+			)) != 0) {
+				RRR_MSG_0("Fault code from discern stack: %u\n", fault);
+			}
+		}
+		else {
+			ret = __rrr_cmodule_worker_loop_process (
+					callback_data->process_callback,
+					callback_data->process_callback_arg,
+					callback_data->worker,
+					msg_msg,
+					msg_addr
+			);
+		}
 
 		if (ret != 0) {
 			RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
@@ -752,6 +810,7 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
+		const struct rrr_discern_stack_collection *methods,
 		rrr_setting_uint spawn_interval_us,
 		int do_spawning,
 		int do_processing,
@@ -799,6 +858,7 @@ int rrr_cmodule_worker_init (
 	worker->settings = settings;
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
+	worker->methods = methods;
 	worker->spawn_interval_us = spawn_interval_us;
 	worker->do_spawning = do_spawning;
 	worker->do_processing = do_processing;
