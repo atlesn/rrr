@@ -409,8 +409,9 @@ static int __rrr_discern_stack_execute_step (
 		const struct rrr_discern_stack_element *node,
 		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
 		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		void *resolve_callback_arg,
 		int (*apply_cb)(int result, const char *desination, void *arg),
-		void *callback_arg
+		void *apply_callback_arg
 ) {
 	int ret = 0;
 
@@ -428,13 +429,13 @@ static int __rrr_discern_stack_execute_step (
 		case RRR_DISCERN_STACK_OP_PUSH:
 			switch (node->type) {
 				case RRR_DISCERN_STACK_E_TOPIC_FILTER:
-					if ((ret = __rrr_discern_stack_execute_resolve_and_push (stack, node, resolve_topic_filter_cb, callback_arg)) != 0) {
+					if ((ret = __rrr_discern_stack_execute_resolve_and_push (stack, node, resolve_topic_filter_cb, resolve_callback_arg)) != 0) {
 						*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 						goto out;
 					}
 					break;
 				case RRR_DISCERN_STACK_E_ARRAY_TAG:
-					if ((ret = __rrr_discern_stack_execute_resolve_and_push (stack, node, resolve_array_tag_cb, callback_arg)) != 0) {
+					if ((ret = __rrr_discern_stack_execute_resolve_and_push (stack, node, resolve_array_tag_cb, resolve_callback_arg)) != 0) {
 						*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 						goto out;
 					}
@@ -481,7 +482,7 @@ static int __rrr_discern_stack_execute_step (
 					fault,
 					stack,
 					apply_cb,
-					callback_arg
+					apply_callback_arg
 			)) != 0) {
 				goto out;
 			}
@@ -526,8 +527,9 @@ static int __rrr_discern_stack_execute (
 		const struct rrr_discern_stack *discern_stack,
 		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
 		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		void *resolve_callback_arg,
 		int (*apply_cb)(int result, const char *destination, void *arg),
-		void *callback_arg
+		void *apply_callback_arg
 ) {
 	int ret = 0;
 
@@ -542,8 +544,9 @@ static int __rrr_discern_stack_execute (
 				node,
 				resolve_topic_filter_cb,
 				resolve_array_tag_cb,
+				resolve_callback_arg,
 				apply_cb,
-				callback_arg
+				apply_callback_arg
 		)) != 0) {
 			if (ret == RRR_DISCERN_STACK_BAIL) {
 				ret = 0;
@@ -562,8 +565,9 @@ int rrr_discern_stack_collection_execute (
 		const struct rrr_discern_stack_collection *collection,
 		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
 		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		void *resolve_callback_arg,
 		int (*apply_cb)(int result, const char *destination, void *arg),
-		void *callback_arg
+		void *apply_callback_arg
 ) {
 	int ret = 0;
 
@@ -575,8 +579,9 @@ int rrr_discern_stack_collection_execute (
 				node,
 				resolve_topic_filter_cb,
 				resolve_array_tag_cb,
+				resolve_callback_arg,
 				apply_cb,
-				callback_arg
+				apply_callback_arg
 		)) != 0) {
 			goto out;
 		}
@@ -794,6 +799,7 @@ static int __rrr_discern_stack_parse (
 				RRR_LL_LAST(&discern_stack->list),
 				__rrr_discern_stack_parse_execute_resolve,
 				__rrr_discern_stack_parse_execute_resolve,
+				NULL,
 				__rrr_discern_stack_parse_execute_apply,
 				NULL
 		)) != 0) {

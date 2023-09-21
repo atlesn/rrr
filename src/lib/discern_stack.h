@@ -63,8 +63,9 @@ int rrr_discern_stack_collection_execute (
 		const struct rrr_discern_stack_collection *collection,
 		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
 		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		void *resolve_callback_arg,
 		int (*apply_cb)(int result, const char *destination, void *arg),
-		void *callback_arg
+		void *apply_callback_arg
 );
 int rrr_discern_stack_collection_iterate_destination_names (
 		const struct rrr_discern_stack_collection *collection,

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "instances.h"
 #include "discern_stack.h"
+#include "discern_stack_helper.h"
 #include "instance_config.h"
 #include "message_broker.h"
 #include "message_helper.h"
@@ -47,58 +48,6 @@ struct rrr_instance_message_broker_entry_postprocess_route_callback_data {
 	struct rrr_msg_holder *entry;
 	struct rrr_instance_friend_collection *nexthops;
 };
-
-static int __rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb (
-		int *result,
-		const char *topic_filter,
-		void *arg
-) {
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_mqtt_topic_token *token = NULL;
-
-	if ((ret = rrr_mqtt_topic_tokenize(&token, topic_filter)) != 0) {
-		RRR_MSG_0("Failed to tokenize topic in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_message_helper_topic_match(result, callback_data->entry, token)) != 0) {
-		RRR_MSG_0("Failed to match topic in %s\n", __func__);
-		goto out;
-	}
-
-	RRR_DBG_3("+ Topic filter %s is a %s while routing message from instance %s\n",
-			topic_filter, (*result ? "MATCH" : "MISMATCH"), INSTANCE_D_NAME(callback_data->data));
-	out:
-	rrr_mqtt_topic_token_destroy(token);
-	return ret;
-}
-
-static int __rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb (
-		int *result,
-		const char *array_tag,
-		void *arg
-) {
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if ((ret = rrr_message_helper_has_array_tag (
-			result,
-			callback_data->entry,
-			array_tag
-	)) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_3("+ Array tag check result for %s is %s while routing message from instance %s\n",
-			array_tag, (*result ? "HAS" : "HASN'T"), INSTANCE_D_NAME(callback_data->data));
-
-	out:
-	return ret;
-}
 
 static int __rrr_instance_message_broker_entry_postprocess_apply_cb (
 		int result,
@@ -149,10 +98,14 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 		goto out;
 	}
 
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data callback_data = {
-			data,
-			entry_locked,
-			&nexthops
+	struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
+		entry_locked->message
+	};
+
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data apply_callback_data = {
+		data,
+		entry_locked,
+		&nexthops
 	};
 
 	enum rrr_discern_stack_fault fault = 0;
@@ -160,10 +113,11 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 	if ((ret = rrr_discern_stack_collection_execute (
 			&fault,
 			INSTANCE_D_ROUTES(data),
-			__rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb,
-			__rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb,
+			rrr_discern_stack_helper_topic_filter_resolve_cb,
+			rrr_discern_stack_helper_array_tag_resolve_cb,
+			&resolve_callback_data,
 			__rrr_instance_message_broker_entry_postprocess_apply_cb,
-			&callback_data
+			&apply_callback_data
 	)) != 0) {
 		goto out;
 	}

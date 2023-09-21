@@ -124,6 +124,7 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	if ((ret = rrr_py_cmodule_call_application_raw (
 			data->config_function,
 			config,
+			NULL,
 			NULL
 	)) != 0) {
 		RRR_MSG_0("Error from config function in __rrr_py_persistent_send_config \n");
@@ -137,43 +138,53 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 }
 
 int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
-	int ret = 0;
-
 	(void)(worker);
+
+	int ret = 0;
 
 	struct python3_child_data *data = private_arg;
 
+	PyObject *arg_method = NULL;
 	PyObject *arg_message = NULL;
+	PyObject *function = NULL;
 
-	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
-	if (arg_message == NULL) {
-		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
+	if (method != NULL) {
+		if ((arg_method = PyUnicode_FromString(method)) == NULL) {
+			RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		RRR_Py_INCREF(arg_method = Py_None);
+	}
+
+	if ((arg_message = rrr_python3_rrr_message_new_from_message_and_address (
+			message,
+			is_spawn_ctx ? NULL : message_addr
+	)) == NULL) {
+		RRR_MSG_0("Could not create python3 message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	PyObject *function = NULL;
-
-	if (is_spawn_ctx) {
-		function = data->source_function;
-	}
-	else {
-		function = data->process_function;
-	}
-
-	if (function != NULL) {
-		ret = rrr_py_cmodule_call_application_raw(function, data->runtime->socket, arg_message);
-	}
-	else {
+	if ((function = (is_spawn_ctx ? data->source_function : data->process_function)) == NULL) {
 		RRR_DBG_3("Python3 no functions defined, is_spawn was %i\n", is_spawn_ctx);
+		goto out;
 	}
 
-	if (ret != 0) {
+	if ((ret = rrr_py_cmodule_call_application_raw (
+			function,
+			data->runtime->socket,
+			arg_message,
+			arg_method
+	)) != 0) {
 		ret = RRR_FIFO_PROTECTED_CALLBACK_ERR | RRR_FIFO_PROTECTED_SEARCH_STOP;
 	}
 
 	out:
 	RRR_Py_XDECREF(arg_message);
+	RRR_Py_XDECREF(arg_method);
 
 	return ret;
 

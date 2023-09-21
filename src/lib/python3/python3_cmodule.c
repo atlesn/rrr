@@ -295,11 +295,12 @@ void rrr_py_cmodule_runtime_cleanup (struct python3_fork_runtime *runtime) {
 int rrr_py_cmodule_call_application_raw (
 		PyObject *function,
 		PyObject *arg1,
-		PyObject *arg2
+		PyObject *arg2,
+		PyObject *arg3
 ) {
 	int ret = 0;
 
-	PyObject *result = PyObject_CallFunctionObjArgs(function, arg1, arg2, NULL);
+	PyObject *result = PyObject_CallFunctionObjArgs(function, arg1, arg2, arg3);
 
 	if (result == NULL) {
 		RRR_MSG_0("Error while calling python3 function in %s pid %i\n",

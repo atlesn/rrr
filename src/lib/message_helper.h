@@ -22,15 +22,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_HELPER_H
 #define RRR_MESSAGE_HELPER_H
 
+struct rrr_msg_msg;
 struct rrr_msg_holder;
 struct rrr_mqtt_topic_token;
 
 int rrr_message_helper_topic_match (
 		int *does_match,
-		const struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg,
 		const struct rrr_mqtt_topic_token *token
 );
 int rrr_message_helper_has_array_tag (
+		int *does_have,
+		const struct rrr_msg_msg *msg,
+		const char *tag
+);
+int rrr_message_helper_entry_topic_match (
+		int *does_match,
+		const struct rrr_msg_holder *entry,
+		const struct rrr_mqtt_topic_token *token
+);
+int rrr_message_helper_entry_has_array_tag (
 		int *does_have,
 		const struct rrr_msg_holder *entry,
 		const char *tag
