@@ -65,7 +65,7 @@ wait_for=WAIT FOR,...
 duplicate=yes
 
 # Set a route definition to apply on output messages to control which reader instance messages
-# are destined fore (optional). If not given, or the definition produces no result, all readers
+# are destined for (optional). If not given, or the definition produces no result, all readers
 # may receive any message.
 
 # If a route definition is given, the duplicate keyword still controls wether or not messages may be
@@ -73,6 +73,19 @@ duplicate=yes
 # the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
 # the definitions will be run in order.
 route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
+
+# Set a method definition to apply on inbound messages to set the method tags given to cmodule
+# processor functions. The methods tags can be used to dispatch messages to respective functions
+# within the cmodule code. If multiple methods are applied to a single method, the processor function
+# will be called once for each method.
+
+# If not given, the processor function will be called with a method argument indicating that no method
+# is set. If given but execution produces no result for a particular message, the processor function
+# will not be called.
+
+# To refer to a method definition specified outside the block, enclose its name in angle brackets like
+# <NAME>. Multiple names may be given, in which the definitions will be run in order.
+methods=METHOD DEFINITION|<METHOD DEFINITION NAME>[,<METHOD DEFINITION NAME>]...
 
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
