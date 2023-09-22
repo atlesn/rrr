@@ -144,19 +144,21 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	struct python3_child_data *data = private_arg;
 
-	PyObject *arg_method = NULL;
-	PyObject *arg_message = NULL;
 	PyObject *function = NULL;
+	PyObject *arg_message = NULL;
+	PyObject *arg_method = NULL;
 
-	if (method != NULL) {
-		if ((arg_method = PyUnicode_FromString(method)) == NULL) {
-			RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
-			ret = 1;
-			goto out;
+	if (!is_spawn_ctx) {
+		if (method != NULL) {
+			if ((arg_method = PyUnicode_FromString(method)) == NULL) {
+				RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
 		}
-	}
-	else {
-		RRR_Py_INCREF(arg_method = Py_None);
+		else {
+			Py_INCREF(arg_method = Py_None);
+		}
 	}
 
 	if ((arg_message = rrr_python3_rrr_message_new_from_message_and_address (
