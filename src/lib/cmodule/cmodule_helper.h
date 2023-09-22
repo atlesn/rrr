@@ -52,6 +52,11 @@ extern struct rrr_instance_event_functions rrr_cmodule_helper_event_functions;
 const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
 		struct rrr_instance_runtime_data *thread_data
 );
+int rrr_cmodule_helper_methods_iterate (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*method_callback)(const char *stack_name, const char *method_name, void *arg),
+		void *callback_arg
+);
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data
 );

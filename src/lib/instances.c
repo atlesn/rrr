@@ -364,7 +364,7 @@ static int __rrr_instance_parse_route (
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active route definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
-		rrr_discern_stack_collection_iterate_names(
+		rrr_discern_stack_collection_iterate_names (
 				INSTANCE_I_ROUTES(data_final),
 				__rrr_instance_parse_discern_stack_name_callback,
 				NULL
@@ -406,7 +406,7 @@ static int __rrr_instance_parse_method (
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active method definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
-		rrr_discern_stack_collection_iterate_names(
+		rrr_discern_stack_collection_iterate_names (
 				INSTANCE_I_METHODS(data_final),
 				__rrr_instance_parse_discern_stack_name_callback,
 				NULL

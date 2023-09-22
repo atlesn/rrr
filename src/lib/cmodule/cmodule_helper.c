@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -725,6 +725,18 @@ static int __rrr_cmodule_helper_event_periodic (
 	rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
 
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(INSTANCE_D_THREAD(thread_data));
+}
+
+int rrr_cmodule_helper_methods_iterate (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*method_callback)(const char *stack_name, const char *method_name, void *arg),
+		void *callback_arg
+) {
+	return rrr_discern_stack_collection_iterate_destination_names (
+			INSTANCE_D_METHODS(thread_data),
+			method_callback,
+			callback_arg
+	);
 }
 
 void rrr_cmodule_helper_loop (
