@@ -77,8 +77,8 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 
 	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
-		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+		RRR_MSG_0("Could not duplicate message in %s for instance %s\n",
+				__func__, INSTANCE_D_NAME(callback_data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -122,8 +122,8 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
 			INSTANCE_D_THREAD(callback_data->thread_data)
 	) != 0) {
-		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+		RRR_MSG_0("Could not write to output buffer in %s in instance %s\n",
+				__func__, INSTANCE_D_NAME(callback_data->thread_data));
 		return 1;
 	}
 
@@ -215,7 +215,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 			worker->to_fork_write_retry_counter += 1;
 		}
 		else {
-			RRR_MSG_0("Error while sending message in __rrr_cmodule_helper_send_message_to_fork\n");
+			RRR_MSG_0("Error while sending message in %s\n", __func__);
 		}
 		goto out;
 	}
@@ -397,8 +397,8 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %llu+%llu != %llu\n",
-				callback_data->worker->name, (unsigned long long) MSG_TOTAL_SIZE(msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
+		RRR_BUG("BUG: Size mismatch in %s for worker %s: %llu+%llu != %llu\n",
+				__func__, callback_data->worker->name, (unsigned long long) MSG_TOTAL_SIZE(msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 	}
 
 	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
@@ -412,7 +412,7 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 	(void)(callback_data);
 
 	if (!RRR_MSG_LOG_SIZE_OK(msg_log) || data_size != msg_log->msg_size) {
-		RRR_BUG("BUG: Size error of message in __rrr_cmodule_read_from_fork_log_callback\n");
+		RRR_BUG("BUG: Size error of message in %s\n", __func__);
 	}
 
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
@@ -460,7 +460,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
 		RRR_DBG_8("Worker %s completed configuration\n", callback_data->worker->name);
 		if (callback_data->worker->config_complete != 0) {
-			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
+			RRR_BUG("Config complete was not 0 in %s\n", __func__);
 		}
 		callback_data->worker->config_complete = 1;
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
@@ -503,7 +503,7 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 		return __rrr_cmodule_helper_read_from_fork_control_callback(msg, data_size, callback_data);
 	}
 
-	RRR_BUG("BUG: Unknown message type %u in __rrr_cmodule_read_from_fork_callback\n", msg->msg_type);
+	RRR_BUG("BUG: Unknown message type %u in %s\n", msg->msg_type, __func__);
 
 	return 0;
 }
@@ -517,8 +517,8 @@ static int __rrr_cmodule_helper_read_from_worker (
 	int ret = 0;
 
 	if (worker->pid == 0) {
-		RRR_MSG_0("A worker fork '%s' had exited while attempting to read in __rrr_cmodule_helper_read_from_forks \n",
-				worker->name);
+		RRR_MSG_0("A worker fork '%s' had exited while attempting to read in %s\n",
+				worker->name, __func__);
 		ret = 1;
 		goto out;
 	}
@@ -752,7 +752,7 @@ void rrr_cmodule_helper_loop (
 				thread_data,
 				2000 // 2ms
 		) != 0) {
-		RRR_MSG_0("Failed to create input queue event in rrr_cmodule_helper_loop\n");
+		RRR_MSG_0("Failed to create input queue event in %s\n", __func__);
 		goto out;
 	}
 
@@ -768,7 +768,7 @@ void rrr_cmodule_helper_loop (
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			RRR_EVENT_PRIORITY_HIGH
 	)) {
-		RRR_MSG_0("Failed to set mmap event priority in rrr_cmodule_helper_loop\n");
+		RRR_MSG_0("Failed to set mmap event priority in %s\n", __func__);
 		goto out;
 	}
 
@@ -793,6 +793,10 @@ int rrr_cmodule_helper_parse_config (
 	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
 
 	int ret = 0;
+
+	// Prevent warning from being printed. Instances framework parses this parameter
+	// whenever present.
+	RRR_INSTANCE_CONFIG_SET_USED("methods");
 
 	RRR_INSTANCE_CONFIG_PREFIX_BEGIN(config_prefix);
 
@@ -864,6 +868,7 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 			INSTANCE_D_NAME(thread_data),
 			INSTANCE_D_SETTINGS(thread_data),
 			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
 			callbacks

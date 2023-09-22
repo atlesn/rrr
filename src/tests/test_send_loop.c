@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_util.h"
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/posix.h"
 
@@ -139,6 +140,8 @@ int rrr_test_send_loop(void) {
 	struct rrr_msg_holder *entry[2];
 	struct rrr_event_queue *queue = NULL;
 	struct rrr_send_loop *send_loop = NULL;
+	int ttl_reached;
+	int timeout_reached;
 	int result = 0;
 
 	memset(msg, '\0', sizeof(msg));
@@ -306,14 +309,27 @@ int rrr_test_send_loop(void) {
 	//////////////////////////////////////////////////////////////////////
 	// TTL test
 	/////////////////////////////
-	TEST_MSG("Test TTL...\n");
+	TEST_MSG("Test TTL timeout...\n");
+
 	rrr_send_loop_set_parameters(send_loop, 0, 1 /* 1 us */, 0, RRR_SEND_LOOP_ACTION_RETURN);
 
 	rrr_msg_holder_lock(entry[0]);
-	// Sleep before prepare to make only message TTL expire
-	rrr_posix_usleep(1000); /* 1ms */
 
+	msg_ptr[0]->timestamp = rrr_time_get_64();
 	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+
+	// Ensure timeout check does not return timeout if message is OK
+	rrr_msg_holder_util_timeout_check(&ttl_reached, &timeout_reached, 10 * 1000 /* 10 ms */, 10 * 1000 /* 10 ms */, entry[0]);
+	assert(!ttl_reached);
+	assert(!timeout_reached);
+
+	// Sleep to make times expire
+	rrr_posix_usleep(10 * 1000); /* 10 ms */
+
+	// Set both timers as function should return only TTL timeout even if both timers have expired
+	rrr_msg_holder_util_timeout_check(&ttl_reached, &timeout_reached, 1 /* 1 us */, 1 /* 1 us */, entry[0]);
+	assert(ttl_reached);
+	assert(!timeout_reached);
 
 	assert(rrr_msg_holder_usercount(entry[0]) == 1);
 	rrr_send_loop_push(send_loop, entry[0]);
@@ -331,17 +347,21 @@ int rrr_test_send_loop(void) {
 	//////////////////////////////////////////////////////////////////////
 	// Timeout test
 	/////////////////////////////
-	TEST_MSG("Test Timeout...\n");
+	TEST_MSG("Test send timeout...\n");
 	rrr_send_loop_set_parameters(send_loop, 0, 0, 1 /* 1 us */, RRR_SEND_LOOP_ACTION_RETURN);
 
 	rrr_msg_holder_lock(entry[0]);
 
-	// Sleep before setting message timestamp to make only send time expire
+	msg_ptr[0]->timestamp = rrr_time_get_64();
+	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+
+	// Sleep to make times expire
 	rrr_posix_usleep(10 * 1000); /* 10 ms */
 
-	msg_ptr[0]->timestamp = rrr_time_get_64();
-
-	rrr_send_loop_entry_prepare(send_loop, entry[0]);
+	// Function returns only send timeout, not TTL timeout as it is disabled by setting it to 0
+	rrr_msg_holder_util_timeout_check(&ttl_reached, &timeout_reached, 0, 1 /* 1 us */, entry[0]);
+	assert(!ttl_reached);
+	assert(timeout_reached);
 
 	assert(rrr_msg_holder_usercount(entry[0]) == 1);
 	rrr_send_loop_push(send_loop, entry[0]);

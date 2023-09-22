@@ -100,6 +100,13 @@ int rrr_array_push_value_str_with_tag_with_size (
 		const char *value,
 		rrr_length value_size
 );
+int rrr_array_push_value_str_with_tag_with_size_with_flags (
+		struct rrr_array *array,
+		const char *tag,
+		const char *value,
+		rrr_length value_size,
+		rrr_type_flags flags
+);
 int rrr_array_push_value_blob_with_tag_with_size (
 		struct rrr_array *array,
 		const char *tag,
@@ -133,8 +140,29 @@ int rrr_array_get_value_signed_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_ull_by_tag (
+		unsigned long long *result,
+		const struct rrr_array *array,
+		const char *tag
+);
 int rrr_array_get_value_str_by_tag (
 		char **result,
+		struct rrr_array *array,
+		const char *tag
+);
+/* TODO : Standardize function call names (with or without index argumemt) */
+int rrr_array_get_value_first_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag
+);
+int rrr_array_get_value_first_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+);
+int rrr_array_get_value_first_ull_by_tag (
+		unsigned long long *result,
 		struct rrr_array *array,
 		const char *tag
 );

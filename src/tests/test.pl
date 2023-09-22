@@ -26,6 +26,12 @@ my @persistent_single_value_tags;
 
 sub process {
 	my $message = shift;
+	my $method = shift;
+
+	if ($method ne "my_method") {
+		print "Method mismatch in process function $method<>my_method\n";
+		return 0;
+	}
 
 	if ($message->count_positions() == 1) {
 		print "Received single position array message with tag " . ($message->get_tag_names()) . "\n";

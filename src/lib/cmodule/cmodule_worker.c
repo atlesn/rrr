@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../fork.h"
 #include "../mmap_channel.h"
+#include "../discern_stack.h"
+#include "../discern_stack_helper.h"
 #include "../common.h"
 #include "../read_constants.h"
 #include "../rrr_shm.h"
@@ -188,8 +190,8 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			break;
 		}
 		else {
-			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				ret, worker->name);
+			RRR_MSG_0("Warning: Error %i while writing to mmap channel in %s for worker %s in log hook\n",
+				ret, __func__, worker->name);
 			break;
 		}
 
@@ -197,8 +199,8 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 	}
 
 	if (ret == RRR_MMAP_CHANNEL_FULL) {
-		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				worker->name);
+		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in log hook\n",
+				__func__, worker->name);
 	}
 
 	out:
@@ -228,11 +230,66 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			// OK, propagate
 		}
 		else {
-			RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
+			RRR_MSG_0("Error while writing settings to mmap channel in %s\n", __func__);
 			ret = 1;
 		}
 		goto out;
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_cmodule_worker_loop_process (
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg,
+		struct rrr_cmodule_worker *worker,
+		const struct rrr_msg_msg *msg_msg,
+		const struct rrr_msg_addr *msg_addr,
+		const char *method
+) {
+	return process_callback (
+			worker,
+			msg_msg,
+			msg_addr,
+			0, // <-- Not in spawn context
+			method,
+			process_callback_arg
+	);
+}
+
+struct rrr_cmodule_process_method_callback_data {
+	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
+	void *process_callback_arg;
+        struct rrr_cmodule_worker *worker;
+        const struct rrr_msg_msg *message;
+        const struct rrr_msg_addr *message_addr;
+	int run_count;
+};
+
+static int __rrr_cmodule_worker_loop_discern_apply_cb (int result, const char *method, void *arg) {
+	struct rrr_cmodule_process_method_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	RRR_DBG_3("+ Apply method %s result %s in worker %s\n",
+			method, result ? "RUN" : "NOT RUN", callback_data->worker->name);
+
+	if (!result)
+		goto out;
+
+	if ((ret = __rrr_cmodule_worker_loop_process (
+			callback_data->process_callback,
+			callback_data->process_callback_arg,
+			callback_data->worker,
+			callback_data->message,
+			callback_data->message_addr,
+			method
+	)) != 0) {
+		goto out;
+	}
+
+	callback_data->run_count++;
 
 	out:
 	return ret;
@@ -247,6 +304,7 @@ struct rrr_cmodule_process_callback_data {
 
 static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_process_callback_data *callback_data = arg;
+	struct rrr_cmodule_worker *worker = callback_data->worker;
 
 	int ret = 0;
 
@@ -255,18 +313,18 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 	callback_data->total_count++;
 
 	if (RRR_MSG_IS_CTRL(msg)) {
-		RRR_DBG_5("cmodule worker %s received control message\n", callback_data->worker->name);
+		RRR_DBG_5("cmodule worker %s received control message\n", worker->name);
 		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING)) {
-			callback_data->worker->ping_received = 1;
+			worker->ping_received = 1;
 		}
 		else {
 			RRR_MSG_0("Warning: cmodule worker %s pid %ld received unknown control message %u\n",
-					callback_data->worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
+					worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
 		}
 	}
-	else if (!callback_data->worker->do_processing) {
+	else if (!worker->do_processing) {
 		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n",
-				callback_data->worker->name);
+				worker->name);
 	}
 	else if (callback_data->process_callback == NULL) {
 		RRR_BUG("BUG: Received a message in cmodule worker while no process callback was set\n");
@@ -276,29 +334,65 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
 
 		if (MSG_TOTAL_SIZE(msg_msg) + sizeof(*msg_addr) != data_size) {
-			RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %llu+%llu != %llu\n",
-					(unsigned long long) MSG_TOTAL_SIZE(msg_msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
+			RRR_BUG("BUG: Size mismatch in %s %llu+%llu != %llu\n",
+					__func__, (unsigned long long) MSG_TOTAL_SIZE(msg_msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 		}
 
-		callback_data->worker->total_msg_mmap_to_fork++;
+		worker->total_msg_mmap_to_fork++;
 
 		RRR_DBG_3("Received a message with timestamp %" PRIu64 " in worker fork '%s'\n",
-				msg->timestamp, callback_data->worker->name);
+				msg->timestamp, worker->name);
 		RRR_DBG_5("cmodule worker %s received message of size %" PRIrrrl ", calling processor function\n",
-				callback_data->worker->name, MSG_TOTAL_SIZE(msg_msg));
+				worker->name, MSG_TOTAL_SIZE(msg_msg));
 
-		ret = callback_data->process_callback (
-				callback_data->worker,
+		if (RRR_LL_COUNT(worker->methods) > 0) {
+			RRR_DBG_3("Performing method discern in worker fork '%s'\n", worker->name);
+
+			struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
+				msg_msg
+			};
+
+			struct rrr_cmodule_process_method_callback_data apply_callback_data = {
+				callback_data->process_callback,
+				callback_data->process_callback_arg,
+				worker,
 				msg_msg,
 				msg_addr,
-				0, // <-- Not in spawn context
-				callback_data->process_callback_arg
-		);
+				0
+			};
 
+			enum rrr_discern_stack_fault fault;
+			if ((ret = rrr_discern_stack_collection_execute (
+					&fault,
+					worker->methods,
+					rrr_discern_stack_helper_topic_filter_resolve_cb,
+					rrr_discern_stack_helper_array_tag_resolve_cb,
+					&resolve_callback_data,
+					__rrr_cmodule_worker_loop_discern_apply_cb,
+					&apply_callback_data
+			)) != 0) {
+				RRR_MSG_0("Fault code from discern stack: %u\n", fault);
+				goto report;
+			}
+			
+			RRR_DBG_3("= %i methods were executed in worker %s\n", apply_callback_data.run_count, worker->name);
+		}
+		else {
+			ret = __rrr_cmodule_worker_loop_process (
+					callback_data->process_callback,
+					callback_data->process_callback_arg,
+					worker,
+					msg_msg,
+					msg_addr,
+					NULL
+			);
+		}
+
+		report:
 		if (ret != 0) {
-			RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
-			if (callback_data->worker->do_drop_on_error) {
-				RRR_MSG_0("Dropping message per configuration in worker %s\n", callback_data->worker->name);
+			RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, worker->name);
+			if (worker->do_drop_on_error) {
+				RRR_MSG_0("Dropping message per configuration in worker %s\n", worker->name);
 				ret = 0;
 			}
 		}
@@ -367,8 +461,8 @@ static int __rrr_cmodule_worker_spawn_message (
 			0,
 			0
 	) != 0) {
-		RRR_MSG_0("Could not initialize message in __rrr_cmodule_worker_spawn_message of worker %s\n",
-				worker->name);
+		RRR_MSG_0("Could not initialize message in %s of worker %s\n",
+				__func__, worker->name);
 		ret = 1;
 		goto out;
 	}
@@ -376,14 +470,15 @@ static int __rrr_cmodule_worker_spawn_message (
 	struct rrr_msg_addr message_addr;
 	rrr_msg_addr_init(&message_addr);
 
-	if ((ret = process_callback(
+	if ((ret = process_callback (
 			worker,
 			message,
 			&message_addr,
 			1, // <-- is spawn context
+			NULL,
 			process_callback_arg
 	)) != 0) {
-		RRR_MSG_0("Error %i from spawn callback in __rrr_cmodule_worker_spawn_message %s\n", ret, worker->name);
+		RRR_MSG_0("Error %i from spawn callback in %s %s\n", ret, __func__, worker->name);
 		ret = 1;
 		goto out;
 	}
@@ -503,7 +598,7 @@ static int __rrr_cmodule_worker_loop (
 	int ret_tmp;
 
 	if (worker->do_spawning == 0 && worker->do_processing == 0 && callbacks->custom_tick_callback == NULL) {
-		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
+		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in %s\n", __func__);
 	}
 
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
@@ -534,7 +629,7 @@ static int __rrr_cmodule_worker_loop (
 			&callback_data,
 			worker->spawn_interval_us
 	) != 0) {
-		RRR_MSG_0("Failed to create spawn event in  __rrr_cmodule_worker_loop\n");
+		RRR_MSG_0("Failed to create spawn event in  %s\n", __func__);
 		goto out_cleanup_events;
 	}
 
@@ -578,7 +673,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if (callbacks->configuration_callback != NULL) {
 		if ((ret = callbacks->configuration_callback(worker, callbacks->configuration_callback_arg)) != 0) {
-			RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
+			RRR_MSG_0("Error from configuration in %s\n", __func__);
 			goto out;
 		}
 
@@ -608,7 +703,7 @@ int rrr_cmodule_worker_loop_start (
 		if (ret == RRR_EVENT_EXIT) {
 			goto out;
 		}
-		RRR_MSG_0("Error %i while writing config complete control message to mmap channel in rrr_cmodule_worker_loop_start\n", ret);
+		RRR_MSG_0("Error %i while writing config complete control message to mmap channel in %s\n", ret, __func__);
 		goto out;
 	}
 
@@ -616,7 +711,7 @@ int rrr_cmodule_worker_loop_start (
 			worker,
 			callbacks
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_start\n");
+		RRR_MSG_0("Error from worker loop in %s\n", __func__);
 		goto out;
 	}
 
@@ -643,7 +738,7 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 			worker,
 			callbacks
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
+		RRR_MSG_0("Error from worker loop in %s\n", __func__);
 		// Don't goto out, run cleanup functions
 	}
 
@@ -681,7 +776,7 @@ int rrr_cmodule_worker_main (
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
-		RRR_MSG_0("Re-init of event queue failed in rrr_cmodule_worker_main\n");
+		RRR_MSG_0("Re-init of event queue failed in %s\n", __func__);
 		goto out;
 	}
 
@@ -694,7 +789,7 @@ int rrr_cmodule_worker_main (
 		int was_found = 0;
 		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
 		if (was_found == 0) {
-			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_main, should have been added in main()\n");
+			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in %s, should have been added in main()\n", __func__);
 		}
 
 		rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
@@ -750,6 +845,7 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
+		const struct rrr_discern_stack_collection *methods,
 		rrr_setting_uint spawn_interval_us,
 		int do_spawning,
 		int do_processing,
@@ -764,23 +860,23 @@ int rrr_cmodule_worker_init (
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
 		goto out_free;
 	}
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, to_parent_name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
 		goto out_destroy_channel_to_fork;
 	}
 
 	if ((worker->name = rrr_strdup(name)) == NULL) {
-		RRR_MSG_0("Could not allocate name in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not allocate name in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_channel_to_parent;
 	}
 
 	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
+		RRR_MSG_0("Could not initialize lock in %s\n", __func__);
 		ret = 1;
 		goto out_free_name;
 	}
@@ -797,6 +893,7 @@ int rrr_cmodule_worker_init (
 	worker->settings = settings;
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
+	worker->methods = methods;
 	worker->spawn_interval_us = spawn_interval_us;
 	worker->do_spawning = do_spawning;
 	worker->do_processing = do_processing;

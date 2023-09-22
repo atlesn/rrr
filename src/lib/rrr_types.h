@@ -377,9 +377,21 @@ static inline void rrr_biglength_inc_bug (rrr_biglength *a) {
 	}
 }
 
+static inline void rrr_size_t_inc_bug (size_t *a) {
+	if (++(*a) == 0) {
+		RRR_BUG("Bug: Overflow in rrr_size_t_inc_bug\n");
+	}
+}
+
 static inline rrr_length rrr_length_inc_bug_const (const rrr_length a) {
 	rrr_length r = a;
 	rrr_length_inc_bug(&r);
+	return r;
+}
+
+static inline size_t rrr_size_t_inc_bug_const (const size_t a) {
+	size_t r = a;
+	rrr_size_t_inc_bug(&r);
 	return r;
 }
 

@@ -1,4 +1,4 @@
-.Dd 2023-04-26
+.Dd 2023-09-13
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -65,7 +65,7 @@ wait_for=WAIT FOR,...
 duplicate=yes
 
 # Set a route definition to apply on output messages to control which reader instance messages
-# are destined fore (optional). If not given, or the definition produces no result, all readers
+# are destined for (optional). If not given, or the definition produces no result, all readers
 # may receive any message.
 
 # If a route definition is given, the duplicate keyword still controls wether or not messages may be
@@ -73,6 +73,19 @@ duplicate=yes
 # the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
 # the definitions will be run in order.
 route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
+
+# Set a method definition to apply on inbound messages to set the method tags given to cmodule
+# processor functions. The methods tags can be used to dispatch messages to respective functions
+# within the cmodule code. If multiple methods are applied to a single method, the processor function
+# will be called once for each method.
+
+# If not given, the processor function will be called with a method argument indicating that no method
+# is set. If given but execution produces no result for a particular message, the processor function
+# will not be called.
+
+# To refer to a method definition specified outside the block, enclose its name in angle brackets like
+# <NAME>. Multiple names may be given, in which the definitions will be run in order.
+methods=METHOD DEFINITION|<METHOD DEFINITION NAME>[,<METHOD DEFINITION NAME>]...
 
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
@@ -93,6 +106,8 @@ argument1 = value1
 [INSTANCE_2_NAME]
 module=...
 
+# ##### ARRAY TREE DEFINITIONS
+
 # Any number of named array trees may be specified
 # Modules parsing array data may refer to these instead of having them defined inside each instance block
 {ARRAY_TREE_DEFINITION_A}
@@ -111,6 +126,8 @@ ELSE
 sep1#separator
 ;
 
+# ##### ROUTE DEFINITIONS
+
 # Any number of named route definitions may be specified.
 # Modules with defined output routes may refer to these instead of having them defined inside each instance block.
 # Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
@@ -118,16 +135,21 @@ sep1#separator
 
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
-# Values are pushed to a stack by placing one of the following keywords in front of them:
-# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
-#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
-# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
-# - I - Instance - Push an instance name to the stack
+# String values are pushed to a stack by placing one of the following keywords in front of them:
+# - T - Topic      - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                    spaces are valid characters in topic filters, end the string with newlines or tabs.
+# - H - Has         - Push a boolean value indicating precence of a given array tag in a message
+# - D - Destinaton  - Push an instance name to the stack
+
+# Boolean values may be pushed to the stack:
+# - TRUE    - Push a boolean true to the stack
+# - FALSE   - Push a boolean false to the stack
 
 # Operators are used after pushing elements to the stack. These require one or two values to be present
 # on the stack. After an operator has been run, the values are consumed and the result of the condition is
 # pushed onto the stack. The route definition must be constructed such that no values are present on the stack
-# after processing, which means that a route definition usually ends with one or more POP operators.
+# after processing, which means that a route definition usually ends with one or more POP operators. If BAIL is
+# used, it also counts as a POP.
 
 # The following operators may be used:
 # - AND    - Apply boolean AND on the two preceeding values and push the result.
@@ -136,6 +158,7 @@ sep1#separator
 # - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
 #            and an instance name to be present on the stack. Leaves the boolean value on the stack.
 # - POP    - Remove one value from the stack.
+# - BAIL   - Stop processing if the top value on the stack is true. The value is removed from the stack.
 
 # Comments may be indicated by using #, they may be placed anywhere except from when a value is expected.
 
@@ -150,15 +173,61 @@ sep1#separator
 	# Run OR operator on the two stack values, leaves a boolean value on the stack 
 	OR
 	# Set the reader instance_receier_1 to receive messages matching one of the filters
-	I instance_receiver_1
+	D instance_receiver_1
 	APPLY
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
-	instance_receiver_2
+	D instance_receiver_2
 		APPLY
 	# Remove the remaining value from the stack
 		POP
+
+# ##### METHOD DEFINITIONS
+
+# Any number of named method definitions may be specified.
+# Modules supporting methods (cmodule, perl5, js and python) may refer to a definition by setting the methods=
+# parameter. The method definition allows messages to be matched depending on their topic or what values they
+# contain. The message is then tagged with a chosen method name which later can be retrieved in the processor
+# function of the module.
+
+# Method definitions are useful when a processor module receives messages from many other modules as they provide
+# a structured way of identifying the type of a message. If the programming language of the module used supports it,
+# the names used in the method definition may map directly to methods or functions inside a processor script.
+
+# Refer to the module-specific documentation on how to use the method tags inside the modules.
+
+# The syntax for a method definition is very much like a route definition. The only difference is that the D
+# operator pushes a method name to the stack.
+
+# If a method name is applied multiple times, the last name takes precedence. The BAIL operator may be
+# used to bail out once a method has been applied.
+
+# Example:
+
+(METHOD_DEFINITION_A)
+	# Push two topic filters to the stack
+	T my_topic_a/+
+	T my_topic_b/+
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+	OR
+	# Push a method name to the stack and apply the name. Bail out if a method was set.
+	M method_topic
+		APPLY
+		BAIL
+	# Check for an array value being present in the message and push a boolean to the stack.
+	H value_a
+	# Set a method on the message if the value was present
+	M method_value
+		APPLY
+	# Invert the result
+		NOT
+	# Set the method name to be method_b
+	D method_b
+		APPLY
+	# Remove the remaining value from the stack
+		POP
+
 .fi
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
@@ -392,6 +461,9 @@ Buffers messages, may be used to duplicate messages to multiple readers.
 
 .It ipclient (PI)
 Implements the RRR assured single delivery protocol on UDP for unstable connections.
+
+.It modbus (PA)
+Implements a modbus client capable of getting coil status from a remote modbus server.
 
 .It python3 (PAI)
 Processes and generates messages with custom Python3 scripts.
@@ -824,6 +896,79 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
+.SS modbus (PA)
+This module implements a modbus client capable of getting coil status from a remote modbus server.
+.PP
+The module is controlled using array command messages from sender instances, and there are no configuration parameters.
+.PP
+When a command is received, a connection is established with the specified modbus server and polling starts.
+The command may be repeated at a specified interval, and stops when an equal command has not been received for two seconds.
+.PP
+The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+.PP
+If different commands are used on the same server, they will share connection.
+.PP
+Please refer to the
+.B Modbus Application Protocol
+for details on the different modbus commands and responses.
+.PP
+The following array fields may be used in the command messages:
+.PP
+.Bl -tag -width -indent
+.It modbus_server
+The IP address of the modbus server to use. If not given,
+.B localhost
+is used. The maximum length of this field is 255 characters.
+.It modbus_port
+The port on the modbus server. If not given,
+.B 502
+is used.
+.It modbus_response_topic
+If given, any messages generated as a result of the command will have this topic set.
+.It modbus_function_code
+The modbus command to send, the commands
+.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
+are supported. If not given,
+.B 0x01
+is used.
+The function code must be stored in the array field in decimal form.
+.It modbus_starting_address
+The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
+.It modbus_quantity
+The quantity (e.g. number of coils or registers) to use. Defaults to 8  and must be in the range 1 - 2000 for coil functions, and defaults to 1 and must be in the range 1 - 125 for register functions.
+.It modbus_interval_ms
+If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
+.El
+.PP
+The following response messages and array fields are generated as a result of the modbus server
+responding to commands, and these must be read by reader instances.
+.PP
+Data fields are in big endian where applicable (it is not manipulated in any way by the modbus module),
+and they correspond to fields given in the protocol standard.
+.PP
+.Bl -tag -width "a" -indent
+.It Error
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_exception_code
+.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_status
+.El
+.PP
+The array fields have the following contents:
+.PP
+.Bl -tag -width -indent
+.It modbus_function_code
+A one byte unsigned integer indicating a function code
+.It modbus_exception_code
+A one byte unsigned integer indicating an exception code
+.It modbus_bytes
+A one byte unsigned integer indicating the size of a data field
+.It modbus_status
+A blob containing response data of a length indicated by
+.B modbus_bytes
+.El
+.PP
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
 All messages read from the senders are sent to the python program to the process function specified.
@@ -894,10 +1039,15 @@ def config(rrr_config : config):
 
 	return True
 
-def process(socket : rrr_socket, message: rrr_message):
+def process(socket : rrr_socket, message: rrr_message, method: str):
+	if (method is None):
+		print("No method given to python3 processor function\n")
+	else:
+		print("Method given to processor function is " + method + "\n")
+
 	# Return False if something is wrong
 	if my_global_variable == "":
-		print("Error: configuration failure")
+		print("Error: configuration failure\n")
 		return False
 		
 	# modify the retrieved message as needed
@@ -1196,6 +1346,16 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
+	# Get any method set by method definition
+	my $method = shift;
+
+	if (defined $method) {
+		print "Method given to processor function: $method\n";
+	}
+	else {
+		print "No method given to processor function\n";
+	}
+
 	# Do some modifications to the message
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
@@ -1351,10 +1511,18 @@ function source(message) {
 	message.send();
 }
 
-function process(message) {
+function process(message, method) {
 	// Process a message from another module
 	// and add the value previously retrieved
 	// from the configuration file.
+
+	if (method !== undefined) {
+		console.log("Method given to JS processor function: " + method + "\n");
+	}
+	else {
+		console.log("No method given to JS processor function\n");
+	}
+
 	console.log("Processing a message\n");
 	message.push_tag("my_parameter", my_parameter);
 	message.send();
@@ -1416,18 +1584,31 @@ The Config and Message objects have the following members:
   MSG_CLASS_ARRAY: 11,
 
   // Array data manipulation. When tag argument is not given, value(s) without tag is assumed
-  clear_array:   function(){},                  // Clear all array data
-  clear_tag:     function(tag=null){},          // Clear all array values with the given tag
-  push_tag_blob: function(tag=null, data){},    // Push array value of type blob
-  push_tag_str:  function(tag=null, data){},    // Push array value of type string
-  push_tag_h:    function(tag=null, data){},    // Push array value of type host (integer)
-  push_tag_fixp: function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
-  push_tag:      function(tag=null, data){},    // Push array value and identify type automatically
-  set_tag:       function(tag=null, data){},    // Clear values with the given tag and push a new array value and identify type automatically
-  get_tag_all:   function(tag=null){return [];},// Get array of values with the given tag
-  send:          function(){}                   // Send the message to the output buffer for other instances to receive
+  clear_array:     function(){},                  // Clear all array data
+  clear_tag:       function(tag=null){},          // Clear all array values with the given tag
+  push_tag_blob:   function(tag=null, data){},    // Push array value of type blob
+  push_tag_str:    function(tag=null, data){},    // Push array value of type string
+  push_tag_h:      function(tag=null, data){},    // Push array value of type host (integer)
+  push_tag_fixp:   function(tag=null, data){},    // Push array value of type fixp (fixed pointer)
+  push_tag_object: function(tag=null, data){},    // Push an object which will be converted to an string with JSON-representation of the object
+  push_tag:        function(tag=null, data){},    // Push array value and identify type automatically
+  set_tag:         function(tag=null, data){},    // Clear values with the given tag and push a new array value and identify type automatically
+  get_tag_all:     function(tag=null){return [];},// Get array of values with the given tag
+  send:            function(){}                   // Send the message to the output buffer for other instances to receive
 }
 .fi
+
+When using
+.B push_tag_object
+, any resulting JSON must begin with either [ or {, and an exception will be thrown otherwise.
+The function is thus less permissive than the default stringify function in JS.
+
+If an object is added using
+.B push_tag_object
+and another instance of the
+.B js
+module accesses this value, the JSON will be parsed and de-serialized into the original object structure.
+Modules not compatible with JSON strings will treat such values just as other strings.
 
 The following special global Objects are available:
 
@@ -1739,7 +1920,7 @@ The content type to use for the response. If it is defined but is an empty strin
 If not defined, the content type sent will depend on the type of the
 .B http_body
 field.
-In any case, a content type header will not be sent if there is no request body.
+In any case, a content type header will not be sent if there is no response body.
 
 .It http_body
 The response body to send. The content type set in the response header, unless specified explititly in 

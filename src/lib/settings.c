@@ -963,6 +963,45 @@ void rrr_settings_update_used (
 	}
 }
 
+static void __rrr_settings_set_used (
+		struct rrr_instance_settings *settings,
+		const char *name,
+		rrr_u32 used
+) {
+	int found = 0;
+
+	__rrr_settings_lock(settings);
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		if (!(strcmp(setting->name, name) == 0))
+			continue;
+
+		found = 1;
+		setting->was_used = used;
+		break;
+	}
+	__rrr_settings_unlock(settings);
+
+	if (!found) {
+		RRR_BUG("BUG: Setting %s not found in %s\n", name, __func__);
+	}
+}
+
+void rrr_settings_set_unused (
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	__rrr_settings_set_used(settings, name, 0 /* Unused */);
+}
+
+void rrr_settings_set_used (
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	__rrr_settings_set_used(settings, name, 1 /* Used */);
+}
+
 static int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
 	int ret = 0;
 	struct rrr_setting_packed *result = NULL;

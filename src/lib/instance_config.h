@@ -42,6 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_CONFIG_STRING_SET(name)                                                                \
     RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
 
+#define RRR_INSTANCE_CONFIG_SET_USED(name)                                                                  \
+    do { rrr_instance_config_set_used(config, name); } while (0)
+
 #define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)                                                    \
     do { if ( rrr_instance_config_setting_exists(config, string)) { then;                                   \
     }} while (0)
@@ -120,7 +123,7 @@ enum rrr_instance_config_write_method {
 
 struct rrr_array;
 struct rrr_array_tree;
-struct rrr_route_collection;
+struct rrr_discern_stack_collection;
 struct rrr_map;
 struct rrr_instance_friend_collection;
 struct rrr_instance_collection;
@@ -132,7 +135,8 @@ struct rrr_instance_config_data {
 	char *name;
 	struct rrr_instance_settings *settings;
 	const struct rrr_array_tree_list *global_array_trees;
-	const struct rrr_route_collection *global_routes;
+	const struct rrr_discern_stack_collection *global_routes;
+	const struct rrr_discern_stack_collection *global_methods;
 };
 
 struct rrr_instance_config_collection {
@@ -210,6 +214,20 @@ static inline int rrr_instance_config_collection_count (
 	return RRR_LL_COUNT(collection);
 }
 
+static inline void rrr_instance_config_set_used (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_used(source->settings, name);
+}
+
+static inline void rrr_instance_config_set_unused (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_unused(source->settings, name);
+}
+
 int rrr_instance_config_string_set (
 		char **target,
 		const char *prefix,
@@ -238,7 +256,12 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		const char *cmd_key
 );
 int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_route_collection *routes,
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+);
+int rrr_instance_config_parse_method_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );

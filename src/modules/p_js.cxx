@@ -207,14 +207,19 @@ class js_run_data {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
 	}
-	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
+	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, const char *method) {
 		{
 			auto scope = RRR::JS::Scope(ctx);
 			processed++;
 			processed_total++;
 			auto message = msg_factory.new_external(ctx, msg, msg_addr);
-			RRR::JS::Value arg(message.first());
-			process.run(ctx, 1, &arg);
+			RRR::JS::Value args[] = {
+				(v8::Local<v8::Value>) message.first(),
+				method != NULL
+					? (RRR::JS::Value) RRR::JS::String(ctx, method)
+					: (RRR::JS::Value) RRR::JS::Undefined(ctx)
+			};
+			process.run(ctx, 2, args);
 			ctx.trycatch_ok([](std::string msg) {
 				throw E(std::string("Failed to run process function: ") + msg);
 			});
@@ -400,7 +405,7 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			if (!run_data->hasProcess()) {
 				RRR_BUG("BUG: Process function was NULL but we tried to process anyway in %s\n", __func__);
 			}
-			run_data->runProcess(message, message_addr);
+			run_data->runProcess(message, message_addr, method);
 		}
 
 		// Run any imminent events

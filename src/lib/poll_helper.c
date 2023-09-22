@@ -43,7 +43,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 
 	*does_match = 0;
 
-	if ((ret = rrr_message_helper_topic_match(does_match, entry, INSTANCE_D_TOPIC(thread_data))) != 0) {
+	if ((ret = rrr_message_helper_entry_topic_match(does_match, entry, INSTANCE_D_TOPIC(thread_data))) != 0) {
 		goto out;
 	}
 

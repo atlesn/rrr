@@ -568,8 +568,23 @@ static void __rrr_socket_client_read_callback_flags_deduct (
 	int do_soft_error_propagates = 1;           \
 	__rrr_socket_client_read_callback_flags_deduct (&read_flags_socket, &do_soft_error_propagates, client);
 
+// Soft error propagation disabling will prevent connection closure upon parse errors. Read session
+// is still cleared by read framework,and parsing commenses when more data is avilable. For files
+// with finite size, soft error should propagate instead to force closure.
+
 #define ENFORCE_SOFT_ERROR_PROPAGATES()             \
 	if (!do_soft_error_propagates) { RRR_BUG("BUG: Soft error propagation is implied in %s and must be set to 1\n", __func__); }
+
+#define PROCESS_SOFT_ERROR_PROPAGATION()              \
+  do {if (ret == RRR_READ_SOFT_ERROR) {             \
+    if (do_soft_error_propagates) {                 \
+      RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd); \
+    }                                               \
+    else {                                          \
+      RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);    \
+      ret = 0;                                      \
+    }                                               \
+  }} while (0)
 
 static int __rrr_socket_client_collection_read_raw_get_target_size_callback (
 		struct rrr_read_session *read_session,
@@ -960,30 +975,33 @@ static void __rrr_socket_client_event_read_raw (
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
-	ENFORCE_SOFT_ERROR_PROPAGATES();
 
 	uint64_t bytes_read = 0;
 
+	int ret = rrr_socket_read_message_default (
+			&bytes_read,
+			&client->read_sessions,
+			fd,
+			4096,
+			collection->read_step_max_size,
+			0, // No max size
+			read_flags_socket,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			__rrr_socket_client_collection_read_raw_get_target_size_callback,
+			client,
+			__rrr_socket_client_event_read_error_callback,
+			client,
+			__rrr_socket_client_collection_read_raw_complete_callback,
+			client
+	);	
+
+	PROCESS_SOFT_ERROR_PROPAGATION();
+
 	__rrr_socket_client_return_value_process (
-		collection,
-		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				fd,
-				4096,
-				collection->read_step_max_size,
-				0, // No max size
-				read_flags_socket,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				__rrr_socket_client_collection_read_raw_get_target_size_callback,
-				client,
-				__rrr_socket_client_event_read_error_callback,
-				client,
-				__rrr_socket_client_collection_read_raw_complete_callback,
-				client
-		)
+			collection,
+			client,
+			ret
 	);
 }
 
@@ -1042,20 +1060,7 @@ static void __rrr_socket_client_event_read_array_tree (
 		client
 	);
 
-	// Prevent connection closure upon parse errors. Read session is still cleared by read framework,
-	// and parsing commenses when more data is avilable. For files with finite size, soft error should
-	// propagate instead to force closure.
-	if (ret == RRR_READ_SOFT_ERROR) {
-		if (do_soft_error_propagates) {
-			// Propagate return value
-			RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd);
-		}
-		else {
-			// Ignore any soft error
-			RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);
-			ret = 0;
-		}
-	}
+	PROCESS_SOFT_ERROR_PROPAGATION();
 
 	__rrr_socket_client_return_value_process (
 		collection,
@@ -1742,6 +1747,21 @@ void rrr_socket_client_collection_close_by_fd (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
 }
 
+static void __rrr_socket_client_collection_close_by_client (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_socket_client *client
+) {
+	RRR_DBG_7("fd %i in client collection close now\n",
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node == client) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+}
+
 int rrr_socket_client_collection_has_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
@@ -1956,7 +1976,9 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		),
 		void *resolve_callback_data,
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
-		void *connect_callback_data
+		void *connect_callback_data,
+		int (*data_prepare_callback)(const void **data, rrr_biglength *size, void *callback_data, void *private_data),
+		void *data_prepare_callback_data
 ) {
 	int ret = 0;
 
@@ -1974,6 +1996,28 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		goto out;
 	}
 
+	if (data_prepare_callback != NULL) {
+		/* Must ensure that client private data is created prior to calling prepare callback */
+		if (client->connected_fd == NULL) {
+			ret = RRR_SOCKET_NOT_READY;
+			goto out;
+		}
+		if ((ret = data_prepare_callback(&data, &size, data_prepare_callback_data, client->private_data)) != 0) {
+			switch (ret) {
+				case RRR_SOCKET_NOT_READY:
+					break;
+				case RRR_SOCKET_HARD_ERROR:
+				case RRR_SOCKET_SOFT_ERROR:
+				case RRR_SOCKET_READ_EOF:
+				default:
+					__rrr_socket_client_collection_close_by_client (collection, client);
+					break;
+			};
+			/* Propagate return value */
+			goto out;
+		}
+	}
+
 	if ((ret = __rrr_socket_client_send_push_const_with_private_data (
 			send_chunk_count,
 			client,
@@ -1989,6 +2033,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 	out:
 	return ret;
 }
+
 
 int rrr_socket_client_collection_sendto_push_const (
 		rrr_length *send_chunk_count,

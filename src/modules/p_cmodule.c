@@ -316,7 +316,7 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		if (run_data->process_function == NULL) {
 			RRR_BUG("BUG: Process function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->process_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->process_function(&run_data->ctx, message_copy, message_addr, method);
 		// Don't goto out here, print error further down
 	}
 

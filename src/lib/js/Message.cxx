@@ -150,7 +150,7 @@ namespace RRR::JS {
 #define GET_VALUE_ARG()                                                                            \
   auto value = info.Length() >= 2 ? info[1] : v8::Local<v8::Value>();
 
-	void Message::send() {
+	void Message::send(v8::Isolate *isolate) {
 		struct rrr_msg_addr msg_addr;
 		struct rrr_msg_msg *msg_ptr = nullptr;
 		std::unique_ptr<struct rrr_msg_msg, void(*)(struct rrr_msg_msg *)> msg(nullptr, [](auto msg){
@@ -193,7 +193,14 @@ namespace RRR::JS {
 			memcpy(&msg_addr.addr, &ip_addr, ip_addr_len);
 		}
 
-		message_drop.drop(msg_ptr, &msg_addr);
+		try {
+			message_drop.drop(msg_ptr, &msg_addr);
+		}
+		catch (E e) {
+			auto msg = std::string("Exception from message drop: ") + (std::string) e;
+			RRR_MSG_0("%s\n", msg.c_str());
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, e)));
+		}
 	}
 
 	void Message::push_tag_vain(std::string key) {
@@ -202,6 +209,10 @@ namespace RRR::JS {
 
 	void Message::push_tag_str(std::string key, std::string value) {
 		array.push_value_str_with_tag(key, value);
+	}
+
+	void Message::push_tag_str_json(std::string key, std::string value) {
+		array.push_value_str_with_tag_json(key, value);
 	}
 
 	void Message::push_tag_blob(std::string key, const char *value, rrr_length size) {
@@ -251,6 +262,20 @@ namespace RRR::JS {
 	}
 
 	void Message::push_tag_h(v8::Isolate *isolate, std::string key, std::string string) {
+		std::string string_tmp = string;
+		if (string_tmp.empty()) {
+			throw std::invalid_argument("Input was empty");
+		}
+		else {
+			// Remove any leading dash for validation purposes
+			if (string_tmp[0] == '-') {
+				string_tmp = string_tmp.substr(1);
+			}
+		}
+
+		if (!std::all_of(string_tmp.begin(), string_tmp.end(), ::isdigit)) {
+			throw std::invalid_argument("Input is not all digits");
+		}
 		try {
 			static_assert(sizeof(std::stoll(string)) == sizeof(int64_t));
 			push_tag_h(isolate, String(isolate, key), (int64_t) std::stoll(string));
@@ -285,6 +310,43 @@ namespace RRR::JS {
 		array.push_value_fixp_with_tag(key, string);
 	}
 
+	void Message::push_tag_object(v8::Isolate *isolate, std::string key, v8::Local<v8::Value> object) {
+		if (object->IsNullOrUndefined()) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot push null or undefined as object")));
+			return;
+		}
+
+		if (object->IsBoolean() || object->IsName() || object->IsNumber()) {
+			// Note : IsBigInt() is omitted as v8 stringify should handle this case and
+			//        either allow or reject the value depending on wether a toJSON 
+			//        function exists on the object.
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot push primitive value as object")));
+			return;
+		}
+
+		if (object->IsExternal()) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot push external value as object")));
+			return;
+		}
+
+		v8::MaybeLocal<v8::String> json = v8::JSON::Stringify(isolate->GetCurrentContext(), object);
+		if (json.IsEmpty()) {
+			// Exception is possibly pending, let the JS code deal with it
+			return;
+		}
+
+		auto json_str = String(isolate, json.ToLocalChecked());
+
+		if (!json_str.begins_with('[') && !json_str.begins_with('{')) {
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string (
+				"The JSON stringifier produced output not beginning with [ or { which is not allowed in RRR. Check input data to push_tag_output. Output was: "
+			) + (std::string) json_str)));
+			return;
+		}
+
+		array.push_value_str_with_tag_json(key, json_str);
+	}
+
 	void Message::push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value) {
 		auto ctx = isolate->GetCurrentContext();
 
@@ -303,7 +365,12 @@ namespace RRR::JS {
 				push_tag_h(isolate, key_string, v8::BigInt::Cast(*value));
 				return;
 			}
+			else if (value->IsObject()) {
+				push_tag_object(isolate, key_string, value);
+				return;
+			}
 			else if (value->ToString(ctx).ToLocal(&value_string)) {
+				// Check if the string contains a number
 				try {
 					push_tag_h(isolate, key_string, String(isolate, value_string));
 					return;
@@ -534,6 +601,15 @@ namespace RRR::JS {
 		Message::cb_push_tag_number(info, l, l);
 	}
 
+	void Message::cb_push_tag_object(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		GET_KEY_ARG();
+		GET_VALUE_ARG();
+
+		message->push_tag_object(isolate, key_string, value);
+	}
+
 	void Message::cb_push_tag(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
@@ -561,12 +637,27 @@ namespace RRR::JS {
 		message->clear_tag(key_string);
 	}
 
+/* TODO move iteration here
+	void Message::extract_array_values (
+		std::vector<v8::Local<v8::Value>> &result
+	) {
+	}
+*/
+
 	void Message::cb_get_tag_all(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		GET_KEY_ARG();
 
 		std::vector<v8::Local<v8::Value>> result;
+
+		class ValueError : public E {
+			public:
+			ValueError(std::string str) : E(str) {}
+		};
+
+		try {
+		// TODO move iteration
 
 		message->array.iterate (
 			[&result, &isolate](rrr_type_be data, bool sign) {
@@ -586,7 +677,10 @@ namespace RRR::JS {
 					);
 				}
 			},
-			[&result, &isolate](const uint8_t *data, rrr_length size) {
+			[&result, &isolate](const uint8_t *data, rrr_length size, rrr_type_flags flags) {
+				if (flags != 0 ) {
+					RRR_MSG_0("Warning: Unknown flags %llu in blob type to JavaScript, message is possibly from a newer RRR version.\n", (unsigned long long) flags);
+				}
 #ifdef RRR_HAVE_V8_BACKINGSTORE
 				auto store = v8::ArrayBuffer::NewBackingStore(isolate, size);
 				memcpy(store->Data(), data, size);
@@ -608,13 +702,40 @@ namespace RRR::JS {
 				static_assert(sizeof(data) == sizeof(int64_t));
 				result.emplace_back(v8::BigInt::New(isolate, data));
 			},
-			[&result, &isolate, &key_string](const char *data, rrr_length size) {
+			[&result, &isolate, &key_string](const char * const data, const rrr_length size, const rrr_type_flags flags) {
+				{
+					rrr_type_flags flags_validate = flags;
+					RRR_TYPE_FLAG_SET_NOT_JSON(flags_validate);
+					if (flags_validate != 0 ) {
+						RRR_MSG_0("Warning: Unknown flags %llu in string type to JavaScript, message is possibly from a newer RRR version.\n", (unsigned long long) flags_validate);
+					}
+				}
+
 				int size_int;
 				if (rrr_int_from_length_err(&size_int, size) != 0) {
 					RRR_MSG_0("Warning: String in array message too long for JavaScript(%" PRIrrrl ">%i) in value with key '%s'. Dropping value.\n",
 						size, INT_MAX, key_string.c_str());
 					return;
 				}
+
+				if (RRR_TYPE_FLAG_IS_JSON(flags)) {
+					auto &ctx = (CTX &) isolate;
+					v8::TryCatch trycatch(isolate);
+
+					v8::MaybeLocal<v8::Value> obj = v8::JSON::Parse(isolate->GetCurrentContext(), String(isolate, data, size_int));
+					if (trycatch.HasCaught()) {
+						throw ValueError(std::string("Failed to parse supposed JSON: ") + ctx.make_location_message(trycatch.Message()));
+					}
+					if (obj.IsEmpty()) {
+						throw ValueError(std::string("JSON was empty while parsing array value"));
+						return;
+					}
+
+					result.emplace_back(obj.ToLocalChecked());
+
+					return;
+				}
+
 				result.emplace_back(String(isolate, data, size_int));
 			},
 			[&result, &isolate](void) {
@@ -624,6 +745,14 @@ namespace RRR::JS {
 				return key_string == tag;
 			}
 		);
+
+		}
+		catch (ValueError e) {
+			isolate->ThrowException(v8::Exception::TypeError(String(
+				isolate, std::string("Error while getting array values from message to JavaScript: ") + (std::string) e
+			)));
+			return;
+		}
 
 		if (result.size() > INT_MAX) {
 			isolate->ThrowException(v8::Exception::TypeError(String(
@@ -640,7 +769,7 @@ namespace RRR::JS {
 
 	void Message::cb_send(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto message = self(info);
-		message->send();
+		message->send(info.GetIsolate());
 	}
 
 	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
@@ -790,6 +919,7 @@ namespace RRR::JS {
 		tmpl_push_tag_str(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_str)),
 		tmpl_push_tag_h(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_h)),
 		tmpl_push_tag_fixp(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_fixp)),
+		tmpl_push_tag_object(v8::FunctionTemplate::New(ctx, Message::cb_push_tag_object)),
 		tmpl_push_tag(v8::FunctionTemplate::New(ctx, Message::cb_push_tag)),
 		tmpl_set_tag(v8::FunctionTemplate::New(ctx, Message::cb_set_tag)),
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, Message::cb_clear_tag)),
@@ -805,6 +935,7 @@ namespace RRR::JS {
 		tmpl->Set(ctx, "push_tag_str", tmpl_push_tag_str);
 		tmpl->Set(ctx, "push_tag_h", tmpl_push_tag_h);
 		tmpl->Set(ctx, "push_tag_fixp", tmpl_push_tag_fixp);
+		tmpl->Set(ctx, "push_tag_object", tmpl_push_tag_object);
 		tmpl->Set(ctx, "push_tag", tmpl_push_tag);
 		tmpl->Set(ctx, "set_tag", tmpl_set_tag);
 		tmpl->Set(ctx, "get_tag_all", tmpl_get_tag_all);

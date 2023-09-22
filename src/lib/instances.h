@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "modules.h"
 #include "instance_friends.h"
-#include "route.h"
+#include "discern_stack.h"
 #include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
@@ -49,7 +49,8 @@ struct rrr_instance {
 	struct rrr_instance_module_data *module_data;
 	struct rrr_instance_friend_collection senders;
 	struct rrr_instance_friend_collection wait_for;
-	struct rrr_route_collection routes;
+	struct rrr_discern_stack_collection routes;
+	struct rrr_discern_stack_collection methods;
 	struct rrr_signal_handler *signal_handler;
 	char *topic_filter;
 	struct rrr_mqtt_topic_token *topic_first_token;
@@ -64,6 +65,7 @@ struct rrr_instance {
 };
 
 #define INSTANCE_I_ROUTES(instance) (&instance->routes)
+#define INSTANCE_I_METHODS(instance) (&instance->methods)
 
 #define INSTANCE_M_NAME(instance) instance->module_data->instance_name
 #define INSTANCE_M_MODULE_TYPE(instance) instance->module_data->type
@@ -98,6 +100,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 #define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
+#define INSTANCE_D_METHODS(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->methods)
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;

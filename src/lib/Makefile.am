@@ -96,6 +96,8 @@ http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 
 websocket = websocket/websocket.c
 
+modbus = modbus/rrr_modbus.c
+
 cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
@@ -107,7 +109,7 @@ util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
        util/increment.c util/sha256.c util/arguments.c util/fs.c
 
-ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
+ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_helper.c
 
 udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
@@ -147,7 +149,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
                     ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
-                    message_broker.c map.c array.c array_tree.c route.c message_helper.c \
+                    message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
                     read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c modules.c \
 		    poll_helper.c msgdb_helper.c \
@@ -158,7 +160,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
-                    ${input} ${input_system} ${helpers} ${websocket} \
+                    ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}

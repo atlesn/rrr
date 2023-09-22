@@ -28,7 +28,6 @@ extern "C" {
 };
 
 #include <v8.h>
-#include <map>
 #include <memory>
 #include <algorithm>
 #include <forward_list>
@@ -120,10 +119,10 @@ namespace RRR::JS {
 
 		// Store an object as persistent. Returns positon to use
 		// when pulling.
-		int push_persistent(v8::Local<v8::Value> value);
+		unsigned long push_persistent(v8::Local<v8::Value> value);
 
 		// Pull a persistent out for temporary use
-		v8::Local<v8::Value> pull_persistent(int i);
+		v8::Local<v8::Value> pull_persistent(unsigned long i);
 
 		public:
 		// Receive acknowledgement that a message has been processed by
@@ -175,24 +174,21 @@ namespace RRR::JS {
 		friend class PersistentStorage;
 
 		private:
-		struct DoneState {
+		struct ValueHolder {
 			public:
 			bool done;
-			v8::Persistent<v8::Value> *persistent;
-			DoneState(bool done, v8::Persistent<v8::Value> *persistent);
-			DoneState();
+			std::unique_ptr<v8::Persistent<v8::Value>> value;
+			ValueHolder(v8::Isolate *isolate, v8::Local<v8::Value> value);
 		};
-		std::map<int,std::unique_ptr<v8::Persistent<v8::Value>>> values;
-		std::map<int,DoneState> values_done;
-		int value_pos;
+		std::vector<ValueHolder> values;
 		bool is_weak;
 		std::shared_ptr<Persistable> t;
 		PersistentBus *bus;
 		v8::Isolate *isolate;
 
 		protected:
-		int push_value(v8::Local<v8::Value> value);
-		v8::Local<v8::Value> pull_value(int i);
+		unsigned long push_value(v8::Local<v8::Value> value);
+		v8::Local<v8::Value> pull_value(unsigned long i);
 		void pass(const char *identifier, void *arg) final;
 		int64_t get_unreported_memory();
 		int64_t get_total_memory_finalize();

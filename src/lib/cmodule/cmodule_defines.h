@@ -66,6 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         const struct rrr_msg_msg *message,                     \
         const struct rrr_msg_addr *message_addr,               \
         int is_spawn_ctx,                                      \
+	const char *method,                                    \
         void *private_arg
 
 #define RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS                                          \

@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "test_hdlc.h"
-#include "../lib/route.h"
 #include "../lib/parse.h"
 #include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
