@@ -374,8 +374,12 @@ function os_tests() {
 	}
 }
 
-function process(message) {
+function process(message, method) {
 	console.log("Process function\n");
+
+	if (method !== "my_method") {
+		throw("Incorrect method to JS process function " + method + "<>my_method");
+	}
 
 	message_tests();
 	os_tests();
