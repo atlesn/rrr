@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_DISCERN_STACK_HELPER_H
 #define RRR_DISCERN_STACK_HELPER_H
 
+#include "rrr_types.h"
+
 struct rrr_msg_msg;
 
 struct rrr_discern_stack_helper_callback_data {
@@ -29,13 +31,13 @@ struct rrr_discern_stack_helper_callback_data {
 };
 
 int rrr_discern_stack_helper_topic_filter_resolve_cb (
-		int *result,
+		rrr_length *result,
 		const char *topic_filter,
 		void *arg
 );
 
 int rrr_discern_stack_helper_array_tag_resolve_cb (
-		int *result,
+		rrr_length *result,
 		const char *array_tag,
 		void *arg
 );

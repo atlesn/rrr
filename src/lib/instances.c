@@ -50,7 +50,7 @@ struct rrr_instance_message_broker_entry_postprocess_route_callback_data {
 };
 
 static int __rrr_instance_message_broker_entry_postprocess_apply_cb (
-		int result,
+		rrr_length result,
 		const char *instance_name,
 		void *arg
 ) {

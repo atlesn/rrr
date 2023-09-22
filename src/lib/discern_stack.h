@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DISCERN_STACK_H
 
 #include "util/linked_list.h"
+#include "rrr_types.h"
 
 struct rrr_discern_stack;
 struct rrr_parse_pos;
@@ -61,10 +62,10 @@ void rrr_discern_stack_collection_iterate_names (
 int rrr_discern_stack_collection_execute (
 		enum rrr_discern_stack_fault *fault,
 		const struct rrr_discern_stack_collection *collection,
-		int (*resolve_topic_filter_cb)(int *result, const char *topic_filter, void *arg),
-		int (*resolve_array_tag_cb)(int *result, const char *tag, void *arg),
+		int (*resolve_topic_filter_cb)(rrr_length *result, const char *topic_filter, void *arg),
+		int (*resolve_array_tag_cb)(rrr_length *result, const char *tag, void *arg),
 		void *resolve_callback_arg,
-		int (*apply_cb)(int result, const char *destination, void *arg),
+		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
 		void *apply_callback_arg
 );
 int rrr_discern_stack_collection_iterate_destination_names (

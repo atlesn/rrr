@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt/mqtt_topic.h"
 
 int rrr_discern_stack_helper_topic_filter_resolve_cb (
-		int *result,
+		rrr_length *result,
 		const char *topic_filter,
 		void *arg
 ) {
@@ -43,10 +43,12 @@ int rrr_discern_stack_helper_topic_filter_resolve_cb (
 		goto out;
 	}
 
-	if ((ret = rrr_message_helper_topic_match(result, callback_data->msg, token)) != 0) {
+	int result_tmp = 0;
+	if ((ret = rrr_message_helper_topic_match(&result_tmp, callback_data->msg, token)) != 0) {
 		RRR_MSG_0("Failed to match topic in %s\n", __func__);
 		goto out;
 	}
+	*result = result_tmp != 0;
 
 	RRR_DBG_3("+ Topic filter %s is a %s\n",
 			topic_filter, (*result ? "MATCH" : "MISMATCH"));
@@ -56,7 +58,7 @@ int rrr_discern_stack_helper_topic_filter_resolve_cb (
 }
 
 int rrr_discern_stack_helper_array_tag_resolve_cb (
-		int *result,
+		rrr_length *result,
 		const char *array_tag,
 		void *arg
 ) {
@@ -64,13 +66,15 @@ int rrr_discern_stack_helper_array_tag_resolve_cb (
 
 	int ret = 0;
 
+	int result_tmp = 0;
 	if ((ret = rrr_message_helper_has_array_tag (
-			result,
+			&result_tmp,
 			callback_data->msg,
 			array_tag
 	)) != 0) {
 		goto out;
 	}
+	*result = result_tmp != 0;
 
 	RRR_DBG_3("+ Array tag check result for %s is %s\n",
 			array_tag, (*result ? "HAS" : "HASN'T"));

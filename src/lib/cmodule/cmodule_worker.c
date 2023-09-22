@@ -267,7 +267,7 @@ struct rrr_cmodule_process_method_callback_data {
 	int run_count;
 };
 
-static int __rrr_cmodule_worker_loop_discern_apply_cb (int result, const char *method, void *arg) {
+static int __rrr_cmodule_worker_loop_discern_apply_cb (rrr_length result, const char *method, void *arg) {
 	struct rrr_cmodule_process_method_callback_data *callback_data = arg;
 
 	int ret = 0;
