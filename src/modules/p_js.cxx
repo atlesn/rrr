@@ -120,6 +120,7 @@ class js_run_data {
 	std::shared_ptr<RRR::JS::Program> program;
 	std::unordered_map<std::string,RRR::JS::Function> methods;
 
+	int64_t start_time = 0;
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
 	rrr_biglength memory_size = 0;
@@ -163,17 +164,19 @@ class js_run_data {
 		if (!need_status(&diff)) {
 			return;
 		}
-
 		double per_sec = ((double) processed) / ((double) diff / 1000000);
-		processed = 0;
+		double per_sec_average = ((double) processed_total) / ((double) (rrr_time_get_64() - start_time) / 1000000);
 
-		RRR_DBG_1("JS instance %s processed per second %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
+		RRR_DBG_1("JS instance %s processed per second %.2f average %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(data->thread_data),
 				per_sec,
+				per_sec_average,
 				processed_total,
 				memory_entries,
 				memory_size
 		);
+
+		processed = 0;
 	}
 	void runGC() {
 		persistent_storage.gc(&memory_entries, &memory_size);
@@ -284,7 +287,8 @@ class js_run_data {
 		timeout_factory(ctx, persistent_storage),
 		os_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
-		program(make_program())
+		program(make_program()),
+		start_time((int64_t) rrr_time_get_64())
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
