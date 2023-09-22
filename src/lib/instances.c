@@ -396,6 +396,11 @@ static int __rrr_instance_parse_method (
 		);
 	}
 
+	// Cmodules, the only ones using this parameter, will set the parameter back
+	// to being tagged as used later. Other modules will not do this and a warning
+	// will be printed that the parameter is unused.
+	rrr_instance_config_set_unused(data_final->config, "methods");
+
 	out:
 	return ret;
 }

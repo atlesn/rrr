@@ -794,6 +794,10 @@ int rrr_cmodule_helper_parse_config (
 
 	int ret = 0;
 
+	// Prevent warning from being printed. Instances framework parses this parameter
+	// whenever present.
+	RRR_INSTANCE_CONFIG_SET_USED("methods");
+
 	RRR_INSTANCE_CONFIG_PREFIX_BEGIN(config_prefix);
 
 	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_config_", config_suffix);

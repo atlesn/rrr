@@ -673,6 +673,10 @@ static int __rrr_discern_stack_parse (
 		else if (rrr_parse_match_word(pos, "D")) {
 			type = RRR_DISCERN_STACK_E_DESTINATION;
 		}
+		else if (rrr_parse_match_word(pos, "I")) {
+			RRR_MSG_0("Warning: Operator I is depracated in discern stacks. Please update the configuration and use D instead.\n");
+			type = RRR_DISCERN_STACK_E_DESTINATION;
+		}
 		else if (rrr_parse_match_word(pos, "AND")) {
 			op = RRR_DISCERN_STACK_OP_AND;
 			goto push;

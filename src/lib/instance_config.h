@@ -42,6 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_CONFIG_STRING_SET(name)                                                                \
     RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
 
+#define RRR_INSTANCE_CONFIG_SET_USED(name)                                                                  \
+    do { rrr_instance_config_set_used(config, name); } while (0)
+
 #define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)                                                    \
     do { if ( rrr_instance_config_setting_exists(config, string)) { then;                                   \
     }} while (0)
@@ -209,6 +212,20 @@ static inline int rrr_instance_config_collection_count (
 		struct rrr_instance_config_collection *collection
 ) {
 	return RRR_LL_COUNT(collection);
+}
+
+static inline void rrr_instance_config_set_used (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_used(source->settings, name);
+}
+
+static inline void rrr_instance_config_set_unused (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_unused(source->settings, name);
 }
 
 int rrr_instance_config_string_set (

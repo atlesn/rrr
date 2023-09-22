@@ -1039,10 +1039,15 @@ def config(rrr_config : config):
 
 	return True
 
-def process(socket : rrr_socket, message: rrr_message):
+def process(socket : rrr_socket, message: rrr_message, method: str):
+	if (method is None):
+		print("No method given to python3 processor function\n")
+	else:
+		print("Method given to processor function is " + method + "\n")
+
 	# Return False if something is wrong
 	if my_global_variable == "":
-		print("Error: configuration failure")
+		print("Error: configuration failure\n")
 		return False
 		
 	# modify the retrieved message as needed
@@ -1341,6 +1346,16 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
+	# Get any method set by method definition
+	my $method = shift;
+
+	if (defined $method) {
+		print "Method given to processor function: $method\n";
+	}
+	else {
+		print "No method given to processor function\n";
+	}
+
 	# Do some modifications to the message
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
@@ -1496,10 +1511,18 @@ function source(message) {
 	message.send();
 }
 
-function process(message) {
+function process(message, method) {
 	// Process a message from another module
 	// and add the value previously retrieved
 	// from the configuration file.
+
+	if (method !== undefined) {
+		console.log("Method given to JS processor function: " + method + "\n");
+	}
+	else {
+		console.log("No method given to JS processor function\n");
+	}
+
 	console.log("Processing a message\n");
 	message.push_tag("my_parameter", my_parameter);
 	message.send();
