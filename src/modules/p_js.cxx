@@ -270,14 +270,14 @@ class js_run_data {
 
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
-		if (cmodule_config_data->config_function != NULL && *cmodule_config_data->config_function != '\0') {
-			config = program->get_function(ctx, cmodule_config_data->config_function);
+		if (cmodule_config_data->config_method != NULL && *cmodule_config_data->config_method != '\0') {
+			config = program->get_function(ctx, cmodule_config_data->config_method);
 		}
-		if (cmodule_config_data->source_function != NULL && *cmodule_config_data->source_function != '\0') {
-			source = program->get_function(ctx, cmodule_config_data->source_function);
+		if (cmodule_config_data->source_method != NULL && *cmodule_config_data->source_method != '\0') {
+			source = program->get_function(ctx, cmodule_config_data->source_method);
 		}
-		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
-			process = program->get_function(ctx, cmodule_config_data->process_function);
+		if (cmodule_config_data->process_method != NULL && *cmodule_config_data->process_method != '\0') {
+			process = program->get_function(ctx, cmodule_config_data->process_method);
 		}
 	}
 };

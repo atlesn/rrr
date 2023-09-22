@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defines.h"
 #include "../instances.h"
 #include "../event/event.h"
+
+#define RRR_CMODULE_HELPER_SET_METHOD_TO_USE(default_actions)      \
+    const char *method_to_use;                                     \
+    switch (cmodule_config_data->process_mode) {                   \
+      case RRR_CMODULE_PROCESS_MODE_DEFAULT:                       \
+        method_to_use = cmodule_config_data->process_method;       \
+        default_actions; break;                                    \
+      case RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH:               \
+        assert(method != NULL); method_to_use = method; break;     \
+      case RRR_CMODULE_PROCESS_MODE_NONE:                          \
+      default: method_to_use = NULL; assert(0); }
 
 struct rrr_instance_runtime_data;
 struct rrr_stats_instance;

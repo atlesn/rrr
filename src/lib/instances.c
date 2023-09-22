@@ -380,12 +380,29 @@ static int __rrr_instance_parse_method (
 ) {
 	int ret = 0;
 
+	struct data {
+		int do_methods_direct_dispatch;
+	} data_tmp;
+
+	struct data *data = &data_tmp;
+	struct rrr_instance_config_data *config = data_final->config;
+
 	if ((ret = rrr_instance_config_parse_method_definition_from_config_silent_fail(&data_final->methods, data_final->config, "methods")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
+			RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("methods_direct_dispatch",
+				RRR_MSG_0("Parameter methods_direct_dispatch was set without methods being set for instance %s, this is a configuration error.\n",
+					INSTANCE_M_NAME(data_final));
+				ret = 1;
+				goto out;
+			);
 			ret = 0;
 		}
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("methods_direct_dispatch", do_methods_direct_dispatch, 0);
+	if (data_tmp.do_methods_direct_dispatch)
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH;
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active method definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
@@ -396,10 +413,11 @@ static int __rrr_instance_parse_method (
 		);
 	}
 
-	// Cmodules, the only ones using this parameter, will set the parameter back
+	// Cmodules, the only ones using these parameters, will set them back
 	// to being tagged as used later. Other modules will not do this and a warning
-	// will be printed that the parameter is unused.
+	// will be printed that the parameters are unused.
 	rrr_instance_config_set_unused(data_final->config, "methods");
+	rrr_instance_config_set_unused(data_final->config, "methods_direct_dispatch");
 
 	out:
 	return ret;

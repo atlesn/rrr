@@ -95,9 +95,9 @@ int parse_config(struct python3_data *data, struct rrr_instance_config_data *con
 
 struct python3_child_data {
 	struct python3_data *parent_data;
-	PyObject *config_function;
-	PyObject *process_function;
-	PyObject *source_function;
+	PyObject *config_method;
+	PyObject *process_method;
+	PyObject *source_method;
 	struct python3_fork_runtime *runtime;
 };
 
@@ -108,7 +108,7 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	PyObject *config = NULL;
 
-	if (data->config_function == NULL) {
+	if (data->config_method == NULL) {
 		goto out;
 	}
 
@@ -122,7 +122,7 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	if ((ret = rrr_py_cmodule_call_application_raw (
-			data->config_function,
+			data->config_method,
 			config,
 			NULL,
 			NULL
@@ -170,7 +170,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		goto out;
 	}
 
-	if ((function = (is_spawn_ctx ? data->source_function : data->process_function)) == NULL) {
+	if ((function = (is_spawn_ctx ? data->source_method : data->process_method)) == NULL) {
 		RRR_DBG_3("Python3 no functions defined, is_spawn was %i\n", is_spawn_ctx);
 		goto out;
 	}
@@ -205,9 +205,9 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	PyObject *module = NULL;
 	PyObject *module_dict = NULL;
 	PyObject *py_module_name = NULL;
-	PyObject *process_function = NULL;
-	PyObject *source_function = NULL;
-	PyObject *config_function = NULL;
+	PyObject *process_method = NULL;
+	PyObject *source_method = NULL;
+	PyObject *config_method = NULL;
 
 	struct python3_fork_runtime runtime;
 
@@ -244,28 +244,28 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out_cleanup_runtime;
 	}
 
-	if (cmodule_config_data->config_function != NULL) {
-		if ((config_function = rrr_py_import_function(module_dict, cmodule_config_data->config_function)) == NULL) {
+	if (cmodule_config_data->config_method != NULL) {
+		if ((config_method = rrr_py_import_function(module_dict, cmodule_config_data->config_method)) == NULL) {
 			RRR_MSG_0("Could not get config function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->config_function, data->python3_module);
+					cmodule_config_data->config_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (cmodule_config_data->source_function != NULL) {
-		if ((source_function = rrr_py_import_function(module_dict, cmodule_config_data->source_function)) == NULL) {
+	if (cmodule_config_data->source_method != NULL) {
+		if ((source_method = rrr_py_import_function(module_dict, cmodule_config_data->source_method)) == NULL) {
 			RRR_MSG_0("Could not get source function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->source_function, data->python3_module);
+					cmodule_config_data->source_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (cmodule_config_data->process_function != NULL) {
-		if ((process_function = rrr_py_import_function(module_dict, cmodule_config_data->process_function)) == NULL) {
+	if (cmodule_config_data->process_method != NULL) {
+		if ((process_method = rrr_py_import_function(module_dict, cmodule_config_data->process_method)) == NULL) {
 			RRR_MSG_0("Could not get process function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->process_function, data->python3_module);
+					cmodule_config_data->process_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
@@ -278,9 +278,9 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	}*/
 
 	child_data.runtime = &runtime;
-	child_data.config_function = config_function;
-	child_data.source_function = source_function;
-	child_data.process_function = process_function;
+	child_data.config_method = config_method;
+	child_data.source_method = source_method;
+	child_data.process_method = process_method;
 	callbacks->configuration_callback_arg = &child_data;
 	callbacks->process_callback_arg = &child_data;
 
@@ -293,9 +293,9 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	}
 
 	out_cleanup_runtime:
-		RRR_Py_XDECREF(config_function);
-		RRR_Py_XDECREF(process_function);
-		RRR_Py_XDECREF(source_function);
+		RRR_Py_XDECREF(config_method);
+		RRR_Py_XDECREF(process_method);
+		RRR_Py_XDECREF(source_method);
 		RRR_Py_XDECREF(py_module_name);
 		RRR_Py_XDECREF(module);
 		PyEval_SaveThread();

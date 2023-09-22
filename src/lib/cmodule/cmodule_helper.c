@@ -738,7 +738,7 @@ void rrr_cmodule_helper_loop (
 	pthread_cleanup_push(rrr_event_collection_clear_void, &events);
 
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
-		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
+		if (INSTANCE_D_CMODULE(thread_data)->config_data.process_mode != RRR_CMODULE_PROCESS_MODE_NONE) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 			goto out;
@@ -794,31 +794,44 @@ int rrr_cmodule_helper_parse_config (
 
 	int ret = 0;
 
-	// Prevent warning from being printed. Instances framework parses this parameter
-	// whenever present.
+	// Prevent warning from being printed. Instances framework parses these
+	// parameters whenever present.
 	RRR_INSTANCE_CONFIG_SET_USED("methods");
+	RRR_INSTANCE_CONFIG_SET_USED("methods_direct_dispatch");
 
 	RRR_INSTANCE_CONFIG_PREFIX_BEGIN(config_prefix);
 
 	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_config_", config_suffix);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, config_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, config_method);
 
 	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_source_", config_suffix);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, source_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, source_method);
 
 	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_process_", config_suffix);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, process_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, process_method);
 
-	if (data->source_function != NULL && *(data->source_function) != '\0') {
+	if (INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
+		assert(data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE);
+		data->process_mode = RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH;
+	}
+
+	if (data->source_method != NULL && *(data->source_method) != '\0') {
 		data->do_spawning = 1;
 	}
 
-	if (data->process_function != NULL && *(data->process_function) != '\0') {
-		data->do_processing = 1;
+	if (data->process_method != NULL && *(data->process_method) != '\0') {
+		if (data->process_mode == RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH) {
+			RRR_MSG_0("A processor %s was set for instance %s while methods_direct_dispatch was yes. This is a configuration error, the processor %s will never be called.\n",
+				config_suffix, INSTANCE_D_NAME(thread_data), config_suffix);
+			ret = 1;
+			goto out;
+		}
+		assert(data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE);
+		data->process_mode = RRR_CMODULE_PROCESS_MODE_DEFAULT;
 	}
 
-	if (data->do_spawning == 0 && data->do_processing == 0) {
-		RRR_MSG_0("No process or source %s defined in configuration for instance %s\n",
+	if (data->do_spawning == 0 && data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE) {
+		RRR_MSG_0("No process or source %s defined in configuration for instance %s and direct method dispatch is not active\n",
 				config_suffix, config->name);
 		ret = 1;
 		goto out;

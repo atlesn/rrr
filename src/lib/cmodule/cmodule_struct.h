@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,8 +39,8 @@ struct rrr_cmodule_worker {
 
 	rrr_setting_uint spawn_interval_us;
 
+	enum rrr_cmodule_process_mode process_mode;
 	int do_spawning;
-	int do_processing;
 	int do_drop_on_error;
 
 	// Managed structures
