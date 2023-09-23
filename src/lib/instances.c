@@ -99,7 +99,8 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 	}
 
 	struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
-		entry_locked->message
+		entry_locked->message,
+		0
 	};
 
 	struct rrr_instance_message_broker_entry_postprocess_route_callback_data apply_callback_data = {

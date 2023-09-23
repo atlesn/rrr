@@ -349,7 +349,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 			RRR_DBG_3("Performing method discern in worker fork '%s'\n", worker->name);
 
 			struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
-				msg_msg
+				msg_msg,
+				0
 			};
 
 			struct rrr_cmodule_process_method_callback_data apply_callback_data = {

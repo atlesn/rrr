@@ -32,6 +32,10 @@ struct rrr_discern_stack_collection {
 	RRR_LL_HEAD(struct rrr_discern_stack);
 };
 
+struct rrr_discern_stack_index_entry {
+	rrr_length id;
+};
+
 enum rrr_discern_stack_fault {
 	RRR_DISCERN_STACK_FAULT_OK,
 	RRR_DISCERN_STACK_FAULT_CRITICAL,
@@ -42,6 +46,12 @@ enum rrr_discern_stack_fault {
 	RRR_DISCERN_STACK_FAULT_INVALID_TYPE,
 	RRR_DISCERN_STACK_FAULT_STACK_COUNT
 };
+
+#define RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS \
+    rrr_length *result, struct rrr_discern_stack_index_entry **new_index, rrr_length *new_index_size, const char *tag, void *arg
+
+#define RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS \
+    rrr_length *result, const char *topic_filter, void *arg
 
 void rrr_discern_stack_collection_clear (
 		struct rrr_discern_stack_collection *list
@@ -62,8 +72,8 @@ void rrr_discern_stack_collection_iterate_names (
 int rrr_discern_stack_collection_execute (
 		enum rrr_discern_stack_fault *fault,
 		const struct rrr_discern_stack_collection *collection,
-		int (*resolve_topic_filter_cb)(rrr_length *result, const char *topic_filter, void *arg),
-		int (*resolve_array_tag_cb)(rrr_length *result, const char *tag, void *arg),
+		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
+		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
 		void *resolve_callback_arg,
 		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
 		void *apply_callback_arg
