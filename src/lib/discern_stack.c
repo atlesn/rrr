@@ -71,14 +71,18 @@ struct rrr_discern_stack_storage {
 	rrr_length capacity;
 };
 
-struct rrr_discern_stack_element {
-	enum rrr_discern_stack_element_type type;
-	enum rrr_discern_stack_operator_type op;
+struct rrr_discern_stack_value {
 	rrr_length data_size;
 	union {
 		rrr_length value;
 		rrr_length data_pos;
 	};
+};
+
+struct rrr_discern_stack_element {
+	enum rrr_discern_stack_element_type type;
+	enum rrr_discern_stack_operator_type op;
+	struct rrr_discern_stack_value value;
 };
 
 struct rrr_discern_stack_list {
@@ -87,10 +91,17 @@ struct rrr_discern_stack_list {
 	rrr_length wpos;
 };
 
+struct rrr_discern_stack_value_list {
+	rrr_length data_pos;
+	rrr_length size;
+	rrr_length wpos;
+};
+
 struct rrr_discern_stack {
 	RRR_LL_NODE(struct rrr_discern_stack);
 	struct rrr_discern_stack_list list;
-	struct rrr_discern_stack_list stack;
+	struct rrr_discern_stack_value_list exe_stack;
+	struct rrr_discern_stack_list parse_stack;
 	struct rrr_discern_stack_storage storage;
 	char *name;
 };
@@ -103,10 +114,10 @@ static int __rrr_discern_stack_storage_push (
 ) {
 	int ret = 0;
 
-	if (data >= target->data && data < target->data + target->capacity) {
+	if (data != NULL && data >= target->data && data < target->data + target->capacity) {
 		// Copy from and to same storage, just return
 		// the position of the existing data.
-		rrr_length_from_ptr_sub_err(position, data, target->data);
+		*position = rrr_length_from_ptr_sub_bug_const(data, target->data);
 		goto out;
 	}
 
@@ -123,7 +134,8 @@ static int __rrr_discern_stack_storage_push (
 	}
 
 	rrr_length new_position = target->size;
-	memcpy(target->data + new_position, data, data_size);
+	if (data != NULL)
+		memcpy(target->data + new_position, data, data_size);
 	target->size += data_size;
 	*position = new_position;
 
@@ -135,18 +147,24 @@ static void __rrr_discern_stack_storage_clear (
 		struct rrr_discern_stack_storage *target
 ) {
 	RRR_FREE_IF_NOT_NULL(target->data);
+	memset(target, '\0', sizeof(*target));
 }
 
-static void __rrr_discern_stack_list_clear (struct rrr_discern_stack_list *discern_stack) {
-	RRR_FREE_IF_NOT_NULL(discern_stack->elements);
-	memset(discern_stack, '\0', sizeof(*discern_stack));
+static void __rrr_discern_stack_list_clear (struct rrr_discern_stack_list *list) {
+	RRR_FREE_IF_NOT_NULL(list->elements);
+	memset(list, '\0', sizeof(*list));
+}
+
+static void __rrr_discern_stack_value_list_clear (struct rrr_discern_stack_value_list *list) {
+	memset(list, '\0', sizeof(*list));
 }
 
 static void __rrr_discern_stack_destroy (
 		struct rrr_discern_stack *discern_stack
 ) {
 	__rrr_discern_stack_list_clear(&discern_stack->list);
-	__rrr_discern_stack_list_clear(&discern_stack->stack);
+	__rrr_discern_stack_list_clear(&discern_stack->parse_stack);
+	__rrr_discern_stack_value_list_clear(&discern_stack->exe_stack);
 	__rrr_discern_stack_storage_clear(&discern_stack->storage);
 	rrr_free(discern_stack->name);
 	rrr_free(discern_stack);
@@ -165,31 +183,78 @@ static int __rrr_discern_stack_list_peek (
 	assert(discern_stack->wpos > 0);
 	const struct rrr_discern_stack_element *e = &discern_stack->elements[discern_stack->wpos - 1];
 	assert(e->type == RRR_DISCERN_STACK_E_BOOL);
-	return e->value != 0;
+	return e->value.value != 0;
 }
 
-static int __rrr_discern_stack_reserve (
-		struct rrr_discern_stack_list *discern_stack,
-		rrr_length size
+static int __rrr_discern_stack_expand (
+		void **data,
+		rrr_length *old_size,
+		rrr_length increase_size,
+		size_t element_size
 ) {
 	int ret = 0;
 
-	const rrr_length size_new = rrr_length_add_bug_const(discern_stack->size, size);
-	struct rrr_discern_stack_element *elements;
-	if ((elements = rrr_reallocate (
-			discern_stack->elements,
-			discern_stack->size * sizeof(*elements),
-			size_new * sizeof(*elements)
+	const rrr_length new_size = rrr_length_add_bug_const(*old_size, increase_size);
+	void *data_new;
+	if ((data_new = rrr_reallocate (
+			*data,
+			*old_size * element_size,
+			new_size * element_size
 	)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
-	discern_stack->elements = elements;
-	discern_stack->size = size_new;
+
+	*data = data_new;
+	*old_size = new_size;
 
 	out:
 	return ret;
+}
+
+static int __rrr_discern_stack_value_list_expand (
+		struct rrr_discern_stack_value_list *list,
+		struct rrr_discern_stack_storage *storage,
+		rrr_length size
+) {
+	int ret = 0;
+
+	struct rrr_discern_stack_value *elements;
+	rrr_length new_size = list->size + size;
+
+	if (list->size > 0) {
+		elements = storage->data + list->data_pos;
+
+		// The list must already be in the given storage as the last data segment.
+		assert((void *) elements >= storage->data && (void *) elements < storage->data + storage->size);
+		assert(storage->size >= sizeof(*elements) * list->size);
+
+		storage->size -= sizeof(*elements) * list->size;
+
+		assert(elements == storage->data + storage->size);
+	}
+
+	if ((ret = __rrr_discern_stack_storage_push (
+			&list->data_pos,
+			storage,
+			NULL,
+			new_size * sizeof(*elements)
+	)) != 0) {
+		goto out;
+	}
+
+	list->size = new_size;
+
+	out:
+	return ret;
+}
+
+static int __rrr_discern_stack_list_reserve (
+		struct rrr_discern_stack_list *list,
+		rrr_length size
+) {
+	return __rrr_discern_stack_expand((void **) &list->elements, &list->size, size, sizeof(*list->elements));
 }
 
 static int __rrr_discern_stack_list_push (
@@ -206,7 +271,7 @@ static int __rrr_discern_stack_list_push (
 	assert (discern_stack->wpos <= discern_stack->size);
 
 	if (discern_stack->wpos == discern_stack->size) {
-		if ((ret = __rrr_discern_stack_reserve (discern_stack, 8)) != 0) {
+		if ((ret = __rrr_discern_stack_list_reserve (discern_stack, 8)) != 0) {
 			goto out;
 		}
 	}
@@ -218,19 +283,19 @@ static int __rrr_discern_stack_list_push (
 	if (data_size > 0) {
 		assert(data != NULL);
 		if ((ret = __rrr_discern_stack_storage_push (
-				&element->data_pos,
+				&element->value.data_pos,
 				storage,
 				data,
 				data_size
 		)) != 0) {
 			goto out;
 		}
-		element->data_size = data_size;
+		element->value.data_size = data_size;
 	}
 	else {
 		assert(data_size == 0);
-		element->data_size = 0;
-		element->value = value;
+		element->value.data_size = 0;
+		element->value.value = value;
 	}
 
 	discern_stack->wpos++;
@@ -269,9 +334,9 @@ static int __rrr_discern_stack_add_from (
 				&target->storage,
 				node->type,
 				node->op,
-				node->data_size > 0 ? source->storage.data + node->data_pos : NULL,
-				node->data_size,
-				node->value
+				node->value.data_size > 0 ? source->storage.data + node->value.data_pos : NULL,
+				node->value.data_size,
+				node->value.value
 		)) != 0) {
 			goto out;
 		}
@@ -381,9 +446,9 @@ static int __rrr_discern_stack_execute_resolve_and_push (
 
 	rrr_length result = 0;
 
-	assert (node->data_size > 0);
+	assert (node->value.data_size > 0);
 
-	if ((ret = resolve_cb (&result, storage->data + node->data_pos, callback_arg)) != 0) {
+	if ((ret = resolve_cb (&result, storage->data + node->value.data_pos, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -440,12 +505,12 @@ static int __rrr_discern_stack_execute_op_bool (
 		b = &stack->elements[stack->wpos - 2];
 		if (b->type != RRR_DISCERN_STACK_E_BOOL)
 			goto out_fail_type;
-		result = eval_two(a->value, b->value);
+		result = eval_two(a->value.value, b->value.value);
 		__rrr_discern_stack_list_pop(stack);
 		__rrr_discern_stack_list_pop(stack);
 	}
 	else {
-		result = eval_one(a->value);
+		result = eval_one(a->value.value);
 		__rrr_discern_stack_list_pop(stack);
 	}
 
@@ -497,9 +562,9 @@ static int __rrr_discern_stack_execute_op_apply (
 	}
 
 	assert(b->type == RRR_DISCERN_STACK_E_BOOL);
-	assert(a->data_size > 0);
+	assert(a->value.data_size > 0);
 
-	if ((ret = apply_cb(b->value, storage->data + a->data_pos, callback_arg)) != 0) {
+	if ((ret = apply_cb(b->value.value, storage->data + a->value.data_pos, callback_arg)) != 0) {
 		*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 		goto out;
 	}
@@ -554,9 +619,9 @@ static int __rrr_discern_stack_execute_op_push (
 					storage,
 					node->type,
 					node->op,
-					storage->data + node->data_pos,
-					node->data_size,
-					node->value
+					storage->data + node->value.data_pos,
+					node->value.data_size,
+					node->value.value
 			)) != 0) {
 				*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 				goto out;
@@ -570,6 +635,10 @@ static int __rrr_discern_stack_execute_op_push (
 	return ret;
 }
 
+/*
+ * Fast execute with no checks of any kind. The list being
+ * run should be verified first during parsing.
+ */
 static int __rrr_discern_stack_execute (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack *discern_stack,
@@ -580,8 +649,9 @@ static int __rrr_discern_stack_execute (
 		void *apply_cb_arg
 ) {
 	struct rrr_discern_stack_list *list = &discern_stack->list;
-	struct rrr_discern_stack_list *stack = &discern_stack->stack;
+	struct rrr_discern_stack_value_list *stack = &discern_stack->exe_stack;
 	struct rrr_discern_stack_storage *storage = &discern_stack->storage;
+	struct rrr_discern_stack_value *elements = storage->data + stack->data_pos;
 
 	int ret = 0;
 
@@ -590,8 +660,15 @@ static int __rrr_discern_stack_execute (
 	for (rrr_length i = 0; i < list->wpos; i++) {
 		struct rrr_discern_stack_element *node = &discern_stack->list.elements[i];
 
-		if (stack->wpos == stack->size && (ret = __rrr_discern_stack_reserve (stack, 8)) != 0) {
-			goto out;
+		if (stack->wpos == stack->size) {
+			if ((ret = __rrr_discern_stack_value_list_expand (
+					stack,
+					storage,
+					8
+			)) != 0) {
+				goto out;
+			}
+			elements = storage->data + stack->data_pos;
 		}
 
 		switch (node->op) {
@@ -599,8 +676,8 @@ static int __rrr_discern_stack_execute (
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
 						if ((ret = resolve_topic_filter_cb (
-								&(stack->elements[stack->wpos++].value),
-								storage->data + node->data_pos,
+								&(elements[stack->wpos++].value),
+								storage->data + node->value.data_pos,
 								resolve_cb_arg
 						)) != 0) {
 							goto out;
@@ -608,50 +685,50 @@ static int __rrr_discern_stack_execute (
 						break;
 					case RRR_DISCERN_STACK_E_ARRAY_TAG:
 						if ((ret = resolve_array_tag_cb (
-								&stack->elements[stack->wpos++].value,
-								storage->data + node->data_pos,
+								&elements[stack->wpos++].value,
+								storage->data + node->value.data_pos,
 								resolve_cb_arg
 						)) != 0) {
 							goto out;
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack->elements[stack->wpos++].value = 1;
+						elements[stack->wpos++].value = 1;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
-						stack->elements[stack->wpos++] = *node;
+						elements[stack->wpos++] = node->value;
 						break;
 					default:
 						assert(0);
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
-				stack->elements[stack->wpos - 1].value =
-					stack->elements[stack->wpos - 1].value &&
-					stack->elements[stack->wpos - 2].value;
+				elements[stack->wpos - 1].value =
+					elements[stack->wpos - 1].value &&
+					elements[stack->wpos - 2].value;
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
-				stack->elements[stack->wpos - 1].value =
-					stack->elements[stack->wpos - 1].value ||
-					stack->elements[stack->wpos - 2].value;
+				elements[stack->wpos - 1].value =
+					elements[stack->wpos - 1].value ||
+					elements[stack->wpos - 2].value;
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
-				if ((ret = apply_cb(stack->elements[stack->wpos - 2].value, storage->data + stack->elements[stack->wpos - 1].data_pos, apply_cb_arg)) != 0) {
+				if ((ret = apply_cb(elements[stack->wpos - 2].value, storage->data + elements[stack->wpos - 1].data_pos, apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
 				}
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_NOT:
-				stack->elements[stack->wpos - 1].value = !stack->elements[stack->wpos - 1].value;
+				elements[stack->wpos - 1].value = !elements[stack->wpos - 1].value;
 				break;
 			case RRR_DISCERN_STACK_OP_POP:
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_BAIL:
-				if (stack->elements[stack->wpos - 1].value) {
+				if (elements[stack->wpos - 1].value) {
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
 				}
@@ -694,6 +771,11 @@ int rrr_discern_stack_collection_execute (
 	return ret;
 }
 
+/*
+ * Slow execution of one list operator. Used only during parsing, but it is
+ * possible to use it during run-time as well as the callbacks are the same
+ * as for the runtime function.
+ */
 static int __rrr_discern_stack_parse_execute_step (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack_list *stack,
@@ -825,6 +907,10 @@ static int __rrr_discern_stack_parse_execute_apply (
 	return 0;
 }
 
+/*
+ * Parse and slow execute with all kinds of checks to verify data types and operators. The
+ * execution is a dummy one evaluating all operations as we go to produce a stack.
+ */
 static int __rrr_discern_stack_parse (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack *discern_stack,
@@ -1009,7 +1095,7 @@ static int __rrr_discern_stack_parse (
 
 		if ((ret = __rrr_discern_stack_parse_execute_step (
 				fault,
-				&discern_stack->stack,
+				&discern_stack->parse_stack,
 				&discern_stack->storage,
 				&discern_stack->list.elements[discern_stack->list.wpos - 1],
 				__rrr_discern_stack_parse_execute_resolve,
@@ -1027,12 +1113,12 @@ static int __rrr_discern_stack_parse (
 		}
 
 		// Parsing is done when stack would have been empty
-		if (discern_stack->stack.wpos == 0) {
+		if (discern_stack->parse_stack.wpos == 0) {
 			break;
 		}
 	}
 
-	if (discern_stack->stack.wpos != 0) {
+	if (discern_stack->parse_stack.wpos != 0) {
 		// Happens if POP is missing and we reach EOF
 		RRR_MSG_0("Discern definition would not have empty stack after execution, maybe there are not enough POP operators?\n");
 		ret = 1;
@@ -1065,7 +1151,7 @@ int rrr_discern_stack_collection_iterate_destination_names (
 			if (e->type != RRR_DISCERN_STACK_E_DESTINATION) {
 				RRR_LL_ITERATE_NEXT();
 			}
-			if ((ret = callback(discern_stack->name, node->storage.data + e->data_pos, callback_arg)) != 0) {
+			if ((ret = callback(discern_stack->name, node->storage.data + e->value.data_pos, callback_arg)) != 0) {
 				goto out;
 			}
 		}
