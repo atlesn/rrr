@@ -195,16 +195,6 @@ static void __rrr_discern_stack_list_pop (
 	discern_stack->wpos--;
 }
 
-static int __rrr_discern_stack_list_peek (
-		struct rrr_discern_stack_list *list,
-		struct rrr_discern_stack_storage *storage
-) {
-	assert(list->wpos > 0);
-	const struct rrr_discern_stack_element *e = storage->data - list->wpos - sizeof(*e);
-	assert(e->type == RRR_DISCERN_STACK_E_BOOL);
-	return e->value.value != 0;
-}
-
 static int __rrr_discern_stack_data_expand (
 		void **data,
 		rrr_length *data_size,
@@ -720,6 +710,8 @@ static int __rrr_discern_stack_execute (
 			case RRR_DISCERN_STACK_OP_PUSH:
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
+//						stack_e[stack->wpos++].value = 1;
+//						break;
 						if ((ret = resolve_topic_filter_cb (
 								&(stack_e[stack->wpos++].value),
 								list_storage->data + node->value.data_pos,
@@ -942,12 +934,17 @@ static int __rrr_discern_stack_parse_execute_step (
 			)) != 0) {
 				goto out;
 			}
-			int v = __rrr_discern_stack_list_peek (stack, stack_storage);
-			__rrr_discern_stack_list_pop(stack);
-			if (v) {
+
+			// XXX : Probably not useful to check if we are to bail or not as the
+			//       parser ignores bail return value.
+
+			// Note : Subtract wpos, first then don't do -1 when retrieving value
+			stack->wpos--;
+			if (((struct rrr_discern_stack_element *) (stack_storage->data + stack->data_pos))[stack->wpos].value.value) {
 				ret = RRR_DISCERN_STACK_BAIL;
 				goto out;
 			}
+
 			break;
 	}
 
