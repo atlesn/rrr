@@ -191,82 +191,59 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 	int topic_token_pos = 0;
 	int filter_token_pos = 0;
 
-	//printf("%lu %lu\n", topic_end - topic, filter_end - filter);
+	for (filter_pos = filter, topic_pos = topic; filter < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
+		c1 = *filter_pos;
 
-		for (filter_pos = filter, topic_pos = topic; filter < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
-			c1 = *filter_pos;
-
-			//printf("At c1 %c\n", c1);
-
-	/* TESTS
-	 * topic               filter                result
-	 * aaa                 #                     match
-	 * a/a                 a/+                   match
-	 * a/a                 +/a                   match
-	 * a/                  +/+                   match
-	 * /a                  +/+                   match
-	 * //                  //                    match
-	 * /                   //                    mismatch
-	 * //                  /                     mismatch
-	 */
-
-			if (c1 == '#') {
-				assert(topic_token_pos == 0);
-				assert(filter_token_pos == 0);
-				goto match;
-			}
-
-			if (c1 == '+') {
-				assert(topic_token_pos == 0);
-				assert(filter_token_pos == 0);
-
-				token_match = 0;
-				for (; topic_pos < topic_end; topic_pos++) {
-					c2 = *topic_pos;
-					//printf("At c2 %c searching for slash\n", c2);
-					if (c2 == '/') {
-						token_match = 1;
-						topic_token_pos = -1;
-						break;
-					}
-				}
-				if (topic_pos == topic_end) {
-					token_match = 1;
-				}
-				if (!token_match) {
-					//printf("Mismatch after +\n");
-					return RRR_MQTT_TOKEN_MISMATCH;
-				}
-				continue;
-			}
-
-			if (topic_pos == topic_end) {
-				//printf("Mismatch topic exhausted\n");
-				return RRR_MQTT_TOKEN_MISMATCH;
-			}
-
-			c2 = *(topic_pos++);
-			//printf("At c2 %c checking for equal\n", c2);
-			if (c1 != c2) {
-				//printf("Mismatch at %c %c\n", c1, c2);
-				return RRR_MQTT_TOKEN_MISMATCH;
-			}
-
-			if (c1 == '/') {
-				filter_token_pos = -1;
-				topic_token_pos = -1;
-			}
+		if (c1 == '#') {
+			assert(topic_token_pos == 0);
+			assert(filter_token_pos == 0);
+			goto match;
 		}
+
+		if (c1 == '+') {
+			assert(topic_token_pos == 0);
+			assert(filter_token_pos == 0);
+
+			token_match = 0;
+			for (; topic_pos < topic_end; topic_pos++) {
+				c2 = *topic_pos;
+				if (c2 == '/') {
+					token_match = 1;
+					topic_token_pos = -1;
+					break;
+				}
+			}
+			if (topic_pos == topic_end) {
+				token_match = 1;
+			}
+			if (!token_match) {
+				return RRR_MQTT_TOKEN_MISMATCH;
+			}
+			continue;
+		}
+
+		if (topic_pos == topic_end) {
+			return RRR_MQTT_TOKEN_MISMATCH;
+		}
+
+		c2 = *(topic_pos++);
+		if (c1 != c2) {
+			return RRR_MQTT_TOKEN_MISMATCH;
+		}
+
+		if (c1 == '/') {
+			filter_token_pos = -1;
+			topic_token_pos = -1;
+		}
+	}
 
 	assert(topic_pos == topic_end);
 
 	if (topic_pos != topic_end) {
-		//printf("Mismatch topic not exhausted\n");
 		return RRR_MQTT_TOKEN_MISMATCH;
 	}
 
 	match:
-	//printf("match\n");
 
 	return RRR_MQTT_TOKEN_MATCH;
 }
