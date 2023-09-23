@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_TOPIC_H
 
 #include "../rrr_inttypes.h"
+#include "../read_constants.h"
 
 struct rrr_mqtt_topic_token {
 	struct rrr_mqtt_topic_token *next;
@@ -31,24 +32,10 @@ struct rrr_mqtt_topic_token {
 	char data[1];
 };
 
-struct rrr_mqtt_topic_linear_token {
-	rrr_u16 data_size;
-
-	// Must be last
-	char data[1];
-} __attribute__((packed));
-
-struct rrr_mqtt_topic_linear {
-	rrr_u32 data_size;
-
-	// Must be last
-	char data[1];
-};
-
-#define RRR_MQTT_TOKEN_OK				0
-#define RRR_MQTT_TOKEN_MATCH			RRR_MQTT_TOKEN_OK
-#define RRR_MQTT_TOKEN_INTERNAL_ERROR	1
-#define RRR_MQTT_TOKEN_MISMATCH			4
+#define RRR_MQTT_TOKEN_OK                 RRR_READ_OK
+#define RRR_MQTT_TOKEN_MATCH              RRR_READ_OK
+#define RRR_MQTT_TOKEN_INTERNAL_ERROR     RRR_READ_HARD_ERROR
+#define RRR_MQTT_TOKEN_MISMATCH           RRR_READ_UNSUCSESSFUL
 
 int rrr_mqtt_topic_filter_validate_name (
 		const char *topic_filter
@@ -66,8 +53,9 @@ int rrr_mqtt_topic_match_tokens_recursively (
 );
 int rrr_mqtt_topic_match_topic_and_linear_with_end (
 		const char *topic,
-		const char *end,
-		const struct rrr_mqtt_topic_linear *filter
+		const char *topic_end,
+		const char *filter,
+		const char *filter_end
 );
 int rrr_mqtt_topic_match_str_with_end (
 		const char *sub_filter,
@@ -96,14 +84,6 @@ int rrr_mqtt_topic_tokenize_with_end (
 );
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,
-		const char *topic
-);
-int rrr_mqtt_topic_token_to_linear (
-		struct rrr_mqtt_topic_linear **target,
-		const struct rrr_mqtt_topic_token *first_token
-);
-int rrr_mqtt_topic_to_linear (
-		struct rrr_mqtt_topic_linear **target,
 		const char *topic
 );
 

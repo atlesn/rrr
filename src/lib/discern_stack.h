@@ -52,7 +52,7 @@ enum rrr_discern_stack_fault {
     rrr_length *result, struct rrr_discern_stack_index_entry **new_index, rrr_length *new_index_size, const char *tag, void *arg
 
 #define RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS \
-    rrr_length *result, struct rrr_mqtt_topic_linear *topic_filter_linear, void *arg
+    rrr_length *result, const char *topic_filter, rrr_length topic_filter_size, void *arg
 
 void rrr_discern_stack_collection_clear (
 		struct rrr_discern_stack_collection *list

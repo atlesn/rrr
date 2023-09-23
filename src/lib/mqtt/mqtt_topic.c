@@ -176,42 +176,27 @@ int rrr_mqtt_topic_match_tokens_recursively (
 // Only sub_token may contain # and +
 int rrr_mqtt_topic_match_topic_and_linear_with_end (
 		const char *topic,
-		const char *end,
-		const struct rrr_mqtt_topic_linear *filter
+		const char *topic_end,
+		const char *filter,
+		const char *filter_end
 ) {
-	const rrr_length topic_length = rrr_length_from_ptr_sub_bug_const(end, topic);
+	assert (topic != NULL);
+	assert (filter != NULL);
+	assert (topic != topic_end);
+	assert (filter != filter_end);
 
-	if (topic == NULL || topic_length == 0)
-		return RRR_MQTT_TOKEN_MISMATCH;
-
-	assert (*topic != '\0');
-
-	const struct rrr_mqtt_topic_linear_token *linear_token = (void *) filter->data;
-	const rrr_u32 linear_token_head_size = sizeof(*linear_token) - sizeof(linear_token->data);
-	const char *data_pos = filter->data;
-	const char * const data_end = ((const void *) filter) + filter->data_size;
-	size_t i = 0, j = 0;
-	rrr_u32 token_length;
+	const char *filter_pos, *topic_pos;
 	char c1, c2;
 	int token_match = 0;
+	int topic_token_pos = 0;
+	int filter_token_pos = 0;
 
-	while (data_pos < data_end) {
-		assert(linear_token->data_size > linear_token_head_size);
+	//printf("%lu %lu\n", topic_end - topic, filter_end - filter);
 
-		token_length = linear_token->data_size - linear_token_head_size;
+		for (filter_pos = filter, topic_pos = topic; filter < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
+			c1 = *filter_pos;
 
-		for (i = 0; i < token_length; i++) {
-			again:
-
-			c1 = linear_token->data[i];
-			printf("At c1 %c\n", c1);
-
-			assert(c1 != '/');
-
-			if (j == topic_length) {
-				printf("Mismatch topic exhausted\n");
-				return RRR_MQTT_TOKEN_MISMATCH;
-			}
+			//printf("At c1 %c\n", c1);
 
 	/* TESTS
 	 * topic               filter                result
@@ -226,63 +211,62 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 	 */
 
 			if (c1 == '#') {
-				assert(i == 0 /* at token start */);
-				assert(token_length == 1);
-				assert((long long int) i == token_length - 1);
+				assert(topic_token_pos == 0);
+				assert(filter_token_pos == 0);
 				goto match;
 			}
 
 			if (c1 == '+') {
-				assert(i == 0 /* at token start */);
-				assert(token_length == 1);
-				token_match = 0;
+				assert(topic_token_pos == 0);
+				assert(filter_token_pos == 0);
 
-				// Everything up to next / or end matches
-				for (; j < topic_length; j++) {
-					c2 = topic[j];
-					printf("At c2 %c checking for slash\n", c2);
+				token_match = 0;
+				for (; topic_pos < topic_end; topic_pos++) {
+					c2 = *topic_pos;
+					//printf("At c2 %c searching for slash\n", c2);
 					if (c2 == '/') {
 						token_match = 1;
-						j++;
+						topic_token_pos = -1;
 						break;
 					}
 				}
-				if (j == topic_length) {
+				if (topic_pos == topic_end) {
 					token_match = 1;
 				}
 				if (!token_match) {
-					printf("Mismatch after +\n");
+					//printf("Mismatch after +\n");
 					return RRR_MQTT_TOKEN_MISMATCH;
 				}
 				continue;
 			}
 
-			c2 = topic[j++];
-			printf("At c2 %c checking for slash and first char of topic token %i\n", c2, i == 0);
-			if (i == 0 && c2 == '/') {
-				goto again;
+			if (topic_pos == topic_end) {
+				//printf("Mismatch topic exhausted\n");
+				return RRR_MQTT_TOKEN_MISMATCH;
 			}
 
-			printf("At c2 %c checking for equal\n", c2);
+			c2 = *(topic_pos++);
+			//printf("At c2 %c checking for equal\n", c2);
 			if (c1 != c2) {
-				printf("Mismatch at %c %c\n", c1, c2);
+				//printf("Mismatch at %c %c\n", c1, c2);
 				return RRR_MQTT_TOKEN_MISMATCH;
+			}
+
+			if (c1 == '/') {
+				filter_token_pos = -1;
+				topic_token_pos = -1;
 			}
 		}
 
-		data_pos += linear_token->data_size;
-		linear_token = (void *) data_pos;
-	}
+	assert(topic_pos == topic_end);
 
-	assert(data_pos == data_end);
-
-	if (j != topic_length) {
-		printf("Mismatch topci not exhausted\n");
+	if (topic_pos != topic_end) {
+		//printf("Mismatch topic not exhausted\n");
 		return RRR_MQTT_TOKEN_MISMATCH;
 	}
 
 	match:
-	printf("%p %p\n", data_pos, data_end);
+	//printf("match\n");
 
 	return RRR_MQTT_TOKEN_MATCH;
 }
@@ -501,91 +485,4 @@ int rrr_mqtt_topic_tokenize (
 ) {
 	const char *end = topic + strlen(topic);
 	return rrr_mqtt_topic_tokenize_with_end(first_token, topic, end);
-}
-
-int rrr_mqtt_topic_token_to_linear (
-		struct rrr_mqtt_topic_linear **target,
-		const struct rrr_mqtt_topic_token *first_token
-) {
-	int ret = 0;
-
-	struct rrr_mqtt_topic_linear *topic_linear;
-	const struct rrr_mqtt_topic_token *token;
-	struct rrr_mqtt_topic_linear_token linear_token_tmp;
-	static const rrr_u32 linear_token_head_size = sizeof(linear_token_tmp) - sizeof(linear_token_tmp.data);
-	static const rrr_u32 linear_head_size = sizeof(*topic_linear) - sizeof(topic_linear->data);
-	rrr_u32 total_size = 0;
-	void *wpos;
-
-	token = first_token;
-	for (token = first_token; token; token = token->next) {
-		const size_t token_data_size = strlen(token->data);
-
-		if (token_data_size > 0xffff) {
-			RRR_MSG_0("Token size exceeds maximum in %s\n");
-			ret = 1;
-			goto out;
-		}
-
-		total_size += linear_token_head_size + token_data_size;
-
-		if (total_size < linear_token_head_size || total_size < token_data_size) {
-			RRR_MSG_0("Size overflow in %s\n", __func__);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if ((topic_linear = rrr_allocate(linear_head_size + total_size)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	RRR_ASSERT(sizeof(rrr_length) == sizeof(topic_linear->data_size),length_of_data_size_is_same_as_rrr_length);
-	topic_linear->data_size = rrr_length_add_bug_const(rrr_length_from_biglength_bug_const(total_size), 4);
-	wpos = &topic_linear->data;
-
-	for (token = first_token; token; token = token->next) {
-		const size_t token_data_size = strlen(token->data);
-
-		linear_token_tmp.data_size = rrr_u16_from_biglength_bug_const(linear_token_head_size + token_data_size);
-		memcpy(wpos, &linear_token_tmp, linear_token_head_size);
-		wpos += linear_token_head_size;
-
-		memcpy(wpos, token->data, token_data_size);
-		wpos += token_data_size;
-	}
-
-	assert(wpos - (void *) topic_linear == topic_linear->data_size);
-
-	*target = topic_linear;
-
-	goto out;
-//	out_free:
-//	rrr_free(topic_linear);
-	out:
-	return ret;
-}
-
-int rrr_mqtt_topic_to_linear (
-		struct rrr_mqtt_topic_linear **target,
-		const char *topic
-) {
-	int ret = 0;
-
-	struct rrr_mqtt_topic_token *token;
-
-	if ((ret = rrr_mqtt_topic_tokenize (&token, topic)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_mqtt_topic_token_to_linear (target, token)) != 0) {
-		goto out_destroy;
-	}
-
-	out_destroy:
-		rrr_mqtt_topic_token_destroy(token);
-	out:
-		return ret;
 }

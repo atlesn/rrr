@@ -46,7 +46,8 @@ int rrr_discern_stack_helper_topic_filter_resolve_cb (RRR_DISCERN_STACK_RESOLVE_
 	if ((rrr_mqtt_topic_match_topic_and_linear_with_end (
 			topic,
 			topic + topic_length,
-			topic_filter_linear
+			topic_filter,
+			topic_filter + topic_filter_size - 1
 	)) == RRR_MQTT_TOKEN_MISMATCH) {
 		goto out;
 	}
@@ -54,7 +55,7 @@ int rrr_discern_stack_helper_topic_filter_resolve_cb (RRR_DISCERN_STACK_RESOLVE_
 	*result = 1;
 
 	out:
-	RRR_DBG_3("+ Topic filter is a %s\n", (*result ? "MATCH" : "MISMATCH"));
+	RRR_DBG_3("+ Topic filter %s is a %s\n", topic_filter, (*result ? "MATCH" : "MISMATCH"));
 	return ret;
 }
 

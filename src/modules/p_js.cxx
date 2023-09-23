@@ -236,8 +236,6 @@ class js_run_data {
 		processed++;
 		processed_total++;
 
-		return;
-
 		auto msg_value = (RRR::JS::Value) msg_factory.new_external(ctx, msg, msg_addr).first();
 
 		if (mode == RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH) {
