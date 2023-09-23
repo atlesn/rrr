@@ -27,31 +27,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "message_helper.h"
 #include "allocator.h"
+#include "messages/msg_msg_struct.h"
 #include "mqtt/mqtt_topic.h"
 
 int rrr_discern_stack_helper_topic_filter_resolve_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
 	struct rrr_discern_stack_helper_callback_data *callback_data = arg;
+	const rrr_u16 topic_length = MSG_TOPIC_LENGTH(callback_data->msg);
+	const char *topic = MSG_TOPIC_PTR(callback_data->msg);
 
 	int ret = 0;
 
-	struct rrr_mqtt_topic_token *token = NULL;
+	*result = 0;
 
-	if ((ret = rrr_mqtt_topic_tokenize(&token, topic_filter)) != 0) {
-		RRR_MSG_0("Failed to tokenize topic in %s\n", __func__);
+	if (topic_length == 0) {
 		goto out;
 	}
 
-	int result_tmp = 0;
-	if ((ret = rrr_message_helper_topic_match(&result_tmp, callback_data->msg, token)) != 0) {
-		RRR_MSG_0("Failed to match topic in %s\n", __func__);
+	if ((rrr_mqtt_topic_match_topic_and_linear_with_end (
+			topic,
+			topic + topic_length,
+			topic_filter_linear
+	)) == RRR_MQTT_TOKEN_MISMATCH) {
 		goto out;
 	}
-	*result = result_tmp != 0;
 
-	RRR_DBG_3("+ Topic filter %s is a %s\n",
-			topic_filter, (*result ? "MATCH" : "MISMATCH"));
+	*result = 1;
+
 	out:
-	rrr_mqtt_topic_token_destroy(token);
+	RRR_DBG_3("+ Topic filter is a %s\n", (*result ? "MATCH" : "MISMATCH"));
 	return ret;
 }
 

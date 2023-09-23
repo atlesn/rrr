@@ -704,6 +704,9 @@ static int __rrr_discern_stack_execute (
 			stack_e = list_storage->data + stack->data_pos;
 		}
 
+		struct rrr_discern_stack_element elements[4];
+		memcpy(elements, list_storage->data + list->data_pos + i * sizeof(struct rrr_discern_stack_element), sizeof(elements));
+
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
 
 		switch (node->op) {
@@ -953,7 +956,7 @@ static int __rrr_discern_stack_parse_execute_step (
 }
 
 static int __rrr_discern_stack_parse_execute_resolve_topic_filter (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
-	(void)(topic_filter);
+	(void)(topic_filter_linear);
 	(void)(arg);
 
 	*result = 1;
@@ -1001,6 +1004,7 @@ static int __rrr_discern_stack_parse (
 	struct rrr_discern_stack_list stack = {0};
 	struct rrr_discern_stack_list list = {0};
 
+	struct rrr_mqtt_topic_linear *topic_linear_tmp = NULL;
 	char *str_tmp = NULL;
 	const void *data = NULL;
 	rrr_length data_size = 0;
@@ -1152,14 +1156,31 @@ static int __rrr_discern_stack_parse (
 			*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 			goto out;
 		}
-		data = str_tmp;
-		data_size = rrr_length_from_size_t_bug_const(rrr_size_t_inc_bug_const(strlen(str_tmp)));
 
-		if (type == RRR_DISCERN_STACK_E_TOPIC_FILTER && rrr_mqtt_topic_filter_validate_name(str_tmp) != 0) {
-			RRR_MSG_0("Invalid topic filter '%s' in discern stack definition\n", str_tmp);
-			ret = 1;
-			*fault = RRR_DISCERN_STACK_FAULT_INVALID_VALUE;
-			goto out;
+		if (type == RRR_DISCERN_STACK_E_TOPIC_FILTER) {
+			if (rrr_mqtt_topic_filter_validate_name(str_tmp) != 0) {
+				RRR_MSG_0("Invalid topic filter '%s' in discern stack definition\n", str_tmp);
+				ret = 1;
+				*fault = RRR_DISCERN_STACK_FAULT_INVALID_VALUE;
+				goto out;
+			}
+
+			RRR_FREE_IF_NOT_NULL(topic_linear_tmp);
+
+			if ((ret = rrr_mqtt_topic_to_linear (
+					&topic_linear_tmp,
+					str_tmp
+			)) != 0) {
+				*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
+				goto out;
+			}
+
+			data = topic_linear_tmp;
+			data_size = topic_linear_tmp->data_size;
+		}
+		else {
+			data = str_tmp;
+			data_size = rrr_length_from_size_t_bug_const(rrr_size_t_inc_bug_const(strlen(str_tmp)));
 		}
 
                 push:
@@ -1241,6 +1262,7 @@ static int __rrr_discern_stack_parse (
 		__rrr_discern_stack_storage_clear(&stack_storage);
 		__rrr_discern_stack_storage_clear(&list_storage);
 		__rrr_discern_stack_storage_clear(&value_storage);
+		RRR_FREE_IF_NOT_NULL(topic_linear_tmp);
 		RRR_FREE_IF_NOT_NULL(str_tmp);
 		return ret;
 }

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,8 +22,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_TOPIC_H
 #define RRR_MQTT_TOPIC_H
 
+#include "../rrr_inttypes.h"
+
 struct rrr_mqtt_topic_token {
 	struct rrr_mqtt_topic_token *next;
+
+	// Must be last
+	char data[1];
+};
+
+struct rrr_mqtt_topic_linear_token {
+	rrr_u16 data_size;
+
+	// Must be last
+	char data[1];
+} __attribute__((packed));
+
+struct rrr_mqtt_topic_linear {
+	rrr_u32 data_size;
 
 	// Must be last
 	char data[1];
@@ -47,6 +63,11 @@ int rrr_mqtt_topic_validate_name (
 int rrr_mqtt_topic_match_tokens_recursively (
 		const struct rrr_mqtt_topic_token *sub_token,
 		const struct rrr_mqtt_topic_token *pub_token
+);
+int rrr_mqtt_topic_match_topic_and_linear_with_end (
+		const char *topic,
+		const char *end,
+		const struct rrr_mqtt_topic_linear *filter
 );
 int rrr_mqtt_topic_match_str_with_end (
 		const char *sub_filter,
@@ -75,6 +96,14 @@ int rrr_mqtt_topic_tokenize_with_end (
 );
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,
+		const char *topic
+);
+int rrr_mqtt_topic_token_to_linear (
+		struct rrr_mqtt_topic_linear **target,
+		const struct rrr_mqtt_topic_token *first_token
+);
+int rrr_mqtt_topic_to_linear (
+		struct rrr_mqtt_topic_linear **target,
 		const char *topic
 );
 
