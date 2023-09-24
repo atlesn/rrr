@@ -1265,7 +1265,7 @@ int rrr_discern_stack_collection_iterate_destination_names (
 		for (rrr_length i = 0; i < discern_stack->exe_list.wpos; i++) {
 			const struct rrr_discern_stack_element *e = &((const struct rrr_discern_stack_element *) (discern_stack->exe_storage.data + discern_stack->exe_list.data_pos))[i];
 			if (e->type != RRR_DISCERN_STACK_E_DESTINATION) {
-				RRR_LL_ITERATE_NEXT();
+				continue;
 			}
 			if ((ret = callback(discern_stack->name, node->exe_storage.data + e->value.data_pos, callback_arg)) != 0) {
 				goto out;
