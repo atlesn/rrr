@@ -261,7 +261,7 @@ class js_run_data {
 	}
 	static int methodCallback(const char *stack_name, const char *method_name, void *self) {
 		js_run_data *run_data = reinterpret_cast<js_run_data*>(self);
-		RRR_DBG_1("JS instance %s registering method %s from discern stack %s\n",
+		RRR_DBG_1("JS instance %s registering method %s from method definition %s\n",
 			INSTANCE_D_NAME(run_data->data->thread_data), method_name, stack_name
 		);
 		run_data->registerMethod(method_name);
