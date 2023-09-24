@@ -53,6 +53,7 @@ extern "C" {
 }; // extern "C"
 
 #include <filesystem>
+#include <unordered_map>
 
 #include "../lib/event/Event.hxx"
 #include "../lib/js/Message.hxx"
