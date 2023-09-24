@@ -364,18 +364,46 @@ AC_DEFUN([V8COMPILE], [
 ])
 
 AC_DEFUN([V8TESTS],[
-	AC_MSG_CHECKING([V8 compilation and linking])
+	AC_MSG_CHECKING([V8 compilation and linking without pointer compression V8_COMPRESS_POINTERS (default mode for NodeJS)])
 	AC_LANG_CONFTEST([
 		AC_LANG_SOURCE([[
 			#include <v8.h>
 			#include <libplatform/libplatform.h>
 			int main (int argc, char **argv) {
 				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				v8::V8::InitializeICUDefaultLocation(argv[0]);
+				v8::V8::InitializeExternalStartupData(argv[0]);
+				v8::V8::InitializePlatform(platform.get());
+				v8::V8::Initialize();
 				return 0;
 			}
 		]])
 	])
-	V8COMPILE
+	V8COMPILE([
+		AC_MSG_RESULT([V8 was not built with pointer compression])
+	],[
+		AC_MSG_RESULT([V8 was maybe built with pointer compression])
+
+		AC_MSG_CHECKING([V8 compilation and linking with pointer compression])
+
+		AC_LANG_SOURCE([[
+			#define V8_COMPRESS_POINTERS 1
+			#include <v8.h>
+			#include <libplatform/libplatform.h>
+			int main (int argc, char **argv) {
+				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				v8::V8::InitializeICUDefaultLocation(argv[0]);
+				v8::V8::InitializeExternalStartupData(argv[0]);
+				v8::V8::InitializePlatform(platform.get());
+				v8::V8::Initialize();
+				return 0;
+			}
+		]])
+		V8COMPILE
+
+		AC_MSG_RESULT([V8 was built with pointer compression])
+		AC_DEFINE([V8_COMPRESS_POINTERS], [1], [Use compressed pointers in V8, this parameter must match with of the V8 library on the system was compiled])
+	])
 
 	AC_MSG_CHECKING([V8 has BackingStore])
 	AC_LANG_CONFTEST([
@@ -456,7 +484,7 @@ AS_IF([test "x$enable_js" != xno],[
 	AC_DEFINE([RRR_WITH_JS], [1], [Enable V8])
 
 	if test "x$with_v8" = xyes; then
-		v8_cflags=`pkg-config --cflags v8 v8_libbase v8_libplatform`
+		v8_cflags=`pkg-config --cflags --silence-errors v8 v8_libbase v8_libplatform`
 		if [[ $? -ne 0 ]]; then
 			v8_include_dir_test="/usr/local/include /usr/include"
 		fi
@@ -484,8 +512,8 @@ AS_IF([test "x$enable_js" != xno],[
 	AC_MSG_CHECKING([for V8 libraries])
 
 	if test "x$with_v8" = xyes; then
-		v8_ldflags=`pkg-config --libs-only-L v8 v8_libbase v8_libplatform`
-		v8_libs=`pkg-config --libs-only-l v8 v8_libbase v8_libplatform`
+		v8_ldflags=`pkg-config --libs-only-L --silence-errors v8 v8_libbase v8_libplatform`
+		v8_libs=`pkg-config --libs-only-l --silence-errors v8 v8_libbase v8_libplatform`
 		if [[ $? -ne 0 ]]; then
 		echo "result: $?, libs: $v8_libs"
 			v8_lib_dir_test="/usr/local/lib /usr/lib"
