@@ -60,9 +60,9 @@ AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the pyt
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
-AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
-AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS bindings])],[enable_node=no],[enable_node=yes])
-AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 bindings (instead of NodeJS)])],[],[enable_v8=yes])
+AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--with-jemalloc],[build with jemalloc support])],[enable_jemalloc=yes],[enable_jemalloc=no])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[set root directory for the V8 bindings in where the out/ directory exists])],[],[with_v8=yes])
+AC_ARG_ENABLE([js],[AS_HELP_STRING([--disable-js],[build without JavaScript bindings])],[enable_js=no],[enable_js=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -93,7 +93,9 @@ AS_IF([ test -f ".development" ], [
 ])
 
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
-CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered $RRR_WARNINGS -D_XOPEN_SOURCE=700 -g"
+CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -D_XOPEN_SOURCE=700 -g"
+CPPFLAGS="-I/usr/local/include -I/usr/include"
+LDFLAGS="-L/usr/local/lib -L/usr/lib -L/lib"
 AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
 AM_LDFLAGS=""
 
@@ -105,7 +107,7 @@ AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
 
 AC_MSG_CHECKING([for C++ usage])
-if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
+if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
 	AC_MSG_RESULT([yes])
 	AC_PROG_CXX
 	# Dont't use. Sometimes adds gnu17 standard.
@@ -114,7 +116,9 @@ if test "x$enable_node" != xno; then # autotools complains when using AC_PROG_CX
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS"
+	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK"
+	CLANG_CXXFLAGS="-Wno-unused-parameter"
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
 	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])
@@ -142,8 +146,7 @@ AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_JEMALLOC], [test "x$enable_jemalloc" != xno])
-AM_CONDITIONAL([RRR_WITH_NODE], [test "x$enable_node" != xno])
-AM_CONDITIONAL([RRR_WITH_V8], [test "x$enable_v8" != xno])
+AM_CONDITIONAL([RRR_WITH_JS], [test "x$enable_js" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -214,7 +217,7 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
-		
+
 AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
@@ -348,8 +351,8 @@ AS_IF([test "x$enable_jemalloc" != xno], [
 AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([V8COMPILE], [
-	cxx_flags="$TEST_CXXFLAGS $NODE_CXXFLAGS -w"
-	ld_flags="$AM_LDFLAGS $NODE_LDFLAGS $NODE_LIBS"
+	cxx_flags="$TEST_CXXFLAGS $JS_CXXFLAGS $FREEBSD_CXXFLAGS -w"
+	ld_flags="$AM_LDFLAGS $JS_LDFLAGS $JS_LIBS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags > /dev/null 2>&1 && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([present])
@@ -359,6 +362,7 @@ AC_DEFUN([V8COMPILE], [
 		m4_default([$2], [AC_MSG_ERROR([Failed: $CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags && ./conftest])])
 	fi
 ])
+
 AC_DEFUN([V8TESTS],[
 	AC_MSG_CHECKING([V8 compilation and linking])
 	AC_LANG_CONFTEST([
@@ -446,84 +450,87 @@ AC_DEFUN([V8TESTS],[
 
 AC_LANG_PUSH([C++])
 
-AC_MSG_CHECKING([for V8 node usage (overriding NodeJS usage)])
-AS_IF([test "x$enable_v8" != xno],[
+AC_MSG_CHECKING([for V8 usage])
+AS_IF([test "x$enable_js" != xno],[
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_NODE], [1], [Enable V8])
-	enable_node=no
+	AC_DEFINE([RRR_WITH_JS], [1], [Enable V8])
+
 	if test "x$with_v8" = xyes; then
-		v8_include_dir_test="/usr/include/v8 /usr/local/include/v8"
+		v8_cflags=`pkg-config --cflags v8 v8_libbase v8_libplatform`
+		if [[ $? -ne 0 ]]; then
+			v8_include_dir_test="/usr/local/include /usr/include"
+		fi
 	else
 		v8_include_dir_test="$with_v8/include"
-		v8_lib_dir_test=`ls -d $with_v8/out/*`
 	fi
 
-	AC_MSG_CHECKING([for V8 include directory])
-	for dir in $v8_include_dir_test; do
-		if test -d $dir; then
-			v8_include_dir=$dir
-			break
-		fi
-	done
-	if test "x$v8_include_dir" != x; then
-		AC_MSG_RESULT([$v8_include_dir])
+	AC_MSG_CHECKING([for V8 include directories])
+
+	if test "x$v8_cflags" = x; then
+		v8_cflags=""
+		for dir in $v8_include_dir_test; do
+			if test -d $dir; then
+				v8_cflags="$v8_cflags -I$dir"
+			fi
+		done
+	fi
+
+	if test "x$v8_cflags" != x; then
+		AC_MSG_RESULT([$v8_cflags])
 	else
 		AC_MSG_ERROR("not found")
 	fi
 
-	NODE_CXXFLAGS="-I$v8_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DRRR_INTERCEPT_ALLOW_FORK -DV8_DEPRECATION_WARNINGS"
-	NODE_LDFLAGS=""
-	NODE_LIBS="-lstdc++ -lv8"
+	AC_MSG_CHECKING([for V8 libraries])
 
-	AC_MSG_CHECKING([for custom V8 library directories])
-	if test "x$v8_lib_dir_test" != x; then
-		for dir in $v8_lib_dir_test; do
-			NODE_LDFLAGS="$NODE_LDFLAGS -L$dir"
-		done
-		AC_MSG_RESULT([$NODE_LDFLAGS])
+	if test "x$with_v8" = xyes; then
+		v8_ldflags=`pkg-config --libs-only-L v8 v8_libbase v8_libplatform`
+		v8_libs=`pkg-config --libs-only-l v8 v8_libbase v8_libplatform`
+		if [[ $? -ne 0 ]]; then
+		echo "result: $?, libs: $v8_libs"
+			v8_lib_dir_test="/usr/local/lib /usr/lib"
+			v8_libs="-lv8 -licuuc -licui18n -licudata -lv8_libbase -lv8_libplatform"
+		fi
 	else
-		AC_MSG_RESULT([none])
+		v8_lib_dir_test=`ls $with_v8/out/*`
+		v8_libs="-lv8 -licuuc -licui18n -licudata -lv8_libbase"
 	fi
+
+	if test "x$v8_libs" != x; then
+		AC_MSG_RESULT([$v8_libs])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	AC_MSG_CHECKING([for V8 library directories])
+
+	if test "x$v8_lib_dir_test" != x; then
+		v8_ldflags=""
+		for dir in $v8_lib_dir_test; do
+			if test -d $dir; then
+				v8_ldflags="$v8_ldflags -L$dir"
+			fi
+		done
+	fi
+
+	if test "x$v8_ldflags" != x; then
+		AC_MSG_RESULT([$v8_ldflags])
+	else
+		AC_MSG_ERROR("not found")
+	fi
+
+	JS_CXXFLAGS="$v8_cflags -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
+	JS_LDFLAGS="$v8_ldflags"
+	JS_LIBS="$v8_libs"
 
 	V8TESTS
 ],[
 	AC_MSG_RESULT([no])
 ])
 
-AC_MSG_CHECKING([for node usage])
-AS_IF([test "x$enable_node" != xno], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_NODE], [1], [Enable NodeJS])
-	# AC_CHECK_HEADERS does not work for C++ headers with .h suffix, it
-	# only starts C-compiler.
-	AC_MSG_CHECKING([for node include directory])
-	node_include_dir=""
-	for dir in /usr/include/node /usr/local/include/node; do
-		if test -d $dir; then
-			node_include_dir=$dir
-			break
-		fi
-	done
-	if test "x$node_include_dir" != x; then
-		AC_MSG_RESULT([$node_include_dir])
-	else
-		AC_MSG_ERROR("not found")
-	fi
-
-	NODE_CXXFLAGS="-I$node_include_dir -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DRRR_INTERCEPT_ALLOW_FORK"
-	NODE_LDFLAGS=""
-	NODE_LIBS="-lstdc++ -lnode"
-	V8TESTS
-], [
-	AC_MSG_RESULT([no])
-])
-
-AC_SUBST([NODE_CXXFLAGS])
-AC_SUBST([NODE_LDFLAGS])
-AC_SUBST([NODE_LIBS])
-
-AS_IF([test "x$NODE_CXXFLAGS" != ""],[
-])
+AC_SUBST([JS_CXXFLAGS])
+AC_SUBST([JS_LDFLAGS])
+AC_SUBST([JS_LIBS])
 
 AC_LANG_POP([C++])
 
@@ -563,6 +570,9 @@ AS_IF([test "x$enable_perl5" = xno], [
 
 	AC_MSG_CHECKING([Perl5 CFLAGS])
 	PERL5_CFLAGS=$(${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | ${PERL5_INTERPRETER} -E 'while(<STDIN>){s/\s*-specs\S*//g;print;}')
+	if test "$CXX" = "c++"; then
+		PERL5_CFLAGS="$PERL5_CFLAGS -Wno-compound-token-split-by-macro"
+	fi
 
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
@@ -694,7 +704,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	AC_SUBST([PYTHON3_LDFLAGS])
 
 	chmod +x test_python3.sh
-	./test_python3.sh "$python3_config_bin"
+	./test_python3.sh "$CC" "$python3_config_bin"
 	PYTHON3_TEST_RESULT="$?"
 
 	AC_MSG_CHECKING([functional python3 config])

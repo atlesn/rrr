@@ -67,13 +67,13 @@ librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
 zlib_extra_ld = ${ZLIB_LDFLAGS}
 endif
 
-if RRR_WITH_NODE
+if RRR_WITH_JS
 libadd_js = librrrjs.la
 librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
-librrrjs_la_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
-librrrjs_la_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
-js_extra_ldflags = ${NODE_LDFLAGS}
-js_extra_libadd = $(NODE_LIBS)
+librrrjs_la_CXXFLAGS = ${JS_CXXFLAGS} ${AM_CXXFLAGS}
+librrrjs_la_LDFLAGS = ${JS_LDFLAGS} ${JS_LIBS}
+js_extra_ldflags = ${JS_LDFLAGS}
+js_extra_libadd = $(JS_LIBS)
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
