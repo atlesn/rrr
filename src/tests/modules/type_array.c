@@ -409,11 +409,6 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	rrr_length final_length = 0;
-	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		final_length += node->total_stored_length;
-	RRR_LL_ITERATE_END();
-
 	const struct rrr_type_value *types[13];
 
 	// After the array has been assembled and then disassembled again, all
