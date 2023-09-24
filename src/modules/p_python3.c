@@ -212,19 +212,6 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	PyObject *arg_message = NULL;
 	PyObject *arg_method = NULL;
 
-	if (!is_spawn_ctx) {
-		if (method != NULL) {
-			if ((arg_method = PyUnicode_FromString(method)) == NULL) {
-				RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
-				ret = 1;
-				goto out;
-			}
-		}
-		else {
-			Py_INCREF(arg_method = Py_None);
-		}
-	}
-
 	if ((arg_message = rrr_python3_rrr_message_new_from_message_and_address (
 			message,
 			is_spawn_ctx ? NULL : message_addr
@@ -241,6 +228,18 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		function = python3_method_collection_get(data->methods, method);
 	}
 	else {
+		// Third argument for process function is name of any method from method definition
+		if (method != NULL) {
+			if ((arg_method = PyUnicode_FromString(method)) == NULL) {
+				RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			Py_INCREF(arg_method = Py_None);
+		}
+
 		function = data->process_method;
 	}
 
