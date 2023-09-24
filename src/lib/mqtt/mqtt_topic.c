@@ -186,7 +186,7 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 	assert (filter != filter_end);
 
 	const char *filter_pos, *topic_pos;
-	char c1, c2;
+	char c1;
 	int topic_token_pos = 0;
 	int filter_token_pos = 0;
 
@@ -196,6 +196,11 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 		if (c1 == '#') {
 			assert(topic_token_pos == 0);
 			assert(filter_token_pos == 0);
+
+			if (*topic_pos == '$') {
+				return RRR_MQTT_TOKEN_MISMATCH;
+			}
+
 			goto match;
 		}
 
@@ -203,9 +208,11 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 			assert(topic_token_pos == 0);
 			assert(filter_token_pos == 0);
 
+			if (*topic_pos == '$') {
+				return RRR_MQTT_TOKEN_MISMATCH;
+			}
 			for (; topic_pos < topic_end; topic_pos++) {
-				c2 = *topic_pos;
-				if (c2 == '/') {
+				if (*topic_pos == '/') {
 					topic_token_pos = -1;
 					break;
 				}
@@ -220,8 +227,7 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 
-		c2 = *(topic_pos++);
-		if (c1 != c2) {
+		if (c1 != *(topic_pos++)) {
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 

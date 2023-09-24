@@ -125,7 +125,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret = 0;
 	int ret_tmp = 0;
-
+goto mqtt;
 	// OR all the return values, don't stop if a test fails
 
 	TEST_BEGIN("rrr_allocator") {
@@ -164,12 +164,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+mqtt:
 	TEST_BEGIN("MQTT topics") {
 		ret_tmp = rrr_test_mqtt_topic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
 
+assert(0);
 	TEST_BEGIN("parsing") {
 		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);
