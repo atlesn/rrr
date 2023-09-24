@@ -187,11 +187,10 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 
 	const char *filter_pos, *topic_pos;
 	char c1, c2;
-	int token_match = 0;
 	int topic_token_pos = 0;
 	int filter_token_pos = 0;
 
-	for (filter_pos = filter, topic_pos = topic; filter < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
+	for (filter_pos = filter, topic_pos = topic; filter_pos < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
 		c1 = *filter_pos;
 
 		if (c1 == '#') {
@@ -204,20 +203,15 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 			assert(topic_token_pos == 0);
 			assert(filter_token_pos == 0);
 
-			token_match = 0;
 			for (; topic_pos < topic_end; topic_pos++) {
 				c2 = *topic_pos;
 				if (c2 == '/') {
-					token_match = 1;
 					topic_token_pos = -1;
 					break;
 				}
 			}
 			if (topic_pos == topic_end) {
-				token_match = 1;
-			}
-			if (!token_match) {
-				return RRR_MQTT_TOKEN_MISMATCH;
+				goto match;
 			}
 			continue;
 		}
@@ -237,13 +231,15 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 		}
 	}
 
-	assert(topic_pos == topic_end);
-
 	if (topic_pos != topic_end) {
 		return RRR_MQTT_TOKEN_MISMATCH;
 	}
 
 	match:
+
+	if (c1 != '#') {
+		assert(topic_pos == topic_end);
+	}
 
 	return RRR_MQTT_TOKEN_MATCH;
 }
@@ -415,30 +411,40 @@ int rrr_mqtt_topic_tokenize_with_end (
 
 	int ret = 0;
 
+	rrr_length len;
+
 	if (pos < end) {
 		const char *token_end = __rrr_mqtt_topic_strnchr(pos, '/', end);
 		if (token_end == NULL) {
 			token_end = end;
 		}
 
-		rrr_length len = rrr_length_from_ptr_sub_bug_const (token_end, pos);
-		token = rrr_allocate(sizeof(*token) + len + 1);
-//		printf ("allocate token %p\n", token);
-		if (token == NULL) {
+		len = rrr_length_from_ptr_sub_bug_const (token_end, pos);
+
+		if ((token = rrr_allocate(sizeof(*token) + len + 1)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
 		memset (token, '\0', sizeof(*token));
-		memcpy(token->data, pos, len);
+		memcpy (token->data, pos, len);
 		token->data[len] = '\0';
 
-		pos += len + 1;
-
-		if (pos < end) {
-			ret = rrr_mqtt_topic_tokenize_with_end(&token->next, pos, end);
-			if (ret != 0) {
+		if (token_end == end - 1 && *token_end == '/') {
+			const char* dummy = "";
+			if ((ret = rrr_mqtt_topic_tokenize_with_end(&token->next, dummy, dummy + 1)) != 0) {
 				goto out_cleanup;
+			}
+			len = 0;
+			token_end = end;
+		}
+		else {
+			pos += len + 1;
+
+			if (pos < end) {
+				if ((ret = rrr_mqtt_topic_tokenize_with_end(&token->next, pos, end)) != 0) {
+					goto out_cleanup;
+				}
 			}
 		}
 	}

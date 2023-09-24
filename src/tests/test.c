@@ -164,13 +164,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-/*
 	TEST_BEGIN("MQTT topics") {
 		ret_tmp = rrr_test_mqtt_topic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-*/
+
 	TEST_BEGIN("parsing") {
 		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);
