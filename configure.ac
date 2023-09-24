@@ -62,7 +62,6 @@ AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bind
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--with-jemalloc],[build with jemalloc support])],[enable_jemalloc=yes],[enable_jemalloc=no])
 AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[set root directory for the V8 bindings in where the out/ directory exists])],[],[with_v8=yes])
-AC_ARG_ENABLE([js],[AS_HELP_STRING([--disable-js],[build without JavaScript bindings])],[enable_js=no],[enable_js=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -76,16 +75,12 @@ AC_MSG_CHECKING([for SystemD disabled on BSD])
 AC_MSG_RESULT([yes])
 
 AC_MSG_CHECKING([for JavaScript enabled])
-if test "x$enable_js" != xno; then
-	if test "x$with_v8" = xno; then
-		AC_MSG_ERROR([JavaScript was enabled but V8 was not. Both or neither must be enabled.])
-	fi
+if test "x$with_v8" != xno; then
+	enable_js=yes
 	AC_MSG_RESULT([yes])
 else
-	if test "x$with_v8" != xno; then
-		AC_MSG_ERROR([V8 was enabled but JavaScript was not. Both or neither must be enabled.])
-	fi
-	AC_MSG_RESULT([bo])
+	enable_js=no
+	AC_MSG_RESULT([no])
 fi
 
 AC_MSG_CHECKING([for RRR GNU Debug])
