@@ -54,6 +54,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
 
+// TODO : Consider using hashmap, but usually there is only a
+//        few methods. Maybe not benefitial (enough).
 struct python3_method {
 	RRR_LL_NODE(struct python3_method);
 	char *name;
@@ -162,7 +164,42 @@ struct python3_child_data {
 	PyObject *source_method;
 	struct python3_method_collection *methods;
 	struct python3_fork_runtime *runtime;
+
+	int64_t start_time;
+	int64_t prev_status_time;
+	uint64_t processed;
+	uint64_t processed_total;
 };
+
+static int python3_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
+	struct python3_child_data *data = private_arg;
+
+	(void)(worker);
+
+	// Need status print?
+	int64_t now = (int64_t) rrr_time_get_64();
+	int64_t diff = now - data->prev_status_time;
+	if (diff < 1 * 1000 * 1000) { // 1 Second
+		return 0;
+	}
+
+	// Calculate/print status
+	data->prev_status_time = now;
+
+	double per_sec = ((double) data->processed) / ((double) diff / 1000000);
+	double per_sec_average = ((double) data->processed_total) / ((double) (rrr_time_get_64() - (uint64_t) data->start_time) / 1000000);
+
+	RRR_DBG_1("Python3 instance %s processed per second %.2f average %.2f total %" PRIu64 "\n",
+			INSTANCE_D_NAME(data->parent_data->thread_data),
+			per_sec,
+			per_sec_average,
+			data->processed_total
+	);
+
+	data->processed = 0;
+
+	return 0;
+}
 
 int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	int ret = 0;
@@ -224,23 +261,28 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	if (is_spawn_ctx) {
 		function = data->source_method;
 	}
-	else if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
-		function = python3_method_collection_get(data->methods, method);
-	}
 	else {
-		// Third argument for process function is name of any method from method definition
-		if (method != NULL) {
-			if ((arg_method = PyUnicode_FromString(method)) == NULL) {
-				RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
-				ret = 1;
-				goto out;
-			}
+		data->processed++;
+		data->processed_total++;
+
+		if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
+			function = python3_method_collection_get(data->methods, method);
 		}
 		else {
-			Py_INCREF(arg_method = Py_None);
-		}
+			// Third argument for process function is name of any method from method definition
+			if (method != NULL) {
+				if ((arg_method = PyUnicode_FromString(method)) == NULL) {
+					RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
+					ret = 1;
+					goto out;
+				}
+			}
+			else {
+				Py_INCREF(arg_method = Py_None);
+			}
 
-		function = data->process_method;
+			function = data->process_method;
+		}
 	}
 
 	if (function == NULL) {
@@ -395,6 +437,8 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	child_data.source_method = source_method;
 	child_data.process_method = process_method;
 	child_data.methods = &methods;
+	child_data.start_time = rrr_time_get_64();
+	callbacks->ping_callback_arg = &child_data;
 	callbacks->configuration_callback_arg = &child_data;
 	callbacks->process_callback_arg = &child_data;
 
@@ -442,14 +486,16 @@ static int python3_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_forks_start (
+	if (rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 			thread_data,
 			python3_init_wrapper_callback,
 			data,
+			python3_ping_callback,
+			NULL, // <-- in the init wrapper, this callback arg is set to child_data
 			python3_configuration_callback,
 			NULL, // <-- in the init wrapper, this callback arg is set to child_data
 			python3_process_callback,
-			NULL  // <-- in the init wrapper, this callback is set to child_data
+			NULL  // <-- in the init wrapper, this callback arg is set to child_data
 	) != 0) {
 		RRR_MSG_0("Error while starting python3 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
 		ret = 1;
