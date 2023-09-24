@@ -44,6 +44,7 @@ struct raw_data {
 	int print_data;
 	long double total_message_age_us;
 	struct rrr_poll_helper_counters counters;
+	uint64_t start_time;
 };
 
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -118,9 +119,12 @@ static int raw_event_periodic (void *arg) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(message_count, raw_data);
 
-	RRR_DBG_1("Raw instance %s messages per second %" PRIu64 " total %" PRIu64 " avg age %Lg ms\n",
+	double per_sec_average = ((double) raw_data->counters.total_message_count) / ((double) (rrr_time_get_64() - raw_data->start_time) / 1000000);
+
+	RRR_DBG_1("Raw instance %s messages per second %" PRIu64 " average %.2f total %" PRIu64 " average age %Lg ms\n",
 			INSTANCE_D_NAME(thread_data),
 			message_count,
+			per_sec_average,
 			raw_data->counters.total_message_count,
 			(raw_data->total_message_age_us/(long double) raw_data->counters.total_message_count/1000.0)
 	);
@@ -132,6 +136,7 @@ static int raw_event_periodic (void *arg) {
 
 void data_init(struct raw_data *data) {
 	memset (data, '\0', sizeof(*data));
+	data->start_time = rrr_time_get_64();
 }
 
 int parse_config (struct raw_data *data, struct rrr_instance_config_data *config) {
