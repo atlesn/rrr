@@ -93,7 +93,7 @@ AS_IF([ test -f ".development" ], [
 ])
 
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
-CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -D_XOPEN_SOURCE=700 -g"
+CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered -D_XOPEN_SOURCE=700 -g"
 CPPFLAGS="-I/usr/local/include -I/usr/include"
 LDFLAGS="-L/usr/local/lib -L/usr/lib -L/lib"
 AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
