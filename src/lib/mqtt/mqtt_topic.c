@@ -186,14 +186,11 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 	assert (filter != filter_end);
 
 	const char *filter_pos, *topic_pos;
-	char c1;
 	int topic_token_pos = 0;
 	int filter_token_pos = 0;
 
 	for (filter_pos = filter, topic_pos = topic; filter_pos < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
-		c1 = *filter_pos;
-
-		if (c1 == '#') {
+		if (*filter_pos == '#') {
 			assert(topic_token_pos == 0);
 			assert(filter_token_pos == 0);
 
@@ -204,7 +201,7 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 			goto match;
 		}
 
-		if (c1 == '+') {
+		if (*filter_pos == '+') {
 			assert(topic_token_pos == 0);
 			assert(filter_token_pos == 0);
 
@@ -217,9 +214,7 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 					break;
 				}
 			}
-			if (topic_pos == topic_end) {
-				goto match;
-			}
+
 			continue;
 		}
 
@@ -227,11 +222,11 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 
-		if (c1 != *(topic_pos++)) {
+		if (*filter_pos != *(topic_pos++)) {
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 
-		if (c1 == '/') {
+		if (*filter_pos == '/') {
 			filter_token_pos = -1;
 			topic_token_pos = -1;
 		}
@@ -243,7 +238,7 @@ int rrr_mqtt_topic_match_topic_and_linear_with_end (
 
 	match:
 
-	if (c1 != '#') {
+	if (*filter_pos != '#') {
 		assert(topic_pos == topic_end);
 	}
 

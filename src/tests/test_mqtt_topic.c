@@ -149,6 +149,13 @@ static const struct rrr_test_mqtt_test_case test_cases_matching[] = {
 	TEST_CASE_NOK(  #,       $/  ),
 	TEST_CASE_NOK(  #,       $/$ ),
 
+	TEST_CASE_OK (   /#,      /a$),
+	TEST_CASE_OK (  #,      a$/  ),
+	TEST_CASE_OK (  #,      a$/a$),
+
+	TEST_CASE_NOK(   a/b,    a   ),
+	TEST_CASE_NOK(   a,      a/b ),
+
 	TEST_CASE_NOK(   +/a,     a   ),
 	TEST_CASE_NOK(   a/+,     a   ),
 	TEST_CASE_NOK(   +/+,     a   ),
@@ -162,6 +169,10 @@ static const struct rrr_test_mqtt_test_case test_cases_matching[] = {
 	TEST_CASE_NOK(   /+,      /$ ),
 	TEST_CASE_NOK(  +/ ,     $/  ),
 	TEST_CASE_NOK(  +/+,     $/$ ),
+
+	TEST_CASE_OK (   /+,      /a$),
+	TEST_CASE_OK (  +/ ,    a$/  ),
+	TEST_CASE_OK (  +/+,    a$/a$),
 
 	{NULL, NULL, 0}
 };
@@ -195,7 +206,7 @@ int rrr_test_mqtt_topic(void) {
 
 	const struct rrr_test_mqtt_test_case *test_case;
 
-	TEST_MSG("\nINVALID FILTERS\n");
+	TEST_MSG("\n=== INVALID FILTERS\n");
 	TEST_MSG("\n+ %10s %5s\n", "FILTER", "VALID");
 	for (test_case = test_cases_topic_validation; test_case->filter != NULL; test_case++) {
 		TEST_MSG("+ %10s %5s\n", test_case->filter, test_case->result ? "YES" : "NO");
