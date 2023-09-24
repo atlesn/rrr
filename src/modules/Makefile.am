@@ -32,11 +32,11 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-if RRR_WITH_NODE
+if RRR_WITH_JS
 js = js.la
 js_la_SOURCES = p_js.cxx
-js_la_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS}
-js_la_LDFLAGS = ${module_ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS}
+js_la_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS}
+js_la_LDFLAGS = ${module_ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la \

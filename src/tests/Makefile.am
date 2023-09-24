@@ -8,10 +8,9 @@ if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
 
-if RRR_WITH_NODE
-js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${NODE_LDFLAGS}
-js_extra_ldadd = -ltestjs -lstdc++ ${NODE_LIBS} -lrrrcxx
-#$(NODE_LIBS)
+if RRR_WITH_JS
+js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${JS_LDFLAGS}
+js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}

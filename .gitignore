@@ -75,6 +75,7 @@ src/vlogger
 *.lai
 .dirstamp
 variables.sh
+variables.sh.in
 /src/lib/rrr-build-config.h
 /src/lib/rrr-build-config.h.in
 
