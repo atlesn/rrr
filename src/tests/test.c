@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_usleep.h"
 #include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
+#include "test_mqtt_topic.h"
 #include "test_parse.h"
 #include "test_inet.h"
 #include "test_modbus.h"
@@ -163,6 +164,13 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+/*
+	TEST_BEGIN("MQTT topics") {
+		ret_tmp = rrr_test_mqtt_topic();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+*/
 	TEST_BEGIN("parsing") {
 		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);

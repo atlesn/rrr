@@ -83,4 +83,10 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_cmodule_worker;
 
+enum rrr_cmodule_process_mode {
+	RRR_CMODULE_PROCESS_MODE_NONE,
+	RRR_CMODULE_PROCESS_MODE_DEFAULT,
+	RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH
+};
+
 #endif /* RRR_CMODULE_DEFINES_H */

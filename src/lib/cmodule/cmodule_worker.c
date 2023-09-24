@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -267,7 +267,7 @@ struct rrr_cmodule_process_method_callback_data {
 	int run_count;
 };
 
-static int __rrr_cmodule_worker_loop_discern_apply_cb (int result, const char *method, void *arg) {
+static int __rrr_cmodule_worker_loop_discern_apply_cb (rrr_length result, const char *method, void *arg) {
 	struct rrr_cmodule_process_method_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -322,7 +322,7 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 					worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
 		}
 	}
-	else if (!worker->do_processing) {
+	else if (worker->process_mode == RRR_CMODULE_PROCESS_MODE_NONE) {
 		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n",
 				worker->name);
 	}
@@ -349,7 +349,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 			RRR_DBG_3("Performing method discern in worker fork '%s'\n", worker->name);
 
 			struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
-				msg_msg
+				msg_msg,
+				0
 			};
 
 			struct rrr_cmodule_process_method_callback_data apply_callback_data = {
@@ -597,7 +598,10 @@ static int __rrr_cmodule_worker_loop (
 ) {
 	int ret_tmp;
 
-	if (worker->do_spawning == 0 && worker->do_processing == 0 && callbacks->custom_tick_callback == NULL) {
+	if ( worker->do_spawning == 0 &&
+	     worker->process_mode == RRR_CMODULE_PROCESS_MODE_NONE &&
+	     callbacks->custom_tick_callback == NULL
+	) {
 		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in %s\n", __func__);
 	}
 
@@ -847,8 +851,8 @@ int rrr_cmodule_worker_init (
 		struct rrr_fork_handler *fork_handler,
 		const struct rrr_discern_stack_collection *methods,
 		rrr_setting_uint spawn_interval_us,
+		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
-		int do_processing,
 		int do_drop_on_error
 ) {
 	int ret = 0;
@@ -895,8 +899,8 @@ int rrr_cmodule_worker_init (
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
 	worker->spawn_interval_us = spawn_interval_us;
+	worker->process_mode = process_mode;
 	worker->do_spawning = do_spawning;
-	worker->do_processing = do_processing;
 	worker->do_drop_on_error = do_drop_on_error;
 
 	pthread_mutex_lock(&worker->pid_lock);
