@@ -385,9 +385,24 @@ AC_DEFUN([V8TESTS],[
 		AC_MSG_RESULT([V8 was maybe built with pointer compression])
 
 		AC_MSG_CHECKING([V8 compilation and linking with pointer compression])
-		AC_DEFINE([V8_COMPRESS_POINTERS], [1], [Use compressed pointers in V8, this parameter must match with of the V8 library on the system was compiled])
+
+		AC_LANG_SOURCE([[
+			#define V8_COMPRESS_POINTERS 1
+			#include <v8.h>
+			#include <libplatform/libplatform.h>
+			int main (int argc, char **argv) {
+				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+				v8::V8::InitializeICUDefaultLocation(argv[0]);
+				v8::V8::InitializeExternalStartupData(argv[0]);
+				v8::V8::InitializePlatform(platform.get());
+				v8::V8::Initialize();
+				return 0;
+			}
+		]])
 		V8COMPILE
+
 		AC_MSG_RESULT([V8 was built with pointer compression])
+		AC_DEFINE([V8_COMPRESS_POINTERS], [1], [Use compressed pointers in V8, this parameter must match with of the V8 library on the system was compiled])
 	])
 
 	AC_MSG_CHECKING([V8 has BackingStore])
