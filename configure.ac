@@ -75,6 +75,19 @@ enable_systemd=no
 AC_MSG_CHECKING([for SystemD disabled on BSD])
 AC_MSG_RESULT([yes])
 
+AC_MSG_CHECKING([for JavaScript enabled])
+if test "x$enable_js" != xno; then
+	if test "x$with_v8" = xno; then
+		AC_MSG_ERROR([JavaScript was enabled but V8 was not. Both or neither must be enabled.])
+	fi
+	AC_MSG_RESULT([yes])
+else
+	if test "x$with_v8" != xno; then
+		AC_MSG_ERROR([V8 was enabled but JavaScript was not. Both or neither must be enabled.])
+	fi
+	AC_MSG_RESULT([bo])
+fi
+
 AC_MSG_CHECKING([for RRR GNU Debug])
 AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([RRR GNU Debug disabled])
@@ -138,6 +151,7 @@ SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
+SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
 
 SHELL_VARS_OUTPUT
 
