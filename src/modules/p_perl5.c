@@ -308,12 +308,12 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
 	struct rrr_perl5_settings_hv settings_hv = {0};
 
-	if (cmodule_config_data->config_function == NULL || *(cmodule_config_data->config_function) == '\0') {
+	if (cmodule_config_data->config_method == NULL || *(cmodule_config_data->config_method) == '\0') {
 		RRR_DBG_1("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
+	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_method);
 
 	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
@@ -327,13 +327,13 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	// child fork, and all settings must be sent back to the parent over the mmap channel.
 	if ((ret = rrr_perl5_call_blessed_hvref_and_sv (
 			child_data->ctx,
-			cmodule_config_data->config_function,
+			cmodule_config_data->config_method,
 			"rrr::rrr_helper::rrr_settings",
 			settings_hv.hv,
 			NULL
 	)) != 0) {
 		RRR_MSG_0("Error while sending settings to sub %s in perl5 instance %s\n",
-				cmodule_config_data->config_function, INSTANCE_D_NAME(data->thread_data));
+				cmodule_config_data->config_method, INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -374,22 +374,24 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	if (is_spawn_ctx) {
 		ret = rrr_perl5_call_blessed_hvref_and_sv (
 				ctx,
-				cmodule_config_data->source_function,
+				cmodule_config_data->source_method,
 				"rrr::rrr_helper::rrr_message",
 				hv_message.hv,
 				NULL
 		);
 	}
 	else {
-		if (method != NULL && (ret = rrr_perl5_method_to_sv(&sv_method, ctx, method)) != 0) {
+		RRR_CMODULE_HELPER_SET_METHOD_TO_USE (
+			if (method == NULL || (ret = rrr_perl5_method_to_sv(&sv_method, ctx, method)) == 0)
+				break;
 			RRR_MSG_0("Could not create method SV in %s of perl5 instance %s\n",
 					__func__, INSTANCE_D_NAME(data->thread_data));
 			goto out;
-		}
+		);
 
 		ret = rrr_perl5_call_blessed_hvref_and_sv (
 				ctx,
-				cmodule_config_data->process_function,
+				method_to_use,
 				"rrr::rrr_helper::rrr_message",
 				hv_message.hv,
 				sv_method.sv
@@ -397,7 +399,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not call source/process function in %s of perl5 instance %s, spawn ctx is %i\n",
+		RRR_MSG_0("Could not call source/process method in %s of perl5 instance %s, spawn ctx is %i\n",
 				__func__, INSTANCE_D_NAME(data->thread_data), is_spawn_ctx);
 		ret = 1;
 		goto out;

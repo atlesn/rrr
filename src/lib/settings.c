@@ -968,8 +968,6 @@ static void __rrr_settings_set_used (
 		const char *name,
 		rrr_u32 used
 ) {
-	int found = 0;
-
 	__rrr_settings_lock(settings);
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		struct rrr_setting *setting = &settings->settings[i];
@@ -977,15 +975,10 @@ static void __rrr_settings_set_used (
 		if (!(strcmp(setting->name, name) == 0))
 			continue;
 
-		found = 1;
 		setting->was_used = used;
 		break;
 	}
 	__rrr_settings_unlock(settings);
-
-	if (!found) {
-		RRR_BUG("BUG: Setting %s not found in %s\n", name, __func__);
-	}
 }
 
 void rrr_settings_set_unused (

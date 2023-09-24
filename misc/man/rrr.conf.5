@@ -87,6 +87,11 @@ route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
 # <NAME>. Multiple names may be given, in which the definitions will be run in order.
 methods=METHOD DEFINITION|<METHOD DEFINITION NAME>[,<METHOD DEFINITION NAME>]...
 
+# When using methods, call a named processor function directly inside the cmodule program (optional). By
+# default, and if set to no, the default processor function will be called instead with the resolved method
+# name as argument.
+methods_direct_dispatch=yes
+
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
 

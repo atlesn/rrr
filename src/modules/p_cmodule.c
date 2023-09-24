@@ -118,9 +118,9 @@ struct cmodule_run_data {
 
 	struct cmodule_data *data;
 
-	int (*config_function)(RRR_CONFIG_ARGS);
-	int (*source_function)(RRR_SOURCE_ARGS);
-	int (*process_function)(RRR_PROCESS_ARGS);
+	int (*config_method)(RRR_CONFIG_ARGS);
+	int (*source_method)(RRR_SOURCE_ARGS);
+	int (*process_method)(RRR_PROCESS_ARGS);
 	int (*cleanup_function)(RRR_CLEANUP_ARGS);
 };
 
@@ -182,9 +182,9 @@ static int __cmodule_load (
 
 		int function_err = 0;
 
-		GET_FUNCTION(cmodule_config_data,config_function);
-		GET_FUNCTION(cmodule_config_data,source_function);
-		GET_FUNCTION(cmodule_config_data,process_function);
+		GET_FUNCTION(cmodule_config_data,config_method);
+		GET_FUNCTION(cmodule_config_data,source_method);
+		GET_FUNCTION(cmodule_config_data,process_method);
 		GET_FUNCTION(data,cleanup_function);
 
 		if (function_err != 0) {
@@ -274,13 +274,13 @@ static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_AR
 
 	int ret = 0;
 
-	if (run_data->config_function == NULL) {
+	if (run_data->config_method == NULL) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
 				INSTANCE_D_NAME(run_data->data->thread_data));
 		goto out;
 	}
 
-	if ((ret = run_data->config_function(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
+	if ((ret = run_data->config_method(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
 		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
 				ret, INSTANCE_D_NAME(run_data->data->thread_data));
 		ret = 1;
@@ -306,17 +306,17 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
-		if (run_data->source_function == NULL) {
+		if (run_data->source_method == NULL) {
 			RRR_BUG("BUG: Source function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->source_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->source_method(&run_data->ctx, message_copy, message_addr);
 		// Don't goto out here, print error further down
 	}
 	else {
-		if (run_data->process_function == NULL) {
+		if (run_data->process_method == NULL) {
 			RRR_BUG("BUG: Process function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->process_function(&run_data->ctx, message_copy, message_addr, method);
+		ret = run_data->process_method(&run_data->ctx, message_copy, message_addr, method);
 		// Don't goto out here, print error further down
 	}
 

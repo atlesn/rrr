@@ -24,12 +24,12 @@ sub config {
 
 my @persistent_single_value_tags;
 
-sub process {
+sub my_method {
 	my $message = shift;
 	my $method = shift;
 
-	if ($method ne "my_method") {
-		print "Method mismatch in process function $method<>my_method\n";
+	if (defined $method) {
+		print "Method was not undefined in process function\n";
 		return 0;
 	}
 

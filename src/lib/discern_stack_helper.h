@@ -22,22 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_DISCERN_STACK_HELPER_H
 #define RRR_DISCERN_STACK_HELPER_H
 
+#include "rrr_types.h"
+#include "discern_stack.h"
+
 struct rrr_msg_msg;
 
 struct rrr_discern_stack_helper_callback_data {
 	const struct rrr_msg_msg *msg;
+	int index_produced;
 };
 
-int rrr_discern_stack_helper_topic_filter_resolve_cb (
-		int *result,
-		const char *topic_filter,
-		void *arg
-);
-
-int rrr_discern_stack_helper_array_tag_resolve_cb (
-		int *result,
-		const char *array_tag,
-		void *arg
-);
+int rrr_discern_stack_helper_topic_filter_resolve_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS);
+int rrr_discern_stack_helper_array_tag_resolve_cb (RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS);
 
 #endif /* RRR_DISCERN_STACK_HELPER_H */

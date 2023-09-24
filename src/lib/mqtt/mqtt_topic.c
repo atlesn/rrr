@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_topic.h"
 
+#include "../rrr_types.h"
 #include "../util/utf8.h"
 #include "../util/macro_utils.h"
 
@@ -170,6 +171,81 @@ int rrr_mqtt_topic_match_tokens_recursively (
 	}
 
 	return rrr_mqtt_topic_match_tokens_recursively(sub_token->next, pub_token->next);
+}
+
+// Only sub_token may contain # and +
+int rrr_mqtt_topic_match_topic_and_linear_with_end (
+		const char *topic,
+		const char *topic_end,
+		const char *filter,
+		const char *filter_end
+) {
+	assert (topic != NULL);
+	assert (filter != NULL);
+	assert (topic != topic_end);
+	assert (filter != filter_end);
+
+	const char *filter_pos, *topic_pos;
+	char c1, c2;
+	int token_match = 0;
+	int topic_token_pos = 0;
+	int filter_token_pos = 0;
+
+	for (filter_pos = filter, topic_pos = topic; filter < filter_end; filter_pos++, filter_token_pos++, topic_token_pos++) {
+		c1 = *filter_pos;
+
+		if (c1 == '#') {
+			assert(topic_token_pos == 0);
+			assert(filter_token_pos == 0);
+			goto match;
+		}
+
+		if (c1 == '+') {
+			assert(topic_token_pos == 0);
+			assert(filter_token_pos == 0);
+
+			token_match = 0;
+			for (; topic_pos < topic_end; topic_pos++) {
+				c2 = *topic_pos;
+				if (c2 == '/') {
+					token_match = 1;
+					topic_token_pos = -1;
+					break;
+				}
+			}
+			if (topic_pos == topic_end) {
+				token_match = 1;
+			}
+			if (!token_match) {
+				return RRR_MQTT_TOKEN_MISMATCH;
+			}
+			continue;
+		}
+
+		if (topic_pos == topic_end) {
+			return RRR_MQTT_TOKEN_MISMATCH;
+		}
+
+		c2 = *(topic_pos++);
+		if (c1 != c2) {
+			return RRR_MQTT_TOKEN_MISMATCH;
+		}
+
+		if (c1 == '/') {
+			filter_token_pos = -1;
+			topic_token_pos = -1;
+		}
+	}
+
+	assert(topic_pos == topic_end);
+
+	if (topic_pos != topic_end) {
+		return RRR_MQTT_TOKEN_MISMATCH;
+	}
+
+	match:
+
+	return RRR_MQTT_TOKEN_MATCH;
 }
 
 int rrr_mqtt_topic_match_str_with_end (
