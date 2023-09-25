@@ -66,6 +66,11 @@ int rrr_discern_stack_helper_array_tag_resolve_cb (RRR_DISCERN_STACK_RESOLVE_ARR
 
 	struct rrr_array array = {0};
 
+	if (!MSG_IS_ARRAY(callback_data->msg)) {
+		*result = 0;
+		goto not_array;
+	}
+
 	uint16_t version;
 	if ((ret = rrr_array_message_append_to_array (
 			&version,
@@ -96,6 +101,8 @@ int rrr_discern_stack_helper_array_tag_resolve_cb (RRR_DISCERN_STACK_RESOLVE_ARR
 	}
 
 	*result = rrr_array_has_tag(&array, tag) != 0;
+
+	not_array:
 
 	RRR_DBG_3("+ Array tag check result for %s is %s\n",
 			tag, (*result ? "HAS" : "HASN'T"));
