@@ -67,7 +67,8 @@ static int __rrr_instance_config_new (
 		const char *name,
 		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees,
-		const struct rrr_route_collection *global_routes
+		const struct rrr_discern_stack_collection *global_routes,
+		const struct rrr_discern_stack_collection *global_methods
 ) {
 	int ret = 0;
 
@@ -95,6 +96,7 @@ static int __rrr_instance_config_new (
 
 	instance_config->global_array_trees = global_array_trees;
 	instance_config->global_routes = global_routes;
+	instance_config->global_methods = global_methods;
 
 	*result = instance_config;
 
@@ -421,31 +423,31 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	return ret;
 }
 
-struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data {
-	struct rrr_instance_config_data *config;
-	struct rrr_route_collection *routes;
+struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data {
+	const struct rrr_discern_stack_collection *source;
+	struct rrr_discern_stack_collection *target;
 };
 
-static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback (
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail_name_callback (
 		const char *name,
 		void *arg
 ) {
 	int ret = 0;
 	
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data *callback_data = arg;
 
-	const struct rrr_route *route = rrr_route_collection_get (
-			callback_data->config->global_routes,
+	const struct rrr_discern_stack *stack = rrr_discern_stack_collection_get (
+			callback_data->source,
 			name
 	);
 
-	if (route == NULL) {
-		RRR_MSG_0("Route with name '%s' not found, check spelling\n", name);
+	if (stack == NULL) {
+		RRR_MSG_0("Definition with name '%s' not found, check spelling\n", name);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_route_collection_add_cloned (callback_data->routes, route)) != 0) {
+	if ((ret = rrr_discern_stack_collection_add_cloned (callback_data->target, stack)) != 0) {
 		goto out;
 	}
 
@@ -453,22 +455,22 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 	return ret;
 }
 
-static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback (
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail_interpret_callback (
 		const char *str,
 		void *arg
 ) {
 	int ret = 0;
 
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data *callback_data = arg;
 
-	enum rrr_route_fault fault;
+	enum rrr_discern_stack_fault fault;
 	struct rrr_parse_pos pos;
 
 	rrr_parse_pos_init(&pos, str, rrr_length_from_size_t_bug_const(strlen(str)));
 
-	assert(RRR_LL_COUNT(callback_data->routes) == 0);
+	assert(RRR_LL_COUNT(callback_data->target) == 0);
 
-	if ((ret = rrr_route_interpret (callback_data->routes, &fault, &pos, "anonymous")) != 0) {
+	if ((ret = rrr_discern_stack_interpret (callback_data->target, &fault, &pos, "anonymous")) != 0) {
 		goto out;
 	}
 
@@ -476,26 +478,29 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 	return ret;
 }
 
-int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_route_collection *routes,
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
 		struct rrr_instance_config_data *config,
-		const char *cmd_key
+		const struct rrr_discern_stack_collection *source,
+		const char *cmd_key,
+		const char *tag_start,
+		const char *tag_end
 ) {
 	int ret = 0;
 
 
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data callback_data = {
-		config,
-		routes
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data callback_data = {
+		source,
+		target
 	};
 
 	if ((ret = __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
 			config,
 			cmd_key,
-			"<",
-			">",
-			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback,
-			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback,
+			tag_start,
+			tag_end,
+			__rrr_instance_config_parse_discern_stack_from_config_silent_fail_name_callback,
+			__rrr_instance_config_parse_discern_stack_from_config_silent_fail_interpret_callback,
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
@@ -511,6 +516,36 @@ int rrr_instance_config_parse_route_definition_from_config_silent_fail (
 
 	out:
 	return ret;
+}
+
+int rrr_instance_config_parse_route_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	return __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+			target,
+			config,
+			config->global_routes,
+			cmd_key,
+			"<",
+			">"
+	);
+}
+
+int rrr_instance_config_parse_method_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	return __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+			target,
+			config,
+			config->global_methods,
+			cmd_key,
+			"(",
+			")"
+	);
 }
 
 struct parse_associative_list_to_map_callback_data {
@@ -854,7 +889,8 @@ static int __rrr_instance_config_new_block_callback (
 			name,
 			RRR_INSTANCE_CONFIG_MAX_SETTINGS,
 			rrr_config_get_array_tree_list(config),
-			rrr_config_get_routes(config)
+			rrr_config_get_routes(config),
+			rrr_config_get_methods(config)
 	)) != 0) {
 		goto out;
 	}

@@ -336,7 +336,7 @@ int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx) {
 	return perl_run(ctx->interpreter);
 }
 
-int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv) {
+int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv, SV *sv) {
 	int ret = 0;
 
 	SV *err_tmp = NULL;
@@ -349,7 +349,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
     	RRR_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
-    SV *ref = newRV_inc((SV*) hv);
+    SV *ref = newRV_noinc((SV*) hv);
     if (ref == NULL) {
     	RRR_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
@@ -359,15 +359,17 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
     	RRR_BUG("No blessed ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
-//    printf ("A: Blessed a reference, package is %s\n", HvNAME(stash));
-//    printf ("B: Blessed a reference, package is %s\n", HvNAME(SvSTASH(SvRV(blessed_ref))));
+    //printf ("A: Blessed a reference, package is %s\n", HvNAME(stash));
+    //printf ("B: Blessed a reference, package is %s\n", HvNAME(SvSTASH(SvRV(blessed_ref))));
 
 	dSP;
 	ENTER;
 	SAVETMPS;
 	PUSHMARK(SP);
-	EXTEND(SP, 1);
-	PUSHs(sv_2mortal(blessed_ref));
+	XPUSHs(blessed_ref);
+	if (sv != NULL) {
+		XPUSHs(sv);
+	}
 	PUTBACK;
 
 	int numitems = call_pv(sub, G_SCALAR|G_EVAL);
@@ -411,40 +413,18 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 #define SV_DEC_UNLESS_NULL(sv) \
 	do {if (sv != NULL) { SvREFCNT_dec((SV*)sv); }} while (0)
 
+#define DEFINE_SCALAR_FIELD(name)                                                       \
+  do {tmp = hv_fetch(hv, RRR_QUOTE(name), strlen(RRR_QUOTE(name)), 1);                  \
+  if (tmp == NULL || *tmp == NULL) {                                                    \
+     RRR_MSG_0("Could not allocate scalar in hv in %s\n", __func__);                    \
+     goto out_error; \
+  }} while (0)
 
-#define DEFINE_SCALAR_FIELD(name)																	\
-	    do {tmp = hv_fetch(message_hv->hv, RRR_QUOTE(name), strlen(RRR_QUOTE(name)), 1);			\
-	    if (tmp == NULL || *tmp == NULL) {															\
-	    	RRR_MSG_0("Could not allocate scalar in hv in __rrr_perl5_allocate_message_hv\n");	\
-	    	goto out_error;																			\
-		}} while (0)
-
-struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
-    struct rrr_perl5_message_hv *message_hv = rrr_allocate(sizeof(*message_hv));
-    if (message_hv == NULL) {
-    	RRR_MSG_0("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
-    	return NULL;
-    }
-    memset(message_hv, '\0', sizeof(*message_hv));
-    SvREFCNT_inc(hv);
-    message_hv->hv = hv;
-    return message_hv;
-}
-
-struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
+HV *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
-    HV *hv = NULL;
-
-    struct rrr_perl5_message_hv *message_hv = rrr_allocate(sizeof(*message_hv));
-    if (message_hv == NULL) {
-    	RRR_MSG_0("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
-    	goto out;
-    }
-
-    hv = newHV();
-	message_hv->hv = hv;
+    HV *hv = newHV();
 
     SV **tmp;
 
@@ -460,18 +440,18 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 	SV *data = newSV(0);
 	SvUTF8_off(data);
 	sv_setpvn(data, "0", 1);
-	tmp = hv_store(message_hv->hv, "data", strlen("data"), data, 0);
+	tmp = hv_store(hv, "data", strlen("data"), data, 0);
 	if (tmp == NULL || *tmp != data) {
-		RRR_MSG_0("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
+		RRR_MSG_0("Could not allocate field 'data' in hv in %s\n", __func__);
 		goto out_error;
 	}
 
 	SV *topic = newSV(0);
 	SvUTF8_on(topic);
 	sv_setpvn(topic, "0", 1);
-	tmp = hv_store(message_hv->hv, "topic", strlen("topic"), topic, 0);
+	tmp = hv_store(hv, "topic", strlen("topic"), topic, 0);
 	if (tmp == NULL || *tmp != topic) {
-		RRR_MSG_0("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
+		RRR_MSG_0("Could not allocate field 'data' in hv in %s\n", __func__);
 		goto out_error;
 	}
 
@@ -479,14 +459,10 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
     goto out;
     out_error:
-		rrr_perl5_destruct_message_hv(ctx, message_hv);
-		message_hv = NULL;
+	SV_DEC_UNLESS_NULL(hv);
+	return NULL;
     out:
-    	return message_hv;
-}
-
-struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
-	return __rrr_perl5_allocate_message_hv(ctx);
+    	return hv;
 }
 
 SV *rrr_perl5_deep_dereference(SV *sv) {
@@ -494,7 +470,7 @@ SV *rrr_perl5_deep_dereference(SV *sv) {
 	while (SvROK(sv)) {
 		sv = SvRV(sv);
 		if (--max == 0) {
-			RRR_MSG_0("Too many nested references (50 or more) in _rrr_perl5_deep_dereference\n");
+			RRR_MSG_0("Too many nested references (50 or more) in %s\n", __func__);
 			return NULL;
 		}
 	}
@@ -505,15 +481,10 @@ void rrr_perl5_destruct_settings_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_settings_hv *source
 ) {
-	if (source == NULL) {
-		return;
-	}
-
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	SV_DEC_UNLESS_NULL(source->hv);
-	source->hv = NULL;
 
 	RRR_FREE_IF_NOT_NULL(source->entries);
 
@@ -522,55 +493,77 @@ void rrr_perl5_destruct_settings_hv (
 	}
 
 	RRR_FREE_IF_NOT_NULL(source->keys);
-	source->allocated_entries = 0;
-	source->used_entries = 0;
 
-	rrr_free(source);
+	memset(source, '\0', sizeof(*source));
 }
 
-int rrr_perl5_settings_to_hv (
-		struct rrr_perl5_settings_hv **target,
+void rrr_perl5_destruct_method_sv (
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_instance_settings *source
+		struct rrr_perl5_method_sv *source
 ) {
-	int ret = 0;
-
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
-	struct rrr_perl5_settings_hv *settings_hv = rrr_allocate(sizeof(*settings_hv));
-	if (settings_hv == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_perl5_config_to_hv\n");
-		ret = 1;
-		goto out;
-	}
-	memset (settings_hv, '\0', sizeof(*settings_hv));
+	SV_DEC_UNLESS_NULL(source->sv);
 
-	settings_hv->hv = newHV();
-
-	*target = settings_hv;
-
-	out:
-	if (ret != 0) {
-		rrr_perl5_destruct_settings_hv(ctx, settings_hv);
-	}
-	return ret;
+	memset(source, '\0', sizeof(*source));
 }
 
 void rrr_perl5_destruct_message_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
-	if (source == NULL) {
-		return;
-	}
-
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	SV_DEC_UNLESS_NULL(source->hv);
 
-	rrr_free(source);
+	memset(source, '\0', sizeof(*source));
+}
+
+int rrr_perl5_settings_to_hv (
+		struct rrr_perl5_settings_hv *target,
+		struct rrr_perl5_ctx *ctx,
+		struct rrr_instance_settings *source
+) {
+	int ret = 0;
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+	PERL_SET_CONTEXT(my_perl);
+
+	assert(target->hv == NULL);
+
+	target->hv = newHV();
+
+	out:
+	if (ret != 0) {
+		rrr_perl5_destruct_settings_hv(ctx, target);
+	}
+	return ret;
+}
+
+int rrr_perl5_method_to_sv (
+		struct rrr_perl5_method_sv *target,
+		struct rrr_perl5_ctx *ctx,
+		const char *method
+) {
+	int ret = 0;
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+	PERL_SET_CONTEXT(my_perl);
+
+	struct rrr_perl5_method_sv *method_sv;
+
+	if ((target->sv = newSVpv(method, strlen(method))) == NULL) {
+		RRR_MSG_0("Failed to create method SV in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	SvUTF8_on(target->sv);
+
+	out:
+	return ret;
 }
 
 static int __rrr_perl5_hv_to_message_process_array (
@@ -593,7 +586,7 @@ static int __rrr_perl5_hv_to_message_process_array (
 				&array_tmp,
 				array
 		) != 0) {
-			RRR_MSG_0("Failed to clone array values in __rrr_perl5_hv_to_message_process_array\n");
+			RRR_MSG_0("Failed to clone array values in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -614,7 +607,7 @@ static int __rrr_perl5_hv_to_message_process_array (
 			MSG_TOPIC_PTR(*target),
 			MSG_TOPIC_LENGTH(*target)
 	) != 0) {
-		RRR_MSG_0("Could not create new array message in _rrr_perl5_hv_to_message_process_array\n");
+		RRR_MSG_0("Could not create new array message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -741,7 +734,7 @@ int rrr_perl5_hv_to_message (
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
 		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, old_total_len, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
 		if (new_message == NULL) {
-			RRR_MSG_0("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
+			RRR_MSG_0("Could not re-allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -760,7 +753,7 @@ int rrr_perl5_hv_to_message (
 
 	// This function will re-allocate the message and erase data if array values are set in the perl5 script.
 	if (__rrr_perl5_hv_to_message_process_array(&target, ctx, source)) {
-		RRR_MSG_0("Error while converting HV to RRR message in rrr_perl5_hv_to_message\n");
+		RRR_MSG_0("Error while converting HV to RRR message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -784,8 +777,8 @@ int rrr_perl5_hv_to_message (
 	return ret;
 }
 
-static int __rrr_perl5_message_to_hv (
-		struct rrr_perl5_message_hv *message_hv,
+int rrr_perl5_message_to_hv (
+		struct rrr_perl5_message_hv *target,
 		struct rrr_perl5_ctx *ctx,
 		const struct rrr_msg_msg *message,
 		struct rrr_msg_addr *message_addr,
@@ -796,11 +789,14 @@ static int __rrr_perl5_message_to_hv (
 
 	int ret = 0;
 
+	assert(RRR_MSG_IS_RRR_MESSAGE(message));
+	assert(target->hv == NULL);
+
 	if (!RRR_MSG_IS_RRR_MESSAGE(message)) {
-		RRR_BUG("Message to __rrr_perl5_message_to_hv was not a VL message\n");
+		RRR_BUG("Message to %s was not a message\n", __func__);
 	}
 
-    HV *hv = message_hv->hv;
+	HV *hv = newHV();
 
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
@@ -817,7 +813,7 @@ static int __rrr_perl5_message_to_hv (
 	SvFLAGS(rrr_array_ptr) &= ~(SVf_PROTECT|SVf_READONLY);
 	sv_setiv(rrr_array_ptr, (intptr_t) array);
 	if (SvIV(rrr_array_ptr) != (intptr_t) array) {
-		RRR_BUG("BUG: RRR array pointer storage failure in __rrr_perl5_message_to_hv, possibly a problem on this particular architecture\n");
+		RRR_BUG("BUG: RRR array pointer storage failure in %s, possibly a problem on this particular architecture\n", __func__);
 	}
 	SvFLAGS(rrr_array_ptr) |= SVf_PROTECT|SVf_READONLY;
 
@@ -843,7 +839,7 @@ static int __rrr_perl5_message_to_hv (
     if (MSG_IS_ARRAY(message)) {
 	    	uint16_t array_version_dummy;
 		if (rrr_array_message_append_to_array(&array_version_dummy, array, message) != 0) {
-			RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_to_hv\n");
+			RRR_MSG_0("Could not convert message to array collection in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -882,43 +878,11 @@ static int __rrr_perl5_message_to_hv (
 		};
 	}
 
-    out:
+	target->hv = hv;
+	hv = NULL;
+
+	out:
+	SV_DEC_UNLESS_NULL(hv);
 	return ret;
 }
-
-int rrr_perl5_message_to_new_hv (
-		struct rrr_perl5_message_hv **target,
-		struct rrr_perl5_ctx *ctx,
-		const struct rrr_msg_msg *message,
-		struct rrr_msg_addr *message_addr,
-		struct rrr_array *array
-) {
-    int ret = 0;
-
-    struct rrr_perl5_message_hv *message_hv = rrr_perl5_allocate_message_hv(ctx);
-    if (message_hv == NULL) {
-    	ret = 1;
-    	goto out;
-    }
-
-    if ((ret = __rrr_perl5_message_to_hv (
-    		message_hv,
-			ctx,
-			message,
-			message_addr,
-			array
-	)) != 0) {
-    	RRR_MSG_0("Error in rrr_perl5_message_to_new_hv\n");
-    	goto out;
-    }
-
-    *target = message_hv;
-
-    out:
-	if (ret != 0) {
-		rrr_perl5_destruct_message_hv(ctx, message_hv);
-	}
-    return ret;
-}
-
 

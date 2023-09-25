@@ -164,8 +164,8 @@ do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 do_test_socket test_cmodule.conf
 
-echo "With node: $RRR_WITH_NODE"
-if test "x$RRR_WITH_NODE" != 'xno'; then
+echo "With node: $RRR_WITH_JS"
+if test "x$RRR_WITH_JS" != 'xno'; then
 	PWD=`pwd`
 	SCRIPT_SUCCESS=test_import_success.js
 	SCRIPT_FAIL=test_import_fail.js

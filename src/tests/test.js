@@ -374,8 +374,12 @@ function os_tests() {
 	}
 }
 
-function process(message) {
+function my_method(message, method) {
 	console.log("Process function\n");
+
+	if (method !== undefined) {
+		throw("Mthod to JS process function was not undefined");
+	}
 
 	message_tests();
 	os_tests();

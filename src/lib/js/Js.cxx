@@ -97,6 +97,11 @@ namespace RRR::JS {
 	{
 	}
 
+	Undefined::Undefined(CTX &ctx) :
+		Value(v8::Undefined(ctx))
+	{
+	}
+
 	UTF8::UTF8(CTX &ctx, Value &value) :
 		utf8(ctx, value)
 	{

@@ -12,10 +12,9 @@ if RRR_WITH_ARTNET
 test_artnet = test_artnet.c
 endif
 
-if RRR_WITH_NODE
-js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${NODE_LDFLAGS}
-js_extra_ldadd = -ltestjs -lstdc++ ${NODE_LIBS} -lrrrcxx
-#$(NODE_LIBS)
+if RRR_WITH_JS
+js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${JS_LDFLAGS}
+js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
@@ -25,6 +24,8 @@ test_SOURCES = test.c \
 	test_usleep.c \
 	test_msleep_signal_safe.c \
 	test_fixp.c \
+	test_mqtt_topic.c \
+	test_parse.c \
 	test_inet.c \
 	test_modbus.c \
 	test_condition.c \
@@ -37,7 +38,7 @@ test_SOURCES = test.c \
 	test_allocator.c \
 	test_mmap_channel.c \
 	test_increment.c \
-	test_route_definition.c \
+	test_discern_stack.c \
 	test_linked_list.c \
 	test_hdlc.c \
 	test_readdir.c \

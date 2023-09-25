@@ -1,9 +1,8 @@
-
 /*
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,24 +19,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_CONFIG_DATA_H
-#define RRR_CMODULE_CONFIG_DATA_H
+#ifndef RRR_DISCERN_STACK_HELPER_H
+#define RRR_DISCERN_STACK_HELPER_H
 
-#include "cmodule_defines.h"
-#include "../settings.h"
+#include "rrr_types.h"
+#include "discern_stack.h"
 
-struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_count;
+struct rrr_msg_msg;
 
-	enum rrr_cmodule_process_mode process_mode;
-	int do_spawning;
-	int do_drop_on_error;
-
-	char *config_method;
-	char *process_method;
-	char *source_method;
-	char *log_prefix;
+struct rrr_discern_stack_helper_callback_data {
+	const struct rrr_msg_msg *msg;
+	int index_produced;
 };
 
-#endif /* RRR_CMODULE_CONFIG_DATA_H */
+int rrr_discern_stack_helper_topic_filter_resolve_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS);
+int rrr_discern_stack_helper_array_tag_resolve_cb (RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS);
+
+#endif /* RRR_DISCERN_STACK_HELPER_H */

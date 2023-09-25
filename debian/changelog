@@ -1,6 +1,13 @@
-rrr (1.28-19) bullseye; urgency=medium
+rrr (1.28-20) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Changes:
+    * In route definition, the I operator is replaced with D. Existing programs
+      must be updated to avoid warning to be printed.
+    * Changed signatures for processor functions by adding a new last argument
+      'method'. Existing scripts MAY BREAK and should be updated. Refer to
+      the rrr.conf.5 manual page for correct function signatures.
 
   * Features:
     * Match generated messages in httpclient with their corresponding message
@@ -21,6 +28,9 @@ rrr (1.28-19) bullseye; urgency=medium
     * New method on Message object in JS push_tag_object which serializes
       objects into JSON. Receiving JS instances will automatically de-
       serialize the JSON added to messages this way.
+    * New parameter methods for cmodules (python3, js, perl5 and cmodule)
+      allowing messages content to be identified before being processed. The
+      processor function receives a method name.
     * Support PATCH requests in httpclient and httpserver
  
   * Improvements:

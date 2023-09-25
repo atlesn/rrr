@@ -28,7 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
-#include "route.h"
+#include "discern_stack.h"
+#include "discern_stack_helper.h"
 #include "instance_config.h"
 #include "message_broker.h"
 #include "message_helper.h"
@@ -48,88 +49,47 @@ struct rrr_instance_message_broker_entry_postprocess_route_callback_data {
 	struct rrr_instance_friend_collection *nexthops;
 };
 
-static int __rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb (
-		int *result,
-		const char *topic_filter,
-		void *arg
-) {
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_mqtt_topic_token *token = NULL;
-
-	if ((ret = rrr_mqtt_topic_tokenize(&token, topic_filter)) != 0) {
-		RRR_MSG_0("Failed to tokenize topic in %s\n", __func__);
-		goto out;
-	}
-
-	if ((ret = rrr_message_helper_topic_match(result, callback_data->entry, token)) != 0) {
-		RRR_MSG_0("Failed to match topic in %s\n", __func__);
-		goto out;
-	}
-
-	RRR_DBG_3("+ Topic filter %s is a %s while routing message from instance %s\n",
-			topic_filter, (*result ? "MATCH" : "MISMATCH"), INSTANCE_D_NAME(callback_data->data));
-	out:
-	rrr_mqtt_topic_token_destroy(token);
-	return ret;
-}
-
-static int __rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb (
-		int *result,
-		const char *array_tag,
-		void *arg
-) {
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if ((ret = rrr_message_helper_has_array_tag (
-			result,
-			callback_data->entry,
-			array_tag
-	)) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_3("+ Array tag check result for %s is %s while routing message from instance %s\n",
-			array_tag, (*result ? "HAS" : "HASN'T"), INSTANCE_D_NAME(callback_data->data));
-
-	out:
-	return ret;
-}
-
-static int __rrr_instance_message_broker_entry_postprocess_apply_cb (
-		int result,
-		const char *instance_name,
-		void *arg
-) {
+static int __rrr_instance_message_broker_entry_postprocess_apply_false_cb (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
 	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
 	struct rrr_instance_runtime_data *data = callback_data->data;
-
-	int ret = 0;
-
-	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), instance_name);
+	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), destination);
 
 	// Instances must be validated before thread is started
 	assert(instance != NULL);
 
 	// Latest result takes precedence in case of apply on same instance multiple times
 	rrr_instance_friend_collection_remove (callback_data->nexthops, instance);
-	if (result) {
-		if ((ret = rrr_instance_friend_collection_append (
-				callback_data->nexthops,
-				instance,
-				NULL
-		)) != 0) {
-			RRR_MSG_0("Failed to append to collection in %s\n", __func__);
-			goto out;
-		}
+
+	RRR_DBG_3("+ Apply instance %s result REMOVE in message from instance %s\n",
+			destination, INSTANCE_D_NAME(callback_data->data));
+
+	return 0;
+}
+
+static int __rrr_instance_message_broker_entry_postprocess_apply_true_cb (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), destination);
+
+	// Instances must be validated before thread is started
+	assert(instance != NULL);
+
+	// Latest result takes precedence in case of apply on same instance multiple times
+	rrr_instance_friend_collection_remove (callback_data->nexthops, instance);
+	if ((ret = rrr_instance_friend_collection_append (
+			callback_data->nexthops,
+			instance,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Failed to append to collection in %s\n", __func__);
+		goto out;
 	}
 
-	RRR_DBG_3("+ Apply instance %s result %s in message from instance %s\n",
-			instance_name, result ? "ADD" : "REMOVE", INSTANCE_D_NAME(callback_data->data));
+	RRR_DBG_3("+ Apply instance %s result ADD in message from instance %s\n",
+			destination, INSTANCE_D_NAME(callback_data->data));
 
 	out:
 	return ret;
@@ -149,21 +109,32 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 		goto out;
 	}
 
-	struct rrr_instance_message_broker_entry_postprocess_route_callback_data callback_data = {
-			data,
-			entry_locked,
-			&nexthops
+	struct rrr_discern_stack_helper_callback_data resolve_callback_data = {
+		entry_locked->message,
+		0
 	};
 
-	enum rrr_route_fault fault = 0;
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data apply_callback_data = {
+		data,
+		entry_locked,
+		&nexthops
+	};
 
-	if ((ret = rrr_route_collection_execute (
+	struct rrr_discern_stack_callbacks callbacks = {
+		rrr_discern_stack_helper_topic_filter_resolve_cb,
+		rrr_discern_stack_helper_array_tag_resolve_cb,
+		&resolve_callback_data,
+		__rrr_instance_message_broker_entry_postprocess_apply_false_cb,
+		__rrr_instance_message_broker_entry_postprocess_apply_true_cb,
+		&apply_callback_data
+	};
+
+	enum rrr_discern_stack_fault fault = 0;
+
+	if ((ret = rrr_discern_stack_collection_execute (
 			&fault,
 			INSTANCE_D_ROUTES(data),
-			__rrr_instance_message_broker_entry_postprocess_topic_filter_resolve_cb,
-			__rrr_instance_message_broker_entry_postprocess_array_tag_resolve_cb,
-			__rrr_instance_message_broker_entry_postprocess_apply_cb,
-			&callback_data
+			&callbacks
 	)) != 0) {
 		goto out;
 	}
@@ -248,7 +219,8 @@ static void __rrr_instance_destroy (
 ) {
 	rrr_instance_friend_collection_clear(&target->senders);
 	rrr_instance_friend_collection_clear(&target->wait_for);
-	rrr_route_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->routes);
+	rrr_discern_stack_collection_clear(&target->methods);
 
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
@@ -387,7 +359,7 @@ static int __rrr_instance_parse_topic_filter (
 	);
 }
 
-void __rrr_instance_parse_route_name_callback (
+void __rrr_instance_parse_discern_stack_name_callback (
 		const char *name,
 		void *arg
 ) {
@@ -409,12 +381,60 @@ static int __rrr_instance_parse_route (
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active route definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
-		rrr_route_collection_iterate_names(
+		rrr_discern_stack_collection_iterate_names (
 				INSTANCE_I_ROUTES(data_final),
-				__rrr_instance_parse_route_name_callback,
+				__rrr_instance_parse_discern_stack_name_callback,
 				NULL
 		);
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_parse_method (
+		struct rrr_instance *data_final
+) {
+	int ret = 0;
+
+	struct data {
+		int do_methods_direct_dispatch;
+	} data_tmp;
+
+	struct data *data = &data_tmp;
+	struct rrr_instance_config_data *config = data_final->config;
+
+	if ((ret = rrr_instance_config_parse_method_definition_from_config_silent_fail(&data_final->methods, data_final->config, "methods")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("methods_direct_dispatch",
+				RRR_MSG_0("Parameter methods_direct_dispatch was set without methods being set for instance %s, this is a configuration error.\n",
+					INSTANCE_M_NAME(data_final));
+				ret = 1;
+				goto out;
+			);
+			ret = 0;
+		}
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("methods_direct_dispatch", do_methods_direct_dispatch, 0);
+	if (data_tmp.do_methods_direct_dispatch)
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH;
+
+	if (RRR_DEBUGLEVEL_1) {
+		RRR_DBG_1("Active method definitions for instance %s:\n", INSTANCE_M_NAME(data_final));
+		rrr_discern_stack_collection_iterate_names (
+				INSTANCE_I_METHODS(data_final),
+				__rrr_instance_parse_discern_stack_name_callback,
+				NULL
+		);
+	}
+
+	// Cmodules, the only ones using these parameters, will set them back
+	// to being tagged as used later. Other modules will not do this and a warning
+	// will be printed that the parameters are unused.
+	rrr_instance_config_set_unused(data_final->config, "methods");
+	rrr_instance_config_set_unused(data_final->config, "methods_direct_dispatch");
 
 	out:
 	return ret;
@@ -679,7 +699,7 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 	data->init_data = *init_data;
 
 	// Verify that instances mentioned in any routes are readers of this instance
-	if (rrr_route_collection_iterate_instance_names (
+	if (rrr_discern_stack_collection_iterate_destination_names (
 			INSTANCE_D_ROUTES(data),
 			__rrr_instance_iterate_route_instances_callback,
 			data
@@ -1222,6 +1242,12 @@ int rrr_instances_create_from_config (
 		ret = __rrr_instance_parse_route(instance);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing of route parameter failed for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			goto out;
+		}
+		ret = __rrr_instance_parse_method(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing of method parameter failed for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			goto out;
 		}

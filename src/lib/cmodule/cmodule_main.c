@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event.h"
 #include "../fork.h"
 #include "../mmap_channel.h"
+#include "../discern_stack.h"
 #include "../util/posix.h"
 
 static void __rrr_cmodule_main_worker_kill (
@@ -120,6 +121,7 @@ int rrr_cmodule_main_worker_fork_start (
 		const char *name,
 		struct rrr_instance_settings *settings,
 		struct rrr_event_queue *notify_queue,
+		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
@@ -147,9 +149,10 @@ int rrr_cmodule_main_worker_fork_start (
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
+			methods,
 			cmodule->config_data.worker_spawn_interval_us,
+			cmodule->config_data.process_mode,
 			cmodule->config_data.do_spawning,
-			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
@@ -217,9 +220,9 @@ void __rrr_cmodule_main_workers_stop (
 static void __rrr_cmodule_config_data_cleanup (
 	struct rrr_cmodule_config_data *config_data
 ) {
-	RRR_FREE_IF_NOT_NULL(config_data->config_function);
-	RRR_FREE_IF_NOT_NULL(config_data->process_function);
-	RRR_FREE_IF_NOT_NULL(config_data->source_function);
+	RRR_FREE_IF_NOT_NULL(config_data->config_method);
+	RRR_FREE_IF_NOT_NULL(config_data->process_method);
+	RRR_FREE_IF_NOT_NULL(config_data->source_method);
 	RRR_FREE_IF_NOT_NULL(config_data->log_prefix);
 }
 

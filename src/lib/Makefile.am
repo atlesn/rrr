@@ -76,13 +76,13 @@ librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
 zlib_extra_ld = ${ZLIB_LDFLAGS}
 endif
 
-if RRR_WITH_NODE
+if RRR_WITH_JS
 libadd_js = librrrjs.la
 librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
-librrrjs_la_CXXFLAGS = ${NODE_CXXFLAGS} ${AM_CXXFLAGS}
-librrrjs_la_LDFLAGS = ${NODE_LDFLAGS} ${NODE_LIBS}
-js_extra_ldflags = ${NODE_LDFLAGS}
-js_extra_libadd = $(NODE_LIBS)
+librrrjs_la_CXXFLAGS = ${JS_CXXFLAGS} ${AM_CXXFLAGS}
+librrrjs_la_LDFLAGS = ${JS_LDFLAGS} ${JS_LIBS}
+js_extra_ldflags = ${JS_LDFLAGS}
+js_extra_libadd = $(JS_LIBS)
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -159,7 +159,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
 		    ${artnet_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
-                    message_broker.c map.c array.c array_tree.c route.c message_helper.c \
+                    message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
                     read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c modules.c \
 		    poll_helper.c msgdb_helper.c \

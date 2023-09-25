@@ -210,6 +210,14 @@ void rrr_settings_update_used (
 				void *callback_args
 		)
 );
+void rrr_settings_set_used (
+		struct rrr_instance_settings *settings,
+		const char *name
+);
+void rrr_settings_set_unused (
+		struct rrr_instance_settings *settings,
+		const char *name
+);
 void rrr_settings_packed_to_host (
 		struct rrr_setting_packed *setting_packed
 );

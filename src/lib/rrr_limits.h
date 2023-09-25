@@ -1,9 +1,8 @@
-
 /*
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,24 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_CONFIG_DATA_H
-#define RRR_CMODULE_CONFIG_DATA_H
+#ifndef RRR_LIMITS_H
+#define RRR_LIMITS_H
 
-#include "cmodule_defines.h"
-#include "../settings.h"
+#include <limits.h>
 
-struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_count;
+/* FreeBSD name */
+#ifdef _POSIX_HOST_NAME_MAX
+#  define RRR_HOST_NAME_MAX       _POSIX_HOST_NAME_MAX
+#else
+#  define RRR_HOST_NAME_MAX       HOST_NAME_MAX
+#endif
 
-	enum rrr_cmodule_process_mode process_mode;
-	int do_spawning;
-	int do_drop_on_error;
-
-	char *config_method;
-	char *process_method;
-	char *source_method;
-	char *log_prefix;
-};
-
-#endif /* RRR_CMODULE_CONFIG_DATA_H */
+#endif /* RRR_LIMITS_H */

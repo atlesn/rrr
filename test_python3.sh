@@ -1,7 +1,8 @@
 #!/bin/sh
 
-PYTHON3_CONFIG="$1"
-PYTHON3_CFLAGS=`$1 --cflags`
+CC="$1"
+PYTHON3_CONFIG="$2"
+PYTHON3_CFLAGS=`$2 --cflags`
 
 mkdir -p config_test
 cd config_test
@@ -17,7 +18,7 @@ int main (int argc, const char **argv) {
 EOF
 
 rm -f python_test
-gcc -o python_test $PYTHON3_CFLAGS python_test.c
+$CC -o python_test $PYTHON3_CFLAGS python_test.c
 ./python_test
 PYTHON3_RESULT=$?
 

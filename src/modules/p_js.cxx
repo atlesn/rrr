@@ -46,12 +46,14 @@ extern "C" {
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
+#include "../lib/cmodule/cmodule_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
 }; // extern "C"
 
 #include <filesystem>
+#include <unordered_map>
 
 #include "../lib/event/Event.hxx"
 #include "../lib/js/Message.hxx"
@@ -115,8 +117,11 @@ class js_run_data {
 	RRR::JS::TimeoutFactory timeout_factory;
 	RRR::JS::OSFactory os_factory;
 	RRR::JS::EventQueue event_queue;
-	std::shared_ptr<RRR::JS::Program> program;
 
+	std::shared_ptr<RRR::JS::Program> program;
+	std::unordered_map<std::string,RRR::JS::Function> methods;
+
+	int64_t start_time = 0;
 	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
 	rrr_biglength memory_size = 0;
@@ -160,17 +165,19 @@ class js_run_data {
 		if (!need_status(&diff)) {
 			return;
 		}
-
 		double per_sec = ((double) processed) / ((double) diff / 1000000);
-		processed = 0;
+		double per_sec_average = ((double) processed_total) / ((double) (rrr_time_get_64() - start_time) / 1000000);
 
-		RRR_DBG_1("JS instance %s processed per second %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
+		RRR_DBG_1("JS instance %s processed per second %.2f average %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(data->thread_data),
 				per_sec,
+				per_sec_average,
 				processed_total,
 				memory_entries,
 				memory_size
 		);
+
+		processed = 0;
 	}
 	void runGC() {
 		persistent_storage.gc(&memory_entries, &memory_size);
@@ -207,24 +214,58 @@ class js_run_data {
 			throw E(std::string("Failed to run source function: ") + msg);
 		});
 	}
-	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr) {
-		{
-			auto scope = RRR::JS::Scope(ctx);
-			processed++;
-			processed_total++;
-			auto message = msg_factory.new_external(ctx, msg, msg_addr);
-			RRR::JS::Value arg(message.first());
-			process.run(ctx, 1, &arg);
-			ctx.trycatch_ok([](std::string msg) {
-				throw E(std::string("Failed to run process function: ") + msg);
-			});
+
+	void runProcessDirectDispatch (RRR::JS::Value message, const char *method) {
+		RRR::JS::Value args[] = {
+			message
+		};
+		methods[method].run(ctx, 1, args);
+	};
+
+	void runProcessDefault (RRR::JS::Value message, const char *method) {
+		RRR::JS::Value args[] = {
+			message,
+			method != NULL
+				? (RRR::JS::Value) RRR::JS::String(ctx, method)
+				: (RRR::JS::Value) RRR::JS::Undefined(ctx)
+		};
+		process.run(ctx, 2, args);
+	};
+
+	void runProcess(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, const char *method, enum rrr_cmodule_process_mode mode) {
+		auto scope = RRR::JS::Scope(ctx);
+		processed++;
+		processed_total++;
+
+		auto msg_value = (RRR::JS::Value) msg_factory.new_external(ctx, msg, msg_addr).first();
+
+		if (mode == RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH) {
+			runProcessDirectDispatch(msg_value, method);
 		}
+		else {
+			runProcessDefault(msg_value, method);
+		}
+
+		ctx.trycatch_ok([](std::string msg) {
+			throw E(std::string("Failed to run process function: ") + msg);
+		});
 	}
 	void runEvents() {
 		auto scope = RRR::JS::Scope(ctx);
 		ctx.trycatch_ok([](std::string msg) {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
+	}
+	void registerMethod(const char *name) {
+		methods[name] = program->get_function(ctx, name);
+	}
+	static int methodCallback(const char *stack_name, const char *method_name, void *self) {
+		js_run_data *run_data = reinterpret_cast<js_run_data*>(self);
+		RRR_DBG_1("JS instance %s registering method %s from method definition %s\n",
+			INSTANCE_D_NAME(run_data->data->thread_data), method_name, stack_name
+		);
+		run_data->registerMethod(method_name);
+		return 0;
 	}
 	template <typename L> js_run_data (
 			struct js_data *data,
@@ -247,7 +288,8 @@ class js_run_data {
 		timeout_factory(ctx, persistent_storage),
 		os_factory(ctx, persistent_storage),
 		event_queue(ctx, persistent_storage, event_collection),
-		program(make_program())
+		program(make_program()),
+		start_time((int64_t) rrr_time_get_64())
 	{
 		msg_factory.register_as_global(ctx);
 		cfg_factory.register_as_global(ctx);
@@ -265,15 +307,25 @@ class js_run_data {
 
 		const struct rrr_cmodule_config_data *cmodule_config_data =
 			rrr_cmodule_helper_config_data_get(data->thread_data);
-		if (cmodule_config_data->config_function != NULL && *cmodule_config_data->config_function != '\0') {
-			config = program->get_function(ctx, cmodule_config_data->config_function);
+
+		if (cmodule_config_data->config_method != NULL && *cmodule_config_data->config_method != '\0') {
+			config = program->get_function(ctx, cmodule_config_data->config_method);
 		}
-		if (cmodule_config_data->source_function != NULL && *cmodule_config_data->source_function != '\0') {
-			source = program->get_function(ctx, cmodule_config_data->source_function);
+		if (cmodule_config_data->source_method != NULL && *cmodule_config_data->source_method != '\0') {
+			source = program->get_function(ctx, cmodule_config_data->source_method);
 		}
-		if (cmodule_config_data->process_function != NULL && *cmodule_config_data->process_function != '\0') {
-			process = program->get_function(ctx, cmodule_config_data->process_function);
-		}
+		switch (cmodule_config_data->process_mode) {
+			case RRR_CMODULE_PROCESS_MODE_DEFAULT:
+				process = program->get_function(ctx, cmodule_config_data->process_method);
+				break;
+			case RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH:
+				rrr_cmodule_helper_methods_iterate(data->thread_data, methodCallback, this);
+				break;
+			case RRR_CMODULE_PROCESS_MODE_NONE:
+				break;
+			default:
+				assert(0);
+		};
 	}
 };
 
@@ -397,10 +449,7 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			run_data->runSource();
 		}
 		else {
-			if (!run_data->hasProcess()) {
-				RRR_BUG("BUG: Process function was NULL but we tried to process anyway in %s\n", __func__);
-			}
-			run_data->runProcess(message, message_addr);
+			run_data->runProcess(message, message_addr, method, worker->process_mode);
 		}
 
 		// Run any imminent events
