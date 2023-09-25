@@ -1,4 +1,4 @@
-rrr (1.28-19) bullseye; urgency=medium
+rrr (1.28-20) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -30,6 +30,7 @@ rrr (1.28-19) bullseye; urgency=medium
     * New parameter methods for cmodules (python3, js, perl5 and cmodule)
       allowing messages content to be identified before being processed. The
       processor function receives a method name.
+    * Support PATCH requests in httpclient and httpserver
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT

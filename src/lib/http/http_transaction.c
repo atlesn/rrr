@@ -360,8 +360,12 @@ int rrr_http_transaction_form_data_generate_if_needed (
 
 	*form_data_was_made = 0;
 
-	if ( (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) ||
-	     (RRR_LL_COUNT(&transaction->request_part->fields)) == 0) {
+	if ( (transaction->method != RRR_HTTP_METHOD_PUT &&
+	      transaction->method != RRR_HTTP_METHOD_POST &&
+	      transaction->method != RRR_HTTP_METHOD_PATCH
+	) || (
+	      RRR_LL_COUNT(&transaction->request_part->fields)) == 0
+        ) {
 		goto out;
 	}
 
@@ -590,7 +594,10 @@ int rrr_http_transaction_request_prepare_wrapper (
 		}
 	}
 
-	if (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) {
+	if (transaction->method == RRR_HTTP_METHOD_PUT ||
+	    transaction->method == RRR_HTTP_METHOD_POST ||
+	    transaction->method == RRR_HTTP_METHOD_PATCH
+	) {
 		if ((ret = __rrr_http_transaction_part_content_length_set( transaction->request_part, transaction->send_body)) != 0) {
 			goto out;
 		}
