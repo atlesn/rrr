@@ -267,16 +267,13 @@ struct rrr_cmodule_process_method_callback_data {
 	int run_count;
 };
 
-static int __rrr_cmodule_worker_loop_discern_apply_cb (rrr_length result, const char *method, void *arg) {
+static int __rrr_cmodule_worker_loop_discern_apply_true_cb (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
 	struct rrr_cmodule_process_method_callback_data *callback_data = arg;
 
 	int ret = 0;
 
-	RRR_DBG_3("+ Apply method %s result %s in worker %s\n",
-			method, result ? "RUN" : "NOT RUN", callback_data->worker->name);
-
-	if (!result)
-		goto out;
+	RRR_DBG_3("+ Apply method %s result RUN in worker %s\n",
+			destination, callback_data->worker->name);
 
 	if ((ret = __rrr_cmodule_worker_loop_process (
 			callback_data->process_callback,
@@ -284,7 +281,7 @@ static int __rrr_cmodule_worker_loop_discern_apply_cb (rrr_length result, const 
 			callback_data->worker,
 			callback_data->message,
 			callback_data->message_addr,
-			method
+			destination
 	)) != 0) {
 		goto out;
 	}
@@ -362,15 +359,20 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 				0
 			};
 
+			struct rrr_discern_stack_callbacks callbacks = {
+					rrr_discern_stack_helper_topic_filter_resolve_cb,
+					rrr_discern_stack_helper_array_tag_resolve_cb,
+					&resolve_callback_data,
+					NULL,
+					__rrr_cmodule_worker_loop_discern_apply_true_cb,
+					&apply_callback_data
+			};
+
 			enum rrr_discern_stack_fault fault;
 			if ((ret = rrr_discern_stack_collection_execute (
 					&fault,
 					worker->methods,
-					rrr_discern_stack_helper_topic_filter_resolve_cb,
-					rrr_discern_stack_helper_array_tag_resolve_cb,
-					&resolve_callback_data,
-					__rrr_cmodule_worker_loop_discern_apply_cb,
-					&apply_callback_data
+					&callbacks
 			)) != 0) {
 				RRR_MSG_0("Fault code from discern stack: %u\n", fault);
 				goto report;

@@ -559,10 +559,7 @@ static int __rrr_discern_stack_execute_op_bool (
 static int __rrr_discern_stack_execute_op_apply (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack_list *stack,
-		struct rrr_discern_stack_storage *stack_storage,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *callback_arg
+		struct rrr_discern_stack_storage *stack_storage
 ) {
 	int ret = 0;
 
@@ -588,10 +585,8 @@ static int __rrr_discern_stack_execute_op_apply (
 	assert(b->type == RRR_DISCERN_STACK_E_BOOL);
 	assert(a->value.data_size > 0);
 
-	if ((ret = apply_cb(b->value.value, value_storage->data + a->value.data_pos, callback_arg)) != 0) {
-		*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
-		goto out;
-	}
+	// No apply callback for parsing, it would otherwise go here. Nothing do do.
+	// (call apply cb)
 
 	// Pop off destination name and leave boolean value
 	__rrr_discern_stack_list_pop(stack);
@@ -605,10 +600,7 @@ static int __rrr_discern_stack_execute_op_push (
 		struct rrr_discern_stack_list *stack,
 		struct rrr_discern_stack_storage *stack_storage,
 		const struct rrr_discern_stack_element *node,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg
+		struct rrr_discern_stack_storage *value_storage
 ) {
 	int ret = 0;
 
@@ -616,10 +608,8 @@ static int __rrr_discern_stack_execute_op_push (
 
 	switch (node->type) {
 		case RRR_DISCERN_STACK_E_TOPIC_FILTER:
-			if ((ret = resolve_topic_filter_cb (&result, value_storage->data + node->value.data_pos, node->value.data_size, resolve_cb_arg)) != 0) {
-				*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
-				goto out;
-			}
+			// Pretend topic filter matches
+			result = 1;
 			if ((ret = __rrr_discern_stack_list_push_bool (
 					stack,
 					stack_storage,
@@ -630,9 +620,8 @@ static int __rrr_discern_stack_execute_op_push (
 			}
 			break;
 		case RRR_DISCERN_STACK_E_ARRAY_TAG:
-			if ((ret = resolve_array_tag_cb (&result, NULL, 0, value_storage->data + node->value.data_pos, resolve_cb_arg)) != 0) {
-				goto out;
-			}
+			// Pretend array tag exists
+			result = 1;
 			if ((ret = __rrr_discern_stack_list_push_bool (
 					stack,
 					stack_storage,
@@ -665,6 +654,12 @@ static int __rrr_discern_stack_execute_op_push (
 	return ret;
 }
 
+static int __rrr_discern_stack_execute_apply_cb_dummy (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	(void)(destination);
+	(void)(arg);
+	return 0;
+}
+
 /*
  * Fast execute with no checks of any kind. The list being
  * run should be verified first during parsing.
@@ -672,11 +667,7 @@ static int __rrr_discern_stack_execute_op_push (
 static int __rrr_discern_stack_execute (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack *discern_stack,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *apply_cb_arg
+		const struct rrr_discern_stack_callbacks *callbacks
 ) {
 	const struct rrr_discern_stack_list *list = &discern_stack->exe_list;
 	struct rrr_discern_stack_storage *list_storage = &discern_stack->exe_storage;
@@ -684,6 +675,11 @@ static int __rrr_discern_stack_execute (
 	struct rrr_discern_stack_value *stack_e = list_storage->data + stack->data_pos;
 
 	int ret = 0;
+
+	int (*const apply_cbs[2])(RRR_DISCERN_STACK_APPLY_CB_ARGS) = {
+		callbacks->apply_cb_false ? callbacks->apply_cb_false : __rrr_discern_stack_execute_apply_cb_dummy,
+		callbacks->apply_cb_true
+	};
 
 	const struct rrr_discern_stack_element *node;
 	struct rrr_discern_stack_index_entry *index_tmp = NULL;
@@ -704,22 +700,17 @@ static int __rrr_discern_stack_execute (
 			stack_e = list_storage->data + stack->data_pos;
 		}
 
-		struct rrr_discern_stack_element elements[4];
-		memcpy(elements, list_storage->data + list->data_pos + i * sizeof(struct rrr_discern_stack_element), sizeof(elements));
-
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
 
 		switch (node->op) {
 			case RRR_DISCERN_STACK_OP_PUSH:
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
-//						stack_e[stack->wpos++].value = 1;
-//						break;
-						if ((ret = resolve_topic_filter_cb (
+						if ((ret = callbacks->resolve_topic_filter_cb (
 								&(stack_e[stack->wpos++].value),
 								list_storage->data + node->value.data_pos,
 								node->value.data_size,
-								resolve_cb_arg
+								callbacks->resolve_cb_arg
 						)) != 0) {
 							goto out;
 						}
@@ -744,12 +735,12 @@ static int __rrr_discern_stack_execute (
 						// The callback may set a temporary index used to quickly eliminate
 						// H array tag check without calling the callback. The callback
 						// may set the index one time during an execution session.
-						if ((ret = resolve_array_tag_cb (
+						if ((ret = callbacks->resolve_array_tag_cb (
 								&stack_e[stack->wpos++].value,
 								&index_tmp,
 								&index_tmp_size,
 								list_storage->data + node->value.data_pos,
-								resolve_cb_arg
+								callbacks->resolve_cb_arg
 						)) != 0) {
 							goto out;
 						}
@@ -777,7 +768,7 @@ static int __rrr_discern_stack_execute (
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
-				if ((ret = apply_cb(stack_e[stack->wpos - 2].value, list_storage->data + stack_e[stack->wpos - 1].data_pos, apply_cb_arg)) != 0) {
+				if ((ret = apply_cbs[stack_e[stack->wpos - 2].value & 1](list_storage->data + stack_e[stack->wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
 				}
@@ -808,11 +799,7 @@ static int __rrr_discern_stack_execute (
 int rrr_discern_stack_collection_execute (
 		enum rrr_discern_stack_fault *fault,
 		const struct rrr_discern_stack_collection *collection,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_callback_arg,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *apply_callback_arg
+		const struct rrr_discern_stack_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -822,11 +809,7 @@ int rrr_discern_stack_collection_execute (
 		if ((ret = __rrr_discern_stack_execute (
 				fault,
 				node,
-				resolve_topic_filter_cb,
-				resolve_array_tag_cb,
-				resolve_callback_arg,
-				apply_cb,
-				apply_callback_arg
+				callbacks
 		)) != 0) {
 			goto out;
 		}
@@ -837,21 +820,14 @@ int rrr_discern_stack_collection_execute (
 }
 
 /*
- * Slow execution of one list operator. Used only during parsing, but it is
- * possible to use it during run-time as well as the callbacks are the same
- * as for the runtime function.
+ * Slow execution of one list operator, used only during parsing.
  */
 static int __rrr_discern_stack_parse_execute_step (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack_list *stack,
 		struct rrr_discern_stack_storage *stack_storage,
 		const struct rrr_discern_stack_element *node,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg,
-		int (*apply_cb)(rrr_length result, const char *desination, void *arg),
-		void *apply_cb_arg
+		struct rrr_discern_stack_storage *value_storage
 ) {
 	int ret = 0;
 
@@ -872,10 +848,7 @@ static int __rrr_discern_stack_parse_execute_step (
 					stack,
 					stack_storage,
 					node,
-					value_storage,
-					resolve_topic_filter_cb,
-					resolve_array_tag_cb,
-					resolve_cb_arg
+					value_storage
 			)) != 0) {
 				goto out;
 			}
@@ -906,10 +879,7 @@ static int __rrr_discern_stack_parse_execute_step (
 			if ((ret = __rrr_discern_stack_execute_op_apply (
 					fault,
 					stack,
-					stack_storage,
-					value_storage,
-					apply_cb,
-					apply_cb_arg
+					stack_storage
 			)) != 0) {
 				goto out;
 			}
@@ -955,39 +925,6 @@ static int __rrr_discern_stack_parse_execute_step (
 	out:
 	return ret;
 }
-
-static int __rrr_discern_stack_parse_execute_resolve_topic_filter (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
-	(void)(topic_filter);
-	(void)(topic_filter_size);
-	(void)(arg);
-
-	*result = 1;
-
-	return 0;
-}
-
-static int __rrr_discern_stack_parse_execute_resolve_array_tag (RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS) {
-	(void)(new_index);
-	(void)(new_index_size);
-	(void)(tag);
-	(void)(arg);
-
-	*result = 1;
-
-	return 0;
-}
-
-static int __rrr_discern_stack_parse_execute_apply (
-		rrr_length result,
-		const char *str,
-		void *arg
-) {
-	(void)(result);
-	(void)(str);
-	(void)(arg);
-	return 0;
-}
-
 
 /*
  * Parse and slow execute with all kinds of checks to verify data types and operators. The
@@ -1190,12 +1127,7 @@ static int __rrr_discern_stack_parse (
 				&stack,
 				&stack_storage,
 				&((const struct rrr_discern_stack_element *) (list_storage.data + list.data_pos))[list.wpos - 1],
-				&value_storage,
-				__rrr_discern_stack_parse_execute_resolve_topic_filter,
-				__rrr_discern_stack_parse_execute_resolve_array_tag,
-				NULL,
-				__rrr_discern_stack_parse_execute_apply,
-				NULL
+				&value_storage
 		)) != 0) {
 			if (ret == RRR_DISCERN_STACK_BAIL) {
 				ret = 0;

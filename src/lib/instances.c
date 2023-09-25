@@ -49,36 +49,47 @@ struct rrr_instance_message_broker_entry_postprocess_route_callback_data {
 	struct rrr_instance_friend_collection *nexthops;
 };
 
-static int __rrr_instance_message_broker_entry_postprocess_apply_cb (
-		rrr_length result,
-		const char *instance_name,
-		void *arg
-) {
+static int __rrr_instance_message_broker_entry_postprocess_apply_false_cb (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
 	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
 	struct rrr_instance_runtime_data *data = callback_data->data;
-
-	int ret = 0;
-
-	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), instance_name);
+	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), destination);
 
 	// Instances must be validated before thread is started
 	assert(instance != NULL);
 
 	// Latest result takes precedence in case of apply on same instance multiple times
 	rrr_instance_friend_collection_remove (callback_data->nexthops, instance);
-	if (result) {
-		if ((ret = rrr_instance_friend_collection_append (
-				callback_data->nexthops,
-				instance,
-				NULL
-		)) != 0) {
-			RRR_MSG_0("Failed to append to collection in %s\n", __func__);
-			goto out;
-		}
+
+	RRR_DBG_3("+ Apply instance %s result REMOVE in message from instance %s\n",
+			destination, INSTANCE_D_NAME(callback_data->data));
+
+	return 0;
+}
+
+static int __rrr_instance_message_broker_entry_postprocess_apply_true_cb (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	struct rrr_instance_message_broker_entry_postprocess_route_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_instance *instance = rrr_instance_find(INSTANCE_D_INSTANCES(data), destination);
+
+	// Instances must be validated before thread is started
+	assert(instance != NULL);
+
+	// Latest result takes precedence in case of apply on same instance multiple times
+	rrr_instance_friend_collection_remove (callback_data->nexthops, instance);
+	if ((ret = rrr_instance_friend_collection_append (
+			callback_data->nexthops,
+			instance,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Failed to append to collection in %s\n", __func__);
+		goto out;
 	}
 
-	RRR_DBG_3("+ Apply instance %s result %s in message from instance %s\n",
-			instance_name, result ? "ADD" : "REMOVE", INSTANCE_D_NAME(callback_data->data));
+	RRR_DBG_3("+ Apply instance %s result ADD in message from instance %s\n",
+			destination, INSTANCE_D_NAME(callback_data->data));
 
 	out:
 	return ret;
@@ -109,16 +120,21 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 		&nexthops
 	};
 
+	struct rrr_discern_stack_callbacks callbacks = {
+		rrr_discern_stack_helper_topic_filter_resolve_cb,
+		rrr_discern_stack_helper_array_tag_resolve_cb,
+		&resolve_callback_data,
+		__rrr_instance_message_broker_entry_postprocess_apply_false_cb,
+		__rrr_instance_message_broker_entry_postprocess_apply_true_cb,
+		&apply_callback_data
+	};
+
 	enum rrr_discern_stack_fault fault = 0;
 
 	if ((ret = rrr_discern_stack_collection_execute (
 			&fault,
 			INSTANCE_D_ROUTES(data),
-			rrr_discern_stack_helper_topic_filter_resolve_cb,
-			rrr_discern_stack_helper_array_tag_resolve_cb,
-			&resolve_callback_data,
-			__rrr_instance_message_broker_entry_postprocess_apply_cb,
-			&apply_callback_data
+			&callbacks
 	)) != 0) {
 		goto out;
 	}
