@@ -29,16 +29,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_message_helper_topic_match (
 		int *does_match,
-		const struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg,
 		const struct rrr_mqtt_topic_token *token
 ) {
 	int ret = 0;
 
 	*does_match = 0;
-	
-	const struct rrr_msg_msg *msg = entry->message;
 
-	assert(entry->data_length >= MSG_MIN_SIZE(msg));
 	assert(RRR_MSG_IS_RRR_MESSAGE(msg));
 
 	if (MSG_TOPIC_LENGTH(msg) > 0 && rrr_msg_msg_topic_match (
@@ -57,19 +54,36 @@ int rrr_message_helper_topic_match (
 
 int rrr_message_helper_has_array_tag (
 		int *does_have,
-		const struct rrr_msg_holder *entry,
+		const struct rrr_msg_msg *msg,
 		const char *tag
 ) {
 	int ret = 0;
 
 	*does_have = 0;
 
-	const struct rrr_msg_msg *msg = entry->message;
-
-	assert(entry->data_length >= MSG_MIN_SIZE(msg));
 	assert(RRR_MSG_IS_RRR_MESSAGE(msg));
 
 	*does_have = rrr_array_message_has_tag (msg, tag);
 
 	return ret;
+}
+
+int rrr_message_helper_entry_topic_match (
+		int *does_match,
+		const struct rrr_msg_holder *entry,
+		const struct rrr_mqtt_topic_token *token
+) {
+	const struct rrr_msg_msg *msg = entry->message;
+	assert(entry->data_length >= MSG_MIN_SIZE(msg));
+	return rrr_message_helper_topic_match(does_match, msg, token);
+}
+
+int rrr_message_helper_entry_has_array_tag (
+		int *does_have,
+		const struct rrr_msg_holder *entry,
+		const char *tag
+) {
+	const struct rrr_msg_msg *msg = entry->message;
+	assert(entry->data_length >= MSG_MIN_SIZE(msg));
+	return rrr_message_helper_has_array_tag(does_have, msg, tag);
 }

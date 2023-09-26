@@ -1,4 +1,4 @@
-if RRR_WITH_NODE
+if RRR_WITH_JS
 noinst_js=rrr_js
 endif
 
@@ -74,8 +74,8 @@ rrr_sub_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_sub_LDFLAGS = ${ldflags} -pie
 
 rrr_js_SOURCES = rrr_js.cxx
-rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS} -fpie
-rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS} -pie
+rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS} -fpie
+rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS} -pie
 
 if RRR_WITH_PERL5
 all-local:

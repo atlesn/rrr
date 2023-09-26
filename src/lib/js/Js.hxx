@@ -77,7 +77,11 @@ namespace RRR::JS {
 	class Value : public v8::Local<v8::Value> {
 		public:
 		Value(v8::Local<v8::Value> value);
-	//	Value(v8::Local<v8::String> &&value);
+	};
+
+	class Undefined : public Value {
+		public:
+		Undefined(CTX &ctx);
 	};
 
 	class UTF8 {

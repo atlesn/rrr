@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_channel;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
+struct rrr_discern_stack_collection;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
@@ -38,8 +39,8 @@ struct rrr_cmodule_worker {
 
 	rrr_setting_uint spawn_interval_us;
 
+	enum rrr_cmodule_process_mode process_mode;
 	int do_spawning;
-	int do_processing;
 	int do_drop_on_error;
 
 	// Managed structures
@@ -74,6 +75,7 @@ struct rrr_cmodule_worker {
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
 	struct rrr_event_queue *event_queue_parent;
+	const struct rrr_discern_stack_collection *methods;
 
 	// Both worker and parent destroy this. It is allocated before forking but
 	// the worker also calls destroy to clean up memory for events it created after forking

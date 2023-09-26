@@ -65,7 +65,7 @@ wait_for=WAIT FOR,...
 duplicate=yes
 
 # Set a route definition to apply on output messages to control which reader instance messages
-# are destined fore (optional). If not given, or the definition produces no result, all readers
+# are destined for (optional). If not given, or the definition produces no result, all readers
 # may receive any message.
 
 # If a route definition is given, the duplicate keyword still controls wether or not messages may be
@@ -73,6 +73,24 @@ duplicate=yes
 # the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
 # the definitions will be run in order.
 route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
+
+# Set a method definition to apply on inbound messages to set the method tags given to cmodule
+# processor functions. The methods tags can be used to dispatch messages to respective functions
+# within the cmodule code. If multiple methods are applied to a single method, the processor function
+# will be called once for each method.
+
+# If not given, the processor function will be called with a method argument indicating that no method
+# is set. If given but execution produces no result for a particular message, the processor function
+# will not be called.
+
+# To refer to a method definition specified outside the block, enclose its name in angle brackets like
+# <NAME>. Multiple names may be given, in which the definitions will be run in order.
+methods=METHOD DEFINITION|<METHOD DEFINITION NAME>[,<METHOD DEFINITION NAME>]...
+
+# When using methods, call a named processor function directly inside the cmodule program (optional). By
+# default, and if set to no, the default processor function will be called instead with the resolved method
+# name as argument.
+methods_direct_dispatch=yes
 
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
@@ -93,6 +111,8 @@ argument1 = value1
 [INSTANCE_2_NAME]
 module=...
 
+# ##### ARRAY TREE DEFINITIONS
+
 # Any number of named array trees may be specified
 # Modules parsing array data may refer to these instead of having them defined inside each instance block
 {ARRAY_TREE_DEFINITION_A}
@@ -111,6 +131,8 @@ ELSE
 sep1#separator
 ;
 
+# ##### ROUTE DEFINITIONS
+
 # Any number of named route definitions may be specified.
 # Modules with defined output routes may refer to these instead of having them defined inside each instance block.
 # Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
@@ -118,16 +140,21 @@ sep1#separator
 
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
-# Values are pushed to a stack by placing one of the following keywords in front of them:
-# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
-#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
-# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
-# - I - Instance - Push an instance name to the stack
+# String values are pushed to a stack by placing one of the following keywords in front of them:
+# - T - Topic      - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                    spaces are valid characters in topic filters, end the string with newlines or tabs.
+# - H - Has         - Push a boolean value indicating precence of a given array tag in a message
+# - D - Destinaton  - Push an instance name to the stack
+
+# Boolean values may be pushed to the stack:
+# - TRUE    - Push a boolean true to the stack
+# - FALSE   - Push a boolean false to the stack
 
 # Operators are used after pushing elements to the stack. These require one or two values to be present
 # on the stack. After an operator has been run, the values are consumed and the result of the condition is
 # pushed onto the stack. The route definition must be constructed such that no values are present on the stack
-# after processing, which means that a route definition usually ends with one or more POP operators.
+# after processing, which means that a route definition usually ends with one or more POP operators. If BAIL is
+# used, it also counts as a POP.
 
 # The following operators may be used:
 # - AND    - Apply boolean AND on the two preceeding values and push the result.
@@ -136,6 +163,7 @@ sep1#separator
 # - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
 #            and an instance name to be present on the stack. Leaves the boolean value on the stack.
 # - POP    - Remove one value from the stack.
+# - BAIL   - Stop processing if the top value on the stack is true. The value is removed from the stack.
 
 # Comments may be indicated by using #, they may be placed anywhere except from when a value is expected.
 
@@ -150,15 +178,61 @@ sep1#separator
 	# Run OR operator on the two stack values, leaves a boolean value on the stack 
 	OR
 	# Set the reader instance_receier_1 to receive messages matching one of the filters
-	I instance_receiver_1
+	D instance_receiver_1
 	APPLY
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
-	instance_receiver_2
+	D instance_receiver_2
 		APPLY
 	# Remove the remaining value from the stack
 		POP
+
+# ##### METHOD DEFINITIONS
+
+# Any number of named method definitions may be specified.
+# Modules supporting methods (cmodule, perl5, js and python) may refer to a definition by setting the methods=
+# parameter. The method definition allows messages to be matched depending on their topic or what values they
+# contain. The message is then tagged with a chosen method name which later can be retrieved in the processor
+# function of the module.
+
+# Method definitions are useful when a processor module receives messages from many other modules as they provide
+# a structured way of identifying the type of a message. If the programming language of the module used supports it,
+# the names used in the method definition may map directly to methods or functions inside a processor script.
+
+# Refer to the module-specific documentation on how to use the method tags inside the modules.
+
+# The syntax for a method definition is very much like a route definition. The only difference is that the D
+# operator pushes a method name to the stack.
+
+# If a method name is applied multiple times, the last name takes precedence. The BAIL operator may be
+# used to bail out once a method has been applied.
+
+# Example:
+
+(METHOD_DEFINITION_A)
+	# Push two topic filters to the stack
+	T my_topic_a/+
+	T my_topic_b/+
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+	OR
+	# Push a method name to the stack and apply the name. Bail out if a method was set.
+	M method_topic
+		APPLY
+		BAIL
+	# Check for an array value being present in the message and push a boolean to the stack.
+	H value_a
+	# Set a method on the message if the value was present
+	M method_value
+		APPLY
+	# Invert the result
+		NOT
+	# Set the method name to be method_b
+	D method_b
+		APPLY
+	# Remove the remaining value from the stack
+		POP
+
 .fi
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
@@ -974,10 +1048,15 @@ def config(rrr_config : config):
 
 	return True
 
-def process(socket : rrr_socket, message: rrr_message):
+def process(socket : rrr_socket, message: rrr_message, method: str):
+	if (method is None):
+		print("No method given to python3 processor function\n")
+	else:
+		print("Method given to processor function is " + method + "\n")
+
 	# Return False if something is wrong
 	if my_global_variable == "":
-		print("Error: configuration failure")
+		print("Error: configuration failure\n")
 		return False
 		
 	# modify the retrieved message as needed
@@ -1276,6 +1355,16 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
+	# Get any method set by method definition
+	my $method = shift;
+
+	if (defined $method) {
+		print "Method given to processor function: $method\n";
+	}
+	else {
+		print "No method given to processor function\n";
+	}
+
 	# Do some modifications to the message
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
@@ -1431,10 +1520,18 @@ function source(message) {
 	message.send();
 }
 
-function process(message) {
+function process(message, method) {
 	// Process a message from another module
 	// and add the value previously retrieved
 	// from the configuration file.
+
+	if (method !== undefined) {
+		console.log("Method given to JS processor function: " + method + "\n");
+	}
+	else {
+		console.log("No method given to JS processor function\n");
+	}
+
 	console.log("Processing a message\n");
 	message.push_tag("my_parameter", my_parameter);
 	message.send();

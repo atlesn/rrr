@@ -174,6 +174,14 @@ static inline rrr_length rrr_length_sub_bug_const (rrr_length a, rrr_length b) {
 	return r;
 }
 
+static inline rrr_length rrr_length_add_bug_const (rrr_length a, rrr_length b) {
+	rrr_length r = a + b;
+	if (r < a || r < b) {
+		RRR_BUG("Bug: Overflow in rrr_length_add_bug_const input was %" PRIrrrl " and %" PRIrrrl "\n", a, b);
+	}
+	return r;
+}
+
 static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
 	rrr_length r = *a + b;
 	if (r < *a) {
@@ -188,14 +196,6 @@ static inline void rrr_length_add_bug (rrr_length *a, rrr_length b) {
 	if (rrr_length_add_err(a, b) != 0) {
 		RRR_BUG("Bugtrap\n");
 	}
-}
-
-static inline rrr_length rrr_length_add_bug_const (rrr_length a, rrr_length b) {
-	rrr_length tmp = a;
-	if (rrr_length_add_err(&tmp, b) != 0) {
-		RRR_BUG("Bugtrap\n");
-	}
-	return tmp;
 }
 
 static inline int rrr_biglength_add_err (rrr_biglength *a, rrr_biglength b) {
@@ -377,9 +377,21 @@ static inline void rrr_biglength_inc_bug (rrr_biglength *a) {
 	}
 }
 
+static inline void rrr_size_t_inc_bug (size_t *a) {
+	if (++(*a) == 0) {
+		RRR_BUG("Bug: Overflow in rrr_size_t_inc_bug\n");
+	}
+}
+
 static inline rrr_length rrr_length_inc_bug_const (const rrr_length a) {
 	rrr_length r = a;
 	rrr_length_inc_bug(&r);
+	return r;
+}
+
+static inline size_t rrr_size_t_inc_bug_const (const size_t a) {
+	size_t r = a;
+	rrr_size_t_inc_bug(&r);
 	return r;
 }
 

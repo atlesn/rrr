@@ -24,8 +24,14 @@ sub config {
 
 my @persistent_single_value_tags;
 
-sub process {
+sub my_method {
 	my $message = shift;
+	my $method = shift;
+
+	if (defined $method) {
+		print "Method was not undefined in process function\n";
+		return 0;
+	}
 
 	if ($message->count_positions() == 1) {
 		print "Received single position array message with tag " . ($message->get_tag_names()) . "\n";

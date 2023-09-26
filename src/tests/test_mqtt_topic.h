@@ -18,9 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TEST_ROUTE_DEFINITION_H
-#define RRR_TEST_ROUTE_DEFINITION_H
+#ifndef RRR_TEST_MQTT_TOPIC_H
+#define RRR_TEST_MQTT_TOPIC_H
 
-int rrr_test_route_definition(void);
+int rrr_test_mqtt_topic(void);
 
-#endif /* RRR_TEST_ROUTE_DEFINITION_H */
+#endif /* RRR_TEST_MQTT_TOPIC_H */

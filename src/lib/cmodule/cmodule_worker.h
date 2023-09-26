@@ -36,6 +36,7 @@ struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_event_queue;
+struct rrr_discern_stack_collection;
 
 struct rrr_cmodule_worker_callbacks {
 	int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS);
@@ -90,9 +91,10 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
+		const struct rrr_discern_stack_collection *methods,
 		rrr_setting_uint spawn_interval_us,
+		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
-		int do_processing,
 		int do_drop_on_error
 );
 void rrr_cmodule_worker_cleanup (
