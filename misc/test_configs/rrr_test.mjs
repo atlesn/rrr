@@ -1,4 +1,5 @@
-export function process(message) {
+export function my_method(message) {
 }
-export function source(message) {
+
+export function process(message, method) {
 }
