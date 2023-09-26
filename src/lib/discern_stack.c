@@ -688,6 +688,8 @@ static int __rrr_discern_stack_execute (
 
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
+	assert(stack->wpos == 0);
+
 	for (rrr_length i = 0; i < list->wpos; i++) {
 		if (stack->wpos == stack->size) {
 			if ((ret = __rrr_discern_stack_value_list_expand (
@@ -707,7 +709,7 @@ static int __rrr_discern_stack_execute (
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
 						if ((ret = callbacks->resolve_topic_filter_cb (
-								&(stack_e[stack->wpos++].value),
+								&stack_e[stack->wpos++].value,
 								list_storage->data + node->value.data_pos,
 								node->value.data_size,
 								callbacks->resolve_cb_arg
@@ -756,18 +758,21 @@ static int __rrr_discern_stack_execute (
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
+				assert(stack->wpos >= 2);
 				stack_e[stack->wpos - 1].value =
 					stack_e[stack->wpos - 1].value &&
 					stack_e[stack->wpos - 2].value;
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
+				assert(stack->wpos >= 2);
 				stack_e[stack->wpos - 1].value =
 					stack_e[stack->wpos - 1].value ||
 					stack_e[stack->wpos - 2].value;
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
+				assert(stack->wpos >= 2);
 				if ((ret = apply_cbs[stack_e[stack->wpos - 2].value & 1](list_storage->data + stack_e[stack->wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
@@ -775,12 +780,15 @@ static int __rrr_discern_stack_execute (
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_NOT:
+				assert(stack->wpos >= 1);
 				stack_e[stack->wpos - 1].value = !stack_e[stack->wpos - 1].value;
 				break;
 			case RRR_DISCERN_STACK_OP_POP:
+				assert(stack->wpos >= 1);
 				stack->wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_BAIL:
+				assert(stack->wpos >= 1);
 				if (stack_e[stack->wpos - 1].value) {
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
