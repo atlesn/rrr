@@ -42,6 +42,14 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_LUA
+libadd_lua = librrrlua.la
+librrrlua_la_SOURCES = lua/lua.c
+librrrlua_la_CFLAGS = ${LUA_CFLAGS} ${AM_CFLAGS}
+librrrlua_la_LDFLAGS = ${LUA_LDFLAGS}
+lua_extra_ld = ${LUA_LDFLAGS}
+endif
+
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
@@ -145,8 +153,14 @@ librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
 endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
-                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
+                    ${TLS_LDFLAGS} \
+                    ${perl5_extra_ld} \
+                    ${lua_extra_ld} \
+		    ${jsonc_extra_ld} \
+		    ${nghttp2_extra_ld} \
+		    ${python3_extra_ld} \
+		    ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
@@ -211,6 +225,7 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
+    ${libadd_lua}                    \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
