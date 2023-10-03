@@ -258,7 +258,7 @@ namespace RRR::JS {
 				RRR_MSG_0("Assertion triggered\n");
 			}
 			else {
-				if (!args[0]->IsTrue()) {
+				if ((args[0]->ToBoolean(isolate))->IsTrue()) {
 					return;
 				}
 
