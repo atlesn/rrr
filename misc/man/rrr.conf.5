@@ -1624,9 +1624,10 @@ The following special global Objects are available:
 .nf
 // Data type Console (accessed through global name console)
 {
-  log(message);      // Log a message using debuglevel 7
-  error(message);    // Log a message using debuglevel 0 (error)
-  critical(message); // Log a message using debuglevel 0 (error) and crash program
+  log(message);                 // Log a message using debuglevel 7
+  error(message);               // Log a message using debuglevel 0 (error)
+  assert(assertion, message);   // Log a message using debuglevel 0 if assertion is false and crash program
+  critical(message);            // Log a message using debuglevel 0 (error) and crash program
 }
 
 // Data type Timeout (run a scheduled function once). Syntax is shown. The
