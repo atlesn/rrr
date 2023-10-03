@@ -37,26 +37,52 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 struct rrr_lua {
-	char b;
+	lua_State *L;
 };
+
+static void *__rrr_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
+	struct rrr_lua *lua = ud;
+	(void)(lua);
+
+	if (nsize == 0) {
+		rrr_free(ptr);
+		return NULL;
+	}
+
+	return rrr_reallocate(ptr, osize, nsize);
+}
 
 int rrr_lua_new(struct rrr_lua **result) {
 	int ret = 0;
 
 	struct rrr_lua *lua;
 
-	if ((lua = rrr_allocate(sizeof(*lua))) == NULL) {
+	if ((lua = rrr_allocate_zero(sizeof(*lua))) == NULL) {
 		RRR_MSG_0("Failed to allocate memroy in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
+	if ((lua->L = lua_newstate(__rrr_lua_alloc, lua)) == NULL) {
+		RRR_MSG_0("Failed to open Lua in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	luaL_openlibs(lua->L);
+
 	*result = lua;
 
+	goto out;
+//	out_close_lua:
+//		lua_close(lua->L);
+	out_free:
+		rrr_free(lua);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_lua_destroy(struct rrr_lua *lua) {
+	lua_close(lua->L);
 	rrr_free(lua);
 }
