@@ -39,12 +39,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/random.h"
 #include "lib/common.h"
 #include "lib/util/rrr_endian.h"
+#include "lib/util/readfile.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/lua/lua.h"
 
-struct rrr_lua_data {
-	uint8_t dummy;
-};
+#include "lib/lua/lua.h"
 
 static int main_running = 1;
 static int rrr_signal_handler(int s, void *arg) {
@@ -52,6 +50,7 @@ static int rrr_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
+	{CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "file",                  "{LUA FILE}"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -72,8 +71,12 @@ int main(int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler;
 	struct cmd_data cmd;
-	struct rrr_lua_data lua_data = {0};
 	struct rrr_lua *lua;
+	const char *file_name;
+	cmd_arg_count file_i = 0;
+	char *file_data = NULL;
+	rrr_biglength file_size = 0;
+	int ret_tmp;
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
@@ -111,8 +114,37 @@ int main(int argc, const char **argv, const char **env) {
 		goto out_cleanup_signal;
 	}
 
-	while (main_running) {
-		goto out_cleanup_lua;
+	for (file_i = 0; (file_name = cmd_get_value(&cmd, "file", file_i)) != NULL; file_i++) {
+		RRR_FREE_IF_NOT_NULL(file_data);
+
+		RRR_DBG_1("Loading Lua script %s...\n",
+			file_name);
+
+		if (rrr_readfile_read (
+				&file_data,
+				&file_size,
+				file_name,
+				0 /* Unlimited size */,
+				0 /* Enoent is not OK */
+		)) {
+			RRR_MSG_0("Failed to load Lua script %s\n", file_name);
+			ret = EXIT_FAILURE;
+			goto out_cleanup_lua;
+		}
+
+		RRR_DBG_1("Lua script %s loaded, size is %" PRIrrrbl ". Now executing...\n",
+			file_name, file_size);
+
+		if ((ret_tmp = rrr_lua_execute_snippet (
+				lua,
+				file_data,
+				file_size
+		)) != 0) {
+			RRR_MSG_0("Non-zero return %i from Lua script %s\n",
+				ret_tmp, file_name);
+			ret = ret_tmp;
+			goto out_cleanup_lua;
+		}
 	}
 
 	if (!main_running) {
@@ -128,6 +160,7 @@ int main(int argc, const char **argv, const char **env) {
 		rrr_log_cleanup();
 		cmd_destroy(&cmd);
 	out_cleanup_allocator:
+		RRR_FREE_IF_NOT_NULL(file_data);
 		rrr_allocator_cleanup();
 	out_final:
 		return ret;

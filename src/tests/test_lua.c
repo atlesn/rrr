@@ -30,6 +30,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/lua/lua.h"
 #include "../lib/util/macro_utils.h"
 
+static int __rrr_test_lua_execute_snippet (
+		struct rrr_lua *lua,
+		const char *snippet,
+		int expect_ret
+) {
+	int ret = 0;
+
+	if ((ret = rrr_lua_execute_snippet(lua, snippet, strlen(snippet))) != 0) {
+		TEST_MSG("Failed to execute Lua snippet '%s'\n", snippet);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret != expect_ret;
+}
+
 int rrr_test_lua(void) {
 	int ret = 0;
 
@@ -39,6 +56,9 @@ int rrr_test_lua(void) {
 		TEST_MSG("Failed to craete Lua in %s\n", __func__);
 		goto out;
 	}
+
+	TEST_MSG("Execute Lua snippet...\n");
+	ret |= __rrr_test_lua_execute_snippet(lua, "1 + 1", 0);
 
 	goto out_destroy;
 	out_destroy:

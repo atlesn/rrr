@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #  error "No HAVE_LUA defined"
 #endif
 
+#include <assert.h>
+
 #include "lua.h"
 
 #include "../allocator.h"
@@ -85,4 +87,37 @@ int rrr_lua_new(struct rrr_lua **result) {
 void rrr_lua_destroy(struct rrr_lua *lua) {
 	lua_close(lua->L);
 	rrr_free(lua);
+}
+
+int rrr_lua_execute_snippet (
+		struct rrr_lua *lua,
+		const char *snippet,
+		size_t size
+) {
+	int ret = 0;
+
+	const int stack_count = lua_gettop(lua->L);
+
+	if (luaL_loadbuffer(lua->L, snippet, size, "snippet") != 0) {
+		goto error;
+	}
+
+	if (lua_pcall(lua->L, 0, 1 /* At most 1 result */, 0) != 0) {
+		goto error;
+	}
+
+	RRR_DBG_1("Top of stack after executing Lua snippet: %s\n",
+		lua_tostring(lua->L, -1));
+
+	const int stack_diff = lua_gettop(lua->L) - stack_count;
+	assert(stack_diff >= 0);
+	lua_pop(lua->L, stack_diff);
+
+	goto out;
+	error:
+		RRR_MSG_0("Error from Lua while executing snippet: %s\n",
+			lua_tostring(lua->L, -1));
+		ret = 1;
+	out:
+		return ret;
 }

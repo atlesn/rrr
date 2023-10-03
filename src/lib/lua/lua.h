@@ -22,9 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LUA_H
 #define RRR_LUA_H
 
+#include <stddef.h>
+
 struct rrr_lua;
 
 int rrr_lua_new(struct rrr_lua **result);
 void rrr_lua_destroy(struct rrr_lua *lua);
+
+int rrr_lua_execute_snippet (
+		struct rrr_lua *lua,
+		const char *snippet,
+		size_t size
+);
 
 #endif /* RRR_LUA_H */
