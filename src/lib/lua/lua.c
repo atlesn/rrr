@@ -19,28 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#if defined(HAVE_LUA5_4_LUA_H)
-#  include <lua5.4/lua.h>
-#  include <lua5.4/lauxlib.h>
-#  include <lua5.4/lualib.h>
-#elif defined(HAVE_LUA5_3_LUA_H)
-#  include <lua5.3/lua.h>
-#  include <lua5.3/lauxlib.h>
-#  include <lua5.3/lualib.h>
-#else
-#  error "No HAVE_LUA defined"
-#endif
-
 #include <assert.h>
 
 #include "lua.h"
+#include "lua_common.h"
 
 #include "../allocator.h"
 #include "../log.h"
-
-struct rrr_lua {
-	lua_State *L;
-};
 
 static void *__rrr_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 	struct rrr_lua *lua = ud;
@@ -72,6 +57,9 @@ int rrr_lua_new(struct rrr_lua **result) {
 	}
 
 	luaL_openlibs(lua->L);
+
+	lua_newtable(lua->L);
+	lua_setglobal(lua->L, "RRR");
 
 	*result = lua;
 

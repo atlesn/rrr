@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_lua.h"
 #include "../lib/lua/lua.h"
+#include "../lib/lua/lua_message.h"
 #include "../lib/util/macro_utils.h"
 
 static int __rrr_test_lua_execute_snippet (
@@ -57,8 +58,25 @@ int rrr_test_lua(void) {
 		goto out;
 	}
 
+	rrr_lua_message_library_register(lua);
+
 	TEST_MSG("Execute Lua snippet...\n");
-	ret |= __rrr_test_lua_execute_snippet(lua, "1 + 1", 0);
+	ret |= __rrr_test_lua_execute_snippet(lua, "a = 1 - 1\nreturn a", 0);
+
+	TEST_MSG("Iterate RRR table...\n");
+	ret |= __rrr_test_lua_execute_snippet(lua,
+		"for k, v in pairs(RRR) do\n" \
+		"  print(k, \"=>\", v)\n"     \
+		"end"
+	, 0);
+
+	TEST_MSG("Make RRR Message...\n");
+	ret |= __rrr_test_lua_execute_snippet(lua,
+		"msg = RRR.Message:new()\n"   \
+		"for k, v in pairs(msg) do\n" \
+		"  print(k, \"=>\", v)\n"     \
+		"end"
+	, 0);
 
 	goto out_destroy;
 	out_destroy:
