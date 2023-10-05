@@ -764,13 +764,13 @@ static int __rrr_discern_stack_execute (
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
-				stack_e[wpos - 1].value =
+				stack_e[wpos - 2].value =
 					stack_e[wpos - 1].value &&
 					stack_e[wpos - 2].value;
 				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
-				stack_e[wpos - 1].value =
+				stack_e[wpos - 2].value =
 					stack_e[wpos - 1].value ||
 					stack_e[wpos - 2].value;
 				wpos--;
