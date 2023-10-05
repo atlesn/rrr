@@ -108,6 +108,10 @@ static const char bigtest[] = "T YYY\nT AAA\nT BBB\nOR OR\n" \
                               "D no APPLY\n" \
 			      "OR NOT\n" \
 			      "D no APPLY\n" \
+			      "NOT\n" \
+                              "D yes APPLY\n" \
+			      "NOT\n" \
+			      "D no APPLY\n" \
 			      "POP\n";
 
 static int __rrr_test_discern_stack_resolve_topic_filter_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
