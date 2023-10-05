@@ -102,17 +102,50 @@ static const char *valids[] = {
 	"TRUE FALSE POP BAIL"
 };
 
-static const char bigtest[] = "T YYY\nT AAA\nT BBB\nOR OR\n" \
+// Test should confirm that
+//   - OR operator writes at correct stack location
+//   - NOT operator works
+
+static const char bigtest[] = "T AAA\nT YYY\nT BBB\nOR\n" \
                               "D yes APPLY\n" \
-                              "T AAA\nT BBB\nOR\n" \
+                              "T AAA\nT BBB\n" \
                               "D no APPLY\n" \
-			      "OR NOT\n" \
+			      "OR OR OR NOT\n" \
 			      "D no APPLY\n" \
 			      "NOT\n" \
                               "D yes APPLY\n" \
 			      "NOT\n" \
 			      "D no APPLY\n" \
 			      "POP\n";
+//   Correct: -
+//            0
+//            0 1
+//            0 1 0
+//            0 1
+//            0 1 0
+//            0 1 0 0
+//            0 1 0
+//            0 1
+//            1
+//            0
+//            1
+//            0
+//            -
+// Incorrect: -
+//            0
+//            0 1
+//            0 1 0
+//            0 1     (1) <-- OR writes to popped value, but error is obscured
+//            0 1 0
+//            0 1 0 0
+//            0 1 0   (0) <-- OR writes to popped value, but error is obscured
+//            0 1     (1) <-- OR writes to popped value, but error is obscured
+//            0       (1) <-- OR writes to popped value, and result becomes incorrect
+//            1
+//            0
+//            1
+//            -
+
 
 static int __rrr_test_discern_stack_resolve_topic_filter_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
 	(void)(arg);
