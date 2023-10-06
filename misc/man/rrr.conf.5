@@ -476,6 +476,9 @@ Processes and generates messages with custom Python3 scripts.
 .It perl5 (PAI)
 Processes and generates messages with custom Perl5 scripts.
 
+.It lua (PAI)
+Processes and generates messages with custom Lua scripts.
+
 .It js (PAI)
 Processes and generates messages with custom JavaScript scripts.
 
@@ -1006,7 +1009,7 @@ The name of the function in the python program to which we send settings form th
 All settings defined inside the python block in the configuration file are sent in here.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the python program might be set as needed.
+Any number of custom settings for the python program may be set as needed.
 .El
 .PP
 Refer to the
@@ -1090,7 +1093,7 @@ More details about Python in
 .PP
 .SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
-perl script. The first and only argument to the source- and generate-functions
+perl script. The first and only argument to the source- and process-subs
 is the RRR message in the form of an object/hash reference of type
 .B rrr_message
 with different parameters which may be modified as needed. To pass the message back to RRR, the
@@ -1136,7 +1139,7 @@ settings object may also be stored in the script to be read from or modified fro
 generate-subroutines.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the Perl script might be set as needed.
+Any number of custom settings for the Perl script may be set as needed.
 .El
 .PP
 Refer to the
@@ -1449,6 +1452,58 @@ sub process {
 	return 1;
 }
 .fi
+.SS lua (PAI)
+The Lua module makes it possible to process and generate messages in a custom 
+Lua script. The source function in the scripts receives an empty message object,
+and the process function receives populated messages from another module.
+
+Messages may be passed on using the
+.B send()
+method on the message object.
+
+The following configuration parameters are available in the
+.B lua
+module:
+
+.Bl -tag -width -indent
+.It lua_file=FILENAME
+The file containing the Lua script to run. The script will be run once when the program starts, and global code outside of functions will be executed.
+If multiple workers are used by setting the parameter
+.B lua_workers,
+the script will run once for each worker and global variables will not be accessible between different workers.
+
+.It lua_config_function=NAME
+The function to call before sourcing and processing starts.
+
+.It lua_source_function=NAME
+The function to call regularely.
+
+.It lua_process_function=NAME
+The function to call when a message from another module should be processed.
+
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the Lua script may be set as needed.
+.El
+
+Refer to the
+.B cmodule
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It lua_workers=UNSIGNED INTEGER
+.It lua_source_interval_ms=MILLISECONDS
+.It lua_log_prefix=PREFIX
+.It lua_drop_on_error={yes|no}
+.El
+
+
+
+
+
+
+
 .SS js (PAI)
 The js module makes it possible to process and generate messages in a custom  JavaScript.
 
@@ -1481,7 +1536,7 @@ The function to call regularely.
 The function to call when a message from another module should be processed.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the JavaScript script might be set as needed.
+Any number of custom settings for the JavaScript script may be set as needed.
 .El
 
 Refer to the
@@ -1682,7 +1737,7 @@ The function to which to call to process messages from senders. Optional, but at
 The function to call before the program shuts down. Optional.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the C-module might be set as needed.
+Any number of custom settings for the C-module may be set as needed.
 .El
 .PP
 Refer to the

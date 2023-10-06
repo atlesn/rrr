@@ -32,6 +32,14 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
+if RRR_WITH_LUA
+lua = lua.la
+lua_la_SOURCES = p_lua.c
+lua_la_CFLAGS = ${LUA_CFLAGS} ${AM_CFLAGS}
+# Lua libraries are linked in librrr
+lua_la_LDFLAGS = ${module_ldflags}
+endif
+
 if RRR_WITH_JS
 js = js.la
 js_la_SOURCES = p_js.cxx
@@ -44,7 +52,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la modbus.la \
-	${mysql} ${python3} ${voltmonitor} ${perl5} ${js}
+	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
