@@ -60,13 +60,19 @@ void rrr_lua_message_decref (struct rrr_lua_message *message) {
 static int __rrr_lua_message_f_finalize(lua_State *L) {
 	struct rrr_lua_message *message;
 
+	int test;
+
+	test = lua_getmetatable(L, -1);
+	assert(test == 1);
 	lua_pushliteral(L, "_rrr_message");
 	lua_gettable(L, -2);
 	assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);
 
-	message = lua_topointer(L, -1);
-	lua_pop(L, 1);
+	message = lua_touserdata(L, -1);
 	rrr_free(message);
+
+	lua_pop(L, 1);
+	lua_pop(L, 1);
 
 	return 1;
 }
@@ -94,13 +100,12 @@ static int __rrr_lua_message_f_new(lua_State *L) {
 	luaL_newlib(L, f);
 	results++;
 
-	lua_pushliteral(L, "_rrr_message");
-	lua_pushlightuserdata(L, message);
-	lua_settable(L, -3);
-
 	printf("new %p\n", message);
 
 	luaL_newlib(L, f_meta);
+	lua_pushliteral(L, "_rrr_message");
+	lua_pushlightuserdata(L, message);
+	lua_settable(L, -3);
 	lua_setmetatable(L, -2);
 
 	lua_pushliteral(L, "data");
