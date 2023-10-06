@@ -248,6 +248,30 @@ namespace RRR::JS {
 			flog(0, args);
 		}
 
+		void _assert(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			// No return value event if we do not abort
+
+			auto isolate = args.GetIsolate();
+			auto ctx = args.GetIsolate()->GetCurrentContext();
+			if (args.Length() == 0) {
+				// Always trigger if there are no arguments
+				RRR_MSG_0("Assertion triggered\n");
+			}
+			else {
+				if ((args[0]->ToBoolean(isolate))->IsTrue()) {
+					return;
+				}
+
+				RRR_MSG_0("Assertion triggered\n");
+
+				for (int i = 1; i < args.Length(); i++) {
+					auto value = String(isolate, args[i]->ToString(ctx).ToLocalChecked());
+					RRR_MSG_0("- %s\n", *value);
+				}
+			}
+			abort();
+		}
+
 		void critical(const v8::FunctionCallbackInfo<v8::Value> &args) {
 			flog(0, args);
 			abort();
@@ -276,6 +300,12 @@ namespace RRR::JS {
 		}
 		{
 			auto result = console->Set(ctx, String(*this, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to intitialize globals\n");
+			}
+		}
+		{
+			auto result = console->Set(ctx, String(*this, "assert"), v8::Function::New(ctx, Console::_assert).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
 				throw E("Failed to intitialize globals\n");
 			}

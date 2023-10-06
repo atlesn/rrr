@@ -94,7 +94,7 @@ struct rrr_discern_stack_list {
 struct rrr_discern_stack_value_list {
 	rrr_length data_pos;
 	rrr_length size;
-	rrr_length wpos;
+	rrr_length sentinel;
 };
 
 struct rrr_discern_stack {
@@ -420,6 +420,8 @@ static int __rrr_discern_stack_new (
 		goto out_free;
 	}
 
+	discern_stack->exe_stack.sentinel = 0xdeadbeef;
+
 	*result = discern_stack;
 	discern_stack = NULL;
 
@@ -688,10 +690,14 @@ static int __rrr_discern_stack_execute (
 
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
-	assert(stack->wpos == 0);
+	// When wpos was inside the struct, it could sometimes be zero
+	// and non-zero at the same time. ????
+	rrr_length wpos = 0;
+
+	assert(stack->sentinel == 0xdeadbeef);
 
 	for (rrr_length i = 0; i < list->wpos; i++) {
-		if (stack->wpos == stack->size) {
+		if (wpos == stack->size) {
 			if ((ret = __rrr_discern_stack_value_list_expand (
 					stack,
 					list_storage,
@@ -709,7 +715,7 @@ static int __rrr_discern_stack_execute (
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
 						if ((ret = callbacks->resolve_topic_filter_cb (
-								&stack_e[stack->wpos++].value,
+								&stack_e[wpos++].value,
 								list_storage->data + node->value.data_pos,
 								node->value.data_size,
 								callbacks->resolve_cb_arg
@@ -730,7 +736,7 @@ static int __rrr_discern_stack_execute (
 						}
 
 						if (!index_result) {
-							stack_e[stack->wpos++].value = 0;
+							stack_e[wpos++].value = 0;
 							break;
 						}
 
@@ -738,7 +744,7 @@ static int __rrr_discern_stack_execute (
 						// H array tag check without calling the callback. The callback
 						// may set the index one time during an execution session.
 						if ((ret = callbacks->resolve_array_tag_cb (
-								&stack_e[stack->wpos++].value,
+								&stack_e[wpos++].value,
 								&index_tmp,
 								&index_tmp_size,
 								list_storage->data + node->value.data_pos,
@@ -748,48 +754,42 @@ static int __rrr_discern_stack_execute (
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack_e[stack->wpos++].value = 1;
+						stack_e[wpos++].value = 1;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
-						stack_e[stack->wpos++] = node->value;
+						stack_e[wpos++] = node->value;
 						break;
 					default:
 						assert(0);
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
-				assert(stack->wpos >= 2);
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value &&
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value &&
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
-				assert(stack->wpos >= 2);
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value ||
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value ||
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
-				assert(stack->wpos >= 2);
-				if ((ret = apply_cbs[stack_e[stack->wpos - 2].value & 1](list_storage->data + stack_e[stack->wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
+				if ((ret = apply_cbs[stack_e[wpos - 2].value & 1](list_storage->data + stack_e[wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
 				}
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_NOT:
-				assert(stack->wpos >= 1);
-				stack_e[stack->wpos - 1].value = !stack_e[stack->wpos - 1].value;
+				stack_e[wpos - 1].value = !stack_e[wpos - 1].value;
 				break;
 			case RRR_DISCERN_STACK_OP_POP:
-				assert(stack->wpos >= 1);
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_BAIL:
-				assert(stack->wpos >= 1);
-				if (stack_e[stack->wpos - 1].value) {
+				if (stack_e[wpos - 1].value) {
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
 				}
@@ -798,6 +798,8 @@ static int __rrr_discern_stack_execute (
 				assert(0);
 		}
 	}
+
+	assert(wpos == 0);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(index_tmp);
