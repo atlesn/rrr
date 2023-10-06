@@ -711,27 +711,30 @@ AS_IF([test "x$enable_lua" = xno], [
 
 	AC_DEFINE([RRR_WITH_LUA], [1], [Enable lua extensions])
 
-#	LUA_CFLAGS=`pkg-config --cflags lua --silence-errors`
-	if test "x${LUA_CFLAGS}" = "x"; then
-		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" " ])
-		if test "x${LUA_CFLAGS}" = "x"; then
-			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " ])
-		fi
-	fi
-
+	LUA_CFLAGS=`pkg-config --cflags lua --silence-errors`
 	LUA_LDFLAGS=`pkg-config --libs lua --silence-errors`
-	if test "x${LUA_LDFLAGS}" = "x"; then
-		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-lliblua5.4" ])
-		if test "x${LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-lliblua5.3" ])
+	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" " ])
+		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
+		if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " ])
+			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" ])
 		fi
 	fi
 
 	AC_MSG_CHECKING([for lua CFLAGS])
-	AC_MSG_RESULT([${LUA_CFLAGS}])
+	AS_IF([ test "x${LUA_CFLAGS}" = "x" ],[
+		AC_MSG_ERROR([Could not find Lua headers])
+	],[
+		AC_MSG_RESULT([${LUA_CFLAGS}])
+	])
 
 	AC_MSG_CHECKING([for lua LDFLAGS])
-	AC_MSG_RESULT([${LUA_LDFLAGS}])
+	AS_IF([ test "x${LUA_LDFLAGS}" = "x" ],[
+		AC_MSG_ERROR([Could not find Lua libraries])
+	],[
+		AC_MSG_RESULT([${LUA_LDFLAGS}])
+	])
 
 	AC_SUBST([LUA_CFLAGS])
 	AC_SUBST([LUA_LDFLAGS])
