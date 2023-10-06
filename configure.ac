@@ -713,7 +713,35 @@ AS_IF([test "x$enable_lua" = xno], [
 
 	LUA_CFLAGS=`pkg-config --cflags lua --silence-errors`
 	LUA_LDFLAGS=`pkg-config --libs lua --silence-errors`
+
+	AC_MSG_CHECKING([for default Lua libraries and headers])
+	if test "x${LUA_LDFLAGS}" != "x" -a "x${LUA_CFLAGS}" = "x"; then
+		# LDFLAGS is given by pkg-config, but not CFLAGS. This might
+		# indicate that headers are not in includes subdirectory.
+		if echo "x${LUA_LDFLAGS}" | grep -qE '\-llua(\s|$)'; then
+			AC_MSG_RESULT([possibly, must check for headers and symbols])
+			AC_CHECK_HEADERS([lua.h], [ LUA_CFLAGS=" " ])
+			if test "x${LUA_CFLAGS}" = "x"; then
+				# Headers without version number not found
+				LUA_LDFLAGS=""
+			else
+				# Have versionless library and headers without version number
+				# and headers are not in subdirectory.
+				AC_CHECK_LIB([lua], [lua_close], [ ], [
+				      LUA_LDFLAGS=""
+				      LUA_CFLAGS=""
+				])
+			fi
+		else
+			# Library is not versionless, check for specific supported versions
+			AC_MSG_RESULT([no])
+		fi
+	else
+		AC_MSG_RESULT([no])
+	fi
+
 	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+		# Try specific versions
 		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" " ])
 		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
 		if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
