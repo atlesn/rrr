@@ -30,6 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #  include <lua5.3/lua.h>
 #  include <lua5.3/lauxlib.h>
 #  include <lua5.3/lualib.h>
+#elif defined(HAVE_LUA_H)
+#  include <lua.h>
+#  include <lauxlib.h>
+#  include <lualib.h>
 #else
 #  error "No HAVE_LUA defined"
 #endif
