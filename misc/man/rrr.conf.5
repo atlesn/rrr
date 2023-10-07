@@ -1456,6 +1456,7 @@ sub process {
 The Lua module makes it possible to process and generate messages in a custom 
 Lua script. The source function in the scripts receives an empty message object,
 and the process function receives populated messages from another module.
+Additional message objects may be created as well.
 
 Messages may be passed on using the
 .B send()
@@ -1497,6 +1498,17 @@ section for descriptions of the following parameters:
 .It lua_log_prefix=PREFIX
 .It lua_drop_on_error={yes|no}
 .El
+The Message object, which is used to modify and create RRR messages, has the following functionallity:
+.nf
+-- Create a new message
+message = Message.new()
+
+-- Set IP address parameters
+message:ip_set(ip, port)
+
+
+
+.if
 
 
 
