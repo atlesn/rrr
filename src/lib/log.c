@@ -546,6 +546,24 @@ void rrr_log_printf (
 	va_end(args);
 }
 
+void rrr_log_vprintf (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list ap
+) {
+	return __rrr_log_printf_va (
+			file,
+			line,
+			loglevel,
+			prefix,
+			__format,
+			ap
+	);
+}
+
 void rrr_log_fprintf (
 		FILE *file_target,
 		const char *file,

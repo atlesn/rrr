@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "../lib/lua/lua.h"
+#include "../lib/lua/lua_message.h"
 
 #include "../lib/log.h"
 #include "../lib/allocator.h"
@@ -140,7 +141,7 @@ int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	int ret_tmp;
 
 	if (method != NULL && *method != '\0') {
-		if ((ret_tmp = rrr_lua_call(data->lua, method)) != 0) {
+		if ((ret_tmp = rrr_lua_call(data->lua, method, 0)) != 0) {
 			RRR_MSG_0("Error %i returned from Lua config function %s in Lua instance %s\n",
 				ret_tmp, method, INSTANCE_D_NAME(parent_data->thread_data));
 			ret = 1;
@@ -157,12 +158,12 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	int ret = 0;
 
+	int ret_tmp;
 	struct lua_child_data *data = private_arg;
 	struct lua_data *parent_data = data->parent_data;
-	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(parent_data->thread_data);
+	const struct rrr_cmodule_config_data *cmodule_config_data = data->cmodule_config_data;
+	const char *function;
 
-	assert(0 && "Call process function");
-	
 	// TODO : Access from cmodule_config_data in child data
 	// cmodule_config_data->config_method
 	// cmodule_config_data->process_method
@@ -170,6 +171,7 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	if (is_spawn_ctx) {
 		// function = data->source_method;
+		assert(0 && "Spawn not implemented");
 	}
 	else {
 		data->processed++;
@@ -179,24 +181,32 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			assert(0 && "Do direct dispatch");
 		}
 		else {
-			// Third argument for process function is name of any method from method definition
-			if (method != NULL) {
-				assert(0 && "Do process with method argument");
+			// Third argument for process function is name of any function from function definition
+			if (function != NULL) {
+				assert(0 && "Do process with function argument");
 			}
 
-			assert(0 && "Do process");
+			function = data->cmodule_config_data->process_method;
+		}
 
-			//function = data->process_method;
+		if ((ret = rrr_lua_message_push_new (data->lua)) != 0) {
+			RRR_MSG_0("Failed to create Lua RRR message in %s\n", __func__);
+			goto out;
 		}
 	}
-/*
-	if (function == NULL) {
-		RRR_BUG("Lua no functions defined in %s, some error in init wrapper causes functions not to be prepared correctly. is_spawn was %i\n",
+
+	if (function == NULL || *function == '\0') {
+		RRR_BUG("Lua no functions defined in %s is_spawn was %i\n",
 			__func__, is_spawn_ctx);
 	}
-*/
 
-	assert(0 && "Call function");
+	// TODO : Add method argument
+	if ((ret_tmp = rrr_lua_call(data->lua, function, 1)) != 0) {
+		RRR_MSG_0("Error %i returned from Lua function '%s'%s in Lua instance %s\n",
+			ret_tmp, function, is_spawn_ctx ? " while spawning" : "", INSTANCE_D_NAME(parent_data->thread_data));
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;

@@ -25,6 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_lua;
 struct rrr_lua_message;
 
+int rrr_lua_message_push_new (
+		struct rrr_lua *target
+);
 void rrr_lua_message_library_register (
 		struct rrr_lua *target
 );

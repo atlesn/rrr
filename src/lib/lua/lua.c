@@ -71,9 +71,29 @@ int rrr_lua_new(struct rrr_lua **result) {
 	out:
 		return ret;
 }
+
 void rrr_lua_destroy(struct rrr_lua *lua) {
 	lua_close(lua->L);
 	rrr_free(lua);
+}
+
+static void __rrr_lua_error_with_location (
+		struct rrr_lua *lua,
+		const char *fmt,
+		...
+) {
+	va_list argp;
+	va_start(argp, fmt);
+
+	// TODO : Location is not being printed
+
+	luaL_where(lua->L, 1);
+	// RRR_MSG_0("At %s:\n", lua_tostring(lua->L, -1));
+	lua_pop(lua->L, 1);
+
+	RRR_MSG_0_V(fmt, argp);
+
+	va_end(argp);
 }
 
 int rrr_lua_execute_snippet (
@@ -108,14 +128,24 @@ int rrr_lua_execute_snippet (
 		return ret;
 }
 
+void rrr_lua_pushint (
+		struct rrr_lua *lua,
+		int n
+) {
+	lua_pushnumber(lua->L, n);
+}
+
 int rrr_lua_call (
 		struct rrr_lua *lua,
-		const char *function
+		const char *function,
+		int nargs
 ) {
 	int ret = 0;
 
 	int type;
 	int status;
+
+	assert(lua_gettop(lua->L) == nargs);
 
 	switch (type = lua_getglobal(lua->L, function)) {
 		case LUA_TFUNCTION:
@@ -140,8 +170,11 @@ int rrr_lua_call (
 			goto out;
 	};
 
-	if ((status = lua_pcall(lua->L, 0, 1 /* One result */, 0)) != LUA_OK) {
-		RRR_MSG_0("Failed to call global Lua function '%s': %s\n",
+	// Function must be before arguments, rotate the stack
+	lua_rotate(lua->L, -1 - nargs, 1);
+
+	if ((status = lua_pcall(lua->L, nargs, 1 /* One result */, 0)) != LUA_OK) {
+		__rrr_lua_error_with_location (lua, "Failed to call global Lua function '%s': %s\n",
 			function, lua_tostring(lua->L, -1));
 		ret = 1;
 		goto out;

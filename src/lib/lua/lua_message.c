@@ -31,7 +31,9 @@ struct rrr_lua_message {
 	int usercount;
 };
 
-int rrr_lua_message_new (struct rrr_lua_message **result) {
+static int __rrr_lua_message_new (
+		struct rrr_lua_message **result
+) {
 	int ret = 0;
 
 	struct rrr_lua_message *message;
@@ -50,7 +52,7 @@ int rrr_lua_message_new (struct rrr_lua_message **result) {
 	return ret;
 }
 
-void rrr_lua_message_decref (struct rrr_lua_message *message) {
+static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
 	if (--message->usercount > 0)
 		return;
 	assert(message->usercount == 0);
@@ -69,7 +71,7 @@ static int __rrr_lua_message_f_finalize(lua_State *L) {
 	assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);
 
 	message = lua_touserdata(L, -1);
-	rrr_free(message);
+	__rrr_lua_message_decref(message);
 
 	lua_pop(L, 1);
 	lua_pop(L, 1);
@@ -77,30 +79,22 @@ static int __rrr_lua_message_f_finalize(lua_State *L) {
 	return 1;
 }
 
-static int __rrr_lua_message_f_new(lua_State *L) {
+static int __rrr_lua_message_construct (
+		lua_State *L,
+		struct rrr_lua_message *message
+) {
+	int results = 0;
+
 	static const luaL_Reg f_meta[] = {
 		{"__gc", __rrr_lua_message_f_finalize},
 		{NULL, NULL}
 	};
-
 	static const luaL_Reg f[] = {
 		{NULL, NULL}
 	};
 
-	int results = 0;
-
-	struct rrr_lua_message *message;
-
-	if (rrr_lua_message_new(&message) != 0) {
-		luaL_error(L, "Failed to create internal message in %s\n",
-			__func__);
-		return 0;
-	}
-
 	luaL_newlib(L, f);
 	results++;
-
-	printf("new %p\n", message);
 
 	luaL_newlib(L, f_meta);
 	lua_pushliteral(L, "_rrr_message");
@@ -113,6 +107,45 @@ static int __rrr_lua_message_f_new(lua_State *L) {
 	lua_settable(L, -3);
 
 	return results;
+}
+
+static int __rrr_lua_message_f_new(lua_State *L) {
+	int results = 0;
+
+	struct rrr_lua_message *message;
+
+	if (__rrr_lua_message_new(&message) != 0) {
+		luaL_error(L, "Failed to create internal message in %s\n",
+			__func__);
+		return 0;
+	}
+
+	results = __rrr_lua_message_construct(L, message);
+	assert(results == 1);
+
+	return 1;
+}
+
+int rrr_lua_message_push_new (
+		struct rrr_lua *target
+) {
+	int ret = 0;
+
+	struct rrr_lua_message *message;
+	int results = 0;
+
+	if ((ret = __rrr_lua_message_new(&message)) != 0) {
+		RRR_MSG_0("Failed to create internal message in %s\n",
+			__func__);
+		goto out;
+	}
+
+	results = __rrr_lua_message_construct(target->L, message);
+	assert(results == 1);
+
+	out:
+	return ret;
+	
 }
 
 void rrr_lua_message_library_register (
@@ -132,3 +165,5 @@ void rrr_lua_message_library_register (
 
 	lua_pop(target->L, 1);
 }
+
+

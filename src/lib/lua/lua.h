@@ -34,9 +34,14 @@ int rrr_lua_execute_snippet (
 		const char *snippet,
 		size_t size
 );
+void rrr_lua_pushint (
+		struct rrr_lua *lua,
+		int n
+);
 int rrr_lua_call (
 		struct rrr_lua *lua,
-		const char *function
+		const char *function,
+		int nargs
 );
 
 #endif /* RRR_LUA_H */

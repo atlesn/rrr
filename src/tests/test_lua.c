@@ -48,6 +48,28 @@ static int __rrr_test_lua_execute_snippet (
 	return ret != expect_ret;
 }
 
+static int __rrr_test_lua_call (
+		struct rrr_lua *lua,
+		const char *function,
+		int a,
+		int b,
+		int expect_ret
+) {
+	int ret = 0;
+
+	rrr_lua_pushint(lua, a);
+	rrr_lua_pushint(lua, b);
+
+	if ((ret = rrr_lua_call(lua, function, 2)) != 0) {
+		TEST_MSG("Failed to call Lua function '%s'\n", function);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret != expect_ret;
+}
+
 int rrr_test_lua(void) {
 	int ret = 0;
 
@@ -77,6 +99,26 @@ int rrr_test_lua(void) {
 		"  print(k, \"=>\", v)\n"     \
 		"end"
 	, 0);
+
+	TEST_MSG("Call function (failing, arguments are swapped around)...\n");
+	ret |= __rrr_test_lua_execute_snippet(lua,
+		"function f(a,b)\n"   \
+		"  assert(a==1)\n"    \
+		"  assert(b==2)\n"    \
+		"  return true\n"     \
+		"end"
+	, 0);
+	ret |= __rrr_test_lua_call (lua, "f", 2, 1, 1);
+
+	TEST_MSG("Call function (succeeding)...\n");
+	ret |= __rrr_test_lua_execute_snippet(lua,
+		"function f(a,b)\n"   \
+		"  assert(a==1)\n"    \
+		"  assert(b==2)\n"    \
+		"  return true\n"     \
+		"end"
+	, 0);
+	ret |= __rrr_test_lua_call (lua, "f", 1, 2, 0);
 
 	goto out_destroy;
 	out_destroy:
