@@ -36,7 +36,7 @@ int rrr_lua_execute_snippet (
 );
 void rrr_lua_pushint (
 		struct rrr_lua *lua,
-		int n
+		int i
 );
 int rrr_lua_call (
 		struct rrr_lua *lua,

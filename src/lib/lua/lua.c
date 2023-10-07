@@ -130,9 +130,9 @@ int rrr_lua_execute_snippet (
 
 void rrr_lua_pushint (
 		struct rrr_lua *lua,
-		int n
+		int i
 ) {
-	lua_pushnumber(lua->L, n);
+	lua_pushnumber(lua->L, i);
 }
 
 int rrr_lua_call (
