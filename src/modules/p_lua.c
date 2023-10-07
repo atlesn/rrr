@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/lua/lua.h"
+
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
@@ -47,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_config_data.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
+#include "../lib/util/readfile.h"
 
 struct lua_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -89,8 +92,8 @@ int parse_config(struct lua_data *data, struct rrr_instance_config_data *config)
 
 struct lua_child_data {
 	struct lua_data *parent_data;
-	// TODO : Set this const struct rrr_cmodule_config_data *cmodule_config_data;
-
+	struct rrr_lua *lua;
+	const struct rrr_cmodule_config_data *cmodule_config_data;
 	int64_t start_time;
 	int64_t prev_status_time;
 	uint64_t processed;
@@ -128,17 +131,23 @@ static int lua_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 }
 
 int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
-	int ret = 0;
-
 	struct lua_child_data *data = private_arg;
 	struct lua_data *parent_data = data->parent_data;
-	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(parent_data->thread_data);
+	const char *method = data->cmodule_config_data->config_method;
 
-	assert(0 && "Call config function");
+	int ret = 0;
+
+	int ret_tmp;
+
+	if (method != NULL && *method != '\0') {
+		if ((ret_tmp = rrr_lua_call(data->lua, method)) != 0) {
+			RRR_MSG_0("Error %i returned from Lua config function %s in Lua instance %s\n",
+				ret_tmp, method, INSTANCE_D_NAME(parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
 	
-	// TODO : Access from cmodule_config_data in child data
-	// cmodule_config_data->config_method
-
 	out:
 	return ret;
 }
@@ -195,17 +204,37 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 }
 
 int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
+	struct lua_data *data = private_arg;
+
 	int ret = 0;
 
-	struct lua_data *data = private_arg;
 	struct lua_child_data child_data = {0};
+	struct rrr_lua *lua;
+	char *script;
+	rrr_biglength script_size;
 
-	assert(0 && "Load Lua");
-	assert(0 && "Load script");
+	if ((ret = rrr_lua_new(&lua)) != 0) {
+		RRR_MSG_0("Error creating Lua context in %s\n", __func__);
+		goto out;
+	}
 
-	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
+	if ((ret = rrr_readfile_read(&script, &script_size, data->lua_file, 0, 0 /* Enoent not ok */)) != 0) {
+		RRR_MSG_0("Error reading Lua script file %s in Lua instance %s\n",
+			data->lua_file, INSTANCE_D_NAME(data->thread_data));
+		goto out_cleanup_lua;
+	}
+
+	if ((ret = rrr_lua_execute_snippet(lua, script, rrr_size_from_biglength_bug_const(script_size))) != 0) {
+		RRR_MSG_0("Error executing Lua script %s in Lua instance %s\n",
+			data->lua_file, INSTANCE_D_NAME(data->thread_data));
+		goto out_free_temp;
+	}
+
+	rrr_free(script);
 
 	child_data.parent_data = data;
+	child_data.lua = lua;
+	child_data.cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 	child_data.start_time = rrr_time_get_64();
 	callbacks->ping_callback_arg = &child_data;
 	callbacks->configuration_callback_arg = &child_data;
@@ -216,13 +245,16 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in %s\n", __func__);
-		// Don't goto out, run cleanup functions
+		goto out_cleanup_lua;
 	}
 
-	assert(0 && "Cleanup lua");
-
+	goto out_cleanup_lua;
+	out_free_temp:
+		rrr_free(script);
+	out_cleanup_lua:
+		rrr_lua_destroy(lua);
 	out:
-	return ret;
+		return ret;
 }
 
 struct lua_fork_callback_data {
@@ -304,9 +336,9 @@ static void *thread_entry_lua (struct rrr_thread *thread) {
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_lua,
-		NULL
+	NULL,
+	thread_entry_lua,
+	NULL
 };
 
 static const char *module_name = "lua";

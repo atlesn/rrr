@@ -71,7 +71,6 @@ int rrr_lua_new(struct rrr_lua **result) {
 	out:
 		return ret;
 }
-
 void rrr_lua_destroy(struct rrr_lua *lua) {
 	lua_close(lua->L);
 	rrr_free(lua);
@@ -94,13 +93,12 @@ int rrr_lua_execute_snippet (
 		goto error;
 	}
 
-	RRR_DBG_1("Top of stack after executing Lua snippet: %s\n",
-		lua_tostring(lua->L, -1));
+	RRR_DBG_3("Top of stack after executing Lua snippet: %s type is %s\n",
+		lua_tostring(lua->L, -1), lua_typename(lua->L, lua_type(lua->L, -1)));
 
 	const int stack_diff = lua_gettop(lua->L) - stack_count;
 	assert(stack_diff >= 0);
 	lua_pop(lua->L, stack_diff);
-
 	goto out;
 	error:
 		RRR_MSG_0("Error from Lua while executing snippet: %s\n",
@@ -108,4 +106,65 @@ int rrr_lua_execute_snippet (
 		ret = 1;
 	out:
 		return ret;
+}
+
+int rrr_lua_call (
+		struct rrr_lua *lua,
+		const char *function
+) {
+	int ret = 0;
+
+	int type;
+	int status;
+
+	switch (type = lua_getglobal(lua->L, function)) {
+		case LUA_TFUNCTION:
+			// OK
+			break;
+		case LUA_TNIL:
+			RRR_MSG_0("Could not find Lua function '%s'\n",
+				function);
+			ret = 1;
+			goto out;
+		case LUA_TNUMBER:
+		case LUA_TBOOLEAN:
+		case LUA_TSTRING:
+		case LUA_TTABLE:
+		case LUA_TUSERDATA:
+		case LUA_TTHREAD:
+		case LUA_TLIGHTUSERDATA:
+		default:
+			RRR_MSG_0("Lua global '%s' is not a function but '%s'\n",
+				function, lua_typename(lua->L, type));
+			ret = 1;
+			goto out;
+	};
+
+	if ((status = lua_pcall(lua->L, 0, 1 /* One result */, 0)) != LUA_OK) {
+		RRR_MSG_0("Failed to call global Lua function '%s': %s\n",
+			function, lua_tostring(lua->L, -1));
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_3("Top of stack after executing Lua function '%s': %s type is %s\n",
+		function, lua_tostring(lua->L, -1), lua_typename(lua->L, lua_type(lua->L, -1)));
+
+	if (!lua_isboolean(lua->L, -1)) {
+		RRR_MSG_0("Returned value from global Lua function '%s' was not a boolean, the value is '%s'\n",
+			function, lua_tostring(lua->L, -1));
+		ret = 1;
+		goto out;
+	}
+
+	if (lua_toboolean(lua->L, -1) != 1) {
+		RRR_MSG_0("False return value from global Lua function '%s'\n",
+			function);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	lua_pop(lua->L, 1);
+	return ret;
 }
