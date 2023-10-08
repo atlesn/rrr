@@ -228,6 +228,8 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out;
 	}
 
+	rrr_lua_message_library_register(lua);
+
 	if ((ret = rrr_readfile_read(&script, &script_size, data->lua_file, 0, 0 /* Enoent not ok */)) != 0) {
 		RRR_MSG_0("Error reading Lua script file %s in Lua instance %s\n",
 			data->lua_file, INSTANCE_D_NAME(data->thread_data));

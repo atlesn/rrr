@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../allocator.h"
 #include "../log.h"
+#include "../util/rrr_time.h"
+#include "../messages/msg_msg.h"
 
 struct rrr_lua_message {
 	int usercount;
@@ -155,6 +157,127 @@ static int __rrr_lua_message_f_ip_clear(lua_State *L) {
 	return 0;
 }
 
+static int __rrr_lua_message_f_clear_array(lua_State *L) {
+	WITH_MSG(0,clear_array,
+		rrr_array_clear(&message->array);
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_clear_tag(lua_State *L) {
+	WITH_MSG(1,clear_tag,
+		rrr_array_clear_by_tag(&message->array, lua_tostring(L, -1));
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
+	WITH_MSG(2,push_tag_blob,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
+	WITH_MSG(2,push_tag_str,
+		const char *k = lua_tostring(L, -2);
+		const char *v = lua_tostring(L, -1);
+		if (rrr_array_push_value_str_with_tag(&message->array, k, v) != 0) {
+			luaL_error(L, "Failed to push value in %s\n", __func__);
+			return 0;
+		}
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
+	WITH_MSG(2,push_tag_h,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
+	WITH_MSG(2,push_tag_fixp,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_push_tag(lua_State *L) {
+	WITH_MSG(2,push_tag,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_set_tag(lua_State *L) {
+	WITH_MSG(2,set_tag,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
+	int results = 0;
+
+	WITH_MSG(1,get_tag_all,
+		const char *key = lua_tostring(L, -1);
+
+		int wpos = 1;
+
+		lua_newtable(L);
+		results++;
+
+		RRR_LL_ITERATE_BEGIN(&message->array, struct rrr_type_value);
+			if (!rrr_type_value_is_tag(node, key)) {
+				RRR_LL_ITERATE_NEXT();
+			}
+
+			lua_pushinteger(L, wpos++);
+
+			switch (node->definition->type) {
+				case RRR_TYPE_MSG:
+				RRR_TYPE_CASE_BLOB:
+				RRR_TYPE_CASE_STR: {
+					const rrr_length len = node->total_stored_length / node->element_count;
+					for (rrr_length i = 0; i < node->total_stored_length; i += len) {
+						lua_pushlstring(L, node->data + i, len);
+					}
+				} break;
+				case RRR_TYPE_H:
+					assert(0 && "NI");
+					break;
+				case RRR_TYPE_FIXP:
+					assert(0 && "NI");
+					break;
+				case RRR_TYPE_VAIN:
+					assert(0 && "NI");
+					break;
+				case RRR_TYPE_LE:
+				case RRR_TYPE_BE:
+				case RRR_TYPE_USTR:
+				case RRR_TYPE_ISTR:
+				case RRR_TYPE_ERR:
+				default:
+					assert(0 && "Type not supported");
+			};
+
+			lua_settable(L, -3);
+		RRR_LL_ITERATE_END();
+	);
+
+	return results;
+}
+
+static int __rrr_lua_message_f_send(lua_State *L) {
+	WITH_MSG(0,send,
+		assert(0 && "NI");
+	);
+	return 0;
+}
+
+
 #define PUSH_SET_STR(k,v)                                      \
   lua_pushliteral(L, k);                                       \
   lua_pushliteral(L, v);                                       \
@@ -184,11 +307,31 @@ static int __rrr_lua_message_construct (
 		{"ip_set", __rrr_lua_message_f_ip_set},
 		{"ip_get", __rrr_lua_message_f_ip_get},
 		{"ip_clear", __rrr_lua_message_f_ip_clear},
+		{"clear_array", __rrr_lua_message_f_clear_array},
+		{"clear_tag", __rrr_lua_message_f_clear_tag},
+		{"push_tag_blob", __rrr_lua_message_f_push_tag_blob},
+		{"push_tag_str", __rrr_lua_message_f_push_tag_str},
+		{"push_tag_h", __rrr_lua_message_f_push_tag_h},
+		{"push_tag_fixp", __rrr_lua_message_f_push_tag_fixp},
+		{"push_tag", __rrr_lua_message_f_push_tag},
+		{"set_tag", __rrr_lua_message_f_set_tag},
+		{"get_tag_all", __rrr_lua_message_f_get_tag_all},
+		{"send", __rrr_lua_message_f_send},
 		{NULL, NULL}
 	};
 
 	luaL_newlib(L, f);
 	results++;
+
+	PUSH_SET_STR("ip_so_type", "");
+	PUSH_SET_STR("topic", "");
+	PUSH_SET_STR("data", "");
+	PUSH_SET_INT("type", MSG_TYPE_MSG);
+	PUSH_SET_INT("class", MSG_CLASS_DATA);
+
+	if (sizeof(lua_Integer) >= 8) {
+		PUSH_SET_INT("timestamp", (lua_Integer) rrr_time_get_i64());
+	}
 
 	luaL_newlib(L, f_meta);
 
@@ -241,19 +384,30 @@ int rrr_lua_message_push_new (
 void rrr_lua_message_library_register (
 		struct rrr_lua *target
 ) {
+	lua_State *L = target->L;
+
 	static const luaL_Reg f[] = {
 		{"new", __rrr_lua_message_f_new},
 		{NULL, NULL}
 	};
 
-	lua_getglobal(target->L, "RRR");
-	assert(lua_type(target->L, -1) == LUA_TTABLE);
+	lua_getglobal(L, "RRR");
+	assert(lua_type(L, -1) == LUA_TTABLE);
 
-	lua_pushliteral(target->L, "Message");
-	luaL_newlib(target->L, f);
-	lua_settable(target->L, -3);
+	lua_pushliteral(L, "Message");
+	luaL_newlib(L, f);
 
-	lua_pop(target->L, 1);
+	PUSH_SET_INT("MSG_TYPE_MSG", MSG_TYPE_MSG);
+	PUSH_SET_INT("MSG_TYPE_TAG", MSG_TYPE_TAG);
+	PUSH_SET_INT("MSG_TYPE_GET", MSG_TYPE_GET);
+	PUSH_SET_INT("MSG_TYPE_PUT", MSG_TYPE_PUT);
+	PUSH_SET_INT("MSG_TYPE_DEL", MSG_TYPE_DEL);
+	PUSH_SET_INT("MSG_CLASS_DATA", MSG_CLASS_DATA);
+	PUSH_SET_INT("MSG_CLASS_ARRAY", MSG_CLASS_ARRAY);
+
+	lua_settable(L, -3);
+
+	lua_pop(L, 1);
 }
 
 
