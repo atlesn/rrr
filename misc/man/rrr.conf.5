@@ -1506,7 +1506,11 @@ message = Message.new()
 -- Set IP address parameters
 message:ip_set(ip, port)
 
+-- Get IP address parameters (returns empty string for IP if no IP is set)
+ip, port = message:ip_get()
 
+-- Clear IP address parameters (same as calling ip_set("", 0))
+message:ip_clear()
 
 .if
 

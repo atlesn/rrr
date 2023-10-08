@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "lua_message.h"
 #include "lua_common.h"
+#include "lua_types.h"
 
 #include "../array.h"
 #include "../allocator.h"
@@ -31,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_lua_message {
 	int usercount;
 	struct rrr_array array;
+	char ip_addr[128];
+	uint16_t ip_port;
 };
 
 static int __rrr_lua_message_new (
@@ -79,7 +82,7 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
 #define WITH_MSG(nargs,func_name,code)                         \
   do {int test; struct rrr_lua_message *message;               \
   if ((test = lua_getmetatable(L, -1 - nargs)) != 1) {         \
-    luaL_error(L, "Possible incorrect number of arguments to function " #func_name ", verify that the number of arguments is " #nargs "\n"); \
+    luaL_error(L, "Possible incorrect number of arguments to function " #func_name ", verify that the number of arguments is " #nargs " and that : is used when calling.\n"); \
     break;                                                     \
   }                                                            \
   lua_pushliteral(L, "_rrr_message");                          \
@@ -105,14 +108,67 @@ static int __rrr_lua_message_f_finalize(lua_State *L) {
 static int __rrr_lua_message_f_ip_set(lua_State *L) {
 	WITH_MSG (2,ip_set,
 		const char *ip = lua_tostring(L, -2);
-		const char *port = lua_tostring(L, -1);
-		printf("IP: %s, PORT: %s\n", ip, port);
-		(void)(message);
-		assert(0 && "Not implemented");
+		rrr_lua_int port = lua_tointeger(L, -1);
+
+		assert(sizeof(message->ip_port) == sizeof(uint16_t));
+
+		if (strlen(ip) > sizeof(message->ip_addr) - 1) {
+			luaL_error(L, "IP address length exceeds maximum (%I>%I)\n",
+				(lua_Integer) strlen(ip), (lua_Integer) sizeof(message->ip_addr) - 1);
+			return 0;
+		}
+
+		strcpy(message->ip_addr, ip);
+
+		if (*ip != '\0') {
+			if (port < 1 || port > 65535) {
+				luaL_error(L, "IP port out of range. Value is %I while valid range is 1-65535\n",
+					(lua_Integer) port);
+				return 0;
+			}
+			message->ip_port = rrr_u16_from_slength_bug_const(port);
+		}
+		else {
+			message->ip_port = 0;
+		}
 	);
 
-	return 1;
+	return 0;
 }
+
+static int __rrr_lua_message_f_ip_get(lua_State *L) {
+	WITH_MSG (0,ip_get,
+		assert(sizeof(message->ip_port) == sizeof(uint16_t));
+		lua_pushstring(L, message->ip_addr);
+		lua_pushinteger(L, message->ip_port);
+	);
+
+	return 2;
+}
+
+static int __rrr_lua_message_f_ip_clear(lua_State *L) {
+	WITH_MSG (0,ip_clear,
+		*message->ip_addr = '\0';
+		message->ip_port = 0;
+	);
+
+	return 0;
+}
+
+#define PUSH_SET_STR(k,v)                                      \
+  lua_pushliteral(L, k);                                       \
+  lua_pushliteral(L, v);                                       \
+  lua_settable(L, -3)
+
+#define PUSH_SET_INT(k,v)                                      \
+  lua_pushliteral(L, k);                                       \
+  lua_pushinteger(L, v);                                       \
+  lua_settable(L, -3)
+
+#define PUSH_SET_USERDATA(k,v)                                 \
+  lua_pushliteral(L, k);                                       \
+  lua_pushlightuserdata(L, v);                                 \
+  lua_settable(L, -3)
 
 static int __rrr_lua_message_construct (
 		lua_State *L,
@@ -126,6 +182,8 @@ static int __rrr_lua_message_construct (
 	};
 	static const luaL_Reg f[] = {
 		{"ip_set", __rrr_lua_message_f_ip_set},
+		{"ip_get", __rrr_lua_message_f_ip_get},
+		{"ip_clear", __rrr_lua_message_f_ip_clear},
 		{NULL, NULL}
 	};
 
@@ -133,14 +191,10 @@ static int __rrr_lua_message_construct (
 	results++;
 
 	luaL_newlib(L, f_meta);
-	lua_pushliteral(L, "_rrr_message");
-	lua_pushlightuserdata(L, message);
-	lua_settable(L, -3);
-	lua_setmetatable(L, -2);
 
-	lua_pushliteral(L, "data");
-	lua_pushliteral(L, "");
-	lua_settable(L, -3);
+	PUSH_SET_USERDATA("_rrr_message", message);
+
+	lua_setmetatable(L, -2);
 
 	return results;
 }

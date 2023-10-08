@@ -19,31 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_LUA_H
-#define RRR_LUA_H
+#ifndef RRR_LUA_TYPES_H
+#define RRR_LUA_TYPES_H
 
-#include <stddef.h>
+#include "../util/macro_utils.h"
 
-#include "lua_types.h"
+#define PRIrrrluai RRR_QUOTE_MACRO(RRR_LUA_INTTYPE_PRI)
 
-struct rrr_lua;
+typedef RRR_LUA_INTTYPE rrr_lua_int;
 
-int rrr_lua_new(struct rrr_lua **result);
-void rrr_lua_destroy(struct rrr_lua *lua);
-
-int rrr_lua_execute_snippet (
-		struct rrr_lua *lua,
-		const char *snippet,
-		size_t size
-);
-void rrr_lua_pushint (
-		struct rrr_lua *lua,
-		rrr_lua_int i
-);
-int rrr_lua_call (
-		struct rrr_lua *lua,
-		const char *function,
-		int nargs
-);
-
-#endif /* RRR_LUA_H */
+#endif /* RRR_LUA_TYPES_H */

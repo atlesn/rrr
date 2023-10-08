@@ -345,6 +345,13 @@ static inline uint16_t rrr_u16_from_biglength_bug_const (rrr_biglength a) {
 	return (uint16_t) a;
 }
 
+static inline uint16_t rrr_u16_from_slength_bug_const (rrr_slength a) {
+	if (a < 0 || a > UINT16_MAX) {
+		RRR_BUG("Overflow or underflow in rrr_u16_from_slength_bug_const\n");
+	}
+	return (uint16_t) a;
+}
+
 static inline rrr_biglength rrr_biglength_from_ptr_sub_bug_const (const void *a, const void *b) {
 	if (b > a) {
 		RRR_BUG("Underflow in rrr_biglength_from_ptr_sub_bug_const\n");

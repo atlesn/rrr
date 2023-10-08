@@ -702,6 +702,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_SUBST([PERL5_INTERPRETER])
 ])
 
+# Make sure Lua-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([for lua enabled])
 AS_IF([test "x$enable_lua" = xno], [
@@ -766,6 +768,51 @@ AS_IF([test "x$enable_lua" = xno], [
 
 	AC_SUBST([LUA_CFLAGS])
 	AC_SUBST([LUA_LDFLAGS])
+
+	AC_MSG_CHECKING([for lua integer size])
+
+	AC_RUN_IFELSE([
+		AC_LANG_PROGRAM([[
+			#if defined(HAVE_LUA5_4_LUA_H)
+			#  include <lua5.4/lua.h>
+			#elif defined(HAVE_LUA5_3_LUA_H)
+			#  include <lua5.3/lua.h>
+			#elif defined(HAVE_LUA_H)
+			#  include <lua.h>
+			#else
+			#  error "No HAVE_LUA defined"
+			#endif
+		]],[[
+			#if LUA_MAXINTEGER == LLONG_MAX
+			return 12
+			#elif LUA_MAXINTEGER == LONG_MAX
+			return 11
+			#elif LUA_MAXINTEGER == INT_MAX
+			return 10
+			#else
+			#  error "Could not determing lua integer size"
+			#endif
+		]])
+	], [
+		AC_MSG_ERROR([test did not return non-zero result])
+	], [
+		RES=$?
+		AS_IF([test $RES -eq 12], [
+			AC_MSG_RESULT([long long int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[long long int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[lli],[Printf format for Lua integers])
+		], [test $RES -eq 11], [
+			AC_MSG_RESULT([long int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[long int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[li],[Printf format for Lua integers])
+		], [test $RES -eq 10], [
+			AC_MSG_RESULT([int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[i],[Printf format for Lua integers])
+		], [
+			AC_MSG_ERROR([Unexpected return value ${RES}]);
+		])
+	])
 ])
 
 

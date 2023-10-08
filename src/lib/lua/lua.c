@@ -130,9 +130,10 @@ int rrr_lua_execute_snippet (
 
 void rrr_lua_pushint (
 		struct rrr_lua *lua,
-		int i
+		rrr_lua_int i
 ) {
-	lua_pushnumber(lua->L, i);
+	RRR_ASSERT(sizeof(i) == sizeof(lua_Integer),size_of_lua_integer_is_correct);
+	lua_pushinteger(lua->L, i);
 }
 
 int rrr_lua_call (
