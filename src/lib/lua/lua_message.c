@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../allocator.h"
 #include "../log.h"
+#include "../fixed_point.h"
 #include "../util/rrr_time.h"
 #include "../messages/msg_msg.h"
 
@@ -216,20 +217,77 @@ static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag(lua_State *L) {
 	WITH_MSG(2,push_tag,
+		const char *k = lua_tostring(L, -2);
+		if (k == NULL) {
+			luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n",
+				__func__, luaL_typename(L, -2));
+			return 0;
+		}
 		switch(lua_type(L, -1)) {
-			case LUA_TNIL:
-			case LUA_TNUMBER:
-			case LUA_TBOOLEAN:
-			case LUA_TSTRING:
+			case LUA_TNIL: {
+				assert(0 && "Blocked, test must be written");
+				if (rrr_array_push_value_vain_with_tag(&message->array, k) != 0) {
+					luaL_error(L, "Failed to push vain value to array in %s\n",
+						__func__);
+				}
+			} break;
+			case LUA_TNUMBER: {
+				assert(0 && "Blocked, test must be written");
+				int isnum = 0;
+				rrr_lua_int i;
+				long double n;
+				rrr_fixp fixp;
+
+				// Try integer
+				i = lua_tointegerx(L, -1, &isnum);
+				if (isnum) {
+					if ((i < 0
+						? rrr_array_push_value_i64_with_tag(&message->array, k, (int64_t) i)
+						: rrr_array_push_value_u64_with_tag(&message->array, k, (uint64_t) i)
+					) != 0) {
+						luaL_error(L, "Failed to push integer value to array in %s\n",
+							__func__);
+					}
+					break;
+				}
+
+				// Try double
+				n = lua_tonumberx(L, -1, &isnum);
+				if (isnum) {
+					if (rrr_fixp_ldouble_to_fixp(&fixp, n) != 0) {
+						luaL_error(L, "Could not convert floating point number '%s' to RRR fixed point while pusing to array\n",
+							lua_tostring(L, -2));
+						break;
+					}
+					if (rrr_array_push_value_fixp_with_tag(&message->array, k, fixp) != 0) {
+						luaL_error(L, "Failed to push fixp value in %s\n",
+							__func__);
+					}
+					break;
+				}
+				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n",
+					lua_tostring(L, -2));
+			} break;
+			case LUA_TBOOLEAN: {
+				assert(0 && "Blocked, test must be written");
+			} break;
+			case LUA_TSTRING: {
+				const char *v = lua_tostring(L, -1);
+				assert(v != NULL);
+				if (rrr_array_push_value_str_with_tag(&message->array, k, v) != 0) {
+					luaL_error(L, "Failed to push string value in %s\n",
+						__func__);
+				}
+			} break;
 			case LUA_TTABLE:
 			case LUA_TFUNCTION:
 			case LUA_TUSERDATA:
 			case LUA_TTHREAD:
 			case LUA_TLIGHTUSERDATA:
 			default:
-				//luaL_error("Cannot push value of type %s to array\n", );
+				luaL_error(L, "Cannot push value of type %s to array\n", lua_type(L, -1));
+				return 1;
 		};
-		assert(0 && "NI");
 	);
 	return 0;
 }
