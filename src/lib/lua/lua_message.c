@@ -182,6 +182,16 @@ static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 	WITH_MSG(2,push_tag_str,
 		const char *k = lua_tostring(L, -2);
 		const char *v = lua_tostring(L, -1);
+		if (k == NULL) {
+			luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n",
+				__func__, luaL_typename(L, -2));
+			return 0;
+		}
+		if (v == NULL) {
+			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
+				__func__, luaL_typename(L, -1));
+			return 0;
+		}
 		if (rrr_array_push_value_str_with_tag(&message->array, k, v) != 0) {
 			luaL_error(L, "Failed to push value in %s\n", __func__);
 			return 0;
@@ -206,6 +216,19 @@ static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag(lua_State *L) {
 	WITH_MSG(2,push_tag,
+		switch(lua_type(L, -1)) {
+			case LUA_TNIL:
+			case LUA_TNUMBER:
+			case LUA_TBOOLEAN:
+			case LUA_TSTRING:
+			case LUA_TTABLE:
+			case LUA_TFUNCTION:
+			case LUA_TUSERDATA:
+			case LUA_TTHREAD:
+			case LUA_TLIGHTUSERDATA:
+			default:
+				//luaL_error("Cannot push value of type %s to array\n", );
+		};
 		assert(0 && "NI");
 	);
 	return 0;

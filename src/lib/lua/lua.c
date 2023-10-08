@@ -123,6 +123,7 @@ int rrr_lua_execute_snippet (
 	error:
 		RRR_MSG_0("Error from Lua while executing snippet: %s\n",
 			lua_tostring(lua->L, -1));
+		lua_pop(lua->L, 1);
 		ret = 1;
 	out:
 		return ret;
@@ -201,4 +202,38 @@ int rrr_lua_call (
 	out:
 	lua_pop(lua->L, 1);
 	return ret;
+}
+
+void rrr_lua_assert_empty_stack (
+		struct rrr_lua *lua
+) {
+	assert(lua_gettop(lua->L) == 0);
+}
+
+void rrr_lua_dump_and_clear_stack (
+		struct rrr_lua *lua
+) {
+	/*
+	 * NOTE : The tostring method may change type of values which
+	 *        is why this function clears the stack.
+	 */
+
+	if (!RRR_DEBUGLEVEL_2)
+		return;
+
+	RRR_MSG_2("Dumping Lua stack in %s, there are %i elements to dump...\n",
+		__func__, lua_gettop(lua->L));
+
+	for (int i = 1; i <= lua_gettop(lua->L); i++) {
+		const char *str = lua_tostring(lua->L, i);
+		if (str != NULL) {
+			RRR_MSG_2("- [%i] [%s] %s\n",
+				i, luaL_typename(lua->L, i), str);
+		}
+		else {
+			RRR_MSG_2("- [%i] [%s]\n",
+				i, luaL_typename(lua->L, i));
+		}
+	}
+	lua_pop(lua->L, lua_gettop(lua->L));
 }

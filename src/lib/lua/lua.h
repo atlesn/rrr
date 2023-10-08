@@ -45,5 +45,11 @@ int rrr_lua_call (
 		const char *function,
 		int nargs
 );
+void rrr_lua_assert_empty_stack (
+		struct rrr_lua *lua
+);
+void rrr_lua_dump_and_clear_stack (
+		struct rrr_lua *lua
+);
 
 #endif /* RRR_LUA_H */

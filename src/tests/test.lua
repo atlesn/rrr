@@ -30,6 +30,7 @@ function verify_defaults()
 	assert (message.class == RRR.Message.MSG_CLASS_DATA)
 
 	-- Array manipulation
+	-- str type
 	message:push_tag_str("key", "value1")
 	message:push_tag_str("key", "value2")
 	assert(message:get_tag_all("key")[1] == "value1")
@@ -40,6 +41,11 @@ function verify_defaults()
 	message:push_tag_str("key", "value")
 	message:clear_tag("key");
 	assert(message:get_tag_all("key")[1] == nil)
+	message:push_tag("key", "value")
+	assert(message:get_tag_all("key")[1] == "value")
+	message:clear_array();
+
+	-- h type
 end
 
 function process(message)
