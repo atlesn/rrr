@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <assert.h>
+#include <float.h>
 
 #include "lua_message.h"
 #include "lua_common.h"
@@ -99,6 +100,49 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
   lua_pop(L, 2);                                               \
   code                                                         \
   } while(0)
+
+#define SET_KEY(k)                                             \
+  const char *k = lua_tostring(L, -2);                         \
+  do {if (k == NULL) {                                         \
+    luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n", \
+        __func__, luaL_typename(L, -2));                       \
+  }} while (0)
+
+/*
+ * NOTE : Error handling in the push functions is done by Lua which
+ *        performs longjmp back to Lua in the luaL_error call.
+ */
+
+static void __rrr_lua_message_push_integer (
+		struct rrr_lua_message *message,
+		lua_State *L,
+		const char *k,
+		rrr_lua_int i
+) {
+	if ((i < 0
+		? rrr_array_push_value_i64_with_tag(&message->array, k, (int64_t) i)
+		: rrr_array_push_value_u64_with_tag(&message->array, k, (uint64_t) i)
+	) != 0) {
+		luaL_error(L, "Failed to push integer value to array in %s\n", __func__);
+	}
+}
+
+static void __rrr_lua_message_push_ld (
+		struct rrr_lua_message *message,
+		lua_State *L,
+		const char *k,
+		long double n
+) {
+	rrr_fixp fixp;
+	if (rrr_fixp_ldouble_to_fixp(&fixp, n) != 0) {
+		luaL_error(L, "Could not convert floating point number '%s' to RRR fixed point while pusing to array\n",
+			lua_tostring(L, -2));
+	}
+	if (rrr_array_push_value_fixp_with_tag(&message->array, k, fixp) != 0) {
+		luaL_error(L, "Failed to push fixp value in %s\n",
+			__func__);
+	}
+}
 
 static int __rrr_lua_message_f_finalize(lua_State *L) {
 	WITH_MSG_META (
@@ -181,13 +225,8 @@ static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 	WITH_MSG(2,push_tag_str,
-		const char *k = lua_tostring(L, -2);
+		SET_KEY(k);
 		const char *v = lua_tostring(L, -1);
-		if (k == NULL) {
-			luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n",
-				__func__, luaL_typename(L, -2));
-			return 0;
-		}
 		if (v == NULL) {
 			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
 				__func__, luaL_typename(L, -1));
@@ -203,7 +242,13 @@ static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
 	WITH_MSG(2,push_tag_h,
-		assert(0 && "NI");
+		SET_KEY(k);
+		int isnum;
+		int i = lua_tointegerx(L, -1, &isnum);
+		if (!isnum) {
+			luaL_error(L, "Failed to convert value to number while pushing h value to array\n");
+		}
+		__rrr_lua_message_push_integer (message, L, k, i);
 	);
 	return 0;
 }
@@ -217,12 +262,7 @@ static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag(lua_State *L) {
 	WITH_MSG(2,push_tag,
-		const char *k = lua_tostring(L, -2);
-		if (k == NULL) {
-			luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n",
-				__func__, luaL_typename(L, -2));
-			return 0;
-		}
+		SET_KEY(k);
 		switch(lua_type(L, -1)) {
 			case LUA_TNIL: {
 				assert(0 && "Blocked, test must be written");
@@ -232,7 +272,6 @@ static int __rrr_lua_message_f_push_tag(lua_State *L) {
 				}
 			} break;
 			case LUA_TNUMBER: {
-				assert(0 && "Blocked, test must be written");
 				int isnum = 0;
 				rrr_lua_int i;
 				long double n;
@@ -241,32 +280,18 @@ static int __rrr_lua_message_f_push_tag(lua_State *L) {
 				// Try integer
 				i = lua_tointegerx(L, -1, &isnum);
 				if (isnum) {
-					if ((i < 0
-						? rrr_array_push_value_i64_with_tag(&message->array, k, (int64_t) i)
-						: rrr_array_push_value_u64_with_tag(&message->array, k, (uint64_t) i)
-					) != 0) {
-						luaL_error(L, "Failed to push integer value to array in %s\n",
-							__func__);
-					}
+					__rrr_lua_message_push_integer (message, L, k, i);
 					break;
 				}
 
+					assert(0 && "BLOCKED: Must write test");
 				// Try double
 				n = lua_tonumberx(L, -1, &isnum);
 				if (isnum) {
-					if (rrr_fixp_ldouble_to_fixp(&fixp, n) != 0) {
-						luaL_error(L, "Could not convert floating point number '%s' to RRR fixed point while pusing to array\n",
-							lua_tostring(L, -2));
-						break;
-					}
-					if (rrr_array_push_value_fixp_with_tag(&message->array, k, fixp) != 0) {
-						luaL_error(L, "Failed to push fixp value in %s\n",
-							__func__);
-					}
+					__rrr_lua_message_push_ld (message, L, k, n);
 					break;
 				}
-				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n",
-					lua_tostring(L, -2));
+				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n", lua_tostring(L, -2));
 			} break;
 			case LUA_TBOOLEAN: {
 				assert(0 && "Blocked, test must be written");
@@ -305,6 +330,8 @@ static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
 	WITH_MSG(1,get_tag_all,
 		const char *key = lua_tostring(L, -1);
 
+		char buf[128];
+		int buf_len;
 		int wpos = 1;
 
 		lua_newtable(L);
@@ -317,18 +344,52 @@ static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
 
 			lua_pushinteger(L, wpos++);
 
+			const rrr_length len = node->total_stored_length / node->element_count;
+
 			switch (node->definition->type) {
 				case RRR_TYPE_MSG:
 				RRR_TYPE_CASE_BLOB:
 				RRR_TYPE_CASE_STR: {
-					const rrr_length len = node->total_stored_length / node->element_count;
 					for (rrr_length i = 0; i < node->total_stored_length; i += len) {
 						lua_pushlstring(L, node->data + i, len);
 					}
 				} break;
-				case RRR_TYPE_H:
-					assert(0 && "NI");
-					break;
+				case RRR_TYPE_H: {
+					lua_Number n;
+					assert(len == sizeof(int64_t));
+					RRR_ASSERT(LDBL_MANT_DIG >= 64,long_double_can_hold_64_bits);
+					RRR_ASSERT(sizeof(lua_Number) >= sizeof(double),double_fits_in_lua_number);
+					if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
+						for (rrr_length i = 0; i < node->total_stored_length; i += len) {
+							int64_t    x = *((int64_t *) (node->data + i));
+							lua_Number n = (lua_Number) x;
+							if (n != x) {
+								RRR_MSG_0("Warning: Precision loss while converting signed value '%" PRIi64 "' to Lua number. Passing as string instead.\n",
+									x);
+								buf_len = sprintf(buf, "%" PRIi64, x);
+								lua_pushlstring(L, buf, (size_t) buf_len);
+							}
+							else {
+								lua_pushinteger(L, (lua_Number) x);
+							}
+						}
+					}
+					else {
+						for (rrr_length i = 0; i < node->total_stored_length; i += len) {
+							uint64_t   x = *((uint64_t *) (node->data + i));
+							lua_Number n = (lua_Number) x;
+							if (n != x) {
+								RRR_MSG_0("Warning: Precision loss while converting unsigned value '%" PRIu64 "' to Lua number. Passing as string instead.\n",
+									x);
+								buf_len = sprintf(buf, "%" PRIu64, x);
+								lua_pushlstring(L, buf, (size_t) buf_len);
+							}
+							else {
+								lua_pushinteger(L, (lua_Number) x);
+							}
+						}
+					}
+				} break;
 				case RRR_TYPE_FIXP:
 					assert(0 && "NI");
 					break;

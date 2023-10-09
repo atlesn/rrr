@@ -35,17 +35,37 @@ function verify_defaults()
 	message:push_tag_str("key", "value2")
 	assert(message:get_tag_all("key")[1] == "value1")
 	assert(message:get_tag_all("key")[2] == "value2")
-	message:clear_array();
+	assert(type(message:get_tag_all("key")[1]) == "string")
+	assert(type(message:get_tag_all("key")[2]) == "string")
+	message:clear_array()
 	assert(message:get_tag_all("key")[1] == nil)
 	message:push_tag_str("key", "value")
 	message:push_tag_str("key", "value")
-	message:clear_tag("key");
+	message:clear_tag("key")
 	assert(message:get_tag_all("key")[1] == nil)
 	message:push_tag("key", "value")
 	assert(message:get_tag_all("key")[1] == "value")
-	message:clear_array();
+	message:clear_array()
 
 	-- h type
+	message:push_tag_h("key", 1)
+	message:push_tag_h("key", -2)
+	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == -2)
+	assert(type(message:get_tag_all("key")[1]) == "number")
+	assert(type(message:get_tag_all("key")[2]) == "number")
+	message:clear_array()
+	assert(message:get_tag_all("key")[1] == nil)
+	message:push_tag_h("key", 1)
+	message:push_tag_h("key", -2)
+	message:clear_tag("key")
+	assert(message:get_tag_all("key")[1] == nil)
+	message:push_tag("key", 1)
+	assert(message:get_tag_all("key")[1] == 1)
+	message:clear_array()
+
+	-- number/fixp type
+	message:push_tag("key", 3.141592)
 end
 
 function process(message)
