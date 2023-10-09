@@ -722,7 +722,8 @@ AS_IF([test "x$enable_lua" = xno], [
 		# indicate that headers are not in includes subdirectory.
 		if echo "x${LUA_LDFLAGS}" | grep -qE '\-llua(\s|$)'; then
 			AC_MSG_RESULT([possibly, must check for headers and symbols])
-			AC_CHECK_HEADERS([lua.h], [ LUA_CFLAGS=" " ])
+			AC_CHECK_HEADERS([lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
+			have_lua_h_set=yes
 			if test "x${LUA_CFLAGS}" = "x"; then
 				# Headers without version number not found
 				LUA_LDFLAGS=""
@@ -742,12 +743,14 @@ AS_IF([test "x$enable_lua" = xno], [
 		AC_MSG_RESULT([no])
 	fi
 
+	have_lua_h_set=no
+
 	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
 		# Try specific versions
-		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" " ])
+		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" "  have_lua_h_set=yes ])
 		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
 		if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " ])
+			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
 			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" ])
 		fi
 	fi
@@ -766,11 +769,16 @@ AS_IF([test "x$enable_lua" = xno], [
 		AC_MSG_RESULT([${LUA_LDFLAGS}])
 	])
 
+	AS_IF([test "$have_lua_h_set" != "yes" ], [
+		AC_DEFINE([HAVE_LUA_H], [1], [Have lua.h in either include path set in CFLAGS or in root include directory])
+	])
+
 	AC_SUBST([LUA_CFLAGS])
 	AC_SUBST([LUA_LDFLAGS])
 
 	AC_MSG_CHECKING([for lua integer size])
 
+	CFLAGS="${LUA_CFLAGS}"
 	AC_RUN_IFELSE([
 		AC_LANG_PROGRAM([[
 			#if defined(HAVE_LUA5_4_LUA_H)
@@ -813,8 +821,8 @@ AS_IF([test "x$enable_lua" = xno], [
 			AC_MSG_ERROR([Unexpected return value ${RES}]);
 		])
 	])
+	CFLAGS=""
 ])
-
 
 # Make sure Python-test does not include any libraries
 LIBS=""
