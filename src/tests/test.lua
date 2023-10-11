@@ -50,22 +50,62 @@ function verify_defaults()
 	-- h type
 	message:push_tag_h("key", 1)
 	message:push_tag_h("key", -2)
-	assert(message:get_tag_all("key")[1] == 1)
-	assert(message:get_tag_all("key")[2] == -2)
+	message:push_tag_h("key", "3")
+	message:push_tag_h("key", "3.14")
+	message:push_tag_h("key", 3.14)
+	message:push_tag_h("key", "-111")
+
 	assert(type(message:get_tag_all("key")[1]) == "number")
 	assert(type(message:get_tag_all("key")[2]) == "number")
-	message:clear_array()
-	assert(message:get_tag_all("key")[1] == nil)
-	message:push_tag_h("key", 1)
-	message:push_tag_h("key", -2)
-	message:clear_tag("key")
-	assert(message:get_tag_all("key")[1] == nil)
-	message:push_tag("key", 1)
+	assert(type(message:get_tag_all("key")[3]) == "number")
+	assert(type(message:get_tag_all("key")[4]) == "number")
+	assert(type(message:get_tag_all("key")[5]) == "number")
+	assert(type(message:get_tag_all("key")[6]) == "number")
+
 	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == -2)
+	assert(message:get_tag_all("key")[3] == 3)
+	assert(message:get_tag_all("key")[4] == 3)
+	assert(message:get_tag_all("key")[5] == 3)
+	assert(message:get_tag_all("key")[6] == -111)
+
 	message:clear_array()
 
 	-- number/fixp type
-	message:push_tag("key", 3.141592)
+	-- Convertible to fixp without loss of precision
+	message:push_tag("key", 3.5)
+	message:push_tag("key", 1.0/3.0)
+	assert(type(message:get_tag_all("key")[1]) == "number")
+	assert(message:get_tag_all("key")[1] == 3.5)
+	assert(type(message:get_tag_all("key")[2]) == "string")
+	assert(message:get_tag_all("key")[2]:sub(1, 5) == "0.333")
+	message:clear_array()
+
+
+	-- test push_tag_fixp function
+	message:push_tag_fixp("key", 3.5)
+	message:push_tag_fixp("key", 1.0/3.0)
+	message:push_tag_fixp("key", "3.5");
+	message:push_tag_fixp("key", "16#-0.000001");
+
+	assert(type(message:get_tag_all("key")[1]) == "number")
+	assert(type(message:get_tag_all("key")[2]) == "string")
+	assert(type(message:get_tag_all("key")[3]) == "number")
+	assert(type(message:get_tag_all("key")[4]) == "number")
+
+	assert(message:get_tag_all("key")[1] == 3.5)
+	assert(message:get_tag_all("key")[2]:sub(1, 5) == "0.333")
+	assert(message:get_tag_all("key")[3] == 3.5)
+	assert((string.format("%.16f", message:get_tag_all("key")[4])):sub(1, 16) == "-0.0000000596046")
+
+	message:clear_array()
+
+	-- nil/vain type
+	message:push_tag("key", nil)
+	assert(type(message:get_tag_all("key")[1]) == "nil")
+	assert(message:get_tag_all("key")[1] == nil)
+	message:clear_array()
+
 end
 
 function process(message)
