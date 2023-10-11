@@ -197,6 +197,18 @@ int rrr_test_fixp(void) {
 		goto out;
 	}
 
+	if (rrr_fixp_from_ldouble(&test, dbl) != 0) {
+		TEST_MSG("Conversion from ldouble to fixed point failed for hex B\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (test != fixp_b) {
+		TEST_MSG("Wrong output while converting ldouble to fixed point (hex B), expected 0xffffffffffffffff but got 0x%llx\n", (unsigned long long) test);
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	RRR_FREE_IF_NOT_NULL(tmp);
 	return (ret != 0);
