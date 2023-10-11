@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -108,23 +108,21 @@ int rrr_fixp_to_ldouble (
 ) {
 	long double result = 0;
 	uint64_t sign = ((uint64_t) source) >> 63;
-	source &= (rrr_fixp) ~(sign<<63);
+	int64_t positive = sign ? -source : source;
 
-	uint64_t whole_number = (uint64_t) source >> RRR_FIXED_POINT_BASE2_EXPONENT;
-	uint64_t decimals = source & 0xFFFFFF;
+	int64_t whole_number = positive >> RRR_FIXED_POINT_BASE2_EXPONENT;
+	int64_t decimals = positive & 0xFFFFFF;
 
 	result += (long double) whole_number;
 
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
-		unsigned int bit = (unsigned int) ((((uint64_t) 1) << (23 - i)) & decimals);
-		if (bit != 0) {
-			result += decimal_fractions_base2[i];
-		}
+		// Times 1 or 0
+		result += decimal_fractions_base2[i] *
+		          ((decimals & ((uint64_t) 1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1 - i))) != 0);
 	}
 
-	if (sign != 0) {
+	if (sign)
 		result *= -1;
-	}
 
 	*target = result;
 
