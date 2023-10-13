@@ -85,21 +85,21 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
   code                                                         \
   } while(0)
 
-#define WITH_MSG(nargs,func_name,code)                         \
-  do {int test; struct rrr_lua_message *message;               \
-  if ((test = lua_getmetatable(L, -1 - nargs)) != 1) {         \
+#define SET_MSG(nargs,func_name)                               \
+  struct rrr_lua_message *message;                             \
+  {int test; if ((test = lua_getmetatable(L, -1 - nargs)) != 1) { \
     luaL_error(L, "Possible incorrect number of arguments to function " #func_name ", verify that the number of arguments is " #nargs " and that : is used when calling.\n"); \
-    break;                                                     \
-  }                                                            \
+  }}                                                           \
   lua_pushliteral(L, "_rrr_message");                          \
   lua_gettable(L, -2);                                         \
   if (lua_type(L, -1) != LUA_TLIGHTUSERDATA) {                 \
     luaL_error(L, "Userdata _rrr_message not found in metatable while calling " #func_name "\n"); \
-    lua_pop(L, 2);                                             \
-    break;                                                     \
   }                                                            \
   message = lua_touserdata(L, -1);                             \
   lua_pop(L, 2);                                               \
+
+#define WITH_MSG(nargs,func_name,code)                         \
+  do {SET_MSG(nargs,func_name);                                \
   code                                                         \
   } while(0)
 
@@ -242,7 +242,18 @@ static int __rrr_lua_message_f_clear_tag(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
 	WITH_MSG(2,push_tag_blob,
-		assert(0 && "NI");
+		SET_KEY(k);
+		size_t str_len;
+		const char *v = lua_tolstring(L, -1, &str_len);
+		if (v == NULL) {
+			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
+				__func__, luaL_typename(L, -1));
+			return 0;
+		}
+		if (rrr_array_push_value_blob_with_tag_with_size(&message->array, k, v, str_len) != 0) {
+			luaL_error(L, "Failed to push blob value in %s\n", __func__);
+			return 0;
+		}
 	);
 	return 0;
 }
@@ -250,14 +261,15 @@ static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
 static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 	WITH_MSG(2,push_tag_str,
 		SET_KEY(k);
-		const char *v = lua_tostring(L, -1);
+		size_t str_len;
+		const char *v = lua_tolstring(L, -1, &str_len);
 		if (v == NULL) {
 			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
 				__func__, luaL_typename(L, -1));
 			return 0;
 		}
-		if (rrr_array_push_value_str_with_tag(&message->array, k, v) != 0) {
-			luaL_error(L, "Failed to push value in %s\n", __func__);
+		if (rrr_array_push_value_str_with_tag_with_size(&message->array, k, v, str_len) != 0) {
+			luaL_error(L, "Failed to push string value in %s\n", __func__);
 			return 0;
 		}
 	);
@@ -265,27 +277,6 @@ static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 }
 
 static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
-/*
-	-- h type
-	message:push_tag_h("key", 1)
-	message:push_tag_h("key", -2)
-	message:push_tag_h("key", "3")
-	message:push_tag_h("key", "3.14")
-	message:push_tag_h("key", 3.14)
-
-	assert(type(message:get_tag_all("key")[1]) == "number")
-	assert(type(message:get_tag_all("key")[2]) == "number")
-	assert(type(message:get_tag_all("key")[3]) == "number")
-	assert(type(message:get_tag_all("key")[4]) == "number")
-	assert(type(message:get_tag_all("key")[5]) == "number")
-
-	assert(message:get_tag_all("key")[1] == 1)
-	assert(message:get_tag_all("key")[2] == -2)
-	assert(message:get_tag_all("key")[3] == 3)
-	assert(message:get_tag_all("key")[4] == 3)
-	assert(message:get_tag_all("key")[5] == 3)
-
-*/
 	WITH_MSG(2,push_tag_h,
 		SET_KEY(k);
 		int isnum;
@@ -349,7 +340,6 @@ static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
 
 static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
 	WITH_MSG(2,push_tag_fixp,
-		// We need to check the 3rd test case converting string to fixp
 		SET_KEY(k);
 		lua_Number n;
 		int isnum;
@@ -367,11 +357,11 @@ static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
 				luaL_error(L, "Failed to push value with key %s to array, value was not convertible to string (type is %s)\n",
 					k, luaL_typename(L, -1));
 			}
-			if (rrr_fixp_str_to_fixp(&fixp, str, rrr_length_from_size_t_bug_const(str_len), &endptr) != 0) {
-				luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array\n", k);
-			}
 			if (str_len == 0) {
 				luaL_error(L, "Failed to push value with key %s to array, string was empty\n", k);
+			}
+			if (rrr_fixp_str_to_fixp(&fixp, str, rrr_length_from_size_t_bug_const(str_len), &endptr) != 0) {
+				luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array\n", k);
 			}
 			if (endptr != str + str_len) {
 				luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array, string was not fully converted\n", k);
@@ -439,10 +429,39 @@ static int __rrr_lua_message_f_push_tag(lua_State *L) {
 }
 
 static int __rrr_lua_message_f_set_tag(lua_State *L) {
-	WITH_MSG(2,set_tag,
-		assert(0 && "NI");
-	);
-	return 0;
+	SET_MSG(2,set_tag);
+	SET_KEY(k);
+	rrr_array_clear_by_tag(&message->array, k);
+	return __rrr_lua_message_f_push_tag(L);
+}
+
+// Implementations of all type specific set functions 
+static int __rrr_lua_message_f_set_tag_blob(lua_State *L) {
+	SET_MSG(2,set_tag_blob);
+	SET_KEY(k);
+	rrr_array_clear_by_tag(&message->array, k);
+	return __rrr_lua_message_f_push_tag_blob(L);
+}
+
+static int __rrr_lua_message_f_set_tag_str(lua_State *L) {
+	SET_MSG(2,set_tag_str);
+	SET_KEY(k);
+	rrr_array_clear_by_tag(&message->array, k);
+	return __rrr_lua_message_f_push_tag_str(L);
+}
+
+static int __rrr_lua_message_f_set_tag_h(lua_State *L) {
+	SET_MSG(2,set_tag_h);
+	SET_KEY(k);
+	rrr_array_clear_by_tag(&message->array, k);
+	return __rrr_lua_message_f_push_tag_h(L);
+}
+
+static int __rrr_lua_message_f_set_tag_fixp(lua_State *L) {
+	SET_MSG(2,set_tag_fixp);
+	SET_KEY(k);
+	rrr_array_clear_by_tag(&message->array, k);
+	return __rrr_lua_message_f_push_tag_fixp(L);
 }
 
 static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
@@ -595,6 +614,10 @@ static int __rrr_lua_message_construct (
 		{"push_tag_fixp", __rrr_lua_message_f_push_tag_fixp},
 		{"push_tag", __rrr_lua_message_f_push_tag},
 		{"set_tag", __rrr_lua_message_f_set_tag},
+		{"set_tag_blob", __rrr_lua_message_f_set_tag_blob},
+		{"set_tag_str", __rrr_lua_message_f_set_tag_str},
+		{"set_tag_h", __rrr_lua_message_f_set_tag_h},
+		{"set_tag_fixp", __rrr_lua_message_f_set_tag_fixp},
 		{"get_tag_all", __rrr_lua_message_f_get_tag_all},
 		{"send", __rrr_lua_message_f_send},
 		{NULL, NULL}

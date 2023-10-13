@@ -106,6 +106,37 @@ function verify_defaults()
 	assert(message:get_tag_all("key")[1] == nil)
 	message:clear_array()
 
+	-- blob type
+	message:push_tag_blob("key", "value1")
+	assert(type(message:get_tag_all("key")[1]) == "string")
+	assert(message:get_tag_all("key")[1] == "value1")
+	message:clear_array()
+
+	-- set tags blob, str, h, fixp, generic
+	message:push_tag_blob("key", "value1")
+	message:set_tag_blob("key", "value2")
+	assert(message:get_tag_all("key")[1] == "value2")
+	message:clear_array()
+
+	message:push_tag_str("key", "value1")
+	message:set_tag_str("key", "value2")
+	assert(message:get_tag_all("key")[1] == "value2")
+	message:clear_array()
+
+	message:push_tag_h("key", 1)
+	message:set_tag_h("key", 2)
+	assert(message:get_tag_all("key")[1] == 2)
+	message:clear_array()
+
+	message:push_tag_fixp("key", 1.0/3.0)
+	message:set_tag_fixp("key", 2.0/3.0)
+	assert((string.format("%.16f", message:get_tag_all("key")[1])):sub(1, 6) == "0.6666")
+	message:clear_array()
+
+	message:push_tag("key", 1)
+	message:set_tag("key", 2)
+	assert(message:get_tag_all("key")[1] == 2)
+	message:clear_array()
 end
 
 function process(message)
@@ -115,6 +146,8 @@ function process(message)
 	end
 
 	verify_defaults()
+
+	message.send()
 
 	return true
 end
