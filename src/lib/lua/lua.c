@@ -59,9 +59,32 @@ int rrr_lua_new(struct rrr_lua **result) {
 	luaL_openlibs(lua->L);
 
 	lua_newtable(lua->L);
-	lua_setglobal(lua->L, "RRR");
+
+	lua_newtable(lua->L);
+	lua_pushstring(lua->L, RRR_LUA_META_KEY_LUA);
+	lua_pushlightuserdata(lua->L, lua);
+	lua_settable(lua->L, -3);
+	lua_setmetatable(lua->L, -2);
+
+	lua_setglobal(lua->L, RRR_LUA_KEY);
 
 	*result = lua;
+
+	// iterate and print keys of RRR metadata
+	lua_getglobal(lua->L, RRR_LUA_KEY);
+	assert(lua_istable(lua->L, -1));
+	lua_getmetatable(lua->L, -1);
+	assert(lua_istable(lua->L, -1));
+	lua_getfield(lua->L, -1, RRR_LUA_META_KEY_LUA);
+	assert(lua_islightuserdata(lua->L, -1));
+	assert(lua_touserdata(lua->L, -1) == lua);
+	lua_pop(lua->L, 1);
+	lua_pushnil(lua->L);
+	while (lua_next(lua->L, -2) != 0) {
+		RRR_DBG_3("RRR metadata key: %s\n", lua_tostring(lua->L, -2));
+		lua_pop(lua->L, 1);
+	}
+	lua_pop(lua->L, 2);
 
 	goto out;
 //	out_close_lua:

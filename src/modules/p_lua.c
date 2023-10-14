@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/lua/lua.h"
 #include "../lib/lua/lua_message.h"
+#include "../lib/lua/lua_cmodule.h"
 
 #include "../lib/log.h"
 #include "../lib/allocator.h"
@@ -229,6 +230,7 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	}
 
 	rrr_lua_message_library_register(lua);
+	rrr_lua_cmodule_library_register(lua, worker);
 
 	if ((ret = rrr_readfile_read(&script, &script_size, data->lua_file, 0, 0 /* Enoent not ok */)) != 0) {
 		RRR_MSG_0("Error reading Lua script file %s in Lua instance %s\n",

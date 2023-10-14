@@ -38,6 +38,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #  error "No HAVE_LUA defined"
 #endif
 
+// Global object name
+#define RRR_LUA_KEY              "RRR"
+
+// Keys in table of RRR global object
+#define RRR_LUA_KEY_MESSAGE      "Message"
+
+// Keys in metatable of RRR global object
+#define RRR_LUA_META_KEY_LUA     "_rrr_lua"
+#define RRR_LUA_META_KEY_CMODULE "_rrr_cmodule"
+
+// Keys in instantiated message object
+#define RRR_LUA_META_KEY_RRR_MESSAGE "_rrr_message"
+
 struct rrr_lua {
 	lua_State *L;
 };

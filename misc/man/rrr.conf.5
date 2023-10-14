@@ -1265,11 +1265,11 @@ Retrieve the value at the specified position. Returns a list with one or more va
 .It $message->count_positions()
 Count the number of positions in the array.
 
-.It $message->get_tag_names(tag)
+.It $message->get_tag_names()
 Get all tag names from the array. Returns a list with zero or more values.
-Always returns the same number of element as count_positions(). An empty string is used forositions without a tag.
+Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
 
-.It $message->get_tag_counts(tag)
+.It $message->get_tag_counts()
 Get the value count at each position of the message. Returns a list with zero or more values.
 Always returns the same number of element as count_positions().
 .El
@@ -1579,6 +1579,20 @@ message:set_tag_blob("my_tag", "my_value")
 message:set_tag_h("my_tag", 1)
 message:set_tag_fixp("my_tag", 3.5)
 message:set_tag("my_tag", 1)
+
+-- Retrieve the value at the specified position. Returns a list with one or more values or nil.
+message:get_position(position_number)
+
+-- Count the number of positions in the array.
+message:count_positions()
+
+-- Get all tag names from the array. Returns a list with zero or more values.
+-- Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
+message:get_tag_names()
+
+-- Get the value count at each position of the message. Returns a list with zero or more values.
+-- Always returns the same number of element as count_positions().
+message:get_tag_counts()
 
 -- Pass the message to reader instances
 message.send()
