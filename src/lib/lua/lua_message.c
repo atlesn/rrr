@@ -494,11 +494,14 @@ static int __rrr_lua_message_f_set_tag_fixp(lua_State *L) {
 
 static void __rrr_lua_message_array_value_to_lua (
 		lua_State *L,
-		const struct rrr_type_value *value
+		const struct rrr_type_value *value,
+		int *wpos
 ) {
 	char buf[128];
 	int buf_len;
 	const rrr_length len = value->total_stored_length / value->element_count;
+
+	// Assume a table is already pushed
 
 	switch (value->definition->type) {
 		case RRR_TYPE_MSG:
@@ -506,6 +509,7 @@ static void __rrr_lua_message_array_value_to_lua (
 		RRR_TYPE_CASE_STR: {
 			for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 				lua_pushlstring(L, value->data + i, len);
+				lua_seti(L, -2, (*wpos)++);
 			}
 		} break;
 		case RRR_TYPE_H: {
@@ -521,9 +525,11 @@ static void __rrr_lua_message_array_value_to_lua (
 							x);
 						buf_len = sprintf(buf, "%" PRIi64, x);
 						lua_pushlstring(L, buf, (size_t) buf_len);
+						lua_seti(L, -2, (*wpos)++);
 					}
 					else {
 						lua_pushinteger(L, (lua_Number) x);
+						lua_seti(L, -2, (*wpos)++);
 					}
 				}
 			}
@@ -536,9 +542,11 @@ static void __rrr_lua_message_array_value_to_lua (
 							x);
 						buf_len = sprintf(buf, "%" PRIu64, x);
 						lua_pushlstring(L, buf, (size_t) buf_len);
+						lua_seti(L, -2, (*wpos)++);
 					}
 					else {
 						lua_pushinteger(L, (lua_Number) x);
+						lua_seti(L, -2, (*wpos)++);
 					}
 				}
 			}
@@ -558,14 +566,17 @@ static void __rrr_lua_message_array_value_to_lua (
 					RRR_MSG_0("Warning: Precision loss while converting fixed point value to Lua number. Passing as string instead.\n");
 					buf_len = sprintf(buf, "%Lf", (long double) number);
 					lua_pushlstring(L, buf, (size_t) buf_len);
+					lua_seti(L, -2, (*wpos)++);
 				}
 				else {
 					lua_pushnumber(L, number);
+					lua_seti(L, -2, (*wpos)++);
 				}
 			}
 			break;
 		case RRR_TYPE_VAIN:
 			lua_pushnil(L);
+			lua_seti(L, -2, (*wpos)++);
 			break;
 		case RRR_TYPE_LE:
 		case RRR_TYPE_BE:
@@ -583,59 +594,47 @@ static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
 	WITH_MSG(1,get_tag_all,
 		const char *key = lua_tostring(L, -1);
 
-		int wpos = 1;
-
 		lua_newtable(L);
 		results++;
 
+		int wpos = 1;
 		RRR_LL_ITERATE_BEGIN(&message->array, struct rrr_type_value);
 			if (!rrr_type_value_is_tag(node, key)) {
 				RRR_LL_ITERATE_NEXT();
 			}
-
-			lua_pushinteger(L, wpos++);
-
-			__rrr_lua_message_array_value_to_lua(L, node);
-
-			lua_settable(L, -3);
+			__rrr_lua_message_array_value_to_lua(L, node, &wpos);
 		RRR_LL_ITERATE_END();
 	);
 
 	return results;
 }
-/*
--- Retrieve the value at the specified position. Returns a list with one or more values or nil.
-message:get_position(position_number)
-
--- Count the number of positions in the array.
-message:count_positions()
-
--- Get all tag names from the array. Returns a list with zero or more values.
--- Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
-message:get_tag_names()
-
--- Get the value count at each position of the message. Returns a list with zero or more values.
--- Always returns the same number of element as count_positions().
-message:get_tag_counts()
-
-
-*/
 
 static int __rrr_lua_message_f_get_position(lua_State *L) {
+	int results = 0;
+
 	WITH_MSG(1,get_position,
 		lua_Integer pos = lua_tointeger(L, -1);
-		if (pos < 1 || pos > RRR_LL_COUNT(&message->array)) {
-			luaL_error(L, "Position out of range. Value is %I while valid range is 1-%I\n",
-				(lua_Integer) pos, (lua_Integer) RRR_LL_COUNT(&message->array));
+		if (pos < 1) {
+			luaL_error(L, "Position must be greater than 0\n");
 		}
+
+		if (pos > RRR_LL_COUNT(&message->array)) {
+			lua_pushnil(L);
+			results++;
+			return results;
+		}
+
+		lua_newtable(L);
+		results++;
 
 		// Lua is 1-based, RRR is 0-based
 		pos--;
 
+		int wpos = 1;
 		int i = 0;
 		RRR_LL_ITERATE_BEGIN(&message->array, struct rrr_type_value);
 			if (i == pos) {
-				__rrr_lua_message_array_value_to_lua(L, node);
+				__rrr_lua_message_array_value_to_lua(L, node, &wpos);
 				RRR_LL_ITERATE_BREAK();
 			}
 			i++;
@@ -643,7 +642,8 @@ static int __rrr_lua_message_f_get_position(lua_State *L) {
 
 		assert(i == pos);
 	);
-	return 1;
+
+	return results;
 }
 
 static int __rrr_lua_message_f_count_positions(lua_State *L) {

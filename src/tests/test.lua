@@ -151,31 +151,18 @@ function verify_defaults()
 	message:set_tag("key", 2)
 	assert(message:get_tag_all("key")[1] == 2)
 	message:clear_array()
---	1 -- Retrieve the value at the specified position. Returns a list with one or more values or nil.
---	2 message:get_position(position_number)
---	3
---	4 -- Count the number of positions in the array.
---	5 message:count_positions()
---	6
---	7 -- Get all tag names from the array. Returns a list with zero or more values.
---	8 -- Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
---	9 message:get_tag_names()
---	10
---	11 -- Get the value count at each position of the message. Returns a list with zero or more values.
---	12 -- Always returns the same number of element as count_positions().
---	13 message:get_tag_counts()
 
-	-- Test get_position, count_positions, get_tag_names, get_tag_counts
-
+	-- Test iteration helpers
 	message:push_tag("key1", 1)
 	message:push_tag("", -1)
 	message:push_tag("key2", 2)
 	message:push_tag("", -2)
 
-	assert(message:get_position(1) == 1)
-	assert(message:get_position(2) == -1)
-	assert(message:get_position(3) == 2)
-	assert(message:get_position(4) == -2)
+	assert(message:get_position(1)[1] == 1)
+	assert(message:get_position(2)[1] == -1)
+	assert(message:get_position(3)[1] == 2)
+	assert(message:get_position(4)[1] == -2)
+	assert(message:get_position(5) == nil)
 
 	assert(message:count_positions() == 4)
 
@@ -191,6 +178,13 @@ function verify_defaults()
 
 	-- TODO : Test passing array to all set functions
 	-- TODO : Test passing array to all push functions
+
+	-- Test push array of strings with both generic and specific method and set method
+	message:push_tag_str("key", {"value1", "value2"})
+	assert(message:get_tag_all("key")[1] == "value1")
+	assert(message:get_tag_all("key")[2] == "value2")
+	assert(message:get_position(1)[1] == "value1")
+	assert(message:get_position(1)[2] == "value2")
 
 end
 
