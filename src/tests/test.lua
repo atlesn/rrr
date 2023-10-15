@@ -35,6 +35,20 @@ function verify_defaults()
 	assert (ip == "")
 	assert (port == 0)
 
+	-- IPv6
+	message:ip_set("::1", 5)
+	ip, port = message:ip_get()
+	assert (ip == "::1")
+	assert (port == 5)
+	message:ip_clear()
+
+	-- IPv4 mapped IPv6
+	message:ip_set("::ffff:0.1.2.3", 5)
+	ip, port = message:ip_get()
+	assert (ip == "::ffff:0.1.2.3")
+	assert (port == 5)
+	message:ip_clear()
+
 	-- Other parameters
 	assert (message.timestamp > 0 or message.timestamp == nil) -- Is nil if Lua integer is less than 8 bytes
 	assert (message.topic == "")

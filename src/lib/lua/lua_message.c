@@ -95,7 +95,6 @@ static int __rrr_lua_message_set_ip_from_str (
 		struct sockaddr_in6 in6;
 	} addr;
 	socklen_t ip_addr_len = 0;
-	const char * const ip_use = *ip != '\0' ? ip : "0.0.0.0";
 
 	memset(&addr, 0, sizeof(addr));
 
@@ -110,13 +109,13 @@ static int __rrr_lua_message_set_ip_from_str (
 		goto out;
 	}
 
-	if (strchr(ip_use, ':') != NULL) {
+	if (strchr(ip, ':') != NULL) {
 		// IPv6
 		ip_addr_len = sizeof(addr.in6);
 		addr.in6.sin6_family = AF_INET6;
 		addr.in6.sin6_port = htons(port);
-		if (inet_pton(AF_INET6, ip_use, &addr.in6.sin6_addr) != 1) {
-			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv6 address (%s)\n", __func__, ip_use);
+		if (inet_pton(AF_INET6, ip, &addr.in6.sin6_addr) != 1) {
+			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv6 address (%s)\n", __func__, ip);
 			error_callback(err, error_callback_arg);
 			ret = 1;
 			goto out;
@@ -127,8 +126,8 @@ static int __rrr_lua_message_set_ip_from_str (
 		ip_addr_len = sizeof(addr.in);
 		addr.in.sin_family = AF_INET;
 		addr.in.sin_port = htons(port);
-		if (inet_pton(AF_INET, ip_use, &addr.in.sin_addr) != 1) {
-			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv4 address (%s)\n", __func__, ip_use);
+		if (inet_pton(AF_INET, ip, &addr.in.sin_addr) != 1) {
+			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv4 address (%s)\n", __func__, ip);
 			error_callback(err, error_callback_arg);
 			ret = 1;
 			goto out;
