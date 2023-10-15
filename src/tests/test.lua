@@ -47,6 +47,8 @@ function verify_defaults()
 	-- str type
 	message:push_tag_str("key", "value1")
 	message:push_tag_str("key", "value2")
+	print("type", type(message:get_tag_all("key")[1]))
+	print("value", message:get_tag_all("key")[1])
 	assert(message:get_tag_all("key")[1] == "value1")
 	assert(message:get_tag_all("key")[2] == "value2")
 	assert(type(message:get_tag_all("key")[1]) == "string")
@@ -91,10 +93,9 @@ function verify_defaults()
 	message:push_tag("key", 1.0/3.0)
 	assert(type(message:get_tag_all("key")[1]) == "number")
 	assert(message:get_tag_all("key")[1] == 3.5)
-	assert(type(message:get_tag_all("key")[2]) == "string")
-	assert(message:get_tag_all("key")[2]:sub(1, 5) == "0.333")
+	assert(type(message:get_tag_all("key")[2]) == "number")
+	assert(("" .. message:get_tag_all("key")[2]):sub(1, 5) == "0.333")
 	message:clear_array()
-
 
 	-- test push_tag_fixp function
 	message:push_tag_fixp("key", 3.5)
@@ -103,12 +104,12 @@ function verify_defaults()
 	message:push_tag_fixp("key", "16#-0.000001");
 
 	assert(type(message:get_tag_all("key")[1]) == "number")
-	assert(type(message:get_tag_all("key")[2]) == "string")
+	assert(type(message:get_tag_all("key")[2]) == "number")
 	assert(type(message:get_tag_all("key")[3]) == "number")
 	assert(type(message:get_tag_all("key")[4]) == "number")
 
 	assert(message:get_tag_all("key")[1] == 3.5)
-	assert(message:get_tag_all("key")[2]:sub(1, 5) == "0.333")
+	assert(("" .. message:get_tag_all("key")[2]):sub(1, 5) == "0.333")
 	assert(message:get_tag_all("key")[3] == 3.5)
 	assert((string.format("%.16f", message:get_tag_all("key")[4])):sub(1, 16) == "-0.0000000596046")
 
@@ -176,8 +177,13 @@ function verify_defaults()
 	assert(message:get_tag_counts()[3] == 1)
 	assert(message:get_tag_counts()[4] == 1)
 
-	-- TODO : Test passing array to all set functions
-	-- TODO : Test passing array to all push functions
+	message:clear_array()
+
+	-- Enable to test input validation
+	-- message:push_tag_str("", {})
+	-- message:push_tag_str("", {{}})
+	-- message:push_tag_str("", {"a", {}})
+	-- message:push_tag_str("", {"a", "aa"})
 
 	-- Test push array of strings with both generic and specific method and set method
 	message:push_tag_str("key", {"value1", "value2"})
@@ -185,6 +191,68 @@ function verify_defaults()
 	assert(message:get_tag_all("key")[2] == "value2")
 	assert(message:get_position(1)[1] == "value1")
 	assert(message:get_position(1)[2] == "value2")
+	message:clear_array()
+
+	message:push_tag("key", {"value1", "value2"})
+	assert(message:get_tag_all("key")[1] == "value1")
+	assert(message:get_tag_all("key")[2] == "value2")
+	assert(message:get_position(1)[1] == "value1")
+	assert(message:get_position(1)[2] == "value2")
+	message:clear_array()
+
+	-- Test push array of h's with both generic and specific method and set method
+	message:push_tag_h("key", {1, 2, "3", -4})
+	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == 2)
+	assert(message:get_tag_all("key")[3] == 3)
+	assert(message:get_tag_all("key")[4] == -4)
+	assert(message:get_position(1)[1] == 1)
+	assert(message:get_position(1)[2] == 2)
+	assert(message:get_position(1)[3] == 3)
+	assert(message:get_position(1)[4] == -4)
+	message:clear_array()
+
+	message:push_tag("key", {1, 2, "3", -4})
+	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == 2)
+	assert(message:get_tag_all("key")[3] == 3)
+	assert(message:get_tag_all("key")[4] == -4)
+	assert(message:get_position(1)[1] == 1)
+	assert(message:get_position(1)[2] == 2)
+	assert(message:get_position(1)[3] == 3)
+	assert(message:get_position(1)[4] == -4)
+	message:clear_array()
+
+	-- Test push array of fixp's with both generic and specific method and set method
+	message:push_tag_fixp("key", {1.0/3.0, 2.0/3.0, "3.0", "3.14"})
+
+	assert((string.format("%.16f", message:get_tag_all("key")[1])):sub(1, 5) == "0.333")
+	assert((string.format("%.16f", message:get_tag_all("key")[2])):sub(1, 6) == "0.6666")
+	assert(                        message:get_tag_all("key")[3]             == 3)
+	assert(                        message:get_tag_all("key")[4] > 3.13 and
+	                               message:get_tag_all("key")[4] <= 3.14)
+
+	assert((string.format("%.16f", message:get_position(1)[1])):sub(1, 5) == "0.333")
+	assert((string.format("%.16f", message:get_position(1)[2])):sub(1, 6) == "0.6666")
+	assert(                        message:get_position(1)[3]             == 3)
+	assert(                        message:get_position(1)[4] > 3.13 and
+	                               message:get_position(1)[4] <= 3.14)
+	message:clear_array()
+
+	message:push_tag("key", {1.0/3.0, 2.0/3.0})
+	assert((string.format("%.16f", message:get_tag_all("key")[1])):sub(1, 5) == "0.333")
+	assert((string.format("%.16f", message:get_tag_all("key")[2])):sub(1, 6) == "0.6666")
+	assert((string.format("%.16f", message:get_position(1)[1])):sub(1, 5) == "0.333")
+	assert((string.format("%.16f", message:get_position(1)[2])):sub(1, 6) == "0.6666")
+	message:clear_array()
+
+	-- Test push array of blobs with both generic and specific method and set method
+	message:push_tag_blob("key", {"value1", "value2"})
+	assert(message:get_tag_all("key")[1] == "value1")
+	assert(message:get_tag_all("key")[2] == "value2")
+	assert(message:get_position(1)[1] == "value1")
+	assert(message:get_position(1)[2] == "value2")
+	message:clear_array()
 
 end
 

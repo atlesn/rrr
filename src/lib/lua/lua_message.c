@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 #include "../log.h"
 #include "../fixed_point.h"
+#include "../helpers/string_builder.h"
 #include "../ip/ip_defines.h"
 #include "../util/rrr_time.h"
 #include "../util/posix.h"
@@ -89,7 +90,7 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
   lua_pop(L, 2);                                               \
   code                                                         \
   } while(0)
-
+ 
 #define SET_MSG(nargs,func_name)                               \
   struct rrr_lua_message *message;                             \
   {int test; if ((test = lua_getmetatable(L, -1 - nargs)) != 1) { \
@@ -142,59 +143,6 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
  * NOTE : Error handling in the push functions is done by Lua which
  *        performs longjmp back to Lua in the luaL_error call.
  */
-
-static void __rrr_lua_message_push_integer (
-		struct rrr_lua_message *message,
-		lua_State *L,
-		const char *k,
-		rrr_lua_int i
-) {
-	if ((i < 0
-		? rrr_array_push_value_i64_with_tag(&message->array, k, (int64_t) i)
-		: rrr_array_push_value_u64_with_tag(&message->array, k, (uint64_t) i)
-	) != 0) {
-		luaL_error(L, "Failed to push integer value to array in %s\n", __func__);
-	}
-}
-
-static void __rrr_lua_message_push_ld (
-		struct rrr_lua_message *message,
-		lua_State *L,
-		const char *k,
-		long double n
-) {
-	rrr_fixp fixp;
-	long double n_test;
-	int buf_len;
-	char buf[128];
-
-	if (rrr_fixp_from_ldouble(&fixp, n) != 0) {
-		luaL_error(L, "Could not convert floating point number '%s' to RRR fixed point while pusing to array\n",
-			lua_tostring(L, -2));
-	}
-
-	if (rrr_fixp_to_ldouble(&n_test, fixp) != 0) {
-		luaL_error(L, "Failed to convert floating point number '%s' to RRR fixed point while pushing to array\n",
-			lua_tostring(L, -2));
-	}
-
-	if (n_test != n) {
-		RRR_MSG_0("Warning: Precision loss while converting lua Number '%Lf' to fixed point " \
-		          "while pushing array value with key '%s'. Passing as string instead.\n",
-			n, k);
-		buf_len = sprintf(buf, "%Lf", (long double) n);
-		if (rrr_array_push_value_str_with_tag_with_size(&message->array, k, buf, buf_len) != 0) {
-			luaL_error(L, "Failed to push string value in %s\n",
-				__func__);
-		}
-	}
-	else {
-		if (rrr_array_push_value_fixp_with_tag(&message->array, k, fixp) != 0) {
-			luaL_error(L, "Failed to push fixp value in %s\n",
-				__func__);
-		}
-	}
-}
 
 static int __rrr_lua_message_f_finalize(lua_State *L) {
 	WITH_MSG_META (
@@ -268,180 +216,452 @@ static int __rrr_lua_message_f_clear_tag(lua_State *L) {
 	return 0;
 }
 
-static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
-	WITH_MSG(2,push_tag_blob,
-		SET_KEY(k);
-		size_t str_len;
-		const char *v = lua_tolstring(L, -1, &str_len);
-		if (v == NULL) {
-			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
-				__func__, luaL_typename(L, -1));
-			return 0;
-		}
-		if (rrr_array_push_value_blob_with_tag_with_size(&message->array, k, v, str_len) != 0) {
-			luaL_error(L, "Failed to push blob value in %s\n", __func__);
-			return 0;
-		}
-	);
-	return 0;
-}
+// This function is extraction of the inner function below taking blob/str type argument but otherwise being the same
+// It checks if top stack element is table or not
+static int __rrr_lua_message_push_tag_blob_str (
+		lua_State *L,
+		const struct rrr_type_definition *definition
+) {
+	struct rrr_string_builder acc = {0};
+	char err[128];
+	struct rrr_type_value *value;
+	rrr_length element_count = 0;
+	size_t str_len, str_len2;
+	const char *v;
+	lua_Integer len, i;
 
-static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
 	WITH_MSG(2,push_tag_str,
 		SET_KEY(k);
-		size_t str_len;
-		const char *v = lua_tolstring(L, -1, &str_len);
-		if (v == NULL) {
-			luaL_error(L, "Failed to push value in %s, value was not convertible to string (type is %s)\n",
-				__func__, luaL_typename(L, -1));
-			return 0;
-		}
-		if (rrr_array_push_value_str_with_tag_with_size(&message->array, k, v, str_len) != 0) {
-			luaL_error(L, "Failed to push string value in %s\n", __func__);
-			return 0;
-		}
-	);
-	return 0;
-}
 
-static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
-	WITH_MSG(2,push_tag_h,
-		SET_KEY(k);
-		int isnum;
-		int i;
-		long long int lli;
-		long long unsigned int llu;
-		const char *str;
-		size_t str_len;
-		const char *endptr;
-
-		i = lua_tointegerx(L, -1, &isnum);
-		if (isnum) {
-			__rrr_lua_message_push_integer (message, L, k, i);
-			goto done;
-		}
-
-		// Try string
-		if ((str = lua_tolstring(L, -1, &str_len)) == NULL) {
-			luaL_error(L, "Failed to push value with key %s to array, value was not convertible to string (type is %s)\n",
-				k, luaL_typename(L, -1));
-		}
-		if (str_len == 0) {
-			luaL_error(L, "Failed to push value with key %s to array, string was empty\n", k);
-		}
-
-		errno = 0;
-
-		if (*str == '-') {
-			lli = strtoll(str, (char **) &endptr, 10);
-			if (errno == ERANGE) {
-				luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, value out of range\n", k);
+		if (lua_type(L, -1) == LUA_TTABLE) {
+			if ((len = lua_rawlen(L, -1)) < 1) {
+				snprintf(err, sizeof(err), "Failed to push value in %s, table was empty\n", __func__);
+				goto err;
 			}
-			if (str + str_len != endptr) {
-				if (*endptr != '.') {
-					luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, string was not fully converted\n", k);
+			for (i = 1; i <= len; i++) {
+				lua_geti(L, -1, i);
+				if ((v = lua_tolstring(L, -1, &str_len)) == NULL) {
+					snprintf(err, sizeof(err), "Failed to push value in %s, value was not convertible to string (type is %s)\n",
+						__func__, luaL_typename(L, -1));
+					goto err;
 				}
-			}
-			if (rrr_array_push_value_i64_with_tag(&message->array, k, (int64_t) lli) != 0) {
-				luaL_error(L, "Failed to push integer value to array in %s\n", __func__);
+
+				if (i == 1) {
+					if (str_len == 0) {
+						snprintf(err, sizeof(err), "Failed to push value in %s, string was empty\n", __func__);
+						goto err;
+					}
+					str_len2 = str_len;
+				}
+				else if (str_len != str_len2) {
+					snprintf(err, sizeof(err), "Failed to push value in %s, table contained strings of different length\n", __func__);
+					goto err;
+				}
+
+				if (rrr_string_builder_append_raw(&acc, v, str_len) != 0) {
+					snprintf(err, sizeof(err), "Failed to push value in %s, failed to append string to string builder\n", __func__);
+					goto err;
+				}
+				element_count++;
+
+				lua_pop(L, 1);
 			}
 		}
 		else {
-			llu = strtoull(str, (char **) &endptr, 10);
-			if (errno == ERANGE) {
-				luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, value out of range\n", k);
+			if ((v = lua_tolstring(L, -1, &str_len)) == NULL) {
+				snprintf(err, sizeof(err), "Failed to push value in %s, value was not convertible to string (type is %s)\n",
+					__func__, luaL_typename(L, -1));
+				goto err;
 			}
-			if (str + str_len != endptr) {
-				if (*endptr != '.') {
-					luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, string was not fully converted\n", k);
+			if (rrr_string_builder_append_raw(&acc, v, str_len) != 0) {
+				snprintf(err, sizeof(err), "Failed to push value in %s, failed to append string to string builder\n", __func__);
+				goto err;
+			}
+			element_count++;
+		}
+
+		if (rrr_string_builder_length(&acc) > RRR_LENGTH_MAX) {
+			snprintf(err, sizeof(err), "Failed to push value in %s, string length exceeds maximum (%llu>%llu)\n",
+				__func__, (unsigned long long) rrr_string_builder_length(&acc), (unsigned long long) RRR_LENGTH_MAX);
+			goto err;
+		}
+
+		if (rrr_type_value_new (
+				&value,
+				definition,
+				0,
+				rrr_length_from_size_t_bug_const(strlen(k)),
+				k,
+				0,
+				NULL,
+				element_count,
+				NULL,
+				rrr_length_from_biglength_bug_const(rrr_string_builder_length(&acc))
+		) != 0) {
+			snprintf(err, sizeof(err), "Failed to push value in %s, failed to create type value\n", __func__);
+			goto err;
+		}
+
+		memcpy(value->data, rrr_string_builder_buf(&acc), rrr_size_from_biglength_bug_const(rrr_string_builder_length(&acc)));
+
+		RRR_LL_APPEND(&message->array, value);
+	);
+
+	goto out;
+	err:
+		rrr_string_builder_clear(&acc);
+		luaL_error(L, "%s", err);
+		assert(0 && "Unreachable");
+	out:
+		rrr_string_builder_clear(&acc);
+		return 0;
+}
+
+static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
+	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
+}
+
+static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
+	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+}
+
+static void __rrr_lua_message_push_tag_h_convert (
+		int64_t *result,
+		rrr_type_flags *result_flags,
+		lua_State *L,
+		const char *debug_k
+) {
+	int isnum;
+	lua_Integer i;
+	long long int lli;
+	long long unsigned int llu;
+	const char *str;
+	size_t str_len;
+	const char *endptr;
+
+	i = lua_tointegerx(L, -1, &isnum);
+	if (isnum) {
+		*result = i;
+		*result_flags = (i < 0 ? RRR_TYPE_FLAG_SIGNED : 0);
+		return;
+	}
+
+	if ((str = lua_tolstring(L, -1, &str_len)) == NULL) {
+		luaL_error(L, "Failed to push value with key %s to array, value was not convertible to string (type is %s)\n",
+			debug_k, luaL_typename(L, -1));
+	}
+	if (str_len == 0) {
+		luaL_error(L, "Failed to push value with key %s to array, string was empty\n", debug_k);
+	}
+
+	errno = 0;
+
+	if (*str == '-') {
+		lli = strtoll(str, (char **) &endptr, 10);
+		if (errno == ERANGE) {
+			luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, value out of range\n", debug_k);
+		}
+		if (str + str_len != endptr) {
+			if (*endptr != '.') {
+				luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, string was not fully converted\n", debug_k);
+			}
+		}
+		*result = lli;
+		*result_flags = RRR_TYPE_FLAG_SIGNED;
+	}
+	else {
+		llu = strtoull(str, (char **) &endptr, 10);
+		if (errno == ERANGE) {
+			luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, value out of range\n", debug_k);
+		}
+		if (str + str_len != endptr) {
+			if (*endptr != '.') {
+				luaL_error(L, "Failed to convert string to integer while pushing value with key %s to array, string was not fully converted\n", debug_k);
+			}
+		}
+		*result = (int64_t) llu;
+		*result_flags = 0;
+	}
+}
+
+static void __rrr_lua_message_push_tag_64_get_stored_length_and_count (
+		lua_State *L,
+		rrr_length *result_stored_length,
+		rrr_length *result_count
+) {
+	rrr_length stored_length, element_count;
+
+	if (lua_type(L, -1) == LUA_TTABLE) {
+		if ((element_count = lua_rawlen(L, -1)) < 1) {
+			luaL_error(L, "Failed to push value in %s, table was empty\n", __func__);
+		}
+		stored_length = element_count;
+		rrr_length_mul_bug(&stored_length, (rrr_length) sizeof(int64_t));
+	}
+	else {
+		element_count = 1;
+		stored_length = (rrr_length) sizeof(int64_t);
+	}
+
+	*result_count = element_count;
+	*result_stored_length = stored_length;
+}
+
+// Function for creating value for 64 types, used by push_tag_h and push_tag_fixp
+static void __rrr_lua_message_push_tag_64_create_value (
+		struct rrr_type_value **result,
+		lua_State *L,
+		const char *k,
+		rrr_length stored_length,
+		rrr_length element_count,
+		const struct rrr_type_definition *definition
+) {
+	if (rrr_type_value_new (
+			result,
+			definition,
+			0,
+			rrr_length_from_size_t_bug_const(strlen(k)),
+			k,
+			0,
+			NULL,
+			element_count,
+			NULL,
+			stored_length
+	) != 0) {
+		luaL_error(L, "Failed to push value in %s, failed to create type value\n", __func__);
+	}
+}
+
+static void __rrr_lua_message_push_tag_h(lua_State *L) {
+	struct rrr_type_value *value;
+	rrr_length stored_length, element_count;
+
+	WITH_MSG(2,push_tag_h,
+		SET_KEY(k);
+
+		__rrr_lua_message_push_tag_64_get_stored_length_and_count(L, &stored_length, &element_count);
+		__rrr_lua_message_push_tag_64_create_value(&value, L, k, stored_length, element_count, &rrr_type_definition_h);
+
+		if (element_count == 1) {
+			__rrr_lua_message_push_tag_h_convert (
+					(int64_t *) value->data,
+					&value->flags,
+					L,
+					k
+			);
+		}
+		else {
+			int force_unsigned = 0;
+			int force_signed = 0;
+			int wpos = 0;
+
+			for (rrr_length i = 1; i <= element_count; i++) {
+				union {
+					int64_t lli;
+					uint64_t llu;
+				} ll;
+				rrr_type_flags flags = 0;
+
+				lua_geti(L, -1, i);
+				__rrr_lua_message_push_tag_h_convert(&ll.lli, &flags, L, k);
+				lua_pop(L, 1);
+
+				if (RRR_TYPE_FLAG_IS_SIGNED(flags)) {
+					assert(ll.lli < 0);
+					if (force_unsigned) {
+						luaL_error(L, "Failed to convert integer while pushing value with key %s to array, string was negative while unsigned conversion was forced due to another large unsigned integer\n", k);
+					}
+					force_signed = 1;
 				}
-			}
-			if (rrr_array_push_value_u64_with_tag(&message->array, k, (uint64_t) llu) != 0) {
-				luaL_error(L, "Failed to push integer value to array in %s\n", __func__);
+				else if (ll.llu > INT64_MAX) {
+					if (force_signed) {
+						luaL_error(L, "Failed to convert integer while pushing value with key %s to array, unsigned value out of range due to another negative integer\n", k);
+					}
+					force_unsigned = 1;
+				}
+
+				memcpy((int64_t *) value->data + (wpos++), &ll.lli, sizeof(ll.lli));
+				value->flags |= flags;
 			}
 		}
 
-		done:
+		RRR_LL_APPEND(&message->array, value);
 	);
+}
+
+static void __rrr_lua_message_push_tag_fixp_convert_ld (
+		rrr_fixp *result,
+		lua_State *L,
+		long double n,
+		const char *debug_k
+) {
+	rrr_fixp fixp;
+	long double n_test;
+
+	if (rrr_fixp_from_ldouble(&fixp, n) != 0) {
+		luaL_error(L, "Could not convert floating point number '%s' to RRR fixed point while pusing to array\n",
+			lua_tostring(L, -2));
+	}
+
+	if (rrr_fixp_to_ldouble(&n_test, fixp) != 0) {
+		luaL_error(L, "Failed to convert floating point number '%s' to RRR fixed point while pushing to array\n",
+			lua_tostring(L, -2));
+	}
+
+	if (n_test != n) {
+		RRR_MSG_0("Warning: Precision loss while converting lua Number '%Lf' to fixed point " \
+		          "while pushing array value with key '%s'. Consider passing as string instead.\n",
+			n, debug_k);
+	}
+
+	*result = fixp;
+}
+
+static void __rrr_lua_message_push_tag_fixp_convert_str (
+		rrr_fixp *result,
+		lua_State *L,
+		const char *debug_k
+) {
+	const char *str;
+	size_t str_len;
+	const char *endptr;
+	rrr_fixp fixp;
+
+	if ((str = lua_tolstring(L, -1, &str_len)) == NULL) {
+		luaL_error(L, "Failed to push value with key %s to array, value was not convertible to string (type is %s)\n",
+			debug_k, luaL_typename(L, -1));
+	}
+	if (str_len == 0) {
+		luaL_error(L, "Failed to push value with key %s to array, string was empty\n", debug_k);
+	}
+	if (rrr_fixp_str_to_fixp(&fixp, str, rrr_length_from_size_t_bug_const(str_len), &endptr) != 0) {
+		luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array\n", debug_k);
+	}
+	if (endptr != str + str_len) {
+		luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array, string was not fully converted\n", debug_k);
+	}
+
+	*result = fixp;
+}
+
+static void __rrr_lua_message_push_tag_fixp_convert (
+		rrr_fixp *result,
+		lua_State *L,
+		const char *debug_k
+) {
+	lua_Number n;
+	int isnum;
+
+	n = lua_tonumberx(L, -1, &isnum);
+	if (isnum) {
+		__rrr_lua_message_push_tag_fixp_convert_ld (result, L, n, debug_k);
+	}
+	else {
+		__rrr_lua_message_push_tag_fixp_convert_str (result, L, debug_k);
+	}
+}
+
+static int __rrr_lua_message_push_tag_fixp(lua_State *L) {
+	struct rrr_type_value *value;
+	rrr_length stored_length, element_count;
+
+	WITH_MSG(2,push_tag_fixp,
+		SET_KEY(k);
+
+		__rrr_lua_message_push_tag_64_get_stored_length_and_count(L, &stored_length, &element_count);
+		__rrr_lua_message_push_tag_64_create_value(&value, L, k, stored_length, element_count, &rrr_type_definition_fixp);
+
+		if (element_count == 1) {
+			__rrr_lua_message_push_tag_fixp_convert ((rrr_fixp *) value->data, L, k);
+		}
+		else {
+			for (rrr_length i = 1; i <= element_count; i++) {
+				lua_geti(L, -1, i);
+				__rrr_lua_message_push_tag_fixp_convert ((rrr_fixp *) value->data + (i - 1), L, k);
+				lua_pop(L, 1);
+			}
+		}
+
+		RRR_LL_APPEND(&message->array, value);
+	);
+	
+	return 0;
+}
+
+static void __rrr_lua_message_push_tag_vain(lua_State *L) {
+	WITH_MSG(2,push_tag_vain,
+		SET_KEY(k);
+		if (lua_type(L, -1) == LUA_TTABLE) {
+			luaL_error(L, "Failed to push value in %s, cannot push multiple nil/vain values\n", __func__);
+		}
+		if (rrr_array_push_value_vain_with_tag(&message->array, k) != 0) {
+			luaL_error(L, "Failed to push vain value to array in %s\n",
+				__func__);
+		}
+	);
+}
+
+static int __rrr_lua_message_f_push_tag_h(lua_State *L) {
+	__rrr_lua_message_push_tag_h(L);
 	return 0;
 }
 
 static int __rrr_lua_message_f_push_tag_fixp(lua_State *L) {
-	WITH_MSG(2,push_tag_fixp,
-		SET_KEY(k);
-		lua_Number n;
-		int isnum;
-		const char *str;
-		size_t str_len;
-		const char *endptr;
-		rrr_fixp fixp;
-
-		n = lua_tonumberx(L, -1, &isnum);
-		if (isnum) {
-			__rrr_lua_message_push_ld (message, L, k, n);
-		}
-		else {
-			if ((str = lua_tolstring(L, -1, &str_len)) == NULL) {
-				luaL_error(L, "Failed to push value with key %s to array, value was not convertible to string (type is %s)\n",
-					k, luaL_typename(L, -1));
-			}
-			if (str_len == 0) {
-				luaL_error(L, "Failed to push value with key %s to array, string was empty\n", k);
-			}
-			if (rrr_fixp_str_to_fixp(&fixp, str, rrr_length_from_size_t_bug_const(str_len), &endptr) != 0) {
-				luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array\n", k);
-			}
-			if (endptr != str + str_len) {
-				luaL_error(L, "Failed to convert string to fixed point number while pushing value with key %s to array, string was not fully converted\n", k);
-			}
-			if (rrr_array_push_value_fixp_with_tag(&message->array, k, fixp) != 0) {
-				luaL_error(L, "Failed to push fixp value in %s\n", __func__);
-			}
-		}
-	);
+	__rrr_lua_message_push_tag_fixp(L);
 	return 0;
 }
 
 static int __rrr_lua_message_f_push_tag(lua_State *L) {
+	int type;
+
 	WITH_MSG(2,push_tag,
+		(void)(message);
+
 		SET_KEY(k);
-		switch(lua_type(L, -1)) {
+
+		if (lua_type(L, -1) == LUA_TTABLE) {
+			if (lua_rawlen(L, -1) < 1) {
+				luaL_error(L, "Failed to push value in %s, table was empty\n", __func__);
+			}
+			type = lua_geti(L, -1, 1);
+		}
+		else {
+			type = lua_type(L, -1);
+			lua_pushvalue(L, -1);
+		}
+
+		switch(type) {
 			case LUA_TNIL: {
-				if (rrr_array_push_value_vain_with_tag(&message->array, k) != 0) {
-					luaL_error(L, "Failed to push vain value to array in %s\n",
-						__func__);
-				}
+				lua_pop(L, 1);
+				__rrr_lua_message_push_tag_vain(L);
 			} break;
 			case LUA_TNUMBER: {
 				int isnum = 0;
-				rrr_lua_int i;
-				long double n;
 
 				// Try integer
-				i = lua_tointegerx(L, -1, &isnum);
+				lua_tointegerx(L, -1, &isnum);
 				if (isnum) {
-					__rrr_lua_message_push_integer (message, L, k, i);
+					lua_pop(L, 1);
+					__rrr_lua_message_push_tag_h(L);
 					break;
 				}
 
 				// Try double
-				n = lua_tonumberx(L, -1, &isnum);
+				lua_tonumberx(L, -1, &isnum);
 				if (isnum) {
-					__rrr_lua_message_push_ld (message, L, k, n);
+					lua_pop(L, 1);
+					__rrr_lua_message_push_tag_fixp(L);
 					break;
 				}
-				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n", lua_tostring(L, -2));
+
+				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n", lua_tostring(L, -1));
 			} break;
 			case LUA_TBOOLEAN: {
 				assert(0 && "Blocked, test must be written");
 			} break;
 			case LUA_TSTRING: {
-				const char *v = lua_tostring(L, -1);
-				assert(v != NULL);
-				if (rrr_array_push_value_str_with_tag(&message->array, k, v) != 0) {
-					luaL_error(L, "Failed to push string value in %s\n",
-						__func__);
-				}
+				lua_pop(L, 1);
+				return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
 			} break;
 			case LUA_TTABLE:
 			case LUA_TFUNCTION:
@@ -468,14 +688,14 @@ static int __rrr_lua_message_f_set_tag_blob(lua_State *L) {
 	SET_MSG(2,set_tag_blob);
 	SET_KEY(k);
 	rrr_array_clear_by_tag(&message->array, k);
-	return __rrr_lua_message_f_push_tag_blob(L);
+	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
 }
 
 static int __rrr_lua_message_f_set_tag_str(lua_State *L) {
 	SET_MSG(2,set_tag_str);
 	SET_KEY(k);
 	rrr_array_clear_by_tag(&message->array, k);
-	return __rrr_lua_message_f_push_tag_str(L);
+	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
 }
 
 static int __rrr_lua_message_f_set_tag_h(lua_State *L) {
