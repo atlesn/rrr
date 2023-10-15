@@ -218,7 +218,7 @@ static int __rrr_lua_message_f_clear_tag(lua_State *L) {
 
 // This function is extraction of the inner function below taking blob/str type argument but otherwise being the same
 // It checks if top stack element is table or not
-static int __rrr_lua_message_push_tag_blob_str (
+static void __rrr_lua_message_push_tag_blob_str (
 		lua_State *L,
 		const struct rrr_type_definition *definition
 ) {
@@ -314,15 +314,16 @@ static int __rrr_lua_message_push_tag_blob_str (
 		assert(0 && "Unreachable");
 	out:
 		rrr_string_builder_clear(&acc);
-		return 0;
 }
 
 static int __rrr_lua_message_f_push_tag_blob(lua_State *L) {
-	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
+	__rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
+	return 0;
 }
 
 static int __rrr_lua_message_f_push_tag_str(lua_State *L) {
-	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+	__rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+	return 0;
 }
 
 static void __rrr_lua_message_push_tag_h_convert (
@@ -588,6 +589,33 @@ static int __rrr_lua_message_push_tag_fixp(lua_State *L) {
 	return 0;
 }
 
+static void __rrr_lua_message_push_tag_boolean(lua_State *L) {
+	struct rrr_type_value *value;
+	rrr_length stored_length, element_count;
+
+	WITH_MSG(2,push_tag_boolean,
+		SET_KEY(k);
+
+		// Use h type for storage but convert using toboolean
+
+		__rrr_lua_message_push_tag_64_get_stored_length_and_count(L, &stored_length, &element_count);
+		__rrr_lua_message_push_tag_64_create_value(&value, L, k, stored_length, element_count, &rrr_type_definition_h);
+
+		if (element_count == 1) {
+			*((int64_t *) value->data) = lua_toboolean(L, -1);
+		}
+		else {
+			for (rrr_length i = 1; i <= element_count; i++) {
+				lua_geti(L, -1, i);
+				*((int64_t *) value->data + (i - 1)) = lua_toboolean(L, -1);
+				lua_pop(L, 1);
+			}
+		}
+
+		RRR_LL_APPEND(&message->array, value);
+	);
+}
+
 static void __rrr_lua_message_push_tag_vain(lua_State *L) {
 	WITH_MSG(2,push_tag_vain,
 		SET_KEY(k);
@@ -657,11 +685,12 @@ static int __rrr_lua_message_f_push_tag(lua_State *L) {
 				luaL_error(L, "Failed to convert number '%s' to integer or fixed point while pusing value to array\n", lua_tostring(L, -1));
 			} break;
 			case LUA_TBOOLEAN: {
-				assert(0 && "Blocked, test must be written");
+				lua_pop(L, 1);
+				__rrr_lua_message_push_tag_boolean(L);
 			} break;
 			case LUA_TSTRING: {
 				lua_pop(L, 1);
-				return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+				__rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
 			} break;
 			case LUA_TTABLE:
 			case LUA_TFUNCTION:
@@ -688,14 +717,16 @@ static int __rrr_lua_message_f_set_tag_blob(lua_State *L) {
 	SET_MSG(2,set_tag_blob);
 	SET_KEY(k);
 	rrr_array_clear_by_tag(&message->array, k);
-	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
+	__rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_blob);
+	return 0;
 }
 
 static int __rrr_lua_message_f_set_tag_str(lua_State *L) {
 	SET_MSG(2,set_tag_str);
 	SET_KEY(k);
 	rrr_array_clear_by_tag(&message->array, k);
-	return __rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+	__rrr_lua_message_push_tag_blob_str(L, &rrr_type_definition_str);
+	return 0;
 }
 
 static int __rrr_lua_message_f_set_tag_h(lua_State *L) {
@@ -740,7 +771,7 @@ static void __rrr_lua_message_array_value_to_lua (
 				for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 					int64_t    x = *((int64_t *) (value->data + i));
 					lua_Number n = (lua_Number) x;
-					if (n != x) {
+					if ((int64_t) n != x) {
 						RRR_MSG_0("Warning: Precision loss while converting signed value '%" PRIi64 "' to Lua number. Passing as string instead.\n",
 							x);
 						buf_len = sprintf(buf, "%" PRIi64, x);
@@ -757,7 +788,7 @@ static void __rrr_lua_message_array_value_to_lua (
 				for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 					uint64_t   x = *((uint64_t *) (value->data + i));
 					lua_Number n = (lua_Number) x;
-					if (n != x) {
+					if ((uint64_t) n != x) {
 						RRR_MSG_0("Warning: Precision loss while converting unsigned value '%" PRIu64 "' to Lua number. Passing as string instead.\n",
 							x);
 						buf_len = sprintf(buf, "%" PRIu64, x);

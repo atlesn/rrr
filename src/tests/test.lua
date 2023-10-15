@@ -47,8 +47,6 @@ function verify_defaults()
 	-- str type
 	message:push_tag_str("key", "value1")
 	message:push_tag_str("key", "value2")
-	print("type", type(message:get_tag_all("key")[1]))
-	print("value", message:get_tag_all("key")[1])
 	assert(message:get_tag_all("key")[1] == "value1")
 	assert(message:get_tag_all("key")[2] == "value2")
 	assert(type(message:get_tag_all("key")[1]) == "string")
@@ -153,6 +151,16 @@ function verify_defaults()
 	assert(message:get_tag_all("key")[1] == 2)
 	message:clear_array()
 
+	-- Test push boolean using generic method.
+	-- Bool will be stored as h.
+	message:push_tag("key", true)
+	message:push_tag("key", false)
+	assert(type(message:get_tag_all("key")[1]) == "number")
+	assert(type(message:get_tag_all("key")[2]) == "number")
+	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == 0)
+	message:clear_array()
+
 	-- Test iteration helpers
 	message:push_tag("key1", 1)
 	message:push_tag("", -1)
@@ -223,6 +231,17 @@ function verify_defaults()
 	assert(message:get_position(1)[4] == -4)
 	message:clear_array()
 
+	-- Test pushing h values outside 64 bit signed range and which also
+	-- cannot be held in lua double without loss of precision. It is not
+	-- possible to loose precision for negative vales.
+	message:push_tag_h("key", "18446744073709551615")
+	message:push_tag_h("key", "-9223372036854775808")
+	assert(type(message:get_tag_all("key")[1]) == "string")
+	assert(type(message:get_tag_all("key")[2]) == "number")
+	assert(message:get_tag_all("key")[1] == "18446744073709551615")
+	assert(message:get_tag_all("key")[2] == -9223372036854775808)
+	message:clear_array()
+
 	-- Test push array of fixp's with both generic and specific method and set method
 	message:push_tag_fixp("key", {1.0/3.0, 2.0/3.0, "3.0", "3.14"})
 
@@ -254,6 +273,17 @@ function verify_defaults()
 	assert(message:get_position(1)[2] == "value2")
 	message:clear_array()
 
+	-- Test array of bools. 0 and "" are true in Lua.
+	message:push_tag("key", {true, false, 0, ""})
+	assert(type(message:get_tag_all("key")[1]) == "number")
+	assert(type(message:get_tag_all("key")[2]) == "number")
+	assert(type(message:get_tag_all("key")[3]) == "number")
+	assert(type(message:get_tag_all("key")[4]) == "number")
+	assert(message:get_tag_all("key")[1] == 1)
+	assert(message:get_tag_all("key")[2] == 0)
+	assert(message:get_tag_all("key")[3] == 1)
+	assert(message:get_tag_all("key")[4] == 1)
+	message:clear_array()
 end
 
 function process(message)

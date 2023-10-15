@@ -1500,8 +1500,15 @@ section for descriptions of the following parameters:
 .El
 The Message object, which is used to modify and create RRR messages, has the following functionallity:
 .nf
+-- ------------------------------------------------------------------------------------------
+-- MAIN FIELDS
+-- ------------------------------------------------------------------------------------------
+
 -- Create a new message
 message = RRR.Message.new()
+
+-- Pass the message to reader instances
+message:send()
 
 -- Set IP address parameters
 message:ip_set(ip, port)
@@ -1544,11 +1551,30 @@ message:type = RRR.Message.MSG_CLASS_DATA
 --   RRR.Message.MSG_CLASS_DATA
 --   RRR.Message.MSG_CLASS_ARRAY
 
+-- ------------------------------------------------------------------------------------------
+-- CLEAR ARRAY VALUES
+-- ------------------------------------------------------------------------------------------
+
 -- Remove any array fields, message becomes DATA type
 message:clear_array()
 
 -- Clear any array fields with the given tag
 message:clear_tag("my_tag")
+
+-- ------------------------------------------------------------------------------------------
+-- PUSH AND SET ARRAY VALUES
+-- ------------------------------------------------------------------------------------------
+
+-- All push and set functions accept arrays as well. The first element in the array
+-- will determine the type of the value unless a type specific method is used.
+
+-- Note that if an array is passed to set_tag or push_tag in which the first value
+-- is a boolean, all values in the array will be converted to booleans which means
+-- that all values apart from 'false' and 'nil' will be converted to 'true'.
+
+-- Lua typically only supports 64 bit signed values, while RRR h type may hold 64 bit unsigned.
+-- To push a large unsigned integer which does not fit in a Lua integer, pass the number as a
+-- string to push_tag_h or set_tag_h.
 
 -- Push an array value of string type
 message:push_tag_str("my_tag", "my_value")
@@ -1566,12 +1592,13 @@ message:push_tag_fixp("my_tag", "16#a.cde")
 
 -- Push a value with automatic type detection
 message:push_tag("my_tag", 1)
--- - If the value is a decimal number, it will be converted to fixp
+-- If the value is a decimal number, it will be converted to fixp
 --   unless precision loss occurs, in which case it will be converted to
 --   a string while also printing a warning message
--- - If the value is a number without decimals, it will be converted to h
--- - If the value is a string, it will be converted to str
--- - If the value is a nil, it will be converted to vain
+-- If the value is a number without decimals, it will be converted to h
+-- If the value is a string, it will be converted to str
+-- If the value is a nil, it will be converted to vain
+-- If the value is a boolean, it will be converted to h
 
 -- Set values (same as push functions, but any matching tags are cleared first)
 message:set_tag_str("my_tag", "my_value")
@@ -1579,6 +1606,10 @@ message:set_tag_blob("my_tag", "my_value")
 message:set_tag_h("my_tag", 1)
 message:set_tag_fixp("my_tag", 3.5)
 message:set_tag("my_tag", 1)
+
+-- ------------------------------------------------------------------------------------------
+-- GET ARRAY VALUES
+-- ------------------------------------------------------------------------------------------
 
 -- Retrieve the value at the specified position. Returns a list with one or more values or nil.
 message:get_position(position_number)
@@ -1593,9 +1624,6 @@ message:get_tag_names()
 -- Get the value count at each position of the message. Returns a list with zero or more values.
 -- Always returns the same number of element as count_positions().
 message:get_tag_counts()
-
--- Pass the message to reader instances
-message.send()
 
 .if
 
