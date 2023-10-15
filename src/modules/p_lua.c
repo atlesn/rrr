@@ -157,13 +157,23 @@ int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	(void)(worker);
 
+/*
+        struct rrr_cmodule_worker *worker,                     \
+        const struct rrr_msg_msg *message,                     \
+        const struct rrr_msg_addr *message_addr,               \
+        int is_spawn_ctx,                                      \
+	const char *method,                                    \
+        void *private_arg
+
+*/
 	int ret = 0;
 
 	int ret_tmp;
 	struct lua_child_data *data = private_arg;
 	struct lua_data *parent_data = data->parent_data;
 	const struct rrr_cmodule_config_data *cmodule_config_data = data->cmodule_config_data;
-	const char *function;
+	const char *function = NULL;
+	struct rrr_array array = {0};
 
 	// TODO : Access from cmodule_config_data in child data
 	// cmodule_config_data->config_method
@@ -190,9 +200,58 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 			function = data->cmodule_config_data->process_method;
 		}
 
-		if ((ret = rrr_lua_message_push_new (data->lua)) != 0) {
-			RRR_MSG_0("Failed to create Lua RRR message in %s\n", __func__);
-			goto out;
+		assert(RRR_MSG_ADDR_SIZE_OK(message_addr));
+
+		if (MSG_IS_DATA(message)) {
+			if ((ret = rrr_lua_message_push_new_data (
+					data->lua,
+					message->timestamp,
+					MSG_TYPE(message),
+					MSG_TOPIC_PTR(message),
+					MSG_TOPIC_LENGTH(message),
+					(const struct sockaddr *) message_addr->addr,
+					RRR_MSG_ADDR_GET_ADDR_LEN(message_addr),
+					message_addr->protocol,
+					MSG_DATA_PTR(message),
+					MSG_DATA_LENGTH(message)
+			)) != 0) {
+				RRR_MSG_0("Error pushing data message in %s in Lua instance %s\n",
+					__func__, INSTANCE_D_NAME(parent_data->thread_data));
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			assert(MSG_IS_ARRAY(message));
+
+			uint16_t version;
+			if ((ret = rrr_array_message_append_to_array (
+					&version,
+					&array,
+					message
+			)) != 0) {
+				RRR_MSG_0("Error appending array message in %s in Lua instance %s\n",
+					__func__, INSTANCE_D_NAME(parent_data->thread_data));
+				ret = 1;
+				goto out;
+			}
+
+			if ((ret = rrr_lua_message_push_new_array (
+					data->lua,
+					message->timestamp,
+					MSG_TYPE(message),
+					MSG_TOPIC_PTR(message),
+					MSG_TOPIC_LENGTH(message),
+					(const struct sockaddr *) message_addr->addr,
+					RRR_MSG_ADDR_GET_ADDR_LEN(message_addr),
+					message_addr->protocol,
+					&array
+			)) != 0) {
+				RRR_MSG_0("Error pushing array message in %s in Lua instance %s\n",
+					__func__, INSTANCE_D_NAME(parent_data->thread_data));
+				ret = 1;
+				goto out;
+			}
 		}
 	}
 
@@ -210,6 +269,7 @@ int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	out:
+	rrr_array_clear(&array);
 	return ret;
 
 }

@@ -23,6 +23,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 #include <float.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 #include "lua_message.h"
 #include "lua_common.h"
@@ -41,11 +45,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../cmodule/cmodule_worker.h"
 
 struct rrr_lua_message {
-	struct rrr_lua *lua;
 	int usercount;
 	struct rrr_array array;
-	char ip_addr[128];
-	uint16_t ip_port;
+	struct sockaddr_storage ip_addr;
+	socklen_t ip_addr_len;
 };
 
 static int __rrr_lua_message_new (
@@ -75,6 +78,77 @@ static void __rrr_lua_message_decref (struct rrr_lua_message *message) {
 	assert(message->usercount == 0);
 	rrr_array_clear(&message->array);
 	rrr_free(message);
+}
+
+static int __rrr_lua_message_set_ip_from_str (
+		struct rrr_lua_message *target,
+		const char *ip,
+		rrr_slength port,
+		void (*error_callback)(const char *msg, void *arg),
+		void *error_callback_arg
+) {
+	int ret = 0;
+
+	char err[128];
+	union {
+		struct sockaddr_in in;
+		struct sockaddr_in6 in6;
+	} addr;
+	socklen_t ip_addr_len = 0;
+	const char * const ip_use = *ip != '\0' ? ip : "0.0.0.0";
+
+	memset(&addr, 0, sizeof(addr));
+
+	if (strlen(ip) == 0) {
+		goto write;
+	}
+
+	if (port < 1 || port > 65535) {
+		snprintf(err, sizeof(err), "Failed to set IP in %s, port out of range (%" PRIrrrsl ")\n", __func__, port);
+		error_callback(err, error_callback_arg);
+		ret = 1;
+		goto out;
+	}
+
+	if (strchr(ip_use, ':') != NULL) {
+		// IPv6
+		ip_addr_len = sizeof(addr.in6);
+		addr.in6.sin6_family = AF_INET6;
+		addr.in6.sin6_port = htons(port);
+		if (inet_pton(AF_INET6, ip_use, &addr.in6.sin6_addr) != 1) {
+			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv6 address (%s)\n", __func__, ip_use);
+			error_callback(err, error_callback_arg);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		// IPv4
+		ip_addr_len = sizeof(addr.in);
+		addr.in.sin_family = AF_INET;
+		addr.in.sin_port = htons(port);
+		if (inet_pton(AF_INET, ip_use, &addr.in.sin_addr) != 1) {
+			snprintf(err, sizeof(err), "Failed to set IP in %s, invalid IPv4 address (%s)\n", __func__, ip_use);
+			error_callback(err, error_callback_arg);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	write:
+	memcpy(&target->ip_addr, &addr, ip_addr_len);
+	target->ip_addr_len = ip_addr_len;
+
+	out:
+	return ret;
+}
+
+static void __rrr_lua_message_error_callback (
+		const char *msg,
+		void *arg
+) {
+	lua_State *L = arg;
+	luaL_error(L, "%s", msg);
 }
 
 #define VERIFY_MSG(nargs,func_name)
@@ -156,38 +230,27 @@ static int __rrr_lua_message_f_ip_set(lua_State *L) {
 	WITH_MSG (2,ip_set,
 		const char *ip = lua_tostring(L, -2);
 		rrr_lua_int port = lua_tointeger(L, -1);
-
-		assert(sizeof(message->ip_port) == sizeof(uint16_t));
-
-		if (strlen(ip) > sizeof(message->ip_addr) - 1) {
-			luaL_error(L, "IP address length exceeds maximum (%I>%I)\n",
-				(lua_Integer) strlen(ip), (lua_Integer) sizeof(message->ip_addr) - 1);
-			return 0;
-		}
-
-		strcpy(message->ip_addr, ip);
-
-		if (*ip != '\0') {
-			if (port < 1 || port > 65535) {
-				luaL_error(L, "IP port out of range. Value is %I while valid range is 1-65535\n",
-					(lua_Integer) port);
-				return 0;
-			}
-			message->ip_port = rrr_u16_from_slength_bug_const(port);
-		}
-		else {
-			message->ip_port = 0;
-		}
+		__rrr_lua_message_set_ip_from_str(message, ip, port, __rrr_lua_message_error_callback, L);
 	);
 
 	return 0;
 }
 
 static int __rrr_lua_message_f_ip_get(lua_State *L) {
+	char buf[INET6_ADDRSTRLEN];
+
 	WITH_MSG (0,ip_get,
-		assert(sizeof(message->ip_port) == sizeof(uint16_t));
-		lua_pushstring(L, message->ip_addr);
-		lua_pushinteger(L, message->ip_port);
+		if (message->ip_addr_len == 0) {
+			lua_pushliteral(L, "");
+			lua_pushinteger(L, 0);
+		}
+		else {
+			if (getnameinfo((struct sockaddr *) &message->ip_addr, message->ip_addr_len, buf, sizeof(buf), NULL, 0, NI_NUMERICHOST) != 0) {
+				luaL_error(L, "Failed to get IP in %s, getnameinfo failed\n", __func__);
+			}
+			lua_pushstring(L, buf);
+			lua_pushinteger(L, ntohs(((struct sockaddr_in *) &message->ip_addr)->sin_port));
+		}
 	);
 
 	return 2;
@@ -195,8 +258,8 @@ static int __rrr_lua_message_f_ip_get(lua_State *L) {
 
 static int __rrr_lua_message_f_ip_clear(lua_State *L) {
 	WITH_MSG (0,ip_clear,
-		*message->ip_addr = '\0';
-		message->ip_port = 0;
+		memset(&message->ip_addr, 0, sizeof(message->ip_addr));
+		message->ip_addr_len = 0;
 	);
 
 	return 0;
@@ -1141,8 +1204,79 @@ static int __rrr_lua_message_f_new(lua_State *L) {
 	return 1;
 }
 
-int rrr_lua_message_push_new (
-		struct rrr_lua *target
+static int __rrr_lua_message_set_meta (
+		struct rrr_lua *target,
+		rrr_u64 timestamp,
+		rrr_u8 type,
+		rrr_u8 class,
+		const char *topic,
+		rrr_u16 topic_len,
+		uint8_t protocol
+) {
+	lua_State *L = target->L;
+
+	int ret = 0;
+
+	if (timestamp > INT64_MAX) {
+		RRR_MSG_0("Timestamp exceeds maximum value in message to Lua module (%" PRIu64 ">%" PRIi64 ")\n",
+			timestamp, INT64_MAX);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_ASSERT(sizeof(lua_Integer) >= 8, lua_integer_is_at_least_64_bits);
+
+	lua_pushstring(L, "timestamp");
+	lua_pushinteger(L, (lua_Integer) timestamp);
+	lua_settable(L, -3);
+
+	lua_pushstring(L, "type");
+	lua_pushinteger(L, (lua_Integer) type);
+	lua_settable(L, -3);
+
+	lua_pushstring(L, "class");
+	lua_pushinteger(L, (lua_Integer) class);
+	lua_settable(L, -3);
+
+	if (topic_len > 0) {
+		assert(topic != NULL);
+
+		lua_pushstring(L, "topic");
+		lua_pushlstring(L, topic, topic_len);
+		lua_settable(L, -3);
+	}
+
+	lua_pushstring(L, "ip_so_type");
+	switch (protocol) {
+		case RRR_IP_AUTO:
+			lua_pushliteral(L, "");
+			break;
+		case RRR_IP_UDP:
+			lua_pushliteral(L, "udp");
+			break;
+		case RRR_IP_TCP:
+			lua_pushliteral(L, "tcp");
+			break;
+		default:
+			assert(0 && "Unknown protocol");
+	};
+	lua_settable(L, -3);
+
+	out:
+	return ret;
+}
+
+static int __rrr_lua_message_push_new_populated (
+		struct rrr_lua *target,
+		rrr_u64 timestamp,
+		rrr_u8 type,
+		rrr_u8 class,
+		const char *topic,
+		rrr_length topic_len,
+		const struct sockaddr *ip_addr,
+		socklen_t ip_addr_len,
+		uint8_t protocol,
+		struct rrr_array *array_victim
 ) {
 	int ret = 0;
 
@@ -1158,9 +1292,116 @@ int rrr_lua_message_push_new (
 	results = __rrr_lua_message_construct(target->L, message);
 	assert(results == 1);
 
+	if (ip_addr_len > 0) {
+		assert(ip_addr != NULL);
+		memcpy(&message->ip_addr, ip_addr, ip_addr_len);
+		message->ip_addr_len = ip_addr_len;
+	}
+
+	if ((ret = __rrr_lua_message_set_meta (
+			target,
+			timestamp,
+			type,
+			class,
+			topic,
+			topic_len,
+			protocol
+	)) != 0) {
+		goto out_decref;
+	}
+
+	if (array_victim != NULL) {
+		assert(class == MSG_CLASS_ARRAY);
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&message->array, array_victim);
+	}
+	else {
+		assert(class == MSG_CLASS_DATA);
+	}
+
+	goto out;
+	out_decref:
+		__rrr_lua_message_decref(message);
+	out:
+		return ret;
+}
+
+int rrr_lua_message_push_new (
+		struct rrr_lua *target
+) {
+	return __rrr_lua_message_push_new_populated (
+			target,
+			rrr_time_get_64(),
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			NULL,
+			0,
+			NULL,
+			0,
+			RRR_IP_AUTO,
+			NULL
+	);
+}
+
+int rrr_lua_message_push_new_data (
+		struct rrr_lua *target,
+		rrr_u64 timestamp,
+		rrr_u8 type,
+		const char *topic,
+		rrr_length topic_len,
+		const struct sockaddr *ip_addr,
+		socklen_t ip_addr_len,
+		uint8_t protocol,
+		const char *data,
+		rrr_length data_length
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_lua_message_push_new_populated (
+			target,
+			timestamp,
+			type,
+			MSG_CLASS_DATA,
+			topic,
+			topic_len,
+			ip_addr,
+			ip_addr_len,
+			protocol,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	lua_pushstring(target->L, "data");
+	lua_pushlstring(target->L, data, data_length);
+	lua_settable(target->L, -3);
+
 	out:
 	return ret;
-	
+}
+
+int rrr_lua_message_push_new_array (
+		struct rrr_lua *target,
+		rrr_u64 timestamp,
+		rrr_u8 type,
+		const char *topic,
+		rrr_length topic_len,
+		const struct sockaddr *ip_addr,
+		socklen_t ip_addr_len,
+		uint8_t protocol,
+		struct rrr_array *array_victim
+) {
+	return __rrr_lua_message_push_new_populated (
+			target,
+			timestamp,
+			type,
+			MSG_CLASS_ARRAY,
+			topic,
+			topic_len,
+			ip_addr,
+			ip_addr_len,
+			protocol,
+			array_victim
+	);
 }
 
 void rrr_lua_message_library_register (
