@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_lua {
 	lua_State *L;
+	int precision_loss_warnings;
 };
 
 #endif /* RRR_LUA_HEADERS_H */

@@ -57,6 +57,7 @@ struct lua_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	char *lua_file;
+	int do_precision_loss_warnings;
 };
 
 int data_init (
@@ -80,13 +81,13 @@ void data_cleanup(void *arg) {
 int parse_config(struct lua_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	ret = rrr_instance_config_get_string_noconvert_silent (&data->lua_file, config, "lua_file");
-
-	if (ret != 0) {
+	if (rrr_instance_config_get_string_noconvert_silent (&data->lua_file, config, "lua_file") != 0) {
 		RRR_MSG_0("No lua_file specified for Lua instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("lua_precision_loss_warnings", do_precision_loss_warnings, 1 /* Defaults to yes */);
 
 	out:
 	return ret;
@@ -289,6 +290,7 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out;
 	}
 
+	rrr_lua_set_precision_loss_warnings(lua, data->do_precision_loss_warnings);
 	rrr_lua_message_library_register(lua);
 	rrr_lua_cmodule_library_register(lua, worker);
 
@@ -347,6 +349,7 @@ static int lua_fork (void *arg) {
 		ret = 1;
 		goto out;
 	}
+
 	if (rrr_cmodule_helper_parse_config(thread_data, "lua", "function") != 0) {
 		ret = 1;
 		goto out;

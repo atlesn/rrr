@@ -1482,6 +1482,9 @@ The function to call regularely.
 .It lua_process_function=NAME
 The function to call when a message from another module should be processed.
 
+.It lua_precision_loss_warnings={yes|no}
+If set to yes or left unset, warnings will be printed if precision loss occurs when converting numbers to fixed point.
+
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the Lua script may be set as needed.
 .El

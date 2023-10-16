@@ -30,7 +30,10 @@ struct rrr_lua;
 
 int rrr_lua_new(struct rrr_lua **result);
 void rrr_lua_destroy(struct rrr_lua *lua);
-
+void rrr_lua_set_precision_loss_warnings (
+		struct rrr_lua *lua,
+		int enable
+);
 int rrr_lua_execute_snippet (
 		struct rrr_lua *lua,
 		const char *snippet,

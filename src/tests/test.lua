@@ -11,14 +11,14 @@ function verify_defaults()
 	assert (type(getmetatable(RRR)._rrr_cmodule) == "userdata")
 
 	-- iterate and print keys and values of RRR
-	for k, v in pairs(RRR) do
-		print (k .. " =>", v)
-	end
+	--for k, v in pairs(RRR) do
+	--	print (k .. " =>", v)
+	--end
 
 	-- iterate and print keys and values of RRR metatable
-	for k, v in pairs(getmetatable(RRR)) do
-		print (k .. " =>", v)
-	end
+	--for k, v in pairs(getmetatable(RRR)) do
+	--	print (k .. " =>", v)
+	--end
 
 	-- IP parameters
 	message:ip_set("1.2.3.4", 5)
@@ -301,10 +301,10 @@ function verify_defaults()
 end
 
 function process(message)
-	print("type", type(message))
-	for k, v in pairs(message) do
-		print (k .. " =>", v)
-	end
+	--print("type", type(message))
+	--for k, v in pairs(message) do
+	--	print (k .. " =>", v)
+	--end
 
 	verify_defaults()
 

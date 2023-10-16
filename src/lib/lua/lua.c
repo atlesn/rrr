@@ -119,6 +119,13 @@ static void __rrr_lua_error_with_location (
 	va_end(argp);
 }
 
+void rrr_lua_set_precision_loss_warnings (
+		struct rrr_lua *lua,
+		int enable
+) {
+	lua->precision_loss_warnings = enable;
+}
+
 int rrr_lua_execute_snippet (
 		struct rrr_lua *lua,
 		const char *snippet,

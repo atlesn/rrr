@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../cmodule/cmodule_worker.h"
 
 struct rrr_lua_message {
+	const struct rrr_lua *lua;
 	int usercount;
 	struct rrr_array array;
 	struct sockaddr_storage ip_addr;
@@ -52,7 +53,8 @@ struct rrr_lua_message {
 };
 
 static int __rrr_lua_message_new (
-		struct rrr_lua_message **result
+		struct rrr_lua_message **result,
+		const struct rrr_lua *lua
 ) {
 	int ret = 0;
 
@@ -64,6 +66,7 @@ static int __rrr_lua_message_new (
 		goto out;
 	}
 
+	message->lua = lua;
 	message->usercount = 1;
 
 	*result = message;
@@ -556,7 +559,8 @@ static void __rrr_lua_message_push_tag_fixp_convert_ld (
 		rrr_fixp *result,
 		lua_State *L,
 		long double n,
-		const char *debug_k
+		const char *debug_k,
+		int precision_loss_warnings
 ) {
 	rrr_fixp fixp;
 	long double n_test;
@@ -571,7 +575,7 @@ static void __rrr_lua_message_push_tag_fixp_convert_ld (
 			lua_tostring(L, -2));
 	}
 
-	if (n_test != n) {
+	if (precision_loss_warnings && n_test != n) {
 		RRR_MSG_0("Warning: Precision loss while converting lua Number '%Lf' to fixed point " \
 		          "while pushing array value with key '%s'. Consider passing as string instead.\n",
 			n, debug_k);
@@ -610,14 +614,15 @@ static void __rrr_lua_message_push_tag_fixp_convert_str (
 static void __rrr_lua_message_push_tag_fixp_convert (
 		rrr_fixp *result,
 		lua_State *L,
-		const char *debug_k
+		const char *debug_k,
+		int precision_loss_warnings
 ) {
 	lua_Number n;
 	int isnum;
 
 	n = lua_tonumberx(L, -1, &isnum);
 	if (isnum) {
-		__rrr_lua_message_push_tag_fixp_convert_ld (result, L, n, debug_k);
+		__rrr_lua_message_push_tag_fixp_convert_ld (result, L, n, debug_k, precision_loss_warnings);
 	}
 	else {
 		__rrr_lua_message_push_tag_fixp_convert_str (result, L, debug_k);
@@ -635,12 +640,22 @@ static int __rrr_lua_message_push_tag_fixp(lua_State *L) {
 		__rrr_lua_message_push_tag_64_create_value(&value, L, k, stored_length, element_count, &rrr_type_definition_fixp);
 
 		if (element_count == 1) {
-			__rrr_lua_message_push_tag_fixp_convert ((rrr_fixp *) value->data, L, k);
+			__rrr_lua_message_push_tag_fixp_convert (
+					(rrr_fixp *) value->data,
+					L,
+					k,
+					message->lua->precision_loss_warnings
+			);
 		}
 		else {
 			for (rrr_length i = 1; i <= element_count; i++) {
 				lua_geti(L, -1, i);
-				__rrr_lua_message_push_tag_fixp_convert ((rrr_fixp *) value->data + (i - 1), L, k);
+				__rrr_lua_message_push_tag_fixp_convert (
+						(rrr_fixp *) value->data + (i - 1),
+						L,
+						k,
+						message->lua->precision_loss_warnings
+				);
 				lua_pop(L, 1);
 			}
 		}
@@ -808,7 +823,8 @@ static int __rrr_lua_message_f_set_tag_fixp(lua_State *L) {
 static void __rrr_lua_message_array_value_to_lua (
 		lua_State *L,
 		const struct rrr_type_value *value,
-		int *wpos
+		int *wpos,
+		int precision_loss_warnings
 ) {
 	char buf[128];
 	int buf_len;
@@ -834,8 +850,10 @@ static void __rrr_lua_message_array_value_to_lua (
 					int64_t    x = *((int64_t *) (value->data + i));
 					lua_Number n = (lua_Number) x;
 					if ((int64_t) n != x) {
-						RRR_MSG_0("Warning: Precision loss while converting signed value '%" PRIi64 "' to Lua number. Passing as string instead.\n",
-							x);
+						if (precision_loss_warnings) {
+							RRR_MSG_0("Warning: Precision loss while converting signed value '%" PRIi64 "' to Lua number. Passing as string instead.\n",
+								x);
+						}
 						buf_len = sprintf(buf, "%" PRIi64, x);
 						lua_pushlstring(L, buf, (size_t) buf_len);
 						lua_seti(L, -2, (*wpos)++);
@@ -851,8 +869,10 @@ static void __rrr_lua_message_array_value_to_lua (
 					uint64_t   x = *((uint64_t *) (value->data + i));
 					lua_Number n = (lua_Number) x;
 					if ((uint64_t) n != x) {
-						RRR_MSG_0("Warning: Precision loss while converting unsigned value '%" PRIu64 "' to Lua number. Passing as string instead.\n",
-							x);
+						if (precision_loss_warnings) {
+							RRR_MSG_0("Warning: Precision loss while converting unsigned value '%" PRIu64 "' to Lua number. Passing as string instead.\n",
+								x);
+						}
 						buf_len = sprintf(buf, "%" PRIu64, x);
 						lua_pushlstring(L, buf, (size_t) buf_len);
 						lua_seti(L, -2, (*wpos)++);
@@ -876,7 +896,9 @@ static void __rrr_lua_message_array_value_to_lua (
 					luaL_error(L, "Failed to convert Lua number to fixed point number while pushing value to array\n");
 				}
 				if (fixp_test != fixp) {
-					RRR_MSG_0("Warning: Precision loss while converting fixed point value to Lua number. Passing as string instead.\n");
+					if (precision_loss_warnings) {
+						RRR_MSG_0("Warning: Precision loss while converting fixed point value to Lua number. Passing as string instead.\n");
+					}
 					buf_len = sprintf(buf, "%Lf", (long double) number);
 					lua_pushlstring(L, buf, (size_t) buf_len);
 					lua_seti(L, -2, (*wpos)++);
@@ -915,7 +937,12 @@ static int __rrr_lua_message_f_get_tag_all(lua_State *L) {
 			if (!rrr_type_value_is_tag(node, key)) {
 				RRR_LL_ITERATE_NEXT();
 			}
-			__rrr_lua_message_array_value_to_lua(L, node, &wpos);
+			__rrr_lua_message_array_value_to_lua(
+					L,
+					node,
+					&wpos,
+					message->lua->precision_loss_warnings
+			);
 		RRR_LL_ITERATE_END();
 	);
 
@@ -947,7 +974,12 @@ static int __rrr_lua_message_f_get_position(lua_State *L) {
 		int i = 0;
 		RRR_LL_ITERATE_BEGIN(&message->array, struct rrr_type_value);
 			if (i == pos) {
-				__rrr_lua_message_array_value_to_lua(L, node, &wpos);
+				__rrr_lua_message_array_value_to_lua (
+						L,
+						node,
+						&wpos,
+						message->lua->precision_loss_warnings
+				);
 				RRR_LL_ITERATE_BREAK();
 			}
 			i++;
@@ -1189,13 +1221,14 @@ static int __rrr_lua_message_construct (
 static int __rrr_lua_message_f_new(lua_State *L) {
 	int results = 0;
 
-	struct rrr_lua_message *message;
+	struct rrr_lua_message *message = NULL;
 
-	if (__rrr_lua_message_new(&message) != 0) {
-		luaL_error(L, "Failed to create internal message in %s\n",
-			__func__);
-		return 0;
-	}
+	WITH_LUA(
+		if (__rrr_lua_message_new(&message, lua) != 0) {
+			luaL_error(L, "Failed to create internal message in %s\n",
+				__func__);
+		}
+	);
 
 	results = __rrr_lua_message_construct(L, message);
 	assert(results == 1);
@@ -1282,7 +1315,7 @@ static int __rrr_lua_message_push_new_populated (
 	struct rrr_lua_message *message;
 	int results = 0;
 
-	if ((ret = __rrr_lua_message_new(&message)) != 0) {
+	if ((ret = __rrr_lua_message_new(&message, target)) != 0) {
 		RRR_MSG_0("Failed to create internal message in %s\n",
 			__func__);
 		goto out;
