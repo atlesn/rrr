@@ -1473,6 +1473,8 @@ If multiple workers are used by setting the parameter
 .B lua_workers,
 the script will run once for each worker and global variables will not be accessible between different workers.
 
+The functions must return a boolean value where true indicates success and false indicates failure.
+
 .It lua_config_function=NAME
 The function to call before sourcing and processing starts.
 
@@ -1682,7 +1684,7 @@ function config(config)
 	for _, key in ipairs({"param_a", "param_b", "param_c"}) do
 		if not config:has(key) then
 			debug:msg(0, "Configuration parameter '" .. key .. "' was not found")
-			assert(false)
+			return false
 		end
 		my_config[key] = config:get(key)
 	end
@@ -1692,6 +1694,8 @@ function config(config)
 
 	-- Retrieve a custom setting
 	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting"))
+
+	return true
 end
 
 -- Process function
@@ -1720,6 +1724,8 @@ function process(message, method)
 
 	-- Pass on the modified message
 	message:send()
+
+	return true
 end
 
 -- Source function
@@ -1731,6 +1737,8 @@ function source(message)
 
 	-- Pass on the new message
 	message:send()
+
+	return true
 end
 
 

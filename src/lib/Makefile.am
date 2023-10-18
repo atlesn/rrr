@@ -46,6 +46,7 @@ if RRR_WITH_LUA
 libadd_lua = librrrlua.la
 librrrlua_la_SOURCES = lua/lua.c \
                        lua/lua_message.c \
+		       lua/lua_config.c \
 		       lua/lua_cmodule.c
 librrrlua_la_CFLAGS = ${LUA_CFLAGS} ${AM_CFLAGS}
 librrrlua_la_LDFLAGS = ${LUA_LDFLAGS}

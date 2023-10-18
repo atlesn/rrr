@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LUA_HEADERS_H
 #define RRR_LUA_HEADERS_H
 
+#include "../util/macro_utils.h"
+
 #if defined(HAVE_LUA5_4_LUA_H)
 #  include <lua5.4/lua.h>
 #  include <lua5.4/lauxlib.h>
@@ -50,6 +52,48 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Keys in instantiated message object
 #define RRR_LUA_META_KEY_RRR_MESSAGE "_rrr_message"
+
+// Keys in instantiated config object
+#define RRR_LUA_META_KEY_RRR_CONFIG "_rrr_config"
+
+// Get first string argument to a function
+#define RRR_LUA_SET_KEY(k,nargs)                               \
+  const char *k = lua_tostring(L, -nargs);                     \
+  do {if (k == NULL) {                                         \
+    luaL_error(L, "Failed in function %s, key was not convertible to string (type is %s)\n", \
+        __func__, luaL_typename(L, -nargs));                   \
+  }} while (0)
+
+// Helper macros to set self in functions
+#define RRR_LUA_SET_SELF(obj,meta_key,nargs,func_name)         \
+  struct RRR_PASTE(rrr_lua_,obj) *obj;                         \
+  {int test; if ((test = lua_getmetatable(L, -1 - nargs)) != 1) { \
+    luaL_error(L, "Possible incorrect number of arguments to function " #func_name ", verify that the number of arguments is " #nargs " and that : is used when calling.\n"); \
+  }}                                                           \
+  lua_pushliteral(L, meta_key);                                \
+  lua_gettable(L, -2);                                         \
+  if (lua_type(L, -1) != LUA_TLIGHTUSERDATA) {                 \
+    luaL_error(L, "Userdata " #meta_key " not found in metatable while calling " #func_name "\n"); \
+  }                                                            \
+  obj = lua_touserdata(L, -1);                                 \
+  lua_pop(L, 2);                                               \
+
+#define RRR_LUA_WITH_SELF(obj,meta_key,nargs,func_name,code)   \
+  do {RRR_LUA_SET_SELF(obj,meta_key,nargs,func_name);          \
+  code                                                         \
+  } while(0)
+
+#define RRR_LUA_WITH_SELF_META(obj,meta_key,code)              \
+  do {int test; struct RRR_PASTE(rrr_lua_,obj) *obj;           \
+  test = lua_getmetatable(L, -1);                              \
+  assert(test == 1);                                           \
+  lua_pushliteral(L, meta_key);                                \
+  lua_gettable(L, -2);                                         \
+  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
+  obj = lua_touserdata(L, -1);                                 \
+  lua_pop(L, 2);                                               \
+  code                                                         \
+  } while(0)
 
 struct rrr_lua {
 	lua_State *L;

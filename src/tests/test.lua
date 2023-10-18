@@ -1,6 +1,20 @@
-function config()
-	-- TODO : Test config stuff
-	return true
+function config(config)
+	-- Read configuration parameters and store them in the config table
+	for _, k in pairs({"lua_param_a", "lua_param_b", "lua_param_c"}) do
+		print("key is: " .. k .. " and type of key is: " .. type(k))
+		local value = config:get(k)
+		if value == nil then
+			debug:msg(0, "Configuration parameter '" .. k .. "' was not found")
+			assert(false)
+		end
+		my_config[key] = value;
+	end
+
+	-- Set a custom setting
+	config:set("my_custom_setting", "5")
+
+	-- Retrieve a custom setting
+	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting"))
 end
 
 function verify_defaults()

@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "../lib/lua/lua.h"
+#include "../lib/lua/lua_config.h"
 #include "../lib/lua/lua_message.h"
 #include "../lib/lua/lua_cmodule.h"
 
@@ -142,13 +143,21 @@ int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	int ret_tmp;
 
-	if (method != NULL && *method != '\0') {
-		if ((ret_tmp = rrr_lua_call(data->lua, method, 0)) != 0) {
-			RRR_MSG_0("Error %i returned from Lua config function %s in Lua instance %s\n",
-				ret_tmp, method, INSTANCE_D_NAME(parent_data->thread_data));
-			ret = 1;
-			goto out;
-		}
+	if (method == NULL || *method == '\0')
+		goto out;
+
+	if ((ret = rrr_lua_config_push_new (data->lua, INSTANCE_D_CONFIG(parent_data->thread_data))) != 0) {
+		RRR_MSG_0("Error pushing config in %s in Lua instance %s\n",
+			__func__, INSTANCE_D_NAME(parent_data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret_tmp = rrr_lua_call(data->lua, method, 1)) != 0) {
+		RRR_MSG_0("Error %i returned from Lua config function %s in Lua instance %s\n",
+			ret_tmp, method, INSTANCE_D_NAME(parent_data->thread_data));
+		ret = 1;
+		goto out;
 	}
 	
 	out:
@@ -158,15 +167,6 @@ int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	(void)(worker);
 
-/*
-        struct rrr_cmodule_worker *worker,                     \
-        const struct rrr_msg_msg *message,                     \
-        const struct rrr_msg_addr *message_addr,               \
-        int is_spawn_ctx,                                      \
-	const char *method,                                    \
-        void *private_arg
-
-*/
 	int ret = 0;
 
 	int ret_tmp;
