@@ -660,7 +660,7 @@ static int __rrr_discern_stack_execute (
 	for (rrr_length i = 0; i < list->wpos; i++) {
 		if (wpos == stack.size) {
 			struct rrr_discern_stack_value *stack_e_new;
-			if ((stack_e_new = rrr_reallocate(stack_e, stack.size, stack.size + 8)) == NULL) {
+			if ((stack_e_new = rrr_reallocate(stack_e, sizeof(*stack_e) * stack.size, sizeof(*stack_e) * (stack.size + 8))) == NULL) {
 				RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 				ret = 1;
 				goto out;
