@@ -94,13 +94,11 @@ struct rrr_discern_stack_list {
 struct rrr_discern_stack_value_list {
 	rrr_length data_pos;
 	rrr_length size;
-	rrr_length wpos;
 };
 
 struct rrr_discern_stack {
 	RRR_LL_NODE(struct rrr_discern_stack);
 	struct rrr_discern_stack_list exe_list;
-	struct rrr_discern_stack_value_list exe_stack;
 	struct rrr_discern_stack_storage exe_storage;
 	char *name;
 };
@@ -235,36 +233,6 @@ static int __rrr_discern_stack_data_expand (
 	return ret;
 }
 
-static int __rrr_discern_stack_value_list_expand (
-		struct rrr_discern_stack_value_list *list,
-		struct rrr_discern_stack_storage *storage,
-		rrr_length expand_size
-) {
-	struct rrr_discern_stack_value *elements = storage->data + list->data_pos;
-
-	int ret = 0;
-
-	rrr_length size_tmp = list->size;
-	rrr_length data_pos_tmp = list->data_pos;
-
-	if ((ret = __rrr_discern_stack_data_expand (
-			(void **) &elements,
-			&size_tmp,
-			&data_pos_tmp,
-			storage,
-			expand_size,
-			sizeof(*elements)
-	)) != 0) {
-		goto out;
-	}
-
-	list->size = size_tmp;
-	list->data_pos = data_pos_tmp;
-
-	out:
-	return ret;
-}
-
 static int __rrr_discern_stack_list_expand (
 		struct rrr_discern_stack_list *list,
 		struct rrr_discern_stack_storage *storage,
@@ -392,7 +360,6 @@ static int __rrr_discern_stack_add_from (
 	memcpy(target->exe_storage.data, source->exe_storage.data, source->exe_storage.capacity);
 
 	target->exe_list = source->exe_list;
-	target->exe_stack = source->exe_stack;
 
 	out:
 	return ret;
@@ -671,10 +638,12 @@ static int __rrr_discern_stack_execute (
 ) {
 	const struct rrr_discern_stack_list *list = &discern_stack->exe_list;
 	struct rrr_discern_stack_storage *list_storage = &discern_stack->exe_storage;
-	struct rrr_discern_stack_value_list *stack = &discern_stack->exe_stack;
-	struct rrr_discern_stack_value *stack_e = list_storage->data + stack->data_pos;
 
 	int ret = 0;
+
+	struct rrr_discern_stack_value_list stack = {0};
+	struct rrr_discern_stack_value *stack_e = NULL;
+	rrr_length wpos = 0;
 
 	int (*const apply_cbs[2])(RRR_DISCERN_STACK_APPLY_CB_ARGS) = {
 		callbacks->apply_cb_false ? callbacks->apply_cb_false : __rrr_discern_stack_execute_apply_cb_dummy,
@@ -689,15 +658,15 @@ static int __rrr_discern_stack_execute (
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
 	for (rrr_length i = 0; i < list->wpos; i++) {
-		if (stack->wpos == stack->size) {
-			if ((ret = __rrr_discern_stack_value_list_expand (
-					stack,
-					list_storage,
-					8
-			)) != 0) {
+		if (wpos == stack.size) {
+			struct rrr_discern_stack_value *stack_e_new;
+			if ((stack_e_new = rrr_reallocate(stack_e, sizeof(*stack_e) * stack.size, sizeof(*stack_e) * (stack.size + 8))) == NULL) {
+				RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+				ret = 1;
 				goto out;
 			}
-			stack_e = list_storage->data + stack->data_pos;
+			stack.size += 8;
+			stack_e = stack_e_new;
 		}
 
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
@@ -707,7 +676,7 @@ static int __rrr_discern_stack_execute (
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
 						if ((ret = callbacks->resolve_topic_filter_cb (
-								&(stack_e[stack->wpos++].value),
+								&stack_e[wpos++].value,
 								list_storage->data + node->value.data_pos,
 								node->value.data_size,
 								callbacks->resolve_cb_arg
@@ -728,7 +697,7 @@ static int __rrr_discern_stack_execute (
 						}
 
 						if (!index_result) {
-							stack_e[stack->wpos++].value = 0;
+							stack_e[wpos++].value = 0;
 							break;
 						}
 
@@ -736,7 +705,7 @@ static int __rrr_discern_stack_execute (
 						// H array tag check without calling the callback. The callback
 						// may set the index one time during an execution session.
 						if ((ret = callbacks->resolve_array_tag_cb (
-								&stack_e[stack->wpos++].value,
+								&stack_e[wpos++].value,
 								&index_tmp,
 								&index_tmp_size,
 								list_storage->data + node->value.data_pos,
@@ -746,42 +715,42 @@ static int __rrr_discern_stack_execute (
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack_e[stack->wpos++].value = 1;
+						stack_e[wpos++].value = 1;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
-						stack_e[stack->wpos++] = node->value;
+						stack_e[wpos++] = node->value;
 						break;
 					default:
 						assert(0);
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value &&
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value &&
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value ||
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value ||
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
-				if ((ret = apply_cbs[stack_e[stack->wpos - 2].value & 1](list_storage->data + stack_e[stack->wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
+				if ((ret = apply_cbs[stack_e[wpos - 2].value & 1](list_storage->data + stack_e[wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
 				}
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_NOT:
-				stack_e[stack->wpos - 1].value = !stack_e[stack->wpos - 1].value;
+				stack_e[wpos - 1].value = !stack_e[wpos - 1].value;
 				break;
 			case RRR_DISCERN_STACK_OP_POP:
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_BAIL:
-				if (stack_e[stack->wpos - 1].value) {
+				if (stack_e[wpos - 1].value) {
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
 				}
@@ -791,8 +760,11 @@ static int __rrr_discern_stack_execute (
 		}
 	}
 
+	assert(wpos == 0);
+
 	out:
 	RRR_FREE_IF_NOT_NULL(index_tmp);
+	RRR_FREE_IF_NOT_NULL(stack_e);
 	return ret;
 }
 

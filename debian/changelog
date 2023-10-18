@@ -1,3 +1,9 @@
+rrr (1.28-20posten12) bookworm; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Tue, 26 Sep 2023 11:07:03 +0200
+
 rrr (1.28-20) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
@@ -32,6 +38,7 @@ rrr (1.28-20) bullseye; urgency=medium
       allowing messages content to be identified before being processed. The
       processor function receives a method name.
     * Support PATCH requests in httpclient and httpserver
+    * New function console.assert in JS
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
