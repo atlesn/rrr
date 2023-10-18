@@ -94,13 +94,11 @@ struct rrr_discern_stack_list {
 struct rrr_discern_stack_value_list {
 	rrr_length data_pos;
 	rrr_length size;
-	rrr_length sentinel;
 };
 
 struct rrr_discern_stack {
 	RRR_LL_NODE(struct rrr_discern_stack);
 	struct rrr_discern_stack_list exe_list;
-	struct rrr_discern_stack_value_list exe_stack;
 	struct rrr_discern_stack_storage exe_storage;
 	char *name;
 };
@@ -235,36 +233,6 @@ static int __rrr_discern_stack_data_expand (
 	return ret;
 }
 
-static int __rrr_discern_stack_value_list_expand (
-		struct rrr_discern_stack_value_list *list,
-		struct rrr_discern_stack_storage *storage,
-		rrr_length expand_size
-) {
-	struct rrr_discern_stack_value *elements = storage->data + list->data_pos;
-
-	int ret = 0;
-
-	rrr_length size_tmp = list->size;
-	rrr_length data_pos_tmp = list->data_pos;
-
-	if ((ret = __rrr_discern_stack_data_expand (
-			(void **) &elements,
-			&size_tmp,
-			&data_pos_tmp,
-			storage,
-			expand_size,
-			sizeof(*elements)
-	)) != 0) {
-		goto out;
-	}
-
-	list->size = size_tmp;
-	list->data_pos = data_pos_tmp;
-
-	out:
-	return ret;
-}
-
 static int __rrr_discern_stack_list_expand (
 		struct rrr_discern_stack_list *list,
 		struct rrr_discern_stack_storage *storage,
@@ -392,7 +360,6 @@ static int __rrr_discern_stack_add_from (
 	memcpy(target->exe_storage.data, source->exe_storage.data, source->exe_storage.capacity);
 
 	target->exe_list = source->exe_list;
-	target->exe_stack = source->exe_stack;
 
 	out:
 	return ret;
@@ -419,8 +386,6 @@ static int __rrr_discern_stack_new (
 		ret = 1;
 		goto out_free;
 	}
-
-	discern_stack->exe_stack.sentinel = 0xdeadbeef;
 
 	*result = discern_stack;
 	discern_stack = NULL;
@@ -673,10 +638,12 @@ static int __rrr_discern_stack_execute (
 ) {
 	const struct rrr_discern_stack_list *list = &discern_stack->exe_list;
 	struct rrr_discern_stack_storage *list_storage = &discern_stack->exe_storage;
-	struct rrr_discern_stack_value_list *stack = &discern_stack->exe_stack;
-	struct rrr_discern_stack_value *stack_e = list_storage->data + stack->data_pos;
 
 	int ret = 0;
+
+	struct rrr_discern_stack_value_list stack = {0};
+	struct rrr_discern_stack_value *stack_e = NULL;
+	rrr_length wpos = 0;
 
 	int (*const apply_cbs[2])(RRR_DISCERN_STACK_APPLY_CB_ARGS) = {
 		callbacks->apply_cb_false ? callbacks->apply_cb_false : __rrr_discern_stack_execute_apply_cb_dummy,
@@ -690,22 +657,16 @@ static int __rrr_discern_stack_execute (
 
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
-	// When wpos was inside the struct, it could sometimes be zero
-	// and non-zero at the same time. ????
-	rrr_length wpos = 0;
-
-	assert(stack->sentinel == 0xdeadbeef);
-
 	for (rrr_length i = 0; i < list->wpos; i++) {
-		if (wpos == stack->size) {
-			if ((ret = __rrr_discern_stack_value_list_expand (
-					stack,
-					list_storage,
-					8
-			)) != 0) {
+		if (wpos == stack.size) {
+			struct rrr_discern_stack_value *stack_e_new;
+			if ((stack_e_new = rrr_reallocate(stack_e, stack.size, stack.size + 8)) == NULL) {
+				RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+				ret = 1;
 				goto out;
 			}
-			stack_e = list_storage->data + stack->data_pos;
+			stack.size += 8;
+			stack_e = stack_e_new;
 		}
 
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
@@ -803,6 +764,7 @@ static int __rrr_discern_stack_execute (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(index_tmp);
+	RRR_FREE_IF_NOT_NULL(stack_e);
 	return ret;
 }
 
