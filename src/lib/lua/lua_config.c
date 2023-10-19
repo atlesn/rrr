@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../instance_config.h"
 
 struct rrr_lua_config {
 	const struct rrr_lua *lua;
@@ -78,8 +79,12 @@ static int __rrr_lua_config_f_finalize(lua_State *L) {
 
 static int __rrr_lua_config_f_set(lua_State *L) {
 	WITH_CONFIG (2,set,
-		RRR_LUA_SET_KEY(key,2);
-		assert(0 && "Not implemented");
+		RRR_LUA_SET_STR(key,2);
+		RRR_LUA_SET_STR(value,1);
+
+		if (rrr_instance_config_replace_string(config->config, key, value) != 0) {
+			luaL_error(L, "Failed to set config value\n");
+		}
 	);
 
 	return 0;
@@ -87,8 +92,23 @@ static int __rrr_lua_config_f_set(lua_State *L) {
 
 static int __rrr_lua_config_f_get(lua_State *L) {
 	WITH_CONFIG (1,get,
-		RRR_LUA_SET_KEY(key,1);
-		assert(0 && "Not implemented");
+		char *str;
+		int ret_tmp;
+		RRR_LUA_SET_STR(key,1);
+		if (!rrr_instance_config_setting_exists(config->config, key)) {
+			lua_pushnil(L);
+			return 1;
+		}
+		if ((ret_tmp = rrr_instance_config_get_string_noconvert (
+				&str,
+				config->config,
+				key
+		)) != 0) {
+			luaL_error(L, "Failed to get config value, return was %d\n",
+				(lua_Integer) ret_tmp);
+		}
+		lua_pushstring(L, str);
+		rrr_free(str);
 	);
 
 	return 1;

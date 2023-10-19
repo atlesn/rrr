@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/lua/lua_config.h"
 #include "../lib/lua/lua_message.h"
 #include "../lib/lua/lua_cmodule.h"
+#include "../lib/lua/lua_debug.h"
 
 #include "../lib/log.h"
 #include "../lib/allocator.h"
@@ -293,6 +294,7 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	rrr_lua_set_precision_loss_warnings(lua, data->do_precision_loss_warnings);
 	rrr_lua_message_library_register(lua);
 	rrr_lua_cmodule_library_register(lua, worker);
+	rrr_lua_debug_library_register(lua);
 
 	if ((ret = rrr_readfile_read(&script, &script_size, data->lua_file, 0, 0 /* Enoent not ok */)) != 0) {
 		RRR_MSG_0("Error reading Lua script file %s in Lua instance %s\n",

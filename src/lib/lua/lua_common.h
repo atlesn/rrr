@@ -45,22 +45,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Keys in table of RRR global object
 #define RRR_LUA_KEY_MESSAGE      "Message"
+#define RRR_LUA_KEY_DEBUG        "Debug"
 
 // Keys in metatable of RRR global object
 #define RRR_LUA_META_KEY_LUA     "_rrr_lua"
 #define RRR_LUA_META_KEY_CMODULE "_rrr_cmodule"
 
-// Keys in instantiated message object
+// Keys in instantiated objects
 #define RRR_LUA_META_KEY_RRR_MESSAGE "_rrr_message"
-
-// Keys in instantiated config object
 #define RRR_LUA_META_KEY_RRR_CONFIG "_rrr_config"
+#define RRR_LUA_META_KEY_RRR_DEBUG "_rrr_debug"
 
-// Get first string argument to a function
-#define RRR_LUA_SET_KEY(k,nargs)                               \
+// Set global Lua object
+#define RRR_WITH_LUA_GLOBAL(code)                              \
+  do{struct rrr_lua *lua;do{                                   \
+  lua_getglobal(L, RRR_LUA_KEY);                               \
+  assert(lua_type(L, -1) == LUA_TTABLE);                       \
+  lua_getmetatable(L, -1);                                     \
+  assert(lua_type(L, -1) == LUA_TTABLE);                       \
+  lua_getfield(L, -1, RRR_LUA_META_KEY_LUA);                   \
+  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
+  lua = lua_touserdata(L, -1);                                 \
+  lua_pop(L, 3);} while(0); code } while(0)
+
+// Get string argument to a function
+#define RRR_LUA_SET_STR(k,nargs)                               \
   const char *k = lua_tostring(L, -nargs);                     \
   do {if (k == NULL) {                                         \
-    luaL_error(L, "Failed in function %s, key was not convertible to string (type is %s)\n", \
+    luaL_error(L, "Failed in function %s, argument was not convertible to string (type is %s)\n", \
         __func__, luaL_typename(L, -nargs));                   \
   }} while (0)
 

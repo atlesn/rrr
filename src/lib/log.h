@@ -83,7 +83,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Unchecked operation, should not cause dangerous situations.
 // Caller should nevertheless use RRR_DEBUGLEVEL_OK macro first.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \
-	(x == 0 ? 0 : 1 << (x-1))
+	((unsigned int) (x == 0 ? 0 : 1 << (x-1)))
 
 //#define RRR_WITH_SIGNAL_PRINTF
 

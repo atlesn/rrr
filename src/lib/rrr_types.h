@@ -130,13 +130,17 @@ static inline int rrr_size_from_biglength_err (size_t *target, rrr_biglength ope
 
 #endif
 
-static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
+static inline int rrr_int_from_biglength_err (int *target, rrr_biglength operand) {
 	if (operand > INT_MAX) {
 		RRR_MSG_0("Error: Overflow in %s, input was %" PRIrrrl "\n", __func__, operand);
 		return 1;
 	}
 	*target = (int) operand;
 	return 0;
+}
+
+static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
+	return rrr_int_from_biglength_err(target, operand);
 }
 
 static inline void __rrr_types_asserts (void) {

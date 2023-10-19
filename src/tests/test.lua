@@ -1,20 +1,35 @@
+local debug = RRR.Debug.new()
+
+local my_config = {}
+
 function config(config)
 	-- Read configuration parameters and store them in the config table
 	for _, k in pairs({"lua_param_a", "lua_param_b", "lua_param_c"}) do
-		print("key is: " .. k .. " and type of key is: " .. type(k))
+		debug:msg(1, "key is: " .. k .. " and type of key is: " .. type(k) .. "\n")
 		local value = config:get(k)
 		if value == nil then
-			debug:msg(0, "Configuration parameter '" .. k .. "' was not found")
+			debug:msg(0, "Configuration parameter '" .. k .. "' was not found\n")
 			assert(false)
 		end
-		my_config[key] = value;
+		my_config[k] = value;
 	end
+
+	-- Verify values
+	assert(my_config["lua_param_a"] == "a")
+	assert(my_config["lua_param_b"] == "b")
+	assert(my_config["lua_param_c"] == "c")
 
 	-- Set a custom setting
 	config:set("my_custom_setting", "5")
 
 	-- Retrieve a custom setting
-	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting"))
+	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting") .. "\n")
+
+	-- Misc. tests
+	debug:err("This is an error message to stderr\n")
+	debug:dbg(1, "This is only printed if debug level 1 is enabled\n")
+
+	return true
 end
 
 function verify_defaults()
