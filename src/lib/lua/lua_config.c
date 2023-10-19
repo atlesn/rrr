@@ -114,11 +114,6 @@ static int __rrr_lua_config_f_get(lua_State *L) {
 	return 1;
 }
 
-#define PUSH_SET_USERDATA(k,v)                                 \
-  lua_pushliteral(L, k);                                       \
-  lua_pushlightuserdata(L, v);                                 \
-  lua_settable(L, -3)
-
 static int __rrr_lua_config_construct (
 		lua_State *L,
 		struct rrr_lua_config *config
@@ -140,7 +135,7 @@ static int __rrr_lua_config_construct (
 
 	luaL_newlib(L, f_meta);
 
-	PUSH_SET_USERDATA(RRR_LUA_META_KEY_RRR_CONFIG, config);
+	RRR_LUA_PUSH_SET_USERDATA(RRR_LUA_META_KEY_RRR_CONFIG, config);
 
 	lua_setmetatable(L, -2);
 

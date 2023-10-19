@@ -153,67 +153,17 @@ static void __rrr_lua_message_error_callback (
 	luaL_error(L, "%s", msg);
 }
 
-#define VERIFY_MSG(nargs,func_name)
-
-#define WITH_MSG_META(code)                                    \
-  do {int test; struct rrr_lua_message *message;               \
-  test = lua_getmetatable(L, -1);                              \
-  assert(test == 1);                                           \
-  lua_pushliteral(L, RRR_LUA_META_KEY_RRR_MESSAGE);            \
-  lua_gettable(L, -2);                                         \
-  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
-  message = lua_touserdata(L, -1);                             \
-  lua_pop(L, 2);                                               \
-  code                                                         \
-  } while(0)
+#define WITH_MSG_META(code) \
+  RRR_LUA_WITH_SELF_META(message,RRR_LUA_META_KEY_RRR_MESSAGE,code)
  
-#define SET_MSG(nargs,func_name)                               \
-  struct rrr_lua_message *message;                             \
-  {int test; if ((test = lua_getmetatable(L, -1 - nargs)) != 1) { \
-    luaL_error(L, "Possible incorrect number of arguments to function " #func_name ", verify that the number of arguments is " #nargs " and that : is used when calling.\n"); \
-  }}                                                           \
-  lua_pushliteral(L, RRR_LUA_META_KEY_RRR_MESSAGE);            \
-  lua_gettable(L, -2);                                         \
-  if (lua_type(L, -1) != LUA_TLIGHTUSERDATA) {                 \
-    luaL_error(L, "Userdata " RRR_LUA_META_KEY_RRR_MESSAGE " not found in metatable while calling " #func_name "\n"); \
-  }                                                            \
-  message = lua_touserdata(L, -1);                             \
-  lua_pop(L, 2);                                               \
+#define SET_MSG(nargs,func_name) \
+  RRR_LUA_SET_SELF(message,RRR_LUA_META_KEY_RRR_MESSAGE,nargs,func_name)
 
-#define WITH_MSG(nargs,func_name,code)                         \
-  do {SET_MSG(nargs,func_name);                                \
-  code                                                         \
-  } while(0)
+#define WITH_MSG(nargs,func_name,code) \
+  RRR_LUA_WITH_SELF(message,RRR_LUA_META_KEY_RRR_MESSAGE,nargs,func_name,code)
 
-#define SET_KEY(k)                                             \
-  const char *k = lua_tostring(L, -2);                         \
-  do {if (k == NULL) {                                         \
-    luaL_error(L, "Failed to push value in %s, key was not convertible to string (type is %s)\n", \
-        __func__, luaL_typename(L, -2));                       \
-  }} while (0)
-
-#define WITH_LUA(code)                                         \
-  do{struct rrr_lua *lua;do{                                   \
-  lua_getglobal(L, RRR_LUA_KEY);                               \
-  assert(lua_type(L, -1) == LUA_TTABLE);                       \
-  lua_getmetatable(L, -1);                                     \
-  assert(lua_type(L, -1) == LUA_TTABLE);                       \
-  lua_getfield(L, -1, RRR_LUA_META_KEY_LUA);                   \
-  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
-  lua = lua_touserdata(L, -1);                                 \
-  lua_pop(L, 3);} while(0); code } while(0)
-
-#define WITH_CMODULE(code)                                     \
-  do {struct rrr_cmodule_worker *cmodule_worker;do{            \
-  lua_getglobal(L, RRR_LUA_KEY);                               \
-  assert(lua_type(L, -1) == LUA_TTABLE);                       \
-  lua_getmetatable(L, -1);                                     \
-  assert(lua_type(L, -1) == LUA_TTABLE);                       \
-  lua_getfield(L, -1, RRR_LUA_META_KEY_CMODULE);               \
-  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
-  cmodule_worker = lua_touserdata(L, -1);                      \
-  lua_pop(L, 3);} while(0); code } while(0)
-  
+#define SET_KEY(k) \
+  RRR_LUA_SET_STR(k,2)
 
 /*
  * NOTE : Error handling in the push functions is done by Lua which
@@ -1130,7 +1080,7 @@ static int __rrr_lua_message_f_send(lua_State *L) {
 				luaL_error(L, "Failed to create data message in %s\n", __func__);
 			}
 		}
-		WITH_CMODULE(
+		RRR_LUA_WITH_CMODULE (
 			if (rrr_cmodule_worker_send_message_and_address_to_parent (
 					cmodule_worker,
 					msg,
@@ -1144,22 +1094,6 @@ static int __rrr_lua_message_f_send(lua_State *L) {
 	RRR_FREE_IF_NOT_NULL(msg);
 	return 0;
 }
-
-
-#define PUSH_SET_STR(k,v)                                      \
-  lua_pushliteral(L, k);                                       \
-  lua_pushliteral(L, v);                                       \
-  lua_settable(L, -3)
-
-#define PUSH_SET_INT(k,v)                                      \
-  lua_pushliteral(L, k);                                       \
-  lua_pushinteger(L, v);                                       \
-  lua_settable(L, -3)
-
-#define PUSH_SET_USERDATA(k,v)                                 \
-  lua_pushliteral(L, k);                                       \
-  lua_pushlightuserdata(L, v);                                 \
-  lua_settable(L, -3)
 
 static int __rrr_lua_message_construct (
 		lua_State *L,
@@ -1199,19 +1133,19 @@ static int __rrr_lua_message_construct (
 	luaL_newlib(L, f);
 	results++;
 
-	PUSH_SET_STR("ip_so_type", "");
-	PUSH_SET_STR("topic", "");
-	PUSH_SET_STR("data", "");
-	PUSH_SET_INT("type", MSG_TYPE_MSG);
-	PUSH_SET_INT("class", MSG_CLASS_DATA);
+	RRR_LUA_PUSH_SET_STR("ip_so_type", "");
+	RRR_LUA_PUSH_SET_STR("topic", "");
+	RRR_LUA_PUSH_SET_STR("data", "");
+	RRR_LUA_PUSH_SET_INT("type", MSG_TYPE_MSG);
+	RRR_LUA_PUSH_SET_INT("class", MSG_CLASS_DATA);
 
 	if (sizeof(lua_Integer) >= 8) {
-		PUSH_SET_INT("timestamp", (lua_Integer) rrr_time_get_i64());
+		RRR_LUA_PUSH_SET_INT("timestamp", (lua_Integer) rrr_time_get_i64());
 	}
 
 	luaL_newlib(L, f_meta);
 
-	PUSH_SET_USERDATA(RRR_LUA_META_KEY_RRR_MESSAGE, message);
+	RRR_LUA_PUSH_SET_USERDATA(RRR_LUA_META_KEY_RRR_MESSAGE, message);
 
 	lua_setmetatable(L, -2);
 
@@ -1223,7 +1157,7 @@ static int __rrr_lua_message_f_new(lua_State *L) {
 
 	struct rrr_lua_message *message = NULL;
 
-	WITH_LUA(
+	RRR_LUA_WITH_LUA_GLOBAL (
 		if (__rrr_lua_message_new(&message, lua) != 0) {
 			luaL_error(L, "Failed to create internal message in %s\n",
 				__func__);
@@ -1452,13 +1386,13 @@ void rrr_lua_message_library_register (
 	lua_pushliteral(L, RRR_LUA_KEY_MESSAGE);
 	luaL_newlib(L, f);
 
-	PUSH_SET_INT("MSG_TYPE_MSG", MSG_TYPE_MSG);
-	PUSH_SET_INT("MSG_TYPE_TAG", MSG_TYPE_TAG);
-	PUSH_SET_INT("MSG_TYPE_GET", MSG_TYPE_GET);
-	PUSH_SET_INT("MSG_TYPE_PUT", MSG_TYPE_PUT);
-	PUSH_SET_INT("MSG_TYPE_DEL", MSG_TYPE_DEL);
-	PUSH_SET_INT("MSG_CLASS_DATA", MSG_CLASS_DATA);
-	PUSH_SET_INT("MSG_CLASS_ARRAY", MSG_CLASS_ARRAY);
+	RRR_LUA_PUSH_SET_INT("MSG_TYPE_MSG", MSG_TYPE_MSG);
+	RRR_LUA_PUSH_SET_INT("MSG_TYPE_TAG", MSG_TYPE_TAG);
+	RRR_LUA_PUSH_SET_INT("MSG_TYPE_GET", MSG_TYPE_GET);
+	RRR_LUA_PUSH_SET_INT("MSG_TYPE_PUT", MSG_TYPE_PUT);
+	RRR_LUA_PUSH_SET_INT("MSG_TYPE_DEL", MSG_TYPE_DEL);
+	RRR_LUA_PUSH_SET_INT("MSG_CLASS_DATA", MSG_CLASS_DATA);
+	RRR_LUA_PUSH_SET_INT("MSG_CLASS_ARRAY", MSG_CLASS_ARRAY);
 
 	lua_settable(L, -3);
 

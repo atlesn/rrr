@@ -135,10 +135,12 @@ static int lua_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 	return 0;
 }
 
-int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
+static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct lua_child_data *data = private_arg;
 	struct lua_data *parent_data = data->parent_data;
 	const char *method = data->cmodule_config_data->config_method;
+
+	(void)(worker);
 
 	int ret = 0;
 
@@ -165,22 +167,17 @@ int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	return ret;
 }
 
-int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
+static int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
+	struct lua_child_data *data = private_arg;
+	struct lua_data *parent_data = data->parent_data;
+
 	(void)(worker);
 
 	int ret = 0;
 
 	int ret_tmp;
-	struct lua_child_data *data = private_arg;
-	struct lua_data *parent_data = data->parent_data;
-	const struct rrr_cmodule_config_data *cmodule_config_data = data->cmodule_config_data;
 	const char *function = NULL;
 	struct rrr_array array = {0};
-
-	// TODO : Access from cmodule_config_data in child data
-	// cmodule_config_data->config_method
-	// cmodule_config_data->process_method
-	// cmodule_config_data->source_method
 
 	if (is_spawn_ctx) {
 		// function = data->source_method;

@@ -19,26 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <assert.h>
+#ifndef RRR_LUA_DEBUG_H
+#define RRR_LUA_DEBUG_H
 
-#include "lua_common.h"
-#include "../cmodule/cmodule_worker.h"
+struct rrr_lua;
 
-void rrr_lua_cmodule_library_register (
-		struct rrr_lua *target,
-		struct rrr_cmodule_worker *worker
-) {
-	lua_State *L = target->L;
+void rrr_lua_debug_library_register (
+		struct rrr_lua *target
+);
 
-	lua_getglobal(L, RRR_LUA_KEY);
-	assert(lua_istable(L, -1));
-
-	lua_getmetatable(L, -1);
-	assert(lua_istable(L, -1));
-
-	lua_pushstring(L, RRR_LUA_META_KEY_CMODULE);
-	lua_pushlightuserdata(L, worker);
-	lua_settable(L, -3);
-
-	lua_pop(L, 2);
-}
+#endif /* RRR_LUA_DEBUG_H */

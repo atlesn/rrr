@@ -57,7 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LUA_META_KEY_RRR_DEBUG "_rrr_debug"
 
 // Set global Lua object
-#define RRR_WITH_LUA_GLOBAL(code)                              \
+#define RRR_LUA_WITH_LUA_GLOBAL(code)                          \
   do{struct rrr_lua *lua;do{                                   \
   lua_getglobal(L, RRR_LUA_KEY);                               \
   assert(lua_type(L, -1) == LUA_TTABLE);                       \
@@ -106,6 +106,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   lua_pop(L, 2);                                               \
   code                                                         \
   } while(0)
+
+#define RRR_LUA_WITH_CMODULE(code)                             \
+  do {struct rrr_cmodule_worker *cmodule_worker;do{            \
+  lua_getglobal(L, RRR_LUA_KEY);                               \
+  assert(lua_type(L, -1) == LUA_TTABLE);                       \
+  lua_getmetatable(L, -1);                                     \
+  assert(lua_type(L, -1) == LUA_TTABLE);                       \
+  lua_getfield(L, -1, RRR_LUA_META_KEY_CMODULE);               \
+  assert(lua_type(L, -1) == LUA_TLIGHTUSERDATA);               \
+  cmodule_worker = lua_touserdata(L, -1);                      \
+  lua_pop(L, 3);} while(0); code } while(0)
+
+#define RRR_LUA_PUSH_SET_USERDATA(k,v)                         \
+  lua_pushliteral(L, k);                                       \
+  lua_pushlightuserdata(L, v);                                 \
+  lua_settable(L, -3)
+
+#define RRR_LUA_PUSH_SET_STR(k,v)                              \
+  lua_pushliteral(L, k);                                       \
+  lua_pushliteral(L, v);                                       \
+  lua_settable(L, -3)
+
+#define RRR_LUA_PUSH_SET_INT(k,v)                              \
+  lua_pushliteral(L, k);                                       \
+  lua_pushinteger(L, v);                                       \
+  lua_settable(L, -3)
 
 struct rrr_lua {
 	lua_State *L;
