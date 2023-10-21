@@ -23,7 +23,9 @@ function config(config)
 	config:set("my_custom_setting", "5")
 
 	-- Retrieve a custom setting
-	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting") .. "\n")
+	my_config["my_custom_setting"] = config:get("my_custom_setting")
+	assert(my_config["my_custom_setting"] == "5")
+	debug:msg(1, "my_custom_setting is: " .. my_config["my_custom_setting"] .. "\n")
 
 	-- Misc. tests
 	debug:err("This is an error message to stderr\n")
@@ -329,15 +331,87 @@ function verify_defaults()
 	message:clear_array()
 end
 
-function process(message)
-	--print("type", type(message))
-	--for k, v in pairs(message) do
-	--	print (k .. " =>", v)
-	--end
+function process_method(message, method)
+	assert(method == nil, "method must be nil when direct dispatch is used")
 
 	verify_defaults()
 
+	-- TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
+
+	local tags = message:get_tag_names()
+	for i = 1, message:count_positions() do
+		local tag = tags[i]
+		local values = message:get_position(i)
+		print("pos " .. i .. " tag: " .. tag .. ":")
+		for j = 1, #values do
+			print(" - " .. values[j] .. "")
+		end
+	end
+
+	local expected = {
+		int1 = 1 << 24 | 2 << 8,
+		int2 = 1 << 16 | 2 << 8,
+		int3 = -33,
+		int4 = 1,
+		sep1 = ";",
+		aaa = 1 << 24 | 2 << 8,
+		bbb = 1 << 16 | 2 << 8,
+		ccc = -33,
+		ddd = 1,
+		sep2 = "||",
+		blob = {"abcdefg\0", "gfedcba\0"},
+		emptystr = "",
+	};
+	local expected_keys = {"int1", "int2", "int3", "int4", "sep1", "aaa", "bbb", "ccc", "ddd", "sep2", "blob", "emptystr"};
+
+	for _, k in pairs(expected_keys) do
+		local v = expected[k]
+		local values = message:get_tag_all(k)
+		if type(v) == "table" then
+			for i = 1, #v do
+				print("string lengths are " .. #values[i] .. " == " .. #v[i])
+				print("checking " .. k .. " value " .. values[i] .. " == " .. v[i])
+				assert(values[i] == v[i])
+			end
+		else
+			print("key is " .. k)
+			print("type is " .. type(values[1]))
+			print("v", v)
+			print("values[1]", values[1])
+			print("checking " .. k .. " value " .. values[1] .. " == " .. v)
+			assert(values[1] == v)
+		end
+	end
+
+	assert(message:get_tag_all("msg")[1]:len() == 31)
+	assert(message:get_position(14)[1] == nil)
+	assert(message.data == "")
+	assert(message.type == RRR.Message.MSG_TYPE_MSG)
+	assert(message.class == RRR.Message.MSG_CLASS_ARRAY)
+	assert(message.topic == "socket/topic/a/b/c")
+	assert(message.timestamp > 0)
+	local ip, port = message:ip_get()
+	assert(ip == "")
+	assert(port == 0)
+	assert(message.ip_so_type == "")
+
 	message:send()
+
+	return true
+end
+
+function process_fail(message, method)
+	print("Incorrect method called, check method discerning")
+
+	return false
+end
+
+function source(message)
+	assert(message.timestamp > 0)
+	assert(message.topic == "")
+	assert(message.type == RRR.Message.MSG_TYPE_MSG)
+	assert(message.class == RRR.Message.MSG_CLASS_DATA)
+	assert(message:count_positions() == 0)
 
 	return true
 end

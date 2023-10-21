@@ -180,22 +180,29 @@ static int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct rrr_array array = {0};
 
 	if (is_spawn_ctx) {
-		// function = data->source_method;
-		assert(0 && "Spawn not implemented");
+		assert(method == NULL && "Spawn process must not have method argument");
+		function = data->cmodule_config_data->source_method;
+
+		// push empty message
+		if ((ret = rrr_lua_message_push_new (
+				data->lua
+		)) != 0) {
+			RRR_MSG_0("Error pushing data message in %s in Lua instance %s\n",
+				__func__, INSTANCE_D_NAME(parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
 	}
 	else {
 		data->processed++;
 		data->processed_total++;
 
 		if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
-			assert(0 && "Do direct dispatch");
+			assert(method != NULL && "Direct dispatch requires method argument");
+			function = method;
 		}
 		else {
-			// Third argument for process function is name of any function from function definition
-			if (function != NULL) {
-				assert(0 && "Do process with function argument");
-			}
-
+			assert(method == NULL && "Default process must not have method argument");
 			function = data->cmodule_config_data->process_method;
 		}
 
