@@ -48,6 +48,10 @@ enum rrr_discern_stack_fault {
 	RRR_DISCERN_STACK_FAULT_STACK_COUNT
 };
 
+#define RRR_DISCERN_STACK_FIRST_LAST_INDEX(src,len)            \
+  (((rrr_length) src[0] << 16) | ((rrr_length) src[len - 1])); \
+  RRR_ASSERT(sizeof(rrr_length) == sizeof(rrr_u32),size_of_rrr_length_is_4_bytes)
+
 #define RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS \
     rrr_length *result, struct rrr_discern_stack_index_entry **new_index, rrr_length *new_index_size, const char *tag, void *arg
 
