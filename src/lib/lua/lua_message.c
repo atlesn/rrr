@@ -785,7 +785,16 @@ static void __rrr_lua_message_array_value_to_lua (
 	switch (value->definition->type) {
 		case RRR_TYPE_MSG:
 		RRR_TYPE_CASE_BLOB:
+			if (len == 0) {
+				luaL_error(L, "Failed to convert value to Lua, blob length was zero. This is probably a bug.\n");
+			}
+			/* Fallthrough */
 		RRR_TYPE_CASE_STR: {
+			if (len == 0) {
+				lua_pushlstring(L, "", 0);
+				lua_seti(L, -2, (*wpos)++);
+				break;
+			}
 			for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 				lua_pushlstring(L, value->data + i, len);
 				lua_seti(L, -2, (*wpos)++);
@@ -869,7 +878,7 @@ static void __rrr_lua_message_array_value_to_lua (
 		case RRR_TYPE_ISTR:
 		case RRR_TYPE_ERR:
 		default:
-			assert(0 && "Type not supported");
+			RRR_BUG("Type %i/%s not implemented\n", value->definition->type, value->definition->identifier);
 	};
 }
 
