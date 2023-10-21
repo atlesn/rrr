@@ -833,13 +833,20 @@ int rrr_cmodule_helper_parse_config (
 
 	if (data->process_method != NULL && *(data->process_method) != '\0') {
 		if (data->process_mode == RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH) {
-			RRR_MSG_0("A processor %s was set for instance %s while methods_direct_dispatch was yes. This is a configuration error, the processor %s will never be called.\n",
-				config_suffix, INSTANCE_D_NAME(thread_data), config_suffix);
-			ret = 1;
-			goto out;
+			if (!(INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY)) {
+				RRR_MSG_0("A processor %s was set for instance %s while methods_direct_dispatch was yes. This is a configuration error, the processor %s will never be called.\n",
+					config_suffix, INSTANCE_D_NAME(thread_data), config_suffix);
+				ret = 1;
+				goto out;
+			}
+			RRR_MSG_1("Instance %s is configured to use double method delivery in %s, ignoring the fact that processor function is defined while methods_direct_dispatch is yes.\n",
+				INSTANCE_D_NAME(thread_data), __func__);
+			data->process_mode = RRR_CMODULE_PROCESS_MODE_DIRECT_DISPATCH;
 		}
-		assert(data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE);
-		data->process_mode = RRR_CMODULE_PROCESS_MODE_DEFAULT;
+		else {
+			assert(data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE);
+			data->process_mode = RRR_CMODULE_PROCESS_MODE_DEFAULT;
+		}
 	}
 
 	if (data->do_spawning == 0 && data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE) {

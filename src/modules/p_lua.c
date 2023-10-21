@@ -138,7 +138,7 @@ static int lua_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct lua_child_data *data = private_arg;
 	struct lua_data *parent_data = data->parent_data;
-	const char *method = data->cmodule_config_data->config_method;
+	const char *function = data->cmodule_config_data->config_method;
 
 	(void)(worker);
 
@@ -146,7 +146,7 @@ static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	int ret_tmp;
 
-	if (method == NULL || *method == '\0')
+	if (function == NULL || *function == '\0')
 		goto out;
 
 	if ((ret = rrr_lua_config_push_new (data->lua, INSTANCE_D_CONFIG(parent_data->thread_data))) != 0) {
@@ -156,9 +156,9 @@ static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 		goto out;
 	}
 
-	if ((ret_tmp = rrr_lua_call(data->lua, method, 1)) != 0) {
+	if ((ret_tmp = rrr_lua_call(data->lua, function, 1)) != 0) {
 		RRR_MSG_0("Error %i returned from Lua config function %s in Lua instance %s\n",
-			ret_tmp, method, INSTANCE_D_NAME(parent_data->thread_data));
+			ret_tmp, function, INSTANCE_D_NAME(parent_data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -175,36 +175,57 @@ static int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	int ret_tmp;
-	const char *function = NULL;
+	int ret_tmp, argc;
+	const char *functions[2] = {NULL, NULL};
 	struct rrr_array array = {0};
 
 	if (is_spawn_ctx) {
-		assert(method == NULL && "Spawn process must not have method argument");
-		function = data->cmodule_config_data->source_method;
+		assert (data->cmodule_config_data->source_method != NULL && "No source method specified");
 
-		// push empty message
 		if ((ret = rrr_lua_message_push_new (
 				data->lua
 		)) != 0) {
 			RRR_MSG_0("Error pushing data message in %s in Lua instance %s\n",
-				__func__, INSTANCE_D_NAME(parent_data->thread_data));
+					__func__, INSTANCE_D_NAME(parent_data->thread_data));
 			ret = 1;
 			goto out;
 		}
+
+		RRR_DBG_3("Lua instance %s calling function '%s' with 1 argument while spawning\n",
+			INSTANCE_D_NAME(parent_data->thread_data), data->cmodule_config_data->source_method);
+
+		if ((ret = rrr_lua_call(data->lua, data->cmodule_config_data->source_method, 1)) != 0) {
+			RRR_MSG_0("Error %i returned from Lua function '%s' while spawning in Lua instance %s\n",
+					ret, data->cmodule_config_data->source_method, INSTANCE_D_NAME(parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
+
+		goto out;
+	}
+
+	if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
+		functions[0] = method;
+
+		// Undocumented parameter, used for testing
+		if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY) {
+			assert(data->cmodule_config_data->process_method != NULL);
+			assert(method != NULL);
+			functions[1] = data->cmodule_config_data->process_method;
+		}
+	}
+	else if (method != NULL) {
+		functions[1] = method;
 	}
 	else {
-		data->processed++;
-		data->processed_total++;
+		functions[0] = data->cmodule_config_data->process_method;
+	}
 
-		if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
-			assert(method != NULL && "Direct dispatch requires method argument");
-			function = method;
-		}
-		else {
-			assert(method == NULL && "Default process must not have method argument");
-			function = data->cmodule_config_data->process_method;
-		}
+	assert((functions[0] != NULL || functions[1] != NULL) && "No process method specified");
+
+	for (int i = 0; i < 2; i++) {
+		if (functions[i] == NULL)
+			continue;
 
 		assert(RRR_MSG_ADDR_SIZE_OK(message_addr));
 
@@ -259,24 +280,31 @@ static int lua_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 				goto out;
 			}
 		}
+
+		argc = 1;
+
+		if (i > 0) {
+			rrr_lua_pushstr(data->lua, method);
+			argc++;
+		}
+
+		RRR_DBG_3("Lua instance %s calling function '%s' with %i arguments while processing (pass %i)\n",
+			INSTANCE_D_NAME(parent_data->thread_data), functions[i], argc, i + 1);
+
+		if ((ret_tmp = rrr_lua_call(data->lua, functions[i], argc)) != 0) {
+			RRR_MSG_0("Error %i returned from Lua function '%s'%s in Lua instance %s\n",
+				ret_tmp, functions[i], is_spawn_ctx ? " while spawning" : "", INSTANCE_D_NAME(parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
 	}
 
-	if (function == NULL || *function == '\0') {
-		RRR_BUG("Lua no functions defined in %s is_spawn was %i\n",
-			__func__, is_spawn_ctx);
-	}
-
-	// TODO : Add method argument
-	if ((ret_tmp = rrr_lua_call(data->lua, function, 1)) != 0) {
-		RRR_MSG_0("Error %i returned from Lua function '%s'%s in Lua instance %s\n",
-			ret_tmp, function, is_spawn_ctx ? " while spawning" : "", INSTANCE_D_NAME(parent_data->thread_data));
-		ret = 1;
-		goto out;
-	}
+	data->processed++;
+	data->processed_total++;
 
 	out:
-	rrr_array_clear(&array);
-	return ret;
+		rrr_array_clear(&array);
+		return ret;
 
 }
 

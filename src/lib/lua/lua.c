@@ -144,7 +144,11 @@ int rrr_lua_execute_snippet (
 	}
 
 	RRR_DBG_3("Top of stack after executing Lua snippet: %s type is %s\n",
-		lua_tostring(lua->L, -1), lua_typename(lua->L, lua_type(lua->L, -1)));
+		lua_isboolean(lua->L, -1)
+			? (lua_toboolean(lua->L, -1) ? "true" : "false")
+			: lua_tostring(lua->L, -1),
+		lua_typename(lua->L, lua_type(lua->L, -1))
+	);
 
 	const int stack_diff = lua_gettop(lua->L) - stack_count;
 	assert(stack_diff >= 0);
@@ -165,6 +169,13 @@ void rrr_lua_pushint (
 ) {
 	RRR_ASSERT(sizeof(i) == sizeof(lua_Integer),size_of_lua_integer_is_correct);
 	lua_pushinteger(lua->L, i);
+}
+
+void rrr_lua_pushstr (
+		struct rrr_lua *lua,
+		const char *str
+) {
+	lua_pushstring(lua->L, str);
 }
 
 int rrr_lua_call (
@@ -212,8 +223,12 @@ int rrr_lua_call (
 		goto out;
 	}
 
-	RRR_DBG_3("Top of stack after executing Lua function '%s': %s type is %s\n",
-		function, lua_tostring(lua->L, -1), lua_typename(lua->L, lua_type(lua->L, -1)));
+	RRR_DBG_3("Top of stack after executing Lua function: %s type is %s\n",
+		lua_isboolean(lua->L, -1)
+			? (lua_toboolean(lua->L, -1) ? "true" : "false")
+			: lua_tostring(lua->L, -1),
+		lua_typename(lua->L, lua_type(lua->L, -1))
+	);
 
 	if (!lua_isboolean(lua->L, -1)) {
 		RRR_MSG_0("Returned value from global Lua function '%s' was not a boolean, the value is '%s'\n",

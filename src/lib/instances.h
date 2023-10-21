@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_MISC_OPTIONS_DUPLICATE                (1<<2)
 #define RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT      (1<<3)
 #define RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH  (1<<4)
+#define RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY  (1<<5)
 
 struct rrr_stats_instance;
 struct rrr_cmodule;

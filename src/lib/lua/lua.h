@@ -43,6 +43,10 @@ void rrr_lua_pushint (
 		struct rrr_lua *lua,
 		rrr_lua_int i
 );
+void rrr_lua_pushstr (
+		struct rrr_lua *lua,
+		const char *str
+);
 int rrr_lua_call (
 		struct rrr_lua *lua,
 		const char *function,

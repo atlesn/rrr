@@ -331,22 +331,14 @@ function verify_defaults()
 	message:clear_array()
 end
 
+local message_to_process_double = nil
+
 function process_method(message, method)
 	assert(method == nil, "method must be nil when direct dispatch is used")
 
 	verify_defaults()
 
 	-- TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
-
-	local tags = message:get_tag_names()
-	for i = 1, message:count_positions() do
-		local tag = tags[i]
-		local values = message:get_position(i)
-		print("pos " .. i .. " tag: " .. tag .. ":")
-		for j = 1, #values do
-			print(" - " .. values[j] .. "")
-		end
-	end
 
 	local expected = {
 		int1 = 1 << 24 | 2 << 8,
@@ -360,27 +352,36 @@ function process_method(message, method)
 		ddd = 1,
 		sep2 = "||",
 		blob = {"abcdefg\0", "gfedcba\0"},
-		emptystr = "",
+		msg = nil, -- Binary data of msg not checked
+		emptystr = ""
 	};
-	local expected_keys = {"int1", "int2", "int3", "int4", "sep1", "aaa", "bbb", "ccc", "ddd", "sep2", "blob", "emptystr"};
 
+	local expected_keys = {"int1", "int2", "int3", "int4", "sep1", "aaa", "bbb", "ccc", "ddd", "sep2", "blob", "msg", "emptystr"};
+	local actual_keys = message:get_tag_names()
+
+	local i = 1
 	for _, k in pairs(expected_keys) do
 		local v = expected[k]
 		local values = message:get_tag_all(k)
+
+		assert(actual_keys[i] == k)
+
+		if (v == nil) then
+			goto continue
+		end
+
 		if type(v) == "table" then
 			for i = 1, #v do
-				print("string lengths are " .. #values[i] .. " == " .. #v[i])
 				print("checking " .. k .. " value " .. values[i] .. " == " .. v[i])
 				assert(values[i] == v[i])
 			end
 		else
-			print("key is " .. k)
-			print("type is " .. type(values[1]))
-			print("v", v)
-			print("values[1]", values[1])
 			print("checking " .. k .. " value " .. values[1] .. " == " .. v)
 			assert(values[1] == v)
 		end
+
+		::continue::
+		i = i + 1
 	end
 
 	assert(message:get_tag_all("msg")[1]:len() == 31)
@@ -395,7 +396,16 @@ function process_method(message, method)
 	assert(port == 0)
 	assert(message.ip_so_type == "")
 
-	message:send()
+	message_to_process_double = message
+
+	return true
+end
+
+function process_double(message, method)
+	assert(method == "process_method")
+	assert(message ~= nil)
+
+	message_to_process_double:send()
 
 	return true
 end
