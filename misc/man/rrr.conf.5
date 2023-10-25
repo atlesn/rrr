@@ -3467,6 +3467,19 @@ and
 .B stop
 command commands will control whether or not the sending of control packets to the universe is active or not.
 By default, control packets are sent.
+.PP
+Sending
+.B set
+or
+.B fade
+commands implies the
+.B start
+command.
+.PP
+If no control message is received for a universe within 10 seconds, sending of control packets is switched off.
+To reset the timeout without sending any data,
+.B start
+commands may be sent.
 
 .It artnet_universe
 The index of the universe to manipulate.

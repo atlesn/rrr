@@ -245,9 +245,11 @@ static int artnet_process_cmd (
 
 	if (strcmp(cmd, ARTNET_CMD_START) == 0) {
 		rrr_artnet_universe_set_mode(data->node, (uint8_t) universe, RRR_ARTNET_MODE_MANAGED);
+		universe_data->active = 1;
 	}
 	else if (strcmp(cmd, ARTNET_CMD_STOP) == 0) {
 		rrr_artnet_universe_set_mode(data->node, (uint8_t) universe, RRR_ARTNET_MODE_STOPPED);
+		universe_data->active = 0;
 	}
 	else if (strcmp(cmd, ARTNET_CMD_SET) == 0) {
 		if (dmx_data) {
@@ -256,6 +258,7 @@ static int artnet_process_cmd (
 		else {
 			rrr_artnet_universe_set_dmx_abs(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, 0);
 		}
+		universe_data->active = 1;
 	}
 	else if (strcmp(cmd, ARTNET_CMD_FADE) == 0) {
 		if (dmx_data) {
@@ -264,6 +267,7 @@ static int artnet_process_cmd (
 		else {
 			rrr_artnet_universe_set_dmx_fade(data->node, (uint8_t) universe, (uint16_t) dmx_channel, (uint16_t) dmx_count, (uint8_t) fade_speed, 0);
 		}
+		universe_data->active = 1;
 	}
 	else {
 		RRR_MSG_0("Warning: Invalid value %s for field " ARTNET_TAG_CMD " in message to artnet instance %s\n",
@@ -396,22 +400,32 @@ static int artnet_periodic_universe_cb (
 
 	const uint64_t data_timeout_limit = rrr_time_get_64() - ARTNET_DATA_TIMEOUT_S * 1000 * 1000;
 
-	if (universe->last_data_time < data_timeout_limit) {
-		universe->active = 0;
-	}
-	else {
-		universe->active = 1;
+
+	if (universe->active) {
+		if (universe->last_data_time < data_timeout_limit) {
+			RRR_DBG_1("artnet instance %s data timeout after %u seconds for universe %u\n",
+					INSTANCE_D_NAME(data->thread_data), ARTNET_DATA_TIMEOUT_S, universe_i);
+			universe->active = 0;
+		}
+		else if (mode != RRR_ARTNET_MODE_MANAGED) {
+			RRR_DBG_1("artnet instance %s set mode MANAGED on universe %u\n",
+					INSTANCE_D_NAME(data->thread_data), universe_i);
+			rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_MANAGED);
+		}
 	}
 
-	if (data->do_demo && !universe->active && mode != RRR_ARTNET_MODE_DEMO) {
-		RRR_DBG_1("artnet instance %s set mode DEMO on universe %u\n",
-				INSTANCE_D_NAME(data->thread_data), universe_i);
-		rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_DEMO);
-	}
-	else if (universe->active && mode != RRR_ARTNET_MODE_MANAGED) {
-		RRR_DBG_1("artnet instance %s set mode MANAGED on universe %u\n",
-				INSTANCE_D_NAME(data->thread_data), universe_i);
-		rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_MANAGED);
+	// Note : Trap any setting of active to 0 from above code
+	if (!universe->active) {
+		if (data->do_demo && mode != RRR_ARTNET_MODE_DEMO) {
+			RRR_DBG_1("artnet instance %s set mode DEMO on universe %u\n",
+					INSTANCE_D_NAME(data->thread_data), universe_i);
+			rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_DEMO);
+		}
+		else if (mode != RRR_ARTNET_MODE_IDLE && mode != RRR_ARTNET_MODE_STOPPED) {
+			RRR_DBG_1("artnet instance %s set mode STOPPED on universe %u\n",
+					INSTANCE_D_NAME(data->thread_data), universe_i);
+			rrr_artnet_universe_set_mode(data->node, universe_i, RRR_ARTNET_MODE_STOPPED);
+		}
 	}
 
 	return 0;
