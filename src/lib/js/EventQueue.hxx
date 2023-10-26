@@ -93,6 +93,7 @@ namespace RRR::JS {
 		RRR::Event::Collection &collection;
 		std::shared_ptr<RRR::Event::HandleBase> handle;
 
+		void set_next_exec_time();
 		void dispatch();
 
 		protected:
