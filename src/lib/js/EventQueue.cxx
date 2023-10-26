@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "EventQueue.hxx"
 #include "Js.hxx"
 
-#define RRR_JS_EVENT_INACCURACY_TOLERANCE_MS 5
-#define RRR_JS_EVENT_QUEUE_DEBUG
+#define RRR_JS_EVENT_INACCURACY_TOLERANCE_MS 500
+//#define RRR_JS_EVENT_QUEUE_DEBUG
 
 namespace RRR::JS {
 	void EventQueue::set_next_exec_time() {
@@ -52,7 +52,7 @@ namespace RRR::JS {
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 		RRR_MSG_1("%s - Next dispatch in %lli us (default is %lli)\n",
-			__PRETTY_FUNCTION__, next_exec_time - now, (long long) default_interval_us);
+			__PRETTY_FUNCTION__, next_interval, (long long) default_interval_us);
 #endif
 		handle->add();
 	}
@@ -133,7 +133,12 @@ namespace RRR::JS {
 
 	bool EventQueue::accept(std::weak_ptr<Persistable> object, const char *identifier, void *arg) {
 		if (strcmp(identifier, MSG_SET_TIMEOUT) == 0) {
-			timeout_events.emplace(object, RRR::util::time_get_i64() + * (int64_t *) arg, identifier, arg);
+			int64_t interval = * (int64_t *) arg;
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+			RRR_MSG_1("%s push timer exec in %lli us\n",
+				__PRETTY_FUNCTION__, interval);
+#endif
+			timeout_events.emplace(object, RRR::util::time_get_i64() + interval, identifier, arg);
 			set_next_exec_time();
 			return true;
 		}
