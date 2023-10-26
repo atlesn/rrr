@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "EventQueue.hxx"
 #include "Js.hxx"
 
+#define RRR_JS_EVENT_INACCURACY_TOLERANCE_MS 5
 #define RRR_JS_EVENT_QUEUE_DEBUG
 
 namespace RRR::JS {
@@ -39,7 +40,8 @@ namespace RRR::JS {
 
 		int64_t next_interval = next_exec_time - now;
 		if (next_interval < 1) {
-			RRR_MSG_0("Warning: Inaccurate timer dispatch detected in %s, not able to run all timeout events fast enough.\n", __PRETTY_FUNCTION__);
+			if (next_interval < -(RRR_JS_EVENT_INACCURACY_TOLERANCE_MS * 1000))
+				RRR_MSG_0("Warning: Inaccurate timer dispatch detected in %s, not able to run all timeout events fast enough.\n", __PRETTY_FUNCTION__);
 			next_interval = 1;
 		}
 
