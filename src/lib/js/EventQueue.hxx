@@ -87,7 +87,7 @@ namespace RRR::JS {
 				return a.get_exec_time() < b.get_exec_time();
 			}
 		};
-		std::set<Event, CompareExecTime> timeout_events;
+		std::multiset<Event, CompareExecTime> timeout_events;
 		CTX &ctx;
 		RRR::Event::Collection &collection;
 		std::shared_ptr<RRR::Event::HandleBase> handle;
