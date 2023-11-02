@@ -962,8 +962,8 @@ static void *__rrr_instance_thread_entry_intermediate (
 		goto out;
 	}
 
-	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, instance %p\n",
-		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, thread_data);
+	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, event queue %p instance %p\n",
+		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, INSTANCE_D_EVENTS(thread_data), thread_data);
 
 	// Ignore return value
 	thread_data->init_data.module->operations.thread_entry(thread);

@@ -113,6 +113,9 @@ static void __rrr_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_DBG_9_PRINTF("EQ DISP %p periodic fd %i pid %llu tid %llu\n",
+		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
 	if ( queue->callback_periodic != NULL &&
 	    (queue->callback_ret = queue->callback_periodic(queue->callback_arg)) != 0
 	) {
@@ -129,6 +132,9 @@ static void __rrr_event_unpause (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_DBG_9_PRINTF("EQ DISP %p unpause fd %i pid %llu tid %llu\n",
+		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		if (queue->functions[i].is_paused) {
@@ -152,6 +158,9 @@ static void __rrr_event_signal_event (
 	uint64_t count = 0;
 
 	unsigned short is_paused_new = function->is_paused;
+
+	RRR_DBG_9_PRINTF("EQ DISP %p function %u fd %i pid %llu tid %llu\n",
+		queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if (function->callback_pause) {
 		function->callback_pause(&is_paused_new, function->is_paused, function->callback_pause_arg);
@@ -188,6 +197,7 @@ static void __rrr_event_signal_event (
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
+				RRR_DBG_9_PRINTF("EQ DISP %p fd %i not ready\n", queue);
 				// OK, nothing to do
 			}
 			else {
