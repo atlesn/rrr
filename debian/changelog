@@ -48,6 +48,8 @@ rrr (1.28-21) bullseye; urgency=medium
   * Fixes:
     * Raw data messages in JS module now working properly
     * Crash in JS module upon GC due to null pointer access
+    * Httpclient sometimes spinning on CPU indefinitely after handshaking if
+      there is no data to send on a socket.
 
   * Under the hood:
     * Use events in file module

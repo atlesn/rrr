@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
+#define RRR_NET_TRANSPORT_NOREAD_STRIKES_MAX 10000
 
 #include "../log.h"
 #include "../rrr_types.h"
@@ -451,6 +452,22 @@ static void __rrr_net_transport_event_read (
 		// - We are in timeout event and something by chance was read (callback returns 0)
 		// - We are in read event (data was present on the socket)
 		rrr_net_transport_ctx_touch (handle);
+
+		// If application behaves badly and does not actually read, close the fd
+		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
+			if (++(handle->noread_strike_count) == RRR_NET_TRANSPORT_NOREAD_STRIKES_MAX) {
+				RRR_MSG_0("net transport fd %i [%s]: The application did not read anything the previous %i read events. This might be a bug. Close handle.\n",
+					handle->submodule_fd,
+					handle->transport->application_name,
+					RRR_NET_TRANSPORT_NOREAD_STRIKES_MAX
+				);
+				ret_tmp = RRR_READ_EOF;
+				goto check_read_write_return;
+			}
+		}
+		else {
+			handle->noread_strike_prev_read_bytes = handle->bytes_read_total;
+		}
 	}
 
 #ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
