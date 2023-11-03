@@ -1513,16 +1513,9 @@ static int __rrr_net_transport_quic_decode (
 			listen_handle->submodule_fd, (unsigned long long) datagram->msg_len, ip_buf_a, ip_buf_b);
 	}
 
-	uint32_t version;
-	const uint8_t *dcid, *scid;
-	size_t dcidlen, scidlen;
-
+	ngtcp2_version_cid version;
 	int ret_tmp = ngtcp2_pkt_decode_version_cid (
 			&version,
-			&dcid,
-			&dcidlen,
-			&scid,
-			&scidlen,
 			datagram->msg_iov.iov_base,
 			datagram->msg_len,
 			RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH
@@ -1553,27 +1546,27 @@ static int __rrr_net_transport_quic_decode (
 		goto out;
 	}
 
-	if (dcidlen > connection_ids->dst.length) {
+	if (version.dcidlen > connection_ids->dst.length) {
 		RRR_DBG_7("net transport quic fd %i dcid too long in received QUIC packet (%llu>%llu)\n",
-				listen_handle->submodule_fd, (long long unsigned) dcidlen, (long long unsigned) connection_ids->dst.length);
+				listen_handle->submodule_fd, (long long unsigned) version.dcidlen, (long long unsigned) connection_ids->dst.length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
 
-	if (scidlen > connection_ids->src.length) {
+	if (version.scidlen > connection_ids->src.length) {
 		RRR_DBG_7("net transport quic fd %i scid too long in received QUIC packet (%llu>%llu)\n",
-				listen_handle->submodule_fd, (long long unsigned) scidlen, (long long unsigned) connection_ids->src.length);
+				listen_handle->submodule_fd, (long long unsigned) version.scidlen, (long long unsigned) connection_ids->src.length);
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 		goto out;
 	}
 
 	// Add any stateless address validation here
 
-	memcpy(connection_ids->dst.data, dcid, dcidlen);
-	connection_ids->dst.length = dcidlen;
+	memcpy(connection_ids->dst.data, verison.dcid, version.dcidlen);
+	connection_ids->dst.length = version.dcidlen;
 
-	memcpy(connection_ids->src.data, scid, scidlen);
-	connection_ids->src.length = scidlen;
+	memcpy(connection_ids->src.data, version.scid, version.scidlen);
+	connection_ids->src.length = version.scidlen;
 
 	out:
 	return ret;
