@@ -163,7 +163,6 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
-		    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} ${ngtcp2_extra_ld}
                     ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} ${ngtcp2_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 
