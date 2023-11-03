@@ -50,6 +50,14 @@ librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
 
+if RRR_WITH_HTTP3
+libadd_http3 = librrrhttp3.la
+librrrhttp3_la_SOURCES = http3/http3.c http/http_application_http3.c
+librrrhttp3_la_CFLAGS = ${HTTP3_CFLAGS} ${AM_CFLAGS}
+librrrhttp3_la_LDFLAGS = ${HTTP3_LDFLAGS}
+http3_extra_ld = ${HTTP3_LDFLAGS}
+endif
+
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
@@ -146,7 +154,7 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
-                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
+                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
@@ -214,6 +222,7 @@ libadd_all =                         \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
+    ${libadd_http3}                  \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
     ${libadd_rrr_fork}               \
