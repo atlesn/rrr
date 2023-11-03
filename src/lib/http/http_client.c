@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 
 #define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS 1000
+//#define RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
 
 struct rrr_http_client {
 	struct rrr_event_queue *events;
@@ -423,7 +424,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
-	// Moved-codes. Maybe this parsing is too persmissive.
+	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
 		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
 		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
@@ -898,12 +899,24 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			goto out;
 		}
 
+#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		if (concurrent_index == 0) {
+			RRR_MSG_1("HTTP client debug unused connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
+					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
+			ret = RRR_HTTP_BUSY;
+		}
+		else {
+#endif
+
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
 				transport_keepalive,
 				keepalive_handle,
 				__rrr_http_client_request_send_final_transport_ctx_callback,
 				callback_data
 		);
+#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		}
+#endif
 	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < callback_data->data->concurrent_connections);
 
 	out:
