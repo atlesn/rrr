@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <pthread.h>
+#include <string.h>
 
 #include <event2/event.h>
 #undef _GNU_SOURCE
@@ -131,8 +132,7 @@ void rrr_event_count (
 static inline void rrr_event_handle_clear (
 		rrr_event_handle *handle
 ) {
-	rrr_event_handle blank = {0};
-	*handle = blank;
+	memset(handle, 0, sizeof(rrr_event_handle));
 }
 static inline void rrr_event_activate (
 		rrr_event_handle *handle
