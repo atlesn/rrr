@@ -50,6 +50,8 @@ rrr (1.28-21) bullseye; urgency=medium
     * Crash in JS module upon GC due to null pointer access
     * Httpclient sometimes spinning on CPU indefinitely after handshaking if
       there is no data to send on a socket.
+    * Readers were blocked in message broker when writer used do_again during
+      slot write (fast writes from dummy module with buffer=no).
 
   * Under the hood:
     * Use events in file module

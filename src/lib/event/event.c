@@ -197,7 +197,7 @@ static void __rrr_event_signal_event (
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
-				RRR_DBG_9_PRINTF("EQ DISP %p fd %i not ready\n", queue);
+				RRR_DBG_9_PRINTF("EQ DISP %p fd %i not ready\n", queue, (int) fd);
 				// OK, nothing to do
 			}
 			else {
