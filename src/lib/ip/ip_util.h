@@ -2,7 +2,11 @@
 
 Read Route Record
 
+<<<<<<< HEAD
 Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+=======
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+>>>>>>> 6b6ba4d9ad0308b1869d3d10e8deef4221440062
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

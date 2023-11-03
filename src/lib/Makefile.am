@@ -164,7 +164,9 @@ endif
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
 		    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} ${ngtcp2_extra_ld}
+                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${http3_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} ${ngtcp2_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \

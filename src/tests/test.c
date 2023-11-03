@@ -55,7 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
-#ifdef RRR_WITH_NODE
+#ifdef RRR_WITH_JS
 #	include "lib/testjs.h"
 #endif
 #ifdef RRR_WITH_HTTP3
@@ -201,17 +201,17 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	ret |= ret_tmp;
 #endif
 
-#ifdef RRR_WITH_NODE
-	TEST_BEGIN("js library functions") {
-		ret_tmp = rrr_test_js();
+#ifdef RRR_WITH_HTTP3
+	TEST_BEGIN("quic handshake") {
+		ret_tmp = rrr_test_quic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
 #endif
 
-#ifdef RRR_WITH_HTTP3
-	TEST_BEGIN("quic handshake") {
-		ret_tmp = rrr_test_quic();
+#ifdef RRR_WITH_JS
+	TEST_BEGIN("js library functions") {
+		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -241,7 +241,6 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-<<<<<<< HEAD
 	TEST_BEGIN("discern stack parsing") {
 		ret_tmp = rrr_test_discern_stack();
 	} TEST_RESULT(ret_tmp == 0);
@@ -278,9 +277,6 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-*/
-=======
->>>>>>> 8b9b6b74 (Re-activate other tests and fix problems with new event handle bugtrap.)
 	return ret;
 }
 

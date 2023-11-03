@@ -74,6 +74,33 @@ struct rrr_socket_graylist;
     size_t bytes,                                              \
     void *arg
 
+#define RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS     \
+    int64_t *stream_id,                                        \
+    struct rrr_net_transport_vector *data_vector,              \
+    size_t *data_vector_count,                                 \
+    int *fin,                                                  \
+    int64_t stream_id_suggestion,                              \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
+    int64_t stream_id,                                         \
+    int is_blocked,                                            \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS                 \
+    int64_t stream_id,                                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
+    int64_t stream_id,                                         \
+    uint64_t application_error_reason,                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+    int64_t stream_id,                                         \
+    size_t bytes,                                              \
+    void *arg
+
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
@@ -283,7 +310,6 @@ int rrr_net_transport_handle_match_data_set (
 		const char *string,
 		uint64_t number
 );
-<<<<<<< HEAD
 int rrr_net_transport_graylist_push (
 		struct rrr_net_transport *transport,
 		const char *string,
@@ -294,7 +320,7 @@ int rrr_net_transport_graylist_exists (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
-=======
+);
 int rrr_net_transport_handle_migrate (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
@@ -302,7 +328,6 @@ int rrr_net_transport_handle_migrate (
 		const char *host,
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
->>>>>>> a39fcc91 (Work on client migration. Quic server not receiving packets on IPv4.)
 );
 void rrr_net_transport_handle_ptr_application_data_bind (
 		struct rrr_net_transport_handle *handle,

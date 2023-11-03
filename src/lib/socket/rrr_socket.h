@@ -48,7 +48,6 @@ struct rrr_socket_options {
 	int protocol;
 };
 
-
 void rrr_socket_unlink (
 		int fd
 );

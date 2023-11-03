@@ -693,6 +693,7 @@ static void __rrr_net_transport_event_read (
 			handle->transport->read_callback_arg
 	)) == 0 || flags & EV_READ) {
 		// Reset hard timeout
+
 		rrr_net_transport_ctx_touch (handle);
 
 		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
@@ -724,6 +725,36 @@ static void __rrr_net_transport_event_read (
 		else {
 			handle->noread_strike_prev_read_bytes = handle->bytes_read_total;
 		}
+	}
+
+	err:
+	CHECK_READ_WRITE_RETURN();
+}
+
+static void __rrr_net_transport_event_decode_client (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+
+	int ret_tmp = 0;
+
+	CHECK_CLOSE_NOW();
+
+	if (flags & EV_TIMEOUT && handle->transport->methods->expiry != NULL) {
+		if ((ret_tmp = __rrr_net_transport_handle_expiry (handle)) != 0) {
+			goto err;
+		}
+	}
+	else {
+		if ((ret_tmp = __rrr_net_transport_handle_decode_client(handle)) != 0) {
+			goto err;
+		}
+
+		rrr_net_transport_ctx_touch (handle);
 	}
 
 	err:
@@ -1819,7 +1850,7 @@ int rrr_net_transport_handle_migrate (
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_migrate");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	int ret = 0;
 
@@ -2102,6 +2133,9 @@ static int __rrr_net_transport_new (
 			}
 			if (alpn_protos != NULL) {
 				RRR_BUG("BUG: Plain method does not support ALPN in %s but it was given\n", __func__);
+			}
+			if (stream_open_callback != NULL) {
+				RRR_BUG("BUG: Stream open callback provided to rrr_net_transport_new in plain mode\n");
 			}
 			if (stream_open_callback != NULL) {
 				RRR_BUG("BUG: Stream open callback provided to rrr_net_transport_new in plain mode\n");

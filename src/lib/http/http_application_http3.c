@@ -1492,7 +1492,7 @@ static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
 	__rrr_http_application_http3_nghttp3_cb_end_stream,
 	__rrr_http_application_http3_nghttp3_cb_reset_stream,
 	NULL, /* shutdown */
-	NULL /* recv_settings */
+	NULL, /* recv_settings */
 };
 
 static const nghttp3_mem rrr_http_application_http3_nghttp3_mem = {
