@@ -216,7 +216,7 @@ static int __rrr_net_transport_iterate_by_handle_and_do (
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_iterate_by_handle_and_do");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 	return __rrr_net_transport_iterate_by_handle_ptr_and_do (
 			transport,
 			handle,
@@ -757,36 +757,6 @@ static void __rrr_net_transport_event_decode_client (
 		rrr_net_transport_ctx_touch (handle);
 	}
 
-	err:
-	CHECK_READ_WRITE_RETURN();
-}
-
-static void __rrr_net_transport_event_decode_client (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	(void)(fd);
-
-	int ret_tmp = 0;
-
-	CHECK_CLOSE_NOW();
-
-	if (flags & EV_TIMEOUT && handle->transport->methods->expiry != NULL) {
-		if ((ret_tmp = __rrr_net_transport_handle_expiry (handle)) != 0) {
-			goto err;
-		}
-	}
-	else {
-		if ((ret_tmp = __rrr_net_transport_handle_decode_client(handle)) != 0) {
-			goto err;
-		}
-
-		rrr_net_transport_ctx_touch (handle);
-	}
-
 	if (!handle->handshake_complete) {
 		return;
 	}
@@ -1185,7 +1155,7 @@ int rrr_net_transport_handle_cid_push (
 		rrr_net_transport_handle transport_handle,
 		const struct rrr_net_transport_connection_id *cid
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_push");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return __rrr_net_transport_handle_ptr_cid_push (handle, cid);
 }
@@ -1195,7 +1165,7 @@ int rrr_net_transport_handle_cids_push (
 		rrr_net_transport_handle transport_handle,
 		const struct rrr_net_transport_connection_id_pair *cids
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cids_push");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	int ret = 0;
 
@@ -1216,7 +1186,7 @@ int rrr_net_transport_handle_cid_remove (
 		rrr_net_transport_handle transport_handle,
 		const struct rrr_net_transport_connection_id *cid
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_cid_remove");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	rrr_net_transport_ctx_connection_id_remove(handle, cid);
 
@@ -1749,7 +1719,7 @@ int rrr_net_transport_handle_notify_read (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_notify_read");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	rrr_net_transport_ctx_notify_read(handle);
 
@@ -1760,7 +1730,7 @@ int rrr_net_transport_handle_notify_tick (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_notify_tick");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	rrr_net_transport_ctx_notify_tick(handle);
 
@@ -1977,7 +1947,7 @@ int rrr_net_transport_handle_stream_data_get (
 		rrr_net_transport_handle transport_handle,
 		int64_t stream_id
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_data_get");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_data_get(stream_data, handle, stream_id);
 }
@@ -1987,7 +1957,7 @@ int rrr_net_transport_handle_stream_data_clear (
 		rrr_net_transport_handle transport_handle,
 		int64_t stream_id
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_data_clear");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_data_clear(handle, stream_id);
 }
@@ -1999,7 +1969,7 @@ int rrr_net_transport_handle_stream_open_local (
 		int flags,
 		void *stream_open_callback_arg_local
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_open");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_open_local(result, handle, flags, stream_open_callback_arg_local);
 }
@@ -2010,7 +1980,7 @@ int rrr_net_transport_handle_stream_consume (
 		int64_t stream_id,
 		size_t consumed
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_consume");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_consume(handle, stream_id, consumed);
 }
@@ -2021,7 +1991,7 @@ int rrr_net_transport_handle_stream_shutdown_read (
 		int64_t stream_id,
 		uint64_t application_error_reason
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_shutdown_read");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_shutdown_read(handle, stream_id, application_error_reason);
 }
@@ -2032,7 +2002,7 @@ int rrr_net_transport_handle_stream_shutdown_write (
 		int64_t stream_id,
 		uint64_t application_error_reason
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_stream_shutdown_write");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_stream_shutdown_write(handle, stream_id, application_error_reason);
 }
@@ -2043,7 +2013,7 @@ int rrr_net_transport_handle_streams_iterate (
 		int (*callback)(int64_t stream_id, void *stream_data, void *arg),
 		void *arg
 ) {
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_handle_streams_iterate");
+	RRR_NET_TRANSPORT_HANDLE_GET();
 
 	return rrr_net_transport_ctx_streams_iterate(handle, callback, arg);
 }

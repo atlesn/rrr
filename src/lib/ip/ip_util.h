@@ -58,7 +58,7 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 int rrr_ip_check (
 		const struct sockaddr *addr,
 		socklen_t addr_len
-};
+);
 void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
 		struct sockaddr *addr,
 		socklen_t *addr_len
