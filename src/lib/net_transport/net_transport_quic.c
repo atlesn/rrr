@@ -110,7 +110,7 @@ struct rrr_net_transport_quic_ctx {
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
 	ngtcp2_path path;
-	ngtcp2_connection_close_error last_error;
+	ngtcp2_ccerr last_error;
 
 	struct rrr_net_transport_quic_stream_collection streams;
 	struct rrr_net_transport_quic_path path_active;
@@ -752,6 +752,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_path_validation (
 		ngtcp2_conn *conn,
 		uint32_t flags,
 		const ngtcp2_path *path,
+		const ngtcp2_path *old_path,
 		ngtcp2_path_validation_result res,
 		void *user_data
 ) {
@@ -760,6 +761,7 @@ static int __rrr_net_transport_quic_ngtcp2_cb_path_validation (
 	(void)(conn);
 	(void)(flags);
 	(void)(path);
+	(void)(old_path);
 
 	// Add any check for NGTCP2_PATH_VALIDATION_FLAG_PREFERRED_ADDR here
 
@@ -1005,7 +1007,8 @@ static int __rrr_net_transport_quic_ctx_new (
 			__rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending,
 			ngtcp2_crypto_version_negotiation_cb,
 			NULL, /* recv_rx_key */
-			NULL  /* recv_tx_key */
+			NULL, /* recv_tx_key */
+			NULL  /* tls_early_data_rejected */
 		};
 
 		if ((ret_tmp = ngtcp2_conn_server_new (
@@ -1087,7 +1090,8 @@ static int __rrr_net_transport_quic_ctx_new (
 			__rrr_net_transport_quic_ngtcp2_cb_stream_stop_sending,
 			ngtcp2_crypto_version_negotiation_cb,
 			NULL, /* recv_rx_key */
-			NULL  /* recv_tx_key */
+			NULL, /* recv_tx_key */
+			NULL  /* tls_early_data_rejected */
 		};
 
 		if ((ret_tmp = ngtcp2_conn_client_new (
@@ -1116,7 +1120,7 @@ static int __rrr_net_transport_quic_ctx_new (
 	}
 
 	ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
-	ngtcp2_connection_close_error_default(&ctx->last_error);
+	ngtcp2_ccerr_default(&ctx->last_error);
 
 	ctx->conn_ref.user_data = ctx;
 	ctx->conn_ref.get_conn = __rrr_net_transport_quic_cb_get_conn;
@@ -1562,7 +1566,7 @@ static int __rrr_net_transport_quic_decode (
 
 	// Add any stateless address validation here
 
-	memcpy(connection_ids->dst.data, verison.dcid, version.dcidlen);
+	memcpy(connection_ids->dst.data, version.dcid, version.dcidlen);
 	connection_ids->dst.length = version.dcidlen;
 
 	memcpy(connection_ids->src.data, version.scid, version.scidlen);
@@ -2150,7 +2154,7 @@ static int __rrr_net_transport_quic_write (
 				);
 
 				if (__rrr_net_transport_quic_stream_block (stream, 1) != 0) {
-					// ngtcp2_connection_close_error_set_application_error();
+					// ngtcp2_ccerr_set_application_error();
 					goto out_failure;
 				}
 			}
@@ -2165,7 +2169,7 @@ static int __rrr_net_transport_quic_write (
 						stream,
 						1 /* Do call application callback */
 				) != 0) {
-					// ngtcp2_connection_close_error_set_application_error();
+					// ngtcp2_ccerr_set_application_error();
 					goto out_failure;
 				}
 			}
@@ -2174,7 +2178,7 @@ static int __rrr_net_transport_quic_write (
 				assert(bytes_from_src >= 0);
 
 				if (stream->cb_ack != NULL && stream->cb_ack(stream_id, (size_t) bytes_from_src, stream->cb_arg) != 0) {
-					// ngtcp2_connection_close_error_set_application_error();
+					// ngtcp2_ccerr_set_application_error();
 					goto out_failure;
 				}
 			}
@@ -2675,7 +2679,7 @@ static int __rrr_net_transport_quic_receive (
 		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
 			RRR_DBG_7("net transport quic fd %i h %i crypto error while reading\n",
 				ctx->fd, ctx->connected_handle);
-			ngtcp2_connection_close_error_set_transport_error_tls_alert (
+			ngtcp2_ccerr_set_tls_alert (
 					&ctx->last_error,
 					ngtcp2_conn_get_tls_alert(ctx->conn),
 					NULL,
@@ -2686,7 +2690,7 @@ static int __rrr_net_transport_quic_receive (
 		else {
 			RRR_DBG_7("net transport quic fd %i h %i transport error while reading packet: %s\n",
 				ctx->fd, ctx->connected_handle, ngtcp2_strerror(ret_tmp));
-			ngtcp2_connection_close_error_set_transport_error_liberr (
+			ngtcp2_ccerr_set_liberr (
 					&ctx->last_error,
 					ret_tmp,
 					NULL,
@@ -2867,7 +2871,7 @@ static int __rrr_net_transport_quic_stream_do_shutdown_read (
 	}
 
 	int ret_tmp;
-	if ((ret_tmp = ngtcp2_conn_shutdown_stream_read(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
+	if ((ret_tmp = ngtcp2_conn_shutdown_stream_read(handle_data->ctx->conn, 0 /* TODO: Set flags? */, stream_id, application_error_reason)) != 0) {
 		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
 		return 1;
 	}
@@ -2892,7 +2896,7 @@ static int __rrr_net_transport_quic_stream_do_shutdown_write (
 	}
 
 	int ret_tmp;
-	if ((ret_tmp = ngtcp2_conn_shutdown_stream_write(handle_data->ctx->conn, stream_id, application_error_reason)) != 0) {
+	if ((ret_tmp = ngtcp2_conn_shutdown_stream_write(handle_data->ctx->conn, 0 /* TODO: Set flags? */, stream_id, application_error_reason)) != 0) {
 		RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
 		return 1;
 	}
@@ -3042,7 +3046,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 	static const char close_reason_default[] = "Bye";
 	static const char transport_close_reason_internal_error[] = "Internal error";
 	static const char transport_close_reason_connection_refused[] = "Connection refused";
-	ngtcp2_connection_close_error cerr = {0};
+	ngtcp2_ccerr cerr = {0};
 	ngtcp2_path_storage path_storage;
 	ngtcp2_pkt_info pi = {0};
 	uint8_t pb[1200];
@@ -3050,7 +3054,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 
 	switch (handle->submodule_close_reason) {
 		case RRR_NET_TRANSPORT_CLOSE_REASON_NO_ERROR:
-			ngtcp2_connection_close_error_set_transport_error (
+			ngtcp2_ccerr_set_transport_error (
 					&cerr,
 					NGTCP2_NO_ERROR,
 					(const uint8_t *) close_reason_default,
@@ -3058,7 +3062,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 			);
 			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_INTERNAL_ERROR:
-			ngtcp2_connection_close_error_set_transport_error (
+			ngtcp2_ccerr_set_transport_error (
 					&cerr,
 					NGTCP2_INTERNAL_ERROR,
 					(const uint8_t *) transport_close_reason_internal_error,
@@ -3066,7 +3070,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 			);
 			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_CONNECTION_REFUSED:
-			ngtcp2_connection_close_error_set_transport_error (
+			ngtcp2_ccerr_set_transport_error (
 					&cerr,
 					NGTCP2_CONNECTION_REFUSED,
 					(const uint8_t *) transport_close_reason_connection_refused,
@@ -3075,7 +3079,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 			break;
 		case RRR_NET_TRANSPORT_CLOSE_REASON_APPLICATION_ERROR:
 			if (handle->application_close_reason_string != NULL) {
-				ngtcp2_connection_close_error_set_application_error (
+				ngtcp2_ccerr_set_application_error (
 						&cerr,
 						handle->application_close_reason,
 						(const uint8_t *) handle->application_close_reason_string,
@@ -3083,7 +3087,7 @@ static int __rrr_net_transport_quic_pre_destroy (
 				);
 			}
 			else {
-				ngtcp2_connection_close_error_set_application_error (
+				ngtcp2_ccerr_set_application_error (
 						&cerr,
 						handle->application_close_reason,
 						(const uint8_t *) close_reason_default,

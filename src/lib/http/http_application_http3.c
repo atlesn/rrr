@@ -615,14 +615,14 @@ static int __rrr_http_application_http3_net_transport_cb_stream_blocked (
 
 	int ret_tmp;
 
-	if ((ret_tmp = (is_blocked ? nghttp3_conn_block_stream : nghttp3_conn_unblock_stream) (
-			http3->conn,
-			stream_id
-	)) != 0) {
-		RRR_MSG_0("Error from nghttp3 while blocking in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+	if (is_blocked) {
+		nghttp3_conn_block_stream (http3->conn, stream_id);
+	}
+	else if ((ret_tmp = nghttp3_conn_unblock_stream(http3->conn, stream_id)) != 0) {
+		RRR_MSG_0("Error from nghttp3 while unblocking in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
 		return 1;
 	}
-
+	
 	return 0;
 }
 
@@ -652,14 +652,10 @@ static int __rrr_http_application_http3_net_transport_cb_stream_shutdown_write (
 
 	RRR_DBG_3("HTTP3 shutdown write for stream %li from net transport\n", stream_id);
 
-	int ret_tmp;
-	if ((ret_tmp = nghttp3_conn_shutdown_stream_write (
+	nghttp3_conn_shutdown_stream_write (
 			http3->conn,
 			stream_id
-	)) != 0) {
-		RRR_MSG_0("Error from nghttp3 during write shutdown in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
-		return 1;
-	}
+	);
 
 	return 0;
 }
@@ -1496,6 +1492,7 @@ static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
 	__rrr_http_application_http3_nghttp3_cb_end_stream,
 	__rrr_http_application_http3_nghttp3_cb_reset_stream,
 	NULL, /* shutdown */
+	NULL /* recv_settings */
 };
 
 static const nghttp3_mem rrr_http_application_http3_nghttp3_mem = {
