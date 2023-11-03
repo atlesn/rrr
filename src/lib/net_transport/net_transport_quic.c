@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <openssl/err.h>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
-#include <ngtcp2/ngtcp2_crypto_openssl.h>
+#include <ngtcp2/ngtcp2_crypto_quictls.h>
 #include <assert.h>
 
 #include "../log.h"
@@ -1305,7 +1305,7 @@ static int __rrr_net_transport_quic_tls_data_new (
 
 	SSL_CTX *ctx = tls_data->ctx;
 
-	if (ngtcp2_crypto_openssl_configure_server_context(ctx) != 0) {
+	if (ngtcp2_crypto_quictls_configure_server_context(ctx) != 0) {
 		RRR_MSG_0("Failed to configure SSL CTX to ngtcp2 in %s\n", __func__);
 		ret = 1;
 		goto out_destroy;
