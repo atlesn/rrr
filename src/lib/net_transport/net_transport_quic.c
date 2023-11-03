@@ -959,6 +959,9 @@ static int __rrr_net_transport_quic_ctx_new (
 		RRR_DBG_7("net transport quic fd %i new server ctx src %s\n",
 				fd, buf_remote_addr);
 
+		// Set server-specific ngtcp2 transport parameters
+		transport_params.original_dcid_present = 1;
+
 		// Store new and original connection ID as expected future destination from client
 		__rrr_net_transport_quic_ngtcp2_cid_to_connection_id(&connection_ids_new->a, &scid);
 		connection_ids_new->b = connection_ids->dst;
