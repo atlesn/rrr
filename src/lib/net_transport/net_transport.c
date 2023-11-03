@@ -670,8 +670,6 @@ static void __rrr_net_transport_event_read (
 	(void)(fd);
 
 	int ret_tmp = 0;
-	ssize_t bytes = 0;
-	char buf;
 
 	CHECK_CLOSE_NOW();
 
@@ -693,7 +691,6 @@ static void __rrr_net_transport_event_read (
 			handle->transport->read_callback_arg
 	)) == 0 || flags & EV_READ) {
 		// Reset hard timeout
-
 		rrr_net_transport_ctx_touch (handle);
 
 		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
@@ -707,9 +704,10 @@ static void __rrr_net_transport_event_read (
 					RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX
 				);
 				ret_tmp = RRR_READ_EOF;
+				goto err;
 			}
 			else if (handle->noread_strike_count >= RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX) {
-				if ((bytes = recv(handle->submodule_fd, &buf, 1, MSG_PEEK)) == 0) {
+				if ((ret_tmp = rrr_net_transport_ctx_check_alive (handle)) != 0) {
 					// Assume that remote has closed the connection and that the application
 					// does not detect this because it is waiting for something to write.
 					RRR_DBG_7("net transport fd %i [%s] application did not read anything the last %i "
@@ -718,7 +716,7 @@ static void __rrr_net_transport_event_read (
 						handle->transport->application_name,
 						RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX
 					);
-					ret_tmp = RRR_READ_EOF;
+					goto err;
 				}
 			}
 		}
