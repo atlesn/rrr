@@ -70,11 +70,16 @@ int rrr_net_transport_tls_common_new (
 		goto out;
 	}
 
+	if ((ret = rrr_socket_graylist_new (&result->connect_graylist)) != 0) {
+		RRR_MSG_0("Could not allocate memory for connect graylist in rrr_net_transport_tls_new\n");
+		goto out_free;
+	}
+
 	if (certificate_file != NULL && *certificate_file != '\0') {
 		if ((result->certificate_file = rrr_strdup(certificate_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for certificate file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -82,7 +87,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->private_key_file = rrr_strdup(private_key_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for private key file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -90,7 +95,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->ca_file = rrr_strdup(ca_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA file file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -98,7 +103,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->ca_path = rrr_strdup(ca_path)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA path file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -106,7 +111,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->alpn.protos = rrr_allocate(alpn_protos_length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 		memcpy(result->alpn.protos, alpn_protos, alpn_protos_length);
 		result->alpn.length = alpn_protos_length;
@@ -118,12 +123,14 @@ int rrr_net_transport_tls_common_new (
 	*target = result;
 
 	goto out;
-	out_free:
+	out_free_strings:
 		RRR_FREE_IF_NOT_NULL(result->alpn.protos);
 		RRR_FREE_IF_NOT_NULL(result->ca_path);
 		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);
 		RRR_FREE_IF_NOT_NULL(result->private_key_file);
+		rrr_socket_graylist_destroy(result->connect_graylist);
+	out_free:
 		rrr_free(result);
 	out:
 		return ret;
@@ -138,7 +145,7 @@ int rrr_net_transport_tls_common_destroy (
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
 
-	rrr_socket_graylist_clear(&tls->connect_graylist);
+	rrr_socket_graylist_destroy(tls->connect_graylist);
 
 	rrr_free(tls);
 

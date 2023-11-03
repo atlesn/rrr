@@ -1898,7 +1898,7 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_low_priority_message_timeout_factor", message_low_pri_timeout_factor, 10);
 
-	if (data->message_low_pri_timeout_factor * data->message_timeout_us < data->message_timeout_us) {
+	if (data->message_low_pri_timeout_factor * data->message_queue_timeout_us < data->message_queue_timeout_us) {
 		RRR_MSG_0("Overflow while multiplying parameters http_message_timeout_ms and http_low_priority_message_timeout_factor in httpclient instance %s. Please reduce the values.\n",
 				config->name);
 		ret = 1;
@@ -2205,11 +2205,11 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		data->connection_soft_error_dropped_count = 0;
 	}
 
-	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_timeout_us;
-	assert(low_pri_timeout_us >= data->message_timeout_us);
+	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_queue_timeout_us;
+	assert(low_pri_timeout_us >= data->message_queue_timeout_us);
 
-	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_msgdb_queue, data);
-	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_senders_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_senders_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {

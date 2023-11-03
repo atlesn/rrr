@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../random.h"
 #include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
+#include "../socket/rrr_socket_graylist.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
@@ -1792,7 +1793,7 @@ static int __rrr_net_transport_quic_connect_or_modify_resolve_callback (
 	memset(ip_data, '\0', sizeof(*ip_data));
 	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
 
-	if (rrr_socket_graylist_exists(&tls->connect_graylist, addr, addr_len)) {
+	if (rrr_socket_graylist_exists(tls->connect_graylist, addr, addr_len)) {
 		RRR_DBG_7("net transport quic connect attempt [%i] not connecting to %s:%u->%s due to graylisting, trying next alternative if any.\n",
 			callback_data->attempt, host, port, buf);
 		goto out;

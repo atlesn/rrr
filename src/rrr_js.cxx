@@ -51,7 +51,7 @@ int main(int argc, const char **argv) {
 
 	while ((size = fread (tmp, 1, 4096, stdin)) > 0) {
 		{
-			char *in_tmp = reinterpret_cast<char *>(rrr_reallocate(in, in == NULL ? 0 : size_total + 1, size_total + size + 1));
+			char *in_tmp = reinterpret_cast<char *>(rrr_reallocate(in, size_total + size + 1));
 			if (in_tmp == NULL) {
 				fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
 				ret = EXIT_FAILURE;

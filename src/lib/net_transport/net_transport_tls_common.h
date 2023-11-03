@@ -59,7 +59,7 @@ struct rrr_net_transport_tls {
 	char *ca_path;
 	struct rrr_net_transport_tls_alpn alpn;
 
-	struct rrr_socket_graylist connect_graylist;
+	struct rrr_socket_graylist *connect_graylist;
 };
 
 struct rrr_net_transport_tls_data {
