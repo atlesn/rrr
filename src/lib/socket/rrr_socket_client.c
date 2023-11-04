@@ -1117,6 +1117,9 @@ static int __rrr_socket_client_fd_reset (
 		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg)
 ) {
 	rrr_event_collection_clear_soft(&client_fd->events);
+	rrr_event_handle_clear(&client_fd->event_read);
+	rrr_event_handle_clear(&client_fd->event_write);
+	rrr_event_handle_clear(&client_fd->event_timeout);
 	return __rrr_socket_client_fd_event_setup (
 			client_fd,
 			event_read_callback,

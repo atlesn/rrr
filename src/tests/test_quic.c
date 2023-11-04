@@ -137,6 +137,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 			data
 	)) != 0) {
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			printf("incomplete\n");
 			ret = 0;
 			goto out;
 		}
@@ -284,11 +285,21 @@ static int __rrr_test_quic_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	if (data->client.transport_handle > 0) {
 		printf("Notify\n");
-		rrr_net_transport_handle_notify_read (
+		if (rrr_net_transport_handle_notify_read (
 				data->client.transport,
 				data->client.transport_handle
-		);
+		) != 0) {
+			TEST_MSG("Quic test notify failed\n");
+			return RRR_EVENT_ERR;
+		}
 	}
+
+	TEST_MSG("CCI %s SCI %s CCO %s SCO %s\n",
+		data->client.complete_in ? "Y" : "-",
+		data->server.complete_in ? "Y" : "-",
+		data->client.complete_out ? "Y" : "-",
+		data->server.complete_out ? "Y" : "-"
+	);
 
 	if ( data->client.complete_in &&
 	     data->server.complete_in &&

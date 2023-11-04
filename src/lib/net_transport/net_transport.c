@@ -864,6 +864,7 @@ static void __rrr_net_transport_handle_event_clear (
 	rrr_event_handle_clear (&handle->event_handshake);
 	rrr_event_handle_clear (&handle->event_read);
 	rrr_event_handle_clear (&handle->event_read_notify);
+	rrr_event_handle_clear (&handle->event_tick_notify);
 	rrr_event_handle_clear (&handle->event_write);
 	rrr_event_handle_clear (&handle->event_first_read_timeout);
 	rrr_event_handle_clear (&handle->event_hard_read_timeout);

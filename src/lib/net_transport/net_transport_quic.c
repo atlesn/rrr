@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
+#define RRR_NET_TRANSPORT_QUIC_INITIAL_UNI_STREAMS 3
 #define RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH 18
 #define RRR_NET_TRANSPORT_QUIC_CIPHERS \
     "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
@@ -948,7 +949,7 @@ static int __rrr_net_transport_quic_ctx_new (
 	transport_params.initial_max_stream_data_uni = 128 * 1024;
 	transport_params.initial_max_data = 1024 * 1024;
 	transport_params.initial_max_streams_bidi = 100;
-	transport_params.initial_max_streams_uni = 3;
+	transport_params.initial_max_streams_uni = RRR_NET_TRANSPORT_QUIC_INITIAL_UNI_STREAMS;
 	transport_params.max_idle_timeout = transport_tls->hard_read_timeout_ms * NGTCP2_MILLISECONDS;
 
 	if (rrr_time_get_64_nano(&settings.initial_ts, NGTCP2_SECONDS) != 0) {
@@ -2300,7 +2301,7 @@ static int __rrr_net_transport_quic_read_stream (
 
 	*bytes_read = 0;
 
-	int ret = 0;
+	int ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 
 	// Write any data from ngtcp2 and fetch stream data from
 	// application layer.
@@ -2328,7 +2329,6 @@ static int __rrr_net_transport_quic_read_stream (
 					__rrr_net_transport_quic_read_stream_nullsafe_callback,
 					&callback_data
 			)) != 0) {
-				printf("Read strean %i\n", ret);
 				goto out;
 			}
 
@@ -2338,6 +2338,8 @@ static int __rrr_net_transport_quic_read_stream (
 			ctx->need_tick = 1;
 
 			*bytes_read += len;
+
+			ret = RRR_NET_TRANSPORT_READ_OK;
 		}
 
 		if (node->flags & RRR_NET_TRANSPORT_STREAM_F_CLOSING) {
@@ -2346,8 +2348,8 @@ static int __rrr_net_transport_quic_read_stream (
 				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
 						ctx->fd, ctx->connected_handle, node->stream_id);
 
-				if (node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) {
-					return 1;
+				if ((ret = node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) != 0) {
+					goto out;
 				}
 
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -2358,8 +2360,6 @@ static int __rrr_net_transport_quic_read_stream (
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&ctx->streams, 0; __rrr_net_transport_quic_stream_destroy(node));
-
-	ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 
 	out:
 	return ret;
@@ -2937,9 +2937,13 @@ static int __rrr_net_transport_quic_selected_proto_get (
 static int __rrr_net_transport_quic_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
-	(void)(handle);
-	RRR_BUG("poll not implemented\n");
-	return 1;
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	if (rrr_length_from_slength_bug_const(RRR_LL_COUNT(&handle_data->ctx->streams)) > 0) {
+		return RRR_NET_TRANSPORT_READ_OK;
+	}
+	RRR_DBG_7("net transport quic fd %i h %i no streams during poll, return EOF\n",
+		handle_data->ctx->fd, handle->handle);
+	return RRR_NET_TRANSPORT_READ_READ_EOF;
 }
 
 static int __rrr_net_transport_quic_handshake (
