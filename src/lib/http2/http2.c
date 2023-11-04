@@ -296,7 +296,25 @@ static int __rrr_http2_on_frame_send_callback (
 	(void)(session);
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %llu\n", frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
+	//get stream
+	struct rrr_http_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
+
+	if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+		RRR_DBG_3("http2 send frame type %" PRIu8 " stream %" PRIi32 " with end stream set\n",
+			frame->hd.type, frame->hd.stream_id);
+		if (stream != NULL)
+			stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_STREAM_CLOSE;
+	}
+
+	if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
+		RRR_DBG_3("http2 send frame type %" PRIu8 " stream %" PRIi32 " with end headers set\n",
+			frame->hd.type, frame->hd.stream_id);
+		if (stream != NULL)
+			stream->flags |= RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END;
+	}
+
+	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %llu\n",
+		frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
 
 	return 0;
 }
@@ -402,7 +420,7 @@ static int __rrr_http2_on_header_callback (
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	RRR_DBG_3("Received HTTP2 header %s=%s\n", name, value);
+	RRR_DBG_3("HTTP2 stream [%" PRIi32 "] received header %s=%s\n", frame->hd.stream_id, name, value);
 
 	rrr_length parsed_bytes = 0;
 	if (rrr_http_header_field_parse_value(&stream->headers, &parsed_bytes, (const char *) name, (const char *) value) != 0) {
@@ -574,9 +592,9 @@ int rrr_http2_session_new_or_reset (
 	nghttp2_session_callbacks_set_on_frame_recv_callback      (callbacks, __rrr_http2_on_frame_recv_callback);
 	nghttp2_session_callbacks_set_on_header_callback          (callbacks, __rrr_http2_on_header_callback);
 	nghttp2_session_callbacks_set_before_frame_send_callback  (callbacks, __rrr_http2_before_frame_send_callback);
+	nghttp2_session_callbacks_set_on_frame_send_callback      (callbacks, __rrr_http2_on_frame_send_callback);
 
 	if (RRR_DEBUGLEVEL_7) {
-		nghttp2_session_callbacks_set_on_frame_send_callback         (callbacks, __rrr_http2_on_frame_send_callback);
 		nghttp2_session_callbacks_set_on_begin_headers_callback      (callbacks, __rrr_http2_on_begin_headers_callback);
 		nghttp2_session_callbacks_set_on_invalid_frame_recv_callback (callbacks, __rrr_http2_on_invalid_frame_recv_callback);
 		nghttp2_session_callbacks_set_error_callback                 (callbacks, __rrr_http2_error_callback);

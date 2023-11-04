@@ -45,16 +45,20 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	int ret = 0;
 
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED)) {
-		// Data or error already delivered to callback
+		RRR_DBG_3("HTTP2/HTTP3 stream [%" PRIi64 "] read end data already delivered\n", stream_id);
 		goto out;
 	}
 
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR)) {
+		RRR_DBG_3("HTTP2/HTTP3 stream [%" PRIi64 "] read end stream error %s\n",
+			stream_id, stream_error_msg != NULL ? stream_error_msg : "(unknown error)");
+
 		rrr_http_transaction_stream_flags_add(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED);
 
 		if (application->callbacks.callback_arg == NULL) {
 			if (is_server) {
-				RRR_DBG_3("HTTP stream error from client: %s\n", stream_error_msg != NULL ? stream_error_msg : "(unknown error)");
+				RRR_DBG_3("HTTP stream error from client: %s\n",
+					stream_error_msg != NULL ? stream_error_msg : "(unknown error)");
 			}
 			else {
 				RRR_MSG_0("HTTP request failed and no failure delivery is defined. Data is lost.\n");
@@ -73,14 +77,14 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 	}
 
 	if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE|RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED)) {
-		printf("Data stream closing and data delivered\n");
-		// Stream is closing and data is delivered
+		RRR_DBG_3("HTTP2/HTTP3 stream [%" PRIi64 "] read end stream close and data already delivered\n",
+			stream_id);
 		goto out;
 	}
 
 	if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_END)) {
-		printf("Wait for data\n");
-		// Wait for any DATA frames and END DATA
+		RRR_DBG_3("HTTP2/HTTP3 stream [%" PRIi64 "] read end data end not received, wait for data\n",
+			stream_id);
 		goto out;
 	}
 
@@ -176,8 +180,6 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 			application->callbacks.callback_arg
 	)) != 0) {
 		if (is_server) {
-			// Is server
-
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;
 			}
@@ -189,12 +191,10 @@ int rrr_http_application_http2_http3_common_stream_read_end (
 		goto out;
 	}
 
-	if (application->callbacks.unique_id_generator_callback != NULL) {
-		// Is server
+	if (is_server) {
 		goto out_send_response;
 	}
 
-	// Is client
 	goto out;
 
 	out_send_response_bad_request:

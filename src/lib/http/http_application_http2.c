@@ -350,6 +350,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	if (is_server) {
 		if (transaction == NULL) {
+			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback server new transaction\n", stream_id);
+
 			if ((ret = rrr_http_transaction_new (
 					&transaction_to_destroy,
 					0,
@@ -377,14 +379,27 @@ static int __rrr_http_application_http2_data_receive_callback (
 			rrr_http_transaction_incref(transaction_to_destroy);
 			transaction = transaction_to_destroy;
 		}
+		else {
+			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback server existing transaction\n", stream_id);
+		}
+
+		rrr_http_transaction_stream_flags_add(transaction, flags);
+
+		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END)) {
+			RRR_DBG_3("HTTP2 stream [%" PRIi64 "] send headers end\n",
+				stream_id);
+			goto out;
+		}
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 	}
 	else {
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
-	}
+		RRR_DBG_3("HTTP2 stream [%" PRIi64 "] data receive callback client\n", stream_id);
 
-	rrr_http_transaction_stream_flags_add(transaction, flags);
+		rrr_http_transaction_stream_flags_add(transaction, flags);
+
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
+	}
 
 	if ((ret = rrr_http_application_http2_http3_common_stream_read_end (
 			(struct rrr_http_application *) callback_data->http2,

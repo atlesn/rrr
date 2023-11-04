@@ -73,6 +73,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_DATA_RECEIVE_FLAG_IS_DATA_DELIVERED  (1<<2)
 #define RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE    (1<<3)
 #define RRR_HTTP_DATA_RECEIVE_FLAG_IS_STREAM_ERROR    (1<<4)
+#define RRR_HTTP_DATA_SEND_FLAG_IS_HEADERS_END        (1<<5)
+#define RRR_HTTP_DATA_SEND_FLAG_IS_STREAM_CLOSE       (1<<6)
 
 enum rrr_http_transport {
 	RRR_HTTP_TRANSPORT_ANY,
