@@ -167,7 +167,6 @@ struct httpclient_data {
 
 	rrr_http_unique_id unique_id_counter;
 
-	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
 };
 
@@ -2008,13 +2007,24 @@ static int httpclient_parse_config (
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(body);
 
+	enum rrr_net_transport_type_f allowed_transport_types = RRR_NET_TRANSPORT_F_PLAIN;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_TLS;
+#endif
+#if defined(RRR_WITH_HTTP3)
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_QUIC;
+#endif
+
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"http",
-			1,
-			0,
-			RRR_NET_TRANSPORT_BOTH
+			0, // Allow multiple transport types
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+			0, // Don't allow specifying certificate without transport type being TLS
+#endif
+			RRR_NET_TRANSPORT_NONE,
+			allowed_transport_types
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -2394,15 +2404,25 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
 
-	switch (data->net_transport_config.transport_type) {
-		case RRR_NET_TRANSPORT_TLS:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-			 break;
-		case RRR_NET_TRANSPORT_PLAIN:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
-			 break;
-		default:
+	switch (data->net_transport_config.transport_type_f) {
+		case RRR_NET_TRANSPORT_F_NONE:
 			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+			break;
+		case RRR_NET_TRANSPORT_F_PLAIN:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
+			break;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+		case RRR_NET_TRANSPORT_F_TLS:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+			break;
+#endif
+#if defined(RRR_WITH_HTTP3)
+		case RRR_NET_TRANSPORT_F_QUIC:
+			http_transport_force = RRR_HTTP_TRANSPORT_QUIC;
+			break;
+#endif
+		default:
+			RRR_BUG("Invalid transport type %i (verify that only one is set)\n", data->net_transport_config.transport_type_f);
 			break;
 	};
 

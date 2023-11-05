@@ -1840,8 +1840,13 @@ The following configuration parameters are available in the
 module:
 .PP
 .Bl -tag -width -indent
-.It http_server_transport_type={tls|plain|both}
-Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
+.It http_server_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain, tls
+and
+.B quic.
+If not given, 'plain' is assumed.
 
 .It http_server_port_tls=PORT
 TCP port to use for TLS listening, defaults to 443.
@@ -1850,14 +1855,7 @@ TCP port to use for TLS listening, defaults to 443.
 TCP port to use for plaintext listening, defaults to 80.
 
 .It http_server_port_quic=PORT
-UDP port to use for QUIC and HTTP/3 listening.
-If the parameter is given, the HTTP header
-.B Alt-Svc
-will be provided to client in all non-QUIC responses.
-The parameter
-.B http_server_transport_type
-does not affect QUIC listening.
-If left unset, QUIC and HTTP/3 will be disabled.
+TCP port to use for TLS listening, defaults to 443 (UDP).
 
 .It http_server_request_max_mb=MEGABYTES
 Maximum size in megabytes for requests. A value of 0 indicates unlimited request size. Defaults to 10.
@@ -2081,11 +2079,9 @@ will detect whether a query string already exists in the URL and prefix the firs
 Defaults to
 .B /.
 
-.It http_transport_type={tls|plain|both}
-If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
-.B enforced,
-which means that redirects fro the server to a different transport type than the chosen one will be rejected.
-Use 'both' or leave unspecified for automatic transport type.
+.It http_transport_type={tls|plain|quic}
+Force a specific transport type.
+If not given, the transport type will be chosen automatically.
 
 .It http_response_max_mb=MEGABYTES
 Maximum size in megabytes for responses. A value of 0 indicates unlimited response size. Defaults to 10.
@@ -2652,8 +2648,13 @@ TCP port to listen on (listens on all interfaces). Defaults to 1883.
 .It mqtt_broker_port_tls=PORT
 TCP port to listen on for TLS connections (listens on all interfaces). Defaults to 8883.
 
-.It mqtt_broker_transport_type={plain|tls|both}
-The transport type to use when listening. Defaults to 'plain'.
+.It mqtt_broker_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain
+and
+.B tls.
+If not given, 'plain' is assumed.
 
 .It mqtt_broker_tls_*
 Refer to the

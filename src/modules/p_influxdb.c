@@ -580,9 +580,15 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			&data->net_transport_config,
 			config,
 			"influxdb",
-			0,
-			0,
-			RRR_NET_TRANSPORT_PLAIN
+			0, // Disallow multiple transports
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+			0, // Don't allow specifying certificate without transport type being TLS
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN | RRR_NET_TRANSPORT_F_TLS
+#else
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	) != 0) {
 		ret = 1;
 	}

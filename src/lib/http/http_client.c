@@ -989,14 +989,26 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	int ret = 0;
 
 	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 		*transport_keepalive_use = http_client->transport_keepalive_tls;
+#else
+		RRR_MSG_0("Warning: HTTPS was requested but RRR was not compiled with OpenSSL or LibreSSL support, aborting request\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+#endif
 	}
 	else if (transport_code == RRR_HTTP_TRANSPORT_QUIC) {
+#ifdef RRR_WITH_HTTP3
 		*transport_keepalive_use = http_client->transport_keepalive_quic;
+#else
+		RRR_MSG_0("Warning: QUIC was requested but RRR was not compiled with HTTP3 support, aborting request\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+#endif
 	}
-	else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS || transport_force == RRR_HTTP_TRANSPORT_QUIC) {
-		RRR_MSG_0("Warning: %s force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n",
-			RRR_HTTP_TRANSPORT_TO_STR(transport_force));
+	else if (transport_force != RRR_HTTP_TRANSPORT_ANY && transport_force != transport_code) {
+		RRR_MSG_0("Warning: Transport type %s was forced while %s was attempted (possibly following redirect), aborting request\n",
+				RRR_HTTP_TRANSPORT_TO_STR(transport_force), RRR_HTTP_TRANSPORT_TO_STR(transport_code));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -1062,8 +1074,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 			NULL,
 			NULL,
 			NULL,
-			NULL,
-			RRR_NET_TRANSPORT_PLAIN
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
 	};
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_HTTP3)
@@ -1081,7 +1093,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 
 #ifdef RRR_WITH_HTTP3
 	if (http_client->transport_keepalive_quic == NULL) {
-		net_transport_config_tmp_ssl.transport_type = RRR_NET_TRANSPORT_QUIC;
+		net_transport_config_tmp_ssl.transport_type_p = RRR_NET_TRANSPORT_QUIC;
 		rrr_http_application_http3_alpn_protos_get(&alpn_protos, &alpn_protos_length);
 
 		// !!! The stream open callback must only be called for local streams
@@ -1121,7 +1133,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 	if (http_client->transport_keepalive_tls == NULL) {
-		net_transport_config_tmp_ssl.transport_type = RRR_NET_TRANSPORT_TLS;
+		net_transport_config_tmp_ssl.transport_type_p = RRR_NET_TRANSPORT_TLS;
 #if RRR_WITH_NGHTTP2
 		rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
 #endif

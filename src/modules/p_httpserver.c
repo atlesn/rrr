@@ -61,6 +61,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 #    define RRR_HTTPSERVER_DEFAULT_PORT_TLS                   443
 #endif
+#if defined(RRR_WITH_HTTP3)
+#    define RRR_HTTPSERVER_DEFAULT_PORT_QUIC                  443
+#endif
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
 #define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
 #define RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB                   10
@@ -155,31 +158,24 @@ static int httpserver_parse_config (
 ) {
 	int ret = 0;
 
+	enum rrr_net_transport_type_f allowed_transport_types = RRR_NET_TRANSPORT_F_PLAIN;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_TLS;
+#endif
 #if defined(RRR_WITH_HTTP3)
-	if ((ret = rrr_instance_config_read_optional_port_number (
-			&data->port_quic,
-			config,
-			"http_server_port_quic"
-	)) != 0) {
-		goto out;
-	}
-
-	if (data->port_quic > 0 && (ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_quic)) != 0) {
-		goto out;
-	}
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_QUIC;
 #endif
 
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"http_server",
-			1,
-#if defined(RRR_WITH_HTTP3)
-			data->port_quic > 0,
-#else
-			0,
+			1, // Allow multiple transport types
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+			0, // Don't allow specifying certificate without transport type being TLS
 #endif
-			RRR_NET_TRANSPORT_PLAIN
+			RRR_NET_TRANSPORT_PLAIN,
+			allowed_transport_types
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -195,15 +191,38 @@ static int httpserver_parse_config (
 		)) != 0) {
 			goto out;
 		}
-		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
-			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-		) {
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLSISH)) {
 			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
 					config->name);
 			ret = 1;
 			goto out;
 		}
 	);
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	data->port_quic = RRR_HTTPSERVER_DEFAULT_PORT_QUIC;
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_quic",
+		if ((ret = rrr_instance_config_read_optional_port_number (
+				&data->port_quic,
+				config,
+				"http_server_port_quic"
+		)) != 0) {
+			goto out;
+		}
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC)) {
+			RRR_MSG_0("Setting http_server_port_quic is set for httpserver instance %s but QUIC transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
+	);
+
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC) {
+		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_quic)) != 0) {
+			goto out;
+		}
+	}
 #endif
 
 	data->port_plain = RRR_HTTPSERVER_DEFAULT_PORT_PLAIN;
@@ -215,9 +234,8 @@ static int httpserver_parse_config (
 		)) != 0) {
 			goto out;
 		}
-		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
-			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-		) {
+
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN)) {
 			RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
 					config->name);
 			ret = 1;
@@ -316,9 +334,7 @@ static int httpserver_parse_config (
 static int httpserver_start_listening (struct httpserver_data *data) {
 	int ret = 0;
 
-	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
-		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
-	) {
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN) {
 		if ((ret = rrr_http_server_start_plain (
 				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
@@ -335,9 +351,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 	}
 
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS ||
-		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
-	) {
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS) {
 		if ((ret = rrr_http_server_start_tls (
 				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
@@ -357,7 +371,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 #endif
 
 #if defined(RRR_WITH_HTTP3)
-	if (data->port_quic > 0) {
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC) {
 		if ((ret = rrr_http_server_start_quic (
 				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),

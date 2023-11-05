@@ -191,19 +191,23 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 			&data->net_transport_config,
 			config,
 			"mqtt_broker",
-			1,
-			0,
-			RRR_NET_TRANSPORT_PLAIN
+			1, // Allow multiple transports
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+			0, // Don't allow specifying certificate without transport type being TLS
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN|RRR_NET_TRANSPORT_F_TLS
+#else
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	)) != 0) {
 		goto out;
 	}
 
-	data->do_transport_plain = (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH ||
-								data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN
-	);
-	data->do_transport_tls = (	data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH ||
-								data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
-	);
+	data->do_transport_plain = (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN) != 0;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	data->do_transport_tls = (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS) != 0;
+#endif
 
 	if (rrr_settings_exists(config->settings, "mqtt_broker_port") && !data->do_transport_plain) {
 		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name);
@@ -362,16 +366,11 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_plain);
 
-		// We're not allowed to pass in TLS parameters when starting plain mode,
-		// create temporary config struct with TLS parameters set to NULL
-		struct rrr_net_transport_config net_transport_config_tmp = {
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			RRR_NET_TRANSPORT_PLAIN
-		};
+		struct rrr_net_transport_config net_transport_config_tmp;
+		rrr_net_transport_config_copy_mask_tls(&net_transport_config_tmp, &data->net_transport_config);
+
+		assert(net_transport_config_tmp.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN);
+		net_transport_config_tmp.transport_type_p = RRR_NET_TRANSPORT_PLAIN;
 
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 				data->mqtt_broker_data,
@@ -390,9 +389,8 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;
 
-		// In case transport type is set to BOTH, we set it to TLS. Do not modify the
-		// original struct, only this temporary one.
-		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
+		assert(net_transport_config_tmp.transport_type_f & RRR_NET_TRANSPORT_F_TLS);
+		net_transport_config_tmp.transport_type_p = RRR_NET_TRANSPORT_TLS;
 
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 				data->mqtt_broker_data,

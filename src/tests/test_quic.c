@@ -411,8 +411,8 @@ int rrr_test_quic (void) {
 		"../../misc/ssl/rrr.key",
 		NULL, //"../../misc/ssl/rootca/goliathdns.no.crt",
 		NULL, //"../../misc/ssl/rootca",
-		"RRR QUIC",
-		RRR_NET_TRANSPORT_QUIC
+		RRR_NET_TRANSPORT_QUIC,
+		RRR_NET_TRANSPORT_F_QUIC
 	};
 
 	static const struct rrr_net_transport_config config_client = {
@@ -420,8 +420,8 @@ int rrr_test_quic (void) {
 		NULL,
 		"../../misc/ssl/rootca/goliathdns.no.crt",
 		"../../misc/ssl/rootca",
-		"RRR QUIC",
-		RRR_NET_TRANSPORT_QUIC
+		RRR_NET_TRANSPORT_QUIC,
+		RRR_NET_TRANSPORT_F_QUIC
 	};
 
 	if ((ret = rrr_net_transport_new (

@@ -382,8 +382,8 @@ int main (int argc, const char **argv, const char **env) {
 				data.private_key_file,
 				NULL,
 				NULL,
-				NULL,
-				RRR_NET_TRANSPORT_TLS
+				RRR_NET_TRANSPORT_TLS,
+				RRR_NET_TRANSPORT_F_TLS
 		};
 
 		int flags = 0;
@@ -417,8 +417,8 @@ int main (int argc, const char **argv, const char **env) {
 				data.private_key_file,
 				NULL,
 				NULL,
-				NULL,
-				RRR_NET_TRANSPORT_QUIC
+				RRR_NET_TRANSPORT_QUIC,
+				RRR_NET_TRANSPORT_F_QUIC
 		};
 
 		int flags = 0;

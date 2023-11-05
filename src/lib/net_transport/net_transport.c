@@ -2092,7 +2092,7 @@ static int __rrr_net_transport_new (
 
 	struct rrr_net_transport *new_transport = NULL;
 
-	switch (config->transport_type) {
+	switch (config->transport_type_p) {
 		case RRR_NET_TRANSPORT_PLAIN:
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in %s but flags were given\n", __func__);
@@ -2151,7 +2151,7 @@ static int __rrr_net_transport_new (
 			break;
 #endif
 		default:
-			RRR_BUG("Transport method %i not implemented in %s\n", config->transport_type, __func__);
+			RRR_BUG("Transport method %i not implemented in %s\n", config->transport_type_p, __func__);
 			break;
 	};
 
@@ -2186,7 +2186,7 @@ static int __rrr_net_transport_new (
 		}
 	}
 
-	new_transport->transport_type = config->transport_type;
+	new_transport->transport_type = config->transport_type_p;
 	strncpy(new_transport->application_name, application_name, sizeof(new_transport->application_name));
 	new_transport->application_name[sizeof(new_transport->application_name)-1] = '\0';
 

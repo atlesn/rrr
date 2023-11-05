@@ -753,7 +753,14 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.net_transport_config.transport_type = RRR_NET_TRANSPORT_BOTH;
+	data.net_transport_config.transport_type_f = RRR_NET_TRANSPORT_F_PLAIN;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	data.net_transport_config.transport_type_f |= RRR_NET_TRANSPORT_F_TLS;
+#endif
+#if defined(RRR_WITH_HTTP3)
+	data.net_transport_config.transport_type_f |= RRR_NET_TRANSPORT_F_QUIC;
+#endif
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,

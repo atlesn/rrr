@@ -144,7 +144,8 @@ int rrr_mqtt_transport_start (
 
 	struct rrr_net_transport *tmp = NULL;
 
-	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_TLS) {
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				net_transport_config,
@@ -158,7 +159,9 @@ int rrr_mqtt_transport_start (
 			goto out;
 		}
 	}
-	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_PLAIN) {
+	else
+#endif
+	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_PLAIN) {
 		struct rrr_net_transport_config net_transport_config_plain;
 		rrr_net_transport_config_copy_mask_tls(&net_transport_config_plain, net_transport_config);
 		if ((ret = rrr_net_transport_new (
@@ -175,7 +178,7 @@ int rrr_mqtt_transport_start (
 		}
 	}
 	else {
-		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type, __func__);
+		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type_p, __func__);
 	}
 
 	transport->transports[transport->transport_count++] = tmp;

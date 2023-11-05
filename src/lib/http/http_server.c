@@ -213,6 +213,7 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 	if (alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0) {
 		type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+#if defined(RRR_WITH_HTTP3)
 	else if (rrr_net_transport_ctx_transport_type_get (handle) == RRR_NET_TRANSPORT_QUIC) {
 		// Check only first two bytes of string (matches h3-29 etc.)
 		if (alpn_selected_proto == NULL || strncmp(alpn_selected_proto, "h3", 2) != 0) {
@@ -225,6 +226,7 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 		}
 		type = RRR_HTTP_APPLICATION_HTTP3;
 	}
+#endif
 
 	if ((ret = rrr_http_application_new (
 			&application,
@@ -670,7 +672,8 @@ static int __rrr_http_server_start (
 	const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
 	const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
 
-	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
 				"HTTP server TLS",
 				http_server,
@@ -691,8 +694,9 @@ static int __rrr_http_server_start (
 				&callback_data
 		);
 	}
+#endif
 #ifdef RRR_WITH_HTTP3
-	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_QUIC) {
+	else if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_QUIC) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
 				"HTTP server QUIC",
 				http_server,
@@ -768,8 +772,8 @@ int rrr_http_server_start_plain (
 			NULL,
 			NULL,
 			NULL,
-			NULL,
-			RRR_NET_TRANSPORT_PLAIN
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
 	};
 
 	ret = __rrr_http_server_start (
@@ -802,7 +806,7 @@ int rrr_http_server_start_tls (
 
 	struct rrr_net_transport_config net_transport_config_tls = *net_transport_config_template;
 
-	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
+	net_transport_config_tls.transport_type_p = RRR_NET_TRANSPORT_TLS;
 
 	if (server->rules.do_no_server_http2) {
 		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
@@ -839,7 +843,7 @@ int rrr_http_server_start_quic (
 
 	struct rrr_net_transport_config net_transport_config_quic = *net_transport_config_template;
 
-	net_transport_config_quic.transport_type = RRR_NET_TRANSPORT_QUIC;
+	net_transport_config_quic.transport_type_p = RRR_NET_TRANSPORT_QUIC;
 
 	ret = __rrr_http_server_start (
 			&server->transport_quic,

@@ -56,11 +56,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE		RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ
 
 enum rrr_net_transport_type {
-	RRR_NET_TRANSPORT_BOTH,
-	RRR_NET_TRANSPORT_PLAIN,
-	RRR_NET_TRANSPORT_TLS,
-	RRR_NET_TRANSPORT_QUIC
+	RRR_NET_TRANSPORT_NONE     = 0,
+	RRR_NET_TRANSPORT_PLAIN    = 1,
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+	RRR_NET_TRANSPORT_TLS      = 2,
+#endif
+#if defined(RRR_WITH_HTTP3)
+	RRR_NET_TRANSPORT_QUIC     = 4
+#endif
 };
+
+enum rrr_net_transport_type_f {
+	RRR_NET_TRANSPORT_F_NONE   = 0,
+	RRR_NET_TRANSPORT_F_PLAIN  = 1,
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+	RRR_NET_TRANSPORT_F_TLS    = 2,
+#endif
+#if defined(RRR_WITH_HTTP3)
+	RRR_NET_TRANSPORT_F_QUIC   = 4
+#endif
+};
+
+#if (defined (RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)) && defined(RRR_WITH_HTTP3)
+#  define RRR_NET_TRANSPORT_F_TLSISH (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)
+#elif defined (RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+#  define RRR_NET_TRANSPORT_F_TLSISH (RRR_NET_TRANSPORT_F_TLS)
+#elif defined (RRR_WITH_HTTP3)
+#  error "RRR_WITH_HTTP3 defined without RRR_WITH_LIBRESSL or RRR_WITH_OPENSSL"
+#endif
 
 enum rrr_net_transport_socket_mode {
 	RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
