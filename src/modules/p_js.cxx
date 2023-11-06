@@ -395,8 +395,18 @@ static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 
 	(void)(worker);
 
-	run_data->status();
-	run_data->runGC();
+	try {
+		run_data->status();
+		run_data->runGC();
+	}
+	catch (js_run_data::E e) {
+		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
+		return 1;
+	}
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(run_data->data->thread_data), __func__);
+		return 1;
+	}
 
 	return 0;
 }
