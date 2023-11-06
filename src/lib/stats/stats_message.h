@@ -32,17 +32,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_MESSAGE_TYPE_TEXT			1
 #define RRR_STATS_MESSAGE_TYPE_BASE10_TEXT	2
 #define RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT	3
-#define RRR_STATS_MESSAGE_TYPE_RRR_MSG		4
 
 #define RRR_STATS_MESSAGE_PATH_INSTANCE_NAME		"name"
 #define RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL	"log_journal"
 #define RRR_STATS_MESSAGE_PATH_GLOBAL_MSG "hook"
 
-#define RRR_STATS_MESSAGE_FLAGS_STICKY (1<<0)
+#define RRR_STATS_MESSAGE_FLAGS_STICKY          (1<<0)
+#define RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE (1<<1)
 
-#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY)
+#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY | \
+                                     RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE)
 
 #define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
 
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
@@ -104,10 +106,11 @@ int rrr_msg_stats_new (
 		uint32_t data_size
 );
 
-int rrr_msg_stats_new_with_rrr_msg (
+int rrr_msg_stats_new_rrr_msg_preface (
 		struct rrr_msg_stats **message,
 		const char *path_postfix,
-		const struct rrr_msg_msg *msg
+		const char **hops,
+		uint32_t hops_count
 );
 
 int rrr_msg_stats_set_path (

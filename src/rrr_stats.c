@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/messages/msg.h"
+#include "lib/messages/msg_msg.h"
 #include "lib/socket/rrr_socket_constants.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/stats/stats_message.h"
@@ -530,14 +531,13 @@ static int __rrr_stats_print_journal_message (
 		return ret;
 }
 
-static int __rrr_stats_process_message (
+static int __rrr_stats_process_stats_message (
 		const struct rrr_msg_stats *message,
 		void *private_arg1,
 		void *private_arg2
 ) {
 	struct rrr_stats_data *data = private_arg2;
 
-	(void)(message);
 	(void)(private_arg1);
 
 	int ret = 0;
@@ -548,14 +548,32 @@ static int __rrr_stats_process_message (
 			goto out;
 		}
 
-		RRR_MSG_0("Error while inserting message in tree in __rrr_stats_process_message\n");
+		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
 		ret = 1;
 		goto out;
 
 	}
 
+	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+		assert(0 && "Preface flag not implemented");
+	}
+
 	out:
 	return ret;
+}
+
+static int __rrr_stats_process_rrr_message (
+		struct rrr_msg_msg **message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(message);
+	(void)(private_arg1);
+	(void)(data);
+
+	assert(0 && "Not implemented");
 }
 
 static void __rrr_stats_event_keepalive (
@@ -707,13 +725,13 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			NULL,
 			NULL,
-			NULL,
+			__rrr_stats_process_rrr_message,
 			NULL,
 			NULL,
 			NULL,
 			(data.do_print_journal
 				? __rrr_stats_print_journal_message
-				: __rrr_stats_process_message
+				: __rrr_stats_process_stats_message
 			),
 			&data
 	);

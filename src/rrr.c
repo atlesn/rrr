@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/stats/stats_engine.h"
 #include "lib/stats/stats_message.h"
+#include "lib/messages/msg_msg.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
 #include "lib/map.h"
@@ -55,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_umask.h"
 #include "lib/allocator.h"
 #include "lib/rrr_mmap_stats.h"
+#include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
@@ -183,6 +185,7 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
 	int ret = 0;
+
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
 		RRR_MSG_0("Error while obtaining statistics handle in main\n");
 		ret = EXIT_FAILURE;
@@ -240,7 +243,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 }
 
 static void main_stats_message_costumer_msg_in_hook (
-	RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
+		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
 ) {
 	(void)(entry_locked);
 	(void)(arg);
@@ -249,14 +252,65 @@ static void main_stats_message_costumer_msg_in_hook (
 }
 
 static void main_stats_message_pre_buffer_hook (
-	RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
+		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
 ) {
-	(void)(entry_locked);
-	(void)(arg);
+	struct stats_data *stats_data = arg;
 
-	printf("MSG FROM %s\n", costumer);
+	int hop_count = 0;
+	char **hop_names = NULL;
+	struct rrr_msg_stats *message_preface = NULL;
+	const struct rrr_msg_msg *message = entry_locked->message;
+	char path[128];
+	int bytes;
 
-	assert(0 && "MSG OUT HOOK NOT IMPLEMENTED");
+	assert(RRR_MSG_IS_RRR_MESSAGE(message));
+
+	if ((hop_names = rrr_allocate (
+			sizeof(*hop_names) * (RRR_LL_COUNT(&entry_locked->nexthops) + 1)
+	)) == NULL) {
+		RRR_BUG("Could not allocate memory for hop names\n");
+	}
+
+	printf("MSG FROM %s hops are %i\n", costumer, RRR_LL_COUNT(&entry_locked->nexthops));
+
+	RRR_LL_ITERATE_BEGIN(&entry_locked->nexthops, struct rrr_instance_friend);
+		if ((hop_names[hop_count] = rrr_strdup(INSTANCE_M_NAME(node->instance))) == NULL) {
+			RRR_BUG("Could not allocate memory for hop name\n");
+		}
+		hop_count++;
+	RRR_LL_ITERATE_END();
+
+	bytes = snprintf(path, sizeof(path), "message_hook/pre_buffer/%s", costumer);
+	assert(bytes >= 0);
+	if ((unsigned int) bytes >= sizeof(path)) {
+		RRR_BUG("Path buffer too small\n");
+	}
+
+	if (rrr_msg_stats_new_rrr_msg_preface (
+			&message_preface,
+			"pre_buffer",
+			(const char **)hop_names,
+			(uint32_t) hop_count
+	) != 0) {
+		RRR_BUG("Could not create message preface\n");
+	}
+
+	if (rrr_stats_engine_send_rrr_message (
+			&stats_data->engine,
+			message_preface,
+			message
+	) != 0) {
+		RRR_BUG("Could not send message int %s\n", __func__);
+	}
+
+	rrr_msg_stats_destroy(message_preface);
+
+	for (int i = 0; i < hop_count; i++) {
+		printf("HOP %i: %s\n", i, hop_names[i]);
+		rrr_free(hop_names[i]);
+	}
+
+	rrr_free(hop_names);
 }
 
 struct main_loop_event_callback_data {
@@ -508,7 +562,7 @@ static int main_loop (
 
 			hooks.costumer_msg_in = main_stats_message_costumer_msg_in_hook;
 			hooks.pre_buffer = main_stats_message_pre_buffer_hook;
-			hooks.arg = NULL;
+			hooks.arg = &stats_data;
 		}
 	}
 

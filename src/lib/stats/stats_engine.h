@@ -52,6 +52,9 @@ struct rrr_stats_log_journal {
 	RRR_LL_HEAD(struct rrr_msg_stats);
 };
 
+struct rrr_stats_message_holder_list {
+};
+
 struct rrr_stats_engine {
 	int initialized;
 	int socket;
@@ -97,6 +100,11 @@ int rrr_stats_engine_post_message (
 		unsigned int handle,
 		const char *path_prefix,
 		const struct rrr_msg_stats *message
+);
+int rrr_stats_engine_send_rrr_message (
+		struct rrr_stats_engine *stats,
+		const struct rrr_msg_stats *message_preface,
+		const struct rrr_msg_msg *message
 );
 
 #endif /* RRR_STATS_ENGINE_H */

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -184,6 +184,31 @@ static int __rrr_stats_engine_message_pack (
 	return callback((struct rrr_msg *) &message_packed, total_size, callback_arg);
 }
 
+static int __rrr_stats_engine_rrr_message_to_network (
+		const struct rrr_msg_msg *message,
+		int (*callback)(
+				struct rrr_msg *data,
+				rrr_length size,
+				void *callback_arg
+		),
+		void *callback_arg
+) {
+	struct rrr_msg_msg *message_copy;
+
+	if ((message_copy = rrr_msg_msg_duplicate(message)) == NULL) {
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
+		return 1;
+	}
+
+	assert(RRR_MSG_IS_RRR_MESSAGE(message_copy) && "Message was not RRR message");
+
+	rrr_msg_msg_prepare_for_network(message_copy);
+
+	rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message_copy);
+	
+	return callback((struct rrr_msg *) message_copy, MSG_TOTAL_SIZE(message), callback_arg);
+}
+
 int __rrr_stats_engine_multicast_send_intermediate (
 		struct rrr_msg *data,
 		rrr_length size,
@@ -274,13 +299,19 @@ static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
 	return result;
 }
 
+static int __rrr_stats_engine_has_clients (
+		struct rrr_stats_engine *stats
+) {
+	return rrr_socket_client_collection_count(stats->client_collection) > 0;
+}
+
 static int __rrr_stats_engine_send_messages_from_list_unlocked (
 		struct rrr_stats_engine *stats,
 		struct rrr_stats_named_message_list *list
 ) {
 	int ret = 0;
 
-	int has_clients = (rrr_socket_client_collection_count(stats->client_collection) > 0 ? 1 : 0);
+	int has_clients = __rrr_stats_engine_has_clients(stats);
 
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t sticky_send_limit = time_now - RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS * 1000;
@@ -757,4 +788,42 @@ int rrr_stats_engine_post_message (
 		pthread_mutex_unlock(&stats->main_lock);
 	out:
 		return ret;
+}
+
+int rrr_stats_engine_send_rrr_message (
+		struct rrr_stats_engine *stats,
+		const struct rrr_msg_stats *message_preface,
+		const struct rrr_msg_msg *message
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&stats->main_lock);
+
+	if (!__rrr_stats_engine_has_clients(stats)) {
+		goto out;
+	}
+
+	if (__rrr_stats_engine_message_pack (
+			message_preface,
+			__rrr_stats_engine_multicast_send_intermediate,
+			stats
+	) != 0) {
+		RRR_MSG_0("Error while sending message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (__rrr_stats_engine_rrr_message_to_network (
+			message,
+			__rrr_stats_engine_multicast_send_intermediate,
+			stats
+	) != 0) {
+		RRR_MSG_0("Error while sending message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+			
+	out:
+	pthread_mutex_unlock(&stats->main_lock);
+	return ret;
 }
