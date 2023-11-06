@@ -80,6 +80,7 @@ struct rrr_message_broker {
 	RRR_LL_HEAD(struct rrr_message_broker_costumer);
 	pthread_mutex_t lock;
 	pthread_t creator;
+	struct rrr_message_broker_hooks hooks;
 };
 
 struct rrr_event_queue *rrr_message_broker_event_queue_get (
@@ -385,7 +386,8 @@ void rrr_message_broker_destroy (
 }
 
 int rrr_message_broker_new (
-		struct rrr_message_broker **target
+		struct rrr_message_broker **target,
+		const struct rrr_message_broker_hooks *hooks
 ) {
 	int ret = 0;
 
@@ -409,6 +411,8 @@ int rrr_message_broker_new (
 
 	pthread_mutex_lock(&broker->lock);
 	broker->creator = pthread_self();
+	if (hooks != NULL)
+		broker->hooks = *hooks;
 	pthread_mutex_unlock(&broker->lock);
 
 	*target = broker;
@@ -672,18 +676,24 @@ static int __rrr_message_broker_entry_prepare (
 	return ret;
 }
 
+#define MSG_HOOK(cb)                                                              \
+  if (costumer->broker->hooks.cb != NULL)                                         \
+    costumer->broker->hooks.cb(entry_locked, costumer->broker->hooks.arg)
+
+
 static int __rrr_message_broker_pre_buffer_hook (
 		struct rrr_message_broker_costumer *costumer,
-		struct rrr_msg_holder *entry
+		struct rrr_msg_holder *entry_locked
 ) {
 	int ret = 0;
 
-	// Any nexthops set by postprocess cb will override those set in prepare
-
-	if ((ret = costumer->entry_pre_buffer_hook(entry, costumer->callback_arg)) != 0) {
+	// Any nexthops set here will override those set in prepare
+	if ((ret = costumer->entry_pre_buffer_hook(entry_locked, costumer->callback_arg)) != 0) {
 		RRR_MSG_0("Error %i from entry postprocess callback in %s\n", ret, __func__);
 		goto out;
 	}
+
+	MSG_HOOK(pre_buffer);
 
 	out:
 	return ret;

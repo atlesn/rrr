@@ -107,6 +107,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "start-interval",        "[-t|--start-interval]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
+		{0,                            'm',    "message-hooks",         "[-m|--message-hooks]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
@@ -236,6 +237,24 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 
 	out:
 	return ret;
+}
+
+static void main_stats_message_costumer_msg_in_hook (
+	RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
+) {
+	(void)(entry_locked);
+	(void)(arg);
+
+	assert(0 && "MSG IN HOOK NOT IMPLEMENTED");
+}
+
+static void main_stats_message_pre_buffer_hook (
+	RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
+) {
+	(void)(entry_locked);
+	(void)(arg);
+
+	assert(0 && "MSG OUT HOOK NOT IMPLEMENTED");
 }
 
 struct main_loop_event_callback_data {
@@ -438,6 +457,7 @@ static int main_loop (
 
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker *message_broker = NULL;
+	struct rrr_message_broker_hooks hooks = {0};
 	struct rrr_event_queue *queue = NULL;
 
 	struct rrr_instance_config_collection *config = NULL;
@@ -480,9 +500,17 @@ static int main_loop (
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
+
+		if (cmd_exists(cmd, "message-hooks", 0)) {
+			RRR_DBG_1("Enabling message hooks for statistics\n");
+
+			hooks.costumer_msg_in = main_stats_message_costumer_msg_in_hook;
+			hooks.pre_buffer = main_stats_message_pre_buffer_hook;
+			hooks.arg = NULL;
+		}
 	}
 
-	if (rrr_message_broker_new(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker, &hooks) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_stats_engine;
 	}
