@@ -871,6 +871,10 @@ static int __rrr_http_application_http3_request_send_final_callback (
 	nghttp3_nv *nv;
 	size_t nv_len;
 
+	static const struct nghttp3_data_reader data_reader = {
+		__rrr_http_application_http3_read_data_callback
+	};
+
 	if ((ret = __rrr_http_application_http3_map_to_nv (&nv, &nv_len, callback_data->headers)) != 0) {
 		goto out;
 	}
@@ -880,7 +884,7 @@ static int __rrr_http_application_http3_request_send_final_callback (
 			callback_data->stream_id,
 			nv,
 			nv_len,
-			NULL,
+			&data_reader,
 			NULL
 	)) != 0) {
 		RRR_MSG_0("Failed to submit HTTP3 request: %s\n", nghttp3_strerror(ret_tmp));
@@ -967,6 +971,8 @@ static int __rrr_http_application_http3_transport_ctx_read_stream_callback (
 	int ret = 0;
 
 	ssize_t consumed;
+
+	printf("Bytes: %li\n", buflen);
 
 	if ((consumed = nghttp3_conn_read_stream (
 			http3->conn,

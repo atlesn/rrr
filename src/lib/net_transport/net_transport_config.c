@@ -225,7 +225,7 @@ int rrr_net_transport_config_parse (
 #endif
 	     !allow_tls_parameters_without_tls
 	) {
-		RRR_MSG_0("TLS certificate specified in %s_tls_certificate_file but %s_transport_type did not contain 'tls' for instance %s\n",
+		RRR_MSG_0("TLS certificate specified in %s_tls_certificate_file but %s_transport_type did not contain a TLS capable transport in instance %s\n",
 				prefix, prefix, config->name);
 		ret = 1;
 		goto out;
