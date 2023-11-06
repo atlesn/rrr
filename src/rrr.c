@@ -254,6 +254,8 @@ static void main_stats_message_pre_buffer_hook (
 	(void)(entry_locked);
 	(void)(arg);
 
+	printf("MSG FROM %s\n", costumer);
+
 	assert(0 && "MSG OUT HOOK NOT IMPLEMENTED");
 }
 

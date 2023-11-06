@@ -211,7 +211,45 @@ int rrr_msg_stats_new (
 	out:
 		return ret;
 }
+/*
+int rrr_msg_stats_new_with_rrr_msg (
+		struct rrr_msg_stats **message,
+		const char *path_postfix,
+		const struct rrr_msg_msg *msg_orig
+) {
+	int ret = 0;
 
+	struct rrr_msg_msg *msg_new;
+	char path_postfix_new[256];
+
+	if (snprintf(
+			path_postfix_new,
+			sizeof(path_postfix_new),
+			"%s/%s",
+			RRR_STATS_MESSAGE_PATH_GLOBAL_MSG,
+			path_postfix
+	) >= sizeof(path_postfix_new)) {
+		RRR_BUG("Path too long in %s\n", __func__);
+	}
+
+	struct rrr_msg_stats *new_message;
+	if ((ret = rrr_msg_stats_new (
+			&new_message,
+			RRR_STATS_MESSAGE_TYPE_RRR_MSG,
+			0,
+			path_postfix,
+			msg_orig,
+			MSG_TOTAL_SIZE(msg_orig)
+	)) != 0) {
+		goto out;
+	}
+
+	msg_new = 
+
+	out:
+	return ret;
+}
+*/
 int rrr_msg_stats_set_path (
 		struct rrr_msg_stats *message,
 		const char *path

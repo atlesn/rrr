@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Make macros for the other callbacks
 
 #define RRR_MESSAGE_BROKER_HOOK_MSG_ARGS            \
+	const char *costumer,                       \
 	const struct rrr_msg_holder *entry_locked,  \
 	void *arg
 

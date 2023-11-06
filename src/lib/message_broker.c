@@ -678,8 +678,7 @@ static int __rrr_message_broker_entry_prepare (
 
 #define MSG_HOOK(cb)                                                              \
   if (costumer->broker->hooks.cb != NULL)                                         \
-    costumer->broker->hooks.cb(entry_locked, costumer->broker->hooks.arg)
-
+    costumer->broker->hooks.cb(costumer->name, entry_locked, costumer->broker->hooks.arg)
 
 static int __rrr_message_broker_pre_buffer_hook (
 		struct rrr_message_broker_costumer *costumer,
