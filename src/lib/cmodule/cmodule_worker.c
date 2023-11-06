@@ -410,6 +410,8 @@ struct rrr_cmodule_worker_event_callback_data {
 	void *custom_tick_callback_arg;
 	int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS);
 	void *ping_callback_arg;
+	int (*periodic_callback)(RRR_CMODULE_PERIODIC_CALLBACK_ARGS);
+	void *periodic_callback_arg;
 	struct rrr_cmodule_process_callback_data read_callback_data;
 };
 
@@ -594,6 +596,27 @@ static int __rrr_cmodule_worker_event_periodic (
 	return 0;
 }
 
+static void __rrr_cmodule_worker_event_app_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
+	struct rrr_cmodule_worker *worker = callback_data->worker;
+
+	(void)(fd);
+	(void)(flags);
+
+	assert(callback_data->periodic_callback && "Periodic event should not run when there is no callback set");
+
+	int ret_tmp;
+	if ((ret_tmp = callback_data->periodic_callback(worker, callback_data->periodic_callback_arg)) != 0) {
+		RRR_MSG_0("Error from app periodic callback in worker fork named %s pid %ld return was %i\n",
+			worker->name, (long) getpid(), ret_tmp);
+		rrr_event_dispatch_break(worker->event_queue_worker);
+	}
+}
+
 static int __rrr_cmodule_worker_loop (
 		struct rrr_cmodule_worker *worker,
 		const struct rrr_cmodule_worker_callbacks *callbacks
@@ -610,7 +633,8 @@ static int __rrr_cmodule_worker_loop (
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
 
 	struct rrr_event_collection events = {0};
-	rrr_event_handle event_spawn;
+	rrr_event_handle event_spawn = RRR_EVENT_HANDLE_STRUCT_INITIALIZER;
+	rrr_event_handle event_periodic = RRR_EVENT_HANDLE_STRUCT_INITIALIZER;
 
 	rrr_event_collection_init(&events, worker->event_queue_worker);
 
@@ -620,6 +644,8 @@ static int __rrr_cmodule_worker_loop (
 		callbacks->custom_tick_callback_arg,
 		callbacks->ping_callback,
 		callbacks->ping_callback_arg,
+		callbacks->periodic_callback,
+		callbacks->periodic_callback_arg,
 		{
 			worker,
 			callbacks->process_callback,
@@ -638,8 +664,21 @@ static int __rrr_cmodule_worker_loop (
 		RRR_MSG_0("Failed to create spawn event in  %s\n", __func__);
 		goto out_cleanup_events;
 	}
-
 	EVENT_ADD(event_spawn);
+
+	if (callbacks->periodic_callback) {
+		if (rrr_event_collection_push_periodic (
+				&event_periodic,
+				&events,
+				__rrr_cmodule_worker_event_app_periodic,
+				&callback_data,
+				1000 * 1000 // 1000 ms
+		) != 0) {
+			RRR_MSG_0("Failed to create periodic event in  %s\n", __func__);
+			goto out_cleanup_events;
+		}
+		EVENT_ADD(event_periodic);
+	}
 
 	ret_tmp = rrr_event_dispatch (
 			worker->event_queue_worker,

@@ -47,6 +47,8 @@ struct rrr_cmodule_worker_callbacks {
 	void *process_callback_arg;
 	int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS);
 	void *custom_tick_callback_arg;
+	int (*periodic_callback)(RRR_CMODULE_PERIODIC_CALLBACK_ARGS);
+	void *periodic_callback_arg;
 };
 
 int rrr_cmodule_worker_send_message_and_address_to_parent (

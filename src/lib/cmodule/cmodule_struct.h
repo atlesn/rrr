@@ -80,6 +80,9 @@ struct rrr_cmodule_worker {
 	// Both worker and parent destroy this. It is allocated before forking but
 	// the worker also calls destroy to clean up memory for events it created after forking
 	struct rrr_event_queue *event_queue_worker;
+
+	// Created after forking if app periodic function is used
+	rrr_event_handle app_periodic_event;
 };
 
 struct rrr_cmodule {
@@ -95,7 +98,7 @@ struct rrr_cmodule {
 	// Created just before event dispatch, not managed
 	rrr_event_handle input_queue_event;
 
-	// Create jsut before event dispatch in case app periodic
+	// Create just before event dispatch in case app periodic
 	// callback is used.
 	rrr_event_handle app_periodic_event;
 
