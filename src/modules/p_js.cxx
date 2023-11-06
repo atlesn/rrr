@@ -250,12 +250,6 @@ class js_run_data {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
 	}
-	void runEvents() {
-		auto scope = RRR::JS::Scope(ctx);
-		ctx.trycatch_ok([](std::string msg) {
-			throw E(std::string("Failed to run process function: ") + msg);
-		});
-	}
 	void registerMethod(const char *name) {
 		methods[name] = program->get_function(ctx, name);
 	}
@@ -403,7 +397,6 @@ static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 
 	run_data->status();
 	run_data->runGC();
-	run_data->runEvents(); // TODO : Finer control of when timeouts and events run
 
 	return 0;
 }
@@ -456,9 +449,6 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		else {
 			run_data->runProcess(message, message_addr, method, worker->process_mode);
 		}
-
-		// Run any imminent events
-		run_data->runEvents();
 	}
 	catch (RRR::util::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
