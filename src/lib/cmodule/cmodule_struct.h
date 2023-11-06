@@ -95,6 +95,10 @@ struct rrr_cmodule {
 	// Created just before event dispatch, not managed
 	rrr_event_handle input_queue_event;
 
+	// Create jsut before event dispatch in case app periodic
+	// callback is used.
+	rrr_event_handle app_periodic_event;
+
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
 

@@ -39,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       case RRR_CMODULE_PROCESS_MODE_NONE:                          \
       default: method_to_use = NULL; assert(0); }
 
+#define RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS \
+    struct rrr_instance_runtime_data *thread_data
+
 struct rrr_instance_runtime_data;
 struct rrr_stats_instance;
 struct rrr_poll_collection;
@@ -59,6 +62,10 @@ int rrr_cmodule_helper_methods_iterate (
 );
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data
+);
+void rrr_cmodule_helper_loop_with_periodic (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 );
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,

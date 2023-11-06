@@ -331,6 +331,11 @@ class js_run_data {
 
 extern "C" {
 
+static int js_periodic_callback(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS) {
+	// TODO : Add stats
+	return 0;
+}
+
 static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct js_data *data = (struct js_data *) private_arg;
 
@@ -534,8 +539,9 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 	RRR_DBG_1 ("js instance %s started thread %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
+	rrr_cmodule_helper_loop_with_periodic (
+			thread_data,
+			js_periodic_callback
 	);
 
 	out_message:
