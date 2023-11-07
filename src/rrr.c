@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/stats/stats_engine.h"
 #include "lib/stats/stats_message.h"
+#include "lib/messages/msg_msg.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
 #include "lib/map.h"
@@ -55,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_umask.h"
 #include "lib/allocator.h"
 #include "lib/rrr_mmap_stats.h"
+#include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
@@ -107,6 +109,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "start-interval",        "[-t|--start-interval]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
+		{0,                            'm',    "message-hooks",         "[-m|--message-hooks]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
@@ -182,6 +185,7 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
 	int ret = 0;
+
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
 		RRR_MSG_0("Error while obtaining statistics handle in main\n");
 		ret = EXIT_FAILURE;
@@ -236,6 +240,57 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 
 	out:
 	return ret;
+}
+
+static void main_stats_message_pre_buffer_hook (
+		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
+) {
+	struct stats_data *stats_data = arg;
+
+	int hop_count = 0;
+	char **hop_names = NULL;
+	const struct rrr_msg_msg *message = entry_locked->message;
+	char path[128];
+	int bytes;
+
+	assert(RRR_MSG_IS_RRR_MESSAGE(message));
+
+	if ((hop_names = rrr_allocate (
+			sizeof(*hop_names) * (RRR_LL_COUNT(&entry_locked->nexthops) + 1)
+	)) == NULL) {
+		RRR_BUG("Could not allocate memory for hop names\n");
+	}
+
+	RRR_LL_ITERATE_BEGIN(&entry_locked->nexthops, struct rrr_instance_friend);
+		if ((hop_names[hop_count] = rrr_strdup(INSTANCE_M_NAME(node->instance))) == NULL) {
+			RRR_BUG("Could not allocate memory for hop name\n");
+		}
+		hop_count++;
+	RRR_LL_ITERATE_END();
+
+	bytes = snprintf(path, sizeof(path), "pre_buffer/%s", costumer);
+	assert(bytes >= 0);
+	if ((unsigned int) bytes >= sizeof(path)) {
+		RRR_BUG("Path buffer too small\n");
+	}
+
+	if (rrr_stats_engine_push_rrr_message (
+			&stats_data->engine,
+			stats_data->handle,
+			"main",
+			path,
+			message,
+			(const char **) hop_names,
+			(uint32_t) hop_count
+	) != 0) {
+		RRR_BUG("Could not send message int %s\n", __func__);
+	}
+
+	for (int i = 0; i < hop_count; i++) {
+		rrr_free(hop_names[i]);
+	}
+
+	rrr_free(hop_names);
 }
 
 struct main_loop_event_callback_data {
@@ -438,6 +493,7 @@ static int main_loop (
 
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker *message_broker = NULL;
+	struct rrr_message_broker_hooks hooks = {0};
 	struct rrr_event_queue *queue = NULL;
 
 	struct rrr_instance_config_collection *config = NULL;
@@ -480,9 +536,16 @@ static int main_loop (
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
+
+		if (cmd_exists(cmd, "message-hooks", 0)) {
+			RRR_DBG_1("Enabling message hooks for statistics\n");
+
+			hooks.pre_buffer = main_stats_message_pre_buffer_hook;
+			hooks.arg = &stats_data;
+		}
 	}
 
-	if (rrr_message_broker_new(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker, &hooks) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_stats_engine;
 	}
@@ -527,6 +590,7 @@ static int main_loop (
 	rrr_message_broker_destroy(message_broker);
 
 	out_destroy_stats_engine:
+		printf("Cleanup stats engine\n");
 		rrr_stats_engine_cleanup(&stats_data.engine);
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

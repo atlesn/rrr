@@ -52,26 +52,37 @@ struct rrr_stats_log_journal {
 	RRR_LL_HEAD(struct rrr_msg_stats);
 };
 
+struct rrr_stats_message_pair {
+	RRR_LL_NODE(struct rrr_stats_message_pair);
+	struct rrr_msg_stats *preface;
+	struct rrr_msg_msg *message;
+};
+
+struct rrr_stats_message_pair_list {
+	RRR_LL_HEAD(struct rrr_stats_message_pair);
+};
+
 struct rrr_stats_engine {
 	int initialized;
 	int socket;
 	int log_hook_handle;
 	pthread_mutex_t main_lock;
 
-	// Errors occuring while logging. The log functions have no
+	// Errors occuring while hooking. The hook functions have no
 	// return values, we must store the return value and check
 	// in our periodic function.
 	int exit_now_ret;
 
 	// Access through macro only to update usercount
-	pthread_mutex_t journal_lock;
-	int journal_lock_usercount;
+	pthread_mutex_t delivery_lock;
+	int delivery_lock_usercount;
 
 	struct rrr_event_queue *queue;
 	struct rrr_event_collection events;
 	rrr_event_handle event_periodic;
 
 	struct rrr_stats_named_message_list_collection named_message_list;
+	struct rrr_stats_message_pair_list message_pairs;
 	struct rrr_socket_client_collection *client_collection;
 
 	struct rrr_stats_log_journal log_journal_input;
@@ -97,6 +108,15 @@ int rrr_stats_engine_post_message (
 		unsigned int handle,
 		const char *path_prefix,
 		const struct rrr_msg_stats *message
+);
+int rrr_stats_engine_push_rrr_message (
+		struct rrr_stats_engine *stats,
+		unsigned int handle,
+		const char *path_prefix,
+		const char *path_postfix,
+		const struct rrr_msg_msg *message,
+		const char **hop_names,
+		uint32_t hop_count
 );
 
 #endif /* RRR_STATS_ENGINE_H */

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/rrr_endian.h"
+#include "../helpers/string_builder.h"
 
 int rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
@@ -210,6 +211,73 @@ int rrr_msg_stats_new (
 		rrr_free(new_message);
 	out:
 		return ret;
+}
+
+int rrr_msg_stats_new_log (
+		struct rrr_msg_stats **message,
+		const void *data,
+		uint32_t data_size
+) {
+	int ret = 0;
+
+	if (rrr_msg_stats_new (
+			message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			0,
+			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK,
+			data,
+			data_size
+	) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_msg_stats_init_rrr_msg_preface (
+		struct rrr_msg_stats *message,
+		const char *path_postfix,
+		const char **hops,
+		uint32_t hops_count
+) {
+	int ret = 0;
+
+	struct rrr_string_builder sb = {0};
+
+	ret |= rrr_string_builder_append(&sb, "nexthops:");
+	for (uint32_t i = 0; i < hops_count; i++) {
+		ret |= rrr_string_builder_append(&sb, hops[i]);
+		if (i < hops_count - 1) {
+			ret |= rrr_string_builder_append(&sb, ",");
+		}
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not append to string builder in %s\n", __func__);
+		goto out;
+	}
+
+	if (sb.wpos >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
+		RRR_MSG_0("String builder was too long in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_stats_init (
+			message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE,
+			path_postfix,
+			sb.buf,
+			sb.wpos
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_string_builder_clear(&sb);
+	return ret;
 }
 
 int rrr_msg_stats_set_path (
