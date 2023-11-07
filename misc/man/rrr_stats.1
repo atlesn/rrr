@@ -12,6 +12,7 @@ Multiple RRR instances can be monitored simultaneously.
 .B rrr_stats [RRR SOCKET (PREFIX)]
 .Dl [-e|--exact-path]
 .Dl [-j|--journal]
+.Dl [-m|--messages]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel-on-exit[=]FLAGS]
@@ -34,6 +35,13 @@ will look for a socket named this unless another name is specified at command li
 Use exact socket path, don't use prefix search.
 .IP -j|--journal
 Print journal (log) messages as they arrive. Nothing else is printed.
+May not be used together with message printing.
+.IP -m|--messages
+Print hooked messages as they arrive. Requires that RRR also is started with
+.B -m
+argument, and if not, no messages will be printed.
+If debuglevel 2 is active, any message array data will be dumped.
+May not be used together with journal printing.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
 .IP -D|--debuglevel-on-exit[=]FLAGS

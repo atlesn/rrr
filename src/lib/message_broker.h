@@ -55,7 +55,6 @@ struct rrr_message_broker_costumer;
 struct rrr_message_broker;
 
 struct rrr_message_broker_hooks {
-	void (*costumer_msg_in)(RRR_MESSAGE_BROKER_HOOK_MSG_ARGS);
 	void (*pre_buffer)(RRR_MESSAGE_BROKER_HOOK_MSG_ARGS);
 	void *arg;
 };

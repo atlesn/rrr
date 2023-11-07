@@ -68,7 +68,7 @@ struct rrr_stats_engine {
 	int log_hook_handle;
 	pthread_mutex_t main_lock;
 
-	// Errors occuring while logging. The log functions have no
+	// Errors occuring while hooking. The hook functions have no
 	// return values, we must store the return value and check
 	// in our periodic function.
 	int exit_now_ret;
@@ -111,8 +111,12 @@ int rrr_stats_engine_post_message (
 );
 int rrr_stats_engine_push_rrr_message (
 		struct rrr_stats_engine *stats,
-		const struct rrr_msg_stats *message_preface,
-		const struct rrr_msg_msg *message
+		unsigned int handle,
+		const char *path_prefix,
+		const char *path_postfix,
+		const struct rrr_msg_msg *message,
+		const char **hop_names,
+		uint32_t hop_count
 );
 
 #endif /* RRR_STATS_ENGINE_H */

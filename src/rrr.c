@@ -242,15 +242,6 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
-static void main_stats_message_costumer_msg_in_hook (
-		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
-) {
-	(void)(entry_locked);
-	(void)(arg);
-
-	assert(0 && "MSG IN HOOK NOT IMPLEMENTED");
-}
-
 static void main_stats_message_pre_buffer_hook (
 		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
 ) {
@@ -258,7 +249,6 @@ static void main_stats_message_pre_buffer_hook (
 
 	int hop_count = 0;
 	char **hop_names = NULL;
-	struct rrr_msg_stats *message_preface = NULL;
 	const struct rrr_msg_msg *message = entry_locked->message;
 	char path[128];
 	int bytes;
@@ -271,8 +261,6 @@ static void main_stats_message_pre_buffer_hook (
 		RRR_BUG("Could not allocate memory for hop names\n");
 	}
 
-	printf("MSG FROM %s hops are %i\n", costumer, RRR_LL_COUNT(&entry_locked->nexthops));
-
 	RRR_LL_ITERATE_BEGIN(&entry_locked->nexthops, struct rrr_instance_friend);
 		if ((hop_names[hop_count] = rrr_strdup(INSTANCE_M_NAME(node->instance))) == NULL) {
 			RRR_BUG("Could not allocate memory for hop name\n");
@@ -280,33 +268,25 @@ static void main_stats_message_pre_buffer_hook (
 		hop_count++;
 	RRR_LL_ITERATE_END();
 
-	bytes = snprintf(path, sizeof(path), "message_hook/pre_buffer/%s", costumer);
+	bytes = snprintf(path, sizeof(path), "pre_buffer/%s", costumer);
 	assert(bytes >= 0);
 	if ((unsigned int) bytes >= sizeof(path)) {
 		RRR_BUG("Path buffer too small\n");
 	}
 
-	if (rrr_msg_stats_new_rrr_msg_preface (
-			&message_preface,
-			"pre_buffer",
-			(const char **)hop_names,
-			(uint32_t) hop_count
-	) != 0) {
-		RRR_BUG("Could not create message preface\n");
-	}
-
 	if (rrr_stats_engine_push_rrr_message (
 			&stats_data->engine,
-			message_preface,
-			message
+			stats_data->handle,
+			"main",
+			path,
+			message,
+			(const char **) hop_names,
+			(uint32_t) hop_count
 	) != 0) {
 		RRR_BUG("Could not send message int %s\n", __func__);
 	}
 
-	rrr_msg_stats_destroy(message_preface);
-
 	for (int i = 0; i < hop_count; i++) {
-		printf("HOP %i: %s\n", i, hop_names[i]);
 		rrr_free(hop_names[i]);
 	}
 
@@ -560,7 +540,6 @@ static int main_loop (
 		if (cmd_exists(cmd, "message-hooks", 0)) {
 			RRR_DBG_1("Enabling message hooks for statistics\n");
 
-			hooks.costumer_msg_in = main_stats_message_costumer_msg_in_hook;
 			hooks.pre_buffer = main_stats_message_pre_buffer_hook;
 			hooks.arg = &stats_data;
 		}

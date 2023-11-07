@@ -34,8 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT	3
 
 #define RRR_STATS_MESSAGE_PATH_INSTANCE_NAME		"name"
-#define RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL	"log_journal"
-#define RRR_STATS_MESSAGE_PATH_GLOBAL_MSG "hook"
+#define RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK  "log_hook"
+#define RRR_STATS_MESSAGE_PATH_GLOBAL_MSG_HOOK  "msg_hook"
 
 #define RRR_STATS_MESSAGE_FLAGS_STICKY          (1<<0)
 #define RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE (1<<1)
@@ -106,8 +106,14 @@ int rrr_msg_stats_new (
 		uint32_t data_size
 );
 
-int rrr_msg_stats_new_rrr_msg_preface (
+int rrr_msg_stats_new_log (
 		struct rrr_msg_stats **message,
+		const void *data,
+		uint32_t data_size
+);
+
+int rrr_msg_stats_init_rrr_msg_preface (
+		struct rrr_msg_stats *message,
 		const char *path_postfix,
 		const char **hops,
 		uint32_t hops_count

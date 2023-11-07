@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/messages/msg.h"
 #include "lib/messages/msg_msg.h"
+#include "lib/messages/msg_dump.h"
 #include "lib/socket/rrr_socket_constants.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/stats/stats_message.h"
@@ -85,6 +86,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
         {0,                            'e',    "exact-path",            "[-e|--exact-path]"},
         {0,                            'j',    "journal",               "[-j|--journal]"},
+        {0,                            'm',    "messages",              "[-m|--messages]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -101,6 +103,7 @@ struct rrr_stats_data {
 
 	int do_socket_path_exact;
 	int do_print_journal;
+	int do_print_messages;
 
 	struct rrr_socket_client_collection *connections;
 
@@ -264,6 +267,15 @@ static int __rrr_stats_parse_config (
 
 	if (cmd_exists(cmd, "journal", 0)) {
 		data->do_print_journal = 1;
+	}
+
+	if (cmd_exists(cmd, "messages", 0)) {
+		data->do_print_messages = 1;
+	}
+
+	if (data->do_print_journal && data->do_print_messages) {
+		RRR_MSG_0("Cannot print messages and journal simultaneously. Check arguments.\n");
+		return 1;
 	}
 
 	cmd_arg_count i = 0;
@@ -541,7 +553,7 @@ static int __rrr_stats_send_keepalive (
 	return __rrr_stats_send_message(data, &message);
 }
 
-static int __rrr_stats_print_journal_message (
+static int __rrr_stats_process_journal_message (
 		const struct rrr_msg_stats *message,
 		void *private_arg1,
 		void *private_arg2
@@ -561,6 +573,8 @@ static int __rrr_stats_print_journal_message (
 		goto out;
 	}
 
+	// TODO : Try to do this (check if path is log message) without generating the tree.
+
 	struct rrr_stats_tree tree_tmp;
 	if (rrr_stats_tree_init(&tree_tmp) != 0) {
 		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
@@ -574,7 +588,7 @@ static int __rrr_stats_print_journal_message (
 		goto out_cleanup_tree;
 	}
 
-	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL)) {
+	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK)) {
 		printf("%s", message->data);
 	}
 
@@ -592,16 +606,17 @@ static int __rrr_stats_process_stats_message (
 	struct rrr_stats_connection *connection = private_arg1;
 	struct rrr_stats_data *data = private_arg2;
 
+	(void)(connection);
+
 	int ret = 0;
 
 	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
-		if ((ret = __rrr_stats_connection_msg_preface_set(connection, message)) != 0) {
-			goto out;
-		}
+		goto out;
 	}
-	else if ((ret = rrr_stats_tree_insert_or_update(&data->message_tree, message)) != 0) {
+
+	if ((ret = rrr_stats_tree_insert_or_update(&data->message_tree, message)) != 0) {
 		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
-			RRR_MSG_0("Message with path %s was invalid, not added to tree\n", message->path);
+			RRR_MSG_0("Message with path %s was invalid, not added to tree in %s\n", message->path, __func__);
 			ret = 0;
 			goto out;
 		}
@@ -609,7 +624,30 @@ static int __rrr_stats_process_stats_message (
 		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
 		ret = 1;
 		goto out;
+	}
 
+	out:
+	return ret;
+}
+
+static int __rrr_stats_process_preface_message (
+		const struct rrr_msg_stats *message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_connection *connection = private_arg1;
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(data);
+
+	int ret = 0;
+
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+		goto out;
+	}
+
+	if ((ret = __rrr_stats_connection_msg_preface_set(connection, message)) != 0) {
+		goto out;
 	}
 
 	out:
@@ -624,21 +662,46 @@ static int __rrr_stats_process_rrr_message (
 	struct rrr_stats_connection *connection = private_arg1;
 	struct rrr_stats_data *data = private_arg2;
 
-	(void)(message);
 	(void)(data);
 
 	int ret = 0;
+
+	struct rrr_stats_tree tree_tmp;
+	struct rrr_msg_stats *message_preface = NULL;
 
 	if (connection->message_preface == NULL) {
 		goto out;
 	}
 
-	assert(RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(connection->message_preface) && "Preface must have preface flag set");
+	message_preface = connection->message_preface;
+	connection->message_preface = NULL;
 
-	assert(0 && "Not implemented");
+	assert(RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message_preface) && "Preface flag must be set");
 
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_preface;
+	}
+
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message_preface)) != 0) {
+		RRR_MSG_0("Could not insert message into tree in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	rrr_stats_tree_dump(&tree_tmp);
+
+	if ((ret = rrr_msg_dump_msg (*message)) != 0) {
+		RRR_MSG_0("Failed to dump message in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out_destroy_preface:
+		rrr_msg_stats_destroy(message_preface);
 	out:
-	return ret;
+		return ret;
 }
 
 static void __rrr_stats_event_keepalive (
@@ -666,7 +729,7 @@ static void __rrr_stats_event_dump_tree (
 	(void)(fd);
 	(void)(flags);
 
-	if (data->do_print_journal == 0) {
+	if (!data->do_print_journal && !data->do_print_messages) {
 		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
 
 		unsigned int purged_total = 0;
@@ -795,7 +858,9 @@ int main (int argc, const char **argv, const char **env) {
 			NULL,
 			NULL,
 			(data.do_print_journal
-				? __rrr_stats_print_journal_message
+				? __rrr_stats_process_journal_message
+				: data.do_print_messages
+				? __rrr_stats_process_preface_message
 				: __rrr_stats_process_stats_message
 			),
 			&data
@@ -809,7 +874,6 @@ int main (int argc, const char **argv, const char **env) {
 	if (__rrr_stats_events_setup (&data) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_cmd;
-		
 	}
 
 	if (rrr_event_dispatch (

@@ -119,11 +119,8 @@ static void __rrr_stats_engine_log_listener (RRR_LOG_HOOK_ARGS) {
 		msg_size = RRR_STATS_MESSAGE_DATA_MAX_SIZE;
 	}
 
-	if (rrr_msg_stats_new (
+	if (rrr_msg_stats_new_log (
 			&new_message,
-			RRR_STATS_MESSAGE_TYPE_TEXT,
-			0,
-			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL,
 			message,
 			msg_size
 	) != 0) {
@@ -520,7 +517,7 @@ static int __rrr_stats_engine_event_pass_log_hook_retry_callback (
 
 	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
 
-	// Checked in periodic functions
+	// Checked in periodic functions. TODO : Use atomic.
 	stats->exit_now_ret = RRR_EVENT_ERR;
 
 	return RRR_EVENT_ERR;
@@ -535,7 +532,7 @@ static int __rrr_stats_engine_event_pass_msg_hook_retry_callback (
 
 	fprintf(stderr, "Error: Too many hooked messages, a build-up has occured. Consider reducing message rates while debugging.\n");
 
-	// Checked in periodic functions
+	// Checked in periodic functions. TODO : Use atomic.
 	stats->exit_now_ret = RRR_EVENT_ERR;
 
 	return RRR_EVENT_ERR;
@@ -709,6 +706,31 @@ static void __rrr_stats_engine_message_sticky_remove_nolock (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_msg_stats_destroy(node));
 }
 
+static int __rrr_stats_engine_message_set_path (
+		struct rrr_msg_stats *message,
+		unsigned int stats_handle,
+		const char *path_prefix
+) {
+	int ret = 0;
+
+	char prefix_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
+
+	ret = snprintf(prefix_tmp, RRR_STATS_MESSAGE_PATH_MAX_LENGTH, "%s/%u/%s", path_prefix, stats_handle, message->path);
+	if (ret >= RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
+		RRR_MSG_0("Path was too long in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_stats_set_path(message, prefix_tmp)) != 0) {
+		RRR_MSG_0("Could not set path in new message in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_stats_engine_message_register_nolock (
 		struct rrr_stats_engine *stats,
 		unsigned int stats_handle,
@@ -716,7 +738,6 @@ static int __rrr_stats_engine_message_register_nolock (
 		const struct rrr_msg_stats *message
 ) {
 	int ret = 0;
-	char prefix_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 
 	struct rrr_stats_named_message_list *list = __rrr_stats_named_message_list_get(&stats->named_message_list, stats_handle);
 
@@ -738,17 +759,11 @@ static int __rrr_stats_engine_message_register_nolock (
 		__rrr_stats_engine_message_sticky_remove_nolock(list, new_message->path);
 	}
 
-	ret = snprintf(prefix_tmp, RRR_STATS_MESSAGE_PATH_MAX_LENGTH, "%s/%u/%s", path_prefix, stats_handle, message->path);
-	if (ret >= RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
-		RRR_MSG_0("Path was too long in __rrr_stats_engine_message_register_nolock\n");
-		ret = 1;
-		goto out_free;
-	}
-	ret = 0;
-
-	if (rrr_msg_stats_set_path(new_message, prefix_tmp) != 0) {
-		RRR_MSG_0("Could not set path in new message in __rrr_stats_engine_message_register_nolock\n");
-		ret = 1;
+	if ((ret = __rrr_stats_engine_message_set_path (
+			new_message,
+			stats_handle,
+			path_prefix
+	)) != 0) {
 		goto out_free;
 	}
 
@@ -932,26 +947,34 @@ static int __rrr_stats_engine_send_rrr_message (
 	return ret;
 }
 
-int rrr_stats_engine_push_rrr_message (
+static int __rrr_stats_engine_push_rrr_message (
 		struct rrr_stats_engine *stats,
+		unsigned int stats_handle,
+		const char *path_prefix,
 		const struct rrr_msg_stats *message_preface,
 		const struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
-	struct rrr_msg_stats *preface_copy = NULL;
 	struct rrr_msg_msg *message_copy = NULL;
+	struct rrr_msg_stats *preface_copy = NULL;
 	uint16_t write_amount = 0;
 
-	DELIVERY_LOCK(stats);
-
 	if ((ret = rrr_msg_stats_duplicate(&preface_copy, message_preface)) != 0) {
-		RRR_MSG_0("Could not duplicate preface in %s\n", __func__);
+		RRR_MSG_0("Could not duplicate preface in %s\n");
 		goto out;
 	}
 
 	if ((message_copy = rrr_msg_msg_duplicate(message)) == NULL) {
 		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = __rrr_stats_engine_message_set_path (
+			preface_copy,
+			stats_handle,
+			path_prefix
+	)) != 0) {
 		goto out;
 	}
 
@@ -973,8 +996,6 @@ int rrr_stats_engine_push_rrr_message (
 	if (preface_copy)
 		rrr_free(preface_copy);
 
-	DELIVERY_UNLOCK();
-
 	if (write_amount > 0) {
 		rrr_event_pass (
 				stats->queue,
@@ -985,5 +1006,44 @@ int rrr_stats_engine_push_rrr_message (
 		);
 	}
 
+	return ret;
+}
+
+int rrr_stats_engine_push_rrr_message (
+		struct rrr_stats_engine *stats,
+		unsigned int handle,
+		const char *path_prefix,
+		const char *path_postfix,
+		const struct rrr_msg_msg *message,
+		const char **hop_names,
+		uint32_t hop_count
+) {
+	int ret = 0;
+
+	struct rrr_msg_stats preface;
+
+	DELIVERY_LOCK(stats);
+
+	if ((ret = rrr_msg_stats_init_rrr_msg_preface (
+			&preface,
+			path_postfix,
+			hop_names,
+			hop_count
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_stats_engine_push_rrr_message (
+			stats,
+			handle,
+			path_prefix,
+			&preface,
+			message
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	DELIVERY_UNLOCK();
 	return ret;
 }
