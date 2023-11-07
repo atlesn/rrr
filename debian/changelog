@@ -1,4 +1,4 @@
-rrr (1.28-23) bullseye; urgency=medium
+rrr (1.28-24) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -53,6 +53,7 @@ rrr (1.28-23) bullseye; urgency=medium
       there is no data to send on a socket.
     * Readers were blocked in message broker when writer used do_again during
       slot write (fast writes from dummy module with buffer=no).
+    * Deadlock in rrr_stats due to printing messages during signal handling
 
   * Under the hood:
     * Use events in file module

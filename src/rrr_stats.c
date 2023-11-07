@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/version.h"
 #include "../build_timestamp.h"
+#include "lib/common.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
 #include "lib/event/event.h"
@@ -80,7 +81,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_stats");
 
-static volatile int rrr_stats_abort = 0;
+static int main_running = 1;
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
@@ -163,19 +164,8 @@ static int __rrr_stats_connection_msg_preface_set (
 	return ret;
 }
 
-static void __rrr_stats_signal_handler (int s) {
-	if (s == SIGPIPE) {
-		RRR_MSG_0("Received SIGPIPE, ignoring\n");
-	}
-	else if (s == SIGTERM) {
-		RRR_MSG_0("Received SIGTERM, exiting\n");
-		exit(EXIT_FAILURE);
-	}
-	else if (s == SIGINT) {
-		// Allow double ctrl+c to close program immediately
-		signal(SIGINT, SIG_DFL);
-		rrr_stats_abort = 1;
-	}
+int rrr_stats_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static int __rrr_stats_data_init (
@@ -773,7 +763,7 @@ static int __rrr_stats_events_setup (struct rrr_stats_data *data) {
 static int __rrr_stats_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_stats_data *data = arg;
 
-	if (rrr_stats_abort) {
+	if (!main_running) {
 		return RRR_EVENT_EXIT;
 	}
 
@@ -806,13 +796,19 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct cmd_data cmd;
 	struct rrr_stats_data data = {0};
+	struct rrr_signal_handler *signal_handler = NULL;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
+
+	signal_handler = rrr_signal_handler_push(rrr_stats_signal_handler, NULL);
+	rrr_signal_default_signal_actions_register();
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 	if (__rrr_stats_data_init(&data) != 0) {
 		RRR_MSG_0("Could not initialize stats data\n");
 		ret = EXIT_FAILURE;
-		goto out;
+		goto out_cleanup_signal;
 	}
 
 	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
@@ -821,28 +817,13 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 1) != 0) {
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
 
 	if (__rrr_stats_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
-
-	struct sigaction action;
-	action.sa_handler = __rrr_stats_signal_handler;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	// We generally ignore sigpipe and use NONBLOCK on all sockets
-	sigaction (SIGPIPE, &action, NULL);
-	// Used to set rrr_stats_abort = 1. The signal is set to default afterwards
-	// so that a second SIGINT will terminate the process
-	sigaction (SIGINT, &action, NULL);
-	// Used to print statistics (disabled)
-	// sigaction (SIGUSR1, &action, NULL);
-	// Exit immediately with EXIT_FAILURE
-	sigaction (SIGTERM, &action, NULL);
 
 	rrr_socket_client_collection_event_setup (
 			data.connections,
@@ -868,13 +849,15 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (__rrr_stats_attempt_connect(&data) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
 
 	if (__rrr_stats_events_setup (&data) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	if (rrr_event_dispatch (
 			data.queue,
@@ -885,12 +868,14 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 	}
 
-	out_cleanup_cmd:
+	out_cleanup_data:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		__rrr_stats_data_cleanup(&data);
+	out_cleanup_signal:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_remove(signal_handler);
 		rrr_config_set_debuglevel_on_exit();
 		cmd_destroy(&cmd);
-	out_cleanup_data:
-		__rrr_stats_data_cleanup(&data);
-	out:
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 		rrr_socket_close_all();
