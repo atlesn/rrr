@@ -56,19 +56,19 @@ struct rrr_stats_client {
 	int first_log_journal_messages_sent;
 };
 
-static void __rrr_stats_engine_journal_lock (struct rrr_stats_engine *engine) {
-	pthread_mutex_lock(&engine->journal_lock);
-	engine->journal_lock_usercount++;
-	if (engine->journal_lock_usercount > 2) {
+static void __rrr_stats_engine_delivery_lock (struct rrr_stats_engine *engine) {
+	pthread_mutex_lock(&engine->delivery_lock);
+	engine->delivery_lock_usercount++;
+	if (engine->delivery_lock_usercount > 2) {
 		RRR_BUG("BUG: Stats engine journal lock usercount was > 2\n");
 	}
 }
 
 static void __rrr_stats_engine_journal_unlock (struct rrr_stats_engine *engine) {
-	engine->journal_lock_usercount--;
-	int usercount_now = engine->journal_lock_usercount;
+	engine->delivery_lock_usercount--;
+	int usercount_now = engine->delivery_lock_usercount;
 
-	pthread_mutex_unlock(&engine->journal_lock);
+	pthread_mutex_unlock(&engine->delivery_lock);
 
 	if (usercount_now < 0) {
 		RRR_BUG("BUG: Stats engine journal lock usercount was < 0\n");
@@ -80,11 +80,11 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	__rrr_stats_engine_journal_unlock(engine);
 }
 
-#define JOURNAL_LOCK(engine)                                   \
-    __rrr_stats_engine_journal_lock(engine);                   \
+#define DELIVERY_LOCK(engine)                                   \
+    __rrr_stats_engine_delivery_lock(engine);                   \
     pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)
 
-#define JOURNAL_UNLOCK()                                       \
+#define DELIVERY_UNLOCK()                                       \
     pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (RRR_LOG_HOOK_ARGS) {
@@ -105,9 +105,9 @@ static void __rrr_stats_engine_log_listener (RRR_LOG_HOOK_ARGS) {
 	(void)(loglevel_translated);
 	(void)(prefix);
 
-	JOURNAL_LOCK(stats);
+	DELIVERY_LOCK(stats);
 
-	if (stats->journal_lock_usercount > 1) {
+	if (stats->delivery_lock_usercount > 1) {
 		// Prevent log loops when sending log messages generates new messages when debug is active
 		goto out;
 	}
@@ -138,7 +138,7 @@ static void __rrr_stats_engine_log_listener (RRR_LOG_HOOK_ARGS) {
 	*write_amount = 1;
 
 	out:
-	JOURNAL_UNLOCK();
+	DELIVERY_UNLOCK();
 	if (new_message != NULL) {
 		rrr_msg_stats_destroy(new_message);
 	}
@@ -185,7 +185,7 @@ static int __rrr_stats_engine_message_pack (
 }
 
 static int __rrr_stats_engine_rrr_message_to_network (
-		const struct rrr_msg_msg *message,
+		struct rrr_msg_msg **message,
 		int (*callback)(
 				struct rrr_msg *data,
 				rrr_length size,
@@ -193,20 +193,23 @@ static int __rrr_stats_engine_rrr_message_to_network (
 		),
 		void *callback_arg
 ) {
-	struct rrr_msg_msg *message_copy;
+	int ret = 0;
 
-	if ((message_copy = rrr_msg_msg_duplicate(message)) == NULL) {
-		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
-		return 1;
-	}
+	rrr_length msg_total_size;
 
-	assert(RRR_MSG_IS_RRR_MESSAGE(message_copy) && "Message was not RRR message");
+	assert(RRR_MSG_IS_RRR_MESSAGE(*message) && "Message must be RRR message");
 
-	rrr_msg_msg_prepare_for_network(message_copy);
+	msg_total_size = MSG_TOTAL_SIZE(*message);
 
-	rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message_copy);
-	
-	return callback((struct rrr_msg *) message_copy, MSG_TOTAL_SIZE(message), callback_arg);
+	rrr_msg_msg_prepare_for_network(*message);
+	rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) *message);
+
+	ret = callback((struct rrr_msg *) *message, msg_total_size, callback_arg);
+
+	rrr_free(*message);
+	*message = NULL;
+
+	return ret;
 }
 
 int __rrr_stats_engine_multicast_send_intermediate (
@@ -263,6 +266,50 @@ static void __rrr_stats_client_destroy_void (void *client) {
 	__rrr_stats_client_destroy (client);
 }
 
+static int __rrr_stats_message_pair_destroy (
+		struct rrr_stats_message_pair *pair
+) {
+	if (pair->preface)
+		rrr_msg_stats_destroy(pair->preface);
+	if (pair->message)
+		rrr_free(pair->message);
+	rrr_free(pair);
+	return 0;
+}
+
+static void __rrr_stats_message_pair_list_clear (
+		struct rrr_stats_message_pair_list *list
+) {
+	RRR_LL_DESTROY(list, struct rrr_stats_message_pair, __rrr_stats_message_pair_destroy(node));
+}
+
+static int __rrr_stats_message_pair_list_push (
+		struct rrr_stats_message_pair_list *list,
+		struct rrr_msg_stats **preface,
+		struct rrr_msg_msg **message
+) {
+	int ret = 0;
+
+	struct rrr_stats_message_pair *pair;
+       
+	if ((pair = rrr_allocate(sizeof(*pair))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	pair->preface = *preface;
+	pair->message = *message;
+
+	RRR_LL_APPEND(list, pair);
+
+	*preface = NULL;
+	*message = NULL;
+
+	out:
+	return ret;
+}
+
 static int __rrr_stats_named_message_list_destroy (
 		struct rrr_stats_named_message_list *list
 ) {
@@ -302,7 +349,8 @@ static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
 static int __rrr_stats_engine_has_clients (
 		struct rrr_stats_engine *stats
 ) {
-	return rrr_socket_client_collection_count(stats->client_collection) > 0;
+	// > 1 because we have the listen socket
+	return rrr_socket_client_collection_count(stats->client_collection) > 1;
 }
 
 static int __rrr_stats_engine_send_messages_from_list_unlocked (
@@ -369,14 +417,14 @@ static int __rrr_stats_engine_send_messages (
 	return ret;
 }
 
-static int __rrr_stats_engine_event_log_journal_data_available (
+static int __rrr_stats_engine_event_log_hook_data_available (
 		RRR_EVENT_FUNCTION_ARGS
 ) {
 	struct rrr_stats_engine *stats = arg;
 
 	int amount_int = *amount;
 
-	JOURNAL_LOCK(stats);
+	DELIVERY_LOCK(stats);
 	while (--amount_int >= 0) {
 		struct rrr_msg_stats *node = RRR_LL_SHIFT(&stats->log_journal_input);
 		if (node == NULL) {
@@ -386,11 +434,46 @@ static int __rrr_stats_engine_event_log_journal_data_available (
 		__rrr_stats_engine_message_pack(node, __rrr_stats_engine_multicast_send_intermediate, stats);
 		rrr_msg_stats_destroy(node);
 	}
-	JOURNAL_UNLOCK();
+	DELIVERY_UNLOCK();
 
 	*amount = 0;
 
 	return 0;
+}
+
+static int __rrr_stats_engine_send_rrr_message (
+		struct rrr_stats_engine *stats,
+		const struct rrr_msg_stats *message_preface,
+		struct rrr_msg_msg **message
+);
+
+static int __rrr_stats_engine_event_msg_hook_data_available (
+		RRR_EVENT_FUNCTION_ARGS
+) {
+	struct rrr_stats_engine *stats = arg;
+
+	int ret = 0;
+
+	int amount_int = *amount;
+
+	DELIVERY_LOCK(stats);
+
+	while (--amount_int >= 0) {
+		struct rrr_stats_message_pair *node = RRR_LL_SHIFT(&stats->message_pairs);
+		if ((ret = __rrr_stats_engine_send_rrr_message(stats, node->preface, &node->message)) != 0) {
+			RRR_MSG_0("Error while sending message in %s\n", __func__);
+		}
+		__rrr_stats_message_pair_destroy(node);
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	*amount = 0;
+
+	out:
+	DELIVERY_UNLOCK();
+	return ret;
 }
 
 static void __rrr_stats_engine_event_periodic (
@@ -428,7 +511,7 @@ static int __rrr_stats_engine_read_callback (
 	return 0;
 }
 
-static int __rrr_stats_engine_event_pass_retry_callback (
+static int __rrr_stats_engine_event_pass_log_hook_retry_callback (
 		void *arg
 ) {
 	struct rrr_stats_engine *stats = arg;
@@ -436,6 +519,21 @@ static int __rrr_stats_engine_event_pass_retry_callback (
  	(void)(arg);
 
 	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
+
+	// Checked in periodic functions
+	stats->exit_now_ret = RRR_EVENT_ERR;
+
+	return RRR_EVENT_ERR;
+}
+
+static int __rrr_stats_engine_event_pass_msg_hook_retry_callback (
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+ 	(void)(arg);
+
+	fprintf(stderr, "Error: Too many hooked messages, a build-up has occured. Consider reducing message rates while debugging.\n");
 
 	// Checked in periodic functions
 	stats->exit_now_ret = RRR_EVENT_ERR;
@@ -503,7 +601,7 @@ int rrr_stats_engine_init (
 		goto out_destroy_client_collection;
 	}
 
-	if (rrr_posix_mutex_init(&stats->journal_lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
+	if (rrr_posix_mutex_init(&stats->delivery_lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize journal mutex in rrr_stats_engine_init\n");
 		ret = 1;
 		goto out_destroy_client_collection;
@@ -519,7 +617,7 @@ int rrr_stats_engine_init (
 			1 * 1000 * 1000 // 1 s
 	)) != 0) {
 		RRR_MSG_0("Could not create periodic event in rrr_stats_engine_init\n");
-		goto out_destroy_journal_lock;
+		goto out_destroy_delivery_lock;
 	}
 
 	EVENT_ADD(stats->event_periodic);
@@ -529,16 +627,24 @@ int rrr_stats_engine_init (
 			__rrr_stats_engine_log_listener,
 			stats,
 			queue,
-			__rrr_stats_engine_event_pass_retry_callback,
+			__rrr_stats_engine_event_pass_log_hook_retry_callback,
 			stats
 	);
 
 	rrr_event_function_set_with_arg (
 			queue,
 			RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
-			__rrr_stats_engine_event_log_journal_data_available,
+			__rrr_stats_engine_event_log_hook_data_available,
 			stats,
 			"stats engine journal data available"
+	);
+
+	rrr_event_function_set_with_arg (
+			queue,
+			RRR_EVENT_FUNCTION_MSG_HOOK_DATA_AVAILABLE,
+			__rrr_stats_engine_event_msg_hook_data_available,
+			stats,
+			"stats engine msg hook data available"
 	);
 
 	RRR_DBG_1("Statistics engine started, listening at %s, log hook handle is %i\n",
@@ -548,8 +654,8 @@ int rrr_stats_engine_init (
 	stats->initialized = 1;
 
 	goto out_final;
-	out_destroy_journal_lock:
-		pthread_mutex_destroy(&stats->journal_lock);
+	out_destroy_delivery_lock:
+		pthread_mutex_destroy(&stats->delivery_lock);
 	out_destroy_client_collection:
 		rrr_socket_client_collection_destroy(stats->client_collection);
 	out_close_socket:
@@ -576,6 +682,7 @@ void rrr_stats_engine_cleanup (
 	rrr_log_hook_unregister(stats->log_hook_handle);
 	rrr_socket_client_collection_destroy(stats->client_collection);
 	__rrr_stats_named_message_list_collection_clear(&stats->named_message_list);
+	__rrr_stats_message_pair_list_clear (&stats->message_pairs);
 	__rrr_stats_log_journal_clear(&stats->log_journal_input);
 
 	stats->initialized = 0;
@@ -586,7 +693,7 @@ void rrr_stats_engine_cleanup (
 	rrr_socket_close_ignore_unregistered(stats->socket);
 	stats->socket = 0;
 	pthread_mutex_destroy(&stats->main_lock);
-	pthread_mutex_destroy(&stats->journal_lock);
+	pthread_mutex_destroy(&stats->delivery_lock);
 }
 
 
@@ -790,14 +897,12 @@ int rrr_stats_engine_post_message (
 		return ret;
 }
 
-int rrr_stats_engine_send_rrr_message (
+static int __rrr_stats_engine_send_rrr_message (
 		struct rrr_stats_engine *stats,
 		const struct rrr_msg_stats *message_preface,
-		const struct rrr_msg_msg *message
+		struct rrr_msg_msg **message
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&stats->main_lock);
 
 	if (!__rrr_stats_engine_has_clients(stats)) {
 		goto out;
@@ -808,7 +913,7 @@ int rrr_stats_engine_send_rrr_message (
 			__rrr_stats_engine_multicast_send_intermediate,
 			stats
 	) != 0) {
-		RRR_MSG_0("Error while sending message in %s\n", __func__);
+		RRR_MSG_0("Error while sending preface in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -822,8 +927,63 @@ int rrr_stats_engine_send_rrr_message (
 		ret = 1;
 		goto out;
 	}
-			
+
 	out:
-	pthread_mutex_unlock(&stats->main_lock);
+	return ret;
+}
+
+int rrr_stats_engine_push_rrr_message (
+		struct rrr_stats_engine *stats,
+		const struct rrr_msg_stats *message_preface,
+		const struct rrr_msg_msg *message
+) {
+	int ret = 0;
+
+	struct rrr_msg_stats *preface_copy = NULL;
+	struct rrr_msg_msg *message_copy = NULL;
+	uint16_t write_amount = 0;
+
+	DELIVERY_LOCK(stats);
+
+	if ((ret = rrr_msg_stats_duplicate(&preface_copy, message_preface)) != 0) {
+		RRR_MSG_0("Could not duplicate preface in %s\n", __func__);
+		goto out;
+	}
+
+	if ((message_copy = rrr_msg_msg_duplicate(message)) == NULL) {
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = __rrr_stats_message_pair_list_push (
+			&stats->message_pairs,
+			&preface_copy,
+			&message_copy
+	)) != 0) {
+		RRR_MSG_0("Could not push message pair in %s\n", __func__);
+		goto out;
+	}
+
+	write_amount++;
+
+	out:
+	if (message_copy)
+		rrr_free(message_copy);
+
+	if (preface_copy)
+		rrr_free(preface_copy);
+
+	DELIVERY_UNLOCK();
+
+	if (write_amount > 0) {
+		rrr_event_pass (
+				stats->queue,
+				RRR_EVENT_FUNCTION_MSG_HOOK_DATA_AVAILABLE,
+				write_amount,
+				__rrr_stats_engine_event_pass_msg_hook_retry_callback,
+				NULL
+		);
+	}
+
 	return ret;
 }

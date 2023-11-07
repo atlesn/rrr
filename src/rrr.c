@@ -295,7 +295,7 @@ static void main_stats_message_pre_buffer_hook (
 		RRR_BUG("Could not create message preface\n");
 	}
 
-	if (rrr_stats_engine_send_rrr_message (
+	if (rrr_stats_engine_push_rrr_message (
 			&stats_data->engine,
 			message_preface,
 			message
@@ -611,6 +611,7 @@ static int main_loop (
 	rrr_message_broker_destroy(message_broker);
 
 	out_destroy_stats_engine:
+		printf("Cleanup stats engine\n");
 		rrr_stats_engine_cleanup(&stats_data.engine);
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

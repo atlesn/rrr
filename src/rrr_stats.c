@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -110,6 +110,55 @@ struct rrr_stats_data {
 	rrr_event_handle event_keepalive;
 	rrr_event_handle event_dump_tree;
 };
+
+struct rrr_stats_connection {
+	struct rrr_msg_stats *message_preface;
+};
+
+static int __rrr_stats_connection_new (void **target, int fd, void *private_arg) {
+	(void)(fd);
+	(void)(private_arg);
+
+	struct rrr_stats_connection *connection;
+
+	if ((connection = rrr_allocate_zero(sizeof(*connection))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	*target = connection;
+
+	return 0;
+}
+
+static void __rrr_stats_connection_destroy (void *target) {
+	struct rrr_stats_connection *connection = target;
+
+	if (connection->message_preface != NULL) {
+		rrr_msg_stats_destroy(connection->message_preface);
+	}
+
+	rrr_free(connection);
+}
+
+static int __rrr_stats_connection_msg_preface_set (
+		struct rrr_stats_connection *connection,
+		const struct rrr_msg_stats *message
+) {
+	int ret = 0;
+
+	if (connection->message_preface != NULL) {
+		rrr_msg_stats_destroy(connection->message_preface);
+	}
+
+	if ((ret = rrr_msg_stats_duplicate(&connection->message_preface, message)) != 0) {
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
 
 static void __rrr_stats_signal_handler (int s) {
 	if (s == SIGPIPE) {
@@ -508,6 +557,10 @@ static int __rrr_stats_print_journal_message (
 		goto out;
 	}
 
+	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+		goto out;
+	}
+
 	struct rrr_stats_tree tree_tmp;
 	if (rrr_stats_tree_init(&tree_tmp) != 0) {
 		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
@@ -536,12 +589,17 @@ static int __rrr_stats_process_stats_message (
 		void *private_arg1,
 		void *private_arg2
 ) {
+	struct rrr_stats_connection *connection = private_arg1;
 	struct rrr_stats_data *data = private_arg2;
 
-	(void)(private_arg1);
-
 	int ret = 0;
-	if ((ret = rrr_stats_tree_insert_or_update(&data->message_tree, message)) != 0) {
+
+	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+		if ((ret = __rrr_stats_connection_msg_preface_set(connection, message)) != 0) {
+			goto out;
+		}
+	}
+	else if ((ret = rrr_stats_tree_insert_or_update(&data->message_tree, message)) != 0) {
 		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
 			RRR_MSG_0("Message with path %s was invalid, not added to tree\n", message->path);
 			ret = 0;
@@ -554,10 +612,6 @@ static int __rrr_stats_process_stats_message (
 
 	}
 
-	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
-		assert(0 && "Preface flag not implemented");
-	}
-
 	out:
 	return ret;
 }
@@ -567,13 +621,24 @@ static int __rrr_stats_process_rrr_message (
 		void *private_arg1,
 		void *private_arg2
 ) {
+	struct rrr_stats_connection *connection = private_arg1;
 	struct rrr_stats_data *data = private_arg2;
 
 	(void)(message);
-	(void)(private_arg1);
 	(void)(data);
 
+	int ret = 0;
+
+	if (connection->message_preface == NULL) {
+		goto out;
+	}
+
+	assert(RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(connection->message_preface) && "Preface must have preface flag set");
+
 	assert(0 && "Not implemented");
+
+	out:
+	return ret;
 }
 
 static void __rrr_stats_event_keepalive (
@@ -718,8 +783,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_socket_client_collection_event_setup (
 			data.connections,
-			NULL,
-			NULL,
+			__rrr_stats_connection_new,
+			__rrr_stats_connection_destroy,
 			NULL,
 			4096,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
