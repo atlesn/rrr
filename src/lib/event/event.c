@@ -44,6 +44,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Uncomment to debug event processing
 //#define RRR_WITH_LIBEVENT_DEBUG
 
+struct rrr_event_hook_config rrr_event_hooking = {0};
+
+void rrr_event_hook_set (
+		void (*hook)(RRR_EVENT_HOOK_ARGS),
+		void *arg
+) {
+	// Unsafe to change this function. Also, only set hook
+	// prior to making any threads as the struct update is
+	// not atomic.
+	assert(rrr_event_hooking.hook == NULL);
+	rrr_event_hooking.hook = hook;
+	rrr_event_hooking.arg = arg;
+}
+
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 ) {
@@ -109,6 +123,8 @@ static void __rrr_event_periodic (
 		void *arg
 ) {
 	struct rrr_event_queue *queue = arg;
+
+	RRR_EVENT_HOOK();
 
 	(void)(fd);
 	(void)(flags);

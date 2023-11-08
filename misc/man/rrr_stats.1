@@ -10,9 +10,10 @@ Multiple RRR instances can be monitored simultaneously.
 
 .SH SYNOPSIS
 .B rrr_stats [RRR SOCKET (PREFIX)]
-.Dl [-e|--exact-path]
-.Dl [-j|--journal]
-.Dl [-m|--messages]
+.Dl [-p|--exact-path]
+.Dl [-E|--events]
+.Dl [-J|--journal]
+.Dl [-M|--messages]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel-on-exit[=]FLAGS]
@@ -33,15 +34,21 @@ will look for a socket named this unless another name is specified at command li
 .SH OPTIONS
 .IP -e|--exact-path
 Use exact socket path, don't use prefix search.
-.IP -j|--journal
-Print journal (log) messages as they arrive. Nothing else is printed.
-May not be used together with message printing.
-.IP -m|--messages
-Print hooked messages as they arrive. Requires that RRR also is started with
-.B -m
+.IP -E|--events
+Print hooked events as they arrive. Requires that RRR is started with the
+.B -E
+argument, and if not, no messages will be printed.
+May not be used together with journal or message printing.
+.IP -J|--journal
+Print journal (log) messages as they arrive.
+Which messages are printed depends on the active debuglevel of RRR.
+May not be used together with message or event printing.
+.IP -M|--messages
+Print hooked messages as they arrive. Requires that RRR is started with the
+.B -M
 argument, and if not, no messages will be printed.
 If debuglevel 2 is active, any message array data will be dumped.
-May not be used together with journal printing.
+May not be used together with journal or event printing.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
 .IP -D|--debuglevel-on-exit[=]FLAGS

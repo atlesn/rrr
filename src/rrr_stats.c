@@ -85,9 +85,10 @@ static int main_running = 1;
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
-        {0,                            'e',    "exact-path",            "[-e|--exact-path]"},
-        {0,                            'j',    "journal",               "[-j|--journal]"},
-        {0,                            'm',    "messages",              "[-m|--messages]"},
+        {0,                            'p',    "exact-path",            "[-p|--exact-path]"},
+        {0,                            'E',    "event",                 "[-E|--events]"},
+        {0,                            'J',    "journal",               "[-J|--journal]"},
+        {0,                            'M',    "messages",              "[-M|--messages]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -105,6 +106,7 @@ struct rrr_stats_data {
 	int do_socket_path_exact;
 	int do_print_journal;
 	int do_print_messages;
+	int do_print_events;
 
 	struct rrr_socket_client_collection *connections;
 
@@ -261,6 +263,11 @@ static int __rrr_stats_parse_config (
 
 	if (cmd_exists(cmd, "messages", 0)) {
 		data->do_print_messages = 1;
+	}
+
+	if (cmd_exists(cmd, "events", 0)) {
+		data->do_print_events = 1;
+		assert(0 && "EVENTS NOT IMPLEMENTED");
 	}
 
 	if (data->do_print_journal && data->do_print_messages) {

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <poll.h>
 #ifdef RRR_WITH_JEMALLOC
 #	include <jemalloc/jemalloc.h>
 #endif
@@ -109,7 +110,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "start-interval",        "[-t|--start-interval]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
-		{0,                            'm',    "message-hooks",         "[-m|--message-hooks]"},
+		{0,                            'E',    "event-hooks",           "[-E|--event-hooks]"},
+		{0,                            'M',    "message-hooks",         "[-M|--message-hooks]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
@@ -291,6 +293,38 @@ static void main_stats_message_pre_buffer_hook (
 	}
 
 	rrr_free(hop_names);
+}
+
+void main_event_hook(RRR_EVENT_HOOK_ARGS) {
+	struct stats_data *stats_data = arg;
+
+	char path[128];
+	char text[128];
+	struct rrr_msg_stats message;
+
+	snprintf(path, sizeof(path), "event/%s", source_func);
+	snprintf(text, sizeof(text), "fd: %i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
+		fd,
+		rrr_time_get_64(),
+		flags,
+		(flags & POLLIN) != 0,
+		(flags & POLLOUT) != 0,
+		(flags & POLLHUP) != 0,
+		(flags & POLLERR) != 0
+	);
+
+	if (rrr_msg_stats_init (
+			&message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			0,
+			path,
+			text,
+			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
+	) != 0) {
+		RRR_BUG("Could not initialize main statistics message\n");
+	}
+
+	rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message);
 }
 
 struct main_loop_event_callback_data {
@@ -542,6 +576,10 @@ static int main_loop (
 
 			hooks.pre_buffer = main_stats_message_pre_buffer_hook;
 			hooks.arg = &stats_data;
+		}
+
+		if (cmd_exists(cmd, "event-hooks", 0)) {
+			rrr_event_hook_set (main_event_hook, &stats_data);
 		}
 	}
 
