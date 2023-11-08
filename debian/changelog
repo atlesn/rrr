@@ -1,4 +1,4 @@
-rrr (1.28-24) bullseye; urgency=medium
+rrr (1.28-25) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -55,6 +55,11 @@ rrr (1.28-24) bullseye; urgency=medium
     * Readers were blocked in message broker when writer used do_again during
       slot write (fast writes from dummy module with buffer=no).
     * Deadlock in rrr_stats due to printing messages during signal handling
+    * Soft error was ignored in socket client collection also when socket
+      surely was closed, like when 0 bytes were read. This caused the socket
+      not to be closed with following CPU spin due do constant POLLIN event.
+      The soft error is now forced to propagate if bytes read is zero so that
+      only data errors are ignored (which is also intention of higher levels).
 
   * Under the hood:
     * Use events in file module

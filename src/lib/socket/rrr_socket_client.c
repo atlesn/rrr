@@ -580,6 +580,9 @@ static void __rrr_socket_client_read_callback_flags_deduct (
     if (do_soft_error_propagates) {                 \
       RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd); \
     }                                               \
+    else if (bytes_read == 0) {                     \
+      RRR_DBG_7("fd %i in client collection soft error while reading and bytes read was 0 (force propagate)\n", fd); \
+    }                                               \
     else {                                          \
       RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);    \
       ret = 0;                                      \
