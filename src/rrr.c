@@ -188,12 +188,6 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
 	int ret = 0;
 
-	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
-		RRR_MSG_0("Error while obtaining statistics handle in main\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
 	char msg_text[RRR_STATS_MESSAGE_DATA_MAX_SIZE + 1];
 
 	if (snprintf (
@@ -353,43 +347,6 @@ static void main_loop_close_sockets_except (
 	rrr_socket_close_all_except_array_no_unlink (fds, fds_count);
 }
 
-static int main_loop_threads_restart (
-	struct main_loop_event_callback_data *callback_data
-) {
-	int ret = 0;
-
-	main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
-
-	if ((ret = rrr_instances_create_and_start_threads (
-			callback_data->collection,
-			callback_data->instances,
-			callback_data->config,
-			callback_data->cmd,
-			&callback_data->stats_data->engine,
-			callback_data->message_broker,
-			callback_data->fork_handler
-	)) != 0) {
-		goto out;
-	}
-
-	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
-	// and then gets unregistered here.
-	if (callback_data->stats_data->handle != 0) {
-		rrr_stats_engine_handle_unregister(&callback_data->stats_data->engine, callback_data->stats_data->handle);
-		callback_data->stats_data->handle = 0;
-	}
-
-	if (callback_data->stats_data->engine.initialized != 0) {
-		if (main_stats_post_sticky_messages(callback_data->stats_data, callback_data->instances) != 0) {
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
-}
-
 static int main_mmap_periodic (struct stats_data *stats_data) {
 	struct rrr_mmap_stats mmap_stats = {0};
 
@@ -439,65 +396,98 @@ static void main_loop_periodic_message_broker_report_buffer_split_buffer_callbac
 	}
 }
 
+static void main_loop_periodic_thread_collection_destroy (
+		struct rrr_thread_collection **collection,
+		const char *config_file
+) {
+	int ghost_count = 0;
+
+	rrr_thread_collection_destroy(&ghost_count, *collection);
+	*collection = NULL;
+
+	if (ghost_count > 0) {
+		// We cannot continue in ghost situations as the ghosts may
+		// occupy split buffer slots causing a crash on assertion in
+		// the message broker if we restart as not enough slots are
+		// available.
+		//
+		// It is also useful to get a coredump showing the state of
+		// the ghost thread, hence we abort here.
+		RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", config_file);
+	}
+}
+
+static int main_loop_stats_handle_reset (struct stats_data *stats_data) {
+	if (stats_data->handle != 0) {
+		rrr_stats_engine_handle_unregister(&stats_data->engine, stats_data->handle);
+		stats_data->handle = 0;
+	}
+
+	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
+		RRR_MSG_0("Error while obtaining statistics handle\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct main_loop_event_callback_data *callback_data = arg;
+
+	// Note : Thread collection must be destroyed and pointer set to NULL
+	//        before we return from this function, and if not, we will
+	//        bugtrap.
 
 	rrr_config_set_debuglevel_orig();
 
 	if (*(callback_data->collection) == NULL) {
-		if (main_loop_threads_restart (callback_data) != 0) {
-			rrr_config_set_debuglevel_on_exit();
-			return RRR_EVENT_EXIT;
+		main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
+
+		if (rrr_instances_create_and_start_threads (
+				callback_data->collection,
+				callback_data->instances,
+				callback_data->config,
+				callback_data->cmd,
+				&callback_data->stats_data->engine,
+				callback_data->message_broker,
+				callback_data->fork_handler
+		) != 0) {
+			goto out_event_exit;
+		}
+
+		if (callback_data->stats_data->engine.initialized) {
+			// Reset stats handle to get rid of sticky messages describing any old threads
+
+			if (main_loop_stats_handle_reset(callback_data->stats_data) != 0 ||
+			    main_stats_post_sticky_messages(callback_data->stats_data, callback_data->instances) != 0
+			) {
+				goto out_destroy_thread_collection;
+			}
 		}
 	}
 
 	if (!main_running) {
-		int ghost_count = 0;
-
 		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
-
-		rrr_config_set_debuglevel_on_exit();
-
-		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
-		if (ghost_count > 0) {
-			// Bug here to produce a possibly useful coredump about ghost situation
-			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
-		}
-		*(callback_data->collection) = NULL;
-
-		return RRR_EVENT_EXIT;
+		goto out_destroy_thread_collection;
 	}
 
 	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
 
-	if (rrr_instance_check_threads_stopped(callback_data->instances) == 1) {
-		int ghost_count = 0;
-
+	if (rrr_instance_check_threads_stopped(callback_data->instances)) {
 		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
 
 		rrr_config_set_debuglevel_on_exit();
 
-		rrr_thread_collection_destroy(&ghost_count, *(callback_data->collection));
-		if (ghost_count > 0) {
-			// We cannot continue in ghost situations as the ghosts may
-			// occupy split buffer slots causing a crash on assertion in
-			// the message broker if we restart as not enough slots are
-			// available.
-			//
-			// It is also useful to get a coredump showing the state of
-			// the ghost thread, hence we abort here.
-			RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", callback_data->config_file);
-		}
-		*(callback_data->collection) = NULL;
+		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 
 		// If main is still supposed to be active and restart is active, sleep
 		// for one second and continue.
-		if (main_running && rrr_config_global.no_thread_restart == 0) {
+		if (main_running && !rrr_config_global.no_thread_restart) {
 			rrr_message_broker_unregister_all(callback_data->message_broker);
 			rrr_posix_usleep(1000000); // 1s
 		}
 		else {
-			return RRR_EVENT_EXIT;
+			goto out_event_exit;
 		}
 	}
 
@@ -514,6 +504,13 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	}
 
 	return main_mmap_periodic(callback_data->stats_data);
+
+	out_destroy_thread_collection:
+		rrr_config_set_debuglevel_on_exit();
+		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
+	out_event_exit:
+		rrr_config_set_debuglevel_on_exit();
+		return RRR_EVENT_EXIT;
 }
 
 // We have one loop per fork and one fork per configuration file
@@ -551,7 +548,7 @@ static int main_loop (
 			rrr_instance_config_collection_count(config), config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
-		if (config != NULL && rrr_instance_config_dump(config) != 0) {
+		if (rrr_instance_config_dump(config) != 0) {
 			ret = EXIT_FAILURE;
 			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
@@ -559,6 +556,7 @@ static int main_loop (
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+
 	if (rrr_instances_create_from_config(&instances, config, module_library_paths) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
@@ -567,6 +565,12 @@ static int main_loop (
 	if (cmd_exists(cmd, "stats", 0)) {
 		if (rrr_stats_engine_init(&stats_data.engine, queue) != 0) {
 			RRR_MSG_0("Could not initialize statistics engine\n");
+			ret = EXIT_FAILURE;
+			goto out_destroy_instance_metadata;
+		}
+
+		if (rrr_stats_engine_handle_obtain(&stats_data.handle, &stats_data.engine) != 0) {
+			RRR_MSG_0("Error while obtaining statistics handle\n");
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
