@@ -743,6 +743,7 @@ static int __rrr_stats_engine_message_register_nolock (
 
 	if (list == NULL) {
 		RRR_MSG_0("List with handle %u not found in __rrr_stats_engine_message_register_nolock\n", stats_handle);
+		assert(0);
 		ret = 1;
 		goto out_final;
 	}

@@ -86,7 +86,7 @@ static int main_running = 1;
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
         {0,                            'p',    "exact-path",            "[-p|--exact-path]"},
-        {0,                            'E',    "event",                 "[-E|--events]"},
+        {0,                            'E',    "events",                "[-E|--events]"},
         {0,                            'J',    "journal",               "[-J|--journal]"},
         {0,                            'M',    "messages",              "[-M|--messages]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -267,7 +267,6 @@ static int __rrr_stats_parse_config (
 
 	if (cmd_exists(cmd, "events", 0)) {
 		data->do_print_events = 1;
-		assert(0 && "EVENTS NOT IMPLEMENTED");
 	}
 
 	if (data->do_print_journal && data->do_print_messages) {
@@ -566,7 +565,7 @@ static int __rrr_stats_process_journal_message (
 		goto out;
 	}
 
-	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)) {
 		goto out;
 	}
 
@@ -575,13 +574,11 @@ static int __rrr_stats_process_journal_message (
 	struct rrr_stats_tree tree_tmp;
 	if (rrr_stats_tree_init(&tree_tmp) != 0) {
 		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
-		ret = 1;
 		goto out;
 	}
 
 	if (rrr_stats_tree_insert_or_update(&tree_tmp, message) != 0) {
 		RRR_MSG_0("Could not insert message into tree in __rrr_stats_print_journal_message\n");
-		ret = 1;
 		goto out_cleanup_tree;
 	}
 
@@ -607,7 +604,10 @@ static int __rrr_stats_process_stats_message (
 
 	int ret = 0;
 
-	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) ||
+	    RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message) ||
+	    RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)
+	) {
 		goto out;
 	}
 
@@ -619,12 +619,54 @@ static int __rrr_stats_process_stats_message (
 		}
 
 		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
-		ret = 1;
 		goto out;
 	}
 
 	out:
 	return ret;
+}
+
+static int  __rrr_stats_process_event_message  (
+		const struct rrr_msg_stats *message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_connection *connection = private_arg1;
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(connection);
+	(void)(data);
+
+	int ret = 0;
+
+	struct rrr_stats_tree tree_tmp;
+
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message)) {
+		goto out;
+	}
+
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message)) != 0) {
+		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
+			RRR_MSG_0("Message with path %s was invalid, not added to tree in %s\n", message->path, __func__);
+			ret = 0;
+			goto out_cleanup_tree;
+		}
+
+		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	rrr_stats_tree_dump(&tree_tmp);
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out:
+		return ret;
 }
 
 static int __rrr_stats_process_preface_message (
@@ -677,7 +719,6 @@ static int __rrr_stats_process_rrr_message (
 
 	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
 		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
-		ret = 1;
 		goto out_destroy_preface;
 	}
 
@@ -726,7 +767,7 @@ static void __rrr_stats_event_dump_tree (
 	(void)(fd);
 	(void)(flags);
 
-	if (!data->do_print_journal && !data->do_print_messages) {
+	if (!data->do_print_journal && !data->do_print_messages && !data->do_print_events) {
 		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
 
 		unsigned int purged_total = 0;
@@ -832,6 +873,21 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_data;
 	}
 
+	int (*message_callback)(const struct rrr_msg_stats *, void *, void *) = NULL;
+
+	if (data.do_print_journal) {
+		message_callback = __rrr_stats_process_journal_message;
+	}
+	else if (data.do_print_messages) {
+		message_callback = __rrr_stats_process_preface_message;
+	}
+	else if (data.do_print_events) {
+		message_callback = __rrr_stats_process_event_message;
+	}
+	else {
+		message_callback = __rrr_stats_process_stats_message;
+	}
+
 	rrr_socket_client_collection_event_setup (
 			data.connections,
 			__rrr_stats_connection_new,
@@ -845,12 +901,7 @@ int main (int argc, const char **argv, const char **env) {
 			NULL,
 			NULL,
 			NULL,
-			(data.do_print_journal
-				? __rrr_stats_process_journal_message
-				: data.do_print_messages
-				? __rrr_stats_process_preface_message
-				: __rrr_stats_process_stats_message
-			),
+			message_callback,
 			&data
 	);
 

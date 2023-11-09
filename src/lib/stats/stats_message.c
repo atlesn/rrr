@@ -223,7 +223,7 @@ int rrr_msg_stats_new_log (
 	if (rrr_msg_stats_new (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
-			0,
+			RRR_STATS_MESSAGE_FLAGS_LOG,
 			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK,
 			data,
 			data_size

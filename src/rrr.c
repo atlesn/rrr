@@ -310,7 +310,7 @@ void main_event_hook(RRR_EVENT_HOOK_ARGS) {
 	if (rrr_msg_stats_init (
 			&message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
-			0,
+			RRR_STATS_MESSAGE_FLAGS_EVENT,
 			path,
 			text,
 			rrr_u16_from_biglength_bug_const (strlen(text) + 1)

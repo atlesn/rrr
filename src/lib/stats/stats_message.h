@@ -39,12 +39,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_MESSAGE_FLAGS_STICKY          (1<<0)
 #define RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE (1<<1)
+#define RRR_STATS_MESSAGE_FLAGS_EVENT           (1<<2)
+#define RRR_STATS_MESSAGE_FLAGS_LOG             (1<<3)
 
-#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY | \
-                                     RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE)
+#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY |            \
+                                     RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE |   \
+				     RRR_STATS_MESSAGE_FLAGS_EVENT |	         \
+				     RRR_STATS_MESSAGE_FLAGS_LOG)
 
 #define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
 #define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_EVENT) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_LOG(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_LOG) != 0)
 
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
