@@ -236,7 +236,7 @@ static int __rrr_stats_client_new (
 
 	struct rrr_stats_client *client = rrr_allocate(sizeof(*client));
 	if (client == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return 1;
 	}
 
@@ -385,7 +385,7 @@ static int __rrr_stats_engine_send_messages_from_list_unlocked (
 					__rrr_stats_engine_multicast_send_intermediate,
 					stats
 			) != 0) {
-				RRR_MSG_0("Error while sending message in __rrr_stats_engine_send_messages_from_list\n");
+				RRR_MSG_0("Error while sending message in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -489,7 +489,7 @@ static void __rrr_stats_engine_event_periodic (
 		return;
 	}
 	if ( __rrr_stats_engine_send_messages(stats)) {
-		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
+		RRR_MSG_0("Error while sending messages in %s\n", __func__);
 		rrr_event_dispatch_break(stats->queue);
 	}
 }
@@ -558,7 +558,7 @@ int rrr_stats_engine_init (
 	unlink(filename); // OK to ignore errors
 
 	if (rrr_posix_mutex_init(&stats->main_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize main mutex in rrr_stats_engine_init\n");
+		RRR_MSG_0("Could not initialize main mutex in %s\n", __func__);
 		ret = 1;
 		goto out_final;
 	}
@@ -599,7 +599,7 @@ int rrr_stats_engine_init (
 	}
 
 	if (rrr_posix_mutex_init(&stats->delivery_lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
-		RRR_MSG_0("Could not initialize journal mutex in rrr_stats_engine_init\n");
+		RRR_MSG_0("Could not initialize journal mutex in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_client_collection;
 	}
@@ -613,7 +613,7 @@ int rrr_stats_engine_init (
 			stats,
 			1 * 1000 * 1000 // 1 s
 	)) != 0) {
-		RRR_MSG_0("Could not create periodic event in rrr_stats_engine_init\n");
+		RRR_MSG_0("Could not create periodic event in %s\n", __func__);
 		goto out_destroy_delivery_lock;
 	}
 
@@ -742,7 +742,7 @@ static int __rrr_stats_engine_message_register_nolock (
 	struct rrr_stats_named_message_list *list = __rrr_stats_named_message_list_get(&stats->named_message_list, stats_handle);
 
 	if (list == NULL) {
-		RRR_MSG_0("List with handle %u not found in __rrr_stats_engine_message_register_nolock\n", stats_handle);
+		RRR_MSG_0("List with handle %u not found in %s\n", stats_handle, __func__);
 		assert(0);
 		ret = 1;
 		goto out_final;
@@ -751,7 +751,7 @@ static int __rrr_stats_engine_message_register_nolock (
 	struct rrr_msg_stats *new_message = NULL;
 
 	if (rrr_msg_stats_duplicate(&new_message, message) != 0) {
-		RRR_MSG_0("Could not duplicate message in __rrr_stats_engine_message_register_nolock\n");
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
 		ret = 1;
 		goto out_final;
 	}
@@ -805,7 +805,7 @@ static void __rrr_stats_engine_handle_unregister_nolock (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->named_message_list, __rrr_stats_named_message_list_destroy(node));
 
 	if (did_unregister != 1) {
-		RRR_MSG_0("Warning: Statistics handle not found in __rrr_stats_engine_unregister_handle_nolock\n");
+		RRR_MSG_0("Warning: Statistics handle not found in %s\n", __func__);
 	}
 }
 
@@ -817,7 +817,7 @@ static int __rrr_stats_engine_handle_register_nolock (
 
 	struct rrr_stats_named_message_list *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in _rrr_stats_engine_register_handle_nolock\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -841,7 +841,7 @@ int rrr_stats_engine_handle_obtain (
 	*handle = 0;
 
 	if (stats->initialized == 0) {
-		RRR_DBG_1("Note: Could not create handle in rrr_stats_engine_handle_obtain, not initialized\n");
+		RRR_DBG_1("Note: Could not create handle in %s, not initialized\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -859,7 +859,7 @@ int rrr_stats_engine_handle_obtain (
 	} while (__rrr_stats_engine_handle_exists_nolock(stats, new_handle) != 0);
 
 	if (__rrr_stats_engine_handle_register_nolock(stats, new_handle) != 0) {
-		RRR_MSG_0("Could not register handle in rrr_stats_engine_obtain_handle\n");
+		RRR_MSG_0("Could not register handle in %s\n", __func__);
 		ret = 1;
 		goto out_unlock;
 	}
@@ -902,7 +902,7 @@ int rrr_stats_engine_post_message (
 
 	pthread_mutex_lock(&stats->main_lock);
 	if (__rrr_stats_engine_message_register_nolock(stats, handle, path_prefix, message) != 0) {
-		RRR_MSG_0("Could not register message in rrr_stats_engine_post_message\n");
+		RRR_MSG_0("Could not register message in %s\n", __func__);
 		ret = 1;
 		goto out_unlock;
 	}

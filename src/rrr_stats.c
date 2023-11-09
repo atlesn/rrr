@@ -180,12 +180,12 @@ static int __rrr_stats_data_init (
 	rrr_read_session_collection_init(&data->read_sessions);
 
 	if ((ret = rrr_stats_tree_init(&data->message_tree)) != 0) {
-		RRR_MSG_0("Could not initialize message tree in __rrr_stats_data_init\n");
+		RRR_MSG_0("Could not initialize message tree in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_event_queue_new(&data->queue)) != 0) {
-		RRR_MSG_0("Could not create event queue in __rrr_stats_data_init\n");
+		RRR_MSG_0("Could not create event queue in %s\n", __func__);
 		goto out_clear_stats_tree;
 	}
 
@@ -226,7 +226,7 @@ static int __rrr_stats_socket_prefix_register (
 
 	struct rrr_map_item *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -234,7 +234,7 @@ static int __rrr_stats_socket_prefix_register (
 
 	node->tag = rrr_strdup(prefix);
 	if (node->tag == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -269,8 +269,8 @@ static int __rrr_stats_parse_config (
 		data->do_print_events = 1;
 	}
 
-	if (data->do_print_journal && data->do_print_messages) {
-		RRR_MSG_0("Cannot print messages and journal simultaneously. Check arguments.\n");
+	if (data->do_print_journal + data->do_print_messages + data->do_print_events > 1) {
+		RRR_MSG_0("Cannot print messages, events and/or journal simultaneously. Check arguments.\n");
 		return 1;
 	}
 
@@ -279,7 +279,7 @@ static int __rrr_stats_parse_config (
 		const char *path = NULL;
 		if ((path = cmd_get_value(cmd, "socket", i)) != NULL) {
 			if (__rrr_stats_socket_prefix_register(data, path) != 0) {
-				RRR_MSG_0("Could not register socket prefix in __rrr_stats_parse_config\n");
+				RRR_MSG_0("Could not register socket prefix in $%s\n");
 				return 1;
 			}
 		}
@@ -308,7 +308,7 @@ static int __rrr_stats_attempt_connect_exact (
 			goto out;
 		}
 
-		RRR_MSG_0("Hard error while connecting to socket %s in __rrr_stats_attempt_connect_exact\n", path);
+		RRR_MSG_0("Hard error while connecting to socket %s in %s\n", path, __func__);
 		ret = 1;
 		goto out;
 	}
@@ -317,7 +317,7 @@ static int __rrr_stats_attempt_connect_exact (
 
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 	if ((data->socket_path_active = rrr_strdup(path)) == NULL) {
-		RRR_MSG_0("Could not save socket path name in __rrr_stats_attempt_connect_exact\n");
+		RRR_MSG_0("Could not save socket path name in %s\n", __func__);
 		ret = 1;
 		goto out_close;
 	}
@@ -380,14 +380,10 @@ static int __rrr_stats_attempt_connect_prefix (
 	char *prefix_copy_a = NULL;
 	char *prefix_copy_b = NULL;
 
-	if (data->do_socket_path_exact != 0) {
-		return __rrr_stats_attempt_connect_exact(data, prefix);
-	}
-
 	int ret = 0;
 
 	if (strlen(prefix) > PATH_MAX) {
-		RRR_MSG_0("Prefix was too long in __rrr_stats_attempt_connect_prefix\n");
+		RRR_MSG_0("Prefix was too long in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -439,7 +435,7 @@ static int __rrr_stats_attempt_connect_prefix (
 		prefix_copy_b = rrr_strdup(prefix);
 
 		if (prefix_copy_a == NULL || prefix_copy_b == NULL) {
-			RRR_MSG_0("Could not duplicate path in __rrr_stats_attempt_connect_prefix\n");
+			RRR_MSG_0("Could not duplicate path in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -475,18 +471,26 @@ static int __rrr_stats_attempt_connect (
 
 	if (RRR_LL_COUNT(&data->socket_prefixes) == 0) {
 		if (__rrr_stats_socket_prefix_register(data, RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH) != 0) {
-			RRR_MSG_0("Could not register default socket prefix in __rrr_stats_attempt_connect\n");
+			RRR_MSG_0("Could not register default socket prefix in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
 	}
 
 	RRR_MAP_ITERATE_BEGIN(&data->socket_prefixes);
-		RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
-		if (__rrr_stats_attempt_connect_prefix(data, node->tag) != 0) {
-			RRR_MSG_0("Error while attempting to connect to socket prefix %s\n", node_tag);
-			ret = 1;
-			goto out;
+		if (data->do_socket_path_exact) {
+			RRR_DBG_1("Attempting to use excact path %s\n", node_tag);
+			if ((ret = __rrr_stats_attempt_connect_exact(data, node_tag)) != 0) {
+				RRR_MSG_0("Error while attempting to connect to socket excact path %s\n", node_tag);
+				goto out;
+			}
+		}
+		else {
+			RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
+			if ((ret = __rrr_stats_attempt_connect_prefix(data, node_tag)) != 0) {
+				RRR_MSG_0("Error while attempting to connect to socket prefix %s\n", node_tag);
+				goto out;
+			}
 		}
 	RRR_MAP_ITERATE_END();
 
@@ -542,7 +546,7 @@ static int __rrr_stats_send_keepalive (
 	struct rrr_msg_stats message;
 
 	if (rrr_msg_stats_init(&message, RRR_STATS_MESSAGE_TYPE_KEEPALIVE, 0, "", NULL, 0) != 0) {
-		RRR_MSG_0("Could not initialize keepalive message in __rrr_stats_send_keepalive\n");
+		RRR_MSG_0("Could not initialize keepalive message in %s\n", __func__);
 		return 1;
 	}
 
@@ -572,13 +576,13 @@ static int __rrr_stats_process_journal_message (
 	// TODO : Try to do this (check if path is log message) without generating the tree.
 
 	struct rrr_stats_tree tree_tmp;
-	if (rrr_stats_tree_init(&tree_tmp) != 0) {
-		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
 		goto out;
 	}
 
-	if (rrr_stats_tree_insert_or_update(&tree_tmp, message) != 0) {
-		RRR_MSG_0("Could not insert message into tree in __rrr_stats_print_journal_message\n");
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message)) != 0) {
+		RRR_MSG_0("Could not insert message into tree in %s\n", __func__);
 		goto out_cleanup_tree;
 	}
 

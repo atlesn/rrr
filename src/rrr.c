@@ -155,10 +155,10 @@ static int main_stats_post_text_message (struct stats_data *stats_data, const ch
 
 	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
 		RRR_MSG_0("Could not post main statistics message\n");
-		return EXIT_FAILURE;
+		return 1;
 	}
 
-	return EXIT_SUCCESS;
+	return 0;
 }
 
 static int main_stats_post_unsigned_message (struct stats_data *stats_data, const char *path, uint64_t value, uint32_t flags) {
@@ -180,10 +180,10 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 
 	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
 		RRR_MSG_0("Could not post main statistics message\n");
-		return EXIT_FAILURE;
+		return 1;
 	}
 
-	return EXIT_SUCCESS;
+	return 0;
 }
 
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
@@ -200,8 +200,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 		RRR_BUG("Statistics message too long in main\n");
 	}
 
-	if (main_stats_post_text_message(stats_data, "status", msg_text, RRR_STATS_MESSAGE_FLAGS_STICKY) != 0) {
-		ret = EXIT_FAILURE;
+	if ((ret = main_stats_post_text_message(stats_data, "status", msg_text, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 		goto out;
 	}
 
@@ -211,22 +210,19 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 		char path[128];
 		sprintf(path, "instance_metadata/%u", i);
 
-		if (main_stats_post_text_message(stats_data, path, instance->module_data->instance_name, RRR_STATS_MESSAGE_FLAGS_STICKY) != 0) {
-			ret = EXIT_FAILURE;
+		if ((ret = main_stats_post_text_message(stats_data, path, instance->module_data->instance_name, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 			goto out;
 		}
 
 		sprintf(path, "instance_metadata/%u/module", i);
-		if (main_stats_post_text_message(stats_data, path, instance->module_data->module_name, RRR_STATS_MESSAGE_FLAGS_STICKY) != 0) {
-			ret = EXIT_FAILURE;
+		if ((ret = main_stats_post_text_message(stats_data, path, instance->module_data->module_name, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 			goto out;
 		}
 
 		unsigned int j = 0;
 		RRR_LL_ITERATE_BEGIN(&instance->senders, struct rrr_instance_friend);
 			sprintf(path, "instance_metadata/%u/senders/%u", i, j);
-			if (main_stats_post_text_message(stats_data, path, node->instance->module_data->instance_name, RRR_STATS_MESSAGE_FLAGS_STICKY) != 0) {
-				ret = EXIT_FAILURE;
+			if ((ret = main_stats_post_text_message(stats_data, path, node->instance->module_data->instance_name, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 				goto out;
 			}
 			j++;
@@ -358,6 +354,10 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/empty_count", mmap_stats.mmap_total_empty_count, 0);
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/bad_count", mmap_stats.mmap_total_bad_count, 0);
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/heap_size", mmap_stats.mmap_total_heap_size, 0);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Error while posting mmap statistics\n");
 	}
 
 	return ret;
@@ -502,7 +502,12 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		callback_data->prev_periodic_time = now_time;
 	}
 
-	return main_mmap_periodic(callback_data->stats_data);
+	if (main_mmap_periodic(callback_data->stats_data) != 0) {
+		RRR_MSG_0("Error while posting mmap statistics in main loop\n");
+		goto out_destroy_thread_collection;
+	}
+
+	return RRR_EVENT_OK;
 
 	out_destroy_thread_collection:
 		rrr_config_set_debuglevel_on_exit();
@@ -519,7 +524,7 @@ static int main_loop (
 		const char *config_file,
 		struct rrr_fork_handler *fork_handler
 ) {
-	int ret = EXIT_SUCCESS;
+	int ret = 0;
 
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker *message_broker = NULL;
@@ -532,14 +537,12 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
-	if (rrr_event_queue_new(&queue) != 0) {
-		ret = EXIT_FAILURE;
+	if ((ret = rrr_event_queue_new(&queue)) != 0) {
 		goto out;
 	}
 
-	if (rrr_instance_config_parse_file(&config, config_file) != 0) {
+	if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
-		ret = EXIT_FAILURE;
 		goto out_destroy_events;
 	}
 
@@ -547,8 +550,7 @@ static int main_loop (
 			rrr_instance_config_collection_count(config), config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
-		if (rrr_instance_config_dump(config) != 0) {
-			ret = EXIT_FAILURE;
+		if ((ret = rrr_instance_config_dump(config)) != 0) {
 			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
 		}
@@ -556,21 +558,18 @@ static int main_loop (
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
-	if (rrr_instances_create_from_config(&instances, config, module_library_paths) != 0) {
-		ret = EXIT_FAILURE;
+	if ((ret = rrr_instances_create_from_config(&instances, config, module_library_paths)) != 0) {
 		goto out_destroy_instance_metadata;
 	}
 
 	if (cmd_exists(cmd, "stats", 0)) {
-		if (rrr_stats_engine_init(&stats_data.engine, queue) != 0) {
+		if ((ret = rrr_stats_engine_init(&stats_data.engine, queue)) != 0) {
 			RRR_MSG_0("Could not initialize statistics engine\n");
-			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
 
-		if (rrr_stats_engine_handle_obtain(&stats_data.handle, &stats_data.engine) != 0) {
+		if ((ret = rrr_stats_engine_handle_obtain(&stats_data.handle, &stats_data.engine)) != 0) {
 			RRR_MSG_0("Error while obtaining statistics handle\n");
-			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
 
@@ -586,8 +585,7 @@ static int main_loop (
 		}
 	}
 
-	if (rrr_message_broker_new(&message_broker, &hooks) != 0) {
-		ret = EXIT_FAILURE;
+	if ((ret = rrr_message_broker_new(&message_broker, &hooks)) != 0) {
 		goto out_destroy_stats_engine;
 	}
 
@@ -661,13 +659,13 @@ static int get_config_files_suffix_ok (const char *check_path) {
 
 	while (check_pos >= check_path && suffix_pos >= suffix) {
 		if (*check_pos != *suffix_pos) {
-				return 1;
+			return 0;
 		}
 		check_pos--;
 		suffix_pos--;
 	}
 
-	return 0;
+	return 1;
 }
 
 static int get_config_files_callback (
@@ -685,22 +683,19 @@ static int get_config_files_callback (
 
 	int ret = 0;
 
-	if (get_config_files_suffix_ok(resolved_path) != 0) {
+	if (!get_config_files_suffix_ok(resolved_path)) {
 		RRR_DBG_1("Note: File '%s' found in a configuration directory did not have the correct suffix '%s', ignoring it.\n",
 				resolved_path, RRR_CONFIG_FILE_SUFFIX);
-		ret = 0;
 		goto out;
 	}
 
-	if (get_config_files_test_open(resolved_path) != 0) {
+	if ((ret = get_config_files_test_open(resolved_path)) != 0) {
 		RRR_MSG_0("Configuration file '%s' could not be opened: %s\n", orig_path, rrr_strerror(errno));
-		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_map_item_add_new(target, resolved_path, "")) != 0) {
-		RRR_MSG_0("Could not add configuration file to list in get_config_files_callback\n");
-		ret = 1;
+		RRR_MSG_0("Could not add configuration file to map\n");
 		goto out;
 	}
 
@@ -720,7 +715,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 		char cwd[PATH_MAX];
 		if (getcwd(cwd, sizeof(cwd)) == NULL) {
-			RRR_MSG_0("getcwd() failed in get_config_files: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("getcwd() failed in while getting config files: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -737,7 +732,6 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 					target
 			)) != 0) {
 				RRR_MSG_0("Error while reading configuration files in directory %s\n", config_string);
-				ret = 1;
 				goto out;
 			}
 		}
@@ -747,8 +741,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 				goto out_print_errno;
 			}
 			if ((ret = rrr_map_item_add_new(target, config_string, "")) != 0) {
-				RRR_MSG_0("Could not add configuration file to list in get_config_files\n");
-				ret = 1;
+				RRR_MSG_0("Could not add configuration file to map\n");
 				goto out;
 			}
 		}
@@ -786,7 +779,12 @@ static int main_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	return main_mmap_periodic(NULL);
+	if (main_mmap_periodic(NULL) != 0) {
+		RRR_MSG_0("Error while posting mmap statistics in main\n");
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
 }
 
 int main (int argc, const char *argv[], const char *env[]) {
@@ -899,7 +897,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		);
 		if (pid < 0) {
 			RRR_MSG_0("Could not fork child process in main(): %s\n", rrr_strerror(errno));
-			ret = 1;
+			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}
 		else if (pid > 0) {
@@ -909,11 +907,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 		// CHILD CODE
 		is_child = 1;
 
-		ret = main_loop (
+		if (main_loop (
 				&cmd,
 				config_string,
 				fork_handler
-		);
+		) != 0) {
+			ret = EXIT_FAILURE;
+		}
 
 		if (is_child) {
 			goto out_cleanup_signal;
@@ -967,7 +967,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_socket_close_all();
-		if (ret == 0) {
+		if (ret == EXIT_SUCCESS) {
 			RRR_MSG_1("Exiting program without errors\n");
 		}
 		else {
