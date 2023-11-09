@@ -218,21 +218,29 @@ int rrr_msg_stats_new_log (
 		const void *data,
 		uint32_t data_size
 ) {
-	int ret = 0;
-
-	if (rrr_msg_stats_new (
+	return rrr_msg_stats_new (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			RRR_STATS_MESSAGE_FLAGS_LOG,
 			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK,
 			data,
 			data_size
-	) != 0) {
-		goto out;
-	}
+	);
+}
 
-	out:
-	return ret;
+int rrr_msg_stats_init_event (
+		struct rrr_msg_stats *message,
+		const void *data,
+		uint32_t data_size
+) {
+	return rrr_msg_stats_init (
+			message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			RRR_STATS_MESSAGE_FLAGS_EVENT,
+			RRR_STATS_MESSAGE_PATH_GLOBAL_EVENT_HOOK,
+			data,
+			data_size
+	);
 }
 
 int rrr_msg_stats_init_rrr_msg_preface (
@@ -243,7 +251,12 @@ int rrr_msg_stats_init_rrr_msg_preface (
 ) {
 	int ret = 0;
 
+	char path[128];
 	struct rrr_string_builder sb = {0};
+
+	if (snprintf(path, sizeof(path), "%s/%s", RRR_STATS_MESSAGE_PATH_GLOBAL_MSG_HOOK, path_postfix) == sizeof(path)) {
+		RRR_BUG("Path was too long in %s\n", __func__);
+	}
 
 	ret |= rrr_string_builder_append(&sb, "nexthops:");
 	for (uint32_t i = 0; i < hops_count; i++) {
@@ -268,7 +281,7 @@ int rrr_msg_stats_init_rrr_msg_preface (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE,
-			path_postfix,
+			path,
 			sb.buf,
 			sb.wpos
 	)) != 0) {

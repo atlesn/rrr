@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_mmap_stats.h"
 #include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
+#include "lib/util/gnu.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
@@ -292,12 +293,13 @@ static void main_stats_message_pre_buffer_hook (
 void main_event_hook(RRR_EVENT_HOOK_ARGS) {
 	struct stats_data *stats_data = arg;
 
-	char path[128];
-	char text[128];
+	char text[256];
 	struct rrr_msg_stats message;
 
-	snprintf(path, sizeof(path), "event/%s", source_func);
-	snprintf(text, sizeof(text), "fd: %i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
+	snprintf(text, sizeof(text), "pid: %lli tid: %lli func: %s fd: %i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
+		(long long int) getpid(),
+		(long long int) rrr_gettid(),
+		source_func,
 		fd,
 		rrr_time_get_64(),
 		flags,
@@ -307,11 +309,8 @@ void main_event_hook(RRR_EVENT_HOOK_ARGS) {
 		(flags & POLLERR) != 0
 	);
 
-	if (rrr_msg_stats_init (
+	if (rrr_msg_stats_init_event (
 			&message,
-			RRR_STATS_MESSAGE_TYPE_TEXT,
-			RRR_STATS_MESSAGE_FLAGS_EVENT,
-			path,
 			text,
 			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
 	) != 0) {
