@@ -417,6 +417,8 @@ static void averager_event_average (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	struct averager_data *data = arg;
 
 	averager_maintain_buffer(data);
@@ -435,6 +437,8 @@ static void averager_event_output_list (
 ) {
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	struct averager_data *data = arg;
 

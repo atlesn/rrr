@@ -433,6 +433,8 @@ static void __rrr_stats_engine_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (stats->exit_now_ret != 0) {
 		RRR_MSG_0("Error %i in statistics engine, exiting\n", stats->exit_now_ret);
 		rrr_event_dispatch_break(stats->queue);

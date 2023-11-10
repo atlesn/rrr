@@ -641,6 +641,8 @@ static void __rrr_socket_client_fd_event_timeout (
 	(void)(flags);
 	(void)(fd);
 
+	RRR_EVENT_HOOK();
+
 	RRR_DBG_7("Disconnecting fd %i in client collection following soft inactivity timeout of %" PRIu64 " ms\n",
 			client_fd->fd, client_fd->client->collection->idle_timeout_us / 1000);
 
@@ -863,6 +865,7 @@ static void __rrr_socket_client_event_write (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 
 	if (client->connected_fd == NULL) {
@@ -924,6 +927,7 @@ static void __rrr_socket_client_event_read_message (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -988,6 +992,7 @@ static void __rrr_socket_client_event_read_raw (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -1052,6 +1057,7 @@ static void __rrr_socket_client_event_read_array_tree (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -1098,6 +1104,7 @@ static void __rrr_socket_client_event_read_ignore (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -2102,6 +2109,8 @@ static void __rrr_socket_client_event_accept (
 	(void)(flags);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	struct sockaddr_storage addr = {0};
 	socklen_t addr_len = sizeof(addr);

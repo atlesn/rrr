@@ -756,6 +756,8 @@ static void __rrr_stats_event_keepalive (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (__rrr_stats_send_keepalive(data) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
@@ -770,6 +772,8 @@ static void __rrr_stats_event_dump_tree (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	if (!data->do_print_journal && !data->do_print_messages && !data->do_print_events) {
 		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);

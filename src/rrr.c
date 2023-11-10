@@ -306,7 +306,7 @@ void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 
 	char text[256];
 
-	snprintf(text, sizeof(text), "pid: %lli tid: %lli func: %s fd: %i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
+	snprintf(text, sizeof(text), "pid: % 8lli tid: % 8lli func: %-45s fd: % 4i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
 		(long long int) getpid(),
 		(long long int) rrr_gettid(),
 		source_func,

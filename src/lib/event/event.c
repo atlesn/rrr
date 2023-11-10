@@ -124,10 +124,10 @@ static void __rrr_event_periodic (
 ) {
 	struct rrr_event_queue *queue = arg;
 
-	RRR_EVENT_HOOK();
-
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_9_PRINTF("EQ DISP %p periodic fd %i pid %llu tid %llu\n",
 		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
@@ -148,6 +148,8 @@ static void __rrr_event_unpause (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_9_PRINTF("EQ DISP %p unpause fd %i pid %llu tid %llu\n",
 		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
@@ -172,8 +174,9 @@ static void __rrr_event_signal_event (
 
  	int ret = 0;
 	uint64_t count = 0;
-
 	unsigned short is_paused_new = function->is_paused;
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_9_PRINTF("EQ DISP %p function %u fd %i pid %llu tid %llu\n",
 		queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());

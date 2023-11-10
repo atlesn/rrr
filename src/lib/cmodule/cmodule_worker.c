@@ -529,6 +529,8 @@ static void __rrr_cmodule_worker_event_spawn (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (worker->do_spawning) {
 		RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
 		if (__rrr_cmodule_worker_spawn_message (
@@ -606,6 +608,8 @@ static void __rrr_cmodule_worker_event_app_periodic (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	assert(callback_data->periodic_callback && "Periodic event should not run when there is no callback set");
 
