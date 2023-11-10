@@ -364,7 +364,7 @@ static void __rrr_stats_engine_chunk_send_end_callback(RRR_SOCKET_CLIENT_SEND_ST
 	STREAM_UNLOCK();
 }
 
-static int __rrr_stats_engine_event_log_hook_data_available (
+static int __rrr_stats_engine_event_str_hook_data_available (
 		RRR_EVENT_FUNCTION_ARGS
 ) {
 	struct rrr_stats_engine *stats = arg;
@@ -475,6 +475,21 @@ static int __rrr_stats_engine_event_pass_msg_hook_retry_callback (
 	return RRR_EVENT_ERR;
 }
 
+static int __rrr_stats_engine_event_pass_str_hook_retry_callback (
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+ 	(void)(arg);
+
+	fprintf(stderr, "Error: Too many hooked log messages or events, a build-up has occured. Consider reducing rates while debugging.\n");
+
+	// Checked in periodic functions. TODO : Use atomic.
+	stats->exit_now_ret = RRR_EVENT_ERR;
+
+	return RRR_EVENT_ERR;
+}
+
 // To provide memory fence, this must be called prior to any thread starting or forking
 int rrr_stats_engine_init (
 		struct rrr_stats_engine *stats,
@@ -511,6 +526,11 @@ int rrr_stats_engine_init (
 		ret = 1;
 		goto out_close_socket;
 	}
+
+	rrr_socket_client_collection_mask_write_event_hooks_setup (
+			stats->client_collection,
+			1 /* Set */
+	);
 
 	rrr_socket_client_collection_send_notify_setup_with_gates (
 			stats->client_collection,
@@ -566,8 +586,8 @@ int rrr_stats_engine_init (
 
 	rrr_event_function_set_with_arg (
 			queue,
-			RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
-			__rrr_stats_engine_event_log_hook_data_available,
+			RRR_EVENT_FUNCTION_STR_HOOK_DATA_AVAILABLE,
+			__rrr_stats_engine_event_str_hook_data_available,
 			stats,
 			"stats engine journal data available"
 	);
@@ -892,6 +912,7 @@ static int __rrr_stats_engine_push_stream_message (
 	int ret = 0;
 
 	struct rrr_msg_stats *message_copy = NULL;
+	uint16_t write_amount = 0;
 
 	STREAM_LOCK(stats);
 
@@ -913,11 +934,23 @@ static int __rrr_stats_engine_push_stream_message (
 
 	RRR_LL_APPEND(&stats->log_stream, message_copy);
 	message_copy = NULL;
+	write_amount++;
 
 	out:
 	STREAM_UNLOCK();
 	if (message_copy)
 		rrr_msg_stats_destroy(message_copy);
+
+	if (write_amount > 0) {
+		rrr_event_pass (
+				stats->queue,
+				RRR_EVENT_FUNCTION_STR_HOOK_DATA_AVAILABLE,
+				write_amount,
+				 __rrr_stats_engine_event_pass_str_hook_retry_callback,
+				stats
+		);
+	}
+
 	return ret;
 }
 

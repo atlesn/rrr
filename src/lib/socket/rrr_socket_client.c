@@ -82,6 +82,9 @@ struct rrr_socket_client_collection {
 	rrr_biglength read_step_max_size;
 	int read_flags_socket;
 
+	// Set to mask events when writing
+	int mask_write_event_hooks;
+
 	// Settings for array reading
 	int array_do_sync_byte_by_byte;
 	unsigned array_message_max_size;
@@ -865,7 +868,9 @@ static void __rrr_socket_client_event_write (
 	(void)(fd);
 	(void)(flags);
 
-	RRR_EVENT_HOOK();
+	if (!collection->mask_write_event_hooks) {
+		RRR_EVENT_HOOK();
+	}
 	CONNECTED_FD_ENSURE();
 
 	if (client->connected_fd == NULL) {
@@ -2180,6 +2185,13 @@ int rrr_socket_client_collection_listen_fd_push (
 
 	out:
 	return ret;
+}
+
+void rrr_socket_client_collection_mask_write_event_hooks_setup (
+		struct rrr_socket_client_collection *collection,
+		int set
+) {
+	collection->mask_write_event_hooks = set;
 }
 
 static void __rrr_socket_client_collection_event_setup (

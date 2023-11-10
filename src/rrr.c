@@ -338,8 +338,6 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 	(void)(loglevel_translated);
 	(void)(prefix);
 
-	*write_amount = 0;
-
 	if (rrr_stats_engine_push_log_message (
 			&stats_data->engine,
 			stats_data->handle,
@@ -348,8 +346,6 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 	) != 0) {
 		RRR_BUG("Could not push message in %s\n", __func__);
 	}
-
-	*write_amount = 1;
 }
 
 struct main_loop_event_callback_data {

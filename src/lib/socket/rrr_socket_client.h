@@ -287,6 +287,10 @@ void rrr_socket_client_collection_fd_close_notify_setup (
 		void (*callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS),
 		void *callback_arg
 );
+void rrr_socket_client_collection_mask_write_event_hooks_setup (
+		struct rrr_socket_client_collection *collection,
+		int set
+);
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
