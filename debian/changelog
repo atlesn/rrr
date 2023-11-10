@@ -1,4 +1,4 @@
-rrr (1.28-25) bullseye; urgency=medium
+rrr (1.28-26) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -33,6 +33,7 @@ rrr (1.28-25) bullseye; urgency=medium
     * Support PATCH requests in httpclient and httpserver
     * New function console.assert in JS
     * Hook messages between modules and dump them using rrr_stats 
+    * Hook events and show them using rrr_stats
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
