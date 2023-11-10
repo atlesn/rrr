@@ -90,7 +90,6 @@ void rrr_msg_stats_pack_and_flip (
 		rrr_length *total_size,
 		const struct rrr_msg_stats *source
 );
-
 int rrr_msg_stats_init (
 		struct rrr_msg_stats *message,
 		uint8_t type,
@@ -99,49 +98,33 @@ int rrr_msg_stats_init (
 		const void *data,
 		uint32_t data_size
 );
-
-int rrr_msg_stats_new_empty (
-		struct rrr_msg_stats **message
-);
-
-int rrr_msg_stats_new (
-		struct rrr_msg_stats **message,
-		uint8_t type,
-		uint32_t flags,
-		const char *path_postfix,
+int rrr_msg_stats_init_log (
+		struct rrr_msg_stats *message,
 		const void *data,
 		uint32_t data_size
 );
-
-int rrr_msg_stats_new_log (
-		struct rrr_msg_stats **message,
-		const void *data,
-		uint32_t data_size
-);
-
 int rrr_msg_stats_init_event (
 		struct rrr_msg_stats *message,
 		const void *data,
 		uint32_t data_size
 );
-
+int rrr_msg_stats_init_keepalive (
+		struct rrr_msg_stats *message
+);
 int rrr_msg_stats_init_rrr_msg_preface (
 		struct rrr_msg_stats *message,
 		const char *path_postfix,
 		const char **hops,
 		uint32_t hops_count
 );
-
 int rrr_msg_stats_set_path (
 		struct rrr_msg_stats *message,
 		const char *path
 );
-
 int rrr_msg_stats_duplicate (
 		struct rrr_msg_stats **target,
 		const struct rrr_msg_stats *source
 );
-
 int rrr_msg_stats_destroy (
 		struct rrr_msg_stats *message
 );

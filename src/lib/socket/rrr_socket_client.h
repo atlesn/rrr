@@ -84,6 +84,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *chunk_private_data,                               \
     void *callback_arg
 
+#define RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS      \
+    RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS
+
 #define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS            \
     int fd,                                                 \
     const struct sockaddr *addr,                            \
@@ -269,8 +272,15 @@ int rrr_socket_client_collection_connected_fd_push (
 );
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
-		void *callback_arg
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void *arg
+);
+void rrr_socket_client_collection_send_notify_setup_with_gates (
+		struct rrr_socket_client_collection *collection,
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void (*start)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void (*end)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void *arg
 );
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,

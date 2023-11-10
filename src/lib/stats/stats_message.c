@@ -180,45 +180,12 @@ int rrr_msg_stats_new_empty (
 	return ret;
 }
 
-int rrr_msg_stats_new (
-		struct rrr_msg_stats **message,
-		uint8_t type,
-		uint32_t flags,
-		const char *path_postfix,
+int rrr_msg_stats_init_log (
+		struct rrr_msg_stats *message,
 		const void *data,
 		uint32_t data_size
 ) {
-	int ret = 0;
-	*message = NULL;
-
-	struct rrr_msg_stats *new_message;
-	if (rrr_msg_stats_new_empty (&new_message) != 0) {
-		RRR_MSG_0("Could not allocate memory in %s", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_msg_stats_init(new_message, type, flags, path_postfix, data, data_size) != 0) {
-		RRR_MSG_0("Could not initialize message in %s\n", __func__);
-		ret = 1;
-		goto out_free;
-	}
-
-	*message = new_message;
-	goto out;
-
-	out_free:
-		rrr_free(new_message);
-	out:
-		return ret;
-}
-
-int rrr_msg_stats_new_log (
-		struct rrr_msg_stats **message,
-		const void *data,
-		uint32_t data_size
-) {
-	return rrr_msg_stats_new (
+	return rrr_msg_stats_init (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			RRR_STATS_MESSAGE_FLAGS_LOG,
@@ -240,6 +207,19 @@ int rrr_msg_stats_init_event (
 			RRR_STATS_MESSAGE_PATH_GLOBAL_EVENT_HOOK,
 			data,
 			data_size
+	);
+}
+
+int rrr_msg_stats_init_keepalive (
+		struct rrr_msg_stats *message
+) {
+	return rrr_msg_stats_init (
+			message,
+			RRR_STATS_MESSAGE_TYPE_KEEPALIVE,
+			0,
+			"",
+			NULL,
+			0
 	);
 }
 

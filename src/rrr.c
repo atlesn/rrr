@@ -136,6 +136,7 @@ void dump_install_directories (void) {
 
 struct stats_data {
 	unsigned int handle;
+	int log_hook_handle;
 	struct rrr_stats_engine engine;
 };
 
@@ -235,6 +236,20 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
+static int main_loop_log_hook_retry_callback (
+		void *arg
+) {
+	struct stats_data *stats_data = arg;
+
+ 	(void)(stats_data);
+
+	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
+
+	main_running = 0;
+
+	return RRR_EVENT_ERR;
+}
+
 static void main_stats_message_pre_buffer_hook (
 		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
 ) {
@@ -286,11 +301,10 @@ static void main_stats_message_pre_buffer_hook (
 	rrr_free(hop_names);
 }
 
-void main_event_hook(RRR_EVENT_HOOK_ARGS) {
+void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 	struct stats_data *stats_data = arg;
 
 	char text[256];
-	struct rrr_msg_stats message;
 
 	snprintf(text, sizeof(text), "pid: %lli tid: %lli func: %s fd: %i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
 		(long long int) getpid(),
@@ -305,15 +319,37 @@ void main_event_hook(RRR_EVENT_HOOK_ARGS) {
 		(flags & POLLERR) != 0
 	);
 
-	if (rrr_msg_stats_init_event (
-			&message,
-			text,
-			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
+	if (rrr_stats_engine_push_event_message (
+			&stats_data->engine,
+			stats_data->handle,
+			"main",
+			text
 	) != 0) {
 		RRR_BUG("Could not initialize main statistics message\n");
 	}
+}
 
-	rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message);
+static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
+	struct stats_data *stats_data = private_arg;
+
+	(void)(file);
+	(void)(line);
+	(void)(loglevel_orig);
+	(void)(loglevel_translated);
+	(void)(prefix);
+
+	*write_amount = 0;
+
+	if (rrr_stats_engine_push_log_message (
+			&stats_data->engine,
+			stats_data->handle,
+			"main",
+			message
+	) != 0) {
+		RRR_BUG("Could not push message in %s\n", __func__);
+	}
+
+	*write_amount = 1;
 }
 
 struct main_loop_event_callback_data {
@@ -581,8 +617,18 @@ static int main_loop (
 		}
 
 		if (cmd_exists(cmd, "event-hooks", 0)) {
-			rrr_event_hook_set (main_event_hook, &stats_data);
+			rrr_event_hook_set (main_loop_event_hook, &stats_data);
 		}
+
+		rrr_log_hook_register (
+				&stats_data.log_hook_handle,
+				main_loop_log_hook,
+				&stats_data,
+				queue,
+				main_loop_log_hook_retry_callback,
+				&stats_data
+		);
+
 	}
 
 	if ((ret = rrr_message_broker_new(&message_broker, &hooks)) != 0) {
@@ -617,6 +663,10 @@ static int main_loop (
 		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
 	}
 
+	if (stats_data.log_hook_handle != 0) {
+		rrr_log_hook_unregister(stats_data.log_hook_handle);
+	}
+
 	if (stats_data.handle != 0) {
 		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 	}
@@ -629,7 +679,6 @@ static int main_loop (
 	rrr_message_broker_destroy(message_broker);
 
 	out_destroy_stats_engine:
-		printf("Cleanup stats engine\n");
 		rrr_stats_engine_cleanup(&stats_data.engine);
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

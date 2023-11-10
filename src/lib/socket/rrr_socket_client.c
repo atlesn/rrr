@@ -64,9 +64,15 @@ struct rrr_socket_client_collection {
 
 	struct rrr_event_queue *queue;
 
+	// Called before send chunk iteration starts and after it ends
+	void (*chunk_send_start_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+	void (*chunk_send_end_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+
 	// Called when a chunk is successfully sent or a client is destroyed with unsent data (if set)
 	void (*chunk_send_notify_callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS);
-	void *chunk_send_notify_callback_arg;
+
+	// Common arg for above callbacks
+	void *chunk_send_callback_arg;
 
 	// Called when a client FD is closed for whatever reason (if set)
 	void (*client_fd_close_callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS);
@@ -258,7 +264,7 @@ static void __rrr_socket_client_chunk_send_notify_success_callback (
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -279,7 +285,7 @@ static void __rrr_socket_client_chunk_send_notify_fail_callback (
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -826,11 +832,18 @@ static int __rrr_socket_client_send_tick (
 ) {
 	int ret;
 
+	struct rrr_socket_send_chunk_send_callbacks callbacks = {
+		.success = __rrr_socket_client_chunk_send_notify_success_callback,
+		.success_arg = client,
+		.send_start = client->collection->chunk_send_start_callback,
+		.send_end = client->collection->chunk_send_end_callback,
+		.start_end_arg = client->collection->chunk_send_callback_arg,
+	};
+
 	if ((ret = rrr_socket_send_chunk_collection_send_and_notify (
 			&client->send_chunks,
 			client->connected_fd->fd,
-			__rrr_socket_client_chunk_send_notify_success_callback,
-			client
+			&callbacks
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
 				client->connected_fd->fd, ret);
@@ -2204,11 +2217,26 @@ int rrr_socket_client_collection_connected_fd_push (
 
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
-		void *callback_arg
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void *arg
 ) {
-	collection->chunk_send_notify_callback = callback;
-	collection->chunk_send_notify_callback_arg = callback_arg;
+	collection->chunk_send_start_callback = NULL;
+	collection->chunk_send_end_callback = NULL;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
+}
+
+void rrr_socket_client_collection_send_notify_setup_with_gates (
+		struct rrr_socket_client_collection *collection,
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void (*start)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void (*end)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void *arg
+) {
+	collection->chunk_send_start_callback = start;
+	collection->chunk_send_end_callback = end;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
 }
 
 void rrr_socket_client_collection_fd_close_notify_setup (
