@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 typedef struct rrr_atomic_u32_s {
-	int32_t value;
+	uint32_t value;
 } rrr_atomic_u32_t;
 
 typedef struct rrr_atomic_u64_s {
@@ -38,12 +38,12 @@ static inline int rrr_atomic_u32_load(rrr_atomic_u32_t *atomic) {
 	return res;
 }
 
-static inline int rrr_atomic_u32_or_fetch(rrr_atomic_u32_t *atomic, int32_t value) {
-	return __atomic_or_fetch(&atomic->value, value, __ATOMIC_SEQ_CST);
+static inline int rrr_atomic_u32_fetch_or(rrr_atomic_u32_t *atomic, uint32_t value) {
+	return __atomic_fetch_or(&atomic->value, value, __ATOMIC_SEQ_CST);
 }
 
-static inline int rrr_atomic_u32_fetch_xor(rrr_atomic_u32_t *atomic, int32_t value) {
-	return __atomic_fetch_xor(&atomic->value, value, __ATOMIC_SEQ_CST);
+static inline int rrr_atomic_u32_fetch_and(rrr_atomic_u32_t *atomic, uint32_t value) {
+	return __atomic_fetch_and(&atomic->value, value, __ATOMIC_SEQ_CST);
 }
 
 static inline uint64_t rrr_atomic_u64_load_relaxed(rrr_atomic_u64_t *atomic) {

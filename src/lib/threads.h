@@ -121,12 +121,11 @@ struct rrr_thread {
 
 struct rrr_thread_collection {
 	RRR_LL_HEAD(struct rrr_thread);
-	pthread_mutex_t threads_mutex;
 };
 
 static inline int rrr_thread_signal_check (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	signal &= RRR_THREAD_SIGNAL_MASK;
 	assert(signal != 0);
@@ -135,7 +134,7 @@ static inline int rrr_thread_signal_check (
 
 static inline int rrr_thread_signal_check_other_than (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	signal &= RRR_THREAD_SIGNAL_MASK;
 	assert(signal != 0);
@@ -144,7 +143,7 @@ static inline int rrr_thread_signal_check_other_than (
 
 static inline int rrr_thread_state_check (
 		struct rrr_thread *thread,
-		int32_t state
+		uint32_t state
 ) {
 	state &= RRR_THREAD_STATE_MASK;
 	assert(state != 0);
@@ -154,15 +153,15 @@ static inline int rrr_thread_state_check (
 
 static inline int rrr_thread_state_and_signal_check (
 		struct rrr_thread *thread,
-		int32_t state,
-		int32_t signal
+		uint32_t state,
+		uint32_t signal
 ) {
 	state &= RRR_THREAD_STATE_MASK;
 	signal &= RRR_THREAD_SIGNAL_MASK;
 	assert(state != 0);
 	assert(signal != 0);
 
-	int32_t tmp = rrr_atomic_u32_load(&thread->state_and_signal);
+	uint32_t tmp = rrr_atomic_u32_load(&thread->state_and_signal);
 	return (tmp & state) != 0 && (tmp & signal) != 0;
 }
 
@@ -192,23 +191,23 @@ static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_tim
 
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 );
 void rrr_thread_signal_wait_busy (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 );
 void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 );
 void rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 );
 void rrr_thread_state_set (
 		struct rrr_thread *thread,
-		int32_t state
+		uint32_t state
 );
 int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection

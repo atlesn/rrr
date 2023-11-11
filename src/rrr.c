@@ -247,7 +247,7 @@ static int main_loop_log_hook_retry_callback (
 
 	main_running = 0;
 
-	return RRR_EVENT_ERR;
+	return RRR_EVENT_OK;
 }
 
 static void main_stats_message_pre_buffer_hook (

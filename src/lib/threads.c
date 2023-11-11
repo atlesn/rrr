@@ -69,11 +69,11 @@ static int __rrr_thread_destroy (
 
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	RRR_DBG_8 ("Thread %s set signal %d\n", thread->name, signal);
 
-	rrr_atomic_u32_or_fetch(&thread->state_and_signal, signal);
+	rrr_atomic_u32_fetch_or(&thread->state_and_signal, signal);
 
 	int ret_tmp;
 	pthread_mutex_lock(&thread->signal_cond_mutex);
@@ -85,7 +85,7 @@ void rrr_thread_signal_set (
 
 void rrr_thread_signal_wait_busy (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	while (1) {
 		if (rrr_thread_signal_check(thread, signal)) {
@@ -121,7 +121,7 @@ static void __rrr_thread_signal_wait_cond_timed (
 
 static void __rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
-		int32_t signal,
+		uint32_t signal,
 		int with_watchdog_update
 ) {
 	while (1) {
@@ -137,27 +137,28 @@ static void __rrr_thread_signal_wait_cond (
 
 void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	__rrr_thread_signal_wait_cond (thread, signal, 1);
 }
 
 void rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
-		int32_t signal
+		uint32_t signal
 ) {
 	__rrr_thread_signal_wait_cond(thread, signal, 0);
 }
 
 void rrr_thread_state_set (
 		struct rrr_thread *thread,
-		int32_t new_state
+		uint32_t new_state
 ) {
-	int32_t old_state;
+	uint32_t old_state;
 
 	RRR_DBG_8 ("Thread %s setting state %i\n", thread->name, new_state);
 
-	old_state = rrr_atomic_u32_fetch_xor(&thread->state_and_signal, new_state);
+	old_state = rrr_atomic_u32_fetch_and(&thread->state_and_signal, RRR_THREAD_SIGNAL_MASK);
+	rrr_atomic_u32_fetch_or(&thread->state_and_signal, new_state);
 
 	assert(old_state != new_state);
 	assert(!(old_state & RRR_THREAD_STATE_STOPPED));
@@ -165,16 +166,16 @@ void rrr_thread_state_set (
 	assert(!(old_state & RRR_THREAD_STATE_READY_TO_DESTROY));
 
 	if (new_state == RRR_THREAD_STATE_STOPPED && (
-		old_state != RRR_THREAD_STATE_RUNNING_FORKED &&
-		old_state != RRR_THREAD_STATE_INITIALIZED &&
-		old_state != RRR_THREAD_STATE_STOPPING
+		!(old_state & RRR_THREAD_STATE_RUNNING_FORKED) &&
+		!(old_state & RRR_THREAD_STATE_INITIALIZED) &&
+		!(old_state & RRR_THREAD_STATE_STOPPING)
 	)) {
 		RRR_MSG_0 ("Warning: Setting STOPPED state of thread %p name %s which never completed initialization\n",
 				thread, thread->name);
 	}
 }
 
-static int32_t __rrr_thread_state_get (
+static uint32_t __rrr_thread_state_get (
 		struct rrr_thread *thread
 ) {
 	return rrr_atomic_u32_load(&thread->state_and_signal) & RRR_THREAD_STATE_MASK;
@@ -186,16 +187,12 @@ static int __rrr_thread_collection_has_thread (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&collection->threads_mutex);
-
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node == thread) {
 			ret = 1;
 			break;
 		}
 	RRR_LL_ITERATE_END();
-
-	pthread_mutex_unlock(&collection->threads_mutex);
 
 	return ret;
 }
@@ -250,13 +247,7 @@ static int __rrr_thread_new (
 int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection
 ) {
-	int count = 0;
-
-	pthread_mutex_lock(&collection->threads_mutex);
-	count = RRR_LL_COUNT(collection);
-	pthread_mutex_unlock(&collection->threads_mutex);
-
-	return count;
+	return RRR_LL_COUNT(collection);
 }
 
 int rrr_thread_collection_new (
@@ -275,17 +266,11 @@ int rrr_thread_collection_new (
 
 	memset(collection, '\0', sizeof(*collection));
 
-	if (rrr_posix_mutex_init(&collection->threads_mutex, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_thread_new_collection\n");
-		ret = 1;
-		goto out_free;
-	}
-
 	*target = collection;
 
 	goto out;
-	out_free:
-		rrr_free(collection);
+	//out_free:
+	//	rrr_free(collection);
 	out:
 		return ret;
 }
@@ -310,7 +295,7 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 		}
 
-		rrr_atomic_u32_or_fetch(&node->state_and_signal,
+		rrr_atomic_u32_fetch_or(&node->state_and_signal,
 			RRR_THREAD_SIGNAL_ENCOURAGE_STOP |
 			RRR_THREAD_SIGNAL_START_INITIALIZE |
 			RRR_THREAD_SIGNAL_START_BEFOREFORK |
@@ -338,8 +323,6 @@ void rrr_thread_collection_destroy (
 
 	// No errors allowed in this function
 
-	pthread_mutex_lock(&collection->threads_mutex);
-
 	__rrr_thread_collection_stop_and_join_all_nolock(collection);
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
@@ -352,9 +335,6 @@ void rrr_thread_collection_destroy (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
-
-	pthread_mutex_unlock(&collection->threads_mutex);
-	pthread_mutex_destroy(&collection->threads_mutex);
 
 	rrr_free(collection);
 }
@@ -510,8 +490,6 @@ int rrr_thread_collection_start_all (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&collection->threads_mutex);
-
 	/* Signal threads to proceed to initialization stage. This is needed as some
 	 * threads might need data from each other, and we ensure here that the downstream
 	 * modules functions are not started untill all threads have been started */
@@ -523,7 +501,7 @@ int rrr_thread_collection_start_all (
 	if ((ret = __rrr_thread_collection_start_all_wait_for_state_initialized (
 			collection
 	)) != 0) {
-		goto out_unlock;
+		goto out;
 	}
 
 	/* Signal threads to proceed to fork stage.
@@ -542,7 +520,7 @@ int rrr_thread_collection_start_all (
 		// DEBUG MESSAGES ALSO NOT ALLOWED
 
 		if ((ret = __rrr_thread_wait_for_state_forked(node)) != 0) {
-			goto out_unlock;
+			goto out;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -565,7 +543,7 @@ int rrr_thread_collection_start_all (
 			if (start_check_callback != NULL && start_check_callback(&do_start, node, callback_arg) != 0) {
 				RRR_MSG_0("Error from start check callback in rrr_thread_start_all_after_initialized\n");
 				ret = 1;
-				goto out_unlock;
+				goto out;
 			}
 
 			if (do_start == 1) {
@@ -594,9 +572,8 @@ int rrr_thread_collection_start_all (
 		}
 	RRR_LL_ITERATE_END();
 
-	out_unlock:
-		pthread_mutex_unlock(&collection->threads_mutex);
-		return ret;
+	out:
+	return ret;
 }
 
 void rrr_thread_start_now_with_watchdog (
@@ -633,9 +610,7 @@ static void __rrr_thread_collection_add_thread (
 		RRR_BUG("BUG: Attempted to add thread to collection in which it was already part of\n");
 	}
 
-	pthread_mutex_lock(&collection->threads_mutex);
 	RRR_LL_APPEND(collection, thread);
-	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
 struct watchdog_data {
