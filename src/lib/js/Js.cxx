@@ -248,7 +248,7 @@ namespace RRR::JS {
 			flog(0, args);
 		}
 
-		void _assert(const v8::FunctionCallbackInfo<v8::Value> &args) {
+		void assert_(const v8::FunctionCallbackInfo<v8::Value> &args) {
 			// No return value event if we do not abort
 
 			auto isolate = args.GetIsolate();
@@ -305,7 +305,7 @@ namespace RRR::JS {
 			}
 		}
 		{
-			auto result = console->Set(ctx, String(*this, "assert"), v8::Function::New(ctx, Console::_assert).ToLocalChecked());
+			auto result = console->Set(ctx, String(*this, "assert"), v8::Function::New(ctx, Console::assert_).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
 				throw E("Failed to intitialize globals\n");
 			}
