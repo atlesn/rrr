@@ -172,10 +172,7 @@ int rrr_instance_check_threads_stopped (
 	int ret = 0;
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance *instance = node;
-		if (
-				rrr_thread_state_get(instance->thread) == RRR_THREAD_STATE_STOPPED ||
-				rrr_thread_ghost_check(instance->thread)
-		) {
+		if (rrr_thread_state_check(instance->thread, RRR_THREAD_STATE_STOPPED|RRR_THREAD_STATE_GHOST)) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", INSTANCE_M_NAME(instance));
 			ret = 1;
 			// Don't break or goto
@@ -612,31 +609,21 @@ int rrr_instance_collection_count (
 	return (RRR_LL_COUNT(collection));
 }
 
-void rrr_instance_runtime_data_destroy_hard (
+void rrr_instance_runtime_data_destroy (
 		struct rrr_instance_runtime_data *data
 ) {
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
 	rrr_free(data);
 }
 
-static int __rrr_instace_runtime_data_destroy_callback (
-		struct rrr_thread *thread,
-		void *arg
-) {
-	(void)(arg);
-
-	struct rrr_instance_runtime_data *data = thread->private_data;
-	rrr_instance_runtime_data_destroy_hard(data);
-	thread->private_data = NULL;
-	return 0;
-}
-
 static void __rrr_instace_runtime_data_destroy_intermediate (
 		void *arg
 ) {
-	struct rrr_instance_runtime_data *data = arg;
-	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", data->thread);
-	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *data = thread->private_data;
+	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", thread);
+	rrr_instance_runtime_data_destroy(data);
+	thread->private_data = NULL;
 }
 
 static int __rrr_instance_iterate_route_instances_callback (
@@ -829,19 +816,12 @@ static void __rrr_instance_thread_intermediate_cleanup (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	pthread_mutex_lock(&thread->mutex);
-
 	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n",
 		thread, thread_data->cmodule);
 
-	if (thread_data->cmodule == NULL) {
-		goto out;
+	if (thread_data->cmodule != NULL) {
+		rrr_cmodule_destroy(thread_data->cmodule);
 	}
-
-	rrr_cmodule_destroy(thread_data->cmodule);
-
-	out:
-	pthread_mutex_unlock(&thread->mutex);
 }
 
 static void __rrr_instance_thread_stats_instance_cleanup (
@@ -850,19 +830,13 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	pthread_mutex_lock(&thread->mutex);
-
 	RRR_DBG_8("Thread %p intermediate cleanup stats is %p\n",
 		thread, thread_data->stats);
 
-	if (thread_data->stats == NULL) {
-		goto out;
+	if (thread_data->stats != NULL) {
+		rrr_stats_instance_destroy(thread_data->stats);
+		thread_data->stats = NULL;
 	}
-
-	rrr_stats_instance_destroy(thread_data->stats);
-	thread_data->stats = NULL;
-	out:
-	pthread_mutex_unlock(&thread->mutex);
 }
 
 struct rrr_instance_count_receivers_of_self_callback_data {
@@ -914,7 +888,7 @@ static void *__rrr_instance_thread_entry_intermediate (
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	thread_data->thread = thread;
 
-	pthread_cleanup_push(__rrr_instace_runtime_data_destroy_intermediate, thread->private_data);
+	pthread_cleanup_push(__rrr_instace_runtime_data_destroy_intermediate, thread);
 	pthread_cleanup_push(__rrr_instance_thread_intermediate_cleanup, thread);
 	pthread_cleanup_push(__rrr_instance_thread_stats_instance_cleanup, thread);
 
@@ -931,9 +905,9 @@ static void *__rrr_instance_thread_entry_intermediate (
 		thread, thread_data->cmodule);
 
 	if (rrr_stats_instance_new (
-		&thread_data->stats,
-		INSTANCE_D_STATS_ENGINE(thread_data),
-		INSTANCE_D_NAME(thread_data)
+			&thread_data->stats,
+			INSTANCE_D_STATS_ENGINE(thread_data),
+			INSTANCE_D_NAME(thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not initialize stats engine for instance %s in %s\n",
 			INSTANCE_D_NAME(thread_data), __func__);
@@ -1044,9 +1018,7 @@ static int __rrr_instance_collection_start_threads_check_wait_for_callback (
 			return 1;
 		}
 
-		if (	rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
-				rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_STOPPED
-		) {
+		if (rrr_thread_state_check(check->thread, RRR_THREAD_STATE_RUNNING_FORKED|RRR_THREAD_STATE_STOPPED)) {
 			// OK
 		}
 		else {
@@ -1181,7 +1153,7 @@ int rrr_instances_create_and_start_threads (
 		}
 	out:
 		if (runtime_data_tmp != NULL) {
-			rrr_instance_runtime_data_destroy_hard(runtime_data_tmp);
+			rrr_instance_runtime_data_destroy(runtime_data_tmp);
 		}
 		return ret;
 }

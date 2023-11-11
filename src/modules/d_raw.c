@@ -187,8 +187,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 			thread
 	);
 
-	RRR_DBG_1 ("Thread raw %p instance %s exiting state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
+	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
 	pthread_exit(0);
 }
