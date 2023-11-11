@@ -298,9 +298,9 @@ static int __rrr_cmodule_helper_input_buffer_process (
 }
 
 static void __rrr_cmodule_helper_event_input_queue (
-				evutil_socket_t fd,
-				short flags,
-				void *arg
+		evutil_socket_t fd,
+		short flags,
+		void *arg
 ) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
@@ -308,12 +308,40 @@ static void __rrr_cmodule_helper_event_input_queue (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (__rrr_cmodule_helper_input_buffer_process(thread_data) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
 	}
 
 	if (RRR_LL_COUNT(&cmodule->input_queue) == 0) {
 		EVENT_REMOVE(cmodule->input_queue_event);
+	}
+}
+
+struct rrr_cmodule_helper_event_app_periodic_callback_data {
+	struct rrr_instance_runtime_data *thread_data;
+	int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS);
+};
+
+static void __rrr_cmodule_helper_event_app_periodic_callback (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_cmodule_helper_event_app_periodic_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+
+	(void)(fd);
+	(void)(flags);
+
+	RRR_EVENT_HOOK();
+
+	int ret_tmp;
+	if ((ret_tmp = callback_data->app_periodic_callback(thread_data)) != 0) {
+		RRR_MSG_0("Error %i from app periodic callback in %s in instance '%s'\n",
+				ret_tmp, __func__, INSTANCE_D_NAME(thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
 	}
 }
 
@@ -724,7 +752,7 @@ static int __rrr_cmodule_helper_event_periodic (
 
 	rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
 
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(INSTANCE_D_THREAD(thread_data));
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
 int rrr_cmodule_helper_methods_iterate (
@@ -739,8 +767,9 @@ int rrr_cmodule_helper_methods_iterate (
 	);
 }
 
-void rrr_cmodule_helper_loop (
-		struct rrr_instance_runtime_data *thread_data
+static void __rrr_cmodule_helper_loop (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
@@ -762,10 +791,30 @@ void rrr_cmodule_helper_loop (
 				&events,
 				__rrr_cmodule_helper_event_input_queue,
 				thread_data,
-				2000 // 2ms
+				2000 // 2 ms
 		) != 0) {
 		RRR_MSG_0("Failed to create input queue event in %s\n", __func__);
 		goto out;
+	}
+
+	if (app_periodic_callback) {
+		struct rrr_cmodule_helper_event_app_periodic_callback_data callback_data = {
+			thread_data,
+			app_periodic_callback
+		};
+
+		if (rrr_event_collection_push_periodic (
+					&cmodule->app_periodic_event,
+					&events,
+					__rrr_cmodule_helper_event_app_periodic_callback,
+					&callback_data,
+					1000 * 1000 // 1000 ms
+		) != 0) {
+			RRR_MSG_0("Failed to create app periodic callback event in %s\n", __func__);
+			goto out;
+		}
+
+		EVENT_ADD(cmodule->app_periodic_event);
 	}
 
 	rrr_event_callback_pause_set (
@@ -794,6 +843,19 @@ void rrr_cmodule_helper_loop (
 	out:
 	pthread_cleanup_pop(1);
 	return;
+}
+
+void rrr_cmodule_helper_loop (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	__rrr_cmodule_helper_loop(thread_data, NULL);
+}
+
+void rrr_cmodule_helper_loop_with_periodic (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
+) {
+	__rrr_cmodule_helper_loop(thread_data, app_periodic_callback);
 }
 
 int rrr_cmodule_helper_parse_config (
@@ -900,6 +962,38 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 	);
 }
 
+int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg
+) {
+	struct rrr_cmodule_worker_callbacks callbacks = {
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL
+	};
+
+	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
+		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+					thread_data,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					&callbacks
+		) != 0) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -918,6 +1012,8 @@ int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 		configuration_callback_arg,
 		process_callback,
 		process_callback_arg,
+		NULL,
+		NULL,
 		NULL,
 		NULL
 	};
@@ -976,7 +1072,9 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		NULL,
 		NULL,
 		custom_tick_callback,
-		custom_tick_callback_arg
+		custom_tick_callback_arg,
+		NULL,
+		NULL
 	};
 
 	return __rrr_cmodule_main_worker_fork_start_intermediate (

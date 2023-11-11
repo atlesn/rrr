@@ -44,6 +44,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Uncomment to debug event processing
 //#define RRR_WITH_LIBEVENT_DEBUG
 
+struct rrr_event_hook_config rrr_event_hooking = {0};
+
+void rrr_event_hook_set (
+		void (*hook)(RRR_EVENT_HOOK_ARGS),
+		void *arg
+) {
+	// Unsafe to change this function. Also, only set hook
+	// prior to making any threads as the struct update is
+	// not atomic.
+	assert(rrr_event_hooking.hook == NULL);
+	rrr_event_hooking.hook = hook;
+	rrr_event_hooking.arg = arg;
+}
+
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 ) {
@@ -113,6 +127,11 @@ static void __rrr_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
+	RRR_DBG_9_PRINTF("EQ DISP %p periodic fd %i pid %llu tid %llu\n",
+		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
 	if ( queue->callback_periodic != NULL &&
 	    (queue->callback_ret = queue->callback_periodic(queue->callback_arg)) != 0
 	) {
@@ -129,6 +148,11 @@ static void __rrr_event_unpause (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
+
+	RRR_DBG_9_PRINTF("EQ DISP %p unpause fd %i pid %llu tid %llu\n",
+		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		if (queue->functions[i].is_paused) {
@@ -150,8 +174,12 @@ static void __rrr_event_signal_event (
 
  	int ret = 0;
 	uint64_t count = 0;
-
 	unsigned short is_paused_new = function->is_paused;
+
+	RRR_EVENT_HOOK();
+
+	RRR_DBG_9_PRINTF("EQ DISP %p function %u fd %i pid %llu tid %llu\n",
+		queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if (function->callback_pause) {
 		function->callback_pause(&is_paused_new, function->is_paused, function->callback_pause_arg);
@@ -188,6 +216,7 @@ static void __rrr_event_signal_event (
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
+				RRR_DBG_9_PRINTF("EQ DISP %p fd %i not ready\n", queue, (int) fd);
 				// OK, nothing to do
 			}
 			else {

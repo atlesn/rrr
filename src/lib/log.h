@@ -255,7 +255,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
 #define RRR_LOG_HOOK_ARGS                                      \
-            uint8_t *write_amount,                             \
 	    const char *file,                                  \
 	    int line,                                          \
             uint8_t loglevel_translated,                       \

@@ -215,10 +215,8 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
-		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
-				&write_amount,
 				file,
 				line,
 				loglevel_translated,
@@ -227,16 +225,6 @@ void rrr_log_hooks_call_raw (
 				message,
 				hook->private_arg
 		);
-
-		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass (
-					hook->notify_queue,
-					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
-					write_amount,
-					hook->event_pass_retry_callback,
-					hook->event_pass_retry_callback_arg
-			);
-		}
 	}
 
 	LOCK_HOOK_END;

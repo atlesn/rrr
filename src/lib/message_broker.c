@@ -80,6 +80,7 @@ struct rrr_message_broker {
 	RRR_LL_HEAD(struct rrr_message_broker_costumer);
 	pthread_mutex_t lock;
 	pthread_t creator;
+	struct rrr_message_broker_hooks hooks;
 };
 
 struct rrr_event_queue *rrr_message_broker_event_queue_get (
@@ -385,7 +386,8 @@ void rrr_message_broker_destroy (
 }
 
 int rrr_message_broker_new (
-		struct rrr_message_broker **target
+		struct rrr_message_broker **target,
+		const struct rrr_message_broker_hooks *hooks
 ) {
 	int ret = 0;
 
@@ -409,6 +411,8 @@ int rrr_message_broker_new (
 
 	pthread_mutex_lock(&broker->lock);
 	broker->creator = pthread_self();
+	if (hooks != NULL)
+		broker->hooks = *hooks;
 	pthread_mutex_unlock(&broker->lock);
 
 	*target = broker;
@@ -672,18 +676,23 @@ static int __rrr_message_broker_entry_prepare (
 	return ret;
 }
 
+#define MSG_HOOK(cb)                                                              \
+  if (costumer->broker->hooks.cb != NULL)                                         \
+    costumer->broker->hooks.cb(costumer->name, entry_locked, costumer->broker->hooks.arg)
+
 static int __rrr_message_broker_pre_buffer_hook (
 		struct rrr_message_broker_costumer *costumer,
-		struct rrr_msg_holder *entry
+		struct rrr_msg_holder *entry_locked
 ) {
 	int ret = 0;
 
-	// Any nexthops set by postprocess cb will override those set in prepare
-
-	if ((ret = costumer->entry_pre_buffer_hook(entry, costumer->callback_arg)) != 0) {
+	// Any nexthops set here will override those set in prepare
+	if ((ret = costumer->entry_pre_buffer_hook(entry_locked, costumer->callback_arg)) != 0) {
 		RRR_MSG_0("Error %i from entry postprocess callback in %s\n", ret, __func__);
 		goto out;
 	}
+
+	MSG_HOOK(pre_buffer);
 
 	out:
 	return ret;
@@ -763,7 +772,6 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 
 static int __rrr_message_broker_write_entry_slot_intermediate (
 		int *do_drop,
-		int *do_again,
 		struct rrr_msg_holder *entry,
 		void *arg
 ) {
@@ -771,9 +779,13 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	int ret = 0;
 
+	// Do again is not beneficial when slot writing as the readed must get the
+	// written slot first, hence we should not spin and try to write another
+	// entry immediately.
+	int do_again_ignore;
 	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
 			do_drop,
-			do_again,
+			&do_again_ignore,
 			callback_data->costumer,
 			entry,
 			callback_data->nexthops,
@@ -800,15 +812,11 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 		callback_data->entries_written++;
 	}
 
-	if (callback_data->entries_written == 0xff) {
-		*do_again = 0;
-	}
-
 	out:
 	return ret;
 }
 
-static int __rrr_message_broker_write_entry_intermediate_postprocess (
+static int __rrr_message_broker_write_entry_fifo_intermediate_postprocess (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry
 ) {
@@ -833,7 +841,7 @@ static int __rrr_message_broker_write_entry_intermediate_postprocess (
 		goto out;
 	}
 
-	// Prevents cleanup_pop below to free the entry now that everything is in order
+	// Incref prevents cleanup now that everything is in order
 	rrr_msg_holder_incref_while_locked(entry);
 	rrr_msg_holder_unlock(entry);
 
@@ -841,7 +849,7 @@ static int __rrr_message_broker_write_entry_intermediate_postprocess (
 	return ret;
 }
 
-static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
+static int __rrr_message_broker_write_entry_fifo_intermediate (RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS) {
 	struct rrr_message_broker_write_entry_intermediate_callback_data *callback_data = arg;
 
 	int ret = RRR_FIFO_PROTECTED_OK;
@@ -903,7 +911,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		ret &= ~(RRR_FIFO_PROTECTED_WRITE_AGAIN);
 	}
 
-	if (__rrr_message_broker_write_entry_intermediate_postprocess (
+	if (__rrr_message_broker_write_entry_fifo_intermediate_postprocess (
 			callback_data->costumer,
 			entry
 	) != 0) {
@@ -1019,7 +1027,7 @@ int rrr_message_broker_write_entry (
 	else {
 		if ((ret = rrr_fifo_protected_write (
 				&costumer->main_queue,
-				__rrr_message_broker_write_entry_intermediate,
+				__rrr_message_broker_write_entry_fifo_intermediate,
 				&callback_data
 		)) != 0) {
 			RRR_MSG_0("Error while writing to buffer (main_queue) in %s\n", __func__);

@@ -325,6 +325,8 @@ static void dummy_event_write_entry (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (dummy_write_entry (data, 1) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}

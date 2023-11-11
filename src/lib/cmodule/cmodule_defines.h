@@ -79,6 +79,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_cmodule_worker_callbacks *callbacks,                                \
         void *private_arg
 
+#define RRR_CMODULE_PERIODIC_CALLBACK_ARGS                                             \
+        struct rrr_cmodule_worker *worker,                                             \
+        void *private_arg
+
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_cmodule_worker;

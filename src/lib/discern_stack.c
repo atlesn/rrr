@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DISCERN_STACK_OK     RRR_READ_OK
 #define RRR_DISCERN_STACK_BAIL   RRR_READ_EOF
 
-#define RRR_DISCERN_STACK_DATA_MAX_SIZE 64
+#define RRR_DISCERN_STACK_MAX 64
 
 enum rrr_discern_stack_element_type {
 	RRR_DISCERN_STACK_E_NONE,
@@ -94,13 +94,11 @@ struct rrr_discern_stack_list {
 struct rrr_discern_stack_value_list {
 	rrr_length data_pos;
 	rrr_length size;
-	rrr_length wpos;
 };
 
 struct rrr_discern_stack {
 	RRR_LL_NODE(struct rrr_discern_stack);
 	struct rrr_discern_stack_list exe_list;
-	struct rrr_discern_stack_value_list exe_stack;
 	struct rrr_discern_stack_storage exe_storage;
 	char *name;
 };
@@ -235,36 +233,6 @@ static int __rrr_discern_stack_data_expand (
 	return ret;
 }
 
-static int __rrr_discern_stack_value_list_expand (
-		struct rrr_discern_stack_value_list *list,
-		struct rrr_discern_stack_storage *storage,
-		rrr_length expand_size
-) {
-	struct rrr_discern_stack_value *elements = storage->data + list->data_pos;
-
-	int ret = 0;
-
-	rrr_length size_tmp = list->size;
-	rrr_length data_pos_tmp = list->data_pos;
-
-	if ((ret = __rrr_discern_stack_data_expand (
-			(void **) &elements,
-			&size_tmp,
-			&data_pos_tmp,
-			storage,
-			expand_size,
-			sizeof(*elements)
-	)) != 0) {
-		goto out;
-	}
-
-	list->size = size_tmp;
-	list->data_pos = data_pos_tmp;
-
-	out:
-	return ret;
-}
-
 static int __rrr_discern_stack_list_expand (
 		struct rrr_discern_stack_list *list,
 		struct rrr_discern_stack_storage *storage,
@@ -392,7 +360,6 @@ static int __rrr_discern_stack_add_from (
 	memcpy(target->exe_storage.data, source->exe_storage.data, source->exe_storage.capacity);
 
 	target->exe_list = source->exe_list;
-	target->exe_stack = source->exe_stack;
 
 	out:
 	return ret;
@@ -559,10 +526,7 @@ static int __rrr_discern_stack_execute_op_bool (
 static int __rrr_discern_stack_execute_op_apply (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack_list *stack,
-		struct rrr_discern_stack_storage *stack_storage,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *callback_arg
+		struct rrr_discern_stack_storage *stack_storage
 ) {
 	int ret = 0;
 
@@ -588,10 +552,8 @@ static int __rrr_discern_stack_execute_op_apply (
 	assert(b->type == RRR_DISCERN_STACK_E_BOOL);
 	assert(a->value.data_size > 0);
 
-	if ((ret = apply_cb(b->value.value, value_storage->data + a->value.data_pos, callback_arg)) != 0) {
-		*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
-		goto out;
-	}
+	// No apply callback for parsing, it would otherwise go here. Nothing do do.
+	// (call apply cb)
 
 	// Pop off destination name and leave boolean value
 	__rrr_discern_stack_list_pop(stack);
@@ -605,10 +567,7 @@ static int __rrr_discern_stack_execute_op_push (
 		struct rrr_discern_stack_list *stack,
 		struct rrr_discern_stack_storage *stack_storage,
 		const struct rrr_discern_stack_element *node,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg
+		struct rrr_discern_stack_storage *value_storage
 ) {
 	int ret = 0;
 
@@ -616,10 +575,8 @@ static int __rrr_discern_stack_execute_op_push (
 
 	switch (node->type) {
 		case RRR_DISCERN_STACK_E_TOPIC_FILTER:
-			if ((ret = resolve_topic_filter_cb (&result, value_storage->data + node->value.data_pos, node->value.data_size, resolve_cb_arg)) != 0) {
-				*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
-				goto out;
-			}
+			// Pretend topic filter matches
+			result = 1;
 			if ((ret = __rrr_discern_stack_list_push_bool (
 					stack,
 					stack_storage,
@@ -630,9 +587,8 @@ static int __rrr_discern_stack_execute_op_push (
 			}
 			break;
 		case RRR_DISCERN_STACK_E_ARRAY_TAG:
-			if ((ret = resolve_array_tag_cb (&result, NULL, 0, value_storage->data + node->value.data_pos, resolve_cb_arg)) != 0) {
-				goto out;
-			}
+			// Pretend array tag exists
+			result = 1;
 			if ((ret = __rrr_discern_stack_list_push_bool (
 					stack,
 					stack_storage,
@@ -665,6 +621,12 @@ static int __rrr_discern_stack_execute_op_push (
 	return ret;
 }
 
+static int __rrr_discern_stack_execute_apply_cb_dummy (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	(void)(destination);
+	(void)(arg);
+	return 0;
+}
+
 /*
  * Fast execute with no checks of any kind. The list being
  * run should be verified first during parsing.
@@ -672,40 +634,36 @@ static int __rrr_discern_stack_execute_op_push (
 static int __rrr_discern_stack_execute (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack *discern_stack,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *apply_cb_arg
+		const struct rrr_discern_stack_callbacks *callbacks
 ) {
 	const struct rrr_discern_stack_list *list = &discern_stack->exe_list;
 	struct rrr_discern_stack_storage *list_storage = &discern_stack->exe_storage;
-	struct rrr_discern_stack_value_list *stack = &discern_stack->exe_stack;
-	struct rrr_discern_stack_value *stack_e = list_storage->data + stack->data_pos;
 
 	int ret = 0;
+
+	struct rrr_discern_stack_value_list stack = {
+		.data_pos = 0,
+		.size = RRR_DISCERN_STACK_MAX
+	};
+	struct rrr_discern_stack_value stack_e[RRR_DISCERN_STACK_MAX];
+	rrr_length wpos = 0;
+
+	int (*const apply_cbs[2])(RRR_DISCERN_STACK_APPLY_CB_ARGS) = {
+		callbacks->apply_cb_false ? callbacks->apply_cb_false : __rrr_discern_stack_execute_apply_cb_dummy,
+		callbacks->apply_cb_true
+	};
 
 	const struct rrr_discern_stack_element *node;
 	struct rrr_discern_stack_index_entry *index_tmp = NULL;
 	rrr_length index_tmp_size = 0;
 	rrr_length index_result;
 
+	memset(stack_e, '\0', sizeof(stack_e));
+
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
 	for (rrr_length i = 0; i < list->wpos; i++) {
-		if (stack->wpos == stack->size) {
-			if ((ret = __rrr_discern_stack_value_list_expand (
-					stack,
-					list_storage,
-					8
-			)) != 0) {
-				goto out;
-			}
-			stack_e = list_storage->data + stack->data_pos;
-		}
-
-		struct rrr_discern_stack_element elements[4];
-		memcpy(elements, list_storage->data + list->data_pos + i * sizeof(struct rrr_discern_stack_element), sizeof(elements));
+		assert (wpos < stack.size);
 
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
 
@@ -713,13 +671,11 @@ static int __rrr_discern_stack_execute (
 			case RRR_DISCERN_STACK_OP_PUSH:
 				switch (node->type) {
 					case RRR_DISCERN_STACK_E_TOPIC_FILTER:
-//						stack_e[stack->wpos++].value = 1;
-//						break;
-						if ((ret = resolve_topic_filter_cb (
-								&(stack_e[stack->wpos++].value),
+						if ((ret = callbacks->resolve_topic_filter_cb (
+								&stack_e[wpos++].value,
 								list_storage->data + node->value.data_pos,
 								node->value.data_size,
-								resolve_cb_arg
+								callbacks->resolve_cb_arg
 						)) != 0) {
 							goto out;
 						}
@@ -737,60 +693,60 @@ static int __rrr_discern_stack_execute (
 						}
 
 						if (!index_result) {
-							stack_e[stack->wpos++].value = 0;
+							stack_e[wpos++].value = 0;
 							break;
 						}
 
 						// The callback may set a temporary index used to quickly eliminate
 						// H array tag check without calling the callback. The callback
 						// may set the index one time during an execution session.
-						if ((ret = resolve_array_tag_cb (
-								&stack_e[stack->wpos++].value,
+						if ((ret = callbacks->resolve_array_tag_cb (
+								&stack_e[wpos++].value,
 								&index_tmp,
 								&index_tmp_size,
 								list_storage->data + node->value.data_pos,
-								resolve_cb_arg
+								callbacks->resolve_cb_arg
 						)) != 0) {
 							goto out;
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack_e[stack->wpos++].value = 1;
+						stack_e[wpos++].value = 1;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
-						stack_e[stack->wpos++] = node->value;
+						stack_e[wpos++] = node->value;
 						break;
 					default:
 						assert(0);
 				};
 				break;
 			case RRR_DISCERN_STACK_OP_AND:
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value &&
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value &&
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_OR:
-				stack_e[stack->wpos - 1].value =
-					stack_e[stack->wpos - 1].value ||
-					stack_e[stack->wpos - 2].value;
-				stack->wpos--;
+				stack_e[wpos - 2].value =
+					stack_e[wpos - 1].value ||
+					stack_e[wpos - 2].value;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_APPLY:
-				if ((ret = apply_cb(stack_e[stack->wpos - 2].value, list_storage->data + stack_e[stack->wpos - 1].data_pos, apply_cb_arg)) != 0) {
+				if ((ret = apply_cbs[stack_e[wpos - 2].value & 1](list_storage->data + stack_e[wpos - 1].data_pos, callbacks->apply_cb_arg)) != 0) {
 					*fault = RRR_DISCERN_STACK_FAULT_CRITICAL;
 					goto out;
 				}
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_NOT:
-				stack_e[stack->wpos - 1].value = !stack_e[stack->wpos - 1].value;
+				stack_e[wpos - 1].value = !stack_e[wpos - 1].value;
 				break;
 			case RRR_DISCERN_STACK_OP_POP:
-				stack->wpos--;
+				wpos--;
 				break;
 			case RRR_DISCERN_STACK_OP_BAIL:
-				if (stack_e[stack->wpos - 1].value) {
+				if (stack_e[wpos - 1].value) {
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
 				}
@@ -800,6 +756,8 @@ static int __rrr_discern_stack_execute (
 		}
 	}
 
+	assert(wpos == 0);
+
 	out:
 	RRR_FREE_IF_NOT_NULL(index_tmp);
 	return ret;
@@ -808,11 +766,7 @@ static int __rrr_discern_stack_execute (
 int rrr_discern_stack_collection_execute (
 		enum rrr_discern_stack_fault *fault,
 		const struct rrr_discern_stack_collection *collection,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_callback_arg,
-		int (*apply_cb)(rrr_length result, const char *destination, void *arg),
-		void *apply_callback_arg
+		const struct rrr_discern_stack_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -822,11 +776,7 @@ int rrr_discern_stack_collection_execute (
 		if ((ret = __rrr_discern_stack_execute (
 				fault,
 				node,
-				resolve_topic_filter_cb,
-				resolve_array_tag_cb,
-				resolve_callback_arg,
-				apply_cb,
-				apply_callback_arg
+				callbacks
 		)) != 0) {
 			goto out;
 		}
@@ -837,21 +787,14 @@ int rrr_discern_stack_collection_execute (
 }
 
 /*
- * Slow execution of one list operator. Used only during parsing, but it is
- * possible to use it during run-time as well as the callbacks are the same
- * as for the runtime function.
+ * Slow execution of one list operator, used only during parsing.
  */
 static int __rrr_discern_stack_parse_execute_step (
 		enum rrr_discern_stack_fault *fault,
 		struct rrr_discern_stack_list *stack,
 		struct rrr_discern_stack_storage *stack_storage,
 		const struct rrr_discern_stack_element *node,
-		struct rrr_discern_stack_storage *value_storage,
-		int (*resolve_topic_filter_cb)(RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS),
-		int (*resolve_array_tag_cb)(RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS),
-		void *resolve_cb_arg,
-		int (*apply_cb)(rrr_length result, const char *desination, void *arg),
-		void *apply_cb_arg
+		struct rrr_discern_stack_storage *value_storage
 ) {
 	int ret = 0;
 
@@ -872,10 +815,7 @@ static int __rrr_discern_stack_parse_execute_step (
 					stack,
 					stack_storage,
 					node,
-					value_storage,
-					resolve_topic_filter_cb,
-					resolve_array_tag_cb,
-					resolve_cb_arg
+					value_storage
 			)) != 0) {
 				goto out;
 			}
@@ -906,10 +846,7 @@ static int __rrr_discern_stack_parse_execute_step (
 			if ((ret = __rrr_discern_stack_execute_op_apply (
 					fault,
 					stack,
-					stack_storage,
-					value_storage,
-					apply_cb,
-					apply_cb_arg
+					stack_storage
 			)) != 0) {
 				goto out;
 			}
@@ -952,42 +889,17 @@ static int __rrr_discern_stack_parse_execute_step (
 			break;
 	}
 
+	assert(stack->wpos <= RRR_DISCERN_STACK_MAX);
+	if (stack->wpos == RRR_DISCERN_STACK_MAX) {
+		RRR_MSG_0("Stack overflow in discern stack. The maximum of %u pushed elements exceeded.\n", RRR_DISCERN_STACK_MAX);
+		*fault = RRR_DISCERN_STACK_FAULT_STACK_OVERFLOW;
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	return ret;
 }
-
-static int __rrr_discern_stack_parse_execute_resolve_topic_filter (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
-	(void)(topic_filter);
-	(void)(topic_filter_size);
-	(void)(arg);
-
-	*result = 1;
-
-	return 0;
-}
-
-static int __rrr_discern_stack_parse_execute_resolve_array_tag (RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS) {
-	(void)(new_index);
-	(void)(new_index_size);
-	(void)(tag);
-	(void)(arg);
-
-	*result = 1;
-
-	return 0;
-}
-
-static int __rrr_discern_stack_parse_execute_apply (
-		rrr_length result,
-		const char *str,
-		void *arg
-) {
-	(void)(result);
-	(void)(str);
-	(void)(arg);
-	return 0;
-}
-
 
 /*
  * Parse and slow execute with all kinds of checks to verify data types and operators. The
@@ -1016,7 +928,7 @@ static int __rrr_discern_stack_parse (
 	rrr_parse_ignore_control_and_increment_line(pos);
 
 	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of file while parsing discern_stack definition\n");
+		RRR_MSG_0("Unexpected end of file while parsing discern stack definition\n");
 		ret = 1;
 		*fault = RRR_DISCERN_STACK_FAULT_END_MISSING;
 		goto out;
@@ -1190,12 +1102,7 @@ static int __rrr_discern_stack_parse (
 				&stack,
 				&stack_storage,
 				&((const struct rrr_discern_stack_element *) (list_storage.data + list.data_pos))[list.wpos - 1],
-				&value_storage,
-				__rrr_discern_stack_parse_execute_resolve_topic_filter,
-				__rrr_discern_stack_parse_execute_resolve_array_tag,
-				NULL,
-				__rrr_discern_stack_parse_execute_apply,
-				NULL
+				&value_storage
 		)) != 0) {
 			if (ret == RRR_DISCERN_STACK_BAIL) {
 				ret = 0;
@@ -1265,7 +1172,7 @@ int rrr_discern_stack_collection_iterate_destination_names (
 		for (rrr_length i = 0; i < discern_stack->exe_list.wpos; i++) {
 			const struct rrr_discern_stack_element *e = &((const struct rrr_discern_stack_element *) (discern_stack->exe_storage.data + discern_stack->exe_list.data_pos))[i];
 			if (e->type != RRR_DISCERN_STACK_E_DESTINATION) {
-				RRR_LL_ITERATE_NEXT();
+				continue;
 			}
 			if ((ret = callback(discern_stack->name, node->exe_storage.data + e->value.data_pos, callback_arg)) != 0) {
 				goto out;

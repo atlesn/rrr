@@ -58,7 +58,13 @@ static const char *fails[] = {
 	"H a H a POP",
 	// End missing
 	"T ##",
-	"H a"
+	"H a",
+	// Stack overflow
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a "
+
 };
 
 const enum rrr_discern_stack_fault fail_codes[] = {
@@ -91,7 +97,8 @@ const enum rrr_discern_stack_fault fail_codes[] = {
 
 	RRR_DISCERN_STACK_FAULT_STACK_COUNT,
 	RRR_DISCERN_STACK_FAULT_END_MISSING,
-	RRR_DISCERN_STACK_FAULT_END_MISSING
+	RRR_DISCERN_STACK_FAULT_END_MISSING,
+	RRR_DISCERN_STACK_FAULT_STACK_OVERFLOW
 };
 
 static const char *valids[] = {
@@ -101,6 +108,80 @@ static const char *valids[] = {
 	"H a\tH b D c\tAPPLY\tAND D d\tAPPLY\tPOP",
 	"TRUE FALSE POP BAIL"
 };
+
+// Test should confirm that
+//   - OR operator writes at correct stack location
+//   - NOT operator works
+
+static const char bigtest[] = "T AAA\nT YYY\nT BBB\nOR\n" \
+                              "D yes APPLY\n" \
+                              "T AAA\nT BBB\n" \
+                              "D no APPLY\n" \
+			      "OR OR OR NOT\n" \
+			      "D no APPLY\n" \
+			      "NOT\n" \
+                              "D yes APPLY\n" \
+			      "NOT\n" \
+			      "D no APPLY\n" \
+			      "POP\n";
+//   Correct: -
+//            0
+//            0 1
+//            0 1 0
+//            0 1
+//            0 1 0
+//            0 1 0 0
+//            0 1 0
+//            0 1
+//            1
+//            0
+//            1
+//            0
+//            -
+// Incorrect: -
+//            0
+//            0 1
+//            0 1 0
+//            0 1     (1) <-- OR writes to popped value, but error is obscured
+//            0 1 0
+//            0 1 0 0
+//            0 1 0   (0) <-- OR writes to popped value, but error is obscured
+//            0 1     (1) <-- OR writes to popped value, but error is obscured
+//            0       (1) <-- OR writes to popped value, and result becomes incorrect
+//            1
+//            0
+//            1
+//            -
+
+
+static int __rrr_test_discern_stack_resolve_topic_filter_cb (RRR_DISCERN_STACK_RESOLVE_TOPIC_FILTER_CB_ARGS) {
+	(void)(arg);
+	assert(topic_filter_size == 4 && topic_filter[3] == '\0');
+	*result = strncmp(topic_filter, "YYY", topic_filter_size) == 0;
+	return 0;
+}
+
+static int __rrr_test_discern_stack_resolve_array_tag_cb (RRR_DISCERN_STACK_RESOLVE_ARRAY_TAG_CB_ARGS) {
+	(void)(result);
+	(void)(new_index);
+	(void)(new_index_size);
+	(void)(tag);
+	(void)(arg);
+	// Not reachable
+	assert(0);
+}
+
+static int __rrr_test_discern_stack_apply_cb_false (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	(void)(arg);
+	assert(strcmp(destination, "no") == 0);
+	return 0;
+}
+
+static int __rrr_test_discern_stack_apply_cb_true (RRR_DISCERN_STACK_APPLY_CB_ARGS) {
+	(void)(arg);
+	assert(strcmp(destination, "yes") == 0);
+	return 0;
+}
 
 int rrr_test_discern_stack(void) {
 	int ret = 0;
@@ -166,6 +247,57 @@ int rrr_test_discern_stack(void) {
 	}
 
 	rrr_discern_stack_collection_clear(&routes);
+
+	{
+		enum rrr_discern_stack_fault fault = 0;
+		int ret_tmp = 0;
+		struct rrr_parse_pos pos;
+		rrr_parse_pos_init(&pos, bigtest, rrr_length_from_biglength_bug_const(strlen(bigtest)));
+
+		TEST_MSG("%s\n -> ", bigtest);
+
+		if ((ret_tmp = rrr_discern_stack_interpret (&routes, &fault, &pos, bigtest)) != 0) {
+			printf("fault %i ret %i\n", fault, ret_tmp);
+			assert(fault != 0);
+			TEST_MSG(" -> NOT OK - Bigtest did not succeed as expected, result was %i fault was %i\n",
+					ret_tmp, fault);
+			ret = 1;
+		}
+		else {
+			assert(fault == 0);
+			TEST_MSG(" OK\n");
+		}
+
+		struct rrr_discern_stack_callbacks callbacks = {
+			__rrr_test_discern_stack_resolve_topic_filter_cb,
+			__rrr_test_discern_stack_resolve_array_tag_cb,
+			NULL,
+			__rrr_test_discern_stack_apply_cb_false,
+			__rrr_test_discern_stack_apply_cb_true,
+			NULL
+		};
+
+		// Test more times to provoke stack re-use
+		for (int i = 0; i < 5; i++) {
+			TEST_MSG("    (execute %i) -> ", i);
+
+			if ((ret_tmp = rrr_discern_stack_collection_execute (
+					&fault,
+					&routes,
+					&callbacks
+			)) != 0) {
+				printf("fault %i ret %i\n", fault, ret_tmp);
+				assert(fault != 0);
+				TEST_MSG(" -> NOT OK - Bigtest did not succeed as expected, result was %i fault was %i\n",
+						ret_tmp, fault);
+				ret = 1;
+			}
+			else {
+				assert(fault == 0);
+				TEST_MSG(" OK\n");
+			}
+		}
+	}
 
 	return ret;
 }

@@ -684,10 +684,12 @@ static void mysql_event_process_entries (
 		short flags,
 		void *arg
 ) {
+	struct mysql_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct mysql_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 

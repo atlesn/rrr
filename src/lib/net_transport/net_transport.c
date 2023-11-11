@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
+#define RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX 10
+#define RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX 10000
 
 #include "../log.h"
 #include "../rrr_types.h"
@@ -353,6 +355,8 @@ static void __rrr_net_transport_event_first_read_timeout (
 
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	RRR_DBG_7("net transport fd %i [%s] no data received within %" PRIu64 " ms, closing connection\n",
 			fd, handle->transport->application_name, handle->transport->first_read_timeout_ms);
 
@@ -370,6 +374,8 @@ static void __rrr_net_transport_event_hard_read_timeout (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_7("net transport fd %i [%s] no data received for %" PRIu64 " ms, closing connection\n",
 			handle->submodule_fd, handle->transport->application_name, handle->transport->hard_read_timeout_ms);
@@ -390,6 +396,8 @@ static void __rrr_net_transport_event_handshake (
 	(void)(fd);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	if (handle->handshake_complete) {
 		RRR_BUG("BUG: __rrr_net_transport_event_handshake called after handshake was complete\n");
@@ -432,6 +440,10 @@ static void __rrr_net_transport_event_read (
 	(void)(fd);
 
 	int ret_tmp = 0;
+	ssize_t bytes = 0;
+	char buf;
+
+	RRR_EVENT_HOOK();
 
 	CHECK_CLOSE_NOW();
 
@@ -451,6 +463,36 @@ static void __rrr_net_transport_event_read (
 		// - We are in timeout event and something by chance was read (callback returns 0)
 		// - We are in read event (data was present on the socket)
 		rrr_net_transport_ctx_touch (handle);
+
+		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
+			handle->noread_strike_count++;
+			RRR_ASSERT(RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX > RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX,_absolute_strikes_must_be_greater_than_check_eof_strikes);
+			if (handle->noread_strike_count >= RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX) {
+				RRR_MSG_0("net transport fd %i [%s] application did not read anything the last %i "
+					"read events. Destroy connection.\n",
+					handle->submodule_fd,
+					handle->transport->application_name,
+					RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX
+				);
+				ret_tmp = RRR_READ_EOF;
+			}
+			else if (handle->noread_strike_count >= RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX) {
+				if ((bytes = recv(handle->submodule_fd, &buf, 1, MSG_PEEK)) == 0) {
+					// Assume that remote has closed the connection and that the application
+					// does not detect this because it is waiting for something to write.
+					RRR_DBG_7("net transport fd %i [%s] application did not read anything the last %i "
+						"read events and remote has closed the connection. Destroy connection.\n",
+						handle->submodule_fd,
+						handle->transport->application_name,
+						RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX
+					);
+					ret_tmp = RRR_READ_EOF;
+				}
+			}
+		}
+		else {
+			handle->noread_strike_prev_read_bytes = handle->bytes_read_total;
+		}
 	}
 
 #ifdef RRR_NET_TRANSPORT_READ_RET_DEBUG
@@ -514,6 +556,8 @@ static void __rrr_net_transport_event_write (
 	(void)(flags);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) > 0) {
 		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
@@ -775,6 +819,8 @@ static void __rrr_net_transport_event_read_add (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	// Re-add read-events (if they where deleted due to ratelimiting or not yet added)
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
@@ -815,6 +861,8 @@ static void __rrr_net_transport_event_accept (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	int did_accept = 0;
 	int ret_tmp = handle->transport->methods->accept (

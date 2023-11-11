@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/version.h"
 #include "../build_timestamp.h"
+#include "lib/common.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
 #include "lib/event/event.h"
@@ -54,6 +55,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/messages/msg.h"
+#include "lib/messages/msg_msg.h"
+#include "lib/messages/msg_dump.h"
 #include "lib/socket/rrr_socket_constants.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/stats/stats_message.h"
@@ -78,12 +81,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_stats");
 
-static volatile int rrr_stats_abort = 0;
+static int main_running = 1;
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
-        {0,                            'e',    "exact-path",            "[-e|--exact-path]"},
-        {0,                            'j',    "journal",               "[-j|--journal]"},
+        {0,                            'p',    "exact-path",            "[-p|--exact-path]"},
+        {0,                            'E',    "events",                "[-E|--events]"},
+        {0,                            'J',    "journal",               "[-J|--journal]"},
+        {0,                            'M',    "messages",              "[-M|--messages]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -100,6 +105,8 @@ struct rrr_stats_data {
 
 	int do_socket_path_exact;
 	int do_print_journal;
+	int do_print_messages;
+	int do_print_events;
 
 	struct rrr_socket_client_collection *connections;
 
@@ -110,19 +117,57 @@ struct rrr_stats_data {
 	rrr_event_handle event_dump_tree;
 };
 
-static void __rrr_stats_signal_handler (int s) {
-	if (s == SIGPIPE) {
-		RRR_MSG_0("Received SIGPIPE, ignoring\n");
+struct rrr_stats_connection {
+	struct rrr_msg_stats *message_preface;
+};
+
+static int __rrr_stats_connection_new (void **target, int fd, void *private_arg) {
+	(void)(fd);
+	(void)(private_arg);
+
+	struct rrr_stats_connection *connection;
+
+	if ((connection = rrr_allocate_zero(sizeof(*connection))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
 	}
-	else if (s == SIGTERM) {
-		RRR_MSG_0("Received SIGTERM, exiting\n");
-		exit(EXIT_FAILURE);
+
+	*target = connection;
+
+	return 0;
+}
+
+static void __rrr_stats_connection_destroy (void *target) {
+	struct rrr_stats_connection *connection = target;
+
+	if (connection->message_preface != NULL) {
+		rrr_msg_stats_destroy(connection->message_preface);
 	}
-	else if (s == SIGINT) {
-		// Allow double ctrl+c to close program immediately
-		signal(SIGINT, SIG_DFL);
-		rrr_stats_abort = 1;
+
+	rrr_free(connection);
+}
+
+static int __rrr_stats_connection_msg_preface_set (
+		struct rrr_stats_connection *connection,
+		const struct rrr_msg_stats *message
+) {
+	int ret = 0;
+
+	if (connection->message_preface != NULL) {
+		rrr_msg_stats_destroy(connection->message_preface);
 	}
+
+	if ((ret = rrr_msg_stats_duplicate(&connection->message_preface, message)) != 0) {
+		RRR_MSG_0("Could not duplicate message in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_stats_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static int __rrr_stats_data_init (
@@ -135,12 +180,12 @@ static int __rrr_stats_data_init (
 	rrr_read_session_collection_init(&data->read_sessions);
 
 	if ((ret = rrr_stats_tree_init(&data->message_tree)) != 0) {
-		RRR_MSG_0("Could not initialize message tree in __rrr_stats_data_init\n");
+		RRR_MSG_0("Could not initialize message tree in %s\n", __func__);
 		goto out;
 	}
 
 	if ((ret = rrr_event_queue_new(&data->queue)) != 0) {
-		RRR_MSG_0("Could not create event queue in __rrr_stats_data_init\n");
+		RRR_MSG_0("Could not create event queue in %s\n", __func__);
 		goto out_clear_stats_tree;
 	}
 
@@ -181,7 +226,7 @@ static int __rrr_stats_socket_prefix_register (
 
 	struct rrr_map_item *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -189,7 +234,7 @@ static int __rrr_stats_socket_prefix_register (
 
 	node->tag = rrr_strdup(prefix);
 	if (node->tag == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -216,12 +261,25 @@ static int __rrr_stats_parse_config (
 		data->do_print_journal = 1;
 	}
 
+	if (cmd_exists(cmd, "messages", 0)) {
+		data->do_print_messages = 1;
+	}
+
+	if (cmd_exists(cmd, "events", 0)) {
+		data->do_print_events = 1;
+	}
+
+	if (data->do_print_journal + data->do_print_messages + data->do_print_events > 1) {
+		RRR_MSG_0("Cannot print messages, events and/or journal simultaneously. Check arguments.\n");
+		return 1;
+	}
+
 	cmd_arg_count i = 0;
 	while (cmd_exists(cmd, "socket", i)) {
 		const char *path = NULL;
 		if ((path = cmd_get_value(cmd, "socket", i)) != NULL) {
 			if (__rrr_stats_socket_prefix_register(data, path) != 0) {
-				RRR_MSG_0("Could not register socket prefix in __rrr_stats_parse_config\n");
+				RRR_MSG_0("Could not register socket prefix in $%s\n");
 				return 1;
 			}
 		}
@@ -250,7 +308,7 @@ static int __rrr_stats_attempt_connect_exact (
 			goto out;
 		}
 
-		RRR_MSG_0("Hard error while connecting to socket %s in __rrr_stats_attempt_connect_exact\n", path);
+		RRR_MSG_0("Hard error while connecting to socket %s in %s\n", path, __func__);
 		ret = 1;
 		goto out;
 	}
@@ -259,7 +317,7 @@ static int __rrr_stats_attempt_connect_exact (
 
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 	if ((data->socket_path_active = rrr_strdup(path)) == NULL) {
-		RRR_MSG_0("Could not save socket path name in __rrr_stats_attempt_connect_exact\n");
+		RRR_MSG_0("Could not save socket path name in %s\n", __func__);
 		ret = 1;
 		goto out_close;
 	}
@@ -322,14 +380,10 @@ static int __rrr_stats_attempt_connect_prefix (
 	char *prefix_copy_a = NULL;
 	char *prefix_copy_b = NULL;
 
-	if (data->do_socket_path_exact != 0) {
-		return __rrr_stats_attempt_connect_exact(data, prefix);
-	}
-
 	int ret = 0;
 
 	if (strlen(prefix) > PATH_MAX) {
-		RRR_MSG_0("Prefix was too long in __rrr_stats_attempt_connect_prefix\n");
+		RRR_MSG_0("Prefix was too long in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -381,7 +435,7 @@ static int __rrr_stats_attempt_connect_prefix (
 		prefix_copy_b = rrr_strdup(prefix);
 
 		if (prefix_copy_a == NULL || prefix_copy_b == NULL) {
-			RRR_MSG_0("Could not duplicate path in __rrr_stats_attempt_connect_prefix\n");
+			RRR_MSG_0("Could not duplicate path in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -417,18 +471,26 @@ static int __rrr_stats_attempt_connect (
 
 	if (RRR_LL_COUNT(&data->socket_prefixes) == 0) {
 		if (__rrr_stats_socket_prefix_register(data, RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH) != 0) {
-			RRR_MSG_0("Could not register default socket prefix in __rrr_stats_attempt_connect\n");
+			RRR_MSG_0("Could not register default socket prefix in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
 	}
 
 	RRR_MAP_ITERATE_BEGIN(&data->socket_prefixes);
-		RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
-		if (__rrr_stats_attempt_connect_prefix(data, node->tag) != 0) {
-			RRR_MSG_0("Error while attempting to connect to socket prefix %s\n", node_tag);
-			ret = 1;
-			goto out;
+		if (data->do_socket_path_exact) {
+			RRR_DBG_1("Attempting to use excact path %s\n", node_tag);
+			if ((ret = __rrr_stats_attempt_connect_exact(data, node_tag)) != 0) {
+				RRR_MSG_0("Error while attempting to connect to socket excact path %s\n", node_tag);
+				goto out;
+			}
+		}
+		else {
+			RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
+			if ((ret = __rrr_stats_attempt_connect_prefix(data, node_tag)) != 0) {
+				RRR_MSG_0("Error while attempting to connect to socket prefix %s\n", node_tag);
+				goto out;
+			}
 		}
 	RRR_MAP_ITERATE_END();
 
@@ -484,14 +546,14 @@ static int __rrr_stats_send_keepalive (
 	struct rrr_msg_stats message;
 
 	if (rrr_msg_stats_init(&message, RRR_STATS_MESSAGE_TYPE_KEEPALIVE, 0, "", NULL, 0) != 0) {
-		RRR_MSG_0("Could not initialize keepalive message in __rrr_stats_send_keepalive\n");
+		RRR_MSG_0("Could not initialize keepalive message in %s\n", __func__);
 		return 1;
 	}
 
 	return __rrr_stats_send_message(data, &message);
 }
 
-static int __rrr_stats_print_journal_message (
+static int __rrr_stats_process_journal_message (
 		const struct rrr_msg_stats *message,
 		void *private_arg1,
 		void *private_arg2
@@ -507,20 +569,24 @@ static int __rrr_stats_print_journal_message (
 		goto out;
 	}
 
-	struct rrr_stats_tree tree_tmp;
-	if (rrr_stats_tree_init(&tree_tmp) != 0) {
-		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
-		ret = 1;
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)) {
 		goto out;
 	}
 
-	if (rrr_stats_tree_insert_or_update(&tree_tmp, message) != 0) {
-		RRR_MSG_0("Could not insert message into tree in __rrr_stats_print_journal_message\n");
-		ret = 1;
+	// TODO : Try to do this (check if path is log message) without generating the tree.
+
+	struct rrr_stats_tree tree_tmp;
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message)) != 0) {
+		RRR_MSG_0("Could not insert message into tree in %s\n", __func__);
 		goto out_cleanup_tree;
 	}
 
-	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL)) {
+	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK)) {
 		printf("%s", message->data);
 	}
 
@@ -530,32 +596,154 @@ static int __rrr_stats_print_journal_message (
 		return ret;
 }
 
-static int __rrr_stats_process_message (
+static int __rrr_stats_process_stats_message (
 		const struct rrr_msg_stats *message,
 		void *private_arg1,
 		void *private_arg2
 ) {
+	struct rrr_stats_connection *connection = private_arg1;
 	struct rrr_stats_data *data = private_arg2;
 
-	(void)(message);
-	(void)(private_arg1);
+	(void)(connection);
 
 	int ret = 0;
+
+	if (RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) ||
+	    RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message) ||
+	    RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)
+	) {
+		goto out;
+	}
+
 	if ((ret = rrr_stats_tree_insert_or_update(&data->message_tree, message)) != 0) {
 		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
-			RRR_MSG_0("Message with path %s was invalid, not added to tree\n", message->path);
+			RRR_MSG_0("Message with path %s was invalid, not added to tree in %s\n", message->path, __func__);
 			ret = 0;
 			goto out;
 		}
 
-		RRR_MSG_0("Error while inserting message in tree in __rrr_stats_process_message\n");
-		ret = 1;
+		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
 		goto out;
-
 	}
 
 	out:
 	return ret;
+}
+
+static int  __rrr_stats_process_event_message  (
+		const struct rrr_msg_stats *message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_connection *connection = private_arg1;
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(connection);
+	(void)(data);
+
+	int ret = 0;
+
+	struct rrr_stats_tree tree_tmp;
+
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message)) {
+		goto out;
+	}
+
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message)) != 0) {
+		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
+			RRR_MSG_0("Message with path %s was invalid, not added to tree in %s\n", message->path, __func__);
+			ret = 0;
+			goto out_cleanup_tree;
+		}
+
+		RRR_MSG_0("Error while inserting message in tree in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	rrr_stats_tree_dump(&tree_tmp);
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out:
+		return ret;
+}
+
+static int __rrr_stats_process_preface_message (
+		const struct rrr_msg_stats *message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_connection *connection = private_arg1;
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(data);
+
+	int ret = 0;
+
+	if (!RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message)) {
+		goto out;
+	}
+
+	if ((ret = __rrr_stats_connection_msg_preface_set(connection, message)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_stats_process_rrr_message (
+		struct rrr_msg_msg **message,
+		void *private_arg1,
+		void *private_arg2
+) {
+	struct rrr_stats_connection *connection = private_arg1;
+	struct rrr_stats_data *data = private_arg2;
+
+	(void)(data);
+
+	int ret = 0;
+
+	struct rrr_stats_tree tree_tmp;
+	struct rrr_msg_stats *message_preface = NULL;
+
+	if (connection->message_preface == NULL) {
+		goto out;
+	}
+
+	message_preface = connection->message_preface;
+	connection->message_preface = NULL;
+
+	assert(RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message_preface) && "Preface flag must be set");
+
+	if ((ret = rrr_stats_tree_init(&tree_tmp)) != 0) {
+		RRR_MSG_0("Could not initialize tree in %s\n", __func__);
+		goto out_destroy_preface;
+	}
+
+	if ((ret = rrr_stats_tree_insert_or_update(&tree_tmp, message_preface)) != 0) {
+		RRR_MSG_0("Could not insert message into tree in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	rrr_stats_tree_dump(&tree_tmp);
+
+	if ((ret = rrr_msg_dump_msg (*message)) != 0) {
+		RRR_MSG_0("Failed to dump message in %s\n", __func__);
+		goto out_cleanup_tree;
+	}
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out_destroy_preface:
+		rrr_msg_stats_destroy(message_preface);
+	out:
+		return ret;
 }
 
 static void __rrr_stats_event_keepalive (
@@ -567,6 +755,8 @@ static void __rrr_stats_event_keepalive (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	if (__rrr_stats_send_keepalive(data) != 0) {
 		rrr_event_dispatch_break(data->queue);
@@ -583,7 +773,9 @@ static void __rrr_stats_event_dump_tree (
 	(void)(fd);
 	(void)(flags);
 
-	if (data->do_print_journal == 0) {
+	RRR_EVENT_HOOK();
+
+	if (!data->do_print_journal && !data->do_print_messages && !data->do_print_events) {
 		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
 
 		unsigned int purged_total = 0;
@@ -627,7 +819,7 @@ static int __rrr_stats_events_setup (struct rrr_stats_data *data) {
 static int __rrr_stats_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_stats_data *data = arg;
 
-	if (rrr_stats_abort) {
+	if (!main_running) {
 		return RRR_EVENT_EXIT;
 	}
 
@@ -660,13 +852,19 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct cmd_data cmd;
 	struct rrr_stats_data data = {0};
+	struct rrr_signal_handler *signal_handler = NULL;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
+
+	signal_handler = rrr_signal_handler_push(rrr_stats_signal_handler, NULL);
+	rrr_signal_default_signal_actions_register();
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 	if (__rrr_stats_data_init(&data) != 0) {
 		RRR_MSG_0("Could not initialize stats data\n");
 		ret = EXIT_FAILURE;
-		goto out;
+		goto out_cleanup_signal;
 	}
 
 	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
@@ -675,59 +873,57 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 1) != 0) {
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
 
 	if (__rrr_stats_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
 
-	struct sigaction action;
-	action.sa_handler = __rrr_stats_signal_handler;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
+	int (*message_callback)(const struct rrr_msg_stats *, void *, void *) = NULL;
 
-	// We generally ignore sigpipe and use NONBLOCK on all sockets
-	sigaction (SIGPIPE, &action, NULL);
-	// Used to set rrr_stats_abort = 1. The signal is set to default afterwards
-	// so that a second SIGINT will terminate the process
-	sigaction (SIGINT, &action, NULL);
-	// Used to print statistics (disabled)
-	// sigaction (SIGUSR1, &action, NULL);
-	// Exit immediately with EXIT_FAILURE
-	sigaction (SIGTERM, &action, NULL);
+	if (data.do_print_journal) {
+		message_callback = __rrr_stats_process_journal_message;
+	}
+	else if (data.do_print_messages) {
+		message_callback = __rrr_stats_process_preface_message;
+	}
+	else if (data.do_print_events) {
+		message_callback = __rrr_stats_process_event_message;
+	}
+	else {
+		message_callback = __rrr_stats_process_stats_message;
+	}
 
 	rrr_socket_client_collection_event_setup (
 			data.connections,
-			NULL,
-			NULL,
+			__rrr_stats_connection_new,
+			__rrr_stats_connection_destroy,
 			NULL,
 			4096,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			NULL,
 			NULL,
+			__rrr_stats_process_rrr_message,
 			NULL,
 			NULL,
 			NULL,
-			NULL,
-			(data.do_print_journal
-				? __rrr_stats_print_journal_message
-				: __rrr_stats_process_message
-			),
+			message_callback,
 			&data
 	);
 
 	if (__rrr_stats_attempt_connect(&data) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_data;
 	}
 
 	if (__rrr_stats_events_setup (&data) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
-		
+		goto out_cleanup_data;
 	}
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	if (rrr_event_dispatch (
 			data.queue,
@@ -738,12 +934,14 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 	}
 
-	out_cleanup_cmd:
+	out_cleanup_data:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		__rrr_stats_data_cleanup(&data);
+	out_cleanup_signal:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_remove(signal_handler);
 		rrr_config_set_debuglevel_on_exit();
 		cmd_destroy(&cmd);
-	out_cleanup_data:
-		__rrr_stats_data_cleanup(&data);
-	out:
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 		rrr_socket_close_all();

@@ -64,8 +64,11 @@ extern "C" {
 
 extern "C" {
 
+class js_run_data;
+
 struct js_data {
 	struct rrr_instance_runtime_data *thread_data;
+	const js_run_data *run_data;
 	char *js_file;
 	char *js_module_name;
 };
@@ -250,18 +253,12 @@ class js_run_data {
 			throw E(std::string("Failed to run process function: ") + msg);
 		});
 	}
-	void runEvents() {
-		auto scope = RRR::JS::Scope(ctx);
-		ctx.trycatch_ok([](std::string msg) {
-			throw E(std::string("Failed to run process function: ") + msg);
-		});
-	}
 	void registerMethod(const char *name) {
 		methods[name] = program->get_function(ctx, name);
 	}
 	static int methodCallback(const char *stack_name, const char *method_name, void *self) {
 		js_run_data *run_data = reinterpret_cast<js_run_data*>(self);
-		RRR_DBG_1("JS instance %s registering method %s from discern stack %s\n",
+		RRR_DBG_1("JS instance %s registering method %s from method definition %s\n",
 			INSTANCE_D_NAME(run_data->data->thread_data), method_name, stack_name
 		);
 		run_data->registerMethod(method_name);
@@ -331,78 +328,6 @@ class js_run_data {
 
 extern "C" {
 
-static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
-	struct js_data *data = (struct js_data *) private_arg;
-
-	using namespace RRR::JS;
-
-	ENV env("rrr-js");
-
-	int ret = 0;
-
-	try {
-		auto isolate = Isolate(env);
-		auto ctx = CTX(env, std::string(data->js_file));
-		auto persistent_storage = PersistentStorage(ctx);
-
-		js_run_data run_data (
-				data,
-				worker,
-				isolate,
-				ctx,
-				persistent_storage,
-				[&](){
-					const auto absolute_path = std::filesystem::absolute(std::string(data->js_file)).string();
-
-					if (data->js_module_name != NULL) {
-						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.make_module<Module>(ctx, absolute_path));
-					}
-
-					auto script = RRR::JS::Script::make_shared(absolute_path);
-					script->compile(ctx);
-					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
-				}
-		);
-
-		callbacks->ping_callback_arg = (void *) &run_data;
-		callbacks->configuration_callback_arg = (void *) &run_data;
-		callbacks->process_callback_arg = (void *) &run_data;
-
-		if ((ret = rrr_cmodule_worker_loop_start (
-				worker,
-				callbacks
-		)) != 0) {
-			RRR_MSG_0("Error from worker loop in %s\n", __func__);
-				goto out;
-		}
-	}
-	catch (RRR::util::E e) {
-		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
-		ret = 1;
-		goto out;
-	}
-	catch (...) {
-		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(data->thread_data), __func__);
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-static int js_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
-	struct js_run_data *run_data = (struct js_run_data *) private_arg;
-
-	(void)(worker);
-
-	run_data->status();
-	run_data->runGC();
-	run_data->runEvents(); // TODO : Finer control of when timeouts and events run
-
-	return 0;
-}
-
 static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct js_run_data *run_data = (struct js_run_data *) private_arg;
 
@@ -451,9 +376,6 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		else {
 			run_data->runProcess(message, message_addr, method, worker->process_mode);
 		}
-
-		// Run any imminent events
-		run_data->runEvents();
 	}
 	catch (RRR::util::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
@@ -462,6 +384,91 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 	catch (...) {
 		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(run_data->data->thread_data), __func__);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
+	struct js_run_data *run_data = (struct js_run_data *) private_arg;
+
+	(void)(worker);
+
+	try {
+		run_data->status();
+		run_data->runGC();
+	}
+	catch (js_run_data::E e) {
+		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
+		return 1;
+	}
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(run_data->data->thread_data), __func__);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
+	struct js_data *data = (struct js_data *) private_arg;
+
+	using namespace RRR::JS;
+
+	ENV env("rrr-js");
+
+	int ret = 0;
+
+	try {
+		auto isolate = Isolate(env);
+		auto ctx = CTX(env, std::string(data->js_file));
+		auto persistent_storage = PersistentStorage(ctx);
+
+		js_run_data run_data (
+				data,
+				worker,
+				isolate,
+				ctx,
+				persistent_storage,
+				[&](){
+					const auto absolute_path = std::filesystem::absolute(std::string(data->js_file)).string();
+
+					if (data->js_module_name != NULL) {
+						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.make_module<Module>(ctx, absolute_path));
+					}
+
+					auto script = RRR::JS::Script::make_shared(absolute_path);
+					script->compile(ctx);
+					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
+				}
+		);
+
+		callbacks->configuration_callback  = js_configuration_callback;
+		callbacks->process_callback        = js_process_callback;
+		callbacks->periodic_callback       = js_periodic_callback;
+
+		callbacks->configuration_callback_arg  = (void *) &run_data;
+		callbacks->process_callback_arg        = (void *) &run_data;
+		callbacks->periodic_callback_arg       = (void *) &run_data;
+
+		if ((ret = rrr_cmodule_worker_loop_start (
+				worker,
+				callbacks
+		)) != 0) {
+			RRR_MSG_0("Error from worker loop in %s\n", __func__);
+				goto out;
+		}
+	}
+	catch (RRR::util::E e) {
+		RRR_MSG_0("Failed while executing script %s: %s\n", data->js_file, *e);
+		ret = 1;
+		goto out;
+	}
+	catch (...) {
+		RRR_MSG_0("Unknown exception in instance %s in %s\n", INSTANCE_D_NAME(data->thread_data), __func__);
 		ret = 1;
 		goto out;
 	}
@@ -492,16 +499,10 @@ static int js_fork (void *arg) {
 	}
 
 	// Calback args are set in init wrapper function
-	if (rrr_cmodule_helper_worker_forks_start_with_ping_callback (
+	if (rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
 			thread_data,
 			js_init_wrapper_callback,
-			data,
-			js_ping_callback,
-			NULL,
-			js_configuration_callback,
-			NULL,
-			js_process_callback,
-			NULL
+			data
 	) != 0) {
 		RRR_MSG_0("Error while starting cmodule worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
 		ret = 1;
@@ -510,6 +511,16 @@ static int js_fork (void *arg) {
 
 	out:
 	return ret;
+}
+
+static int js_main_periodic_callback(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS) {
+	struct js_data *data = (struct js_data *) thread_data->private_memory;
+
+	(void)(data);
+
+	// Nothing to do for main tread
+
+	return 0;
 }
 
 static void *thread_entry_js (struct rrr_thread *thread) {
@@ -534,8 +545,9 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 	RRR_DBG_1 ("js instance %s started thread %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
+	rrr_cmodule_helper_loop_with_periodic (
+			thread_data,
+			js_main_periodic_callback
 	);
 
 	out_message:

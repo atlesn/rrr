@@ -164,13 +164,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-/*
 	TEST_BEGIN("MQTT topics") {
 		ret_tmp = rrr_test_mqtt_topic();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-*/
+
 	TEST_BEGIN("parsing") {
 		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);
@@ -317,7 +316,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-	if (rrr_message_broker_new(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker, NULL) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}

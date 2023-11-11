@@ -181,8 +181,6 @@ static void journal_log_hook (RRR_LOG_HOOK_ARGS) {
 
 	(void)(loglevel_orig);
 
-	*write_amount = 0;
-
 	// Make the calling thread pause a bit to reduce the amount of messages
 	// coming in. This is done if we are unable to handle request due to
 	// slowness of the readers of journal module. DO NOT sleep inside the
@@ -245,8 +243,6 @@ static void journal_log_hook (RRR_LOG_HOOK_ARGS) {
 	entry = NULL;
 
 	data->is_in_hook = 0;
-
-	*write_amount = 1;
 
 	out_unlock:
 		if (entry != NULL) {
