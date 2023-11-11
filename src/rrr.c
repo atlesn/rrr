@@ -236,20 +236,6 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
-static int main_loop_log_hook_retry_callback (
-		void *arg
-) {
-	struct stats_data *stats_data = arg;
-
- 	(void)(stats_data);
-
-	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
-
-	main_running = 0;
-
-	return RRR_EVENT_OK;
-}
-
 static void main_stats_message_pre_buffer_hook (
 		RRR_MESSAGE_BROKER_HOOK_MSG_ARGS
 ) {
@@ -291,7 +277,8 @@ static void main_stats_message_pre_buffer_hook (
 			(const char **) hop_names,
 			(uint32_t) hop_count
 	) != 0) {
-		RRR_BUG("Could not send message int %s\n", __func__);
+		RRR_MSG_0("Could not push RRR message in %s\n", __func__);
+		main_running = 0;
 	}
 
 	for (int i = 0; i < hop_count; i++) {
@@ -325,7 +312,8 @@ void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 			"main",
 			text
 	) != 0) {
-		RRR_BUG("Could not initialize main statistics message\n");
+		RRR_MSG_0("Could not push event message in %s\n", __func__);
+		main_running = 0;
 	}
 }
 
@@ -344,7 +332,8 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 			"main",
 			message
 	) != 0) {
-		RRR_BUG("Could not push message in %s\n", __func__);
+		RRR_MSG_0("Could not push log message in %s\n", __func__);
+		main_running = 0;
 	}
 }
 
@@ -427,7 +416,7 @@ static void main_loop_periodic_message_broker_report_buffer_split_buffer_callbac
 	}
 }
 
-static void main_loop_periodic_thread_collection_destroy (
+static void main_loop_thread_collection_destroy (
 		struct rrr_thread_collection **collection,
 		const char *config_file
 ) {
@@ -444,7 +433,8 @@ static void main_loop_periodic_thread_collection_destroy (
 		//
 		// It is also useful to get a coredump showing the state of
 		// the ghost thread, hence we abort here.
-		RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", config_file);
+		RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n",
+			ghost_count, config_file);
 	}
 }
 
@@ -509,7 +499,7 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 		rrr_config_set_debuglevel_on_exit();
 
-		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
+		main_loop_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 
 		// If main is still supposed to be active and restart is active, sleep
 		// for one second and continue.
@@ -543,7 +533,7 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	out_destroy_thread_collection:
 		rrr_config_set_debuglevel_on_exit();
-		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
+		main_loop_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 	out_event_exit:
 		rrr_config_set_debuglevel_on_exit();
 		return RRR_EVENT_EXIT;
@@ -620,9 +610,7 @@ static int main_loop (
 				&stats_data.log_hook_handle,
 				main_loop_log_hook,
 				&stats_data,
-				queue,
-				main_loop_log_hook_retry_callback,
-				&stats_data
+				queue
 		);
 
 	}
@@ -646,16 +634,20 @@ static int main_loop (
 		queue
 	};
 
-	rrr_event_dispatch (
+	ret = rrr_event_dispatch (
 			queue,
 			250 * 1000, // 250 ms
 			main_loop_periodic,
 			&event_callback_data
 	);
 
-	RRR_DBG_1 ("Main loop finished\n");
+	RRR_DBG_1 ("Main loop finished with code %i\n", ret);
 
-	if (collection != NULL) {
+	rrr_config_set_debuglevel_on_exit();
+	
+	if (ret == RRR_EVENT_ERR) {
+		main_loop_thread_collection_destroy(&collection, config_file);
+	} else if (collection != NULL) {
 		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
 	}
 

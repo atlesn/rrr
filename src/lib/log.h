@@ -272,9 +272,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(RRR_LOG_HOOK_ARGS),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue,
-		int (*event_pass_retry_callback)(void *arg),
-		void *event_pass_retry_callback_arg
+		struct rrr_event_queue *notify_queue
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (

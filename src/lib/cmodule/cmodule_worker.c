@@ -819,7 +819,7 @@ int rrr_cmodule_worker_main (
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	int log_hook_handle;
-	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
+	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
 		RRR_MSG_0("Re-init of event queue failed in %s\n", __func__);

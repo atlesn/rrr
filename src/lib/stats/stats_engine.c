@@ -435,11 +435,6 @@ static void __rrr_stats_engine_event_periodic (
 
 	RRR_EVENT_HOOK();
 
-	if (stats->exit_now_ret != 0) {
-		RRR_MSG_0("Error %i in statistics engine, exiting\n", stats->exit_now_ret);
-		rrr_event_dispatch_break(stats->queue);
-		return;
-	}
 	if ( __rrr_stats_engine_send_messages(stats)) {
 		RRR_MSG_0("Error while sending messages in %s\n", __func__);
 		rrr_event_dispatch_break(stats->queue);
@@ -465,12 +460,9 @@ static int __rrr_stats_engine_event_pass_msg_hook_retry_callback (
 ) {
 	struct rrr_stats_engine *stats = arg;
 
- 	(void)(arg);
+	(void)(stats);
 
 	fprintf(stderr, "Error: Too many hooked messages, a build-up has occured. Consider reducing message rates while debugging.\n");
-
-	// Checked in periodic functions. TODO : Use atomic.
-	stats->exit_now_ret = RRR_EVENT_ERR;
 
 	return RRR_EVENT_ERR;
 }
@@ -480,12 +472,9 @@ static int __rrr_stats_engine_event_pass_str_hook_retry_callback (
 ) {
 	struct rrr_stats_engine *stats = arg;
 
- 	(void)(arg);
+ 	(void)(stats);
 
 	fprintf(stderr, "Error: Too many hooked log messages or events, a build-up has occured. Consider reducing rates while debugging.\n");
-
-	// Checked in periodic functions. TODO : Use atomic.
-	stats->exit_now_ret = RRR_EVENT_ERR;
 
 	return RRR_EVENT_ERR;
 }
@@ -942,7 +931,7 @@ static int __rrr_stats_engine_push_stream_message (
 		rrr_msg_stats_destroy(message_copy);
 
 	if (write_amount > 0) {
-		rrr_event_pass (
+		ret |= rrr_event_pass (
 				stats->queue,
 				RRR_EVENT_FUNCTION_STR_HOOK_DATA_AVAILABLE,
 				write_amount,
@@ -1004,7 +993,7 @@ static int __rrr_stats_engine_push_rrr_message (
 		rrr_free(preface_copy);
 
 	if (write_amount > 0) {
-		rrr_event_pass (
+		ret |= rrr_event_pass (
 				stats->queue,
 				RRR_EVENT_FUNCTION_MSG_HOOK_DATA_AVAILABLE,
 				write_amount,

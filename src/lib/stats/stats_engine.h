@@ -68,11 +68,6 @@ struct rrr_stats_engine {
 	int log_hook_handle;
 	pthread_mutex_t main_lock;
 
-	// Errors occuring while hooking. The hook functions have no
-	// return values, we must store the return value and check
-	// in our periodic function.
-	int exit_now_ret;
-
 	// Use to prevent re-entry logging when we are sending data
 	// to statistics client. Log messages received when this value
 	// is set will be ignored.
