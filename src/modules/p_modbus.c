@@ -792,15 +792,17 @@ static int modbus_callback_data_prepare (
 }
 
 static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
-	(void)(fd);
-	(void)(flags);
-
 	struct modbus_command_node *node = arg;
 	struct modbus_command *command = &node->command;
 	struct modbus_data *data = node->data;
 
+	(void)(fd);
+	(void)(flags);
+
 	int ret_tmp;
 	uint8_t buf[2048];
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_3("Modbus instance %s send command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
 		INSTANCE_D_NAME(data->thread_data),
@@ -870,13 +872,15 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 }
 
 static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
+	struct modbus_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct modbus_data *data = arg;
-
 	uint64_t command_time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
 	uint64_t send_time_limit = rrr_time_get_64() - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
+
+	RRR_EVENT_HOOK();
 
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
 		if (node->last_seen_time < command_time_limit) {

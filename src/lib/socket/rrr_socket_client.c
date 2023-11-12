@@ -64,9 +64,15 @@ struct rrr_socket_client_collection {
 
 	struct rrr_event_queue *queue;
 
+	// Called before send chunk iteration starts and after it ends
+	void (*chunk_send_start_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+	void (*chunk_send_end_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+
 	// Called when a chunk is successfully sent or a client is destroyed with unsent data (if set)
 	void (*chunk_send_notify_callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS);
-	void *chunk_send_notify_callback_arg;
+
+	// Common arg for above callbacks
+	void *chunk_send_callback_arg;
 
 	// Called when a client FD is closed for whatever reason (if set)
 	void (*client_fd_close_callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS);
@@ -75,6 +81,9 @@ struct rrr_socket_client_collection {
 	// Common settings
 	rrr_biglength read_step_max_size;
 	int read_flags_socket;
+
+	// Set to mask events when writing
+	int mask_write_event_hooks;
 
 	// Settings for array reading
 	int array_do_sync_byte_by_byte;
@@ -258,7 +267,7 @@ static void __rrr_socket_client_chunk_send_notify_success_callback (
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -279,7 +288,7 @@ static void __rrr_socket_client_chunk_send_notify_fail_callback (
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -580,6 +589,9 @@ static void __rrr_socket_client_read_callback_flags_deduct (
     if (do_soft_error_propagates) {                 \
       RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd); \
     }                                               \
+    else if (bytes_read == 0) {                     \
+      RRR_DBG_7("fd %i in client collection soft error while reading and bytes read was 0 (force propagate)\n", fd); \
+    }                                               \
     else {                                          \
       RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);    \
       ret = 0;                                      \
@@ -631,6 +643,8 @@ static void __rrr_socket_client_fd_event_timeout (
 
 	(void)(flags);
 	(void)(fd);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_7("Disconnecting fd %i in client collection following soft inactivity timeout of %" PRIu64 " ms\n",
 			client_fd->fd, client_fd->client->collection->idle_timeout_us / 1000);
@@ -823,11 +837,18 @@ static int __rrr_socket_client_send_tick (
 ) {
 	int ret;
 
+	struct rrr_socket_send_chunk_send_callbacks callbacks = {
+		.success = __rrr_socket_client_chunk_send_notify_success_callback,
+		.success_arg = client,
+		.send_start = client->collection->chunk_send_start_callback,
+		.send_end = client->collection->chunk_send_end_callback,
+		.start_end_arg = client->collection->chunk_send_callback_arg,
+	};
+
 	if ((ret = rrr_socket_send_chunk_collection_send_and_notify (
 			&client->send_chunks,
 			client->connected_fd->fd,
-			__rrr_socket_client_chunk_send_notify_success_callback,
-			client
+			&callbacks
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
 				client->connected_fd->fd, ret);
@@ -847,6 +868,9 @@ static void __rrr_socket_client_event_write (
 	(void)(fd);
 	(void)(flags);
 
+	if (!collection->mask_write_event_hooks) {
+		RRR_EVENT_HOOK();
+	}
 	CONNECTED_FD_ENSURE();
 
 	if (client->connected_fd == NULL) {
@@ -908,6 +932,7 @@ static void __rrr_socket_client_event_read_message (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -972,6 +997,7 @@ static void __rrr_socket_client_event_read_raw (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -1036,6 +1062,7 @@ static void __rrr_socket_client_event_read_array_tree (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -1082,6 +1109,7 @@ static void __rrr_socket_client_event_read_ignore (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
 	DEDUCT_READ_FLAGS();
@@ -2090,6 +2118,8 @@ static void __rrr_socket_client_event_accept (
 
 	int ret_tmp = 0;
 
+	RRR_EVENT_HOOK();
+
 	struct sockaddr_storage addr = {0};
 	socklen_t addr_len = sizeof(addr);
 
@@ -2160,6 +2190,13 @@ int rrr_socket_client_collection_listen_fd_push (
 	return ret;
 }
 
+void rrr_socket_client_collection_mask_write_event_hooks_setup (
+		struct rrr_socket_client_collection *collection,
+		int set
+) {
+	collection->mask_write_event_hooks = set;
+}
+
 static void __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		rrr_biglength read_step_max_size,
@@ -2204,11 +2241,26 @@ int rrr_socket_client_collection_connected_fd_push (
 
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
-		void *callback_arg
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void *arg
 ) {
-	collection->chunk_send_notify_callback = callback;
-	collection->chunk_send_notify_callback_arg = callback_arg;
+	collection->chunk_send_start_callback = NULL;
+	collection->chunk_send_end_callback = NULL;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
+}
+
+void rrr_socket_client_collection_send_notify_setup_with_gates (
+		struct rrr_socket_client_collection *collection,
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void (*start)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void (*end)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void *arg
+) {
+	collection->chunk_send_start_callback = start;
+	collection->chunk_send_end_callback = end;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
 }
 
 void rrr_socket_client_collection_fd_close_notify_setup (

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,16 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../ip/ip_defines.h"
 
-static int __rrr_msg_dump_msg_callback (
-		struct rrr_msg_msg **message,
-		void *arg1,
-		void *arg2
+static int __rrr_msg_dump_msg (
+		const struct rrr_msg_msg *msg
 ) {
-	(void)(arg1);
-	(void)(arg2);
-
-	const struct rrr_msg_msg *msg = *message;
-
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
@@ -91,6 +84,17 @@ static int __rrr_msg_dump_msg_callback (
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
 	return ret;
+}
+
+static int __rrr_msg_dump_msg_callback (
+		struct rrr_msg_msg **message,
+		void *arg1,
+		void *arg2
+) {
+	(void)(arg1);
+	(void)(arg2);
+
+	return __rrr_msg_dump_msg(*message);
 }
 
 static int __rrr_msg_dump_addr_callback (
@@ -208,4 +212,10 @@ int rrr_msg_dump_to_host_and_dump (
 
 	out:
 	return ret;
+}
+
+int rrr_msg_dump_msg (
+		const struct rrr_msg_msg *msg
+) {
+	return __rrr_msg_dump_msg (msg);
 }

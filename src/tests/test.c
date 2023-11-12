@@ -327,7 +327,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-	if (rrr_message_broker_new(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker, NULL) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}

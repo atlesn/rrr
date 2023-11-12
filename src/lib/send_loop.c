@@ -417,6 +417,8 @@ static void __rrr_send_loop_event_run (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (rrr_send_loop_run(send_loop) != 0) {
 		rrr_event_dispatch_break(send_loop->queue);
 	}
@@ -437,6 +439,8 @@ static void __rrr_send_loop_event_periodic (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	if (rrr_send_loop_count(send_loop) > 0) {
 		EVENT_ACTIVATE(send_loop->event_run);

@@ -39,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       case RRR_CMODULE_PROCESS_MODE_NONE:                          \
       default: method_to_use = NULL; assert(0); }
 
+#define RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS \
+    struct rrr_instance_runtime_data *thread_data
+
 struct rrr_instance_runtime_data;
 struct rrr_stats_instance;
 struct rrr_poll_collection;
@@ -60,6 +63,10 @@ int rrr_cmodule_helper_methods_iterate (
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data
 );
+void rrr_cmodule_helper_loop_with_periodic (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
+);
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
@@ -78,12 +85,28 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
+int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg
+);
 int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS),
 		void *ping_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg
+);
+int rrr_cmodule_helper_worker_forks_start_with_periodic_callback (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*periodic_callback)(RRR_CMODULE_PERIODIC_CALLBACK_ARGS),
+		void *periodic_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),

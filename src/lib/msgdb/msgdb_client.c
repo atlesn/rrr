@@ -314,10 +314,12 @@ static void __rrr_msgdb_client_event_periodic (
 		short flags,
 		void *arg
 ) {
+	struct rrr_msgdb_client_conn *conn = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_msgdb_client_conn *conn = arg;
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
 
@@ -349,6 +351,8 @@ static void __rrr_msgdb_client_event_read (
 
 	int ret_tmp = 0;
 	int max = 100;
+
+	RRR_EVENT_HOOK();
 
 	again:
 	if ((ret_tmp = __rrr_msgdb_client_read (

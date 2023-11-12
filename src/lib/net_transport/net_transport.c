@@ -586,6 +586,8 @@ static void __rrr_net_transport_event_first_read_timeout (
 
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	RRR_DBG_7("net transport fd %i [%s] no data received within %" PRIu64 " ms, closing connection\n",
 			fd, handle->transport->application_name, handle->transport->first_read_timeout_ms);
 
@@ -603,6 +605,8 @@ static void __rrr_net_transport_event_hard_read_timeout (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_7("net transport fd %i [%s] no data received for %" PRIu64 " ms, closing connection\n",
 			handle->submodule_fd, handle->transport->application_name, handle->transport->hard_read_timeout_ms);
@@ -623,6 +627,8 @@ static void __rrr_net_transport_event_handshake (
 	(void)(fd);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	if (handle->handshake_complete) {
 		RRR_BUG("BUG: __rrr_net_transport_event_handshake called after handshake was complete\n");
@@ -670,6 +676,8 @@ static void __rrr_net_transport_event_read (
 	(void)(fd);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	CHECK_CLOSE_NOW();
 
@@ -837,6 +845,8 @@ static void __rrr_net_transport_event_write (
 	(void)(flags);
 
 	int ret_tmp = 0;
+
+	RRR_EVENT_HOOK();
 
 	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) > 0) {
 		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
@@ -1204,6 +1214,8 @@ static void __rrr_net_transport_event_read_add (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	// Re-add read-events (if they where deleted due to ratelimiting or not yet added)
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
@@ -1252,6 +1264,8 @@ static void __rrr_net_transport_event_accept (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	int ret_tmp = listen_handle->transport->methods->accept (
 			&new_handle,

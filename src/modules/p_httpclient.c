@@ -2255,6 +2255,8 @@ static void httpclient_event_msgdb_poll (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	struct httpclient_data *data = arg;
 
 	int do_short_timeout = 0;
@@ -2302,6 +2304,8 @@ static void httpclient_event_queue_process (
 ) {
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	struct httpclient_data *data = arg;
 
