@@ -204,7 +204,7 @@ int rrr_msg_dump_to_host_and_dump (
 		if (RRR_MSG_IS_SETTING(msg)) {
 			RRR_MSG_1("Possibly an RRR Setting Message (dump not supported)\n");
 		}
-		else if (RRR_MSG_IS_TREE_DATA(msg)) {
+		else if (RRR_MSG_IS_STATS(msg)) {
 			RRR_MSG_1("Possibly an RRR Stats Engine Tree Data Message (dump not supported)\n");
 		}
 		goto out;
