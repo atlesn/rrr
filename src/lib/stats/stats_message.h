@@ -48,10 +48,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				     RRR_STATS_MESSAGE_FLAGS_EVENT |	         \
 				     RRR_STATS_MESSAGE_FLAGS_LOG)
 
-#define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
-#define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
-#define RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_EVENT) != 0)
-#define RRR_STATS_MESSAGE_FLAGS_IS_LOG(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_LOG) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message)          (((message)->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) (((message)->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message)           (((message)->flags & RRR_STATS_MESSAGE_FLAGS_EVENT) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)             (((message)->flags & RRR_STATS_MESSAGE_FLAGS_LOG) != 0)
 
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
@@ -80,10 +80,20 @@ struct rrr_msg_stats_packed {
 	char path_and_data[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 + RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 } __attribute((packed));
 
+int rrr_msg_stats_flip_and_unpack (
+		struct rrr_msg_stats *target,
+		const struct rrr_msg_stats_packed *source,
+		rrr_length expected_size
+);
 int rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
 		const struct rrr_msg_stats_packed *source,
 		rrr_length expected_size
+);
+void rrr_msg_stats_pack (
+		struct rrr_msg_stats_packed *target,
+		rrr_length *total_size,
+		const struct rrr_msg_stats *source
 );
 void rrr_msg_stats_pack_and_flip (
 		struct rrr_msg_stats_packed *target,

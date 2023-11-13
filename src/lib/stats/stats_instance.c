@@ -207,6 +207,32 @@ static int __rrr_stats_instance_post_text (
 	return ret;
 }
 
+int rrr_stats_instance_push_stream_message (
+		struct rrr_stats_instance *instance,
+		const struct rrr_msg_stats *msg
+) {
+	int ret = 0;
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		goto out;
+	}
+
+	if ((ret = rrr_stats_engine_push_stream_message (
+			instance->engine,
+			instance->stats_handle,
+			RRR_STATS_INSTANCE_PATH_PREFIX,
+			msg
+	)) != 0) {
+		RRR_MSG_0("Error returned from post function in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		const char *text

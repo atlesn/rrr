@@ -107,6 +107,12 @@ int rrr_stats_engine_post_message (
 		const char *path_prefix,
 		const struct rrr_msg_stats *message
 );
+int rrr_stats_engine_push_stream_message (
+		struct rrr_stats_engine *stats,
+		unsigned int handle,
+		const char *path_prefix,
+		const struct rrr_msg_stats *message
+);
 int rrr_stats_engine_push_rrr_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,

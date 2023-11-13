@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <poll.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -47,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
+#include "../stats/stats_message.h"
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)                              \
     if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {                 \
@@ -140,6 +142,105 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 	return 0;
 }
 
+static int __rrr_cmodule_worker_hook_write (
+		struct rrr_cmodule_worker *worker,
+		const void *msg,
+		rrr_length msg_size
+) {
+	int ret = 0;
+
+	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
+	while (max--) {
+		ret = rrr_mmap_channel_write (
+				worker->channel_to_parent,
+				worker->event_queue_parent,
+				msg,
+				msg_size,
+				__rrr_cmodule_worker_check_cancel_callback,
+				worker
+		);
+
+		if (ret == 0) {
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, try again
+		}
+		else if (ret == RRR_EVENT_EXIT) {
+			// OK, wait for some other function to detect exit
+			break;
+		}
+		else {
+			RRR_MSG_0("Error %i while writing to mmap channel in %s for worker %s in hook\n",
+				ret, __func__, worker->name);
+			break;
+		}
+
+		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
+	}
+
+	if (ret == RRR_MMAP_CHANNEL_FULL) {
+		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in hook\n",
+			__func__, worker->name);
+		ret = 0;
+	}
+
+	return ret;
+}
+
+static void __rrr_cmodule_worker_event_hook(RRR_EVENT_HOOK_ARGS) {
+	struct rrr_cmodule_worker *worker = arg;
+
+	char text[256];
+	char worker_text[32];
+	struct rrr_msg_stats msg;
+	struct rrr_msg_stats_packed msg_packed;
+	rrr_length msg_packed_size;
+	ssize_t text_length;
+
+	snprintf(worker_text, sizeof(worker_text), " worker: %s", worker->name);
+
+	text_length = rrr_event_hook_string_format(text, sizeof(text), source_func, fd, flags, worker_text);
+
+	assert(text_length > 0);
+
+	if (rrr_msg_stats_init_event (
+			&msg,
+			text,
+			text_length + 1
+	) != 0) {
+		RRR_MSG_0("Failed to initialize stats message in %s\n", __func__);
+		goto out_failure;
+	}
+
+	rrr_msg_stats_pack (
+			&msg_packed,
+			&msg_packed_size,
+			&msg
+	);
+
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &msg_packed,
+			RRR_MSG_TYPE_STATS,
+			msg_packed_size,
+			(rrr_u32) (rrr_time_get_64() / 1000 / 1000)
+	);
+
+	if (__rrr_cmodule_worker_hook_write (
+			worker,
+			&msg_packed,
+			msg_packed_size
+	)) {
+		RRR_MSG_0("Failed to write stats message in %s\n", __func__);
+		goto out_failure;
+	}
+
+	return;
+
+	out_failure:
+	worker->received_stop_signal = 1;
+}
+
 static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
@@ -160,48 +261,24 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			prefix,
 			message
 	) != 0) {
-		goto out;
+		RRR_MSG_0("Failed to create log message in %s\n", __func__);
+		goto out_failure;
 	}
 
-	int ret = 0;
-
-	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
-	while (max--) {
-		ret = rrr_mmap_channel_write (
-				worker->channel_to_parent,
-				worker->event_queue_parent,
-				message_log,
-				message_log->msg_size,
-				__rrr_cmodule_worker_check_cancel_callback,
-				worker
-		);
-
-		if (ret == 0) {
-			break;
-		}
-		else if (ret == RRR_MMAP_CHANNEL_FULL) {
-			// OK, try again
-		}
-		else if (ret == RRR_EVENT_EXIT) {
-			// OK, wait for some other function to detect exit
-			break;
-		}
-		else {
-			RRR_MSG_0("Warning: Error %i while writing to mmap channel in %s for worker %s in log hook\n",
-				ret, __func__, worker->name);
-			break;
-		}
-
-		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
+	if (__rrr_cmodule_worker_hook_write (
+			worker,
+			message_log,
+			message_log->msg_size
+	)) {
+		RRR_MSG_0("Failed to write log message in %s\n", __func__);
+		goto out_failure;
 	}
 
-	if (ret == RRR_MMAP_CHANNEL_FULL) {
-		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in log hook\n",
-				__func__, worker->name);
-	}
-
+	goto out;
+	out_failure:
+		worker->received_stop_signal = 1;
 	out:
-	RRR_FREE_IF_NOT_NULL(message_log);
+		RRR_FREE_IF_NOT_NULL(message_log);
 }
 
 static int __rrr_cmodule_worker_send_setting_to_parent (
@@ -806,10 +883,11 @@ int rrr_cmodule_worker_main (
 ) {
 	int ret = 0;
 
-	rrr_log_hook_unregister_all_after_fork();
-
 	int event_fds[RRR_EVENT_QUEUE_FD_MAX * 2];
 	size_t event_fds_count = 0;
+	int log_hook_handle;
+
+	rrr_log_hook_unregister_all_after_fork();
 
 	memset(event_fds, '\0', sizeof(event_fds));
 
@@ -818,7 +896,7 @@ int rrr_cmodule_worker_main (
 	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
-	int log_hook_handle;
+	rrr_event_hook_set(__rrr_cmodule_worker_event_hook, worker);
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
@@ -854,6 +932,7 @@ int rrr_cmodule_worker_main (
 			callbacks,
 			init_wrapper_arg
 	);
+			//rrr_event_hook_set (main_loop_event_hook, &stats_data);
 
 	rrr_log_hook_unregister(log_hook_handle);
 

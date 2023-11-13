@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
+#include "../stats/stats_message.h"
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
@@ -410,10 +411,11 @@ struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {
 };
 
 struct rrr_cmodule_read_from_fork_callback_data {
-		struct rrr_cmodule_worker *worker;
-		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
-		void *final_callback_arg;
-		int read_count;
+	struct rrr_cmodule_worker *worker;
+	struct rrr_instance_runtime_data *thread_data;
+	int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
+	void *final_callback_arg;
+	int read_count;
 };
 
 static int __rrr_cmodule_helper_read_from_fork_message_callback (
@@ -432,7 +434,7 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
 }
 
-int __rrr_cmodule_helper_from_fork_log_callback (
+static int __rrr_cmodule_helper_read_from_fork_log_callback (
 		const struct rrr_msg_log *msg_log,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
@@ -446,25 +448,62 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
 	// only (includes statistics engine)
 	rrr_log_hooks_call_raw (
-		msg_log->file,
-		msg_log->line > INT_MAX ? 0 : (int) msg_log->line,
-		msg_log->loglevel_translated,
-		msg_log->loglevel_orig,
-		msg_log->prefix_and_message,
-		RRR_MSG_LOG_MSG_POS(msg_log)
+			msg_log->file,
+			msg_log->line > INT_MAX ? 0 : (int) msg_log->line,
+			msg_log->loglevel_translated,
+			msg_log->loglevel_orig,
+			msg_log->prefix_and_message,
+			RRR_MSG_LOG_MSG_POS(msg_log)
 	);
 
 	return 0;
 }
 
-int __rrr_cmodule_helper_read_from_fork_setting_callback (
+static int __rrr_cmodule_helper_read_from_fork_stats_callback (
+		const struct rrr_msg_stats_packed *msg_packed,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	(void)(callback_data);
+
+	int ret = 0;
+
+	struct rrr_msg_stats msg;
+
+	if ((rrr_msg_stats_unpack (
+			&msg,
+			msg_packed,
+			rrr_length_from_size_t_bug_const(data_size)
+	)) != 0) {
+		RRR_MSG_0("Failed to unpack stats message in %s\n", __func__);
+		goto out;
+	};
+
+	if (RRR_STATS_MESSAGE_FLAGS_IS_EVENT(&msg)) {
+		if ((ret = rrr_stats_instance_push_stream_message (
+				INSTANCE_D_STATS(callback_data->thread_data),
+				&msg
+		)) != 0) {
+			RRR_MSG_0("Failed to push stats message in %s\n", __func__);
+			goto out;
+		}
+	}
+	else {
+		RRR_BUG("Received stats message of type %u from worker for, this is not implemented", msg.type);
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_cmodule_helper_read_from_fork_setting_callback (
 		const struct rrr_setting_packed *setting_packed,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
-	int ret = 0;
-
 	(void)(data_size);
+
+	int ret = 0;
 
 	rrr_settings_update_used (
 			callback_data->worker->settings,
@@ -522,7 +561,10 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
+		return __rrr_cmodule_helper_read_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
+	}
+	else if (RRR_MSG_IS_STATS(msg)) {
+		return __rrr_cmodule_helper_read_from_fork_stats_callback((const struct rrr_msg_stats_packed *) msg, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_SETTING(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
@@ -539,6 +581,7 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 static int __rrr_cmodule_helper_read_from_worker (
 		uint16_t *amount,
 		struct rrr_cmodule_worker *worker,
+		struct rrr_instance_runtime_data *thread_data,
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -553,6 +596,7 @@ static int __rrr_cmodule_helper_read_from_worker (
 
 	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
 			worker,
+			thread_data,
 			final_callback,
 			final_callback_arg,
 			0
@@ -605,6 +649,7 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 		if ((ret = __rrr_cmodule_helper_read_from_worker (
 				amount,
 				worker,
+				thread_data,
 				__rrr_cmodule_helper_read_callback,
 				&callback_data
 		)) != 0) {
