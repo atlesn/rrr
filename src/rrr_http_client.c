@@ -603,10 +603,12 @@ static void rrr_http_client_event_redirect (
 		short flags,
 		void *arg
 ) {
+	struct rrr_http_client_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_http_client_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	data->redirect_pending = 1;
 
@@ -618,10 +620,12 @@ static void rrr_http_client_event_stdin (
 		short flags,
 		void *arg
 ) {
+	struct rrr_http_client_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_http_client_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	rrr_http_client_websocket_response_available_notify(data->http_client);
 }

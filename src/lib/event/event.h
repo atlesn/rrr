@@ -40,6 +40,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_FUNCTION_PAUSE_ARGS \
 	unsigned short *do_pause, unsigned short is_paused, void *callback_arg
 
+#define RRR_EVENT_HOOK_ARGS \
+	const char *source_func, int fd, short flags, void *arg
+
 #define RRR_EVENT_QUEUE_FD_MAX \
 	(0x100 * 2)
 
@@ -57,8 +60,28 @@ enum rrr_event_priority {
 
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
+struct rrr_event_hook_config {
+	void (*hook)(RRR_EVENT_HOOK_ARGS);
+	void *arg;
+};
+
+extern struct rrr_event_hook_config rrr_event_hooking;
+
+static inline void rrr_event_hook (const char *source_func, int fd, short flags) {
+	if (!rrr_event_hooking.hook)
+		return;
+	rrr_event_hooking.hook(source_func, fd, flags, rrr_event_hooking.arg);
+}
+
+#define RRR_EVENT_HOOK() \
+	rrr_event_hook(__PRETTY_FUNCTION__, fd, flags)
+
 struct rrr_event_queue;
 
+void rrr_event_hook_set (
+		void (*hook)(RRR_EVENT_HOOK_ARGS),
+		void *arg
+);
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );

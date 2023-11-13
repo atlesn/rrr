@@ -9,7 +9,8 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-T|--no-thread-restart]
 .Dl [-t|--start-interval]
 .Dl [-s|--stats]
-.Dl [-m|--message-hooks]
+.Dl [-E|--event-hooks]
+.Dl [-M|--message-hooks]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
 .Dl [-o|--output-buffer-warn-limit[=]LIMIT]
@@ -109,14 +110,21 @@ The timer may be set to a number between 0 and 10000, units are milliseconds.
 Enable the statistics engine which
 .Xr rrr_stats(1)
 can connect to.
-.IP -m|--message-hooks
+.IP -E|--event-hooks
+Enable event hooks in the statistics engine.
+This makes it possible to view triggered events with information about file descriptors and event flags using
+.Xr rrr_stats(1).
+Hooking events may give a performance penalty.
+This option has no effect if
+.B -s|--stats
+is not used.
+.IP -M|--message-hooks
 Enable message hooks in the statistics engine.
 This makes it possible to view messages as they pass between modules using
-.Xr rrr_stats(1)
-.
+.Xr rrr_stats(1).
 Hooking messages may give a performance penalty.
 This option has no effect if
-.IP -s|--stats
+.B -s|--stats
 is not used.
 .IP -b|--banner
 Print RRR banner before starting.

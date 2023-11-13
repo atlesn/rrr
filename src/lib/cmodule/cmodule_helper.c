@@ -308,6 +308,8 @@ static void __rrr_cmodule_helper_event_input_queue (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (__rrr_cmodule_helper_input_buffer_process(thread_data) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
 	}
@@ -332,6 +334,8 @@ static void __rrr_cmodule_helper_event_app_periodic_callback (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	int ret_tmp;
 	if ((ret_tmp = callback_data->app_periodic_callback(thread_data)) != 0) {

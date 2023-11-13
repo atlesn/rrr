@@ -42,13 +42,13 @@ int rrr_msg_stats_unpack (
 	int ret = 0;
 
 	if (expected_size < sizeof(*source) - sizeof(source->path_and_data)) {
-		RRR_MSG_0("Received statistics message which was too short in rrr_msg_stats_unpack_callback\n");
+		RRR_MSG_0("Received statistics message which was too short in %s\n", __func__);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (expected_size > sizeof(*source)) {
-		RRR_MSG_0("Received statistics message which was too long in rrr_msg_stats_unpack_callback\n");
+		RRR_MSG_0("Received statistics message which was too long in %s\n", __func__);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -138,12 +138,12 @@ int rrr_msg_stats_init (
 	memset(message, '\0', sizeof(*message));
 
 	if (strlen(path_postfix) > RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
-		RRR_MSG_0("Path postfix was too long in __rrr_msg_stats_init\n");
+		RRR_MSG_0("Path postfix was too long in %s\n", __func__);
 		return 1;
 	}
 
 	if (data_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
-		RRR_MSG_0("Data was too long in __rrr_msg_stats_init\n");
+		RRR_MSG_0("Data was too long in %s\n", __func__);
 		return 1;
 	}
 
@@ -153,7 +153,7 @@ int rrr_msg_stats_init (
 	message->data_size = data_size;
 	if (data_size > 0) {
 		if (data == NULL) {
-			RRR_BUG("data was NULL while data_size was >0 in rrr_msg_stats_init\n");
+			RRR_BUG("data was NULL while data_size was >0 in %s\n", __func__);
 		}
 		memcpy(message->data, data, data_size);
 	}
@@ -169,7 +169,7 @@ int rrr_msg_stats_new_empty (
 
 	struct rrr_msg_stats *new_message = rrr_allocate(sizeof(*new_message));
 	if (new_message == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_msg_stats_new_empty");
+		RRR_MSG_0("Could not allocate memory in %s", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -180,59 +180,47 @@ int rrr_msg_stats_new_empty (
 	return ret;
 }
 
-int rrr_msg_stats_new (
-		struct rrr_msg_stats **message,
-		uint8_t type,
-		uint32_t flags,
-		const char *path_postfix,
+int rrr_msg_stats_init_log (
+		struct rrr_msg_stats *message,
 		const void *data,
 		uint32_t data_size
 ) {
-	int ret = 0;
-	*message = NULL;
-
-	struct rrr_msg_stats *new_message;
-	if (rrr_msg_stats_new_empty (&new_message) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_msg_stats_new");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_msg_stats_init(new_message, type, flags, path_postfix, data, data_size) != 0) {
-		RRR_MSG_0("Could not initialize message in rrr_msg_stats_new\n");
-		ret = 1;
-		goto out_free;
-	}
-
-	*message = new_message;
-	goto out;
-
-	out_free:
-		rrr_free(new_message);
-	out:
-		return ret;
-}
-
-int rrr_msg_stats_new_log (
-		struct rrr_msg_stats **message,
-		const void *data,
-		uint32_t data_size
-) {
-	int ret = 0;
-
-	if (rrr_msg_stats_new (
+	return rrr_msg_stats_init (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
-			0,
+			RRR_STATS_MESSAGE_FLAGS_LOG,
 			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK,
 			data,
 			data_size
-	) != 0) {
-		goto out;
-	}
+	);
+}
 
-	out:
-	return ret;
+int rrr_msg_stats_init_event (
+		struct rrr_msg_stats *message,
+		const void *data,
+		uint32_t data_size
+) {
+	return rrr_msg_stats_init (
+			message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			RRR_STATS_MESSAGE_FLAGS_EVENT,
+			RRR_STATS_MESSAGE_PATH_GLOBAL_EVENT_HOOK,
+			data,
+			data_size
+	);
+}
+
+int rrr_msg_stats_init_keepalive (
+		struct rrr_msg_stats *message
+) {
+	return rrr_msg_stats_init (
+			message,
+			RRR_STATS_MESSAGE_TYPE_KEEPALIVE,
+			0,
+			"",
+			NULL,
+			0
+	);
 }
 
 int rrr_msg_stats_init_rrr_msg_preface (
@@ -243,7 +231,12 @@ int rrr_msg_stats_init_rrr_msg_preface (
 ) {
 	int ret = 0;
 
+	char path[128];
 	struct rrr_string_builder sb = {0};
+
+	if (snprintf(path, sizeof(path), "%s/%s", RRR_STATS_MESSAGE_PATH_GLOBAL_MSG_HOOK, path_postfix) == sizeof(path)) {
+		RRR_BUG("Path was too long in %s\n", __func__);
+	}
 
 	ret |= rrr_string_builder_append(&sb, "nexthops:");
 	for (uint32_t i = 0; i < hops_count; i++) {
@@ -268,7 +261,7 @@ int rrr_msg_stats_init_rrr_msg_preface (
 			message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE,
-			path_postfix,
+			path,
 			sb.buf,
 			sb.wpos
 	)) != 0) {
@@ -285,7 +278,7 @@ int rrr_msg_stats_set_path (
 		const char *path
 ) {
 	if (strlen(path) > RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
-		RRR_MSG_0("Path was too long in rrr_msg_stats_set_path\n");
+		RRR_MSG_0("Path was too long in %s\n", __func__);
 		return 1;
 	}
 	strcpy(message->path, path);
@@ -301,7 +294,7 @@ int rrr_msg_stats_duplicate (
 
 	struct rrr_msg_stats *new_message;
 	if (rrr_msg_stats_new_empty (&new_message) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_msg_stats_new");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}

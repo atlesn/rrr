@@ -195,7 +195,7 @@ struct rrr_instance *rrr_instance_find (
 int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 );
-void rrr_instance_runtime_data_destroy_hard (
+void rrr_instance_runtime_data_destroy (
 		struct rrr_instance_runtime_data *data
 );
 int rrr_instances_create_and_start_threads (

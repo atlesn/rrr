@@ -1955,6 +1955,8 @@ static void file_event_probe (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (file_probe(data, data->directory, data->prefix) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
@@ -1969,6 +1971,8 @@ static void file_event_stats (
 
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_1("file instance %s messages per second %" PRIu64 " total %" PRIu64"\n",
 			INSTANCE_D_NAME(data->thread_data), data->message_count - data->message_count_prev, data->message_count);

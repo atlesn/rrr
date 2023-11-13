@@ -467,10 +467,12 @@ static void influxdb_event_process_entries (
 		short flags,
 		void *arg
 ) {
+	struct influxdb_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct influxdb_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
@@ -668,15 +670,15 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	out_message:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
 	pthread_exit(0);
 }
