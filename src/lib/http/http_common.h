@@ -134,13 +134,11 @@ enum rrr_http_parse_type {
 };
 
 struct rrr_http_rules {
-	short do_no_server_http2;
 	short do_no_body_parse;
 	union {
 		rrr_biglength server_request_max_size;
 		rrr_biglength client_response_max_size;
 	};
-	const char *server_alt_svc_header;
 };
 
 extern const char *rrr_http_transport_str_any;

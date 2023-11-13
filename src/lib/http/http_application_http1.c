@@ -840,7 +840,7 @@ static int __rrr_http_application_http1_request_upgrade_try (
 			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
 	}
-	else if (!receive_data->rules->do_no_server_http2 && upgrade_h2c != NULL) {
+	else if (upgrade_h2c != NULL) {
 		if ((ret = __rrr_http_application_http1_request_upgrade_try_http2 (
 				receive_data->upgraded_application,
 				receive_data,
@@ -1115,7 +1115,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 
 #ifdef RRR_WITH_NGHTTP2
-	if (!receive_data->rules->do_no_server_http2 && read_session->parse_pos == 0 && receive_data->http1->callbacks.unique_id_generator_callback != NULL) {
+	if (read_session->parse_pos == 0 && receive_data->http1->callbacks.unique_id_generator_callback != NULL) {
 		// Is server
 
 		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";

@@ -28,6 +28,7 @@ test_SOURCES = test.c \
 	test_parse.c \
 	test_inet.c \
 	test_modbus.c \
+	test_http.c \
 	test_condition.c \
 	${test_jsonc} \
 	${test_zlib} \

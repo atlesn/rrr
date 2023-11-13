@@ -122,8 +122,6 @@ struct rrr_http_client_request_callback_data {
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *callback_arg;
 
-	enum rrr_http_application_type application_type;
-
 	struct rrr_http_transaction *transaction;
 };
 

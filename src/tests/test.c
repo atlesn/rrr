@@ -72,6 +72,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
+#include "test_http.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -273,6 +274,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("modbus functions") {
 		ret_tmp = rrr_test_modbus();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("http functions") {
+		ret_tmp = rrr_test_http();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

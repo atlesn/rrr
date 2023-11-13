@@ -62,6 +62,10 @@ struct rrr_http_transaction {
 
 	int stream_flags;
 
+	// Helper values for use in callbacks
+	enum rrr_http_transport transport_code;
+	enum rrr_http_application_type application_type;
+
 	uint64_t creation_time;
 };
 

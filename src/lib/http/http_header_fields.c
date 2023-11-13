@@ -334,6 +334,35 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 	return ret;
 }
 
+static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+		if (!rrr_nullsafe_str_isset(node->value)) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+			RRR_DBG_1("Warning: Empty field '%s' in alt-svc header\n", name);
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		// h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+
+		int found;
+		const char *unquote_field_names[] = {"h3", "h3-29"};
+		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 2);
+		if (found == 0) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+			RRR_DBG_1("Warning: Unknown field '%s' in alt-svc header\n", name);
+		}
+
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		printf("alt-svc: %s = %s\n", name, value);
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static const struct rrr_http_header_field_definition definitions[] = {
         {":status",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_unsigned_value},
         {":method",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -365,6 +394,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"sec-websocket-accept",   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_base64_value},
         {"sec-websocket-version",  RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"http2-settings",         RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
+        {"alt-svc",                RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_alt_svc_value},
         {NULL, 0, NULL}
 };
 

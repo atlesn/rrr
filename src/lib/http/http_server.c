@@ -128,9 +128,7 @@ int rrr_http_server_new (
     }                                                          \
 
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_body_parse);
-RRR_HTTP_SERVER_DEFINE_SET_FUNCTION(no_server_http2);
 RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_BIGLENGTH(server_request_max_size);
-RRR_HTTP_SERVER_DEFINE_SET_FUNCTION_STRING(server_alt_svc_header);
 
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
@@ -321,13 +319,10 @@ static int __rrr_http_server_upgrade_verify_callback (
 	struct rrr_http_server *http_server = arg;
 
 	(void)(from);
+	(void)(to);
+	(void)(http_server);
 
-	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->rules.do_no_server_http2) {
-		*do_upgrade = 0;
-	}
-	else {
-		*do_upgrade = 1;
-	}
+	*do_upgrade = 1;
 
 	return 0;
 }
@@ -807,10 +802,6 @@ int rrr_http_server_start_tls (
 	struct rrr_net_transport_config net_transport_config_tls = *net_transport_config_template;
 
 	net_transport_config_tls.transport_type_p = RRR_NET_TRANSPORT_TLS;
-
-	if (server->rules.do_no_server_http2) {
-		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
-	}
 
 	ret = __rrr_http_server_start (
 			&server->transport_https,

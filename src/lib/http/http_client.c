@@ -435,6 +435,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	const struct rrr_http_header_field *alt_svc, *location;
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *data_chunks_merged = NULL;
 	struct rrr_nullsafe_str *data_decoded = NULL;
@@ -449,9 +450,15 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
+	// Store alt-svc headers
+	if ((alt_svc = rrr_http_part_header_field_get(response_part, "alt-svc")) != 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, alt_svc->value);
+		printf("HTTP client got alt-svc header: %s\n", value);
+	}
+
 	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
-		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
+		location = rrr_http_part_header_field_get(response_part, "location");
 		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
 			RRR_MSG_0("Could not find Location-field in HTTP redirect response %i %s\n",
 					response_part->response_code,
@@ -730,7 +737,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
-			callback_data->application_type,
+			callback_data->transaction->application_type,
 			handle,
 			callback_data->data->user_agent,
 			__rrr_http_client_websocket_handshake_callback,
@@ -1262,9 +1269,6 @@ int rrr_http_client_request_send (
 		.query_prepare_callback = query_prepare_callback,
 		.callback_arg = callback_arg,
 		.data = data,
-		.application_type = transport_code == RRR_HTTP_TRANSPORT_QUIC
-			? RRR_HTTP_APPLICATION_HTTP3
-			: RRR_HTTP_APPLICATION_HTTP1,
 		.transaction = transaction
 	};
 
@@ -1313,21 +1317,28 @@ int rrr_http_client_request_send (
 
 	callback_data.request_header_host = request_header_host_to_free;
 
+	enum rrr_http_application_type application_type = transport_code == RRR_HTTP_TRANSPORT_QUIC
+		? RRR_HTTP_APPLICATION_HTTP3
+		: RRR_HTTP_APPLICATION_HTTP1;
+
 #ifdef RRR_WITH_NGHTTP2
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
 	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
-		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
 	// Must try HTTP2 first because ALPN upgrade is always sent, downgrade to HTTP/1.1 will occur if negotiation fails
 	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 #endif /* RRR_WITH_NGHTTP2 */
+
+	transaction->transport_code = transport_code;
+	transaction->application_type = application_type;
 
 	if (method_prepare_callback != NULL) {
 		enum rrr_http_method chosen_method = data->method;
@@ -1347,7 +1358,7 @@ int rrr_http_client_request_send (
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(transaction->method),
 			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
-			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
+			RRR_HTTP_APPLICATION_TO_STR(transaction->application_type),
 			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
