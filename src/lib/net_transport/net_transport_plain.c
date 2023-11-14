@@ -118,7 +118,7 @@ static int __rrr_net_transport_plain_connect (
 	}
 
 	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
-			&accept_data->ip_data
+		&accept_data->ip_data
 	};
 
 	rrr_net_transport_handle new_handle = 0;
@@ -126,6 +126,7 @@ static int __rrr_net_transport_plain_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"plain outbound",
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {
@@ -270,7 +271,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 	}
 
 	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
-			&ip_data
+		&ip_data
 	};
 
 	rrr_net_transport_handle new_handle = 0;
@@ -278,6 +279,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			"plain listen",
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
 			&callback_data
 	)) != 0) {
@@ -319,7 +321,7 @@ int __rrr_net_transport_plain_accept (
 	}
 
 	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
-			&accept_data->ip_data
+		&accept_data->ip_data
 	};
 
 	rrr_net_transport_handle new_handle = 0;
@@ -327,6 +329,7 @@ int __rrr_net_transport_plain_accept (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"plain inbound",
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {
