@@ -3038,7 +3038,18 @@ Any ongoing reading operation will stop, but the file may be read from at a late
 
 If writing is performed to a stream device, these will also be read from.
 
-The following array fields are used in these messages:
+If the type of
+.B file_data
+is
+.B str,
+a quoted string will be output in the file.
+If this is not wanted, use the
+.B blob
+type instead, possibly by converting the value using the
+.B mangler
+module.
+
+The following array fields are used in write messages to the file module:
 .PP
 .Bl -tag -width -indent
 .It file_directory
@@ -3048,6 +3059,11 @@ is set to yes, this value may be present in the message to override the director
 .It file_name
 The name of the file to open to save the data.
 The file must be located inside the directory being used and the name may not contain directories (e.g. slashes).
+.It file_data
+The data to write to the file.
+If the configuration parameter
+.B file_write_array_values
+is used, the given array values are used instead.
 .El
 
 .PP
@@ -3228,7 +3244,7 @@ Defaults to 0 which means that TTL check is disabled.
 .It file_write_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the file.
 RRR messages which do not contain an array are dropped.
-Any integer types will have big endianess in the resulting publish message.
+Any integer types will have big endianess in the written files.
 If left unset, the field
 .B file_data
 will be used.
