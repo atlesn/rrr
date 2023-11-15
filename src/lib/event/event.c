@@ -25,8 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <sys/mman.h>
 
-#include <poll.h>
-
 #include "../log.h"
 #include "../allocator.h"
 #include "event.h"
@@ -78,17 +76,16 @@ ssize_t rrr_event_hook_string_format (
 		int flags,
 		const char *extra
 ) {
-	return snprintf (buf, buf_size, "pid: % 8lli tid: % 8lli func: %-50s fd: % 4i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i%s",
+	return snprintf (buf, buf_size, "pid: % 8lli tid: % 8lli func: %-50s fd: % 4i time: %" PRIu64 " flags: %i read: %i write: %i timeout: %i%s",
 		(long long int) getpid(),
 		(long long int) rrr_gettid(),
 		source_func,
 		fd,
 		rrr_time_get_64(),
 		flags,
-		(flags & POLLIN) != 0,
-		(flags & POLLOUT) != 0,
-		(flags & POLLHUP) != 0,
-		(flags & POLLERR) != 0,
+		(flags & EV_READ) != 0,
+		(flags & EV_WRITE) != 0,
+		(flags & EV_TIMEOUT) != 0,
 		extra
 	);
 }
