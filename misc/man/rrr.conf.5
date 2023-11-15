@@ -3038,6 +3038,9 @@ Any ongoing reading operation will stop, but the file may be read from at a late
 
 If writing is performed to a stream device, these will also be read from.
 
+Failure to open files are typically ignored silently.
+Use debuglevel 3 to print more information about failures.
+
 If the type of
 .B file_data
 is
@@ -3271,6 +3274,13 @@ If no files are open, the message is dropped.
 If write error occurs during multicast, the file in question will be closed.
 No attempt will be made to write the data again.
 Defaults to 'no' which disables write multicast.
+
+.It file_write_mode={MODE}[,MODE]...
+If specified, and a newly created or existing file is opened for writing, the given mode will be set on the file.
+Refer to
+.Xr chmod(2)
+for a list of valid modes.
+For write to be possible, proper permissions must be given (read + write permissions for the user should always be set).
 
 .El
 .SS mysql (DAI)

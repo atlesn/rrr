@@ -136,6 +136,8 @@ struct file_data {
 	int do_write_append;
 	int do_write_multicast;
 
+	int write_mode;
+
 	char *serial_parity;
 
 	int serial_bps_set;
@@ -366,6 +368,30 @@ static void file_data_cleanup(void *arg) {
 	rrr_map_clear(&data->write_values_list);
 }
 
+static int file_parse_write_mode_callback (const char *value, void *arg) {
+	struct file_data *data = arg;
+
+	if      (strcmp("S_ISUID", value) == 0) { data->write_mode |= S_ISUID; }
+	else if (strcmp("S_ISGID", value) == 0) { data->write_mode |= S_ISGID; }
+	else if (strcmp("S_ISVTX", value) == 0) { data->write_mode |= S_ISVTX; }
+	else if (strcmp("S_IRUSR", value) == 0) { data->write_mode |= S_IRUSR; }
+	else if (strcmp("S_IWUSR", value) == 0) { data->write_mode |= S_IWUSR; }
+	else if (strcmp("S_IXUSR", value) == 0) { data->write_mode |= S_IXUSR; }
+	else if (strcmp("S_IRGRP", value) == 0) { data->write_mode |= S_IRGRP; }
+	else if (strcmp("S_IWGRP", value) == 0) { data->write_mode |= S_IWGRP; }
+	else if (strcmp("S_IXGRP", value) == 0) { data->write_mode |= S_IXGRP; }
+	else if (strcmp("S_IROTH", value) == 0) { data->write_mode |= S_IROTH; }
+	else if (strcmp("S_IWOTH", value) == 0) { data->write_mode |= S_IWOTH; }
+	else if (strcmp("S_IXOTH", value) == 0) { data->write_mode |= S_IXOTH; }
+	else {
+		RRR_MSG_0("Unknown mode '%s' in parameter file_write_mode in file instance %s. Ensure that modes are separated by commas.\n",
+			value, INSTANCE_D_NAME(data->thread_data));
+		return 1;
+	}
+
+	return 0;
+}
+
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 	int ret_keep = 0;
@@ -526,13 +552,25 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if (	RRR_INSTANCE_CONFIG_EXISTS("file_max_read_step_size") &&
 			data->do_read_all_to_message_ != 0
 	) {
-		RRR_MSG_0("Both file_max_read_step_size and do_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("Both file_max_read_step_size and file_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
 		ret_keep = 1;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_allow_directory_override", do_write_allow_directory_override, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_append", do_write_append, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_write_multicast", do_write_multicast, 0);
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("file_write_mode")) {
+		if (rrr_instance_config_traverse_split_commas_silent_fail (
+				config,
+				"file_write_mode",
+				file_parse_write_mode_callback,
+				data
+		) != 0) {
+			RRR_MSG_0("Failed to parse configuration parameter file_write_mode in file instance %s\n", config->name);
+			ret_keep = 1;
+		}
+	}
 
 	if (rrr_instance_config_parse_optional_write_method (
 			&data->write_values_list,
@@ -681,7 +719,7 @@ static int file_open_or_connect (
 
 		if (rrr_socket_unix_connect(result_fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1) != 0) {
 			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", orig_path, INSTANCE_D_NAME(data->thread_data));
-			ret = 0;
+			ret = RRR_FILE_SOFT_ERROR;
 			goto out;
 		}
 	}
@@ -708,12 +746,20 @@ static int file_open_or_connect (
 					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
 		}
 		else {
+			// Unknown type
+			ret = RRR_FILE_SOFT_ERROR;
 			goto out;
 		}
 
 		if ((*result_fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), 0)) <= 0) {
-			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
-					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+			RRR_DBG_3("file instance %s failed to open '%s'=>'%s' for %s: %s\n",
+				INSTANCE_D_NAME(data->thread_data),
+				orig_path,
+				resolved_path,
+				flags & O_RDWR ? "reading/writing" : "reading",
+				rrr_strerror(errno)
+			);
+			ret = RRR_FILE_SOFT_ERROR;
 			goto out;
 		}
 	}
@@ -752,9 +798,7 @@ static int file_open_as_needed (
 		goto out;
 	}
 
-	if (!(fd > 0)) {
-		goto out;
-	}
+	assert(fd > 0);
 
 	if ((ret = file_set_special_behaviour (&flags, data, orig_path, resolved_path, type, fd)) != 0) {
 		goto out_close;
@@ -830,8 +874,7 @@ static int file_probe_callback (
 	(void)(entry);
 
 	int fd;
-	// Note : May return RRR_FILE_BUSY
-	return file_open_as_needed(&fd, data, orig_path, resolved_path, type);
+	return ~(RRR_FILE_SOFT_ERROR) & file_open_as_needed(&fd, data, orig_path, resolved_path, type);
 }
 
 static int file_probe (struct file_data *data, const char *directory, const char *prefix) {
@@ -870,7 +913,6 @@ static int file_probe_excact_callback (
 
 	int fd;
 	if ((ret = file_open_as_needed(&fd, data, orig_path, resolved_path, type)) != 0) {
-		// Note : May return RRR_FILE_BUSY
 		goto out;
 	}
 
@@ -898,7 +940,7 @@ static int file_probe_excact_or_create (
 	*result_type = 0;
 
 	char *orig_path = NULL;
-	int fd = 0;
+	int fd = -1;
 	unsigned char type = 0;
 
 	if (!(rrr_asprintf (&orig_path, "%s/%s", directory, name) > 0)) {
@@ -910,15 +952,30 @@ static int file_probe_excact_or_create (
 
 	if ((fd = open(orig_path, O_CREAT|O_EXCL, 0660)) == -1) {
 		if (errno != EEXIST) {
-			RRR_MSG_0("Failed to create file %s in file instance %s\n",
-					orig_path, INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_0("Failed to create file %s in file instance %s: %s\n",
+				orig_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			ret = RRR_FILE_SOFT_ERROR;
 			goto out;
 		}
 	}
 	else {
 		RRR_DBG_3("file instance %s created file '%s'\n",
-				INSTANCE_D_NAME(data->thread_data), orig_path);
+			INSTANCE_D_NAME(data->thread_data), orig_path);
+	}
+
+	if (data->write_mode != 0) {
+		RRR_DBG_3("file instance %s set mode on file '%s' to %i\n",
+			INSTANCE_D_NAME(data->thread_data), orig_path, data->write_mode);
+
+		if (chmod(orig_path, data->write_mode) == -1) {
+			RRR_MSG_0("Failed to set mode on file '%s' in file instance %s: %s\n",
+				orig_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+			ret = RRR_FILE_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	if (fd != -1) {
 		close(fd);
 	}
 
