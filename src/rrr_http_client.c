@@ -460,6 +460,8 @@ static int __rrr_http_client_request_send_loop (
 				NULL,
 				NULL
 		)) == 0 || ret != RRR_HTTP_BUSY) {
+			RRR_MSG_0("Could not connect to server %s:%i\n",
+				http_client_data->request_data.server, http_client_data->request_data.http_port);
 			goto out;
 		}
 		rrr_event_dispatch_once(http_client_data->queue);

@@ -1406,19 +1406,38 @@ int rrr_http_client_request_send (
 	return ret;
 }
 
-void rrr_http_client_terminate_if_open (
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle
+int rrr_http_client_connections_close_if_open (
+		struct rrr_http_client *http_client
 ) {
-	if (transport_keepalive == NULL || transport_keepalive_handle == 0) {
-		return;
+	int ret = 0;
+
+	if (http_client->transport_keepalive_plain != NULL) {
+		ret |= rrr_net_transport_iterate_by_mode_and_do (
+				http_client->transport_keepalive_plain,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
 	}
 
-	rrr_net_transport_handle_with_transport_ctx_do (
-			transport_keepalive,
-			transport_keepalive_handle,
-			rrr_http_session_transport_ctx_close_if_open,
-			NULL
-	);
+	if (http_client->transport_keepalive_tls != NULL) {
+		ret |= rrr_net_transport_iterate_by_mode_and_do (
+				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+
+	if (http_client->transport_keepalive_quic != NULL) {
+		ret |= rrr_net_transport_iterate_by_mode_and_do (
+				http_client->transport_keepalive_quic,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+
+	return ret;
 }
 

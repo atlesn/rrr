@@ -52,12 +52,20 @@ void rrr_net_transport_ctx_touch (
 	}
 }
 
+void rrr_net_transport_ctx_notify_read_timed (
+		struct rrr_net_transport_handle *handle,
+		uint64_t timeout_us
+) {
+	if (!EVENT_PENDING(handle->event_read_notify)) {
+		EVENT_INTERVAL_SET(handle->event_read_notify, timeout_us);
+		EVENT_ADD(handle->event_read_notify);
+	}
+}
+
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!EVENT_PENDING(handle->event_read_notify)) {
-		EVENT_ADD(handle->event_read_notify);
-	}
+	rrr_net_transport_ctx_notify_read_timed(handle, 1000 /* 1 ms */);
 }
 
 void rrr_net_transport_ctx_notify_tick (

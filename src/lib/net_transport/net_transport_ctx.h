@@ -58,6 +58,10 @@ void rrr_net_transport_ctx_connection_id_remove (
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_ctx_notify_read_timed (
+		struct rrr_net_transport_handle *handle,
+		uint64_t timeout_us
+);
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 );

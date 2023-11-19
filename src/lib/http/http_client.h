@@ -178,9 +178,8 @@ void rrr_http_client_request_data_cleanup (
 void rrr_http_client_request_data_cleanup_void (
 		void *data
 );
-void rrr_http_client_terminate_if_open (
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle
+int rrr_http_client_connections_close_if_open (
+		struct rrr_http_client *http_client
 );
 int rrr_http_client_request_send (
 		const struct rrr_http_client_request_data *data,

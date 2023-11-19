@@ -55,7 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "P-256:X25519:P-384:P-521"
 
 // Enable printf logging in ngtcp2 library
-//#define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
+// #define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
 
 struct rrr_net_transport_quic_recv_buf {
 	struct rrr_nullsafe_str *str;
@@ -987,8 +987,8 @@ static int __rrr_net_transport_quic_ctx_new (
 			__rrr_net_transport_quic_ngtcp2_cb_stream_open,
 			__rrr_net_transport_quic_ngtcp2_cb_stream_close,
 			NULL, /* recv_stateless_reset */
-			NULL, /* recv_retry */
-			NULL, /* extend_max_local_streams_uni */
+			ngtcp2_crypto_recv_retry_cb,
+			NULL, /* extend_max_local_streams_bidi */
 			NULL, /* extend_max_local_streams_uni */
 			__rrr_net_transport_quic_ngtcp2_cb_random,
 			__rrr_net_transport_quic_ngtcp2_cb_get_new_connection_id,
@@ -2596,6 +2596,16 @@ static int __rrr_net_transport_quic_receive_verify_path (
 		return ret;
 }
 
+static void __rrr_net_transport_quic_quictls_error_cb (
+		unsigned long code,
+		const char *str,
+		void *user_data
+) {
+	struct rrr_net_transport_quic_ctx *ctx = user_data;
+	RRR_MSG_0("net transport quic fd %i h %i crypto error %lu while reading: %s\n",
+		ctx->fd, ctx->connected_handle, code, str);
+}
+
 static int __rrr_net_transport_quic_receive (
 		RRR_NET_TRANSPORT_RECEIVE_ARGS
 ) {
@@ -2681,8 +2691,7 @@ static int __rrr_net_transport_quic_receive (
 			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
 		}
 		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
-			RRR_DBG_7("net transport quic fd %i h %i crypto error while reading\n",
-				ctx->fd, ctx->connected_handle);
+			ngtcp2_crypto_quictls_get_errors(__rrr_net_transport_quic_quictls_error_cb, ctx);
 			ngtcp2_ccerr_set_tls_alert (
 					&ctx->last_error,
 					ngtcp2_conn_get_tls_alert(ctx->conn),

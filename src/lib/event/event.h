@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "event_handle_struct.h"
 #include "../read_constants.h"
+#include "../util/rrr_time.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
 	uint16_t *amount, void *arg

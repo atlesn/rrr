@@ -35,15 +35,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../map.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_ctx.h"
+#include "../util/rrr_time.h"
 
 // Enable printf logging in nghttp3 library
 //#define RRR_HTTP_APPLICATION_HTTP3_NGHTTP3_DEBUG 1
+
+// TODO : Replace with RTT times to or otherwise per spec
+#define RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_PROGRESSION_INTERVAL_US (250 * 1000) /* 250 ms */
+
+enum rrr_http_application_http3_shutdown_state {
+	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NONE                   = 0,
+	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS   = 1<<0,
+	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_REMOTE_STREAMS  = 1<<1,
+	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_FINAL                  = 1<<2
+};
 
 struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct nghttp3_conn *conn;
 	int is_server;
 	int initialized;
+	enum rrr_http_application_http3_shutdown_state shutdown_state;
+	uint64_t shutdown_time;
 	struct rrr_net_transport *transport;
 	rrr_net_transport_handle handle;
 	const struct rrr_http_rules *rules;
@@ -712,6 +725,24 @@ static int __rrr_http_application_http3_stream_open (
 
 	struct rrr_http_transaction *transaction_tmp = NULL;
 
+	if (flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL &&
+	    http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS
+	) {
+		RRR_DBG_3("HTTP3 stream open %li in %s (local): Local streams are not allowed as connection is in shutdown\n",
+			stream_id, __func__);
+		ret = RRR_HTTP_BUSY;
+		goto out;
+	}
+
+	if (!(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL) &&
+	    http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_REMOTE_STREAMS
+	) {
+		RRR_DBG_3("HTTP3 stream open %li in %s (remote): Remote streams are not allowed as connection is in shutdown\n",
+			stream_id, __func__);
+		ret = RRR_HTTP_BUSY;
+		goto out;
+	}
+
 	RRR_DBG_3("HTTP3 stream open %li in %s is server %i is local %i is bidi %i\n",
 		stream_id,
 		__func__,
@@ -826,7 +857,9 @@ static int __rrr_http_application_http3_request_send_possible (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
-	*is_possible = http3->initialized;
+
+	*is_possible = http3->initialized && !(http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS);
+
 	return 0;
 }
 
@@ -974,8 +1007,6 @@ static int __rrr_http_application_http3_transport_ctx_read_stream_callback (
 
 	ssize_t consumed;
 
-	printf("Bytes: %li\n", buflen);
-
 	if ((consumed = nghttp3_conn_read_stream (
 			http3->conn,
 			stream_id,
@@ -1024,7 +1055,19 @@ static int __rrr_http_application_http3_transport_ctx_read_stream (
 static void __rrr_http_application_http3_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
-	RRR_BUG("%s\n", __func__);
+	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+
+	RRR_DBG_3("HTTP3 sumbit polite close\n");
+
+	if (nghttp3_conn_submit_shutdown_notice (http3->conn) != 0) {
+		RRR_MSG_0("Warning: Failed to submit HTTP3 shutdown notice\n");
+		return;
+	}
+
+	http3->shutdown_state |= RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS;
+	http3->shutdown_time = rrr_time_get_64();
+
+	rrr_net_transport_ctx_notify_read (handle);
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_stream_acked_data (
@@ -1322,6 +1365,33 @@ static int __rrr_http_application_http3_nghttp3_cb_reset_stream (
 	return 0;
 }
 
+static int __rrr_http_application_http3_nghttp3_cb_shutdown (
+		nghttp3_conn *conn,
+		int64_t stream_id,
+		void *conn_user_data
+) {
+	struct rrr_http_application_http3 *http3 = conn_user_data;
+
+	(void)(conn);
+
+	if (http3->shutdown_time)
+		return 0;
+
+	if (stream_id == NGHTTP3_SHUTDOWN_NOTICE_STREAM_ID ||
+	    stream_id == NGHTTP3_SHUTDOWN_NOTICE_PUSH_ID
+	) {
+		RRR_DBG_3("HTTP3 shutdown from remote\n");
+	}
+	else {
+		RRR_DBG_3("HTTP3 shutdown. Stream IDs from us greater than or equal to %li will not be processed by remote.\n", stream_id);
+	}
+
+	http3->shutdown_state |= RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS;
+	http3->shutdown_time = rrr_time_get_64();
+
+	return 0;
+}
+
 static int __rrr_http_application_http3_nghttp3_cb_end_stream (
 		nghttp3_conn *conn,
 		int64_t stream_id,
@@ -1412,6 +1482,56 @@ static int __rrr_http_application_http3_tick_get_async_response_stream_callback 
 	return ret;
 }
 
+static int __rrr_http_application_http3_tick_process_shutdown (
+		struct rrr_http_application_http3 *http3
+) {
+	int ret = 0;
+
+	uint64_t diff = rrr_time_get_64() - http3->shutdown_time;
+
+	// In case of delays, always check both 1x and 2x timeout
+
+	if ( (diff > RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_PROGRESSION_INTERVAL_US * 1) &&
+	    !(http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_REMOTE_STREAMS)
+	) {
+		RRR_DBG_3("HTTP3 first shutdown progression interval reached, blocking new remote streams.\n");
+
+		http3->shutdown_state |= RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_REMOTE_STREAMS;
+	}
+
+	if (diff > RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_PROGRESSION_INTERVAL_US * 2) {
+		if (!(http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_FINAL)) {
+			RRR_DBG_3("HTTP3 second shutdown progression interval reached, shutting down.\n");
+
+			if (nghttp3_conn_shutdown (http3->conn) != 0) {
+				RRR_MSG_0("Failed to shutdown http3 in %s\n", __func__);
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+
+			http3->shutdown_state |= RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_FINAL;
+		}
+		else if (http3->is_server) {
+			if (nghttp3_conn_is_drained(http3->conn)) {
+				RRR_DBG_3("HTTP3 server all streams are drained after shutdown, closing connection.\n");
+				ret = RRR_HTTP_DONE;
+				goto out;
+			}
+			else {
+				RRR_DBG_3("HTTP3 server waiting for all streams to drain before shutdown.\n");
+			}
+		}
+		else {
+			RRR_DBG_3("HTTP3 client closing connection.\n");
+			ret = RRR_HTTP_DONE;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http3_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
@@ -1429,6 +1549,13 @@ static int __rrr_http_application_http3_tick (
 			goto out;
 		}
 		http3->initialized = 1;
+	}
+
+	if (http3->shutdown_time != 0) {
+		if ((ret = __rrr_http_application_http3_tick_process_shutdown(http3)) != 0) {
+			goto out;
+		}
+		rrr_net_transport_ctx_notify_read_timed(handle, 50 * 1000 /* 50 ms */);
 	}
 
 	http3->rules = rules;
@@ -1499,7 +1626,7 @@ static const nghttp3_callbacks rrr_http_application_http3_nghttp3_callbacks = {
 	__rrr_http_application_http3_nghttp3_cb_stop_sending,
 	__rrr_http_application_http3_nghttp3_cb_end_stream,
 	__rrr_http_application_http3_nghttp3_cb_reset_stream,
-	NULL, /* shutdown */
+	__rrr_http_application_http3_nghttp3_cb_shutdown,
 	NULL, /* recv_settings */
 };
 
