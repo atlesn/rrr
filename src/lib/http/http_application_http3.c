@@ -453,9 +453,9 @@ static int __rrr_http_application_http3_response_submit (
 	}
 
 	struct rrr_http_application_http3_response_submit_callback_data callback_data = {
-			http3,
-			&headers,
-			stream_id
+		http3,
+		&headers,
+		stream_id
 	};
 
 	RRR_DBG_3("HTTP3 response submit status %i send data length %" PRIrrr_nullsafe_len "\n",
@@ -471,6 +471,8 @@ static int __rrr_http_application_http3_response_submit (
 	)) != 0) {
 		goto out;
 	}
+
+	rrr_net_transport_handle_notify_read(http3->transport, http3->handle);
 
 	out:
 	rrr_map_clear(&headers);

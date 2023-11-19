@@ -115,6 +115,8 @@ struct rrr_http_client_data {
 	rrr_event_handle event_redirect;
 };
 
+static int main_running = 1;
+
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
@@ -445,7 +447,7 @@ static int __rrr_http_client_request_send_loop (
 	int ret = 0;
 
 	int retries = 5000;
-	while (--retries) {
+	while (--retries && main_running) {
 		if ((ret = rrr_http_client_request_send (
 				&http_client_data->request_data,
 				http_client_data->http_client,
@@ -674,7 +676,6 @@ static void rrr_http_client_event_stdin (
 	rrr_http_client_websocket_response_available_notify(data->http_client);
 }
 
-static int main_running = 1;
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }

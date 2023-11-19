@@ -164,9 +164,9 @@ void rrr_http_transaction_decref_if_not_null (
 
 	if (RRR_DEBUGLEVEL_3) {
 		uint64_t total_time = rrr_time_get_64() - transaction->creation_time;
-		if (total_time > 1000000) {
-		assert(0);
-		}
+//		if (total_time > 1000000) {
+//		assert(0);
+//		}
 		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n", total_time / 1000, transaction->endpoint_str);
 	}
 
