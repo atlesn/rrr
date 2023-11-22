@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -56,11 +56,16 @@ struct incrementer_data {
 
 	char *id_tag;
 	char *msgdb_socket;
+	char *id_prefix_str;
 
 	rrr_setting_uint id_min;
 	rrr_setting_uint id_max;
 	rrr_setting_uint id_modulus;
 	rrr_setting_uint id_position;
+	rrr_setting_uint id_prefix;
+	rrr_setting_uint id_prefix_bits;
+
+	int do_id_prefix_negotiation;
 
 	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
@@ -78,6 +83,7 @@ static void incrementer_data_cleanup(void *arg) {
 	rrr_mqtt_topic_token_destroy(data->subject_topic_filter_token);
 	RRR_FREE_IF_NOT_NULL(data->id_tag);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
+	RRR_FREE_IF_NOT_NULL(data->id_prefix_str);
 	rrr_map_clear(&data->db_initial_ids);
 	rrr_map_clear(&data->db_used_ids);
 
@@ -595,7 +601,39 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 1);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_position", id_position, 0);
 
-	if ((ret = rrr_increment_verify (data->id_modulus, data->id_min, data->id_max, data->id_position)) != 0) {
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_prefix", id_prefix_str);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix_bits", id_prefix_bits, 0);
+
+	if (data->id_prefix_str != NULL && *(data->id_prefix_str) != '\0') {
+		if (strcmp(data->id_prefix_str, "negotiate") == 0) {
+			data->do_id_prefix_negotiation = 1;
+			assert (0 && "incrementer_id_prefix 'negotiate' is not implemented yet");
+		}
+	}
+
+	if (!data->do_id_prefix_negotiation) {
+		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix", id_prefix, 0);
+	}
+
+	if ((ret = rrr_increment_verify_prefix (
+			data->id_prefix,
+			data->id_prefix_bits
+	)) != 0) {
+		RRR_MSG_0("Invalid ID prefix parameters in incrementer instance %s, the prefix does not fit in the given number of bits\n",
+				config->name);
+		goto out;
+	}
+
+	assert(data->id_prefix == 0 && "incrementer_id_prefix is not implemented yet");
+	assert(data->id_prefix_bits == 0 && "incrementer_id_prefix_bits is not implemented yet");
+
+	if ((ret = rrr_increment_verify (
+			data->id_modulus,
+			data->id_min,
+			data->id_max,
+			data->id_position,
+			data->id_prefix
+	)) != 0) {
 		RRR_MSG_0("Invalid ID parameters in incrementer instance %s\n",
 				config->name);
 		goto out;

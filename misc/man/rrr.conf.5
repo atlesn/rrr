@@ -2477,7 +2477,7 @@ The topic filter for messages to process, required parameters. Wildcards # and +
 Messages received which do not match will be passed through to the output buffer unmodified.
 To prevent other messages from being received to incrementer all together, set the same filter in the general
 .B topic_filter
-parameter.
+parameter or use routing.
 
 .It incrementer_msgdb_socket=PATH
 If specified, used IDs will be stored on disk using Message DB. An instance of
@@ -2495,6 +2495,25 @@ The lowest ID to allocate, defaults to 1.
 
 .It incrementer_id_max=UNSIGNED INTEGER
 The maximum ID to allocate, default to 4.294.967.295.
+
+.It incrementer_id_prefix=UNSIGNED INTEGER
+The prefix to use for the ID.
+May be set to
+.B negotiate
+in which case the prefix must be initialized (see below).
+Defaults to 0 which means that no prefix is used.
+Generated IDs will be prefixed with the given value so that the bits required
+to represent the maximum ID set in
+.B incrementer_id_max
+occupies the least significant bits of the ID and the prefix occupies the most
+significant bits.
+The total number of bits may not exceed 64.
+
+.It incrementer_id_prefix_bits=UNSIGNED INTEGER
+The number of bits to use for the prefix of the ID. If not given,
+and a prefix is defined in
+.B incrementer_id_prefix,
+the prefix will occupy the number of bits needed to represent the prefix.
 
 .It incrementer_id_modulus=UNSIGNED INTEGER
 The modulus (increment step) to use, defaults to 1 which is also the minimum value. Maximum value is 255.
@@ -2535,6 +2554,8 @@ If IDn2 < IDl, then IDn = IDn2 + m
 \(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
 .br
 \(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
+
+TODO Explain negotiation
 
 .SS cacher (PA)
 The

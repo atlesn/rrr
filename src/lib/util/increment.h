@@ -23,24 +23,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+uint64_t rrr_increment_bits_to_max (
+		uint8_t bits
+);
+int rrr_increment_verify_prefix (
+		uint64_t prefix_max,
+		uint64_t prefix_bits
+);
 int rrr_increment_verify (
-		const uint64_t step_or_mod,
-		const uint64_t min,
-		const uint64_t max,
-		const uint64_t position_or_zero
+		uint64_t step_or_mod,
+		uint64_t min,
+		uint64_t max,
+		uint64_t position_or_zero,
+		uint64_t prefix_max
 );
 uint32_t rrr_increment_basic (
-		const uint32_t value,
-		const uint32_t step,
-		const uint32_t min,
-		const uint32_t max
+		uint32_t value,
+		uint32_t step,
+		uint32_t min,
+		uint32_t max
 );
 uint32_t rrr_increment_mod (
-		const uint32_t value,
-		const uint8_t mod,
-		const uint32_t min,
-		const uint32_t max,
-		const uint8_t position
+		uint32_t value,
+		uint8_t mod,
+		uint32_t min,
+		uint32_t max,
+		uint8_t position
 );
 
 #endif /* RRR_INCREMENT_H */
