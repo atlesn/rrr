@@ -30,30 +30,39 @@ namespace RRR::JS {
 		int64_t now = RRR::util::time_get_i64();
 		int64_t next_exec_time = now + (int64_t) default_interval_us;
 
-		for (auto it = timeout_events.begin(); it != timeout_events.end(); it = timeout_events.begin()) {
-			next_exec_time = it->get_exec_time();
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
-			RRR_MSG_1("%s - set next exec time in %lli us\n", __PRETTY_FUNCTION__, next_exec_time - now);
+		int i = 0;
+		for (auto it = timeout_events.begin(); it != timeout_events.end(); ++it) {
+			RRR_MSG_1("%s - exec time for timer %i in %lli us\n",
+				__PRETTY_FUNCTION__, i++, it->get_exec_time() - now);
+		}
 #endif
-			break;
+
+		if (!timeout_events.empty()) {
+			next_exec_time = timeout_events.begin()->get_exec_time();
+#ifdef RRR_JS_EVENT_QUEUE_DEBUG
+			RRR_MSG_1("%s - set next exec time in %lli us\n",
+				__PRETTY_FUNCTION__, next_exec_time - now);
+#endif
 		}
 
 		int64_t next_interval = next_exec_time - now;
 		if (next_interval < 1) {
-			if (next_interval < -(RRR_JS_EVENT_INACCURACY_TOLERANCE_MS * 1000))
-				RRR_MSG_0("Warning: Inaccurate timer dispatch detected in %s, not able to run all timeout events fast enough.\n", __PRETTY_FUNCTION__);
+			if (next_interval < -(RRR_JS_EVENT_INACCURACY_TOLERANCE_MS * 1000)) {
+				RRR_MSG_0("Warning: Inaccurate timer dispatch detected in %s, not able to run all timeout events fast enough.\n",
+					__PRETTY_FUNCTION__);
+			}
 			next_interval = 1;
 		}
-
-		handle->set_interval((uint64_t) next_interval > default_interval_us
-			? default_interval_us
-			: (uint64_t) next_interval
-		);
+		else if ((uint64_t) next_interval > default_interval_us) {
+			next_interval = default_interval_us;
+		}
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 		RRR_MSG_1("%s - Next dispatch in %lli us (default is %lli)\n",
 			__PRETTY_FUNCTION__, next_interval, (long long) default_interval_us);
 #endif
+		handle->set_interval(next_interval);
 		handle->add();
 	}
 
@@ -61,9 +70,9 @@ namespace RRR::JS {
 		// The event list must be sorted by execution time.
 		const int max = 10;
 		int i = -1;
-		while (i < max) {
-			i++;
+		while (i++ < max) {
 
+			// Get now time each round in case callback is slow
 			int64_t now = RRR::util::time_get_i64();
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
@@ -72,9 +81,7 @@ namespace RRR::JS {
 
 			// Start iteration from the beginning every time the list is modified
 			int j = -1;
-			for (auto it = timeout_events.begin(); it != timeout_events.end() && j < max; it = timeout_events.begin()) {
-				j++;
-
+			for (auto it = timeout_events.begin(); it != timeout_events.end() && j++ < max; it = timeout_events.begin()) {
 				const int64_t it_exec_time = it->get_exec_time();
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
@@ -86,7 +93,9 @@ namespace RRR::JS {
 					timeout_events.erase(it);
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 					RRR_MSG_1("%s - [%i] erase, object is not alive\n", __PRETTY_FUNCTION__, j);
-					break; /* Restart iteration from the beginning */
+
+					// Restart iteration from the beginning, list has changed
+					break;
 #endif
 				}
 
@@ -108,11 +117,11 @@ namespace RRR::JS {
 						// OK
 					}
 
-					// Get now time again in case callback is slow			
-					now = RRR::util::time_get_i64();
-					break; /* Restart iteration from the beginning */
+					// Restart iteration from the beginning, list has changed
+					break;
 				}
 
+				// The following events cannot have lower execution time
 				goto done;
 			}
 
