@@ -28,7 +28,7 @@ static uint8_t __rrr_increment_calculate_bit_requirement (
 		uint64_t n
 ) {
 	int bits = 0;
-	while (n > 0) {
+	while (n) {
 		bits++;
 		n >>= 1;
 	}
@@ -49,6 +49,42 @@ uint64_t rrr_increment_bits_to_max (
 	return max;
 }
 
+static uint64_t __rrr_increment_prefix_bits_to_mask_wide (
+		uint32_t max
+) {
+	uint64_t mask = 0xffffffffffffffff;
+	mask <<= __rrr_increment_calculate_bit_requirement(max);
+	return mask;
+}
+
+uint64_t rrr_increment_prefix_bits_to_mask (
+		uint8_t prefix_bits,
+		uint32_t max
+) {
+	assert(prefix_bits < 64);
+
+	uint64_t mask = 0xffffffffffffffff;
+	mask >>= (64 - prefix_bits);
+	mask <<= __rrr_increment_calculate_bit_requirement(max);
+	return mask;
+}
+
+int rrr_increment_verify_value_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint64_t prefix
+) {
+	uint8_t bits = __rrr_increment_calculate_bit_requirement (max);
+
+	if ((prefix << bits) != (value & __rrr_increment_prefix_bits_to_mask_wide(max))) {
+		RRR_MSG_0("Prefix mismatch, given prefix from value 0x%" PRIx64 " does not match configured prefix 0x%" PRIx64 ". Max value is 0x%" PRIx32 ".\n",
+			value, prefix, max);
+		return 1;
+	}
+
+	return 0;
+}
+
 int rrr_increment_verify_prefix (
 		uint64_t prefix_max,
 		uint64_t prefix_bits
@@ -58,6 +94,25 @@ int rrr_increment_verify_prefix (
 		return 1;
 	}
 	return 0;
+}
+
+uint32_t rrr_increment_strip_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint8_t prefix_bits
+) {
+	uint64_t res = value & ~(rrr_increment_prefix_bits_to_mask(prefix_bits, max));
+	assert(res <= 0xffffffff && "Value was not completely masked");
+	return (uint32_t) res;
+}
+
+uint64_t rrr_increment_apply_prefix (
+		uint32_t value,
+		uint32_t max,
+		uint64_t prefix,
+		uint8_t prefix_bits
+) {
+	return ((uint64_t) value) | (prefix << (__rrr_increment_calculate_bit_requirement(max) + prefix_bits));
 }
 
 int rrr_increment_verify (

@@ -2513,7 +2513,8 @@ The total number of bits may not exceed 64.
 The number of bits to use for the prefix of the ID. If not given,
 and a prefix is defined in
 .B incrementer_id_prefix,
-the prefix will occupy the number of bits needed to represent the prefix.
+the prefix will occupy all available bits not used by the value set in
+.B incrementer_id_max.
 
 .It incrementer_id_modulus=UNSIGNED INTEGER
 The modulus (increment step) to use, defaults to 1 which is also the minimum value. Maximum value is 255.

@@ -26,9 +26,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 uint64_t rrr_increment_bits_to_max (
 		uint8_t bits
 );
+uint64_t rrr_increment_prefix_bits_to_mask (
+		uint8_t prefix_bits,
+		uint32_t max
+);
+int rrr_increment_verify_value_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint64_t prefix
+);
 int rrr_increment_verify_prefix (
 		uint64_t prefix_max,
 		uint64_t prefix_bits
+);
+uint32_t rrr_increment_strip_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint8_t prefix_bits
+);
+uint64_t rrr_increment_apply_prefix (
+		uint32_t value,
+		uint32_t max,
+		uint64_t prefix
 );
 int rrr_increment_verify (
 		uint64_t step_or_mod,
@@ -53,7 +72,8 @@ uint32_t rrr_increment_mod (
 uint64_t rrr_increment_prefix_apply (
 		uint32_t value,
 		uint32_t max,
-		uint64_t prefix
+		uint64_t prefix,
+		uint8_t prefix_bits
 );
 
 #endif /* RRR_INCREMENT_H */
