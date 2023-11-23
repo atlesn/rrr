@@ -229,7 +229,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-
+exit(ret);
 	TEST_BEGIN("discern stack parsing") {
 		ret_tmp = rrr_test_discern_stack();
 	} TEST_RESULT(ret_tmp == 0);

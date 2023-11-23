@@ -123,6 +123,67 @@ static int __test_increment_verify(void) {
 	return ret;
 }
 
+static int __test_increment_prefix_apply (void) {
+	int ret = 0;
+
+	uint32_t value;
+	uint32_t max;
+	uint64_t prefix;
+	uint64_t res;
+
+	value = 0xdeadbeef;
+	max = 0xffffffff; 
+	prefix = 0x12345678;
+
+	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x12345678deadbeef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected A\n",
+			res, 0x12345678deadbeef);
+		ret = 1;
+	}
+
+	value = 0xeadbeef;
+	max = 0xfffffff;
+	prefix = 0x123456789;
+
+	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x123456789eadbeef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected B\n",
+			res, 0x123456789eadbeef);
+		ret = 1;
+	}
+
+	value = 0xdeadbeef;
+	max = 0xffffffff;
+	prefix = 0x123456;
+
+	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x00123456deadbeef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected C\n",
+			res, 0x123456deadbeef);
+		ret = 1;
+	}
+
+	value = 0xbeef;
+	max = 0xffff;
+	prefix = 0xdead;
+
+	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x00000000deadbeef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected D\n",
+			res, (uint64_t) 0x00000000deadbeef);
+		ret = 1;
+	}
+
+	value = 0xbeef;
+	max = 0xffffffff; 
+	prefix = 0x12345678;
+
+	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x123456780000beef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected E\n",
+			res, 0x123456780000beef);
+		ret = 1;
+	}
+
+	return ret;
+}
+
 int rrr_test_increment (void) {
 	int ret = 0;
 
@@ -135,6 +196,10 @@ int rrr_test_increment (void) {
 	}
 
 	if (__test_increment_verify() != 0) {
+		return 1;
+	}
+
+	if (__test_increment_prefix_apply() != 0) {
 		return 1;
 	}
 

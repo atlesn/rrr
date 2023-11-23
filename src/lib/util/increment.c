@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "increment.h"
 
-static int __rrr_increment_calculate_bit_requirement (
+static uint8_t __rrr_increment_calculate_bit_requirement (
 		uint64_t n
 ) {
 	int bits = 0;
@@ -103,9 +103,8 @@ int rrr_increment_verify (
 
 	// Check that the number of bits required for prefix + the number of bits required for max does not exceed 64.
 	// The prefix may exceed 32 bits as long as the total number of bits do not exceed 64.
-	uint64_t bits_required_for_max = __rrr_increment_calculate_bit_requirement(max);
-	uint64_t bits_required_for_prefix = __rrr_increment_calculate_bit_requirement(prefix_max);
-	printf("%" PRIu64 " %" PRIu64 "\n", bits_required_for_max, bits_required_for_prefix);
+	uint8_t bits_required_for_max = __rrr_increment_calculate_bit_requirement(max);
+	uint8_t bits_required_for_prefix = __rrr_increment_calculate_bit_requirement(prefix_max);
 	if (bits_required_for_max + bits_required_for_prefix > 64) {
 		RRR_MSG_0("Bits required for max + bits required for prefix exceeds 64 in incrementer\n");
 		return 1;
@@ -144,4 +143,14 @@ uint32_t rrr_increment_mod (
 	}
 
 	return (uint32_t) value_tmp;
+}
+
+uint64_t rrr_increment_prefix_apply (
+		uint32_t value,
+		uint32_t max,
+		uint64_t prefix
+) {
+	uint8_t bits = __rrr_increment_calculate_bit_requirement (max);
+
+	return ((uint64_t) value) | (prefix << bits);
 }

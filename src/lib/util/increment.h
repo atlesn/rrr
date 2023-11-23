@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,11 @@ uint32_t rrr_increment_mod (
 		uint32_t min,
 		uint32_t max,
 		uint8_t position
+);
+uint64_t rrr_increment_prefix_apply (
+		uint32_t value,
+		uint32_t max,
+		uint64_t prefix
 );
 
 #endif /* RRR_INCREMENT_H */
