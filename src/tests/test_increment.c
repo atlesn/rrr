@@ -102,27 +102,6 @@ static int __test_increment_verify_value_prefix (void) {
 	return ret;
 }
 
-static int __test_increment_verify_prefix (void) {
-	int ret = 0;
-
-	if (rrr_increment_verify_prefix(0, 0) != 0) {
-		RRR_MSG_0("rrr_increment_verify_prefix failed on valid input A\n");
-		ret = 1;
-	}
-
-	if (rrr_increment_verify_prefix(0xff, 8) != 0) {
-		RRR_MSG_0("rrr_increment_verify_prefix failed on valid input B\n");
-		ret = 1;
-	}
-
-	if (rrr_increment_verify_prefix(0xff, 7) != 1) {
-		RRR_MSG_0("rrr_increment_verify_prefix did not fail on prefix > prefix_bits\n");
-		ret = 1;
-	}
-
-	return ret;
-}
-
 static int __test_increment_verify (void) {
 	int ret = 0;
 	// Step or mod too high
@@ -191,7 +170,7 @@ static int __test_increment_prefix_apply (void) {
 	max = 0xffffffff; 
 	prefix = 0x12345678;
 
-	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x12345678deadbeef) {
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x12345678deadbeef) {
 		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected A\n",
 			res, 0x12345678deadbeef);
 		ret = 1;
@@ -201,8 +180,8 @@ static int __test_increment_prefix_apply (void) {
 	max = 0xfffffff;
 	prefix = 0x123456789;
 
-	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x123456789eadbeef) {
-		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected B\n",
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x123456789eadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected B\n",
 			res, 0x123456789eadbeef);
 		ret = 1;
 	}
@@ -211,8 +190,8 @@ static int __test_increment_prefix_apply (void) {
 	max = 0xffffffff;
 	prefix = 0x123456;
 
-	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x00123456deadbeef) {
-		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected C\n",
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x00123456deadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected C\n",
 			res, 0x123456deadbeef);
 		ret = 1;
 	}
@@ -221,8 +200,8 @@ static int __test_increment_prefix_apply (void) {
 	max = 0xffff;
 	prefix = 0xdead;
 
-	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x00000000deadbeef) {
-		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected D\n",
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x00000000deadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected D\n",
 			res, (uint64_t) 0x00000000deadbeef);
 		ret = 1;
 	}
@@ -231,7 +210,7 @@ static int __test_increment_prefix_apply (void) {
 	max = 0xffffffff; 
 	prefix = 0x12345678;
 
-	if ((res = rrr_increment_prefix_apply(value, max, prefix)) != 0x123456780000beef) {
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x123456780000beef) {
 		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected E\n",
 			res, 0x123456780000beef);
 		ret = 1;
@@ -240,17 +219,16 @@ static int __test_increment_prefix_apply (void) {
 	return ret;
 }
 
-static int __test_increment_prefix_bits_to_mask (void) {
+static int __test_increment_max_to_prefix_mask (void) {
 	int ret = 0;
 
 	uint32_t max = 0xffff;
 	uint64_t res = 0xdeadbeef1234;
-	uint8_t prefix_bits = 16;
-	uint64_t mask = rrr_increment_prefix_bits_to_mask(prefix_bits, max);
+	uint64_t mask = rrr_increment_max_to_prefix_mask(max);
 
-	if ((res &= mask) != 0x0000beef0000) {
-		RRR_MSG_0("rrr_increment_prefix_bits_to_mask returned %" PRIx64 " while %" PRIx64 " was expected\n",
-			res, 0x0000beef0000);
+	if ((res &= mask) != 0xdeadbeef0000) {
+		RRR_MSG_0("rrr_increment_max_to_prefix_mask returned %" PRIx64 " while %" PRIx64 " was expected\n",
+			res, 0xdeadbeef0000);
 		ret = 1;
 	}
 
@@ -268,10 +246,6 @@ int rrr_test_increment (void) {
 		return 1;
 	}
 
-	if (__test_increment_verify_prefix() != 0) {
-		return 1;
-	}
-
 	if (__test_increment_verify() != 0) {
 		return 1;
 	}
@@ -280,7 +254,7 @@ int rrr_test_increment (void) {
 		return 1;
 	}
 
-	if (__test_increment_prefix_bits_to_mask() != 0) {
+	if (__test_increment_max_to_prefix_mask() != 0) {
 		return 1;
 	}
 
