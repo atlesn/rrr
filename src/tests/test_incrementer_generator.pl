@@ -17,7 +17,7 @@ sub source {
 
 	# Max value in configuration is expected to be 32 bits (for instance 0xffffffff)
 
-	my $prefix = 0xffff;
+	my $prefix = 65535;
 
 	if ($loops == 0) {
 		my $value;

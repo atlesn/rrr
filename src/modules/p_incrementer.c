@@ -63,7 +63,6 @@ struct incrementer_data {
 	rrr_setting_uint id_modulus;
 	rrr_setting_uint id_position;
 	rrr_setting_uint id_prefix;
-	rrr_setting_uint id_prefix_bits;
 
 	int do_id_prefix_negotiation;
 
@@ -378,10 +377,6 @@ static int incrementer_process_subject (
 		goto out;
 	}
 
-	uint64_t old_id_u64 = old_id_llu;
-
-	RRR_ASSERT(sizeof(old_id_llu) <= sizeof(old_id_u64),llu_must_be_smaller_than_or_have_equal_size_to_u64);
-
 	if (old_id_llu == 0) {
 		// TODO : Error if id initializer topic is set
 /*		RRR_MSG_0("No ID stored for subject with topic %s in incrementer instance %s\n",
@@ -392,14 +387,14 @@ static int incrementer_process_subject (
 			INSTANCE_D_NAME(data->thread_data), topic_tmp);
 	}
 	else {
-		if (rrr_increment_verify_value_prefix(old_id_u64, (uint32_t) data->id_max, data->id_prefix) != 0) {
+		if (rrr_increment_verify_value_prefix(old_id_llu, (uint32_t) data->id_max, data->id_prefix) != 0) {
 			RRR_MSG_0("ID prefix check for old value (possibly from msgdb) failed in incrementer instance %s, tag is %s.\n",
 				INSTANCE_D_NAME(data->thread_data), topic_tmp);
 			ret = 1;
 			goto out;
 		}
 
-		old_id_u64 = rrr_increment_strip_prefix (old_id_u64, data->id_max, data->id_prefix_bits);
+		old_id_llu = rrr_increment_strip_prefix (old_id_llu, data->id_max);
 	}
 
 	unsigned long long new_id_llu = rrr_increment_mod (
@@ -409,6 +404,8 @@ static int incrementer_process_subject (
 			(uint32_t) data->id_max,
 			(uint8_t) data->id_position
 	);
+
+	printf("New ID: %llu\n", new_id_llu);
 
 	assert(new_id_llu <= 0xffffffff);
 
@@ -618,9 +615,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0xffffffff);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 1);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_position", id_position, 0);
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_prefix", id_prefix_str);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix_bits", id_prefix_bits, 0);
 
 	if (data->id_prefix_str != NULL && *(data->id_prefix_str) != '\0') {
 		if (strcmp(data->id_prefix_str, "negotiate") == 0) {
@@ -629,25 +624,8 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 		}
 	}
 
-	if (data->do_id_prefix_negotiation) {
-		if (data->id_prefix_bits != 0) {
-			RRR_MSG_0("Parameter increment_id_prefix_bits was set to non-zero while increment_id_prefix was set to 'negotiate' in incrementer instance %s. " \
-				"This is an invalid configuration.\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
+	if (!data->do_id_prefix_negotiation) {
 		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix", id_prefix, 0);
-	}
-
-	if ((ret = rrr_increment_verify_prefix (
-			data->id_prefix,
-			data->id_prefix_bits
-	)) != 0) {
-		RRR_MSG_0("Invalid ID prefix parameters in incrementer instance %s, the prefix does not fit in the given number of bits\n",
-				config->name);
-		goto out;
 	}
 
 	if ((ret = rrr_increment_verify (
