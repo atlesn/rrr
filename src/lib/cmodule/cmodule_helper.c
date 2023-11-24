@@ -982,7 +982,7 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
-static int __rrr_cmodule_main_worker_fork_start_intermediate (
+static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
@@ -1026,7 +1026,7 @@ int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
 	};
 
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
@@ -1064,7 +1064,7 @@ int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 	};
 
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
@@ -1122,7 +1122,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		NULL
 	};
 
-	return __rrr_cmodule_main_worker_fork_start_intermediate (
+	return __rrr_cmodule_helper_worker_fork_start_intermediate (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
