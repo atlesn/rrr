@@ -34,12 +34,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_endian.h"
 #include "../helpers/string_builder.h"
 
-int rrr_msg_stats_unpack (
+static int __rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
 		const struct rrr_msg_stats_packed *source,
-		rrr_length expected_size
+		rrr_length expected_size,
+		int do_flip
 ) {
 	int ret = 0;
+
+	uint16_t path_size;
+	uint32_t flags;
+	uint8_t type;
 
 	if (expected_size < sizeof(*source) - sizeof(source->path_and_data)) {
 		RRR_MSG_0("Received statistics message which was too short in %s\n", __func__);
@@ -53,9 +58,16 @@ int rrr_msg_stats_unpack (
 		goto out;
 	}
 
-	uint16_t path_size = rrr_be16toh(source->path_size);
-	uint32_t flags = rrr_be32toh(source->flags);
-	uint8_t type = source->type;
+	if (do_flip) {
+		path_size = rrr_be16toh(source->path_size);
+		flags = rrr_be32toh(source->flags);
+	}
+	else {
+		path_size = source->path_size;
+		flags = source->flags;
+	}
+
+	type = source->type;
 
 	if ((flags & (unsigned int) ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
 		RRR_MSG_0("Unknown flags %u in received statistics packet\n", flags);
@@ -106,7 +118,33 @@ int rrr_msg_stats_unpack (
 	return ret;
 }
 
-void rrr_msg_stats_pack_and_flip (
+int rrr_msg_stats_flip_and_unpack (
+		struct rrr_msg_stats *target,
+		const struct rrr_msg_stats_packed *source,
+		rrr_length expected_size
+) {
+	return __rrr_msg_stats_unpack (
+			target,
+			source,
+			expected_size,
+			1 /* Do flip */
+	);
+}
+
+int rrr_msg_stats_unpack (
+		struct rrr_msg_stats *target,
+		const struct rrr_msg_stats_packed *source,
+		rrr_length expected_size
+) {
+	return __rrr_msg_stats_unpack (
+			target,
+			source,
+			expected_size,
+			0 /* Do not flip */
+	);
+}
+
+void rrr_msg_stats_pack (
 		struct rrr_msg_stats_packed *target,
 		rrr_length *total_size,
 		const struct rrr_msg_stats *source
@@ -120,11 +158,23 @@ void rrr_msg_stats_pack_and_flip (
 	*total_size = sizeof(*target) - sizeof(target->path_and_data) + path_and_data_size;
 
 	target->type = source->type;
-	target->flags = rrr_htobe32(source->flags);
-	target->path_size = rrr_htobe16((uint16_t) path_size);
+	target->flags = source->flags;
+	target->path_size = (uint16_t) path_size;
 
 	memcpy(target->path_and_data, source->path, path_size);
 	memcpy(target->path_and_data + path_size, source->data, source->data_size);
+}
+
+void rrr_msg_stats_pack_and_flip (
+		struct rrr_msg_stats_packed *target,
+		rrr_length *total_size,
+		const struct rrr_msg_stats *source
+) {
+	rrr_msg_stats_pack(target, total_size, source);
+
+	target->type = source->type;
+	target->flags = rrr_htobe32(source->flags);
+	target->path_size = rrr_htobe16((uint16_t) target->path_size);
 }
 
 int rrr_msg_stats_init (

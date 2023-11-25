@@ -216,10 +216,10 @@ static void __rrr_stats_tree_branch_dump (struct rrr_stats_tree_branch *branch, 
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_BASE10_TEXT ||
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT
 		) {
-			printf ("-- %s/%s: %s\n", path_prefix, branch->name, branch->value->data);
+			printf ("-- %s/%s:\n - %s\n", path_prefix, branch->name, branch->value->data);
 		}
 		else {
-			printf ("-- %s/%s (not text): %s\n", path_prefix, branch->name, branch->value->path);
+			printf ("-- %s/%s (not text):\n - %s\n", path_prefix, branch->name, branch->value->path);
 		}
 	}
 

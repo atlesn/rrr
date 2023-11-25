@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 #define RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX 10
-#define RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX 10000
+#define RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX 100
 
 #include "../log.h"
 #include "../rrr_types.h"
@@ -85,6 +85,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
+		const char *description,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -105,6 +106,7 @@ static int __rrr_net_transport_handle_create_and_push (
 	new_handle->transport = transport;
 	new_handle->handle = handle;
 	new_handle->mode = mode;
+	snprintf(new_handle->description, sizeof(new_handle->description), "%s", description);
 
 	rrr_event_collection_init(&new_handle->events, transport->event_queue);
 
@@ -132,6 +134,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
+		const char *description,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
@@ -183,6 +186,7 @@ int rrr_net_transport_handle_allocate_and_add (
 			transport,
 			new_handle_id,
 			mode,
+			description,
 			submodule_callback,
 			submodule_callback_arg
 	)) != 0) {
@@ -440,8 +444,6 @@ static void __rrr_net_transport_event_read (
 	(void)(fd);
 
 	int ret_tmp = 0;
-	ssize_t bytes = 0;
-	char buf;
 
 	RRR_EVENT_HOOK();
 
@@ -465,33 +467,17 @@ static void __rrr_net_transport_event_read (
 		rrr_net_transport_ctx_touch (handle);
 
 		if (handle->bytes_read_total == handle->noread_strike_prev_read_bytes) {
-			handle->noread_strike_count++;
-			RRR_ASSERT(RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX > RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX,_absolute_strikes_must_be_greater_than_check_eof_strikes);
-			if (handle->noread_strike_count >= RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX) {
-				RRR_MSG_0("net transport fd %i [%s] application did not read anything the last %i "
-					"read events. Destroy connection.\n",
-					handle->submodule_fd,
-					handle->transport->application_name,
-					RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX
-				);
-				ret_tmp = RRR_READ_EOF;
-			}
-			else if (handle->noread_strike_count >= RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX) {
-				if ((bytes = recv(handle->submodule_fd, &buf, 1, MSG_PEEK)) == 0) {
-					// Assume that remote has closed the connection and that the application
-					// does not detect this because it is waiting for something to write.
-					RRR_DBG_7("net transport fd %i [%s] application did not read anything the last %i "
-						"read events and remote has closed the connection. Destroy connection.\n",
-						handle->submodule_fd,
-						handle->transport->application_name,
-						RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX
-					);
-					ret_tmp = RRR_READ_EOF;
+			if (++(handle->noread_strike_count) >= RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX) {
+				if (!EVENT_PENDING(handle->event_noread_check)) {
+					EVENT_ADD(handle->event_noread_check);
 				}
+				EVENT_REMOVE(handle->event_read);
 			}
 		}
 		else {
+			handle->noread_strike_count = 0;
 			handle->noread_strike_prev_read_bytes = handle->bytes_read_total;
+			EVENT_REMOVE(handle->event_noread_check);
 		}
 	}
 
@@ -514,6 +500,71 @@ static void __rrr_net_transport_event_read (
 			break;
 	};
 #endif
+
+	CHECK_READ_WRITE_RETURN();
+}
+
+static void __rrr_net_transport_event_noread_check (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+
+	int ret_tmp = RRR_READ_OK;
+	ssize_t bytes = 0;
+	char buf;
+
+	// - If two consecutive reads returns 0 bytes, this event gets added
+	//   and runs periodically. This is to prevent that the read event
+	//   spins on the CPU with POLLINs.
+	// - The application/read framework is generally responsible for detecting
+	//   EOF/connection closed, but sometimes it doesnt
+	// - If the number of consecutive 0 byte reads exceed EOF MAX threshold, we
+	//   start polling the filehandle to check if returned bytes are actually
+	//   zero. If it is, we close the FD.
+	// - If the number of consecutive 0 byte reads exceed ABSOLUTE MAX threshold,
+	//   we close the FD regardless.
+
+	RRR_EVENT_HOOK();
+
+	CHECK_CLOSE_NOW();
+
+	assert(handle->handshake_complete);
+
+	RRR_ASSERT(RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX > RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX,_absolute_strikes_must_be_greater_than_check_eof_strikes);
+
+	if (handle->noread_strike_count < RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX) {
+		// TODO : Use net transport read function (quic does not work with this)
+		if ((bytes = recv(handle->submodule_fd, &buf, 1, MSG_PEEK)) == 0) {
+			// Assume that remote has closed the connection and that the application
+			// does not detect this because it is waiting for something to write.
+			RRR_DBG_7("net transport fd %i [%s] {%s} application did not read anything the last %i "
+				"read events and remote has closed the connection. Destroy handle.\n",
+				handle->submodule_fd,
+				handle->transport->application_name,
+				handle->description,
+				RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX
+			);
+			ret_tmp = RRR_READ_EOF;
+		}
+	}
+	else {
+		RRR_MSG_0("net transport fd %i [%s] {%s} application did not read anything the last %i "
+			"read events. Destroy handle.\n",
+			handle->submodule_fd,
+			handle->transport->application_name,
+			handle->description,
+			RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX
+		);
+		ret_tmp = RRR_READ_EOF;
+	}
+
+	if (ret_tmp == RRR_READ_OK) {
+		EVENT_ADD(handle->event_read);
+	}
 
 	CHECK_READ_WRITE_RETURN();
 }
@@ -619,6 +670,18 @@ static int __rrr_net_transport_handle_events_setup_connected (
 			__rrr_net_transport_event_read,
 			handle,
 			1 * 1000 // 1 ms
+	)) != 0) {
+		goto out;
+	}
+
+	// NOREAD CHECK
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&handle->event_noread_check,
+			&handle->events,
+			__rrr_net_transport_event_noread_check,
+			handle,
+			5 * 1000 // 5 ms
 	)) != 0) {
 		goto out;
 	}

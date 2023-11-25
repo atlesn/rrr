@@ -293,18 +293,7 @@ void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 
 	char text[256];
 
-	snprintf(text, sizeof(text), "pid: % 8lli tid: % 8lli func: %-45s fd: % 4i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
-		(long long int) getpid(),
-		(long long int) rrr_gettid(),
-		source_func,
-		fd,
-		rrr_time_get_64(),
-		flags,
-		(flags & POLLIN) != 0,
-		(flags & POLLOUT) != 0,
-		(flags & POLLHUP) != 0,
-		(flags & POLLERR) != 0
-	);
+	rrr_event_hook_string_format(text, sizeof(text), source_func, fd, flags, "");
 
 	if (rrr_stats_engine_push_event_message (
 			&stats_data->engine,
@@ -603,6 +592,7 @@ static int main_loop (
 		}
 
 		if (cmd_exists(cmd, "event-hooks", 0)) {
+			rrr_event_hook_enable ();
 			rrr_event_hook_set (main_loop_event_hook, &stats_data);
 		}
 

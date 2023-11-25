@@ -96,7 +96,7 @@ static int __rrr_stats_engine_message_pack (
 
 	rrr_msg_populate_head (
 			(struct rrr_msg *) &message_packed,
-			RRR_MSG_TYPE_TREE_DATA,
+			RRR_MSG_TYPE_STATS,
 			total_size,
 			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
@@ -892,9 +892,9 @@ static int __rrr_stats_engine_send_rrr_message (
 	return ret;
 }
 
-static int __rrr_stats_engine_push_stream_message (
+int rrr_stats_engine_push_stream_message (
 		struct rrr_stats_engine *stats,
-		unsigned int stats_handle,
+		unsigned int handle,
 		const char *path_prefix,
 		const struct rrr_msg_stats *message
 ) {
@@ -915,7 +915,7 @@ static int __rrr_stats_engine_push_stream_message (
 
 	if ((ret = __rrr_stats_engine_message_set_path (
 			message_copy,
-			stats_handle,
+			handle,
 			path_prefix
 	)) != 0) {
 		goto out;
@@ -1077,7 +1077,7 @@ static int __rrr_stats_engine_push_text_message (
 		goto out;
 	}
 
-	if ((ret = __rrr_stats_engine_push_stream_message (
+	if ((ret = rrr_stats_engine_push_stream_message (
 			stats,
 			handle,
 			path_prefix,

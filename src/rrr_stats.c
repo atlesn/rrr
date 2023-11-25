@@ -513,7 +513,7 @@ static int __rrr_stats_send_message (
 
 	rrr_msg_populate_head (
 			(struct rrr_msg *) &message_packed,
-			RRR_MSG_TYPE_TREE_DATA,
+			RRR_MSG_TYPE_STATS,
 			total_size,
 			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
