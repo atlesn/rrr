@@ -351,6 +351,10 @@ static int __rrr_read_message_using_callbacks (
 
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
+			// Might otherwise cause read function to return 0
+			// bytes indicating EOF
+			assert(read_session->rx_overshoot_size > 0);
+
 			read_session->rx_buf_ptr = read_session->rx_overshoot;
 			read_session->rx_buf_size = read_session->rx_overshoot_size;
 			read_session->rx_buf_wpos = read_session->rx_overshoot_size;
@@ -446,22 +450,27 @@ static int __rrr_read_message_using_callbacks (
 
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
-			RRR_DBG_7("Aligning buffer, skipping %" PRIrrrbl " bytes while reading from socket\n",
-				read_session->rx_buf_skip);
+			rrr_biglength overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
-			RRR_SIZE_CHECK(read_session->rx_buf_size,"Read buffer too big C",ret = RRR_READ_SOFT_ERROR; goto out);
-			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
-			if (new_buf == NULL) {
-				RRR_MSG_0("Could not allocate memory while aligning buffer in %s\n", __func__);
-				ret = RRR_READ_HARD_ERROR;
-				goto out;
+			RRR_DBG_7("Aligning buffer, skipping %" PRIrrrbl " bytes while reading from socket (%" PRIrrrbl " bytes overshoot)\n",
+				read_session->rx_buf_skip, overshoot_size);
+
+			// Overshoot with 0 bytes is not allowed
+			if (overshoot_size > 0) {
+				RRR_SIZE_CHECK(read_session->rx_buf_size,"Read buffer too big C",ret = RRR_READ_SOFT_ERROR; goto out);
+				char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
+				if (new_buf == NULL) {
+					RRR_MSG_0("Could not allocate memory while aligning buffer in %s\n", __func__);
+					ret = RRR_READ_HARD_ERROR;
+					goto out;
+				}
+				rrr_memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, overshoot_size);
+
+				// Put new buffer into overshoot so that it is picked up again
+				// in the next read loop
+				read_session->rx_overshoot = new_buf;
+				read_session->rx_overshoot_size = overshoot_size;
 			}
-			rrr_memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, read_session->rx_buf_wpos - read_session->rx_buf_skip);
-
-			// Put new buffer into overshoot so that it is picked up again
-			// in the next read loop
-			read_session->rx_overshoot = new_buf;
-			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
 			rrr_free(read_session->rx_buf_ptr);
 			read_session->rx_buf_ptr = NULL;

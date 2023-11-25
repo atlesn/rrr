@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define FAIL_IF_NE(exp_i) \
 	do {if (i != exp_i) { TEST_MSG("Incrementer: i was not " RRR_QUOTE(exp_i) "\n"); return 1; }} while (0)
 
-static int __test_increment_bits_to_max(void) {
+static int __test_increment_bits_to_max (void) {
 	int ret = 0;
 
 	uint64_t acc = 0;
@@ -45,29 +45,64 @@ static int __test_increment_bits_to_max(void) {
 
 	return ret;
 }
+/*
+int rrr_increment_verify_value_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint64_t prefix
+);
+ 
+* */
 
-static int __test_increment_verify_prefix(void) {
+static int __test_increment_verify_value_prefix (void) {
 	int ret = 0;
 
-	if (rrr_increment_verify_prefix(0, 0) != 0) {
-		RRR_MSG_0("rrr_increment_verify_prefix failed on valid input\n");
+	uint64_t value;
+	uint32_t max;
+	uint64_t prefix;
+
+	value =  0x0000dead0000beef;
+	max =    0x00000000ffffffff;
+	prefix = 0xdead;
+
+	if (rrr_increment_verify_value_prefix (value, max, prefix) != 0) {
+		RRR_MSG_0("rrr_increment_verify_value_prefix failed unexpectedly\n");
 		ret = 1;
 	}
 
-	if (rrr_increment_verify_prefix(0xff, 8) != 0) {
-		RRR_MSG_0("rrr_increment_verify_prefix failed on valid input\n");
+	prefix = 0x1dead;
+
+	if (rrr_increment_verify_value_prefix (value, max, prefix) != 1) {
+		RRR_MSG_0("rrr_increment_verify_value_prefix did not fail as expected A\n");
 		ret = 1;
 	}
 
-	if (rrr_increment_verify_prefix(0xff, 7) != 1) {
-		RRR_MSG_0("rrr_increment_verify_prefix did not fail on prefix > prefix_bits\n");
+	prefix = 0xead;
+
+	if (rrr_increment_verify_value_prefix (value, max, prefix) != 1) {
+		RRR_MSG_0("rrr_increment_verify_value_prefix did not fail as expected B\n");
+		ret = 1;
+	}
+
+	value =  0x00000ead0000beef;
+	prefix = 0xdead;
+
+	if (rrr_increment_verify_value_prefix (value, max, prefix) != 1) {
+		RRR_MSG_0("rrr_increment_verify_value_prefix did not fail as expected C\n");
+		ret = 1;
+	}
+
+	value =  0x0001dead0000beef;
+
+	if (rrr_increment_verify_value_prefix (value, max, prefix) != 1) {
+		RRR_MSG_0("rrr_increment_verify_value_prefix did not fail as expected D\n");
 		ret = 1;
 	}
 
 	return ret;
 }
 
-static int __test_increment_verify(void) {
+static int __test_increment_verify (void) {
 	int ret = 0;
 	// Step or mod too high
 	if (rrr_increment_verify(0x100, 1, 100, 0, 0) != 1) {
@@ -123,6 +158,83 @@ static int __test_increment_verify(void) {
 	return ret;
 }
 
+static int __test_increment_prefix_apply (void) {
+	int ret = 0;
+
+	uint32_t value;
+	uint32_t max;
+	uint64_t prefix;
+	uint64_t res;
+
+	value = 0xdeadbeef;
+	max = 0xffffffff; 
+	prefix = 0x12345678;
+
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x12345678deadbeef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected A\n",
+			res, 0x12345678deadbeef);
+		ret = 1;
+	}
+
+	value = 0xeadbeef;
+	max = 0xfffffff;
+	prefix = 0x123456789;
+
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x123456789eadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected B\n",
+			res, 0x123456789eadbeef);
+		ret = 1;
+	}
+
+	value = 0xdeadbeef;
+	max = 0xffffffff;
+	prefix = 0x123456;
+
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x00123456deadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected C\n",
+			res, 0x123456deadbeef);
+		ret = 1;
+	}
+
+	value = 0xbeef;
+	max = 0xffff;
+	prefix = 0xdead;
+
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x00000000deadbeef) {
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected D\n",
+			res, (uint64_t) 0x00000000deadbeef);
+		ret = 1;
+	}
+
+	value = 0xbeef;
+	max = 0xffffffff; 
+	prefix = 0x12345678;
+
+	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x123456780000beef) {
+		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected E\n",
+			res, 0x123456780000beef);
+		ret = 1;
+	}
+
+	return ret;
+}
+
+static int __test_increment_max_to_prefix_mask (void) {
+	int ret = 0;
+
+	uint32_t max = 0xffff;
+	uint64_t res = 0xdeadbeef1234;
+	uint64_t mask = rrr_increment_max_to_prefix_mask(max);
+
+	if ((res &= mask) != 0xdeadbeef0000) {
+		RRR_MSG_0("rrr_increment_max_to_prefix_mask returned %" PRIx64 " while %" PRIx64 " was expected\n",
+			res, 0xdeadbeef0000);
+		ret = 1;
+	}
+
+	return ret;
+}
+
 int rrr_test_increment (void) {
 	int ret = 0;
 
@@ -130,11 +242,19 @@ int rrr_test_increment (void) {
 		return 1;
 	}
 
-	if (__test_increment_verify_prefix() != 0) {
+	if (__test_increment_verify_value_prefix() != 0) {
 		return 1;
 	}
 
 	if (__test_increment_verify() != 0) {
+		return 1;
+	}
+
+	if (__test_increment_prefix_apply() != 0) {
+		return 1;
+	}
+
+	if (__test_increment_max_to_prefix_mask() != 0) {
 		return 1;
 	}
 

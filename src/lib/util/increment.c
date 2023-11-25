@@ -24,11 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "increment.h"
 
-static int __rrr_increment_calculate_bit_requirement (
+static uint8_t __rrr_increment_calculate_bit_requirement (
 		uint64_t n
 ) {
 	int bits = 0;
-	while (n > 0) {
+	while (n) {
 		bits++;
 		n >>= 1;
 	}
@@ -49,15 +49,47 @@ uint64_t rrr_increment_bits_to_max (
 	return max;
 }
 
-int rrr_increment_verify_prefix (
-		uint64_t prefix_max,
-		uint64_t prefix_bits
+uint64_t rrr_increment_max_to_prefix_mask (
+		uint32_t max
 ) {
-	if (prefix_max > rrr_increment_bits_to_max(prefix_bits)) {
-		RRR_MSG_0("Prefix max %" PRIu64 " cannot fit within the given number of prefix bits %" PRIu64 "\n", prefix_max, prefix_bits);
+	uint64_t mask = 0xffffffffffffffff;
+	mask <<= __rrr_increment_calculate_bit_requirement(max);
+	return mask;
+}
+
+int rrr_increment_verify_value_prefix (
+		uint64_t value,
+		uint32_t max,
+		uint64_t prefix
+) {
+	uint8_t bits = __rrr_increment_calculate_bit_requirement (max);
+
+	if ((prefix << bits) != (value & rrr_increment_max_to_prefix_mask(max))) {
+		RRR_MSG_0("Prefix mismatch, given prefix from value 0x%" PRIx64 \
+			" does not match configured prefix 0x%" PRIx64
+			". Max value is 0x%" PRIx32 ".\n",
+			value, prefix, max);
 		return 1;
 	}
+
 	return 0;
+}
+
+uint32_t rrr_increment_strip_prefix (
+		uint64_t value,
+		uint32_t max
+) {
+	uint64_t res = value & ~(rrr_increment_max_to_prefix_mask(max));
+	assert(res <= 0xffffffff && "Value was not completely masked");
+	return (uint32_t) res;
+}
+
+uint64_t rrr_increment_apply_prefix (
+		uint32_t value,
+		uint32_t max,
+		uint64_t prefix
+) {
+	return ((uint64_t) value) | (prefix << __rrr_increment_calculate_bit_requirement(max));
 }
 
 int rrr_increment_verify (
@@ -65,7 +97,7 @@ int rrr_increment_verify (
 		uint64_t min,
 		uint64_t max,
 		uint64_t position_or_zero,
-		uint64_t prefix_max
+		uint64_t prefix
 ) {
 	if (step_or_mod > 0xff) {
 		RRR_MSG_0("step_or_mod was above max value %lu\n", (long unsigned int) 0xff);
@@ -101,13 +133,11 @@ int rrr_increment_verify (
 		return 1;
 	}
 
-	// Check that the number of bits required for prefix + the number of bits required for max does not exceed 64.
-	// The prefix may exceed 32 bits as long as the total number of bits do not exceed 64.
-	uint64_t bits_required_for_max = __rrr_increment_calculate_bit_requirement(max);
-	uint64_t bits_required_for_prefix = __rrr_increment_calculate_bit_requirement(prefix_max);
-	printf("%" PRIu64 " %" PRIu64 "\n", bits_required_for_max, bits_required_for_prefix);
-	if (bits_required_for_max + bits_required_for_prefix > 64) {
-		RRR_MSG_0("Bits required for max + bits required for prefix exceeds 64 in incrementer\n");
+	if (__rrr_increment_calculate_bit_requirement (prefix) +
+	    __rrr_increment_calculate_bit_requirement (max) > 64
+	) {
+		RRR_MSG_0("prefix 0x%" PRIx64 " and max 0x%" PRIx64 " do not fit within 64 bits\n",
+			prefix, max);
 		return 1;
 	}
 
@@ -145,3 +175,4 @@ uint32_t rrr_increment_mod (
 
 	return (uint32_t) value_tmp;
 }
+
