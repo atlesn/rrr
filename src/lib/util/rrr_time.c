@@ -54,6 +54,11 @@ uint64_t rrr_time_get_64(void) {
 	return (tv_sec * tv_factor) + (tv_usec);
 }
 
+rrr_time_us_t rrr_time_get_us(void) {
+	rrr_time_us_t result = { rrr_time_get_64() };
+	return result;
+}
+
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add) {
 	if (gettimeofday(__tv, NULL) != 0) {
 		RRR_BUG("Error while getting time in rrr_time_gettimeofday, cannot recover from this: %s\n", rrr_strerror(errno));

@@ -58,10 +58,80 @@ static int __test_time_usleep (void) {
 	return ret;
 }
 
+static int __test_time_conversions (void) {
+	int ret = 0;
+
+	rrr_time_us_t us = { 1000000 };
+	rrr_time_ms_t ms = { 1000 };
+	rrr_time_s_t s = { 1 };
+
+	rrr_time_us_t us2 = rrr_time_us_from_ms(ms);
+	rrr_time_us_t us3 = rrr_time_us_from_s(s);
+
+	rrr_time_ms_t ms2 = rrr_time_ms_from_us(us);
+	rrr_time_ms_t ms3 = rrr_time_ms_from_s(s);
+
+	rrr_time_s_t s2 = rrr_time_s_from_us(us);
+	rrr_time_s_t s3 = rrr_time_s_from_ms(ms);
+
+	if (rrr_time_us_eq(us, us2) == 0) {
+		RRR_MSG_0("rrr_time_us_from_ms failed\n");
+		ret = 1;
+	}
+
+	if (rrr_time_us_eq(us, us3) == 0) {
+		RRR_MSG_0("rrr_time_us_from_s failed\n");
+		ret = 1;
+	}
+
+	if (rrr_time_ms_eq(ms, ms2) == 0) {
+		RRR_MSG_0("rrr_time_ms_from_us failed\n");
+		ret = 1;
+	}
+
+	if (rrr_time_ms_eq(ms, ms3) == 0) {
+		RRR_MSG_0("rrr_time_ms_from_s failed\n");
+		ret = 1;
+	}
+
+	if (rrr_time_s_eq(s, s2) == 0) {
+		RRR_MSG_0("rrr_time_s_from_us failed\n");
+		ret = 1;
+	}
+
+	if (rrr_time_s_eq(s, s3) == 0) {
+		RRR_MSG_0("rrr_time_s_from_ms failed\n");
+		ret = 1;
+	}
+
+	rrr_time_us_t us4 = { 1 };
+	rrr_time_us_t us5 = rrr_time_us_sub(us, us4);
+
+	if (us5.us != 999999) {
+		RRR_MSG_0("rrr_time_us_sub failed\n");
+		ret = 1;
+	}
+
+	if (!rrr_time_us_lt(us4, us)) {
+		RRR_MSG_0("rrr_time_us_lt failed\n");
+		ret = 1;
+	}
+
+	rrr_time_us_t us6 = { 0 };
+
+	if (!rrr_time_us_zero(us6)) {
+		RRR_MSG_0("rrr_time_us_zero failed\n");
+		ret = 1;
+	}
+
+	return ret;
+}
+
 int rrr_test_time (void) {
 	int ret = 0;
 
 	ret |= __test_time_usleep();
+	ret |= __test_time_conversions();
 
 	return ret;
 }
