@@ -187,7 +187,7 @@ static int msgdb_fork (void *arg) {
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
-			250, // 250ms
+			250 * 1000, // 250ms
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,
