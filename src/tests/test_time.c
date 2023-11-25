@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "test.h"
-#include "test_usleep.h"
+#include "test_time.h"
 #include "../lib/log.h"
 #include "../lib/util/posix.h"
 #include "../lib/util/rrr_time.h"
@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Four zeros = 50ms
 #define SLEEPTIME_TOLERANCE_US 50000
 
-int rrr_test_usleep (void) {
+static int __test_time_usleep (void) {
 	int ret = 0;
 
 	uint64_t time_start = rrr_time_get_64();
@@ -54,6 +54,14 @@ int rrr_test_usleep (void) {
 			sleeptime_us, SLEEPTIME_US, SLEEPTIME_TOLERANCE_US);	
 		ret = 1;
 	}
+
+	return ret;
+}
+
+int rrr_test_time (void) {
+	int ret = 0;
+
+	ret |= __test_time_usleep();
 
 	return ret;
 }
