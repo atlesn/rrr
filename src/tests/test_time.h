@@ -21,6 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TEST_USLEEP_H
 #define RRR_TEST_USLEEP_H
 
-int rrr_test_usleep (void);
+int rrr_test_time (void);
 
 #endif /* RRR_TEST_USLEEP_H */
