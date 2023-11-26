@@ -203,12 +203,14 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 		}
 	}
 
+	rrr_time_us_t full_wait_time = RRR_US(0); // No waiting
+
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
 			message,
 			&addr_msg,
-			0, // No waiting
+			full_wait_time,
 			1, // 1 attempt
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
@@ -534,7 +536,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 	}
 
 	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_MSG_CTRL_F_PONG)) {
-		callback_data->worker->pong_receive_time = rrr_time_get_64();
+		callback_data->worker->pong_receive_time = rrr_time_get_us();
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_PONG);
 	}
 
@@ -685,19 +687,19 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 static int __rrr_cmodule_helper_check_pong (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
-
-	uint64_t min_time = rrr_time_get_64() - (RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S * 1000 * 1000);
-
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
+	int ret = 0;
+
+	rrr_time_us_t min_time = rrr_time_us_sub(rrr_time_get_us(), rrr_time_us_from_s(rrr_cmodule_worker_fork_pong_timeout));
+
 	WORKER_LOOP_BEGIN();
-		if (worker->pong_receive_time == 0) {
-			worker->pong_receive_time = rrr_time_get_64();
+		if (rrr_time_us_zero(worker->pong_receive_time)) {
+			worker->pong_receive_time = rrr_time_get_us();
 		}
-		else if (worker->pong_receive_time < min_time) {
+		else if (rrr_time_us_lt(worker->pong_receive_time, min_time)) {
 			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
-					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, worker->name, (long) worker->pid);
+					(long) rrr_cmodule_worker_fork_pong_timeout.s, worker->name, (long) worker->pid);
 			ret = 1;
 		}
 	WORKER_LOOP_END();
@@ -956,10 +958,8 @@ int rrr_cmodule_helper_parse_config (
 		goto out;
 	}
 
-	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_source_interval_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
-	data->worker_spawn_interval_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(config_string, worker_spawn_interval, rrr_cmodule_worker_default_spawn_interval);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
@@ -1101,13 +1101,13 @@ int rrr_cmodule_helper_worker_forks_start (
 
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
-		unsigned int tick_interval_us,
+		rrr_time_us_t tick_interval,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
-	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
+	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval = tick_interval;
 
 	struct rrr_cmodule_worker_callbacks callbacks = {
 		NULL,

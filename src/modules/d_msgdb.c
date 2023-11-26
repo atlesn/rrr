@@ -59,6 +59,8 @@ struct msgdb_data {
 	rrr_setting_uint directory_levels;
 };
 
+static const rrr_time_ms_t msgdb_tick_interval = RRR_MS(250);
+
 static void msgdb_data_cleanup(void *arg) {
 	struct msgdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->directory);
@@ -187,7 +189,7 @@ static int msgdb_fork (void *arg) {
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
-			250 * 1000, // 250ms
+			rrr_time_us_from_ms(msgdb_tick_interval),
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,

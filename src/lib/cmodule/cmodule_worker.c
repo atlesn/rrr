@@ -85,7 +85,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 			worker->event_queue_parent,
 			message,
 			message_addr,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			rrr_cmodule_channel_wait_time,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
@@ -176,7 +176,7 @@ static int __rrr_cmodule_worker_hook_write (
 			break;
 		}
 
-		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
+		rrr_posix_sleep_us(rrr_cmodule_channel_wait_time);
 	}
 
 	if (ret == RRR_MMAP_CHANNEL_FULL) {
@@ -734,12 +734,12 @@ static int __rrr_cmodule_worker_loop (
 		}
 	};
 
-	if (rrr_event_collection_push_periodic (
+	if (rrr_event_collection_push_periodic_new (
 			&event_spawn,
 			&events,
 			__rrr_cmodule_worker_event_spawn,
 			&callback_data,
-			worker->spawn_interval_us
+			worker->spawn_interval
 	) != 0) {
 		RRR_MSG_0("Failed to create spawn event in  %s\n", __func__);
 		goto out_cleanup_events;
@@ -973,7 +973,7 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		const struct rrr_discern_stack_collection *methods,
-		rrr_setting_uint spawn_interval_us,
+		rrr_time_us_t spawn_interval,
 		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
 		int do_drop_on_error
@@ -1021,7 +1021,7 @@ int rrr_cmodule_worker_init (
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
-	worker->spawn_interval_us = spawn_interval_us;
+	worker->spawn_interval = spawn_interval;
 	worker->process_mode = process_mode;
 	worker->do_spawning = do_spawning;
 	worker->do_drop_on_error = do_drop_on_error;

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "../rrr_inttypes.h"
+#include "../rrr_types.h"
 
 struct rrr_msg;
 struct rrr_msg_msg;
@@ -49,7 +50,7 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
-		unsigned int full_wait_time_us,
+		rrr_time_us_t full_wait_time,
 		int wait_attempts_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg

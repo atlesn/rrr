@@ -405,8 +405,6 @@ static int incrementer_process_subject (
 			(uint8_t) data->id_position
 	);
 
-	printf("New ID: %llu\n", new_id_llu);
-
 	assert(new_id_llu <= 0xffffffff);
 
 	new_id_llu = rrr_increment_apply_prefix((uint32_t) new_id_llu, data->id_max, data->id_prefix);

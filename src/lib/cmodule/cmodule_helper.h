@@ -114,7 +114,7 @@ int rrr_cmodule_helper_worker_forks_start_with_periodic_callback (
 );
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
-		unsigned int tick_interval_us,
+		rrr_time_us_t tick_interval_us,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
