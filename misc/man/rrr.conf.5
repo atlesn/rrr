@@ -2459,8 +2459,9 @@ Must be in the range 0 to 4 inclusive, defaults to 2.
 Incrementer will append unique ID numbers to messages matching a specified topic filter.
 If wildcards are present in the filter, an separate ID counter will be used for each unique topic matching the filter.
 The ID counters may be initialized by passing in messages with a start ID value in a specific tag, or they may begin at
-the lowest allowed value. If a message DB socket is specified, the latest used ID's will be stored on disk for
-persistence across restarts.
+the lowest allowed value.
+Any initialization messages are ignored if an ID is already initialized.
+If a message DB socket is specified, the latest used ID's will be stored on disk for persistence across restarts.
 
 When messages are allocated an ID, a number following a slash / is appended to the topic before the messages
 are sent to the output buffer for other instances to pick up.
@@ -2505,7 +2506,8 @@ must be running and listening on the socket.
 If specified, all topics for which to allocate IDs must be pre-initialized. This is done
 by passing a message to
 .B incrementer
-with the same topic 
+containing a start ID number in a value with the given tag.
+Once an ID has been initialized, any further initialization messages will be ignored.
 
 .It incrementer_id_min=UNSIGNED INTEGER
 The lowest ID to allocate, defaults to 1.
