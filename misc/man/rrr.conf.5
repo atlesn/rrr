@@ -2509,10 +2509,10 @@ If specified, all topics for which to allocate IDs must be pre-initialized. This
 by passing a message to
 .B incrementer
 containing a start ID number in a value with the given tag.
-Once an ID has been initialized, any further initialization messages will be ignored.
 
-Initialization does not persist across restarts.
-To retain an initialized ID, a generation must be triggered.
+Initialization does not persist across restarts, and to retain an initialized ID, a generation must be triggered.
+Once an ID has been generated, the initializion value will no longer be used.
+If multiple initializations are sent, the last one takes precedence.
 
 If a fixed prefix is used through the parameter
 .B incrementer_id_prefix
