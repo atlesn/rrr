@@ -32,13 +32,15 @@ sub source {
 
 	if ($count < 50) {
 		# Use invalid server to create HOL blocking situation
-		# in httclient.
+		# in httpclient.
 		send_message($message, "1.1.1.1", "9999", 5);
 	}
 	elsif ($count == 50) {
 		# Send message with valid destination. The invalid
 		# messages should be graylisted prior to this message
-		# getting timed out.
+		# getting timed out, which means that these messages
+		# should be sent immediately by being bumped in the
+		# queue.
 		send_message($message, "localhost", "8880", 1);
 	}
 	else {
