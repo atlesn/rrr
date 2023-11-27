@@ -514,8 +514,8 @@ static int incrementer_process_id (
 
 	if (data->id_prefix > 0 && rrr_increment_verify_value_prefix(id, (uint32_t) data->id_max, data->id_prefix) != 0) {
 		RRR_MSG_0("ID prefix check for initialization value in array tag %s failed in incrementer instance %s. " \
-			"%s" "The prefix in the given ID does not match the configured prefix. Tag is %s.\n",
-			data->id_tag, INSTANCE_D_NAME(data->thread_data), topic_tmp);
+			"The prefix in the given ID %llu does not match the configured prefix. Tag is %s.\n",
+			data->id_tag, INSTANCE_D_NAME(data->thread_data), id, topic_tmp);
 		ret = 1;
 		goto out;
 	}
