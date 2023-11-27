@@ -536,6 +536,8 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	int does_match = 0;
+
 	// We check stuff with the watchdog in case we are slow to process messages
 	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
 		ret = RRR_FIFO_PROTECTED_SEARCH_STOP;
@@ -545,8 +547,9 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Do not produce errors for message process failures, just drop them
 
-	int does_match = 0;
-	if (rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token) != 0) {
+	if (MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message) > 0 &&
+	    rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token) != 0
+	) {
 		RRR_MSG_0("Error while checking subject topic in incrementer_poll_callback of instance %s, dropping message\n",
 			INSTANCE_D_NAME(thread_data));
 		goto out;
