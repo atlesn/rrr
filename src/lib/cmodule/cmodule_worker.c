@@ -616,19 +616,21 @@ static void __rrr_cmodule_worker_event_spawn (
 		}
 	}
 
+	if (callback_data->custom_tick_callback == NULL) {
+		return;
+	}
+
 	int custom_tick_something_happened = 1;
 	int retries = 100;
 	while (--retries && custom_tick_something_happened) {
-		if (callback_data->custom_tick_callback != NULL) {
-			if (callback_data->custom_tick_callback (
-					&custom_tick_something_happened,
-					worker,
-					callback_data->custom_tick_callback_arg
-			) != 0) {
-				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
-				rrr_event_dispatch_break(worker->event_queue_worker);
-			}
+		if (callback_data->custom_tick_callback (
+				&custom_tick_something_happened,
+				worker,
+				callback_data->custom_tick_callback_arg
+		) != 0) {
+			RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
+					worker->name, (long) getpid());
+			rrr_event_dispatch_break(worker->event_queue_worker);
 		}
 	}
 

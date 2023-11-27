@@ -64,6 +64,8 @@ rrr (1.28-29) bullseye; urgency=medium
       only data errors are ignored (which is also intention of higher levels).
     * Connections were closed in IP module when byte by byte sync was used
       and the alignment used up all remaining buffered bytes.
+    * Non-working default socket name in msgdb module causing crash
+    * Incorrect tick timer in msgdb causing excessive CPU usage
 
   * Under the hood:
     * Use events in file module

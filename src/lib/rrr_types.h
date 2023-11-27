@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -464,5 +464,30 @@ typedef uint64_t rrr_type_be;
 typedef uint64_t rrr_type_h;
 typedef uint64_t rrr_type_istr;
 typedef uint64_t rrr_type_ustr;
+
+/*
+ * Types for timestamp. Use these to avoid mixing up time in seconds, milliseconds
+ * and microseconds. There are helper functions in util/rrr_time.h for conversions
+ * and arithmetic operations.
+ */
+
+typedef struct rrr_time_s_s {
+	uint64_t s;
+} rrr_time_s_t;
+
+typedef struct rrr_time_ms_s {
+	uint64_t ms;
+} rrr_time_ms_t;
+
+typedef struct rrr_time_us_s {
+	uint64_t us;
+} rrr_time_us_t;
+
+#define RRR_S(n)  \
+    { .s = n }
+#define RRR_MS(n) \
+    { .ms = n }
+#define RRR_US(n) \
+    { .us = n }
 
 #endif /* RRR_TYPES_H */

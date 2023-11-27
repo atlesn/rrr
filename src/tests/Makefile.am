@@ -21,7 +21,7 @@ noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sh
 
 test_SOURCES = test.c \
 	../main.c \
-	test_usleep.c \
+	test_time.c \
 	test_msleep_signal_safe.c \
 	test_fixp.c \
 	test_mqtt_topic.c \

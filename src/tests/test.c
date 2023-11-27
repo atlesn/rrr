@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/posix.h"
 
 #include "test_condition.h"
-#include "test_usleep.h"
+#include "test_time.h"
 #include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
 #include "test_mqtt_topic.h"
@@ -149,8 +149,8 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-	TEST_BEGIN("rrr_posix_usleep") {
-		ret_tmp = rrr_test_usleep();
+	TEST_BEGIN("time functions") {
+		ret_tmp = rrr_test_time();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
