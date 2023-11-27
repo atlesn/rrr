@@ -211,8 +211,16 @@ static int __test_increment_prefix_apply (void) {
 	prefix = 0x12345678;
 
 	if ((res = rrr_increment_apply_prefix(value, max, prefix)) != 0x123456780000beef) {
-		RRR_MSG_0("rrr_increment_prefix_apply returned %" PRIx64 " while %" PRIx64 " was expected E\n",
+		RRR_MSG_0("rrr_increment_apply_prefix returned %" PRIx64 " while %" PRIx64 " was expected E\n",
 			res, 0x123456780000beef);
+		ret = 1;
+	}
+
+	if ((value = rrr_increment_strip_prefix(&prefix, res, max)) != 0xbeef || prefix != 0x12345678) {
+		RRR_MSG_0("rrr_increment_strip prefix returned %" PRIx32 " and %" PRIx64 " while " \
+			"%" PRIx32 " and %" PRIx64 " was expected\n",
+			value, res,
+			0xbeef, 0x12345678);
 		ret = 1;
 	}
 

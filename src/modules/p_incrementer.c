@@ -56,15 +56,12 @@ struct incrementer_data {
 
 	char *id_tag;
 	char *msgdb_socket;
-	char *id_prefix_str;
 
 	rrr_setting_uint id_min;
 	rrr_setting_uint id_max;
 	rrr_setting_uint id_modulus;
 	rrr_setting_uint id_position;
 	rrr_setting_uint id_prefix;
-
-	int do_id_prefix_negotiation;
 
 	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
@@ -82,7 +79,6 @@ static void incrementer_data_cleanup(void *arg) {
 	rrr_mqtt_topic_token_destroy(data->subject_topic_filter_token);
 	RRR_FREE_IF_NOT_NULL(data->id_tag);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
-	RRR_FREE_IF_NOT_NULL(data->id_prefix_str);
 	rrr_map_clear(&data->db_initial_ids);
 	rrr_map_clear(&data->db_used_ids);
 
@@ -361,6 +357,8 @@ static int incrementer_process_subject (
 	char *topic_tmp = NULL;
 	uint16_t topic_tmp_length = 0;
 	struct rrr_string_builder topic_new = {0};
+	unsigned long long old_id_llu = 0;
+	uint64_t prefix = 0;
 
 	if ((ret = rrr_msg_msg_topic_and_length_get (
 			&topic_tmp,
@@ -371,30 +369,38 @@ static int incrementer_process_subject (
 		goto out;
 	}
 
-	unsigned long long old_id_llu = 0;
-
 	if ((ret = incrementer_get_id(&old_id_llu, data, topic_tmp)) != 0) {
 		goto out;
 	}
 
 	if (old_id_llu == 0) {
-		// TODO : Error if id initializer topic is set
-/*		RRR_MSG_0("No ID stored for subject with topic %s in incrementer instance %s\n",
-			topic_tmp, INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;*/
-		RRR_DBG_2("Incrementer instance %s starting ID for tag %s at 0, not previously stored\n",
-			INSTANCE_D_NAME(data->thread_data), topic_tmp);
-	}
-	else {
-		if (rrr_increment_verify_value_prefix(old_id_llu, (uint32_t) data->id_max, data->id_prefix) != 0) {
-			RRR_MSG_0("ID prefix check for old value (possibly from msgdb) failed in incrementer instance %s, tag is %s.\n",
-				INSTANCE_D_NAME(data->thread_data), topic_tmp);
+		if (data->id_tag != NULL && *data->id_tag != '\0' &&
+		    !rrr_map_get_value(&data->db_used_ids, topic_tmp) &&
+		    !rrr_map_get_value(&data->db_initial_ids, topic_tmp)
+		) {
+			RRR_MSG_0("No ID stored or initialized for subject with topic %s in incrementer instance %s despite explicit initialization being configured\n",
+				topic_tmp, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
 		}
 
-		old_id_llu = rrr_increment_strip_prefix (old_id_llu, data->id_max);
+		RRR_DBG_2("Incrementer instance %s starting ID for tag %s at 0, not previously stored\n",
+			INSTANCE_D_NAME(data->thread_data), topic_tmp);
+	}
+	else {
+		if (data->id_prefix > 0 && rrr_increment_verify_value_prefix(old_id_llu, (uint32_t) data->id_max, data->id_prefix) != 0) {
+			RRR_MSG_0("ID prefix check for old value %llu (possibly from msgdb) failed in incrementer instance %s, tag is %s and configured prefix is 0x%llx.\n",
+				old_id_llu, INSTANCE_D_NAME(data->thread_data), topic_tmp, (unsigned long long) data->id_prefix);
+			ret = 1;
+			goto out;
+		}
+
+		old_id_llu = rrr_increment_strip_prefix (&prefix, old_id_llu, data->id_max);
+	}
+
+	if (prefix == 0) {
+		// Configured prefix may also be zero which is OK
+		prefix = data->id_prefix;
 	}
 
 	unsigned long long new_id_llu = rrr_increment_mod (
@@ -407,7 +413,7 @@ static int incrementer_process_subject (
 
 	assert(new_id_llu <= 0xffffffff);
 
-	new_id_llu = rrr_increment_apply_prefix((uint32_t) new_id_llu, data->id_max, data->id_prefix);
+	new_id_llu = rrr_increment_apply_prefix((uint32_t) new_id_llu, data->id_max, prefix);
 
 	if ((ret = rrr_string_builder_append_format(&topic_new, "%s/%llu", topic_tmp, new_id_llu)) != 0) {
 		RRR_MSG_0("Failed to allocate new topic in incrementer_process_subject\n");
@@ -499,6 +505,14 @@ static int incrementer_process_id (
 	}
 
 	long long unsigned id = value->definition->to_ull(value);
+
+	if (data->id_prefix > 0 && rrr_increment_verify_value_prefix(id, (uint32_t) data->id_max, data->id_prefix) != 0) {
+		RRR_MSG_0("ID prefix check for initialization value in array tag %s failed in incrementer instance %s. " \
+			"%s" "The prefix in the given ID does not match the configured prefix. Tag is %s.\n",
+			data->id_tag, INSTANCE_D_NAME(data->thread_data), topic_tmp);
+		ret = 1;
+		goto out;
+	}
 
 	char buf[64];
 	sprintf(buf, "%llu", id);
@@ -613,18 +627,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0xffffffff);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 1);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_position", id_position, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_prefix", id_prefix_str);
-
-	if (data->id_prefix_str != NULL && *(data->id_prefix_str) != '\0') {
-		if (strcmp(data->id_prefix_str, "negotiate") == 0) {
-			data->do_id_prefix_negotiation = 1;
-			assert (0 && "incrementer_id_prefix 'negotiate' is not implemented yet");
-		}
-	}
-
-	if (!data->do_id_prefix_negotiation) {
-		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix", id_prefix, 0);
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix", id_prefix, 0);
 
 	if ((ret = rrr_increment_verify (
 			data->id_modulus,

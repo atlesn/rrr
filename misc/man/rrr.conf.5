@@ -2485,7 +2485,9 @@ The modulus represent at least the number of ID generators, and the position rep
 .B Prefix
 
 A prefix may be given which is ORed with generated IDs.
-The prefix may either be specified in the configuration or be negotiated.
+The prefix may either be specified in the configuration, or in case
+.B incrementer_id_tag
+is used, the ID being supplied must contain the prefix.
 
 The following configuration parameters are available in the incrementer module:
 
@@ -2509,6 +2511,14 @@ by passing a message to
 containing a start ID number in a value with the given tag.
 Once an ID has been initialized, any further initialization messages will be ignored.
 
+Initialization does not persist across restarts.
+To retain an initialized ID, a generation must be triggered.
+
+If a fixed prefix is used through the parameter
+.B incrementer_id_prefix
+being non-zero, the ID given must contain this prefix.
+Otherwise, if the ID given contains a prefix, this will continue to be used for successive ID generations.
+
 .It incrementer_id_min=UNSIGNED INTEGER
 The lowest ID to allocate, defaults to 1.
 
@@ -2517,10 +2527,10 @@ The maximum ID to allocate, default to 4.294.967.295.
 
 .It incrementer_id_prefix=UNSIGNED INTEGER
 The prefix to use for generated IDs.
-May be set to
-.B negotiate
-in which case the prefix must be initialized (see below).
-Defaults to 0 which means that no prefix is used.
+Defaults to 0 which means that no prefix is used unless IDs with prefixes are supplied through initialization using the
+.B incrementer_id_tag
+parameter.
+
 Generated IDs will be prefixed with the given value so that the bits required
 to represent the maximum ID set in
 .B incrementer_id_max

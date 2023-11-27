@@ -76,11 +76,19 @@ int rrr_increment_verify_value_prefix (
 }
 
 uint32_t rrr_increment_strip_prefix (
+		uint64_t *prefix,
 		uint64_t value,
 		uint32_t max
 ) {
-	uint64_t res = value & ~(rrr_increment_max_to_prefix_mask(max));
+	uint64_t mask = rrr_increment_max_to_prefix_mask(max);
+	uint8_t bits = __rrr_increment_calculate_bit_requirement(max);
+	uint64_t res;
+
+	*prefix = (value & mask) >> bits;
+	res = value & ~mask;
+
 	assert(res <= 0xffffffff && "Value was not completely masked");
+
 	return (uint32_t) res;
 }
 

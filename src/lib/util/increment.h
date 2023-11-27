@@ -35,6 +35,7 @@ int rrr_increment_verify_value_prefix (
 		uint64_t prefix
 );
 uint32_t rrr_increment_strip_prefix (
+		uint64_t *prefix,
 		uint64_t value,
 		uint32_t max
 );
