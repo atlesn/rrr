@@ -160,6 +160,12 @@ static int incrementer_get_id_from_msgdb (
 ) {
 	int ret = 0;
 
+	*result_llu = 0;
+
+	if (data->msgdb_socket == NULL) {
+		goto out;
+	}
+
 	struct incrementer_get_id_from_msgdb_callback_data callback_data = {
 		result_llu,
 		tag
