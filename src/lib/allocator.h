@@ -29,6 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ALLOCATOR_GROUP_MSG         1
 #define RRR_ALLOCATOR_GROUP_MAX         1
 
+#define RRR_ARENA_SIZE_STEP_MIN (1 * 1024 * 1024) // 1 MB
+#define RRR_ARENA_ALIGNMENT     (sizeof(long double))
+#define RRR_ARENA_DEBUG
+
 #define RRR_ALLOCATOR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)
 
 struct rrr_mmap_stats;
@@ -53,35 +57,35 @@ static void *__rrr_allocate_failure (rrr_biglength size) {
 #include "log.h"
 
 /* Allocate memory from OS allocator */
-static inline void *rrr_allocate (rrr_biglength bytes) {
+static inline void *__rrr_allocate (rrr_biglength bytes) {
 	VERIFY_SIZE(bytes);
 	return mallocx((size_t) bytes, 0);
 }
 
 /* Allocate zeroed memory from OS allocator */
-static inline void *rrr_allocate_zero (rrr_biglength bytes) {
+static inline void *__rrr_allocate_zero (rrr_biglength bytes) {
 	VERIFY_SIZE(bytes);
 	return mallocx((size_t) bytes, MALLOCX_ZERO);
 }
 
 /* Allocate memory from group allocator */
-static inline void *rrr_allocate_group (rrr_biglength bytes, size_t group) {
+static inline void *__rrr_allocate_group (rrr_biglength bytes, size_t group) {
 	(void)(group);
 	VERIFY_SIZE(bytes);
 	return mallocx((size_t) bytes, 0);
 }
 
 /* Frees both allocations done by OS allocator and group allocator */
-static inline void rrr_free (void *ptr) {
+static inline void __rrr_free (void *ptr) {
 	free(ptr);
 }
 
-static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group_num) {
+static void *__rrr_reallocate_final (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group_num) {
 	(void)(bytes_old);
 	(void)(group_num);
 
 	if (ptr_old == NULL) {
-		return rrr_allocate(bytes_new);
+		return __rrr_allocate(bytes_new);
 	}
 
 	if (bytes_new > 0) {
@@ -92,21 +96,21 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 }
 
 /* Caller must ensure that old allocation is done by OS allocator */
-static inline void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
+static inline void *__rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new) {
 	VERIFY_SIZE(bytes_new);
 	VERIFY_SIZE(bytes_old);
-	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, 0);
+	return __rrr_reallocate_final(ptr_old, (size_t) bytes_old, (size_t) bytes_new, 0);
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
-static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
+static inline void *__rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group) {
 	VERIFY_SIZE(bytes_new);
 	VERIFY_SIZE(bytes_old);
-	return __rrr_reallocate(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
+	return __rrr_reallocate_final(ptr_old, (size_t) bytes_old, (size_t) bytes_new, group);
 }
 
 /* Duplicate string using OS allocator */
-static inline char *rrr_strdup (const char *str) {
+static inline char *__rrr_strdup (const char *str) {
 	size_t size = strlen(str) + 1;
 
 	if (size == 0) {
@@ -114,7 +118,7 @@ static inline char *rrr_strdup (const char *str) {
 		return NULL;
 	}	
 
-	char *result = (char *) rrr_allocate(size);
+	char *result = (char *) __rrr_allocate(size);
 
 	if (result == NULL) {
 		return result;
@@ -124,6 +128,27 @@ static inline char *rrr_strdup (const char *str) {
 
 	return result;
 }
+
+#define rrr_allocate(bytes)                                          \
+    __rrr_allocate(bytes)
+
+#define rrr_allocate_zero(bytes)                                     \
+    __rrr_allocate_zero(bytes)
+
+#define rrr_allocate_group(bytes, group)                             \
+    __rrr_allocate_group(bytes, group)
+
+#define rrr_free(ptr)                                                \
+    __rrr_free(ptr)
+
+#define rrr_reallocate(ptr_old, bytes_old, bytes_new)                \
+    __rrr_reallocate(ptr_old, bytes_old, bytes_new)
+
+#define rrr_reallocate_group(ptr_old, bytes_old, bytes_new, group)   \
+    __rrr_reallocate_group(ptr_old, bytes_old, bytes_new, group)
+
+#define rrr_strdup(str)                                              \
+    __rrr_strdup(str)
 
 static inline int rrr_allocator_init (void) {
 	// Ensure linking with jemalloc is performed in binaries
@@ -212,4 +237,58 @@ static inline void rrr_allocator_maintenance_nostats (void) {
 }
 
 #endif /* RRR_WITH_JEMALLOC */
+
+struct rrr_arena {
+	void *ptr;
+	size_t size;
+	size_t pos;
+	char name[32];
+};
+
+int rrr_arena_expand (
+		struct rrr_arena *arena,
+		size_t size,
+		const char *name
+);
+
+static inline void *rrr_arena_allocate (
+		struct rrr_arena *arena,
+		size_t size,
+		const char *name
+) {
+	void *ptr;
+
+	size = (size + RRR_ARENA_ALIGNMENT - 1) & ~(RRR_ARENA_ALIGNMENT - 1);
+
+	if (arena->pos + size > arena->size) {
+#ifdef RRR_ARENA_DEBUG
+		RRR_MSG_1("Expanding arena %s from %llu to %llu bytes\n",
+			arena->name,
+			(unsigned long long) arena->size,
+			(unsigned long long) arena->size + size);
+#endif
+		if (rrr_arena_expand(arena, arena->size + size, name) != 0) {
+			return NULL;
+		}
+	}
+
+	ptr = (char *) arena->ptr + arena->pos;
+	arena->pos += size;
+
+	return ptr;
+}
+
+static inline void rrr_arena_free (
+		struct rrr_arena *arena
+) {
+#ifdef RRR_ARENA_DEBUG
+	RRR_MSG_1("Freeing arena %s currently using %llu bytes\n",
+		arena->name, (unsigned long long) arena->pos);
+#endif
+	rrr_free(arena->ptr);
+	arena->ptr = NULL;
+	arena->size = 0;
+	arena->pos = 0;
+}
+
 #endif /* RRR_ALLOCATOR_H */
