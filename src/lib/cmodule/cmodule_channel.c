@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
 	const struct rrr_msg *message;
@@ -102,7 +103,7 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
-		unsigned int full_wait_time_us,
+		rrr_time_us_t full_wait_time,
 		int wait_attempts_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
@@ -138,8 +139,8 @@ int rrr_cmodule_channel_send_message_and_address (
 			goto out;
 		}
 
-		if (full_wait_time_us > 0) {
-			rrr_posix_usleep(full_wait_time_us);
+		if (!rrr_time_us_zero(full_wait_time)) {
+			rrr_posix_sleep_us(full_wait_time);
 		}
 	}
 

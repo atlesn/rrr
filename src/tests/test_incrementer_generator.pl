@@ -15,19 +15,31 @@ my $loops = 0;
 sub source {
 	my $message = shift;
 
+	# Max value in configuration is expected to be 32 bits (for instance 0xffffffff)
+
+	my $prefix = 65535;
+
 	if ($loops == 0) {
+		my $value;
+
+		$value = 1 | ($prefix << 32);
+
 		$message->{'topic'} = "rrr/increment/A";
-		$message->push_tag_str("id", "1");
+		$message->push_tag_str("id", $value);
 		$message->send();
 		$message->clear_array();
+
+		$value = 2 | ($prefix << 32);
 
 		$message->{'topic'} = "rrr/increment/B";
-		$message->push_tag_str("id", "2");
+		$message->push_tag_str("id", $value);
 		$message->send();
 		$message->clear_array();
 
+		$value = 3 | ($prefix << 32);
+
 		$message->{'topic'} = "rrr/increment/C";
-		$message->push_tag_str("id", "3");
+		$message->push_tag_str("id", $value);
 		$message->send();
 		$message->clear_array();
 	}

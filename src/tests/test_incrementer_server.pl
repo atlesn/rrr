@@ -25,9 +25,9 @@ sub source {
 			return 1;
 		}
 		my $id_check =
-			($suffix eq "A" ? 2 :
-			($suffix eq "B" ? 3 :
-			($suffix eq "C" ? 4 : 0)));
+			($suffix eq "A" ? 2 | (65535<<32) :
+			($suffix eq "B" ? 3 | (65535<<32) :
+			($suffix eq "C" ? 4 | (65535<<32) : 0)));
 
 		foreach my $id (sort keys %{$results{$suffix}}) {
 			if ($id != $id_check) {

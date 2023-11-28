@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "settings.h"
 #include "util/linked_list.h"
+#include "util/rrr_time.h"
 
 #define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)                                                            \
     do { const char *__prefix = prefix; char *config_string = NULL
@@ -99,6 +100,13 @@ do {rrr_setting_uint tmp_uint = (default_uint);                                 
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)                           \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, data->target, default_uint)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(string, target, default_ms)                                   \
+do {rrr_time_ms_t tmp_time_ms;                                                                              \
+    RRR_ASSERT(sizeof(tmp_time_ms.ms) >= sizeof(rrr_setting_uint),size_of_rrr_time_ms_t_ms_must_be_at_least_size_of_rrr_setting_uint); \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, tmp_time_ms.ms, default_ms.ms);                 \
+    data->target = rrr_time_us_from_ms(tmp_time_ms);                                                        \
+    } while(0)
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, target, default_double)                       \
 do {rrr_setting_double tmp_double = (default_double);                                                       \

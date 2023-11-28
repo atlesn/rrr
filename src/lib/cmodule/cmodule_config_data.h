@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../settings.h"
 
 struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
+	rrr_time_us_t worker_spawn_interval;
 	rrr_setting_uint worker_count;
 
 	enum rrr_cmodule_process_mode process_mode;

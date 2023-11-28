@@ -36,17 +36,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_INPUT_QUEUE_MAX      250
 
-#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS            50
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT   250
 #define RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT             1
-#define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS        1000
-#define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S              10
-
 #define RRR_CMODULE_WORKER_MAX_WORKER_COUNT                 16
 
+static const rrr_time_ms_t rrr_cmodule_worker_default_sleep_time       = RRR_MS   (50);
+static const rrr_time_ms_t rrr_cmodule_worker_default_spawn_interval   = RRR_MS (1000);
+static const rrr_time_s_t  rrr_cmodule_worker_fork_pong_timeout        = RRR_S    (10);
+
 #define RRR_CMODULE_CHANNEL_SIZE             (1024*1024*2*RRR_CMODULE_WORKER_MAX_WORKER_COUNT)
-#define RRR_CMODULE_CHANNEL_WAIT_TIME_US     100
 #define RRR_CMODULE_CHANNEL_WAIT_RETRIES     500
+
+static const rrr_time_us_t rrr_cmodule_channel_wait_time = RRR_US(100);
 
 #define RRR_CMODULE_FINAL_CALLBACK_ARGS                        \
         const struct rrr_msg_msg *msg,                         \
