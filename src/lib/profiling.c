@@ -72,6 +72,11 @@ static int __rrr_profiling_mallctl_call (const char *name) {
 
 	return 0;
 }
+
+static void __rrr_profiling_stats_callback (void *opaque_data, const char *str) {
+	RRR_MSG_1("Heap statistics for pid %lli:\n%s\n", (long long int) getpid(), str);
+}
+
 #endif
 
 void rrr_profiling_dump (void) {
@@ -127,6 +132,8 @@ void rrr_profiling_dump (void) {
 		return;
 	}
 
+	RRR_MSG_1("Dumping memory stats for pid %lli\n", (long long int) getpid());
+	malloc_stats_print(__rrr_profiling_stats_callback, NULL, NULL);
 #else
 
 	RRR_MSG_0("Memory profiling requested by signal SIGUSR2, but RRR is not built with jemalloc.\n");
