@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "profiling.h"
 
 #include "log.h"
+#include "rrr_config.h"
 #include "rrr_strerror.h"
 
 #ifdef RRR_WITH_JEMALLOC
@@ -47,6 +48,15 @@ static int __rrr_profiling_mallctl_set_bool (const char *name, bool value) {
 	value = value != 0;
 
 	if (mallctl(name, NULL, 0, &value, sizeof(value)) != 0) {
+		RRR_MSG_0("Warning: mallctl failed for %s\n", name);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int __rrr_profiling_mallctl_set_string (const char *name, const char *str) {
+	if (mallctl(name, NULL, 0, &str, sizeof(str)) != 0) {
 		RRR_MSG_0("Warning: mallctl failed for %s\n", name);
 		return 1;
 	}
@@ -94,16 +104,26 @@ void rrr_profiling_dump (void) {
 		return;
 	}
 
-	*buf = '\0';
-	if (getcwd(buf, sizeof(buf)) == NULL) {
-		RRR_MSG_0("Warning: getcwd() failed in %s: %s\n", __func__, buf);
+	if (snprintf(buf, sizeof(buf), "%s/%s", rrr_config_global.run_directory, "jeprof") >= (int) sizeof(buf)) {
+		sprintf(buf, "/tmp/jeprof");
+
+		RRR_MSG_0("Warning: Path trunctation in %s, cannot use current run directory to store profiling dumps. " \
+			"Falling back to %s\n", __func__, buf);
+	}
+
+	buf[sizeof(buf) - 1] = '\0';
+
+	if (__rrr_profiling_mallctl_set_string ("prof.prefix", buf) != 0) {
+		return;
 	}
 
 	RRR_MSG_1("Dumping memory profile in pid %lli as instructed by signal SIGUSR2. " \
-		"Current working directory is '%s', expect dump files to be placed here.\n",
+		"Prefix for dump files is '%s'\n",
 		(long long int) getpid(), buf);
 
 	if (__rrr_profiling_mallctl_call("prof.dump")) {
+		RRR_MSG_0("Warning: Memory profiling dump failed. Verify hat the prefix '%s' is valid and that the containing directory is writable.\n",
+			buf);
 		return;
 	}
 
