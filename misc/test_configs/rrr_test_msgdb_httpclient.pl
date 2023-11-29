@@ -20,7 +20,6 @@ my $counter = 0;
 sub source {
 	my $message = shift;
 
-	return 1;
 	if ($counter > 10000) {
 		return 1;
 	}

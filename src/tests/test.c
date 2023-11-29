@@ -107,10 +107,12 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 	return get_test_result();
 }
 
-static int some_fork_has_stopped = 0;
-static int main_running = 1;
+static volatile int some_fork_has_stopped = 0;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -240,7 +242,6 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-exit(ret);
 
 	TEST_BEGIN("discern stack parsing") {
 		ret_tmp = rrr_test_discern_stack();
@@ -463,6 +464,10 @@ int main (int argc, const char **argv, const char **env) {
 		) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+			if (sigusr2) {
+				RRR_MSG_0("Received SIGUSR2, but this is not implemented in test suite\n");
+				sigusr2 = 0;
+			}
 		}
 
 		ret = main_get_test_result(&instances);

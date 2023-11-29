@@ -160,7 +160,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
-                    read.c mmap_channel.c rrr_shm.c \
+                    read.c mmap_channel.c rrr_shm.c profiling.c \
                     instances.c instance_friends.c modules.c \
 		    poll_helper.c msgdb_helper.c \
                     random.c condition.c \

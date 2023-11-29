@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../common.h"
 #include "../read_constants.h"
 #include "../rrr_shm.h"
+#include "../profiling.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -137,6 +138,10 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 		RRR_DBG_SIGNAL("cmodule worker %s pid %i received SIGUSR1, SIGTERM or SIGINT, stopping\n",
 				worker->name, getpid());
 		worker->received_stop_signal = 1;
+	}
+
+	if (signal == SIGUSR2) {
+		worker->received_sigusr2_signal = 1;
 	}
 
 	return 0;
@@ -644,6 +649,11 @@ static int __rrr_cmodule_worker_event_periodic (
 
 	if (worker->received_stop_signal) {
 		return RRR_EVENT_EXIT;
+	}
+
+	if (worker->received_sigusr2_signal) {
+		rrr_profiling_dump();
+		worker->received_sigusr2_signal = 0;
 	}
 
 	int ret_tmp = 0;

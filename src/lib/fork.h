@@ -52,7 +52,7 @@ struct rrr_fork_unregister_exit_handler_data {
 };
 
 struct rrr_fork_default_exit_notification_data {
-	int *int_to_set;
+	volatile int *int_to_set;
 };
 
 int rrr_fork_handler_new (

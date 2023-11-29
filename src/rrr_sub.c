@@ -270,10 +270,11 @@ static int __rrr_sub_init (
 		return ret;
 }
 
-static int main_running = 1;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
 
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -379,6 +380,11 @@ static int __rrr_sub_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	else if (!main_running) {
 		RRR_DBG_1("| Exiting\n");
 		return RRR_EVENT_EXIT;
+	}
+
+	if (sigusr2) {
+		RRR_MSG_0("Received SIGUSR2, but this is not implemented in subscriber\n");
+		sigusr2 = 0;
 	}
 
 	return RRR_EVENT_OK;
