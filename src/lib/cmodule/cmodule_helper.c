@@ -784,6 +784,20 @@ static int __rrr_cmodule_helper_event_periodic (
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 5, "mmap_to_parent_full_events", write_full_counter);
 		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_parent_count", 0, count);
 	}
+	{
+		char buf_path[128];
+		char buf_value[64];
+		for (int i = 0; i < INSTANCE_D_CMODULE(thread_data)->worker_count; i++) {
+			const struct rrr_cmodule_worker *worker = &INSTANCE_D_CMODULE(thread_data)->workers[i];
+
+			snprintf(buf_path,  sizeof(buf_path),  "workers/%i/pid", i);
+			rrr_stats_instance_post_base10_text(INSTANCE_D_STATS(thread_data), buf_path, 0, (long long int) worker->pid);
+
+			snprintf(buf_path,  sizeof(buf_path),  "workers/%i/name", i);
+			snprintf(buf_value, sizeof(buf_value), "%s", worker->name);
+			rrr_stats_instance_post_text(INSTANCE_D_STATS(thread_data), buf_path, 0, buf_value);
+		}
+	}
 
 	// TODO : Fix rate counter
 	// rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 11, "input_counter", INSTANCE_D_COUNTERS(thread_data)->total_message_count);
