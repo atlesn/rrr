@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event/event_functions.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
+#include "util/atomic.h"
 
 // Blocks larger than this limit are allocated using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 8192
@@ -91,6 +92,12 @@ struct rrr_mmap_channel {
 	char name[64];
 
 	unsigned long long int write_full_counter;
+
+	rrr_atomic_u64_t shm_alloced_bytes;
+	rrr_atomic_u64_t shm_alloced_blocks;
+
+	rrr_atomic_u64_t mmap_alloced_bytes;
+	rrr_atomic_u64_t mmap_alloced_blocks;
 };
 
 #define INDEX_LOCK(channel) \
@@ -112,6 +119,38 @@ int rrr_mmap_channel_count (
 
 	out_lock_err:
 	return ret;
+}
+
+static void __rrr_mmap_channel_block_free_sub_counters (
+		rrr_atomic_u64_t *alloced_bytes,
+		size_t bytes,
+		rrr_atomic_u64_t *alloced_blocks
+) {
+	if (rrr_atomic_u64_sub_fetch(alloced_blocks, 1) == UINT64_MAX) {
+		RRR_BUG("BUG: Underflow for block counter in %s\n", __func__);
+	}
+
+	if (rrr_atomic_u64_fetch_sub(alloced_bytes, 0) <
+	    rrr_atomic_u64_sub_fetch(alloced_bytes, bytes)
+	) {
+		RRR_BUG("BUG: Underflow for byte counter in %s\n", __func__);
+	}
+}
+
+static void __rrr_mmap_channel_block_allocate_add_counters (
+		rrr_atomic_u64_t *alloced_bytes,
+		size_t bytes,
+		rrr_atomic_u64_t *alloced_blocks
+) {
+	if (rrr_atomic_u64_add_fetch(alloced_blocks, 1) == 0) {
+		RRR_BUG("BUG: Overflow for block counter in %s\n", __func__);
+	}
+
+	if (rrr_atomic_u64_fetch_add(alloced_bytes, 0) >
+	    rrr_atomic_u64_add_fetch(alloced_bytes, bytes)
+	) {
+		RRR_BUG("BUG: Overflow for byte counter in %s\n", __func__);
+	}
 }
 
 static int __rrr_mmap_channel_block_free (
@@ -140,6 +179,11 @@ static int __rrr_mmap_channel_block_free (
 			RRR_MSG_0("shmdt failed in %s: %s\n", __func__, rrr_strerror(errno));
 			return 1;
 		}
+
+		__rrr_mmap_channel_block_free_sub_counters (
+				&target->shm_alloced_bytes,
+				&target->shm_alloced_blocks
+		);
 	}
 	else if (block->ptr_shm_or_mmap_writer != NULL) {
 		if (rrr_mmap_collection_free (
@@ -148,6 +192,8 @@ static int __rrr_mmap_channel_block_free (
 		) != 0) {
 			RRR_BUG("BUG: Free failed in %s\n", __func__);
 		}
+
+
 	}
 
 	block->ptr_shm_or_mmap_writer = NULL;

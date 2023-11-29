@@ -32,7 +32,11 @@ typedef struct rrr_atomic_u64_s {
 	uint64_t value;
 } rrr_atomic_u64_t;
 
+
 static inline int rrr_atomic_u32_load(rrr_atomic_u32_t *atomic) {
+	// TODO : Change int return types to uint32_t for all functions
+	RRR_ASSERT(sizeof(int) == sizeof(uint32_t),todo_function_return_types_must_be_changed_to_uint32_t);
+
 	int res;
 	__atomic_load(&atomic->value, &res, __ATOMIC_SEQ_CST);
 	return res;
@@ -44,6 +48,18 @@ static inline int rrr_atomic_u32_fetch_or(rrr_atomic_u32_t *atomic, uint32_t val
 
 static inline int rrr_atomic_u32_fetch_and(rrr_atomic_u32_t *atomic, uint32_t value) {
 	return __atomic_fetch_and(&atomic->value, value, __ATOMIC_SEQ_CST);
+}
+
+static inline uint64_t rrr_atomic_u64_fetch_sub(rrr_atomic_u64_t *atomic, uint64_t value) {
+	return __atomic_fetch_sub(&atomic->value, value, __ATOMIC_SEQ_CST);
+}
+
+static inline uint64_t rrr_atomic_u64_add_fetch(rrr_atomic_u64_t *atomic, uint64_t value) {
+	return __atomic_add_fetch(&atomic->value, value, __ATOMIC_SEQ_CST);
+}
+
+static inline uint64_t rrr_atomic_u64_sub_fetch(rrr_atomic_u64_t *atomic, uint64_t value) {
+	return __atomic_sub_fetch(&atomic->value, value, __ATOMIC_SEQ_CST);
 }
 
 static inline uint64_t rrr_atomic_u64_load_relaxed(rrr_atomic_u64_t *atomic) {

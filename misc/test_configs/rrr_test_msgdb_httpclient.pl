@@ -20,7 +20,8 @@ my $counter = 0;
 sub source {
 	my $message = shift;
 
-	return 1;
+	my $dummy_4kb_string = "a" x 4096;
+
 	if ($counter > 10000) {
 		return 1;
 	}
@@ -40,6 +41,8 @@ sub source {
 		$message->push_tag_str('method', "GET");
 		$message->send();
 	}
+
+	$message->push_tag("payload", $dummy_4kb_string);
 
 	$counter++;
 
