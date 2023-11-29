@@ -49,7 +49,8 @@ struct rrr_cmodule_worker {
 	pthread_mutex_t pid_lock;
 
 	pid_t pid;
-	int received_stop_signal;
+	volatile int received_stop_signal;
+	volatile int received_sigusr2_signal;
 
 	int config_complete;
 

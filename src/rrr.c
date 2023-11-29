@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/log.h"
 #include "lib/allocator.h"
 #include "lib/rrr_shm.h"
+#include "lib/profiling.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
@@ -530,6 +531,11 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	if (main_mmap_periodic(callback_data->stats_data) != 0) {
 		RRR_MSG_0("Error while posting mmap statistics in main loop\n");
 		goto out_destroy_thread_collection;
+	}
+
+	if (sigusr2) {
+		rrr_profiling_dump();
+		sigusr2 = 0;
 	}
 
 	return RRR_EVENT_OK;
