@@ -53,9 +53,11 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            '\0',    NULL,                   NULL}
 };
 
-static int main_running = 1;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 /*
@@ -77,6 +79,11 @@ static int __rrr_readdir_callback (
 	(void)(private_data);
 
 	printf("File '%s'=>'%s'\n", orig_path, resolved_path);
+
+	if (sigusr2) {
+		RRR_MSG_0("Received SIGUSR2, but this is not implemented in RRR readdir\n");
+		sigusr2 = 0;
+	}
 
 	return main_running ? 0 : RRR_READ_EOF;
 }

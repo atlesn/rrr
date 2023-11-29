@@ -99,10 +99,12 @@ const char *module_library_paths[] = {
 // on the stack correctly
 //#define RRR_NO_MODULE_UNLOAD
 
-static int some_fork_has_stopped = 0;
-static int main_running = 1;
+static volatile int some_fork_has_stopped = 0;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -854,7 +856,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
-			&some_fork_has_stopped
+		&some_fork_has_stopped
 	};
 
 	struct rrr_map config_file_map = {0};

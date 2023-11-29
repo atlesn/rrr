@@ -210,15 +210,22 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	return ret;
 }
 
-static int main_running = 1;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_http_server_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	(void)(arg);
 
 	rrr_allocator_maintenance_nostats();
+
+	if (sigusr2) {
+		RRR_MSG_0("Received SIGUSR2, but this is not implemented in http server\n");
+		sigusr2 = 0;
+	}
 
 	return (main_running ? 0 : RRR_EVENT_EXIT);
 }
