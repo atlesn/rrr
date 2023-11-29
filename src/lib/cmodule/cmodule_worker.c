@@ -934,7 +934,6 @@ int rrr_cmodule_worker_main (
 			callbacks,
 			init_wrapper_arg
 	);
-			//rrr_event_hook_set (main_loop_event_hook, &stats_data);
 
 	rrr_log_hook_unregister(log_hook_handle);
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -140,12 +140,12 @@ struct stats_data {
 	struct rrr_stats_engine engine;
 };
 
-static int main_stats_post_text_message (struct stats_data *stats_data, const char *path, const char *text, uint32_t flags) {
+static int main_stats_post_message (struct stats_data *stats_data, const char *path, uint8_t type, const char *text, uint32_t flags) {
 	struct rrr_msg_stats message;
 
 	if (rrr_msg_stats_init (
 			&message,
-			RRR_STATS_MESSAGE_TYPE_TEXT,
+			type,
 			flags,
 			path,
 			text,
@@ -162,29 +162,40 @@ static int main_stats_post_text_message (struct stats_data *stats_data, const ch
 	return 0;
 }
 
-static int main_stats_post_unsigned_message (struct stats_data *stats_data, const char *path, uint64_t value, uint32_t flags) {
-	struct rrr_msg_stats message;
+static int main_stats_post_text_message (struct stats_data *stats_data, const char *path, const char *text, uint32_t flags) {
+	return main_stats_post_message (
+			stats_data,
+			path,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			text,
+			flags
+	);
+}
 
+static int main_stats_post_unsigned_message (struct stats_data *stats_data, const char *path, uint64_t value, uint32_t flags) {
 	char text[125];
 	sprintf(text, "%" PRIu64, value);
 
-	if (rrr_msg_stats_init (
-			&message,
-			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
-			flags,
+	return main_stats_post_message (
+			stats_data,
 			path,
+			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
 			text,
-			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
-	) != 0) {
-		RRR_BUG("Could not initialize main statistics message\n");
-	}
+			flags
+	);
+}
 
-	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
-		RRR_MSG_0("Could not post main statistics message\n");
-		return 1;
-	}
+static int main_stats_post_signed_message (struct stats_data *stats_data, const char *path, int64_t value, uint32_t flags) {
+	char text[125];
+	sprintf(text, "%" PRIi64, value);
 
-	return 0;
+	return main_stats_post_message (
+			stats_data,
+			path,
+			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
+			text,
+			flags
+	);
 }
 
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
@@ -192,16 +203,17 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 
 	char msg_text[RRR_STATS_MESSAGE_DATA_MAX_SIZE + 1];
 
-	if (snprintf (
-			msg_text,
-			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
-			"RRR running with %i instances",
-			rrr_instance_collection_count(instances)
-	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
-		RRR_BUG("Statistics message too long in main\n");
-	}
+	snprintf (msg_text,
+	          RRR_STATS_MESSAGE_DATA_MAX_SIZE,
+	          "RRR running with %i instances",
+	          rrr_instance_collection_count(instances)
+	);
 
 	if ((ret = main_stats_post_text_message(stats_data, "status", msg_text, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
+		goto out;
+	}
+
+	if ((ret = main_stats_post_signed_message(stats_data, "pid", (int64_t) getpid(), RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 		goto out;
 	}
 
