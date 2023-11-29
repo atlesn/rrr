@@ -147,3 +147,6 @@ stamp-h2
 # FreeBSD
 *~
 .test_composite.sh
+
+# jemalloc
+jeprof.*
