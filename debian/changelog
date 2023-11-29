@@ -37,6 +37,7 @@ rrr (1.28-31) bullseye; urgency=medium
     * Hook events and show them using rrr_stats
     * Set mode on file which are written by the file module
     * Incrementer can use prefixes ORed with incremented ID
+    * Dump memory profiling using functionallity provided by jemalloc
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
