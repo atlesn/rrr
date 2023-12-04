@@ -1,4 +1,4 @@
-rrr (1.28-31) bullseye; urgency=medium
+rrr (1.28-32) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -67,6 +67,7 @@ rrr (1.28-31) bullseye; urgency=medium
       and the alignment used up all remaining buffered bytes.
     * Non-working default socket name in msgdb module causing crash
     * Incorrect tick timer in msgdb causing excessive CPU usage
+    * Memory leak of HV in Perl subroutine call helper function
 
   * Under the hood:
     * Use events in file module
