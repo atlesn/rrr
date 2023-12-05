@@ -1,4 +1,4 @@
-.Dd 2023-09-16
+.Dd 2023-12-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2037,10 +2037,16 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 .PP
 With default configuration, having no parameters specified, no RRR messages will be generated for received requests.
 .PP
-Note that all incoming request have to use
-.B HTTP/1.1
-as protocol version, any other versions will be rejected.
-
+The following protocols are supported by
+.B httpserver,
+and may be used at the clients discretion:
+.PP
+\(bu HTTP/1.0 and HTTP/1.1 where the latter implies keepalive connection
+\(bu Websocket through upgrade from HTTP/1.1
+\(bu HTTP/2 through upgrade from HTTP/1.1
+\(bu HTTP/2 plain mode using HTTP/2 magic
+\(bu HTTP/2 negotiated using TLS/ALPN
+.PP
 .SS httpclient (PAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
 may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
