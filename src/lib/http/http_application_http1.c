@@ -1612,7 +1612,10 @@ static int __rrr_http_application_http1_tick (
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
 			if ((ret = rrr_net_transport_ctx_check_alive(handle)) == 0) {
-				if ((ret = http1->callbacks.async_response_get_callback(http1->active_transaction, http1->callbacks.async_response_get_callback_arg)) == RRR_HTTP_OK) {
+				if ((ret = http1->callbacks.async_response_get_callback (
+						http1->active_transaction,
+						http1->callbacks.async_response_get_callback_arg
+				)) == RRR_HTTP_OK) {
 					ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
 
 					__rrr_http_application_http1_transaction_clear(http1);
@@ -1659,14 +1662,20 @@ static int __rrr_http_application_http1_tick (
 	return ret;
 }
 
-static int __rrr_http_application_http1_need_tick (
+static void __rrr_http_application_http1_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
-	(void)(app);
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
 
-	/* No need for extra ticking in HTTP1 */
+	/* Need to tick if we are waiting for response from
+	 * async response callback. */
 
-	return 0;
+	if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE &&
+	    http1->active_transaction != NULL &&
+	    http1->active_transaction->need_response
+	) {
+		*speed = RRR_HTTP_TICK_SPEED_SLOW;
+	}
 }
 
 static void __rrr_http_application_http1_polite_close (

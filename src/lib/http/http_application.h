@@ -128,7 +128,8 @@ int rrr_http_application_transport_ctx_request_send (
 		enum rrr_http_version protocol_version,
 		struct rrr_http_transaction *transaction
 );
-int rrr_http_application_transport_ctx_need_tick (
+void rrr_http_application_transport_ctx_need_tick (
+		enum rrr_http_tick_speed *speed,
 		struct rrr_http_application *app
 );
 int rrr_http_application_transport_ctx_tick (

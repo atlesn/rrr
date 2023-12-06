@@ -36,11 +36,19 @@ void rrr_net_transport_ctx_touch (
 	}
 }
 
-void rrr_net_transport_ctx_notify_read (
+void rrr_net_transport_ctx_notify_read_fast (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!EVENT_PENDING(handle->event_read_notify)) {
-		EVENT_ADD(handle->event_read_notify);
+	if (!EVENT_PENDING(handle->event_read_notify_fast)) {
+		EVENT_ADD(handle->event_read_notify_fast);
+	}
+}
+
+void rrr_net_transport_ctx_notify_read_slow (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_read_notify_slow)) {
+		EVENT_ADD(handle->event_read_notify_slow);
 	}
 }
 
