@@ -44,6 +44,7 @@ struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct rrr_http2_session *http2_session;
 	struct rrr_http_transaction *transaction_incomplete_upgrade;
+	int need_slow_tick;
 };
 
 static const char rrr_http_application_http2_alpn_protos[] = {
@@ -313,19 +314,20 @@ static int __rrr_http_application_http2_data_receive_callback (
 		RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
+	struct rrr_http_application_http2 *http2 = callback_data->http2;
+	struct rrr_http_transaction *transaction = stream_application_data;
 
 	(void)(session);
 
 	int ret = 0;
 
 	struct rrr_http_transaction *transaction_to_destroy = NULL;
-	struct rrr_http_transaction *transaction = stream_application_data;
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
 	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
-		if (callback_data->http2->callbacks.failure_callback == NULL) {
-			if (callback_data->http2->callbacks.unique_id_generator_callback == NULL) {
+		if (http2->callbacks.failure_callback == NULL) {
+			if (http2->callbacks.unique_id_generator_callback == NULL) {
 				// Is client
 				RRR_MSG_0("HTTP2 request failed and no failure delivery defined, data is lost\n");
 			}
@@ -335,16 +337,16 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		ret = callback_data->http2->callbacks.failure_callback (
+		ret = http2->callbacks.failure_callback (
 				callback_data->handle,
 				transaction,
 				stream_error_msg,
-				callback_data->http2->callbacks.failure_callback_arg
+				http2->callbacks.failure_callback_arg
 		);
 		goto out;
 	}
 
-	if (callback_data->http2->callbacks.unique_id_generator_callback == NULL) {
+	if (http2->callbacks.unique_id_generator_callback == NULL) {
 		// Is client
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
@@ -400,15 +402,15 @@ static int __rrr_http_application_http2_data_receive_callback (
 					0,
 					0,
 					0,
-					callback_data->http2->callbacks.unique_id_generator_callback,
-					callback_data->http2->callbacks.unique_id_generator_callback_arg,
+					http2->callbacks.unique_id_generator_callback,
+					http2->callbacks.unique_id_generator_callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
 				RRR_MSG_0("Could not create transaction in %s\n", __func__);
 				goto out;
 			}
-			if ((ret = rrr_http2_session_stream_application_data_set(callback_data->http2->http2_session, stream_id, transaction_to_destroy, rrr_http_transaction_decref_if_not_null_void)) != 0) {
+			if ((ret = rrr_http2_session_stream_application_data_set(http2->http2_session, stream_id, transaction_to_destroy, rrr_http_transaction_decref_if_not_null_void)) != 0) {
 				goto out;
 			}
 			// Don't set to NULL, will be decrefed at function out
@@ -478,15 +480,15 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 
-	if ((ret = callback_data->http2->callbacks.callback (
+	if ((ret = http2->callbacks.callback (
 			callback_data->handle,
 			transaction,
 			data,
 			0,
 			RRR_HTTP_APPLICATION_HTTP2,
-			callback_data->http2->callbacks.callback_arg
+			http2->callbacks.callback_arg
 	)) != 0) {
-		if (callback_data->http2->callbacks.unique_id_generator_callback != NULL) {
+		if (http2->callbacks.unique_id_generator_callback != NULL) {
 			// Is server
 
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
@@ -494,13 +496,14 @@ static int __rrr_http_application_http2_data_receive_callback (
 			}
 			else if (ret == RRR_HTTP_NO_RESULT) {
 				transaction->need_response = 1;
+				http2->need_slow_tick = 1;
 				ret = 0;
 			}
 		}
 		goto out;
 	}
 
-	if (callback_data->http2->callbacks.unique_id_generator_callback != NULL) {
+	if (http2->callbacks.unique_id_generator_callback != NULL) {
 		// Is server
 		goto out_send_response;
 	}
@@ -514,7 +517,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 		if (transaction->response_part->response_code != 0) {
 			RRR_DBG_3("HTTP2 submit response %u\n", transaction->response_part->response_code);
 
-			if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
+			if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) http2, transaction, stream_id)) != 0) {
 				goto out;
 			}
 		}
@@ -592,17 +595,22 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 		void *arg
 ) {
 	struct rrr_http_application_http2_callback_data *callback_data = arg;
+	struct rrr_http_application_http2 *http2 = callback_data->http2;
 	struct rrr_http_transaction *transaction = application_data;
 
 	int ret = 0;
 
 	if (transaction && transaction->need_response) {
-		if ((ret = callback_data->http2->callbacks.async_response_get_callback(transaction, callback_data->http2->callbacks.async_response_get_callback_arg)) != 0) {
-			ret &= ~(RRR_HTTP_NO_RESULT);
+		if ((ret = http2->callbacks.async_response_get_callback(transaction, http2->callbacks.async_response_get_callback_arg)) != 0) {
+			if (ret == RRR_HTTP_NO_RESULT) {
+				// Try again shortly
+				http2->need_slow_tick = 1;
+				ret = 0;
+			}
 			goto out;
 		}
 
-		if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
+		if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) http2, transaction, stream_id)) != 0) {
 			goto out;
 		}
 	}
@@ -674,9 +682,11 @@ static void __rrr_http_application_http2_need_tick (
 	if (rrr_http2_need_tick(http2->http2_session)) {
 		*speed = RRR_HTTP_TICK_SPEED_FAST;
 	}
-	else if (http2->transaction_incomplete_upgrade) {
+	else if (http2->transaction_incomplete_upgrade || http2->need_slow_tick) {
 		*speed = RRR_HTTP_TICK_SPEED_SLOW;
 	}
+
+	http2->need_slow_tick = 0;
 }
 
 static void __rrr_http_application_http2_alpn_protos_get (
