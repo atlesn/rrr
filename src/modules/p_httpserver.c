@@ -1072,7 +1072,8 @@ static int httpserver_async_response_get_and_process (
 	else if (rrr_time_get_64() > response_data->time_begin + data->response_timeout_ms * 1000) {
 		RRR_DBG_3("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
 				response_data->request_topic, INSTANCE_D_NAME(data->thread_data));
-		ret = RRR_HTTP_SOFT_ERROR;
+		transaction->response_part->response_code = 504; // Gateway timeout
+		ret = RRR_HTTP_OK;
 		goto out;
 	}
 
