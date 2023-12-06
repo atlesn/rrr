@@ -1315,6 +1315,9 @@ int rrr_msgdb_server_new (
 	struct rrr_msgdb_server *server = NULL;
 	int fd = 0;
 
+	assert(directory != NULL && *directory != '\0' && "directory must be provided");
+	assert(socket != NULL && *socket != '\0' && "socket must be provided");
+
 	if ((ret = rrr_socket_unix_create_bind_and_listen (
 		&fd,
 		"msgdb_server",

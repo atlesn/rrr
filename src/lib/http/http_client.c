@@ -601,7 +601,11 @@ static int __rrr_http_client_read_callback (
 
 	int again_max = 5;
 
+	enum rrr_http_tick_speed tick_speed;
+
 	again:
+
+	tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
@@ -629,12 +633,24 @@ static int __rrr_http_client_read_callback (
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		if (again_max--) {
-			goto again;
-		}
-		rrr_net_transport_ctx_notify_read(handle);
-	}
+	rrr_http_session_transport_ctx_need_tick(&tick_speed, handle);
+
+	switch (tick_speed) {
+		case RRR_HTTP_TICK_SPEED_NO_TICK:
+			if (RRR_LL_COUNT(&http_client->redirects) == 0) {
+				break;
+			}
+			/* Fallthrough */
+		case RRR_HTTP_TICK_SPEED_FAST:
+			if (again_max--) {
+				goto again;
+			}
+			rrr_net_transport_ctx_notify_read_fast(handle);
+			break;
+		case RRR_HTTP_TICK_SPEED_SLOW:
+			rrr_net_transport_ctx_notify_read_slow(handle);
+			break;
+	};
 
 	out:
 	return ret != 0 ? ret : ret_done;
@@ -645,6 +661,8 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		void *arg
 ) {
 	struct rrr_http_client_request_callback_data *callback_data = arg;
+	enum rrr_http_version protocol_version = callback_data->data->protocol_version;
+	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
 	int ret = 0;
 
@@ -653,9 +671,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	char *endpoint_and_query_to_free = NULL;
 
 	struct rrr_http_application *upgraded_app = NULL;
-
-	enum rrr_http_version protocol_version = callback_data->data->protocol_version;
-	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
+	enum rrr_http_tick_speed tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
@@ -793,9 +809,18 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
-	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		rrr_net_transport_ctx_notify_read(handle);
-	}
+	rrr_http_session_transport_ctx_need_tick(&tick_speed, handle);
+
+	switch (tick_speed) {
+		case RRR_HTTP_TICK_SPEED_NO_TICK:
+			break;
+		case RRR_HTTP_TICK_SPEED_FAST:
+			rrr_net_transport_ctx_notify_read_fast(handle);
+			break;
+		case RRR_HTTP_TICK_SPEED_SLOW:
+			rrr_net_transport_ctx_notify_read_slow(handle);
+			break;
+	};
 
 	goto out;
 	out:

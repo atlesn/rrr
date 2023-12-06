@@ -166,7 +166,8 @@ struct rrr_net_transport_handle {
 	struct rrr_event_collection events;
 	rrr_event_handle event_handshake;
 	rrr_event_handle event_read;
-	rrr_event_handle event_read_notify;
+	rrr_event_handle event_read_notify_fast;
+	rrr_event_handle event_read_notify_slow;
 	rrr_event_handle event_noread_check;
 	rrr_event_handle event_write;
 	rrr_event_handle event_first_read_timeout;

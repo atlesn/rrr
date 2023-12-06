@@ -1,4 +1,4 @@
-rrr (1.28-32) bullseye; urgency=medium
+rrr (1.28-33) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -69,6 +69,8 @@ rrr (1.28-32) bullseye; urgency=medium
     * Non-working default socket name in msgdb module causing crash
     * Incorrect tick timer in msgdb causing excessive CPU usage
     * Memory leak of HV in Perl subroutine call helper function
+    * Discrepancies in httpserver with respect to timeout and response when
+      waiting for responses from sender modules.
 
   * Under the hood:
     * Use events in file module
