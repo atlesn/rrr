@@ -258,7 +258,7 @@ void rrr_mqtt_transport_notify_tick (
 		struct rrr_mqtt_transport *transport
 ) {
 	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
-		rrr_net_transport_notify_read_all_connected(node);
+		rrr_net_transport_notify_read_fast_all_connected(node);
 	}
 }
 

@@ -95,10 +95,11 @@ int rrr_http_application_transport_ctx_request_send (
 	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, protocol_version, transaction);
 }
 
-int rrr_http_application_transport_ctx_need_tick (
+void rrr_http_application_transport_ctx_need_tick (
+		enum rrr_http_tick_speed *speed,
 		struct rrr_http_application *app
 ) {
-	return app->constants->need_tick(app);
+	app->constants->need_tick(speed, app);
 }
 
 int rrr_http_application_transport_ctx_tick (

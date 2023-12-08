@@ -409,7 +409,12 @@ static int __rrr_http_server_read_callback (
 
 	rrr_biglength received_bytes_dummy = 0;
 
+	enum rrr_http_tick_speed tick_speed;
+
 	again:
+
+	tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
+
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes_dummy,
 			handle,
@@ -423,12 +428,21 @@ static int __rrr_http_server_read_callback (
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		if (again_max--) {
-			goto again;
-		}
-		rrr_net_transport_ctx_notify_read(handle);
-	}
+	rrr_http_session_transport_ctx_need_tick(&tick_speed, handle);
+
+	switch (tick_speed) {
+		case RRR_HTTP_TICK_SPEED_NO_TICK:
+			break;
+		case RRR_HTTP_TICK_SPEED_FAST:
+			if (again_max--) {
+				goto again;
+			}
+			rrr_net_transport_ctx_notify_read_fast(handle);
+			break;
+		case RRR_HTTP_TICK_SPEED_SLOW:
+			rrr_net_transport_ctx_notify_read_slow(handle);
+			break;
+	};
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
 	rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
