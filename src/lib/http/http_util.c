@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -299,7 +299,7 @@ struct rrr_http_util_uri_encode_foreach_byte_callback_data {
 	char *wpos;
 };
 
-int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
+static int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
 	struct rrr_http_util_uri_encode_foreach_byte_callback_data *callback_data = arg;
 
 	if (__rrr_http_util_is_alphanumeric((unsigned char) byte) || __rrr_http_util_is_uri_unreserved_rfc2396((unsigned char) byte)) {
@@ -1119,6 +1119,29 @@ int rrr_http_util_uri_parse (
 		rrr_http_util_uri_destroy(uri_new);
 	out:
 		return ret;
+}
+
+static int __rrr_http_util_uri_validate_characters_nullsafe_callback (
+		const struct rrr_nullsafe_str *str,
+		void *arg
+) {
+	unsigned char *invalid = arg;
+	return __rrr_http_util_uri_validate_characters (
+			invalid,
+			str
+	);
+}
+
+int rrr_http_util_uri_validate_characters (
+		unsigned char *invalid,
+		const char *str
+) {
+	return rrr_nullsafe_str_with_tmp_str_do (
+			str,
+			strlen(str),
+			__rrr_http_util_uri_validate_characters_nullsafe_callback,
+			invalid
+	);
 }
 
 void rrr_http_util_nprintf (

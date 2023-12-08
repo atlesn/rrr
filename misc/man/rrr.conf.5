@@ -2083,6 +2083,8 @@ If GET method is used, any query values from RRR messages will be appended to th
 will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
 Defaults to
 .B /.
+Any provided endpoint by means of this parameter or otherwise must contain only characters which are valid for URIs;
+If for instance spaces are to be used in an endpoint, these must be encoded as %20.
 
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
@@ -2166,7 +2168,7 @@ will only be used if the active content type is multipart/form-data.
 
 Values from the message, although they will be attempted converted, should be of the
 .B str
-type, event binary data. The
+type or binary data. The
 .Xt mangler (PA)
 module can be used to convery values if needed.
 The endpoint, method, server or port must not contain any NULL characters.
