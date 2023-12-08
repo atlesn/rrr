@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -651,6 +651,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	char *query_to_free = NULL;
 	char *endpoint_to_free = NULL;
 	char *endpoint_and_query_to_free = NULL;
+	unsigned char invalid_byte = 0;
 
 	struct rrr_http_application *upgraded_app = NULL;
 
@@ -741,6 +742,16 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	}
 	else {
 		endpoint_to_use = endpoint_to_free;
+	}
+
+	if (rrr_http_util_uri_validate_characters (
+			&invalid_byte,
+			endpoint_to_use
+	) != 0) {
+		RRR_MSG_0("Invalid HTTP endpoint '%s', it contains invalid/non-conforming characters. Offending character was '%c'/0x%02x.\n",
+			endpoint_to_use, invalid_byte, invalid_byte);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
 	}
 
 	if (query_to_free != NULL && *(query_to_free) != '\0') {

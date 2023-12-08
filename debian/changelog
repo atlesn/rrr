@@ -1,4 +1,4 @@
-rrr (1.28-32) bullseye; urgency=medium
+rrr (1.28-34) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -49,6 +49,8 @@ rrr (1.28-32) bullseye; urgency=medium
       instead of once for every message.
     * Add warning when buffer entry count exceeds a certain configurable limit
     * Add statistics data for message broker costumer buffers
+    * Print warning and disallow requests in HTTP-client if the endpoints has
+      invalid characters.
 
   * Fixes:
     * Raw data messages in JS module now working properly
