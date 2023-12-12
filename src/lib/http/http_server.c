@@ -255,7 +255,7 @@ static int __rrr_http_server_response_headers_push (
 ) {
 	int ret = RRR_HTTP_OK;
 
-	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST, PUT, PATCH");
+	ret |= rrr_http_part_header_field_push(response_part, "access-control-allow-methods", "OPTIONS, GET, POST, PUT, PATCH");
 
 	return ret;
 }

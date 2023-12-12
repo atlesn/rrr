@@ -1,4 +1,4 @@
-rrr (1.28-34) bullseye; urgency=medium
+rrr (1.28-35) bullseye; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -73,6 +73,7 @@ rrr (1.28-34) bullseye; urgency=medium
     * Memory leak of HV in Perl subroutine call helper function
     * Discrepancies in httpserver with respect to timeout and response when
       waiting for responses from sender modules.
+    * Incorrect header name for access-control-allow-methods in httpserver
 
   * Under the hood:
     * Use events in file module
