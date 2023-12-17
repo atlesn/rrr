@@ -56,7 +56,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
+#include "../event/event_handle_struct.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 #define RRR_UDPSTREAM_OK                  RRR_READ_OK
 #define RRR_UDPSTREAM_HARD_ERR            RRR_READ_HARD_ERROR

@@ -453,6 +453,9 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PUT") == 0) {
 		*method = RRR_HTTP_METHOD_PUT;
 	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PATCH") == 0) {
+		*method = RRR_HTTP_METHOD_PATCH;
+	}
 	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "HEAD") == 0) {
 		*method = RRR_HTTP_METHOD_HEAD;
 	}
@@ -461,7 +464,7 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 	}
 	else {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,part->request_method_str_nullsafe);
-		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/HEAD/DELETE)\n", value);
+		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/PATCH/HEAD/DELETE)\n", value);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}

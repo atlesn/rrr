@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -100,6 +100,13 @@ int rrr_array_push_value_str_with_tag_with_size (
 		const char *value,
 		rrr_length value_size
 );
+int rrr_array_push_value_str_with_tag_with_size_with_flags (
+		struct rrr_array *array,
+		const char *tag,
+		const char *value,
+		rrr_length value_size,
+		rrr_type_flags flags
+);
 int rrr_array_push_value_blob_with_tag_with_size (
 		struct rrr_array *array,
 		const char *tag,
@@ -133,8 +140,29 @@ int rrr_array_get_value_signed_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_ull_by_tag (
+		unsigned long long *result,
+		const struct rrr_array *array,
+		const char *tag
+);
 int rrr_array_get_value_str_by_tag (
 		char **result,
+		struct rrr_array *array,
+		const char *tag
+);
+/* TODO : Standardize function call names (with or without index argumemt) */
+int rrr_array_get_value_first_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag
+);
+int rrr_array_get_value_first_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+);
+int rrr_array_get_value_first_ull_by_tag (
+		unsigned long long *result,
 		struct rrr_array *array,
 		const char *tag
 );
@@ -232,12 +260,20 @@ int rrr_array_message_clone_value_by_tag (
 		const struct rrr_msg_msg *message_orig,
 		const char *tag
 );
+int rrr_array_message_append_to_array_by_tag (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+);
 int rrr_array_message_append_to_array (
 		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
 );
 int rrr_array_dump (
+		const struct rrr_array *definition
+);
+rrr_biglength rrr_array_get_allocated_size (
 		const struct rrr_array *definition
 );
 static inline int rrr_array_count(const struct rrr_array *array) {

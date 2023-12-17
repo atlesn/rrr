@@ -330,6 +330,8 @@ static int socket_start (
 				NULL,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				NULL,
+				NULL,
 				socket_read_rrr_msg_msg_callback,
 				NULL,
 				NULL,
@@ -346,6 +348,8 @@ static int socket_start (
 				NULL,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				NULL,
+				NULL,
 				socket_read_raw_get_target_size_callback,
 				raw_callback_data,
 				socket_read_raw_error_callback,
@@ -443,8 +447,6 @@ static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
-	NULL,
-	NULL,
 	NULL
 };
 

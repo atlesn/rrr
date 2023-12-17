@@ -48,7 +48,7 @@ static int __rrr_stats_instance_rate_counter_new (
 
 	struct rrr_stats_instance_rate_counter *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_instance_rate_counter_new A\n");
+        	RRR_MSG_0("Could not allocate memory in %s A\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -56,7 +56,7 @@ static int __rrr_stats_instance_rate_counter_new (
 	memset(result, '\0', sizeof(*result));
 
 	if ((result->name = rrr_strdup(name)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_instance_rate_counter_new B\n");
+		RRR_MSG_0("Could not allocate memory in %s B\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -104,7 +104,7 @@ int rrr_stats_instance_new (
 
 	struct rrr_stats_instance *instance = rrr_allocate(sizeof(*instance));
 	if (instance == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_stats_instance_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -112,20 +112,20 @@ int rrr_stats_instance_new (
 	memset(instance, '\0', sizeof(*instance));
 
 	if (rrr_posix_mutex_init(&instance->lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in  rrr_stats_instance_new\n");
+		RRR_MSG_0("Could not initialize mutex in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
 
 	if ((instance->name = rrr_strdup(name)) == NULL) {
-		RRR_MSG_0("Could not save instance name in rrr_stats_instance_new\n");
+		RRR_MSG_0("Could not save instance name in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_mutex;
 	}
 
 	// NOTE : We won't trap memory or other errors here very well as program continues to run upon any error
 	if ((ret = rrr_stats_engine_handle_obtain(&instance->stats_handle, engine)) != 0) {
-		RRR_DBG_1("Could not obtain stats handle in rrr_stats_instance_new, statistics will be disabled. Return was %i.\n", ret);
+		RRR_DBG_1("Could not obtain stats handle in %s, statistics will be disabled. Return was %i.\n", __func__, ret);
 		ret = 0;
 	}
 
@@ -187,7 +187,7 @@ static int __rrr_stats_instance_post_text (
 			text,
 			rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(text)))
 	) != 0) {
-		RRR_MSG_0("Could not initialize statistics message in rrr_msg_stats_post_text\n");
+		RRR_MSG_0("Could not initialize statistics message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -198,7 +198,33 @@ static int __rrr_stats_instance_post_text (
 			RRR_STATS_INSTANCE_PATH_PREFIX,
 			&message
 	)) != 0) {
-		RRR_MSG_0("Error returned from post function in rrr_msg_stats_post_text\n");
+		RRR_MSG_0("Error returned from post function in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_stats_instance_push_stream_message (
+		struct rrr_stats_instance *instance,
+		const struct rrr_msg_stats *msg
+) {
+	int ret = 0;
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		goto out;
+	}
+
+	if ((ret = rrr_stats_engine_push_stream_message (
+			instance->engine,
+			instance->stats_handle,
+			RRR_STATS_INSTANCE_PATH_PREFIX,
+			msg
+	)) != 0) {
+		RRR_MSG_0("Error returned from post function in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -280,7 +306,7 @@ int rrr_stats_instance_update_rate (
 	struct rrr_stats_instance_rate_counter *counter = __rrr_stats_instance_rate_counter_find(instance, id);
 	if (counter == NULL) {
 		if (__rrr_stats_instance_rate_counter_new(&counter, id, name) != 0) {
-			RRR_MSG_0("Could not create rate counter in rrr_stats_instance_update_rate\n");
+			RRR_MSG_0("Could not create rate counter in %s\n", __func__);
 			return 1;
 		}
 		RRR_LL_APPEND(&instance->rate_counters, counter);

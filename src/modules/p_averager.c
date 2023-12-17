@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/event/event.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -416,6 +417,8 @@ static void averager_event_average (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	struct averager_data *data = arg;
 
 	averager_maintain_buffer(data);
@@ -434,6 +437,8 @@ static void averager_event_output_list (
 ) {
 	(void)(fd);
 	(void)(flags);
+
+	RRR_EVENT_HOOK();
 
 	struct averager_data *data = arg;
 
@@ -565,8 +570,6 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
-		NULL,
-		NULL,
 		NULL
 };
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -378,7 +378,7 @@ int rrr_msg_holder_slot_write (
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		uint8_t protocol,
-		int (*callback)(int *do_drop, int *do_again, struct rrr_msg_holder *entry, void *arg),
+		int (*callback)(int *do_drop, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
@@ -391,9 +391,6 @@ int rrr_msg_holder_slot_write (
 	pthread_cleanup_push(__rrr_msg_holder_slot_holder_destroy_double_ptr, &entry_new);
 
 	int do_drop = 0;
-	int do_again = 0;
-
-	again:
 
 	if (entry_new == NULL && (ret = rrr_msg_holder_new(&entry_new, 0, addr, addr_len, protocol, NULL)) != 0) {
 		goto out_no_unlock;
@@ -402,10 +399,9 @@ int rrr_msg_holder_slot_write (
 	LOCK_AND_WAIT();
 
 	// Callback must always unlock entry. If the callback is possibly slow
-	// and has cancellation points, it must wrap unlock in pthread_cleanup_push
+	// and has cancellation points, it must wrap unlock in pthread_cleanup_push.
 	rrr_msg_holder_lock(entry_new);
-	if ((ret = callback(&do_drop, &do_again, entry_new, callback_arg)) != 0) {
-		do_again = 0;
+	if ((ret = callback(&do_drop, entry_new, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -415,9 +411,6 @@ int rrr_msg_holder_slot_write (
 
 	out:
 		UNLOCK();
-		if (do_again) {
-			goto again;
-		}
 	out_no_unlock:
 		pthread_cleanup_pop(1);
 		return ret;

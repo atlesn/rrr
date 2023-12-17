@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #undef _GNU_SOURCE
 
+#include "event_handle_struct.h"
 #include "../read_constants.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
@@ -38,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_EVENT_FUNCTION_PAUSE_ARGS \
 	unsigned short *do_pause, unsigned short is_paused, void *callback_arg
+
+#define RRR_EVENT_HOOK_ARGS \
+	const char *source_func, int fd, short flags, void *arg
 
 #define RRR_EVENT_QUEUE_FD_MAX \
 	(0x100 * 2)
@@ -56,14 +60,41 @@ enum rrr_event_priority {
 
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
-typedef void *rrr_event;
+struct rrr_event_hook_config {
+	int enabled;
+	pid_t pid;
+	void (*hook)(RRR_EVENT_HOOK_ARGS);
+	void *arg;
+};
+
+extern struct rrr_event_hook_config rrr_event_hooking;
+
+static inline void rrr_event_hook (const char *source_func, int fd, short flags) {
+	if (!rrr_event_hooking.hook)
+		return;
+	rrr_event_hooking.hook(source_func, fd, flags, rrr_event_hooking.arg);
+}
+
+#define RRR_EVENT_HOOK() \
+	rrr_event_hook(__PRETTY_FUNCTION__, fd, flags)
+
 struct rrr_event_queue;
 
-typedef struct rrr_event_handle {
-	rrr_event event;
-	struct timeval interval;
-} rrr_event_handle;
-
+void rrr_event_hook_set (
+		void (*hook)(RRR_EVENT_HOOK_ARGS),
+		void *arg
+);
+void rrr_event_hook_enable (
+		void
+);
+ssize_t rrr_event_hook_string_format (
+		char *buf,
+		size_t buf_size,
+		const char *source_func,
+		evutil_socket_t fd,
+		int flags,
+		const char *extra
+);
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );
@@ -175,9 +206,5 @@ static inline int rrr_event_pending (
 /* Change the timeout interval for the e, 0 disables timeout. EVENT_ADD should follow. */
 #define EVENT_INTERVAL_SET(e, us) \
     rrr_time_from_usec(&(e.interval), us)
-
-/* Check if e handle is initialized */
-#define EVENT_INITIALIZED(e) \
-    (e.event != NULL)
 
 #endif /* RRR_EVENT_H */

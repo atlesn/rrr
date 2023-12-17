@@ -24,15 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "modules.h"
 #include "instance_friends.h"
+#include "discern_stack.h"
 #include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
 #include "util/linked_list.h"
 
-#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER       (1<<0)
-#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP     (1<<1)
-#define RRR_INSTANCE_MISC_OPTIONS_DUPLICATE            (1<<2)
-#define RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT  (1<<3)
+#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER           (1<<0)
+#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP         (1<<1)
+#define RRR_INSTANCE_MISC_OPTIONS_DUPLICATE                (1<<2)
+#define RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT      (1<<3)
+#define RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH  (1<<4)
+#define RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY  (1<<5)
 
 struct rrr_stats_instance;
 struct rrr_cmodule;
@@ -48,6 +51,8 @@ struct rrr_instance {
 	struct rrr_instance_module_data *module_data;
 	struct rrr_instance_friend_collection senders;
 	struct rrr_instance_friend_collection wait_for;
+	struct rrr_discern_stack_collection routes;
+	struct rrr_discern_stack_collection methods;
 	struct rrr_signal_handler *signal_handler;
 	char *topic_filter;
 	struct rrr_mqtt_topic_token *topic_first_token;
@@ -61,7 +66,9 @@ struct rrr_instance {
 	struct rrr_thread *thread;
 };
 
-#define INSTANCE_M_THREAD(instance) instance->thread
+#define INSTANCE_I_ROUTES(instance) (&instance->routes)
+#define INSTANCE_I_METHODS(instance) (&instance->methods)
+
 #define INSTANCE_M_NAME(instance) instance->module_data->instance_name
 #define INSTANCE_M_MODULE_TYPE(instance) instance->module_data->type
 #define INSTANCE_M_MODULE_NAME(instance) instance->module_data->module_name
@@ -94,6 +101,8 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
+#define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
+#define INSTANCE_D_METHODS(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->methods)
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;
@@ -187,11 +196,8 @@ struct rrr_instance *rrr_instance_find (
 int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 );
-void rrr_instance_runtime_data_destroy_hard (
+void rrr_instance_runtime_data_destroy (
 		struct rrr_instance_runtime_data *data
-);
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
-		struct rrr_instance_runtime_init_data *init_data
 );
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,

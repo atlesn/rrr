@@ -57,7 +57,8 @@ void rrr_signal (
 );
 void rrr_signal_default_signal_actions_register (void);
 int rrr_signal_default_handler (
-		int *main_running,
+		volatile int *main_running,
+		volatile int *sigusr2,
 		int s,
 		void *arg
 );

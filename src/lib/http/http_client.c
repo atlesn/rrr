@@ -48,6 +48,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS 1000
+//#define RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+
 struct rrr_http_client {
 	struct rrr_event_queue *events;
 
@@ -76,7 +79,7 @@ int rrr_http_client_new (
 	struct rrr_http_client *client = rrr_allocate(sizeof(*client));
 
 	if (client == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http_client_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -210,7 +213,7 @@ static int __rrr_http_client_request_data_strings_reset (
 	if (server != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->server);
 		if ((data->server = rrr_strdup(server)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for server in __rrr_http_client_request_data_strings_reset\n");
+			RRR_MSG_0("Could not allocate memory for server in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -219,7 +222,7 @@ static int __rrr_http_client_request_data_strings_reset (
 	if (endpoint != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
 		if ((data->endpoint = rrr_strdup(endpoint)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_data_strings_reset\n");
+			RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -228,7 +231,7 @@ static int __rrr_http_client_request_data_strings_reset (
 	if (user_agent != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->user_agent);
 		if ((data->user_agent = rrr_strdup(user_agent)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for user_agent in __rrr_http_client_request_data_strings_reset\n");
+			RRR_MSG_0("Could not allocate memory for user_agent in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -301,7 +304,7 @@ int rrr_http_client_request_data_reset_from_config (
 	}
 
 	if (config->concurrent_connections < 1 || config->concurrent_connections > 65535) {
-		RRR_BUG("BUG: Concurrent connection parameter out of range in rrr_http_client_request_data_reset_from_config\n");
+		RRR_BUG("BUG: Concurrent connection parameter out of range in %s\n", __func__);
 	}
 
 	data->http_port = rrr_u16_from_biglength_bug_const(config->server_port);
@@ -421,7 +424,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
-	// Moved-codes. Maybe this parsing is too persmissive.
+	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
 		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
 		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
@@ -463,13 +466,14 @@ static int __rrr_http_client_receive_http_part_callback (
 
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 	const struct rrr_http_header_field *encoding = rrr_http_part_header_field_get(response_part, "content-encoding");
-	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value)) {
+	if (encoding != NULL && rrr_nullsafe_str_isset(encoding->value) && rrr_nullsafe_str_len(data_use) > 0) {
 		if ((ret = rrr_http_util_decode (
 				data_decoded,
 				data_use,
 				encoding->value
 		) != 0)) {
-			RRR_MSG_0("Error while decoding in response in %s\n", __func__);
+			RRR_MSG_0("Error %i while decoding in response in %s\n", ret, __func__);
+			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 		data_use = data_decoded;
@@ -679,7 +683,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			callback_data->http_client->callbacks.frame_callback,
 			callback_data->http_client->callbacks.frame_callback_arg
 	)) != 0) {
-		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
+		RRR_MSG_0("Could not create HTTP session in %s\n", __func__);
 		goto out;
 	}
 
@@ -688,7 +692,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			&request_send_is_possible,
 			handle
 	)) != 0) {
-		RRR_MSG_0("Error while checking for request send possible in HTTP session in __rrr_http_client_request_send_callback\n");
+		RRR_MSG_0("Error while checking for request send possible in HTTP session in %s\n", __func__);
 		goto out;
 	}
 
@@ -707,11 +711,11 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 				callback_data->query_prepare_callback_arg)
 		) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
-				RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_request_send_callback\n");
+				RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in %s\n", __func__);
 				ret = 0;
 				goto out;
 			}
-			RRR_MSG_0("Error %i from query prepare callback in __rrr_http_client_request_send_callback\n", ret);
+			RRR_MSG_0("Error %i from query prepare callback in %a\n", ret, __func__);
 			goto out;
 		}
 	}
@@ -728,7 +732,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		else {
 			RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 			if ((endpoint_to_free = rrr_strdup("/")) == NULL) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_send_callback\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
@@ -747,14 +751,14 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			goto out;
 		}
 		if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint_to_use, query_to_free)) <= 0) {
-			RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_request_send_callback return was %i\n", ret);
+			RRR_MSG_0("Could not allocate string for endpoint and query in %s return was %i\n", __func__, ret);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
 	}
 	else {
 		if ((endpoint_and_query_to_free = rrr_strdup(endpoint_to_use)) == NULL) {
-			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_request_send_callback\n");
+			RRR_MSG_0("Could not allocate string for endpoint in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -766,7 +770,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			callback_data->transaction,
 			endpoint_and_query_to_free
 	)) != 0) {
-		RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_request_send_callback\n");
+		RRR_MSG_0("Could not set HTTP endpoint in %s\n", __func__);
 		goto out;
 	}
 
@@ -779,7 +783,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			protocol_version
 	)) != 0) {
 		if (ret != RRR_HTTP_BUSY) {
-			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+			RRR_MSG_0("Could not send request in %s, return was %i\n", __func__, ret);
 		}
 		goto out;
 	}
@@ -841,6 +845,19 @@ static int __rrr_http_client_request_send_intermediate_connect (
 		);
 
 		if (keepalive_handle == 0) {
+			// Prevent multiple simultaneous connection attempts
+			// to the same host which would cause delays.
+			if (rrr_net_transport_graylist_exists (
+					transport_keepalive,
+					server_to_use,
+					port_to_use
+			)) {
+				RRR_DBG_3("HTTP client not making connection to %s:%" PRIu16 " due to destination being graylisted\n",
+						server_to_use, port_to_use);
+				ret = RRR_HTTP_BUSY;
+				goto out;
+			}
+
 			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
 					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
 
@@ -851,6 +868,15 @@ static int __rrr_http_client_request_send_intermediate_connect (
 					__rrr_http_client_request_send_connect_callback,
 					&keepalive_handle
 			) != 0) {
+				if ((ret = rrr_net_transport_graylist_push (
+							transport_keepalive,
+							server_to_use,
+							port_to_use,
+							RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS * 1000
+				)) != 0) {
+					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+					goto out;
+				}
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
@@ -873,12 +899,24 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			goto out;
 		}
 
+#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		if (concurrent_index == 0) {
+			RRR_MSG_1("HTTP client debug unused connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
+					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
+			ret = RRR_HTTP_BUSY;
+		}
+		else {
+#endif
+
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
 				transport_keepalive,
 				keepalive_handle,
 				__rrr_http_client_request_send_final_transport_ctx_callback,
 				callback_data
 		);
+#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		}
+#endif
 	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < callback_data->data->concurrent_connections);
 
 	out:
@@ -959,7 +997,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				__rrr_http_client_read_callback,
 				http_client
 		) != 0) {
-			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
+			RRR_MSG_0("Could not create TLS transport in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -998,7 +1036,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				__rrr_http_client_read_callback,
 				http_client
 		) != 0) {
-			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
+			RRR_MSG_0("Could not create plain transport in %s\n", __func__);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -1042,7 +1080,7 @@ int rrr_http_client_request_send (
 			application_data,
 			application_data_destroy
 	)) != 0) {
-		RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_request_send\n");
+		RRR_MSG_0("Could not create HTTP transaction in %s\n", __func__);
 		goto out;
 	}
 
@@ -1099,11 +1137,11 @@ int rrr_http_client_request_send (
 	}
 
 	if (server_to_use == NULL) {
-		RRR_BUG("BUG: No server set in __rrr_http_client_request_send\n");
+		RRR_BUG("BUG: No server set in %s\n", __func__);
 	}
 
 	if (port_to_use == 0) {
-		RRR_BUG("BUG: Port was 0 in __rrr_http_client_request_send\n");
+		RRR_BUG("BUG: Port was 0 in %s\n", __func__);
 	}
 
 	if (transport_code == RRR_HTTP_TRANSPORT_ANY && port_to_use == 443) {
@@ -1111,7 +1149,7 @@ int rrr_http_client_request_send (
 	}
 
 	if (rrr_asprintf(&request_header_host_to_free, "%s:%u", server_to_use, port_to_use) <= 0) {
-		RRR_MSG_0("Failed to allocate memory for host header in __rrr_http_client_request_send\n");
+		RRR_MSG_0("Failed to allocate memory for host header in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}

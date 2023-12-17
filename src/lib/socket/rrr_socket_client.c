@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
@@ -48,23 +49,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_CONNECT_TIMEOUT_S 5
 #define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_IDLE_TIMEOUT_S 0 /* No timeout */
 
+#define RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_HARD_TIMEOUT(type)  \
+    (type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT &&    \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN &&        \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_FILE)
+
+#define RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_IDLE_TIMEOUT(type)  \
+    (type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT &&    \
+     type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+
 struct rrr_socket_client_collection {
 	RRR_LL_HEAD(struct rrr_socket_client);
 	char *creator;
 
 	struct rrr_event_queue *queue;
 
+	// Called before send chunk iteration starts and after it ends
+	void (*chunk_send_start_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+	void (*chunk_send_end_callback)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS);
+
 	// Called when a chunk is successfully sent or a client is destroyed with unsent data (if set)
-	void (*chunk_send_notify_callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg);
-	void *chunk_send_notify_callback_arg;
+	void (*chunk_send_notify_callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS);
+
+	// Common arg for above callbacks
+	void *chunk_send_callback_arg;
 
 	// Called when a client FD is closed for whatever reason (if set)
-	void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg);
+	void (*client_fd_close_callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS);
 	void *client_fd_close_callback_arg;
 
 	// Common settings
 	rrr_biglength read_step_max_size;
 	int read_flags_socket;
+
+	// Set to mask events when writing
+	int mask_write_event_hooks;
 
 	// Settings for array reading
 	int array_do_sync_byte_by_byte;
@@ -77,10 +96,11 @@ struct rrr_socket_client_collection {
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
-
 	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
 	void (*callback_private_data_destroy)(void *private_data);
 	void *callback_private_data_arg;
+	void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS);
+	void *callback_set_read_flags_arg;
 
 	// Callbacks for message mode
 	RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
@@ -99,6 +119,10 @@ struct rrr_socket_client_collection {
 	// Callback for parse errors
 	void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS);
 	void *error_callback_arg;
+
+	// Callback for new accepted connections
+	int (*accept_callback)(RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS);
+	void *accept_callback_arg;
 };
 
 struct rrr_socket_client_fd {
@@ -142,6 +166,7 @@ struct rrr_socket_client {
 	uint64_t last_seen;
 
 	enum rrr_socket_client_collection_create_type create_type;
+
 	int close_when_send_complete;
 
 	void *private_data;
@@ -229,14 +254,20 @@ static void __rrr_socket_client_chunk_send_notify_success_callback (
 		void *arg
 ) {
 	struct rrr_socket_client *client = arg;
+
+	if (client->connected_fd == NULL) {
+		RRR_BUG("BUG: Connected FD not set in %s\n", __func__);
+	}
+
 	if (client->collection->chunk_send_notify_callback) {
 		client->collection->chunk_send_notify_callback (
 				1, // Success
+ 				client->connected_fd->fd,
 				data,
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -252,11 +283,12 @@ static void __rrr_socket_client_chunk_send_notify_fail_callback (
 	if (client->collection->chunk_send_notify_callback) {
 		client->collection->chunk_send_notify_callback (
 				0, // Fail
+ 				client->connected_fd != NULL ? client->connected_fd->fd : -1,
 				data,
 				data_size,
 				data_pos,
 				chunk_private_data,
-				client->collection->chunk_send_notify_callback_arg
+				client->collection->chunk_send_callback_arg
 		);
 	}
 }
@@ -292,6 +324,10 @@ static int __rrr_socket_client_private_data_create_as_needed (
 		struct rrr_socket_client *client
 ) {
 	int ret = 0;
+
+	if (client->connected_fd == NULL) {
+		RRR_BUG("BUG: Connected FD not set in %s\n", __func__);
+	}
 
 	if (client->collection->callback_private_data_new != NULL) {
 		if ((ret = client->collection->callback_private_data_new (
@@ -333,8 +369,8 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(client, __rrr_socket_client_fd_destroy(node));
 	
-	RRR_DBG_7("fd %i in client collection remaining during connect finalize, %i other fds were closed. Connection is ready.\n",
-		fd, destroyed);
+	RRR_DBG_7("fd %i in client collection remaining during connect finalize, %i other fds were closed. Connection is ready, type is %s.\n",
+		fd, destroyed, RRR_SOCKET_CLIENT_CREATE_TYPE_STR(client->create_type));
 
 	if (RRR_LL_COUNT(client) != 1) {
 		RRR_BUG("BUG: FD count was not exactly 1 in %s\n", __func__);
@@ -505,7 +541,9 @@ static void __rrr_socket_client_read_callback_address_deduct (
 		const struct rrr_socket_client *client
 ) {
 	switch (client->create_type) {
+		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_FILE:
 		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND:
+		case RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND:
 			*result_addr = (const struct sockaddr *) &client->connected_fd->addr;
 			*result_addr_len = client->connected_fd->addr_len;
 		       break;
@@ -515,10 +553,50 @@ static void __rrr_socket_client_read_callback_address_deduct (
 	};
 }
 
+static void __rrr_socket_client_read_callback_flags_deduct (
+		int *read_flags_socket,
+		int *do_soft_error_propagates,
+		const struct rrr_socket_client *client
+) {
+	const struct rrr_socket_client_collection *collection = client->collection;
+
+	*read_flags_socket = client->collection->read_flags_socket;
+
+	if (collection->callback_set_read_flags != NULL) {
+		collection->callback_set_read_flags(read_flags_socket, do_soft_error_propagates, client->private_data, collection->callback_set_read_flags_arg);
+	}
+}
+
 #define DEDUCT_ADDRESS()                            \
 	const struct sockaddr *addr;                \
 	socklen_t addr_len;                         \
 	__rrr_socket_client_read_callback_address_deduct (&addr, &addr_len, read_session, client)
+
+#define DEDUCT_READ_FLAGS()                         \
+	int read_flags_socket = 0;                  \
+	int do_soft_error_propagates = 1;           \
+	__rrr_socket_client_read_callback_flags_deduct (&read_flags_socket, &do_soft_error_propagates, client);
+
+// Soft error propagation disabling will prevent connection closure upon parse errors. Read session
+// is still cleared by read framework,and parsing commenses when more data is avilable. For files
+// with finite size, soft error should propagate instead to force closure.
+
+#define ENFORCE_SOFT_ERROR_PROPAGATES()             \
+	if (!do_soft_error_propagates) { RRR_BUG("BUG: Soft error propagation is implied in %s and must be set to 1\n", __func__); }
+
+#define PROCESS_SOFT_ERROR_PROPAGATION()              \
+  do {if (ret == RRR_READ_SOFT_ERROR) {             \
+    if (do_soft_error_propagates) {                 \
+      RRR_DBG_7("fd %i in client collection soft error while reading (propagate)\n", fd); \
+    }                                               \
+    else if (bytes_read == 0) {                     \
+      RRR_DBG_7("fd %i in client collection soft error while reading and bytes read was 0 (force propagate)\n", fd); \
+    }                                               \
+    else {                                          \
+      RRR_DBG_7("fd %i in client collection soft error while reading (ignore)\n", fd);    \
+      ret = 0;                                      \
+    }                                               \
+  }} while (0)
 
 static int __rrr_socket_client_collection_read_raw_get_target_size_callback (
 		struct rrr_read_session *read_session,
@@ -565,6 +643,8 @@ static void __rrr_socket_client_fd_event_timeout (
 
 	(void)(flags);
 	(void)(fd);
+
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_7("Disconnecting fd %i in client collection following soft inactivity timeout of %" PRIu64 " ms\n",
 			client_fd->fd, client_fd->client->collection->idle_timeout_us / 1000);
@@ -615,9 +695,8 @@ static int __rrr_socket_client_fd_event_setup (
 		EVENT_ADD(client_fd->event_write);
 	}
 
-	if ( client_fd->client->collection->idle_timeout_us > 0 &&
-	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN &&
-	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
+	if (client_fd->client->collection->idle_timeout_us > 0 &&
+	    RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_IDLE_TIMEOUT(client_fd->client->create_type)
 	) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&client_fd->event_timeout,
@@ -649,8 +728,8 @@ static void __rrr_socket_client_return_value_process (
 		client->last_seen = rrr_time_get_64();
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
-		if ((client->last_seen < timeout) &&
-		    (client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT && client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+		if (client->last_seen < timeout &&
+		    RRR_SOCKET_CLIENT_COLLECTION_TYPE_REQUIRES_HARD_TIMEOUT(client->create_type)
 		) {
 			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
@@ -758,11 +837,18 @@ static int __rrr_socket_client_send_tick (
 ) {
 	int ret;
 
+	struct rrr_socket_send_chunk_send_callbacks callbacks = {
+		.success = __rrr_socket_client_chunk_send_notify_success_callback,
+		.success_arg = client,
+		.send_start = client->collection->chunk_send_start_callback,
+		.send_end = client->collection->chunk_send_end_callback,
+		.start_end_arg = client->collection->chunk_send_callback_arg,
+	};
+
 	if ((ret = rrr_socket_send_chunk_collection_send_and_notify (
 			&client->send_chunks,
 			client->connected_fd->fd,
-			__rrr_socket_client_chunk_send_notify_success_callback,
-			client
+			&callbacks
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
 				client->connected_fd->fd, ret);
@@ -782,6 +868,9 @@ static void __rrr_socket_client_event_write (
 	(void)(fd);
 	(void)(flags);
 
+	if (!collection->mask_write_event_hooks) {
+		RRR_EVENT_HOOK();
+	}
 	CONNECTED_FD_ENSURE();
 
 	if (client->connected_fd == NULL) {
@@ -843,8 +932,11 @@ static void __rrr_socket_client_event_read_message (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
+	ENFORCE_SOFT_ERROR_PROPAGATES();
 
 	uint64_t bytes_read = 0;
 
@@ -858,7 +950,7 @@ static void __rrr_socket_client_event_read_message (
 				sizeof(struct rrr_msg),
 				collection->read_step_max_size,
 				0, // No max size
-				collection->read_flags_socket,
+				read_flags_socket,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
@@ -905,31 +997,37 @@ static void __rrr_socket_client_event_read_raw (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	uint64_t bytes_read = 0;
 
+	int ret = rrr_socket_read_message_default (
+			&bytes_read,
+			&client->read_sessions,
+			fd,
+			4096,
+			collection->read_step_max_size,
+			0, // No max size
+			read_flags_socket,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			__rrr_socket_client_collection_read_raw_get_target_size_callback,
+			client,
+			__rrr_socket_client_event_read_error_callback,
+			client,
+			__rrr_socket_client_collection_read_raw_complete_callback,
+			client
+	);	
+
+	PROCESS_SOFT_ERROR_PROPAGATION();
+
 	__rrr_socket_client_return_value_process (
-		collection,
-		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				fd,
-				4096,
-				collection->read_step_max_size,
-				0, // No max size
-				collection->read_flags_socket,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				__rrr_socket_client_collection_read_raw_get_target_size_callback,
-				client,
-				__rrr_socket_client_event_read_error_callback,
-				client,
-				__rrr_socket_client_collection_read_raw_complete_callback,
-				client
-		)
+			collection,
+			client,
+			ret
 	);
 }
 
@@ -964,32 +1062,37 @@ static void __rrr_socket_client_event_read_array_tree (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	uint64_t bytes_read = 0;
 
 	struct rrr_array array_tmp = {0};
+	int ret = rrr_socket_common_receive_array_tree (
+		&bytes_read,
+		&client->read_sessions,
+		fd,
+		read_flags_socket,
+		&array_tmp,
+		collection->array_tree,
+		collection->array_do_sync_byte_by_byte,
+		collection->read_step_max_size,
+		0, // No ratelimit interval
+		0, // No ratelimit max bytes
+		collection->array_message_max_size,
+		__rrr_socket_client_event_read_array_tree_callback,
+		__rrr_socket_client_event_read_error_callback,
+		client
+	);
+
+	PROCESS_SOFT_ERROR_PROPAGATION();
 
 	__rrr_socket_client_return_value_process (
 		collection,
 		client,
-		rrr_socket_common_receive_array_tree (
-			&bytes_read,
-			&client->read_sessions,
-			fd,
-			collection->read_flags_socket,
-			&array_tmp,
-			collection->array_tree,
-			collection->array_do_sync_byte_by_byte,
-			collection->read_step_max_size,
-			0, // No ratelimit interval
-			0, // No ratelimit max bytes
-			collection->array_message_max_size,
-			__rrr_socket_client_event_read_array_tree_callback,
-			__rrr_socket_client_event_read_error_callback,
-			client
-		) & ~(RRR_READ_SOFT_ERROR) // Prevent connection closure upon parse errors (read session is still cleared by read framework)
+		ret
 	);
 
 	rrr_array_clear(&array_tmp);
@@ -1006,8 +1109,10 @@ static void __rrr_socket_client_event_read_ignore (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
 	CONNECTED_FD_ENSURE();
 	TIMEOUT_UPDATE();
+	DEDUCT_READ_FLAGS();
 
 	char buf[1024];
 	rrr_biglength read_bytes = 0;
@@ -1024,7 +1129,7 @@ static void __rrr_socket_client_event_read_ignore (
 					sizeof(buf),
 					(struct sockaddr *) &addr,
 					&addr_len,
-					collection->read_flags_socket
+					read_flags_socket
 			)
 	);
 
@@ -1032,6 +1137,21 @@ static void __rrr_socket_client_event_read_ignore (
 		RRR_DBG_7("fd %i in client collection, ignoring %lli received bytes\n",
 				client->connected_fd->fd, (long long int) read_bytes);
 	}
+}
+
+static int __rrr_socket_client_fd_reset (
+		struct rrr_socket_client_fd *client_fd,
+		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
+		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg)
+) {
+	rrr_event_collection_clear_soft(&client_fd->events);
+	return __rrr_socket_client_fd_event_setup (
+			client_fd,
+			event_read_callback,
+			client_fd->client,
+			event_write_callback,
+			client_fd->client
+	);
 }
 
 static int __rrr_socket_client_fd_push (
@@ -1130,6 +1250,28 @@ static int __rrr_socket_client_collection_fd_push (
 	collection->event_read_callback,  \
 	__rrr_socket_client_event_write
 
+static int __rrr_socket_client_reset (
+		struct rrr_socket_client *client,
+		struct rrr_socket_client_collection *collection
+) {
+	int ret = 0;
+
+	client->collection = collection;
+
+	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+		if ((ret = __rrr_socket_client_fd_reset (
+				node,
+				CONNECTED_CALLBACKS
+		)) != 0) {
+			goto out;
+		}
+				
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static int __rrr_socket_client_collection_not_ready_fd_push (
 		struct rrr_socket_client **result,
 		struct rrr_socket_client_collection *collection,
@@ -1211,24 +1353,33 @@ static int __rrr_socket_client_collection_connected_fd_push (
 	return ret;
 }
 
-static int __rrr_socket_client_send_push (
+#define ENFORCE_NON_LISTEN_TYPE()                                                        \
+    do {if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {    \
+        RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);    \
+    }} while(0)
+
+static int __rrr_socket_client_send_push_with_private_data (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
 		void **data,
-		rrr_biglength data_size
+		rrr_biglength data_size,
+		void (*private_data_new)(void **private_data, void *arg),
+		void *private_data_arg,
+		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
-	if ((ret = rrr_socket_send_chunk_collection_push (
+	if ((ret = rrr_socket_send_chunk_collection_push_with_private_data (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
 			data_size,
-			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
+			private_data_new,
+			private_data_arg,
+			private_data_destroy
 	)) != 0) {
 		goto out;
 	}
@@ -1239,6 +1390,23 @@ static int __rrr_socket_client_send_push (
 	return ret;
 }
 
+static int __rrr_socket_client_send_push (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client *client,
+		void **data,
+		rrr_biglength data_size
+) {
+	return __rrr_socket_client_send_push_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			data_size,
+			NULL,
+			NULL,
+			NULL
+	);
+}
+
 static int __rrr_socket_client_send_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client *client,
@@ -1247,9 +1415,7 @@ static int __rrr_socket_client_send_push_const (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const (
 			send_chunk_count,
@@ -1278,9 +1444,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
 			send_chunk_count,
@@ -1314,9 +1478,7 @@ static int __rrr_socket_client_sendto_push_const (
 ) {
 	int ret = 0;
 
-	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
-		RRR_BUG("BUG: Attempted to push data to listening socket in %s\n", __func__);
-	}
+	ENFORCE_NON_LISTEN_TYPE();
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 			send_chunk_count,
@@ -1386,13 +1548,14 @@ void rrr_socket_client_collection_send_push_const_multicast (
 		rrr_length count_tmp = 0;
 		int ret_tmp;
 		if ((ret_tmp = __rrr_socket_client_send_push_const (&count_tmp, node, data, size)) != 0) {
-			RRR_DBG_7("Send failed with return value %i during multicast send, destroying client\n", ret_tmp);
+			RRR_DBG_7("Send failed with return value %i for fd %i during multicast send, destroying client\n",
+					ret_tmp, node->connected_fd != NULL ? node->connected_fd->fd : -1);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
 		if (count_tmp > send_chunk_limit) {
 			RRR_MSG_0("Send chunk limit reach for fd %i in client collection multicast send (%i>%i), closing connection.\n",
-					node->connected_fd->fd, count_tmp, send_chunk_limit);
+					node->connected_fd != NULL ? node->connected_fd->fd : -1, count_tmp, send_chunk_limit);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
@@ -1470,6 +1633,33 @@ int rrr_socket_client_collection_send_push (
 	);
 }
 
+int rrr_socket_client_collection_send_push_with_private_data (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		void **data,
+		rrr_biglength data_size,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
+		void (*chunk_private_data_destroy)(void *chunk_private_data)
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client == NULL) {
+		return RRR_READ_SOFT_ERROR;
+	}
+
+	return __rrr_socket_client_send_push_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			data_size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy
+	);
+}
+
 int rrr_socket_client_collection_send_push_const (
 		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
@@ -1523,6 +1713,88 @@ void rrr_socket_client_collection_close_when_send_complete_by_fd (
 	if (client != NULL) {
 		__rrr_socket_client_close_when_send_complete (client);
 	}
+}
+
+int rrr_socket_client_collection_migrate_by_fd (
+		struct rrr_socket_client_collection *target,
+		struct rrr_socket_client_collection *source,
+		int fd
+) {
+	int ret = 0;
+
+	assert(target != source);
+
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(source, fd);
+
+	if (client == NULL) {
+		goto out;
+	}
+
+	RRR_DBG_7("fd %i in client collection migrating to other collection\n",
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
+
+	int found = 0;
+	RRR_LL_ITERATE_BEGIN(source, struct rrr_socket_client);
+		if (node == client) {
+			found = 1;
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(source, 0);
+	assert(found == 1);
+
+	if ((ret = __rrr_socket_client_reset (client, target)) != 0) {
+		__rrr_socket_client_destroy_dangerous(client);
+		goto out;
+	}
+
+	RRR_LL_APPEND(target, client);
+
+	out:
+	return ret;
+}
+
+void rrr_socket_client_collection_close_by_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client == NULL) {
+		return;
+	}
+
+	RRR_DBG_7("fd %i in client collection close now (external call)\n",
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node == client) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+}
+
+static void __rrr_socket_client_collection_close_by_client (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_socket_client *client
+) {
+	RRR_DBG_7("fd %i in client collection close now\n",
+			client->connected_fd != NULL ? client->connected_fd->fd : -1);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node == client) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+}
+
+int rrr_socket_client_collection_has_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+) {
+	return __rrr_socket_client_collection_find_by_fd(collection, fd) != NULL;
 }
 
 static int __rrr_socket_client_collection_find_by_address_or_connect (
@@ -1732,7 +2004,9 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		),
 		void *resolve_callback_data,
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
-		void *connect_callback_data
+		void *connect_callback_data,
+		int (*data_prepare_callback)(const void **data, rrr_biglength *size, void *callback_data, void *private_data),
+		void *data_prepare_callback_data
 ) {
 	int ret = 0;
 
@@ -1750,6 +2024,28 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		goto out;
 	}
 
+	if (data_prepare_callback != NULL) {
+		/* Must ensure that client private data is created prior to calling prepare callback */
+		if (client->connected_fd == NULL) {
+			ret = RRR_SOCKET_NOT_READY;
+			goto out;
+		}
+		if ((ret = data_prepare_callback(&data, &size, data_prepare_callback_data, client->private_data)) != 0) {
+			switch (ret) {
+				case RRR_SOCKET_NOT_READY:
+					break;
+				case RRR_SOCKET_HARD_ERROR:
+				case RRR_SOCKET_SOFT_ERROR:
+				case RRR_SOCKET_READ_EOF:
+				default:
+					__rrr_socket_client_collection_close_by_client (collection, client);
+					break;
+			};
+			/* Propagate return value */
+			goto out;
+		}
+	}
+
 	if ((ret = __rrr_socket_client_send_push_const_with_private_data (
 			send_chunk_count,
 			client,
@@ -1765,6 +2061,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 	out:
 	return ret;
 }
+
 
 int rrr_socket_client_collection_sendto_push_const (
 		rrr_length *send_chunk_count,
@@ -1818,6 +2115,8 @@ static void __rrr_socket_client_event_accept (
 
 	int ret_tmp = 0;
 
+	RRR_EVENT_HOOK();
+
 	struct sockaddr_storage addr = {0};
 	socklen_t addr_len = sizeof(addr);
 
@@ -1835,7 +2134,7 @@ static void __rrr_socket_client_event_accept (
 	int connected_fd = ret_tmp;
 
 	struct rrr_socket_client *client_new = NULL;
-	ret_tmp = __rrr_socket_client_collection_connected_fd_push (
+	if ((ret_tmp = __rrr_socket_client_collection_connected_fd_push (
 			&client_new,
 			collection,
 			connected_fd,
@@ -1843,7 +2142,16 @@ static void __rrr_socket_client_event_accept (
 			addr_len,
 			NULL,
 			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if (collection->accept_callback != NULL) {
+		if ((ret_tmp = collection->accept_callback((const struct sockaddr *) &addr, addr_len, client_new->private_data, collection->accept_callback_arg)) != 0) {
+			RRR_MSG_0("Error %i from accept callback in %s\n", ret_tmp, __func__);
+			goto out;
+		}
+	}
 
 	out:
 	if (ret_tmp != 0) {
@@ -1879,10 +2187,19 @@ int rrr_socket_client_collection_listen_fd_push (
 	return ret;
 }
 
+void rrr_socket_client_collection_mask_write_event_hooks_setup (
+		struct rrr_socket_client_collection *collection,
+		int set
+) {
+	collection->mask_write_event_hooks = set;
+}
+
 static void __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
+		void *callback_set_read_flags_arg,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
@@ -1898,6 +2215,8 @@ static void __rrr_socket_client_collection_event_setup (
 	collection->callback_private_data_new = callback_private_data_new;
 	collection->callback_private_data_destroy = callback_private_data_destroy;
 	collection->callback_private_data_arg = callback_private_data_arg;
+	collection->callback_set_read_flags = callback_set_read_flags;
+	collection->callback_set_read_flags_arg = callback_set_read_flags_arg;
 }
 
 int rrr_socket_client_collection_connected_fd_push (
@@ -1919,20 +2238,35 @@ int rrr_socket_client_collection_connected_fd_push (
 
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg),
-		void *callback_arg
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void *arg
 ) {
-	collection->chunk_send_notify_callback = callback;
-	collection->chunk_send_notify_callback_arg = callback_arg;
+	collection->chunk_send_start_callback = NULL;
+	collection->chunk_send_end_callback = NULL;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
+}
+
+void rrr_socket_client_collection_send_notify_setup_with_gates (
+		struct rrr_socket_client_collection *collection,
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void (*start)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void (*end)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void *arg
+) {
+	collection->chunk_send_start_callback = start;
+	collection->chunk_send_end_callback = end;
+	collection->chunk_send_notify_callback = notify;
+	collection->chunk_send_callback_arg = arg;
 }
 
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg),
-		void *client_fd_close_callback_arg
+		void (*callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS),
+		void *callback_arg
 ) {
-	collection->client_fd_close_callback = client_fd_close_callback;
-	collection->client_fd_close_callback_arg = client_fd_close_callback_arg;
+	collection->client_fd_close_callback = callback;
+	collection->client_fd_close_callback_arg = callback_arg;
 }
 
 void rrr_socket_client_collection_event_setup (
@@ -1942,6 +2276,8 @@ void rrr_socket_client_collection_event_setup (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
+		void *callback_set_read_flags_arg,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 ) {
@@ -1956,6 +2292,8 @@ void rrr_socket_client_collection_event_setup (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_message,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -1970,6 +2308,8 @@ void rrr_socket_client_collection_event_setup_raw (
 		void *callback_private_data_arg,
 		rrr_biglength read_step_max_size,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
+		void *callback_set_read_flags_arg,
 		int (*get_target_size)(RRR_SOCKET_CLIENT_RAW_GET_TARGET_SIZE_CALLBACK_ARGS),
 		void *get_target_size_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
@@ -1990,6 +2330,8 @@ void rrr_socket_client_collection_event_setup_raw (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_raw,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -2003,6 +2345,8 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
 		int read_flags_socket,
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
+		void *callback_set_read_flags_arg,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		rrr_biglength read_step_max_size,
@@ -2010,7 +2354,9 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int (*array_callback)(RRR_SOCKET_CLIENT_ARRAY_CALLBACK_ARGS),
 		void *array_callback_arg,
 		void (*error_callback)(RRR_SOCKET_CLIENT_ERROR_CALLBACK_ARGS),
-		void *error_callback_arg
+		void *error_callback_arg,
+		int (*accept_callback)(RRR_SOCKET_CLIENT_ACCEPT_CALLBACK_ARGS),
+		void *accept_callback_arg
 ) {
 	collection->array_do_sync_byte_by_byte = do_sync_byte_by_byte;
 	collection->array_message_max_size = message_max_size;
@@ -2022,10 +2368,15 @@ void rrr_socket_client_collection_event_setup_array_tree (
 	collection->error_callback = error_callback;
 	collection->error_callback_arg = error_callback_arg;
 
+	collection->accept_callback = accept_callback;
+	collection->accept_callback_arg = accept_callback_arg;
+
 	__rrr_socket_client_collection_event_setup (
 			collection,
 			read_step_max_size,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_array_tree,
 			callback_private_data_new,
 			callback_private_data_destroy,
@@ -2038,13 +2389,36 @@ void rrr_socket_client_collection_event_setup_ignore (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		int read_flags_socket
+		int read_flags_socket,
+		void (*callback_set_read_flags)(RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS),
+		void *callback_set_read_flags_arg
 ) {
 	__rrr_socket_client_collection_event_setup (
 			collection,
 			0,
 			read_flags_socket,
+			callback_set_read_flags,
+			callback_set_read_flags_arg,
 			__rrr_socket_client_event_read_ignore,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
+	);
+}
+
+void rrr_socket_client_collection_event_setup_write_only (
+		struct rrr_socket_client_collection *collection,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg
+) {
+	__rrr_socket_client_collection_event_setup (
+			collection,
+			0,
+			0,
+			NULL,
+			NULL,
+			NULL,
 			callback_private_data_new,
 			callback_private_data_destroy,
 			callback_private_data_arg

@@ -81,6 +81,7 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
 	RRR_HTTP_METHOD_PUT,
+	RRR_HTTP_METHOD_PATCH,
 	RRR_HTTP_METHOD_POST /* Remove the other POSTS and replace functionallity with format */
 };
 
@@ -144,6 +145,7 @@ extern const char *rrr_http_transport_str_https;
 extern const char *rrr_http_method_str_get;
 extern const char *rrr_http_method_str_head;
 extern const char *rrr_http_method_str_put;
+extern const char *rrr_http_method_str_patch;
 extern const char *rrr_http_method_str_delete;
 extern const char *rrr_http_method_str_post;
 
@@ -151,17 +153,19 @@ extern const char *rrr_http_method_str_post;
     (method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :                                                                 \
     (method == RRR_HTTP_METHOD_HEAD ? rrr_http_method_str_head :                                                               \
     (method == RRR_HTTP_METHOD_PUT ? rrr_http_method_str_put :                                                                 \
+    (method == RRR_HTTP_METHOD_PATCH ? rrr_http_method_str_patch :                                                             \
     (method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :                                                           \
     (method == RRR_HTTP_METHOD_POST ? rrr_http_method_str_post :                                                               \
-    ("unknown") )))))
+    ("unknown") ))))))
 
 #define RRR_HTTP_METHOD_TO_STR_CONFORMING(method)                                                                              \
     (method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :                                                                 \
     (method == RRR_HTTP_METHOD_HEAD ? rrr_http_method_str_head :                                                               \
     (method == RRR_HTTP_METHOD_PUT ? rrr_http_method_str_put :                                                                 \
+    (method == RRR_HTTP_METHOD_PATCH ? rrr_http_method_str_patch :                                                             \
     (method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :                                                           \
     rrr_http_method_str_post                                                                                                   \
-    ))))
+    )))))
 
 extern const char *rrr_http_body_format_str_multipart_form_data;
 extern const char *rrr_http_body_format_str_urlencoded;

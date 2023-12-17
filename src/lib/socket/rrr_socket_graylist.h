@@ -27,11 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
+struct rrr_socket_graylist;
 struct rrr_socket_graylist_entry;
-
-struct rrr_socket_graylist {
-	RRR_LL_HEAD(struct rrr_socket_graylist_entry);
-};
 
 int rrr_socket_graylist_exists (
 		struct rrr_socket_graylist *list,
@@ -44,14 +41,14 @@ int rrr_socket_graylist_push (
 		socklen_t len,
 		uint64_t graylist_period_us
 );
-void rrr_socket_graylist_clear (
+void rrr_socket_graylist_destroy (
 		struct rrr_socket_graylist *target
 );
-void rrr_socket_graylist_clear_void (
+void rrr_socket_graylist_destroy_void (
 		void *target
 );
-void rrr_socket_graylist_init (
-		struct rrr_socket_graylist *target
+int rrr_socket_graylist_new (
+		struct rrr_socket_graylist **target
 );
 
 #endif /* RRR_SOCKET_GRAYLIST_H */

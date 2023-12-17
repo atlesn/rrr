@@ -22,13 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MAIN_H
 #define RRR_MAIN_H
 
-#define RRR_ENV_DEBUGLEVEL				"RRR_DEBUGLEVEL"
-#define RRR_ENV_DEBUGLEVEL_ON_EXIT		"RRR_DEBUGLEVEL_ON_EXIT"
-#define RRR_ENV_START_INTERVAL		"RRR_START_INTERVAL"
-#define RRR_ENV_NO_WATCHDOG_TIMERS		"RRR_NO_WATCHDOG_TIMERS"
-#define RRR_ENV_NO_THREAD_RESTART		"RRR_NO_THREAD_RESTART"
-#define RRR_ENV_LOGLEVEL_TRANSLATION	"RRR_LOGLEVEL_TRANSLATION"
-#define RRR_ENV_RUN_DIRECTORY	"RRR_RUN_DIRECTORY"
+#define RRR_ENV_DEBUGLEVEL               "RRR_DEBUGLEVEL"
+#define RRR_ENV_DEBUGLEVEL_ON_EXIT       "RRR_DEBUGLEVEL_ON_EXIT"
+#define RRR_ENV_START_INTERVAL           "RRR_START_INTERVAL"
+#define RRR_ENV_NO_WATCHDOG_TIMERS       "RRR_NO_WATCHDOG_TIMERS"
+#define RRR_ENV_NO_THREAD_RESTART        "RRR_NO_THREAD_RESTART"
+#define RRR_ENV_LOGLEVEL_TRANSLATION     "RRR_LOGLEVEL_TRANSLATION"
+#define RRR_ENV_RUN_DIRECTORY            "RRR_RUN_DIRECTORY"
+#define RRR_ENV_OUTPUT_BUFFER_WARN_LIMIT "RRR_INSTANCE_OUTPUT_BUFFER_WARN_LIMIT"
 
 #include "lib/cmdlineparser/cmdline_defines.h"
 
@@ -40,17 +41,6 @@ struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_fork_handler;
 
-int rrr_main_create_and_start_threads (
-		struct rrr_thread_collection **thread_collection,
-		struct rrr_instance_collection *instances,
-		struct rrr_instance_config_collection *config,
-		struct cmd_data *cmd,
-		struct rrr_stats_engine *stats,
-		struct rrr_message_broker *message_broker,
-		struct rrr_fork_handler *fork_handler
-);
-
-void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection);
 int rrr_main_parse_cmd_arguments_and_env(struct cmd_data *cmd, const char **env, cmd_conf config);
 int rrr_main_print_banner_help_and_version (
 		struct cmd_data *cmd,
