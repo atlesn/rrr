@@ -59,6 +59,8 @@ struct msgdb_data {
 	rrr_setting_uint directory_levels;
 };
 
+static const rrr_time_ms_t msgdb_tick_interval = RRR_MS(250);
+
 static void msgdb_data_cleanup(void *arg) {
 	struct msgdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->directory);
@@ -83,8 +85,8 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_directory", directory, RRR_MSGDB_DEFAULT_DIRECTORY);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("msgdb_socket", socket);
 
-	if (data->directory == NULL) {
-		if (rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET) <= 0) {
+	if (data->socket == NULL) {
+		if (rrr_asprintf(&data->socket, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET) <= 0) {
 			RRR_MSG_0("rrr_asprintf() failed in %s\n", __func__);
 			ret = 1;
 			goto out;
@@ -187,7 +189,7 @@ static int msgdb_fork (void *arg) {
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
-			250, // 250ms
+			rrr_time_us_from_ms(msgdb_tick_interval),
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,

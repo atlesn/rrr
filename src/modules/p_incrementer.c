@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -61,6 +61,7 @@ struct incrementer_data {
 	rrr_setting_uint id_max;
 	rrr_setting_uint id_modulus;
 	rrr_setting_uint id_position;
+	rrr_setting_uint id_prefix;
 
 	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
@@ -158,6 +159,12 @@ static int incrementer_get_id_from_msgdb (
 		const char *tag
 ) {
 	int ret = 0;
+
+	*result_llu = 0;
+
+	if (data->msgdb_socket == NULL) {
+		goto out;
+	}
 
 	struct incrementer_get_id_from_msgdb_callback_data callback_data = {
 		result_llu,
@@ -356,6 +363,8 @@ static int incrementer_process_subject (
 	char *topic_tmp = NULL;
 	uint16_t topic_tmp_length = 0;
 	struct rrr_string_builder topic_new = {0};
+	unsigned long long old_id_llu = 0;
+	uint64_t prefix = 0;
 
 	if ((ret = rrr_msg_msg_topic_and_length_get (
 			&topic_tmp,
@@ -366,20 +375,38 @@ static int incrementer_process_subject (
 		goto out;
 	}
 
-	unsigned long long old_id_llu = 0;
-
 	if ((ret = incrementer_get_id(&old_id_llu, data, topic_tmp)) != 0) {
 		goto out;
 	}
 
 	if (old_id_llu == 0) {
-		// TODO : Error if id initializer topic is set
-/*		RRR_MSG_0("No ID stored for subject with topic %s in incrementer instance %s\n",
-			topic_tmp, INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;*/
+		if (data->id_tag != NULL && *data->id_tag != '\0' &&
+		    !rrr_map_get_value(&data->db_used_ids, topic_tmp) &&
+		    !rrr_map_get_value(&data->db_initial_ids, topic_tmp)
+		) {
+			RRR_MSG_0("No ID stored or initialized for subject with topic %s in incrementer instance %s despite explicit initialization being configured\n",
+				topic_tmp, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+
 		RRR_DBG_2("Incrementer instance %s starting ID for tag %s at 0, not previously stored\n",
 			INSTANCE_D_NAME(data->thread_data), topic_tmp);
+	}
+	else {
+		if (data->id_prefix > 0 && rrr_increment_verify_value_prefix(old_id_llu, (uint32_t) data->id_max, data->id_prefix) != 0) {
+			RRR_MSG_0("ID prefix check for old value %llu (possibly from msgdb) failed in incrementer instance %s, tag is %s and configured prefix is 0x%llx.\n",
+				old_id_llu, INSTANCE_D_NAME(data->thread_data), topic_tmp, (unsigned long long) data->id_prefix);
+			ret = 1;
+			goto out;
+		}
+
+		old_id_llu = rrr_increment_strip_prefix (&prefix, old_id_llu, data->id_max);
+	}
+
+	if (prefix == 0) {
+		// Configured prefix may also be zero which is OK
+		prefix = data->id_prefix;
 	}
 
 	unsigned long long new_id_llu = rrr_increment_mod (
@@ -389,6 +416,10 @@ static int incrementer_process_subject (
 			(uint32_t) data->id_max,
 			(uint8_t) data->id_position
 	);
+
+	assert(new_id_llu <= 0xffffffff);
+
+	new_id_llu = rrr_increment_apply_prefix((uint32_t) new_id_llu, data->id_max, prefix);
 
 	if ((ret = rrr_string_builder_append_format(&topic_new, "%s/%llu", topic_tmp, new_id_llu)) != 0) {
 		RRR_MSG_0("Failed to allocate new topic in incrementer_process_subject\n");
@@ -481,6 +512,14 @@ static int incrementer_process_id (
 
 	long long unsigned id = value->definition->to_ull(value);
 
+	if (data->id_prefix > 0 && rrr_increment_verify_value_prefix(id, (uint32_t) data->id_max, data->id_prefix) != 0) {
+		RRR_MSG_0("ID prefix check for initialization value in array tag %s failed in incrementer instance %s. " \
+			"The prefix in the given ID %llu does not match the configured prefix. Tag is %s.\n",
+			data->id_tag, INSTANCE_D_NAME(data->thread_data), id, topic_tmp);
+		ret = 1;
+		goto out;
+	}
+
 	char buf[64];
 	sprintf(buf, "%llu", id);
 
@@ -503,6 +542,8 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	int does_match = 0;
+
 	// We check stuff with the watchdog in case we are slow to process messages
 	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
 		ret = RRR_FIFO_PROTECTED_SEARCH_STOP;
@@ -512,8 +553,9 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Do not produce errors for message process failures, just drop them
 
-	int does_match = 0;
-	if (rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token) != 0) {
+	if (MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message) > 0 &&
+	    rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token) != 0
+	) {
 		RRR_MSG_0("Error while checking subject topic in incrementer_poll_callback of instance %s, dropping message\n",
 			INSTANCE_D_NAME(thread_data));
 		goto out;
@@ -594,8 +636,15 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0xffffffff);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 1);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_position", id_position, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_prefix", id_prefix, 0);
 
-	if ((ret = rrr_increment_verify (data->id_modulus, data->id_min, data->id_max, data->id_position)) != 0) {
+	if ((ret = rrr_increment_verify (
+			data->id_modulus,
+			data->id_min,
+			data->id_max,
+			data->id_position,
+			data->id_prefix
+	)) != 0) {
 		RRR_MSG_0("Invalid ID parameters in incrementer instance %s\n",
 				config->name);
 		goto out;

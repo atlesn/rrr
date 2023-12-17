@@ -61,6 +61,8 @@ enum rrr_event_priority {
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
 struct rrr_event_hook_config {
+	int enabled;
+	pid_t pid;
 	void (*hook)(RRR_EVENT_HOOK_ARGS);
 	void *arg;
 };
@@ -81,6 +83,17 @@ struct rrr_event_queue;
 void rrr_event_hook_set (
 		void (*hook)(RRR_EVENT_HOOK_ARGS),
 		void *arg
+);
+void rrr_event_hook_enable (
+		void
+);
+ssize_t rrr_event_hook_string_format (
+		char *buf,
+		size_t buf_size,
+		const char *source_func,
+		evutil_socket_t fd,
+		int flags,
+		const char *extra
 );
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue

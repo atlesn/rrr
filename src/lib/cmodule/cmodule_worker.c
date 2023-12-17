@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <poll.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -37,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../common.h"
 #include "../read_constants.h"
 #include "../rrr_shm.h"
+#include "../profiling.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -47,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
+#include "../stats/stats_message.h"
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)                              \
     if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {                 \
@@ -83,7 +86,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 			worker->event_queue_parent,
 			message,
 			message_addr,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			rrr_cmodule_channel_wait_time,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
@@ -137,7 +140,110 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 		worker->received_stop_signal = 1;
 	}
 
+	if (signal == SIGUSR2) {
+		worker->received_sigusr2_signal = 1;
+	}
+
 	return 0;
+}
+
+static int __rrr_cmodule_worker_hook_write (
+		struct rrr_cmodule_worker *worker,
+		const void *msg,
+		rrr_length msg_size
+) {
+	int ret = 0;
+
+	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
+	while (max--) {
+		ret = rrr_mmap_channel_write (
+				worker->channel_to_parent,
+				worker->event_queue_parent,
+				msg,
+				msg_size,
+				__rrr_cmodule_worker_check_cancel_callback,
+				worker
+		);
+
+		if (ret == 0) {
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, try again
+		}
+		else if (ret == RRR_EVENT_EXIT) {
+			// OK, wait for some other function to detect exit
+			break;
+		}
+		else {
+			RRR_MSG_0("Error %i while writing to mmap channel in %s for worker %s in hook\n",
+				ret, __func__, worker->name);
+			break;
+		}
+
+		rrr_posix_sleep_us(rrr_cmodule_channel_wait_time);
+	}
+
+	if (ret == RRR_MMAP_CHANNEL_FULL) {
+		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in hook\n",
+			__func__, worker->name);
+		ret = 0;
+	}
+
+	return ret;
+}
+
+static void __rrr_cmodule_worker_event_hook(RRR_EVENT_HOOK_ARGS) {
+	struct rrr_cmodule_worker *worker = arg;
+
+	char text[256];
+	char worker_text[32];
+	struct rrr_msg_stats msg;
+	struct rrr_msg_stats_packed msg_packed;
+	rrr_length msg_packed_size;
+	ssize_t text_length;
+
+	snprintf(worker_text, sizeof(worker_text), " worker: %s", worker->name);
+
+	text_length = rrr_event_hook_string_format(text, sizeof(text), source_func, fd, flags, worker_text);
+
+	assert(text_length > 0);
+
+	if (rrr_msg_stats_init_event (
+			&msg,
+			text,
+			text_length + 1
+	) != 0) {
+		RRR_MSG_0("Failed to initialize stats message in %s\n", __func__);
+		goto out_failure;
+	}
+
+	rrr_msg_stats_pack (
+			&msg_packed,
+			&msg_packed_size,
+			&msg
+	);
+
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &msg_packed,
+			RRR_MSG_TYPE_STATS,
+			msg_packed_size,
+			(rrr_u32) (rrr_time_get_64() / 1000 / 1000)
+	);
+
+	if (__rrr_cmodule_worker_hook_write (
+			worker,
+			&msg_packed,
+			msg_packed_size
+	)) {
+		RRR_MSG_0("Failed to write stats message in %s\n", __func__);
+		goto out_failure;
+	}
+
+	return;
+
+	out_failure:
+	worker->received_stop_signal = 1;
 }
 
 static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
@@ -160,48 +266,24 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			prefix,
 			message
 	) != 0) {
-		goto out;
+		RRR_MSG_0("Failed to create log message in %s\n", __func__);
+		goto out_failure;
 	}
 
-	int ret = 0;
-
-	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
-	while (max--) {
-		ret = rrr_mmap_channel_write (
-				worker->channel_to_parent,
-				worker->event_queue_parent,
-				message_log,
-				message_log->msg_size,
-				__rrr_cmodule_worker_check_cancel_callback,
-				worker
-		);
-
-		if (ret == 0) {
-			break;
-		}
-		else if (ret == RRR_MMAP_CHANNEL_FULL) {
-			// OK, try again
-		}
-		else if (ret == RRR_EVENT_EXIT) {
-			// OK, wait for some other function to detect exit
-			break;
-		}
-		else {
-			RRR_MSG_0("Warning: Error %i while writing to mmap channel in %s for worker %s in log hook\n",
-				ret, __func__, worker->name);
-			break;
-		}
-
-		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
+	if (__rrr_cmodule_worker_hook_write (
+			worker,
+			message_log,
+			message_log->msg_size
+	)) {
+		RRR_MSG_0("Failed to write log message in %s\n", __func__);
+		goto out_failure;
 	}
 
-	if (ret == RRR_MMAP_CHANNEL_FULL) {
-		RRR_MSG_0("Warning: mmap channel was full in %s for worker %s in log hook\n",
-				__func__, worker->name);
-	}
-
+	goto out;
+	out_failure:
+		worker->received_stop_signal = 1;
 	out:
-	RRR_FREE_IF_NOT_NULL(message_log);
+		RRR_FREE_IF_NOT_NULL(message_log);
 }
 
 static int __rrr_cmodule_worker_send_setting_to_parent (
@@ -539,19 +621,21 @@ static void __rrr_cmodule_worker_event_spawn (
 		}
 	}
 
+	if (callback_data->custom_tick_callback == NULL) {
+		return;
+	}
+
 	int custom_tick_something_happened = 1;
 	int retries = 100;
 	while (--retries && custom_tick_something_happened) {
-		if (callback_data->custom_tick_callback != NULL) {
-			if (callback_data->custom_tick_callback (
-					&custom_tick_something_happened,
-					worker,
-					callback_data->custom_tick_callback_arg
-			) != 0) {
-				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
-				rrr_event_dispatch_break(worker->event_queue_worker);
-			}
+		if (callback_data->custom_tick_callback (
+				&custom_tick_something_happened,
+				worker,
+				callback_data->custom_tick_callback_arg
+		) != 0) {
+			RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
+					worker->name, (long) getpid());
+			rrr_event_dispatch_break(worker->event_queue_worker);
 		}
 	}
 
@@ -565,6 +649,11 @@ static int __rrr_cmodule_worker_event_periodic (
 
 	if (worker->received_stop_signal) {
 		return RRR_EVENT_EXIT;
+	}
+
+	if (worker->received_sigusr2_signal) {
+		rrr_profiling_dump();
+		worker->received_sigusr2_signal = 0;
 	}
 
 	int ret_tmp = 0;
@@ -655,12 +744,12 @@ static int __rrr_cmodule_worker_loop (
 		}
 	};
 
-	if (rrr_event_collection_push_periodic (
+	if (rrr_event_collection_push_periodic_new (
 			&event_spawn,
 			&events,
 			__rrr_cmodule_worker_event_spawn,
 			&callback_data,
-			worker->spawn_interval_us
+			worker->spawn_interval
 	) != 0) {
 		RRR_MSG_0("Failed to create spawn event in  %s\n", __func__);
 		goto out_cleanup_events;
@@ -806,10 +895,11 @@ int rrr_cmodule_worker_main (
 ) {
 	int ret = 0;
 
-	rrr_log_hook_unregister_all_after_fork();
-
 	int event_fds[RRR_EVENT_QUEUE_FD_MAX * 2];
 	size_t event_fds_count = 0;
+	int log_hook_handle;
+
+	rrr_log_hook_unregister_all_after_fork();
 
 	memset(event_fds, '\0', sizeof(event_fds));
 
@@ -818,8 +908,8 @@ int rrr_cmodule_worker_main (
 	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
-	int log_hook_handle;
-	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
+	rrr_event_hook_set(__rrr_cmodule_worker_event_hook, worker);
+	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
 		RRR_MSG_0("Re-init of event queue failed in %s\n", __func__);
@@ -892,7 +982,7 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		const struct rrr_discern_stack_collection *methods,
-		rrr_setting_uint spawn_interval_us,
+		rrr_time_us_t spawn_interval,
 		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
 		int do_drop_on_error
@@ -940,7 +1030,7 @@ int rrr_cmodule_worker_init (
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
-	worker->spawn_interval_us = spawn_interval_us;
+	worker->spawn_interval = spawn_interval;
 	worker->process_mode = process_mode;
 	worker->do_spawning = do_spawning;
 	worker->do_drop_on_error = do_drop_on_error;

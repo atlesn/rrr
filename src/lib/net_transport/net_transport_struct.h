@@ -167,6 +167,7 @@ struct rrr_net_transport_handle {
 	rrr_event_handle event_handshake;
 	rrr_event_handle event_read;
 	rrr_event_handle event_read_notify;
+	rrr_event_handle event_noread_check;
 	rrr_event_handle event_write;
 	rrr_event_handle event_first_read_timeout;
 	rrr_event_handle event_hard_read_timeout;
@@ -191,6 +192,8 @@ struct rrr_net_transport_handle {
 
 	struct sockaddr_storage connected_addr;
 	socklen_t connected_addr_len;
+
+	char description[16];
 
 	// Like SSL data or plain FD
 	void *submodule_private_ptr;

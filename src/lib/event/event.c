@@ -25,8 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <sys/mman.h>
 
-#include <poll.h>
-
 #include "../log.h"
 #include "../allocator.h"
 #include "event.h"
@@ -50,12 +48,46 @@ void rrr_event_hook_set (
 		void (*hook)(RRR_EVENT_HOOK_ARGS),
 		void *arg
 ) {
+	if (!rrr_event_hooking.enabled)
+		return;
+
 	// Unsafe to change this function. Also, only set hook
 	// prior to making any threads as the struct update is
-	// not atomic.
-	assert(rrr_event_hooking.hook == NULL);
+	// not atomic. After forking however, this function may
+	// be called again.
+	assert (rrr_event_hooking.pid != getpid() && "Double call to event hook set from same pid");
+
+	rrr_event_hooking.pid = getpid();
 	rrr_event_hooking.hook = hook;
 	rrr_event_hooking.arg = arg;
+}
+
+void rrr_event_hook_enable (
+		void
+) {
+	rrr_event_hooking.enabled = 1;
+}
+
+ssize_t rrr_event_hook_string_format (
+		char *buf,
+		size_t buf_size,
+		const char *source_func,
+		evutil_socket_t fd,
+		int flags,
+		const char *extra
+) {
+	return snprintf (buf, buf_size, "pid: % 8lli tid: % 8lli func: %-50s fd: % 4i time: %" PRIu64 " flags: %i read: %i write: %i timeout: %i%s",
+		(long long int) getpid(),
+		(long long int) rrr_gettid(),
+		source_func,
+		fd,
+		rrr_time_get_64(),
+		flags,
+		(flags & EV_READ) != 0,
+		(flags & EV_WRITE) != 0,
+		(flags & EV_TIMEOUT) != 0,
+		extra
+	);
 }
 
 int rrr_event_queue_reinit (

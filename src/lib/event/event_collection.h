@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <event2/event.h>
 
+#include "../rrr_types.h"
+
 struct rrr_event_queue;
 struct rrr_event_handle;
 struct rrr_event_collection;
@@ -54,6 +56,14 @@ int rrr_event_collection_push_periodic (
 		void (callback)(evutil_socket_t fd, short flags, void *arg),
 		void *arg,
 		uint64_t interval_us
+);
+// TODO : Replace old function with this
+int rrr_event_collection_push_periodic_new (
+		struct rrr_event_handle *target,
+		struct rrr_event_collection *collection,
+		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void *arg,
+		rrr_time_us_t interval
 );
 int rrr_event_collection_push_read (
 		struct rrr_event_handle *target,

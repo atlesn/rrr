@@ -81,8 +81,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_stats");
 
-static int main_running = 1;
-
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',    "socket",                "[RRR SOCKET (PREFIX)] ..."},
         {0,                            'p',    "exact-path",            "[-p|--exact-path]"},
@@ -166,8 +164,11 @@ static int __rrr_stats_connection_msg_preface_set (
 	return ret;
 }
 
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_stats_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static int __rrr_stats_data_init (
@@ -513,7 +514,7 @@ static int __rrr_stats_send_message (
 
 	rrr_msg_populate_head (
 			(struct rrr_msg *) &message_packed,
-			RRR_MSG_TYPE_TREE_DATA,
+			RRR_MSG_TYPE_STATS,
 			total_size,
 			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
@@ -821,6 +822,11 @@ static int __rrr_stats_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	if (!main_running) {
 		return RRR_EVENT_EXIT;
+	}
+
+	if (sigusr2) {
+		RRR_MSG_0("Received SIGUSR2, but this is not implemented in statistics client\n");
+		sigusr2 = 0;
 	}
 
 	if (__rrr_stats_attempt_connect(data) != 0) {

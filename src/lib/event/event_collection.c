@@ -140,6 +140,17 @@ int rrr_event_collection_push_periodic (
 	return __rrr_event_collection_push(target, collection, -1, EV_PERSIST, callback, arg, interval_us);
 }
 
+// TODO : Replace old function with this
+int rrr_event_collection_push_periodic_new (
+		struct rrr_event_handle *target,
+		struct rrr_event_collection *collection,
+		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void *arg,
+		rrr_time_us_t interval
+) {
+	return __rrr_event_collection_push(target, collection, -1, EV_PERSIST, callback, arg, interval.us);
+}
+
 int rrr_event_collection_push_read (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,

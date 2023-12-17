@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
+#include "../stats/stats_message.h"
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
@@ -202,12 +203,14 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 		}
 	}
 
+	rrr_time_us_t full_wait_time = RRR_US(0); // No waiting
+
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
 			message,
 			&addr_msg,
-			0, // No waiting
+			full_wait_time,
 			1, // 1 attempt
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
@@ -410,10 +413,11 @@ struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {
 };
 
 struct rrr_cmodule_read_from_fork_callback_data {
-		struct rrr_cmodule_worker *worker;
-		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
-		void *final_callback_arg;
-		int read_count;
+	struct rrr_cmodule_worker *worker;
+	struct rrr_instance_runtime_data *thread_data;
+	int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
+	void *final_callback_arg;
+	int read_count;
 };
 
 static int __rrr_cmodule_helper_read_from_fork_message_callback (
@@ -432,7 +436,7 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
 }
 
-int __rrr_cmodule_helper_from_fork_log_callback (
+static int __rrr_cmodule_helper_read_from_fork_log_callback (
 		const struct rrr_msg_log *msg_log,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
@@ -446,25 +450,62 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
 	// only (includes statistics engine)
 	rrr_log_hooks_call_raw (
-		msg_log->file,
-		msg_log->line > INT_MAX ? 0 : (int) msg_log->line,
-		msg_log->loglevel_translated,
-		msg_log->loglevel_orig,
-		msg_log->prefix_and_message,
-		RRR_MSG_LOG_MSG_POS(msg_log)
+			msg_log->file,
+			msg_log->line > INT_MAX ? 0 : (int) msg_log->line,
+			msg_log->loglevel_translated,
+			msg_log->loglevel_orig,
+			msg_log->prefix_and_message,
+			RRR_MSG_LOG_MSG_POS(msg_log)
 	);
 
 	return 0;
 }
 
-int __rrr_cmodule_helper_read_from_fork_setting_callback (
+static int __rrr_cmodule_helper_read_from_fork_stats_callback (
+		const struct rrr_msg_stats_packed *msg_packed,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	(void)(callback_data);
+
+	int ret = 0;
+
+	struct rrr_msg_stats msg;
+
+	if ((rrr_msg_stats_unpack (
+			&msg,
+			msg_packed,
+			rrr_length_from_size_t_bug_const(data_size)
+	)) != 0) {
+		RRR_MSG_0("Failed to unpack stats message in %s\n", __func__);
+		goto out;
+	};
+
+	if (RRR_STATS_MESSAGE_FLAGS_IS_EVENT(&msg)) {
+		if ((ret = rrr_stats_instance_push_stream_message (
+				INSTANCE_D_STATS(callback_data->thread_data),
+				&msg
+		)) != 0) {
+			RRR_MSG_0("Failed to push stats message in %s\n", __func__);
+			goto out;
+		}
+	}
+	else {
+		RRR_BUG("Received stats message of type %u from worker for, this is not implemented", msg.type);
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_cmodule_helper_read_from_fork_setting_callback (
 		const struct rrr_setting_packed *setting_packed,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
-	int ret = 0;
-
 	(void)(data_size);
+
+	int ret = 0;
 
 	rrr_settings_update_used (
 			callback_data->worker->settings,
@@ -495,7 +536,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 	}
 
 	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_MSG_CTRL_F_PONG)) {
-		callback_data->worker->pong_receive_time = rrr_time_get_64();
+		callback_data->worker->pong_receive_time = rrr_time_get_us();
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_PONG);
 	}
 
@@ -522,7 +563,10 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
+		return __rrr_cmodule_helper_read_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
+	}
+	else if (RRR_MSG_IS_STATS(msg)) {
+		return __rrr_cmodule_helper_read_from_fork_stats_callback((const struct rrr_msg_stats_packed *) msg, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_SETTING(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
@@ -539,6 +583,7 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 static int __rrr_cmodule_helper_read_from_worker (
 		uint16_t *amount,
 		struct rrr_cmodule_worker *worker,
+		struct rrr_instance_runtime_data *thread_data,
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -553,6 +598,7 @@ static int __rrr_cmodule_helper_read_from_worker (
 
 	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
 			worker,
+			thread_data,
 			final_callback,
 			final_callback_arg,
 			0
@@ -605,6 +651,7 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 		if ((ret = __rrr_cmodule_helper_read_from_worker (
 				amount,
 				worker,
+				thread_data,
 				__rrr_cmodule_helper_read_callback,
 				&callback_data
 		)) != 0) {
@@ -640,19 +687,19 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 static int __rrr_cmodule_helper_check_pong (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
-
-	uint64_t min_time = rrr_time_get_64() - (RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S * 1000 * 1000);
-
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
+	int ret = 0;
+
+	rrr_time_us_t min_time = rrr_time_us_sub(rrr_time_get_us(), rrr_time_us_from_s(rrr_cmodule_worker_fork_pong_timeout));
+
 	WORKER_LOOP_BEGIN();
-		if (worker->pong_receive_time == 0) {
-			worker->pong_receive_time = rrr_time_get_64();
+		if (rrr_time_us_zero(worker->pong_receive_time)) {
+			worker->pong_receive_time = rrr_time_get_us();
 		}
-		else if (worker->pong_receive_time < min_time) {
+		else if (rrr_time_us_lt(worker->pong_receive_time, min_time)) {
 			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
-					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, worker->name, (long) worker->pid);
+					(long) rrr_cmodule_worker_fork_pong_timeout.s, worker->name, (long) worker->pid);
 			ret = 1;
 		}
 	WORKER_LOOP_END();
@@ -736,6 +783,20 @@ static int __rrr_cmodule_helper_event_periodic (
 
 		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 5, "mmap_to_parent_full_events", write_full_counter);
 		rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "mmap_to_parent_count", 0, count);
+	}
+	{
+		char buf_path[128];
+		char buf_value[64];
+		for (int i = 0; i < INSTANCE_D_CMODULE(thread_data)->worker_count; i++) {
+			const struct rrr_cmodule_worker *worker = &INSTANCE_D_CMODULE(thread_data)->workers[i];
+
+			snprintf(buf_path,  sizeof(buf_path),  "workers/%i/pid", i);
+			rrr_stats_instance_post_base10_text(INSTANCE_D_STATS(thread_data), buf_path, 0, (long long int) worker->pid);
+
+			snprintf(buf_path,  sizeof(buf_path),  "workers/%i/name", i);
+			snprintf(buf_value, sizeof(buf_value), "%s", worker->name);
+			rrr_stats_instance_post_text(INSTANCE_D_STATS(thread_data), buf_path, 0, buf_value);
+		}
 	}
 
 	// TODO : Fix rate counter
@@ -911,10 +972,8 @@ int rrr_cmodule_helper_parse_config (
 		goto out;
 	}
 
-	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_source_interval_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
-	data->worker_spawn_interval_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(config_string, worker_spawn_interval, rrr_cmodule_worker_default_spawn_interval);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
@@ -937,7 +996,7 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
-static int __rrr_cmodule_main_worker_fork_start_intermediate (
+static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
@@ -981,7 +1040,7 @@ int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
 	};
 
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
@@ -1019,7 +1078,7 @@ int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 	};
 
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
@@ -1056,13 +1115,13 @@ int rrr_cmodule_helper_worker_forks_start (
 
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
-		unsigned int tick_interval_us,
+		rrr_time_us_t tick_interval,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
-	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
+	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval = tick_interval;
 
 	struct rrr_cmodule_worker_callbacks callbacks = {
 		NULL,
@@ -1077,7 +1136,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		NULL
 	};
 
-	return __rrr_cmodule_main_worker_fork_start_intermediate (
+	return __rrr_cmodule_helper_worker_fork_start_intermediate (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,

@@ -68,11 +68,6 @@ struct rrr_stats_engine {
 	int log_hook_handle;
 	pthread_mutex_t main_lock;
 
-	// Errors occuring while hooking. The hook functions have no
-	// return values, we must store the return value and check
-	// in our periodic function.
-	int exit_now_ret;
-
 	// Use to prevent re-entry logging when we are sending data
 	// to statistics client. Log messages received when this value
 	// is set will be ignored.
@@ -107,6 +102,12 @@ void rrr_stats_engine_handle_unregister (
 		unsigned int handle
 );
 int rrr_stats_engine_post_message (
+		struct rrr_stats_engine *stats,
+		unsigned int handle,
+		const char *path_prefix,
+		const struct rrr_msg_stats *message
+);
+int rrr_stats_engine_push_stream_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,
 		const char *path_prefix,

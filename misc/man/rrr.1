@@ -1,4 +1,4 @@
-.Dd 2023-04-15
+.Dd 2023-11-29
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -173,10 +173,29 @@ Other variables are ignored, which means that the same environment file may be u
 .SH SIGNALS
 .IP SIGINT|Ctrl+C
 Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.
-.IP SIGUSR1
+.IP SIGUSR1 and SIGTERM
 Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
-.IP SIGTERM
-Exit immediately.
+There is no difference betweein
+.B SIGUSR1
+and
+.B SIGTERM
+unless signal debugging is enabled while building RRR in which case the signal
+.B SIGTERM
+causes a message to be printed and
+.B SIGUSR1
+does not.
+.IP SIGUSR2
+If RRR is built with profiling-enabled jemalloc and profiling is active by having started RRR with
+.B MALLOC_CONF="prof:true"
+set in the environment, this signal causes a profiling dump to be generated within a short timespan.
+RRR runs with multiple forks, and the
+.Xt rrr_stats(1)
+utility can be used to find the correct fork to profile while RRR is running and has been started with the
+.B -s
+parameter.
+The dump files will be stored in the current run directory, and this location will also be printed in a log message when dumping occurs.
+
+In addition to the profiling dump, a heap status report is printed in log messages.
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.
@@ -185,4 +204,6 @@ returns 0 on success and 1 on failure.
 .Xr rrr_stats(1),
 .Xr rrr_msg(1),
 .Xr rrr.conf(5),
-.Xr rrr_python3(5)
+.Xr rrr_python3(5),
+.Xr jemalloc(3),
+.Xr jeprof(1)

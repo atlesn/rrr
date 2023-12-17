@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../discern_stack.h"
 #include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 static void __rrr_cmodule_main_worker_kill (
 		struct rrr_cmodule_worker *worker
@@ -150,7 +151,7 @@ int rrr_cmodule_main_worker_fork_start (
 			worker_queue,
 			cmodule->fork_handler,
 			methods,
-			cmodule->config_data.worker_spawn_interval_us,
+			cmodule->config_data.worker_spawn_interval,
 			cmodule->config_data.process_mode,
 			cmodule->config_data.do_spawning,
 			cmodule->config_data.do_drop_on_error
@@ -267,7 +268,7 @@ int rrr_cmodule_new (
 	cmodule->fork_handler = fork_handler;
 
 	// Default settings for modules which do not parse config
-	cmodule->config_data.worker_spawn_interval_us = RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS * 1000;
+	cmodule->config_data.worker_spawn_interval = rrr_time_us_from_ms(rrr_cmodule_worker_default_spawn_interval);
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	// Memory map not allocated until needed

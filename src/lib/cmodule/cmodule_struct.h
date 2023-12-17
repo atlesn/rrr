@@ -37,7 +37,7 @@ struct rrr_msg_addr;
 struct rrr_cmodule_worker {
 	uint8_t index;
 
-	rrr_setting_uint spawn_interval_us;
+	rrr_time_us_t spawn_interval;
 
 	enum rrr_cmodule_process_mode process_mode;
 	int do_spawning;
@@ -49,7 +49,8 @@ struct rrr_cmodule_worker {
 	pthread_mutex_t pid_lock;
 
 	pid_t pid;
-	int received_stop_signal;
+	volatile int received_stop_signal;
+	volatile int received_sigusr2_signal;
 
 	int config_complete;
 
@@ -69,7 +70,7 @@ struct rrr_cmodule_worker {
 	// Used by fork only
 	int ping_received;
 	// Used by parent reader thread only. Unprotected, only access from reader thread.
-	uint64_t pong_receive_time;
+	rrr_time_us_t pong_receive_time;
 
 	// Unmanaged pointers provided by application
 	struct rrr_instance_settings *settings;

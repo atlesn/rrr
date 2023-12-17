@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/log.h"
 #include "lib/allocator.h"
 #include "lib/rrr_shm.h"
+#include "lib/profiling.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
@@ -99,10 +100,12 @@ const char *module_library_paths[] = {
 // on the stack correctly
 //#define RRR_NO_MODULE_UNLOAD
 
-static int some_fork_has_stopped = 0;
-static int main_running = 1;
+static volatile int some_fork_has_stopped = 0;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -140,12 +143,12 @@ struct stats_data {
 	struct rrr_stats_engine engine;
 };
 
-static int main_stats_post_text_message (struct stats_data *stats_data, const char *path, const char *text, uint32_t flags) {
+static int main_stats_post_message (struct stats_data *stats_data, const char *path, uint8_t type, const char *text, uint32_t flags) {
 	struct rrr_msg_stats message;
 
 	if (rrr_msg_stats_init (
 			&message,
-			RRR_STATS_MESSAGE_TYPE_TEXT,
+			type,
 			flags,
 			path,
 			text,
@@ -162,29 +165,40 @@ static int main_stats_post_text_message (struct stats_data *stats_data, const ch
 	return 0;
 }
 
-static int main_stats_post_unsigned_message (struct stats_data *stats_data, const char *path, uint64_t value, uint32_t flags) {
-	struct rrr_msg_stats message;
+static int main_stats_post_text_message (struct stats_data *stats_data, const char *path, const char *text, uint32_t flags) {
+	return main_stats_post_message (
+			stats_data,
+			path,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			text,
+			flags
+	);
+}
 
+static int main_stats_post_unsigned_message (struct stats_data *stats_data, const char *path, uint64_t value, uint32_t flags) {
 	char text[125];
 	sprintf(text, "%" PRIu64, value);
 
-	if (rrr_msg_stats_init (
-			&message,
-			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
-			flags,
+	return main_stats_post_message (
+			stats_data,
 			path,
+			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
 			text,
-			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
-	) != 0) {
-		RRR_BUG("Could not initialize main statistics message\n");
-	}
+			flags
+	);
+}
 
-	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
-		RRR_MSG_0("Could not post main statistics message\n");
-		return 1;
-	}
+static int main_stats_post_signed_message (struct stats_data *stats_data, const char *path, int64_t value, uint32_t flags) {
+	char text[125];
+	sprintf(text, "%" PRIi64, value);
 
-	return 0;
+	return main_stats_post_message (
+			stats_data,
+			path,
+			RRR_STATS_MESSAGE_TYPE_BASE10_TEXT,
+			text,
+			flags
+	);
 }
 
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
@@ -192,16 +206,17 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 
 	char msg_text[RRR_STATS_MESSAGE_DATA_MAX_SIZE + 1];
 
-	if (snprintf (
-			msg_text,
-			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
-			"RRR running with %i instances",
-			rrr_instance_collection_count(instances)
-	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
-		RRR_BUG("Statistics message too long in main\n");
-	}
+	snprintf (msg_text,
+	          RRR_STATS_MESSAGE_DATA_MAX_SIZE,
+	          "RRR running with %i instances",
+	          rrr_instance_collection_count(instances)
+	);
 
 	if ((ret = main_stats_post_text_message(stats_data, "status", msg_text, RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
+		goto out;
+	}
+
+	if ((ret = main_stats_post_signed_message(stats_data, "pid", (int64_t) getpid(), RRR_STATS_MESSAGE_FLAGS_STICKY)) != 0) {
 		goto out;
 	}
 
@@ -234,20 +249,6 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 
 	out:
 	return ret;
-}
-
-static int main_loop_log_hook_retry_callback (
-		void *arg
-) {
-	struct stats_data *stats_data = arg;
-
- 	(void)(stats_data);
-
-	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
-
-	main_running = 0;
-
-	return RRR_EVENT_ERR;
 }
 
 static void main_stats_message_pre_buffer_hook (
@@ -291,7 +292,8 @@ static void main_stats_message_pre_buffer_hook (
 			(const char **) hop_names,
 			(uint32_t) hop_count
 	) != 0) {
-		RRR_BUG("Could not send message int %s\n", __func__);
+		RRR_MSG_0("Could not push RRR message in %s\n", __func__);
+		main_running = 0;
 	}
 
 	for (int i = 0; i < hop_count; i++) {
@@ -306,18 +308,7 @@ void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 
 	char text[256];
 
-	snprintf(text, sizeof(text), "pid: % 8lli tid: % 8lli func: %-45s fd: % 4i time: %" PRIu64 " flags: %i pollin: %i pollout: %i pollhup: %i pollerr: %i",
-		(long long int) getpid(),
-		(long long int) rrr_gettid(),
-		source_func,
-		fd,
-		rrr_time_get_64(),
-		flags,
-		(flags & POLLIN) != 0,
-		(flags & POLLOUT) != 0,
-		(flags & POLLHUP) != 0,
-		(flags & POLLERR) != 0
-	);
+	rrr_event_hook_string_format(text, sizeof(text), source_func, fd, flags, "");
 
 	if (rrr_stats_engine_push_event_message (
 			&stats_data->engine,
@@ -325,7 +316,8 @@ void main_loop_event_hook(RRR_EVENT_HOOK_ARGS) {
 			"main",
 			text
 	) != 0) {
-		RRR_BUG("Could not initialize main statistics message\n");
+		RRR_MSG_0("Could not push event message in %s\n", __func__);
+		main_running = 0;
 	}
 }
 
@@ -344,7 +336,8 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 			"main",
 			message
 	) != 0) {
-		RRR_BUG("Could not push message in %s\n", __func__);
+		RRR_MSG_0("Could not push log message in %s\n", __func__);
+		main_running = 0;
 	}
 }
 
@@ -427,7 +420,7 @@ static void main_loop_periodic_message_broker_report_buffer_split_buffer_callbac
 	}
 }
 
-static void main_loop_periodic_thread_collection_destroy (
+static void main_loop_thread_collection_destroy (
 		struct rrr_thread_collection **collection,
 		const char *config_file
 ) {
@@ -444,7 +437,8 @@ static void main_loop_periodic_thread_collection_destroy (
 		//
 		// It is also useful to get a coredump showing the state of
 		// the ghost thread, hence we abort here.
-		RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n", config_file);
+		RRR_BUG("%i threads are ghost for configuration %s. Aborting now.\n",
+			ghost_count, config_file);
 	}
 }
 
@@ -509,7 +503,7 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 		rrr_config_set_debuglevel_on_exit();
 
-		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
+		main_loop_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 
 		// If main is still supposed to be active and restart is active, sleep
 		// for one second and continue.
@@ -539,11 +533,16 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		goto out_destroy_thread_collection;
 	}
 
+	if (sigusr2) {
+		rrr_profiling_dump();
+		sigusr2 = 0;
+	}
+
 	return RRR_EVENT_OK;
 
 	out_destroy_thread_collection:
 		rrr_config_set_debuglevel_on_exit();
-		main_loop_periodic_thread_collection_destroy(callback_data->collection, callback_data->config_file);
+		main_loop_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 	out_event_exit:
 		rrr_config_set_debuglevel_on_exit();
 		return RRR_EVENT_EXIT;
@@ -613,6 +612,7 @@ static int main_loop (
 		}
 
 		if (cmd_exists(cmd, "event-hooks", 0)) {
+			rrr_event_hook_enable ();
 			rrr_event_hook_set (main_loop_event_hook, &stats_data);
 		}
 
@@ -620,9 +620,7 @@ static int main_loop (
 				&stats_data.log_hook_handle,
 				main_loop_log_hook,
 				&stats_data,
-				queue,
-				main_loop_log_hook_retry_callback,
-				&stats_data
+				queue
 		);
 
 	}
@@ -646,16 +644,20 @@ static int main_loop (
 		queue
 	};
 
-	rrr_event_dispatch (
+	ret = rrr_event_dispatch (
 			queue,
 			250 * 1000, // 250 ms
 			main_loop_periodic,
 			&event_callback_data
 	);
 
-	RRR_DBG_1 ("Main loop finished\n");
+	RRR_DBG_1 ("Main loop finished with code %i\n", ret);
 
-	if (collection != NULL) {
+	rrr_config_set_debuglevel_on_exit();
+	
+	if (ret == RRR_EVENT_ERR) {
+		main_loop_thread_collection_destroy(&collection, config_file);
+	} else if (collection != NULL) {
 		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
 	}
 
@@ -860,7 +862,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
-			&some_fork_has_stopped
+		&some_fork_has_stopped
 	};
 
 	struct rrr_map config_file_map = {0};

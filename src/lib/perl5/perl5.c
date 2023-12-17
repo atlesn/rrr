@@ -344,12 +344,13 @@ int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
+    
     HV *stash = gv_stashpv(class, GV_ADD);
     if (stash == NULL) {
     	RRR_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
-    SV *ref = newRV_noinc((SV*) hv);
+    SV *ref = newRV_inc((SV*) hv);
     if (ref == NULL) {
     	RRR_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
@@ -400,6 +401,9 @@ int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *
 	PUTBACK;
 	FREETMPS;
 	LEAVE;
+
+    assert(SvREFCNT(hv) == 2);
+    SvREFCNT_dec(ref);
 
 	return ret;
 }
