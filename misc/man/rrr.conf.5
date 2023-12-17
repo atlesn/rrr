@@ -44,7 +44,7 @@ do not matter. An instance section ends when a new begins or when we reach the e
 Multiple instances of a module may co-exist as long as their settings don't collide, like if they try to use the same
 network ports.
 .PP
-.nf
+.EX
 # Comment are like this, they must be on separate lines. The instance name
 # and module name are the ony parameters which are always required. Spaces
 # around the = are ignored as well as spaces at the end of a line.
@@ -83,9 +83,9 @@ route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
 # is set. If given but execution produces no result for a particular message, the processor function
 # will not be called.
 
-# To refer to a method definition specified outside the block, enclose its name in angle brackets like
-# <NAME>. Multiple names may be given, in which the definitions will be run in order.
-methods=METHOD DEFINITION|<METHOD DEFINITION NAME>[,<METHOD DEFINITION NAME>]...
+# To refer to a method definition specified outside the block, enclose its name in parentheses like
+# (NAME). Multiple names may be given, in which the definitions will be run in order.
+methods=METHOD DEFINITION|(METHOD DEFINITION NAME)[,(METHOD DEFINITION NAME)]...
 
 # When using methods, call a named processor function directly inside the cmodule program (optional). By
 # default, and if set to no, the default processor function will be called instead with the resolved method
@@ -233,7 +233,7 @@ sep1#separator
 	# Remove the remaining value from the stack
 		POP
 
-.fi
+.EE
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
 In all module parameters for array definitions, it is possible to instead specify {NAME} to reference a definition
@@ -271,12 +271,12 @@ and that the eight byte sequence with ASCII-characters is split into two values.
 enclosed by quotes "". The quotes will be removed when the value is parsed. At the second array position, there are nine
 values, and at the sixth position there are two values.
 .PP
-.nf
+.EX
 +--------+-----------------+---------------------------+----------+----------+-------------+----+
 | my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
 |   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
 +--------+-----------------+---------------------------+----------+----------+-------------+----+
-.fi
+.EE
 .PP
 An array parsing specification to produce a dataset like this (assuming the integers are 1 byte wide):
 .PP
@@ -295,7 +295,7 @@ of the sender will be contained within the message. All modules may use IP-messa
 Each instance of a source or processor module has an output buffer from which other modules read. If buffer is
 disabled, a "slot" is used instead which fits a single message.
 .PP
-.nf
+.EX
                                      3 +------------+--------+
                                      __|  INSTANCE  | Buffer |
                 Duplication off     |  |     B      | / Slot |
@@ -305,14 +305,14 @@ disabled, a "slot" is used instead which fits a single message.
             +------------+--------+ |  |  INSTANCE  | Buffer |
                                     |__|     C      | / Slot |
                                        +------------+--------+
-.fi
+.EE
 .PP
 If an instance is specified as sender in more than one other instance, these will compete about messages from it unless
 duplication is enabled. If duplication is enabled, each reader of the duplicated instance gets it's own buffer which
 is filled with copies of all messages. If the buffer is disabled, all readers must make a copy of the message in the slot
 after which it is deleted.
 .PP
-.nf
+.EX
                                        +------------+--------+
                                     4 _|  INSTANCE  | Buffer |
                 Duplication on       / |     B      | / Slot |
@@ -332,7 +332,7 @@ after which it is deleted.
             |     A      |        |----|  INSTANCE  | Buffer |
             +------------+--------+    |     C      | / Slot |
                                        +------------+--------+
-.fi
+.EE
 .PP
 If buffer is disabled, the instance will block if it has a new message to write to the output while the slot is busy,
 and it will proceed once a reader has picked up the message (or all readers if duplication is enabled).
@@ -353,7 +353,7 @@ module may be used to measure performance.
 By default, RRR has a backstop mechanism enabled which stops messages originating from an instance to be read back into the same instance.
 This allows creation of a message bus and to some extent control the direction of messages in certain situations.
 .PP
-.nf
+.EX
      BUS            NODES
 +----------+   +------------+
 |          |<--|  INSTANCE  |
@@ -369,7 +369,7 @@ This allows creation of a message bus and to some extent control the direction o
 |          |<--|  INSTANCE  |
 |          |-->|  python_2  |
 +----------+   +------------+
-.fi
+.EE
 .PP
 In the example above, the buffer instance has the other three instances set as it's senders, and the other three has the buffer
 set as their only sender. This setup allows nodes to be added and removed to the bus without the need for configuring senders on
@@ -377,7 +377,7 @@ other nodes. The Python modules may then generate HTTP requests for the httpclie
 responses. Backstopping prevents httpclient from receiving it's own responses back to itself. The Python will however receive
 HTTP requests from each other, and they must handle this in some way, possibly just ignoring them.
 .PP
-.nf
+.EX
      BAD BUS CONFIGURATION
 +------------+   +------------+
 |  INSTANCE  |<--|            |
@@ -388,7 +388,7 @@ HTTP requests from each other, and they must handle this in some way, possibly j
 |  INSTANCE  |<--|            |
 | httpclient |-->|            |
 +------------+   +------------+
-.fi
+.EE
 .PP
 Backstopping does not work through modules with internal buffers. In the example above, the python instance is supposed to receive
 requests from the mqttclient and then make HTTP requests and convert responses back to mqttclient for it to publish. When the python
@@ -396,7 +396,7 @@ instance puts the modified message in it's output buffer, both mqttclient and ht
 from mqttclient. The configuration can be modified to mitigate this problem, either ny using some clever topic filtering (which
 may or may not be difficult to maintain) or by using a circular configuration.
 .PP
-.nf
+.EX
    GOOD CIRCULAR CONFIGRATION
 +------------+     +------------+
 |  INSTANCE  |---->|            |
@@ -407,7 +407,7 @@ may or may not be difficult to maintain) or by using a circular configuration.
 |  INSTANCE  |--+  |            |
 | httpclient |<----|            |
 +------------+     +------------+
-.fi
+.EE
 .PP
 In the modified example, a circular configuration is used as opposed to a star configuration. When responses are generated in the
 httpclient, they are only received by the mqttclient. If the HTTP response still need to be modified before mqttclient receives it,
@@ -475,6 +475,9 @@ Processes and generates messages with custom Python3 scripts.
 
 .It perl5 (PAI)
 Processes and generates messages with custom Perl5 scripts.
+
+.It lua (PAI)
+Processes and generates messages with custom Lua scripts.
 
 .It js (PAI)
 Processes and generates messages with custom JavaScript scripts.
@@ -1006,7 +1009,7 @@ The name of the function in the python program to which we send settings form th
 All settings defined inside the python block in the configuration file are sent in here.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the python program might be set as needed.
+Any number of custom settings for the python program may be set as needed.
 .El
 .PP
 Refer to the
@@ -1027,7 +1030,7 @@ post messages. The process and source functions have their own environments, and
 share any global variables set by the config function. The config function is called first in
 the process environment, then in the source environment.
 .PP
-.nf
+.EX
 from rrr_helper import *
 import time
 
@@ -1084,13 +1087,13 @@ def source(socket : rrr_socket, message : rrr_message):
 
 	return True
 	
-.fi
+.EE
 More details about Python in 
 .Xr rrr_python3(5)
 .PP
 .SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
-perl script. The first and only argument to the source- and generate-functions
+perl script. The first and only argument to the source- and process-subs
 is the RRR message in the form of an object/hash reference of type
 .B rrr_message
 with different parameters which may be modified as needed. To pass the message back to RRR, the
@@ -1136,7 +1139,7 @@ settings object may also be stored in the script to be read from or modified fro
 generate-subroutines.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the Perl script might be set as needed.
+Any number of custom settings for the Perl script may be set as needed.
 .El
 .PP
 Refer to the
@@ -1262,11 +1265,11 @@ Retrieve the value at the specified position. Returns a list with one or more va
 .It $message->count_positions()
 Count the number of positions in the array.
 
-.It $message->get_tag_names(tag)
+.It $message->get_tag_names()
 Get all tag names from the array. Returns a list with zero or more values.
-Always returns the same number of element as count_positions(). An empty string is used forositions without a tag.
+Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
 
-.It $message->get_tag_counts(tag)
+.It $message->get_tag_counts()
 Get the value count at each position of the message. Returns a list with zero or more values.
 Always returns the same number of element as count_positions().
 .El
@@ -1299,7 +1302,7 @@ calls to message print functions.
 .PP
 Below follows an example perl script.
 .PP
-.nf
+.EX
 #!/usr/bin/perl -w
 
 package main;
@@ -1448,7 +1451,317 @@ sub process {
 	# Return 1 for success and 0 for error
 	return 1;
 }
-.fi
+.EE
+.SS lua (PAI)
+The Lua module makes it possible to process and generate messages in a custom 
+Lua script. The source function in the scripts receives an empty message object,
+and the process function receives populated messages from another module.
+Additional message objects may be created as well.
+
+Messages may be passed on using the
+.B send()
+method on the message object.
+
+The following configuration parameters are available in the
+.B lua
+module:
+
+.Bl -tag -width -indent
+.It lua_file=FILENAME
+The file containing the Lua script to run. The script will be run once when the program starts, and global code outside of functions will be executed.
+If multiple workers are used by setting the parameter
+.B lua_workers,
+the script will run once for each worker and global variables will not be accessible between different workers.
+
+The functions must return a boolean value where true indicates success and false indicates failure.
+
+.It lua_config_function=NAME
+The function to call before sourcing and processing starts.
+
+.It lua_source_function=NAME
+The function to call regularely.
+The source function receives an empty message object which may be populated with data.
+
+.It lua_process_function=NAME
+The function to call when a message from another module should be processed.
+The process function receives a populated message object from another module.
+If methods are used (without direct dispatch), the method name is passed as a string as the second argument.
+
+.It lua_precision_loss_warnings={yes|no}
+If set to yes or left unset, warnings will be printed if precision loss occurs when converting numbers to fixed point.
+
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the Lua script may be set as needed.
+.El
+
+Refer to the
+.B cmodule
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It lua_workers=UNSIGNED INTEGER
+.It lua_source_interval_ms=MILLISECONDS
+.It lua_log_prefix=PREFIX
+.It lua_drop_on_error={yes|no}
+.El
+.PP
+There must always be either a source- or process function specified, or both. If a process function
+is specified, there must also be at least one sender specified.
+.PP
+Logging, retrieval of configuration parameters and sending of messages is done through the
+.PP
+The Debug object, which is used to print debug and log messages, has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It debug = RRR.Debug.new()
+Create a new debug object. This is required before any messages can be printed.
+
+.It debug:msg(level, message)
+Messages to this function are always printed prefixed with the specified loglevel (a number 0, 1, 2 etc.).
+
+.It debug:dbg(level, message)
+Messages to this function are printed only if the specified loglevel (debuglevel) is active. If loglevel is 0 however, the message is always printed.
+
+.It debug:err(message)
+Messages to this function are always printed with loglevel 0 and to STDERR output. Do not overuse this as it might cause broadcast messages on the system when RRR is run for instance by systemd. Error messages should usually be printed using the msg function with loglevel 0.
+.El
+.PP
+The Message object, which is used to modify and create RRR messages, has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It message = RRR.Message.new()
+Create a new message.
+
+.It message:send()
+Pass the message to reader instances.
+
+.It message:ip_set(ip, port)
+Set IP address parameters.
+
+.It ip, port = message:ip_get()
+Get IP address parameters (returns empty string for IP if no IP is set).
+
+.It message:ip_clear()
+Clear IP address parameters (same as calling ip_set("", 0)).
+
+.It message:ip_so_type = "UDP"
+Set or get IP protocol to UDP or TCP (string). May be empty.
+
+.It message:topic = "TOPIC"
+Set or get message topic (string). May be empty or otherwise a valid MQTT topic.
+
+.It message:timestamp = 1696752424000000
+Set or get message timestamp (integer) in microseconds. Not available for manipulation if Lua was built with less than 64 bit integers.
+
+.It message:data = ""
+Set or get message data. The data field is ignored if the message has any array fields set.
+
+.It message:type = RRR.Message.MSG_TYPE_MSG
+Set or get message type, use one of the constants from the Message object:
+.sp
+
+.Bl -tag -width "aa"
+.It \(bu
+RRR.Message.MSG_TYPE_MSG
+.It \(bu
+RRR.Message.MSG_TYPE_TAG
+.It \(bu 
+RRR.Message.MSG_TYPE_GET
+.It \(bu 
+RRR.Message.MSG_TYPE_PUT
+.It \(bu
+RRR.Message.MSG_TYPE_DEL
+.El
+
+.It message:class = RRR.Message.MSG_CLASS_DATA
+Set or get message class.
+Changing this field has no effect as ARRAY or DATA is implicitly set depending on whether
+or not the message has array fields set.
+Use one of the constants from the Message object:
+.sp
+.Bl -tag -width "aa"
+.It \(bu
+RRR.Message.MSG_CLASS_DATA
+.It \(bu
+RRR.Message.MSG_CLASS_ARRAY
+.El
+
+.It message:clear_array()
+Remove any array fields, message becomes DATA type.
+
+.It message:clear_tag("my_tag")
+Clear any array fields with the given tag.
+
+.El
+.PP
+All push and set functions accept arrays as well. The first element in the array
+will determine the type of the value unless a type specific method is used.
+
+Note that if an array is passed to set_tag or push_tag in which the first value
+is a boolean, all values in the array will be converted to booleans which means
+that all values apart from 'false' and 'nil' will be converted to 'true'.
+
+Lua typically only supports 64 bit signed values, while RRR h type may hold 64 bit unsigned.
+To push a large unsigned integer which does not fit in a Lua integer, pass the number as a
+string to push_tag_h or set_tag_h.
+.PP
+.Bl -tag -width -indent
+.It message:push_tag_str("my_tag", "my_value")
+Push an array value of string type.
+
+.It message:push_tag_blob("my_tag", "my_value")
+Push an array value of blob type.
+
+.It message:push_tag_h("my_tag", 1)
+Push array value of type host (integer).
+
+.It message:push_tag_fixp("my_tag", 3.5)
+.It message:push_tag_fixp("my_tag", "3.5")
+.It message:push_tag_fixp("my_tag", "16#a.cde")
+Push array value of fixed pointer type.
+
+.It message:push_tag("my_tag", 1)
+Push a value with automatic type detection.
+Depending on the type of the value, the following will happen:
+.Bl -tag -width "aa" -indent
+.It Decimal number
+Will be converted to fixp unless precision loss occurs, in which case it will be converted to a string while also printing a warning message
+.It Number without decimals
+Will be converted to h (host endian integer signed or unsigned)
+.It String
+Will be converted to str
+.It Nil
+Will be converted to vain
+.It Boolean
+Will be converted to h (set to 1 or 0)
+.El
+
+.It set_tag_str("my_tag", "my_value")
+.It set_tag_blob("my_tag", "my_value")
+.It set_tag_h("my_tag", 1)
+.It set_tag_fixp("my_tag", 3.5)
+.It set_tag("my_tag", 1)
+Set values (same as push functions, but any matching tags are cleared first).
+
+.It message:get_position(position_number)
+Retrieve the value at the specified position. Returns a list with one or more values or nil.
+
+.It message:count_positions()
+Count the number of positions in the array.
+
+.It message:get_tag_names()
+Get all tag names from the array. Returns a list with zero or more values.
+
+.It message:get_tag_counts()
+Get the value count at each position of the message. Returns a list with zero or more values.
+.El
+.PP
+The Config object, which is used to retrieve settings from the RRR configuration file,
+may not be instantiated but is received as argument to any specified configuration method.
+It has the has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It config:get(key)
+Retrieve a setting from the configuration file. Returns a string or nil if the setting is not found.
+.It config:set(key, value)
+Set a setting in the configuration file. The setting will only be visible to the current Lua script.
+.El
+.PP
+Below follows an example Lua script.
+.PP
+.EX
+-- Create a debug object
+local debug = RRR.Debug.new()
+
+-- Create a configuration table
+local my_config = { }
+
+-- Configuration function
+function config(config)
+	-- Read configuration parameters and store them in the config table
+	for _, key in ipairs({"param_a", "param_b", "param_c"}) do
+		if not config:has(key) then
+			debug:msg(0, "Configuration parameter '" .. key .. "' was not found")
+			return false
+		end
+		my_config[key] = config:get(key)
+	end
+
+	-- Set a custom setting
+	config:set("my_custom_setting", "5")
+
+	-- Retrieve a custom setting
+	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting"))
+
+	return true
+end
+
+-- Process function
+function process(message, method)
+	-- Get any method set by method definition
+	if method then
+		debug:msg(1, "Method given to Lua processor function: " .. method)
+	else
+		debug:msg(1, "No method given to Lua processor function")
+	end
+
+	-- Print some information about the message
+	debug:msg(1, "Processing a message\n")
+	debug:msg(1, "- The timestamp of the message is: " .. message:timestamp .. "\n")
+	debug:msg(1, "- The topic of the message is: " .. message:topic .. "\n")
+	debug:msg(1, "- The message has " .. message:count_positions() .. " array positions\n")
+
+	-- Do some modifications
+	message:topic = message:topic .. "/" .. my_config["param_a"]
+
+	-- Remove any array values
+	message:clear_array()
+
+	-- Set data in the message
+	message:data = "Hello world"
+
+	-- Pass on the modified message
+	message:send()
+
+	return true
+end
+
+-- Source function
+function source(message)
+	-- Do some modifications
+	message.push_tag("my_param_a", my_config["param_a"])
+	message.push_tag("my_param_b", my_config["param_b"])
+	message.push_tag("my_param_c", my_config["param_c"])
+
+	-- Pass on the new message
+	message:send()
+
+	return true
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 .SS js (PAI)
 The js module makes it possible to process and generate messages in a custom  JavaScript.
 
@@ -1481,7 +1794,7 @@ The function to call regularely.
 The function to call when a message from another module should be processed.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the JavaScript script might be set as needed.
+Any number of custom settings for the JavaScript script may be set as needed.
 .El
 
 Refer to the
@@ -1499,7 +1812,7 @@ section for descriptions of the following parameters:
 
 A scripts with all three function types defined may look like this:
 
-.nf
+.EX
 let my_parameter = undefined;
 
 function config(config) {
@@ -1532,7 +1845,7 @@ function process(message, method) {
 	message.push_tag("my_parameter", my_parameter);
 	message.send();
 }
-.fi
+.EE
 
 The
 .B config
@@ -1556,7 +1869,7 @@ operator.
 
 The Config and Message objects have the following members:
 
-.nf
+.EX
 // Data type Config
 {
   has: function(parameter){},   // Returns true if the parameter exists, and false otherwise
@@ -1601,7 +1914,7 @@ The Config and Message objects have the following members:
   get_tag_all:     function(tag=null){return [];},// Get array of values with the given tag
   send:            function(){}                   // Send the message to the output buffer for other instances to receive
 }
-.fi
+.EE
 
 When using
 .B push_tag_object
@@ -1617,7 +1930,7 @@ Modules not compatible with JSON strings will treat such values just as other st
 
 The following special global Objects are available:
 
-.nf
+.EX
 // Data type Console (accessed through global name console)
 {
   log(message);                 // Log a message using debuglevel 7
@@ -1644,7 +1957,7 @@ const os = new OS();
 // Retrieve the hostname of the host on which the script runs
 const hostname = os.hostname();
 
-.fi
+.EE
 
 .SS cmodule (P)
 This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
@@ -1683,7 +1996,7 @@ The function to which to call to process messages from senders. Optional, but at
 The function to call before the program shuts down. Optional.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the C-module might be set as needed.
+Any number of custom settings for the C-module may be set as needed.
 .El
 .PP
 Refer to the
@@ -2564,7 +2877,7 @@ The algorithm used for calculating ID numbers:
 .br
 \(bu p    = Position
 
-.nf
+.EX
 IDn1 = IDo - (IDo mod m) + m + p
 
 If IDn1 < IDl or IDn1 > IDh, then IDn2 = IDl - (IDl mod m) + p
@@ -2572,7 +2885,7 @@ If IDn1 < IDl or IDn1 > IDh, then IDn2 = IDl - (IDl mod m) + p
 
 If IDn2 < IDl, then IDn = IDn2 + m
                else IDn = IDn2
-.fi
+.EE
 
 \(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
 .br
@@ -2770,7 +3083,7 @@ Comments may be placed on separate lines and begins with '#'. Spaces and tabs ar
 .PP
 Below follows some example rules:
 .PP
-.nf
+.EX
 # BEGIN ACL FILE
 # Allow access to everything from everyone
 TOPIC #
@@ -2781,7 +3094,7 @@ TOPIC $SYS/#
 	DEFAULT READ
 	USER system_user WRITE
 # END ACL FILE
-.fi
+.EE
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP

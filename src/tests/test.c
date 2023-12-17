@@ -55,6 +55,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+#ifdef RRR_WITH_LUA
+#	include "test_lua.h"
+#endif
 #ifdef RRR_WITH_NODE
 #	include "lib/testjs.h"
 #endif
@@ -129,7 +132,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-
+goto lua;
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -199,7 +202,15 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 #endif
+lua:
+#ifdef RRR_WITH_LUA
+	TEST_BEGIN("Lua library functions") {
+		ret_tmp = rrr_test_lua();
+	} TEST_RESULT(ret_tmp == 0);
 
+	ret |= ret_tmp;
+#endif
+return ret;
 #ifdef RRR_WITH_NODE
 	TEST_BEGIN("js library functions") {
 		ret_tmp = rrr_test_js();

@@ -152,6 +152,14 @@ struct rrr_instance_config_collection {
 	struct rrr_config *config;
 };
 
+static inline int rrr_instance_config_replace_string (
+		struct rrr_instance_config_data *target,
+		const char *name,
+		const char *value
+) {
+	return rrr_settings_replace_string(target->settings, name, value);
+}
+
 static inline int rrr_instance_config_setting_exists (
 		struct rrr_instance_config_data *source,
 		const char *name

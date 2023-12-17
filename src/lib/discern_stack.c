@@ -263,7 +263,6 @@ static int __rrr_discern_stack_list_expand (
 	return ret;
 }
 
-
 static int __rrr_discern_stack_list_push (
 		struct rrr_discern_stack_list *list,
 		struct rrr_discern_stack_storage *list_storage,
@@ -308,7 +307,7 @@ static int __rrr_discern_stack_list_push (
 		RRR_ASSERT(sizeof(rrr_length) == sizeof(rrr_u32),size_of_rrr_length_is_4_bytes);
 
 		const char *str = value_storage->data + element->value.data_pos;
-		element->value.value = ((rrr_length) str[0] << 16) | ((rrr_length) str[strlen(str) - 1]);
+		element->value.value = RRR_DISCERN_STACK_FIRST_LAST_INDEX(str, strlen(str));
 		element->value.data_size = data_size;
 	}
 	else {
@@ -682,14 +681,13 @@ static int __rrr_discern_stack_execute (
 						break;
 					case RRR_DISCERN_STACK_E_ARRAY_TAG:
 						// Check against any index from the callback. If the first and last
-						// letter does not match, we produce false result immediately.
+						// letter do not match any index entry, we produce false result
+						// immediately.
 						index_result = 1;
-						struct rrr_discern_stack_index_entry *entry = index_tmp;
 						for (rrr_length i = 0; i < index_tmp_size; i++) {
-							if ((index_result = entry->id == node->value.value ? 1 : 0)) {
+							if ((index_result = index_tmp[i].id == node->value.value)) {
 								break;
 							}
-							entry++;
 						}
 
 						if (!index_result) {

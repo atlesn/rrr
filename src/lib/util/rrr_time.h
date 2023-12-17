@@ -90,6 +90,7 @@ struct timespec;
 
 uint64_t rrr_time_get_64(void);
 rrr_time_us_t rrr_time_get_us(void);
+int64_t rrr_time_get_i64(void);
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
 void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
 void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec);
