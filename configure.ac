@@ -841,7 +841,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.11 3.10 3.9 3.8 3.7; do
+		for version_tmp in 3.12 3.11 3.10 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
