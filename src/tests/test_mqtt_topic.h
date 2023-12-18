@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,9 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TEST_USLEEP_H
-#define RRR_TEST_USLEEP_H
+#ifndef RRR_TEST_MQTT_TOPIC_H
+#define RRR_TEST_MQTT_TOPIC_H
 
-int rrr_test_usleep (void);
+int rrr_test_mqtt_topic(void);
 
-#endif /* RRR_TEST_USLEEP_H */
+#endif /* RRR_TEST_MQTT_TOPIC_H */

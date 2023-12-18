@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,22 +42,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/posix.h"
 
 #include "test_condition.h"
-#include "test_usleep.h"
+#include "test_time.h"
 #include "test_msleep_signal_safe.h"
 #include "test_fixp.h"
+#include "test_mqtt_topic.h"
+#include "test_parse.h"
 #include "test_inet.h"
+#include "test_modbus.h"
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
 #endif
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+#ifdef RRR_WITH_LUA
+#	include "test_lua.h"
+#endif
+#ifdef RRR_WITH_NODE
+#	include "lib/testjs.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
 #include "test_increment.h"
+#include "test_discern_stack.h"
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
+#include "test_linked_list.h"
+#include "test_hdlc.h"
+#include "test_readdir.h"
+#include "test_send_loop.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -93,21 +107,12 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 	return get_test_result();
 }
 
+static volatile int some_fork_has_stopped = 0;
 static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
 
-int signal_interrupt (int s, void *arg) {
-    (void)(arg);
-
-    RRR_DBG_SIGNAL("Received signal %i\n", s);
-
-    if (s == SIGINT) {
-    	main_running = 0;
-	signal(SIGTERM, SIG_DFL);
-	signal(SIGINT, SIG_DFL);
-	signal(SIGUSR1, SIG_DFL);
-    }
-    
-    return 0;
+int rrr_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -116,8 +121,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
-        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel DEBUGLEVEL]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUGLEVEL]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "library-tests",         "[-l|--library-tests]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "fork-executable",       "[-f|--fork-executable[=]EXECUTABLE]"},
         {0,                           '\0',    NULL,                   ""}
 };
 
@@ -126,7 +132,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-
+goto lua;
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -145,8 +151,8 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
-	TEST_BEGIN("rrr_posix_usleep") {
-		ret_tmp = rrr_test_usleep();
+	TEST_BEGIN("time functions") {
+		ret_tmp = rrr_test_time();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -159,6 +165,18 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("fixed point type") {
 		ret_tmp = rrr_test_fixp();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("MQTT topics") {
+		ret_tmp = rrr_test_mqtt_topic();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("parsing") {
+		ret_tmp = rrr_test_parse();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -180,6 +198,22 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {
 		ret_tmp = rrr_test_zlib();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+lua:
+#ifdef RRR_WITH_LUA
+	TEST_BEGIN("Lua library functions") {
+		ret_tmp = rrr_test_lua();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+return ret;
+#ifdef RRR_WITH_NODE
+	TEST_BEGIN("js library functions") {
+		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -209,7 +243,52 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("discern stack parsing") {
+		ret_tmp = rrr_test_discern_stack();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("linked list") {
+		ret_tmp = rrr_test_linked_list();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("HDLC frames") {
+		ret_tmp = rrr_test_hdlc();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Readdir") {
+		ret_tmp = rrr_test_readdir();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("Send loop") {
+		ret_tmp = rrr_test_send_loop();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("modbus functions") {
+		ret_tmp = rrr_test_modbus();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
+}
+
+int rrr_test_fork_executable (const char *fork_executable) {
+	TEST_MSG("Running executable %s in fork\n", fork_executable);
+	// This function does not return unless there is an error
+	if (execl(fork_executable, fork_executable, (char *) NULL) == -1) {
+		TEST_MSG("Failed to execute %s: %s\n", fork_executable, rrr_strerror(errno));
+	}
+	return 1;
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -232,21 +311,25 @@ int main (int argc, const char **argv, const char **env) {
 	}
 	rrr_strerror_init();
 
-	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
+	struct rrr_fork_default_exit_notification_data exit_notification_data = {
+		&some_fork_has_stopped
+	};
+	int is_child = 0;
 
 	struct cmd_data cmd;
+	const char *config_file, *fork_executable;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
-	signal_handler_interrupt = rrr_signal_handler_push(signal_interrupt, NULL);
+	signal_handler_interrupt = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
-	if (rrr_message_broker_new(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker, NULL) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
@@ -287,11 +370,36 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	const char *config_file = cmd_get_value(&cmd, "config", 0);
-	if (config_file == NULL) {
+	if ((config_file = cmd_get_value(&cmd, "config", 0)) == NULL) {
 		RRR_MSG_0("No configuration file specified for test program\n");
 		ret = 1;
 		goto out_cleanup_cmd;
+	}
+
+	if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
+		pid_t pid = -1;
+		TEST_MSG("forking and running external executable\n");
+		pid = rrr_fork (
+				fork_handler,
+				rrr_fork_default_exit_notification,
+				&exit_notification_data
+		);
+		if (pid == 0) {
+			rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+			is_child = 1;
+			ret = rrr_test_fork_executable(fork_executable);
+			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
+			while (main_running) {
+				rrr_posix_usleep(50000);
+				rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+			}
+			goto out_cleanup_cmd;
+		}
+		if (pid < 0) {
+			TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out_cleanup_cmd;
+		}
 	}
 
 	TEST_BEGIN("configuration loading") {
@@ -321,7 +429,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (rrr_main_create_and_start_threads (
+		if (rrr_instances_create_and_start_threads (
 				&collection,
 				&instances,
 				config,
@@ -348,10 +456,18 @@ int main (int argc, const char **argv, const char **env) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
+		while (  main_running &&
+		        !some_fork_has_stopped &&
+		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)
+		) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+			if (sigusr2) {
+				RRR_MSG_0("Received SIGUSR2, but this is not implemented in test suite\n");
+				sigusr2 = 0;
+			}
 		}
 
 		ret = main_get_test_result(&instances);
@@ -359,12 +475,16 @@ int main (int argc, const char **argv, const char **env) {
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
-
-		rrr_main_threads_stop_and_destroy(collection);
+		int ghost_count = 0;
+		rrr_thread_collection_destroy(&ghost_count, collection);
+		if (ghost_count > 0) {
+			RRR_MSG_0("%i threads were ghost during cleanup\n", ghost_count);
+		}
 	} TEST_RESULT(ret == 0);
 
+	goto out_cleanup_instances;
+
 	out_cleanup_instances:
-		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite
@@ -376,12 +496,17 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 	out_cleanup_cmd:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		cmd_destroy(&cmd);
 
 	out_cleanup_message_broker:
 		rrr_message_broker_destroy(message_broker);
 
 //	out_cleanup_fork_handler:
+		if (is_child) {
+			// Only main runs fork cleanup stuff
+			goto out_cleanup_signal;
+		}
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);

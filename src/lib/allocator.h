@@ -114,7 +114,7 @@ static inline char *rrr_strdup (const char *str) {
 		return NULL;
 	}	
 
-	char *result = rrr_allocate(size);
+	char *result = (char *) rrr_allocate(size);
 
 	if (result == NULL) {
 		return result;

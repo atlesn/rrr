@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "udpstream_asd.h"
 #include "../read.h"
 #include "../ip/ip.h"
+#include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"

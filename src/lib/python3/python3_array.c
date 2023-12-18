@@ -559,7 +559,7 @@ static struct rrr_python3_array_value_data *__rrr_python3_array_get_node_by_tag 
 	for (ssize_t i = 0; i < max; i++) {
 		PyObject *node = PyList_GET_ITEM(data->list, i);
 		struct rrr_python3_array_value_data *value = (struct rrr_python3_array_value_data *) node;
-		if (value->tag != NULL && PyUnicode_Compare(value->tag, tag) == 0) {
+		if ((value->tag == NULL && PyUnicode_CompareWithASCIIString(tag, "") == 0) || PyUnicode_Compare(tag, value->tag) == 0) {
 			return value;
 		}
 	}
@@ -609,35 +609,31 @@ int rrr_python3_array_append_value_with_list (
 ) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
 
-	PyObject *iterator = NULL;
-	PyObject *item = NULL;
+	int ret = 0;
 
-	struct rrr_python3_array_value_data *result = (struct rrr_python3_array_value_data *) rrr_python3_array_value_f_new(&rrr_python3_array_value_type, NULL, NULL);
-	if (result == NULL) {
-		RRR_MSG_0("Could not allocate array value in rrr_python3_array_append\n");
-		goto out_err;
-	}
+	struct rrr_python3_array_value_data *result;
 
 	if (!PyList_Check(list)) {
-		RRR_BUG("Argument to rrr_python3_array_append_list was not a list\n");
+		RRR_BUG("Argument to %s was not a list\n", __func__);
+	}
+	
+	if ((result = (struct rrr_python3_array_value_data *) rrr_python3_array_value_f_new(&rrr_python3_array_value_type, NULL, NULL)) == NULL) {
+		RRR_MSG_0("Could not allocate array value in %s\n", __func__);
+		ret = 1;
+		goto out;
 	}
 
 	result->type_orig = type_orig;
 	rrr_python3_array_value_set_tag(result, tag);
 	rrr_python3_array_value_set_list(result, list);
 
-	if (__rrr_python3_array_append_raw(data, (PyObject *) result) != 0) {
-		goto out_err;
+	if ((ret = __rrr_python3_array_append_raw(data, (PyObject *) result)) != 0) {
+		goto out;
 	}
-	result = NULL;
 
-	return 0;
-
-	out_err:
-		Py_XDECREF(iterator);
-		Py_XDECREF(item);
-		Py_XDECREF(result);
-		return 1;
+	out:
+	Py_XDECREF(result);
+	return ret;
 }
 
 static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *value) {

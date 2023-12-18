@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "udpstream.h"
 #include "../read.h"
 #include "../random.h"
+#include "../event/event.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../socket/rrr_socket_client.h"
@@ -805,6 +806,15 @@ static void __rrr_udpstream_read_get_target_size_error (
 	(void)(private_data);
 
 	// Any error message goes here
+}
+
+static void __rrr_udpstream_set_read_flags_callback (RRR_SOCKET_CLIENT_SET_READ_FLAGS_CALLBACK_ARGS) {
+	(void)(arg);
+	(void)(socket_read_flags);
+	(void)(private_data);
+
+	// Don't close socket upon parse errors
+	*do_soft_error_propagates = 0;
 }
 
 static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handle (
@@ -1788,7 +1798,6 @@ static int __rrr_udpstream_send_loop (
 
 	int sent_count = 0;
 	int64_t missing_ack_count = 0;
-	int64_t resend_count = 0;
 	RRR_LL_ITERATE_BEGIN(&stream->send_buffer, struct rrr_udpstream_frame);
 		int do_send = 0;
 
@@ -1809,7 +1818,6 @@ static int __rrr_udpstream_send_loop (
 			RRR_DBG_3("UDP-stream TX %u-%u DUP WS %" PRIu32 " UNACK %i\n",
 					stream->stream_id, node->frame_id, stream->window_size_from_remote, node->unacknowledged_count);
 			do_send = 1;
-			resend_count++;
 		}
 		else {
 			missing_ack_count++;
@@ -2429,6 +2437,8 @@ int rrr_udpstream_init (
 			data,
 			8192,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
+			__rrr_udpstream_set_read_flags_callback,
+			NULL,
 			__rrr_udpstream_read_get_target_size,
 			NULL,
 			__rrr_udpstream_read_get_target_size_error,

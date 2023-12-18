@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -131,7 +131,7 @@ int rrr_array_clone (
 
 #define SET_AND_VERIFY_TAG_LENGTH()                                                 \
     rrr_length tag_length = 0;                                                      \
-    do {const rrr_biglength tag_length_big = tag != 0 ? strlen(tag) : 0;            \
+    do {const rrr_biglength tag_length_big = tag != NULL ? strlen(tag) : 0;         \
     if (tag_length_big > RRR_TYPE_TAG_MAX) {                                        \
             RRR_MSG_0("Tag was too long when pushing array value (%llu>%llu)\n",    \
             (unsigned long long) tag_length_big,                                    \
@@ -211,7 +211,7 @@ static int __rrr_array_push_value_64_with_tag (
 	}
 
 	rrr_length parsed_bytes = 0;
-	if ((ret = new_value->definition->import (
+	if ((ret = new_value->definition->do_import (
 			new_value,
 			&parsed_bytes,
 			(const char *) &value,
@@ -260,12 +260,13 @@ int rrr_array_push_value_i64_with_tag (
 	);
 }
 
-static int __rrr_array_push_value_x_with_tag_with_size (
+static int __rrr_array_push_value_x_with_tag_with_size_with_flags (
 		struct rrr_array *array,
 		const char *tag,
 		const char *value,
 		rrr_length value_size,
-		const struct rrr_type_definition *type
+		const struct rrr_type_definition *type,
+		rrr_type_flags flags
 ) {
 	struct rrr_type_value *new_value = NULL;
 
@@ -276,7 +277,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 	if ((ret = rrr_type_value_new (
 			&new_value,
 			type,
-			0,
+			flags,
 			tag_length,
 			tag,
 			value_size,
@@ -285,7 +286,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			NULL,
 			value_size
 	)) != 0) {
-		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
+		RRR_MSG_0("Could not create value in %s\n", __func__);
 		goto out;
 	}
 
@@ -302,12 +303,13 @@ int rrr_array_push_value_fixp_with_tag (
 		const char *tag,
 		rrr_fixp value
 ) {
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			(const char *) &value,
 			sizeof(value),
-			&rrr_type_definition_fixp
+			&rrr_type_definition_fixp,
+			0
 	);
 }
 
@@ -319,12 +321,32 @@ int rrr_array_push_value_str_with_tag_with_size (
 ) {
 	// Don't use the import function, it reads strings with quotes around it
 
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			value,
 			value_size,
-			&rrr_type_definition_str
+			&rrr_type_definition_str,
+			0
+	);
+}
+
+int rrr_array_push_value_str_with_tag_with_size_with_flags (
+		struct rrr_array *array,
+		const char *tag,
+		const char *value,
+		rrr_length value_size,
+		rrr_type_flags flags
+) {
+	// Don't use the import function, it reads strings with quotes around it
+
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
+			array,
+			tag,
+			value,
+			value_size,
+			&rrr_type_definition_str,
+			flags
 	);
 }
 
@@ -334,12 +356,13 @@ int rrr_array_push_value_blob_with_tag_with_size (
 		const char *value,
 		rrr_length value_size
 ) {
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			array,
 			tag,
 			value,
 			value_size,
-			&rrr_type_definition_blob
+			&rrr_type_definition_blob,
+			0
 	);
 }
 
@@ -362,12 +385,13 @@ static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 		return 1;
 	}
 
-	return __rrr_array_push_value_x_with_tag_with_size (
+	return __rrr_array_push_value_x_with_tag_with_size_with_flags (
 			callback_data->array,
 			callback_data->tag,
 			str,
 			(rrr_length) len,
-			callback_data->definition
+			callback_data->definition,
+			0
 	);
 }
 
@@ -440,19 +464,11 @@ static int __rrr_array_get_value_64_by_tag (
 
 	const struct rrr_type_value *value = NULL;
 
+	int64_t signed_result;
+	uint64_t unsigned_result;
+
 	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
-		ret = 1;
-		goto out;
-	}
-
-	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && !do_signed) {
-		RRR_MSG_0("Value '%s' in array was signed but unsigned value was expected\n", tag);
-		ret = 1;
-		goto out;
-	}
-	else if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && do_signed) {
-		RRR_MSG_0("Value '%s' in array was unsigned but signed value was expected\n", tag);
 		ret = 1;
 		goto out;
 	}
@@ -464,11 +480,24 @@ static int __rrr_array_get_value_64_by_tag (
 		goto out;
 	}
 
+	signed_result = *((int64_t*) value->data + (sizeof(int64_t) * index));
+	unsigned_result = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+
 	if (do_signed) {
-		*((int64_t *) result) = *((int64_t*) value->data + (sizeof(int64_t) * index));
+		if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && unsigned_result > INT64_MAX) {
+			RRR_MSG_0("Value '%s' in array was unsigned and would overflow (%" PRIu64") as signed value was expected\n", tag, unsigned_result);
+			ret = 1;
+			goto out;
+		}
+		*((int64_t *) result) = signed_result;
 	}
 	else {
-		*((uint64_t *) result) = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+		if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && signed_result < 0) {
+			RRR_MSG_0("Value '%s' in array was signed and negative (%" PRIi64 ") while unsigned value was expected\n", tag, signed_result);
+			ret = 1;
+			goto out;
+		}
+		*((uint64_t *) result) = unsigned_result;
 	}
 
 	out:
@@ -491,6 +520,33 @@ int rrr_array_get_value_signed_64_by_tag (
 		unsigned int index
 ) {
 	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
+}
+
+int rrr_array_get_value_ull_by_tag (
+		unsigned long long *result,
+		const struct rrr_array *array,
+		const char *tag
+) {
+	int ret = 0;
+
+	const struct rrr_type_value *value = NULL;
+
+	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
+		RRR_MSG_0("Could not find value '%s' in array while getting ull-value with conversion\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (value->definition->to_ull == NULL) {
+		RRR_MSG_0("Value '%s' of type '%s' can't be converted to unsigned\n", tag, value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+
+	*result = value->definition->to_ull(value);
+
+	out:
+	return ret;
 }
 
 int rrr_array_get_value_str_by_tag (
@@ -527,6 +583,30 @@ int rrr_array_get_value_str_by_tag (
 	return ret;
 }
 
+int rrr_array_get_value_first_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag
+) {
+	return rrr_array_get_value_unsigned_64_by_tag(result, array, tag, 0);
+}
+
+int rrr_array_get_value_first_str_by_tag (
+		char **result,
+		struct rrr_array *array,
+		const char *tag
+) {
+	return rrr_array_get_value_str_by_tag(result, array, tag);
+}
+
+int rrr_array_get_value_first_ull_by_tag (
+		unsigned long long *result,
+		struct rrr_array *array,
+		const char *tag
+) {
+	return rrr_array_get_value_ull_by_tag(result, array, tag);
+}
+
 void rrr_array_strip_type (
 		struct rrr_array *array,
 		const struct rrr_type_definition *definition
@@ -550,13 +630,11 @@ void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_arr
 	*cleared_count = 0;
 
 	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
-		if (node->tag == NULL) {
+		if (!rrr_type_value_is_tag(node, tag)) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		if (strcmp(node->tag, tag) == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			(*cleared_count)++;
-		}
+		RRR_LL_ITERATE_SET_DESTROY();
+		(*cleared_count)++;
 	RRR_LL_ITERATE_END_CHECK_DESTROY(array, 0; rrr_type_value_destroy(node));
 }
 
@@ -630,10 +708,8 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return node;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -645,10 +721,8 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return node;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -660,10 +734,8 @@ int rrr_array_has_tag (
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->tag != NULL) {
-			if (strcmp(node->tag, tag) == 0) {
-				return 1;
-			}
+		if (rrr_type_value_is_tag(node, tag)) {
+			return 1;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -737,16 +809,13 @@ static int __rrr_array_array_iterate_chosen_tags (
 			found = 1;
 		}
 		else {
-			if (node->tag != NULL) {
-				const char *tag = node->tag;
-				const rrr_length tag_length = node->tag_length;
-				RRR_MAP_ITERATE_BEGIN_CONST(tags);
-					if (strncmp (tag, node_tag, tag_length) == 0) {
-						found = 1;
-						RRR_LL_ITERATE_LAST();
-					}
-				RRR_MAP_ITERATE_END();
-			}
+			const struct rrr_type_value *value = node;
+			RRR_MAP_ITERATE_BEGIN_CONST(tags);
+				if (rrr_type_value_is_tag(value, node_tag)) {
+					found = 1;
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_MAP_ITERATE_END();
 		}
 
 		if (found == 1) {
@@ -890,12 +959,12 @@ static int __rrr_array_array_export_callback (const struct rrr_type_value *node,
 
 	struct pack_callback_data *data = arg;
 
-	if (node->definition->export == NULL) {
+	if (node->definition->do_export == NULL) {
 		RRR_BUG("No export function defined for type %u in __rrr_array_array_export_callback\n", node->definition->type);
 	}
 
 	rrr_length written_bytes = 0;
-	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
+	if (node->definition->do_export(data->write_pos, &written_bytes, node) != 0) {
 		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_array_export_callback\n", node->definition->type);
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
@@ -1251,7 +1320,7 @@ static int __rrr_array_message_clone_value_by_tag_callback (
 ) {
 	struct rrr_array_message_clone_value_by_tag_callback_data *callback_data = arg;
 
-	if (value->tag == NULL || strcmp(callback_data->tag, value->tag) != 0) {
+	if (!rrr_type_value_is_tag(value, callback_data->tag)) {
 		return 0;
 	}
 
@@ -1284,6 +1353,29 @@ int rrr_array_message_clone_value_by_tag (
 			__rrr_array_message_clone_value_by_tag_callback,
 			&callback_data
 	);
+}
+
+int rrr_array_message_append_to_array_by_tag (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	int ret = 0;
+
+	struct rrr_type_value *value = NULL;
+
+	if ((ret = rrr_array_message_clone_value_by_tag (&value, message_orig, tag)) != 0) {
+		goto out;
+	}
+
+	if (value == NULL) {
+		goto out;
+	}
+
+	RRR_LL_PUSH(target, value);
+
+	out:
+	return ret;
 }
 
 struct rrr_array_message_append_to_array_callback_data {
@@ -1369,6 +1461,7 @@ int rrr_array_dump (
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		const char *tag = "-";
 		const char *to_str = "-";
+		const char *flags = "";
 
 		if (node->tag != NULL && *(node->tag) != '\0') {
 			tag = node->tag;
@@ -1384,9 +1477,14 @@ int rrr_array_dump (
 			to_str = tmp;
 		}
 
-		RRR_DBG_2 ("%i - %s - %s - (%i/%i = %i) - %s\n",
+		if (RRR_TYPE_IS_STR_EXCACT(node->definition->type) && RRR_TYPE_FLAG_IS_JSON(node->flags)) {
+			flags = "(json)";
+		}
+
+		RRR_DBG_2 ("%i - %s%s - %s - (%i/%i = %i) - %s\n",
 				i,
 				node->definition->identifier,
+				flags,
 				tag,
 				node->total_stored_length,
 				node->element_count,
@@ -1402,4 +1500,18 @@ int rrr_array_dump (
 	out:
 	RRR_FREE_IF_NOT_NULL(tmp);
 	return ret;
+}
+
+rrr_biglength rrr_array_get_allocated_size (
+		const struct rrr_array *definition
+) {
+	rrr_biglength acc = 0;
+
+	acc += sizeof(*definition);
+
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		acc += rrr_type_value_get_allocated_size(node);
+	RRR_LL_ITERATE_END();
+
+	return acc;
 }

@@ -73,8 +73,8 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 		// Slave code
 		ret = 1; // Default error
 	
-		for (int i = 0; i < 20; i++) {
-			rrr_posix_usleep(50000); // 50ms
+		for (int i = 0; i < 40; i++) {
+			rrr_posix_usleep(25000); // 25ms
 			int read_count = 0;
 			if (rrr_mmap_channel_read_with_callback (
 					&read_count,

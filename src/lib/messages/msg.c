@@ -43,7 +43,7 @@ void rrr_msg_populate_head (
 		rrr_u32 value
 ) {
 	if (msg_size < sizeof(*message)) {
-		RRR_BUG("Size was too small in rrr_msg_head_to_network\n");
+		RRR_BUG("Size was too small in %s\n", __func__);
 	}
 
 	message->msg_type = type;
@@ -57,7 +57,7 @@ void rrr_msg_populate_control_msg (
 		rrr_u32 value
 ) {
 	if ((flags & RRR_MSG_CTRL_F_RESERVED) != 0) {
-		RRR_BUG("Reserved flags were set in rrr_msg_populate_control_msg\n");
+		RRR_BUG("Reserved flags were set in %s\n", __func__);
 	}
 
 	rrr_msg_populate_head (
@@ -75,8 +75,8 @@ static int __rrr_msg_head_validate (
 	int ret = 0;
 
 	if (message->msg_size != expected_size) {
-		RRR_MSG_0("Message network size mismatch in __rrr_msg_head_validate actual size is %u stated size is %" PRIu32 "\n",
-				expected_size, message->msg_size);
+		RRR_MSG_0("Message network size mismatch in %s actual size is %u stated size is %" PRIu32 "\n",
+				__func__, expected_size, message->msg_size);
 		ret = 1;
 		goto out;
 	}
@@ -95,7 +95,7 @@ static int __rrr_msg_head_validate (
 		// OK
 	}
 	else {
-		RRR_MSG_0("Received message with invalid type %u in __rrr_msg_head_validate\n", message->msg_type);
+		RRR_MSG_0("Received message with invalid type %u in %s\n", message->msg_type, __func__);
 		ret = 1;
 		goto out;
 	}
@@ -115,7 +115,7 @@ int rrr_msg_head_to_host_and_verify (
 	message->msg_value = rrr_be32toh(message->msg_value);
 
 	if (__rrr_msg_head_validate (message, expected_size) != 0) {
-		RRR_MSG_0("Received socket message was invalid in rrr_msg_head_to_host\n");
+		RRR_MSG_0("Received socket message was invalid in %s\n", __func__);
 		return 1;
 	}
 
@@ -151,11 +151,11 @@ int rrr_msg_check_data_checksum_and_length (
 		rrr_length data_size
 ) {
 	if (data_size < sizeof(*message)) {
-		RRR_BUG("rrr_msg_checksum_check called with too short message\n");
+		RRR_BUG("%s called with too short message\n", __func__);
 	}
 	if (message->msg_size != data_size) {
-		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check (%" PRIu32 "<>%" PRIrrrl ")\n",
-				message->msg_size, data_size);
+		RRR_MSG_0("Message size mismatch in %s (%" PRIu32 "<>%" PRIrrrl ")\n",
+				__func__, message->msg_size, data_size);
 		return 1;
 	}
 	// HEX dumper
@@ -192,27 +192,27 @@ int rrr_msg_to_host_and_verify_with_callback (
 
 	// Header CRC32 is checked when reading the data from remote and getting size
 	if (rrr_msg_head_to_host_and_verify(*msg, expected_size) != 0) {
-		RRR_MSG_0("Message was invalid in rrr_msg_to_host_and_verify_with_callback\n");
+		RRR_MSG_0("Message was invalid in %s\n", __func__);
 		ret = RRR_MSG_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (rrr_msg_check_data_checksum_and_length(*msg, expected_size) != 0) {
-		RRR_MSG_0 ("Message checksum was invalid in rrr_msg_to_host_and_verify_with_callback\n");
+		RRR_MSG_0 ("Message checksum was invalid in %s\n", __func__);
 		ret = RRR_MSG_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (RRR_MSG_IS_RRR_MESSAGE(*msg)) {
 		if (callback_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_msg in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_msg in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) *msg, expected_size) != 0) {
-			RRR_MSG_0("Message verification failed in rrr_msg_to_host_and_verify_with_callback (size: %u<>%u)\n",
-					MSG_TOTAL_SIZE(*msg), (*msg)->msg_size);
+			RRR_MSG_0("Message verification failed in %s (size: %u<>%u)\n",
+					__func__, MSG_TOTAL_SIZE(*msg), (*msg)->msg_size);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -221,7 +221,7 @@ int rrr_msg_to_host_and_verify_with_callback (
 	}
 	else if (RRR_MSG_IS_CTRL(*msg)) {
 		if (callback_ctrl_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg of control type in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg of control type in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -230,14 +230,14 @@ int rrr_msg_to_host_and_verify_with_callback (
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_ADDR(*msg)) {
 		if (callback_addr_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_addr in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_addr in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		struct rrr_msg_addr *message = (struct rrr_msg_addr *) (*msg);
 		if (rrr_msg_addr_to_host(message) != 0) {
-			RRR_MSG_0("Invalid data in received address message in rrr_msg_to_host_and_verify_with_callback\n");
+			RRR_MSG_0("Invalid data in received address message in %s\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -246,31 +246,31 @@ int rrr_msg_to_host_and_verify_with_callback (
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(*msg)) {
 		if (callback_log_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_log in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_log in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		struct rrr_msg_log *message = (struct rrr_msg_log *) (*msg);
 		if (rrr_msg_msg_log_to_host(message) != 0) {
-			RRR_MSG_0("Invalid data in received log message in rrr_msg_to_host_and_verify_with_callback\n");
+			RRR_MSG_0("Invalid data in received log message in %s\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		ret = callback_log_msg(message, callback_arg1, callback_arg2);
 	}
-	else if (RRR_MSG_IS_TREE_DATA(*msg)) {
+	else if (RRR_MSG_IS_STATS(*msg)) {
 		if (callback_stats_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_stats in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_stats in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		struct rrr_msg_stats tmp;
 
-		if (rrr_msg_stats_unpack(&tmp, (const struct rrr_msg_stats_packed *) (*msg), expected_size) != 0) {
-			RRR_MSG_0("Invalid data in received stats message in rrr_msg_to_host_and_verify_with_callback\n");
+		if (rrr_msg_stats_flip_and_unpack(&tmp, (const struct rrr_msg_stats_packed *) (*msg), expected_size) != 0) {
+			RRR_MSG_0("Invalid data in received stats message in %s\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -278,8 +278,8 @@ int rrr_msg_to_host_and_verify_with_callback (
 		ret = callback_stats_msg(&tmp, callback_arg1, callback_arg2);
 	}
 	else {
-		RRR_MSG_0("Received a socket message of unknown type %u in rrr_msg_to_host_and_verify_with_callback\n",
-				(*msg)->msg_type);
+		RRR_MSG_0("Received a socket message of unknown type %u in %s\n",
+				(*msg)->msg_type, __func__);
 		ret = RRR_MSG_READ_SOFT_ERROR;
 		goto out;
 	}

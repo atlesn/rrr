@@ -42,10 +42,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_SENDERS_MAX                64
 #define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX  RRR_MESSAGE_BROKER_SENDERS_MAX
 
+// TODO : Make macros for the other callbacks
+
+#define RRR_MESSAGE_BROKER_HOOK_MSG_ARGS            \
+	const char *costumer,                       \
+	const struct rrr_msg_holder *entry_locked,  \
+	void *arg
+
 struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
 struct rrr_message_broker_costumer;
 struct rrr_message_broker;
+
+struct rrr_message_broker_hooks {
+	void (*pre_buffer)(RRR_MESSAGE_BROKER_HOOK_MSG_ARGS);
+	void *arg;
+};
 
 void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
@@ -58,7 +70,8 @@ void rrr_message_broker_destroy (
 		struct rrr_message_broker *broker
 );
 int rrr_message_broker_new (
-		struct rrr_message_broker **target
+		struct rrr_message_broker **target,
+		const struct rrr_message_broker_hooks *hooks
 );
 struct rrr_message_broker_costumer *rrr_message_broker_costumer_find_by_name (
 		struct rrr_message_broker *broker,
@@ -68,7 +81,9 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
-		int no_buffer
+		int no_buffer,
+		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
+		void *callback_arg
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
@@ -143,6 +158,12 @@ int rrr_message_broker_with_ctx_and_buffer_lock_do (
 int rrr_message_broker_sender_add (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_message_broker_costumer *listener_costumer
+);
+void rrr_message_broker_report_buffers (
+		struct rrr_message_broker *broker,
+		void (*callback_buffer)(const char *name, rrr_length count, void *arg),
+		void (*callback_split_buffer)(const char *name, const char *receiver_name, rrr_length count, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */

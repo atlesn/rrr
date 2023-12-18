@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "parse.h"
 #include "allocator.h"
 #include "util/macro_utils.h"
+#include "helpers/string_builder.h"
 
 void rrr_parse_pos_init (
 		struct rrr_parse_pos *target,
@@ -39,36 +40,39 @@ void rrr_parse_pos_init (
 	target->line_begin_pos = 0;
 }
 
-void rrr_parse_ignore_space_and_tab (
-		struct rrr_parse_pos *pos
+static int __rrr_parse_is_space_or_tab (
+		unsigned char c
 ) {
-	if (pos->pos >= pos->size) {
-		return;
-	}
-
-	char c = pos->data[pos->pos];
-
-	while ((c == ' ' || c == '\t') && pos->pos < pos->size) {
-		pos->pos++;
-		if (RRR_PARSE_CHECK_EOF(pos)) {
-			break;
-		}
-
-		c = pos->data[pos->pos];
-	}
+	return RRR_PARSE_MATCH_C_SPACE_TAB(c);
 }
 
-void rrr_parse_ignore_spaces_and_increment_line (
-		struct rrr_parse_pos *pos
+static int __rrr_parse_is_spaces (
+		unsigned char c
+) {
+	return RRR_PARSE_MATCH_C_SPACE_TAB(c) || RRR_PARSE_MATCH_C_NEWLINES(c);
+}
+
+static int __rrr_parse_is_control (
+		unsigned char c
+) {
+	return RRR_PARSE_MATCH_C_CONTROL(c);
+}
+
+static void __rrr_parse_ignore_and_increment_line (
+		struct rrr_parse_pos *pos,
+		int (*condition_cb)(unsigned char c)
 ) {
 	if (pos->pos >= pos->size) {
 		return;
 	}
 
-	char c = pos->data[pos->pos];
+	unsigned char c = (unsigned char) pos->data[pos->pos];
 
-	while ((c == ' ' || c == '\t' || c == '\n' || c == '\r') && pos->pos < pos->size) {
-		char next = pos->pos + 1 < pos->size ? pos->data[pos->pos + 1] : '\0';
+	// If the given condition_cb does not match newlines, line counting
+	// is not performed (parsing will stop at newlines).
+
+	while (condition_cb(c) && pos->pos < pos->size) {
+		unsigned char next = pos->pos + 1 < pos->size ? (unsigned char) pos->data[pos->pos + 1] : '\0';
 
 		if (c == '\r' && next == '\n') {
 			// Windows
@@ -92,8 +96,26 @@ void rrr_parse_ignore_spaces_and_increment_line (
 			break;
 		}
 
-		c = pos->data[pos->pos];
+		c = (unsigned char) pos->data[pos->pos];
 	}
+}
+
+void rrr_parse_ignore_space_and_tab (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_space_or_tab);
+}
+
+void rrr_parse_ignore_control_and_increment_line (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_control);
+}
+
+void rrr_parse_ignore_spaces_and_increment_line (
+		struct rrr_parse_pos *pos
+) {
+	__rrr_parse_ignore_and_increment_line(pos, __rrr_parse_is_spaces);
 }
 
 void rrr_parse_comment (
@@ -200,6 +222,39 @@ int rrr_parse_match_letters_simple (
 	return ret;
 }
 
+static int __rrr_parse_match_char (char c, rrr_length flags) {
+	return (((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
+	        ((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
+	        ((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
+	        ((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+	        ((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c)) ||
+	        ((flags & RRR_PARSE_MATCH_DASH) && RRR_PARSE_MATCH_C_DASH(c)) ||
+	        ((flags & RRR_PARSE_MATCH_CONTROL) && RRR_PARSE_MATCH_C_CONTROL(c))
+	);
+}
+
+rrr_length rrr_parse_match_letters_peek (
+		const struct rrr_parse_pos *pos_orig,
+		rrr_length flags
+) {
+	struct rrr_parse_pos pos_tmp = *pos_orig;
+
+	char c;
+	while (!RRR_PARSE_CHECK_EOF(&pos_tmp)) {
+		c = pos_tmp.data[pos_tmp.pos];
+
+		if (!__rrr_parse_match_char(c, flags)) {
+			break;
+		}
+
+		rrr_length_inc_bug(&pos_tmp.pos);
+	}
+
+	return pos_tmp.pos - pos_orig->pos;
+}
+
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
@@ -209,28 +264,7 @@ void rrr_parse_match_letters (
 	*start = pos->pos;
 	*end = pos->pos;
 
-	char c = pos->data[pos->pos];
-	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
-				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
-				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
-				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
-				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
-				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
-		) {
-			// OK
-		}
-		else {
-			break;
-		}
-
-		pos->pos++;
-		if (RRR_PARSE_CHECK_EOF(pos)) {
-			break;
-		}
-		c = pos->data[pos->pos];
-	}
+	rrr_length_add_bug(&pos->pos, rrr_parse_match_letters_peek(pos, flags));
 
 	*end = (rrr_slength) pos->pos - 1;
 }
@@ -249,14 +283,7 @@ void rrr_parse_match_until (
 	int found = 0;
 	char c = pos->data[pos->pos];
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
-				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
-				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
-				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
-				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
-				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
-				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
-		) {
+		if (__rrr_parse_match_char(c, flags)) {
 			found = 1;
 			break;
 		}
@@ -290,6 +317,30 @@ void rrr_parse_non_newline (
 	char c = pos->data[pos->pos];
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
 		if (c == '\r' || c == '\n') {
+			break;
+		}
+
+		pos->pos++;
+		if (RRR_PARSE_CHECK_EOF(pos)) {
+			break;
+		}
+		c = pos->data[pos->pos];
+	}
+
+	*end = (rrr_slength) pos->pos - 1;
+}
+
+void rrr_parse_non_control (
+		struct rrr_parse_pos *pos,
+		rrr_length *start,
+		rrr_slength *end
+) {
+	*start = pos->pos;
+	*end = pos->pos;
+
+	char c = pos->data[pos->pos];
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		if (RRR_PARSE_MATCH_C_CONTROL(c)) {
 			break;
 		}
 
@@ -428,6 +479,63 @@ int rrr_parse_str_extract_until (
 	return 0;
 }
 
+int rrr_parse_str_extract_name (
+		char **name,
+		struct rrr_parse_pos *pos,
+		char end_char
+) {
+	int ret = 0;
+
+	char *name_tmp = NULL;
+
+	*name = NULL;
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos)) {
+		goto out;
+	}
+
+	rrr_length start;
+	rrr_slength end;
+
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NAME);
+
+	if (end < start) {
+		goto out;
+	}
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+
+	if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != end_char) {
+		goto out_missing_end_char;
+	}
+	rrr_length_inc_bug(&pos->pos);
+
+	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
+	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
+		goto out_failed_alloc;
+	}
+
+	memcpy(name_tmp, pos->data + start, name_length);
+	name_tmp[name_length] = '\0';
+
+	*name = name_tmp;
+	name_tmp = NULL;
+
+	goto out;
+	out_failed_alloc:
+		RRR_MSG_0("Could not allocate memory for name in %s\n", __func__);
+		ret = 1;
+		goto out;
+	out_missing_end_char:
+		RRR_MSG_0("End character %c missing after name\n", end_char);
+		ret = 1;
+		goto out;
+	out:
+		RRR_FREE_IF_NOT_NULL(name_tmp);
+		return ret;
+}
+
 void rrr_parse_str_strip_newlines (
 		char *str
 ) {
@@ -460,4 +568,91 @@ void rrr_parse_str_trim (
 			break;
 		}
 	}
+}
+
+void rrr_parse_make_location_message (
+		char **result,
+		const struct rrr_parse_pos *pos_orig
+) {
+	struct rrr_parse_pos pos = *pos_orig;
+
+	rrr_length start;
+	rrr_slength end;
+	rrr_slength col;
+	rrr_slength line_length;
+	char line_num_str[24];
+	int line_num_chars;
+	char *str_tmp;
+	struct rrr_string_builder string_builder = {0};
+
+	col = pos.pos - pos.line_begin_pos;
+	pos.pos = pos.line_begin_pos;
+
+	line_num_chars = sprintf(line_num_str, "%" PRIrrrl "", pos.line);
+
+	rrr_parse_non_newline (&pos, &start, &end);
+
+	if (end >= start) {
+		line_length = end - start + 1;
+
+		if (rrr_parse_str_extract (
+				&str_tmp,
+				&pos,
+				start,
+				line_length
+		) != 0) {
+			RRR_BUG("Allocation failure in %s\n", __func__);
+		}
+
+		if (line_length > 128) {
+			line_length = 128;
+			str_tmp[start + line_length] = '\0';
+		}
+	}
+	else {
+		if ((str_tmp = strdup(" ")) == NULL) {
+			RRR_BUG("Allocation failure in %s\n", __func__);
+		}
+		line_length = 1;
+	}
+
+	// If the position already was at a newline, we cheat and
+	// move the reported column position back by one to a character
+	if (col > line_length - 1) {
+		col = line_length - 1;
+	}
+
+	for (size_t i = 0; i < (size_t) line_length; i++) {
+		if (str_tmp[i] == '\t')
+			str_tmp[i] = ' ';
+	}
+
+	if (rrr_string_builder_append_format(&string_builder, "At line %" PRIrrrl " col %" PRIrrrsl "%s\n",
+			pos.line, col + 1, line_length == 128 ? " (line preview is truncated at 128 chars)" : "") != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append_format(&string_builder, "  %s | ", line_num_str) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append_raw(&string_builder, str_tmp, (rrr_biglength) line_length) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	if (rrr_string_builder_append(&string_builder, "\n") != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	memset(line_num_str, ' ', line_num_chars);
+	memset(str_tmp, ' ', (rrr_length) col);
+	str_tmp[col] = '\0';
+
+	if (rrr_string_builder_append_format(&string_builder, "  %s %s~-^-~ <= HERE\n", line_num_str, str_tmp) != 0) {
+		RRR_BUG("Failed to format string in %s\n", __func__);
+	}
+
+	*result = rrr_string_builder_buffer_takeover(&string_builder);
+
+	rrr_free(str_tmp);
 }

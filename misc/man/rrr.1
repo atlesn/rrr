@@ -1,4 +1,4 @@
-.Dd 2020-09-16
+.Dd 2023-11-29
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -9,8 +9,11 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-T|--no-thread-restart]
 .Dl [-t|--start-interval]
 .Dl [-s|--stats]
+.Dl [-E|--event-hooks]
+.Dl [-M|--message-hooks]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
+.Dl [-o|--output-buffer-warn-limit[=]LIMIT]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
@@ -107,6 +110,22 @@ The timer may be set to a number between 0 and 10000, units are milliseconds.
 Enable the statistics engine which
 .Xr rrr_stats(1)
 can connect to.
+.IP -E|--event-hooks
+Enable event hooks in the statistics engine.
+This makes it possible to view triggered events with information about file descriptors and event flags using
+.Xr rrr_stats(1).
+Hooking events may give a performance penalty.
+This option has no effect if
+.B -s|--stats
+is not used.
+.IP -M|--message-hooks
+Enable message hooks in the statistics engine.
+This makes it possible to view messages as they pass between modules using
+.Xr rrr_stats(1).
+Hooking messages may give a performance penalty.
+This option has no effect if
+.B -s|--stats
+is not used.
 .IP -b|--banner
 Print RRR banner before starting.
 .IP -r|--run-directory[=]RUN DIRECTORY
@@ -114,6 +133,11 @@ Specify an alternative default prefix for runtime sockets.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
+.IP -o|--output-buffer-warn-limit[=]LIMIT
+Maximum number of messages in an instance's output buffer before warnings are
+printed. Warnings will be printed every second if the limit is exceeded. This
+can help to detecting issues with slow-reading instances. If set to 0, warnings
+are disabled. If not given, the default value of 1000 is used.
 .IP -e|--environment-file
 Specify an environment file to read in before the program starts.
 The file should contain one variable per line, like VARIABLE=VALUE. 
@@ -133,6 +157,7 @@ If a variable is specified both in the environment and at the command line, the 
 .It RRR_NO_THREAD_RESTART
 .It RRR_START_INTERVAL
 .It RRR_LOGLEVEL_TRANSLATION
+.It RRR_INSTANCE_OUTPUT_BUFFER_WARN_LIMIT
 .It RRR_RUN_DIRECTORY
 .El
 
@@ -148,10 +173,29 @@ Other variables are ignored, which means that the same environment file may be u
 .SH SIGNALS
 .IP SIGINT|Ctrl+C
 Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.
-.IP SIGUSR1
+.IP SIGUSR1 and SIGTERM
 Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
-.IP SIGTERM
-Exit immediately.
+There is no difference betweein
+.B SIGUSR1
+and
+.B SIGTERM
+unless signal debugging is enabled while building RRR in which case the signal
+.B SIGTERM
+causes a message to be printed and
+.B SIGUSR1
+does not.
+.IP SIGUSR2
+If RRR is built with profiling-enabled jemalloc and profiling is active by having started RRR with
+.B MALLOC_CONF="prof:true"
+set in the environment, this signal causes a profiling dump to be generated within a short timespan.
+RRR runs with multiple forks, and the
+.Xt rrr_stats(1)
+utility can be used to find the correct fork to profile while RRR is running and has been started with the
+.B -s
+parameter.
+The dump files will be stored in the current run directory, and this location will also be printed in a log message when dumping occurs.
+
+In addition to the profiling dump, a heap status report is printed in log messages.
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.
@@ -160,4 +204,6 @@ returns 0 on success and 1 on failure.
 .Xr rrr_stats(1),
 .Xr rrr_msg(1),
 .Xr rrr.conf(5),
-.Xr rrr_python3(5)
+.Xr rrr_python3(5),
+.Xr jemalloc(3),
+.Xr jeprof(1)

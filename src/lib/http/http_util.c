@@ -1181,6 +1181,9 @@ enum rrr_http_method rrr_http_util_method_str_to_enum (
 	else if ( strcasecmp(method_str, "put") == 0) {
 		method = RRR_HTTP_METHOD_PUT;
 	}
+	else if ( strcasecmp(method_str, "patch") == 0) {
+		method = RRR_HTTP_METHOD_PATCH;
+	}
 	else if ( strcasecmp(method_str, "post") == 0) {
 		method = RRR_HTTP_METHOD_POST;
 	}
@@ -1319,7 +1322,7 @@ const char *rrr_http_util_iana_response_phrase_from_status_code (
 	out_unknown:
 	return "Unknown status";
 }
-
+#ifdef RRR_WITH_JSONC
 int rrr_http_util_json_to_arrays (
 		const char *data,
 		rrr_length data_size,
@@ -1328,7 +1331,7 @@ int rrr_http_util_json_to_arrays (
 ) {
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
-
+#endif
 #ifdef RRR_HTTP_UTIL_WITH_ENCODING
 int rrr_http_util_encode (
 		struct rrr_nullsafe_str *output,
@@ -1367,6 +1370,10 @@ int rrr_http_util_decode (
 
 	/* Only one single gzip encoding is supported, and parsing 
 	 * of multiple encodings is not performed. */
+
+	if (!(rrr_nullsafe_str_len(input) > 0)) {
+		RRR_BUG("Input had zero length in %s\n", __func__);
+	}
 
 #ifdef RRR_WITH_ZLIB
 	if (rrr_nullsafe_str_cmpto_case(encoding, "gzip") == 0) {

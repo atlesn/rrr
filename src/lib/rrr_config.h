@@ -44,6 +44,7 @@ struct rrr_global_config {
 	unsigned int no_watchdog_timers;
 	unsigned int no_thread_restart;
 	unsigned int rfc5424_loglevel_output;
+	unsigned int output_buffer_warn_limit;
 	unsigned int do_journald_output;
 	const char *log_prefix;
 	const char *run_directory;
@@ -58,6 +59,7 @@ void rrr_config_init (
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
 		unsigned int rfc5424_loglevel_output,
+		unsigned int output_buffer_warn_limit,
 		unsigned int do_journald_output,
 		const char *run_directory
 );

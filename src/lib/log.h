@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,9 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LOG_H
 #define RRR_LOG_H
 
-#include <stdio.h>
-
 #include "rrr_config.h"
+
+#ifdef __cplusplus
+#	include <cstdio>
+#	include <cstdlib>
+#	include <cassert>
+#else
+#	include <stdio.h>
+#	include <stdlib.h>
+#	include <assert.h>
+#endif
 
 /*
  * About debug levels, ORed together:
@@ -75,11 +83,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Unchecked operation, should not cause dangerous situations.
 // Caller should nevertheless use RRR_DEBUGLEVEL_OK macro first.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \
-	(x == 0 ? 0 : 1 << (x-1))
-
-// Disables all calls to the logging subsystem. This make the compiler check all
-// arguments properly, use when coding.
-//#define RRR_WITH_PRINTF_LOGGING
+	((unsigned int) (x == 0 ? 0 : 1 << (x-1)))
 
 //#define RRR_WITH_SIGNAL_PRINTF
 
@@ -87,7 +91,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_DBG_SIGNAL(...) do { } while(0)
 #endif
 
-#ifdef RRR_WITH_PRINTF_LOGGING
+#ifdef RRR_ENABLE_PRINTF_LOGGING
 #	define RRR_MSG_PLAIN(...) printf(__VA_ARGS__)
 #	define RRR_MSG_PLAIN_N(a,b) do{ (void)(a); (void)(b); }while(0)
 #	define RRR_MSG_0(...) printf(__VA_ARGS__)
@@ -100,6 +104,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
 #	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
+#	define RRR_MSG_0_V(fmt, ap) vprintf(fmt, ap)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
 #	define RRR_DBG_2(...) printf(__VA_ARGS__)
@@ -111,11 +116,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_DBG_8(...) printf(__VA_ARGS__)
 	/* Debuglevel 9 is always printf */
 #	define RRR_DBG(...) printf(__VA_ARGS__)
-#	define RRR_BUG(...) do {printf(__VA_ARGS__); abort();}while(0)
+#	ifdef NDEBUG
+#		define RRR_BUG(...) do {fprintf(stderr, __VA_ARGS__); abort();}while(0)
+#	else
+#		define RRR_BUG(...) do {fprintf(stderr, __VA_ARGS__); assert(0);}while(0)
+#	endif
 #else
 
 #	define RRR_MSG_LOC(...) \
 	rrr_log_printf(__FILE__, __LINE__, __VA_ARGS__)
+
+#	define RRR_MSG_LOC_V(...) \
+	rrr_log_vprintf(__FILE__, __LINE__, __VA_ARGS__)
 
 #	define RRR_MSG_PLAIN(...) \
 	do {rrr_log_printf_plain (__VA_ARGS__);}while(0)
@@ -155,6 +167,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         rrr_log_printf (__FILE__, __LINE__, debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);                        \
     } while (0)                                                                                                                \
 
+#	define RRR_MSG_0_V(fmt, ap) \
+	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, fmt, ap);}while(0)
+
 #	define RRR_DBG_X(debuglevel_num, ...)																										\
 	do { if ((rrr_config_global.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
 		RRR_MSG_LOC (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);															\
@@ -189,8 +204,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 	// While writing code, use this macro to detect for instance invalid arguments to a function
 	// which caller should have checked as opposed to letting the program crash ungracefully
-#	define RRR_BUG(...) \
-	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+#	ifdef NDEBUG
+#	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+#	else
+#	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); assert(0); } while (0)
+#	endif
 #endif
 
 #define RRR_MSG_0_PRINTF(...) \
@@ -244,7 +262,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
 #define RRR_LOG_HOOK_ARGS                                      \
-            uint8_t *write_amount,                             \
 	    const char *file,                                  \
 	    int line,                                          \
             uint8_t loglevel_translated,                       \
@@ -262,9 +279,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(RRR_LOG_HOOK_ARGS),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue,
-		int (*event_pass_retry_callback)(void *arg),
-		void *event_pass_retry_callback_arg
+		struct rrr_event_queue *notify_queue
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (
@@ -301,6 +316,14 @@ void rrr_log_printf (
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+void rrr_log_vprintf (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list ap
 );
 void rrr_log_fprintf (
 		FILE *file_target,

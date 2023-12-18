@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../random.h"
 
 #include "message_holder_collection.h"
 #include "message_holder_struct.h"
@@ -43,7 +44,10 @@ void rrr_msg_holder_collection_clear_void (
 void rrr_msg_holder_collection_sort (
 		struct rrr_msg_holder_collection *target,
 		int do_lock,
-		int (*compare)(const struct rrr_msg_holder *a, const struct rrr_msg_holder *b)
+		int (*compare)(
+				const struct rrr_msg_holder *a,
+				const struct rrr_msg_holder *b
+		)
 ) {
 	struct rrr_msg_holder_collection tmp = {0};
 
@@ -73,4 +77,24 @@ void rrr_msg_holder_collection_sort (
 	}
 
 	*target = tmp;
+}
+
+void rrr_msg_holder_collection_rotate (
+		struct rrr_msg_holder_collection *target,
+		int pos,
+		int do_lock
+) {
+	if (do_lock) {
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
+			rrr_msg_holder_lock(node);
+		RRR_LL_ITERATE_END();
+	}
+
+	RRR_LL_ROTATE(target, struct rrr_msg_holder, pos);
+
+	if (do_lock) {
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
+			rrr_msg_holder_unlock(node);
+		RRR_LL_ITERATE_END();
+	}
 }

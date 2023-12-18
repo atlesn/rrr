@@ -256,9 +256,6 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config_data
 static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	int ret = 0;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	struct perl5_child_data child_data = {0};
 
 	child_data.parent_data = private_arg;
@@ -279,14 +276,12 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 		goto out_sys_term;
 	}
 
+	callbacks->configuration_callback_arg = &child_data;
+	callbacks->process_callback_arg = &child_data;
+
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&child_data,
-			process_callback,
-			&child_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in perl5_init_wrapper_callback\n");
 		// Don't goto out, run cleanup functions
@@ -311,14 +306,14 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
-	struct rrr_perl5_settings_hv *settings_hv = NULL;
+	struct rrr_perl5_settings_hv settings_hv = {0};
 
-	if (cmodule_config_data->config_function == NULL || *(cmodule_config_data->config_function) == '\0') {
+	if (cmodule_config_data->config_method == NULL || *(cmodule_config_data->config_method) == '\0') {
 		RRR_DBG_1("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
+	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_method);
 
 	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
@@ -330,68 +325,90 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	// The settings object from parent will get updated as the application accesses
 	// entries or writes new ones. Memory will however only get written to in the
 	// child fork, and all settings must be sent back to the parent over the mmap channel.
-	if ((ret = rrr_perl5_call_blessed_hvref (
+	if ((ret = rrr_perl5_call_blessed_hvref_and_sv (
 			child_data->ctx,
-			cmodule_config_data->config_function,
+			cmodule_config_data->config_method,
 			"rrr::rrr_helper::rrr_settings",
-			settings_hv->hv
+			settings_hv.hv,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Error while sending settings to sub %s in perl5 instance %s\n",
-				cmodule_config_data->config_function, INSTANCE_D_NAME(data->thread_data));
+				cmodule_config_data->config_method, INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
 
 	out:
-	rrr_perl5_destruct_settings_hv(child_data->ctx, settings_hv);
+	rrr_perl5_destruct_settings_hv(child_data->ctx, &settings_hv);
 	return ret;
 }
 
 static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	int ret = 0;
 
-	(void)(worker);
-
 	struct perl5_child_data *child_data = private_arg;
 	struct perl5_data *data = child_data->parent_data;
 	struct rrr_perl5_ctx *ctx = child_data->ctx;
 	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
-	struct rrr_perl5_message_hv *hv_message = NULL;
-	struct rrr_msg_addr addr_msg_tmp = *message_addr;
+	(void)(worker);
 
+	struct rrr_msg_addr addr_msg_tmp = *message_addr;
+	struct rrr_perl5_message_hv hv_message = {0};
+	struct rrr_perl5_method_sv sv_method = {0};
 	struct rrr_array array_tmp = {0};
 
-	// We prefer to send NULL for empty address messages when spawning.
-	if ((ret = rrr_perl5_message_to_new_hv (
+	if ((ret = rrr_perl5_message_to_hv (
 			&hv_message,
 			ctx,
 			message,
+			// We prefer to send NULL for empty address messages when spawning.
 			(is_spawn_ctx ? NULL : &addr_msg_tmp),
 			&array_tmp
 	)) != 0) {
-		RRR_MSG_0("Could not create rrr_perl5_message_hv struct in worker_process_message of perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Could not create message HV in %s of perl5 instance %s\n",
+				__func__, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (is_spawn_ctx) {
-		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->source_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
+		ret = rrr_perl5_call_blessed_hvref_and_sv (
+				ctx,
+				cmodule_config_data->source_method,
+				"rrr::rrr_helper::rrr_message",
+				hv_message.hv,
+				NULL
+		);
 	}
 	else {
-		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->process_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
+		RRR_CMODULE_HELPER_SET_METHOD_TO_USE (
+			if (method == NULL || (ret = rrr_perl5_method_to_sv(&sv_method, ctx, method)) == 0)
+				break;
+			RRR_MSG_0("Could not create method SV in %s of perl5 instance %s\n",
+					__func__, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		);
+
+		ret = rrr_perl5_call_blessed_hvref_and_sv (
+				ctx,
+				method_to_use,
+				"rrr::rrr_helper::rrr_message",
+				hv_message.hv,
+				sv_method.sv
+		);
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not call source/process function in worker_process_message of perl5 instance %s, spawn ctx is %i\n",
-				INSTANCE_D_NAME(data->thread_data), is_spawn_ctx);
+		RRR_MSG_0("Could not call source/process method in %s of perl5 instance %s, spawn ctx is %i\n",
+				__func__, INSTANCE_D_NAME(data->thread_data), is_spawn_ctx);
 		ret = 1;
 		goto out;
 	}
 
 	out:
+	rrr_perl5_destruct_message_hv(child_data->ctx, &hv_message);
+	rrr_perl5_destruct_method_sv(child_data->ctx, &sv_method);
 	rrr_array_clear(&array_tmp);
-	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
 }
 
@@ -469,8 +486,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_perl5,
-		NULL,
-		NULL,
 		NULL
 };
 

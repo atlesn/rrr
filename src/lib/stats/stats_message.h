@@ -34,13 +34,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT	3
 
 #define RRR_STATS_MESSAGE_PATH_INSTANCE_NAME		"name"
-#define RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL	"log_journal"
+#define RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_HOOK  "log_hook"
+#define RRR_STATS_MESSAGE_PATH_GLOBAL_MSG_HOOK  "msg_hook"
+#define RRR_STATS_MESSAGE_PATH_GLOBAL_EVENT_HOOK  "event_hook"
 
-#define RRR_STATS_MESSAGE_FLAGS_STICKY (1<<0)
+#define RRR_STATS_MESSAGE_FLAGS_STICKY          (1<<0)
+#define RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE (1<<1)
+#define RRR_STATS_MESSAGE_FLAGS_EVENT           (1<<2)
+#define RRR_STATS_MESSAGE_FLAGS_LOG             (1<<3)
 
-#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY)
+#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY |            \
+                                     RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE |   \
+				     RRR_STATS_MESSAGE_FLAGS_EVENT |	         \
+				     RRR_STATS_MESSAGE_FLAGS_LOG)
 
-#define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message)          (((message)->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) (((message)->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message)           (((message)->flags & RRR_STATS_MESSAGE_FLAGS_EVENT) != 0)
+#define RRR_STATS_MESSAGE_FLAGS_IS_LOG(message)             (((message)->flags & RRR_STATS_MESSAGE_FLAGS_LOG) != 0)
 
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
@@ -69,17 +80,26 @@ struct rrr_msg_stats_packed {
 	char path_and_data[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 + RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 } __attribute((packed));
 
+int rrr_msg_stats_flip_and_unpack (
+		struct rrr_msg_stats *target,
+		const struct rrr_msg_stats_packed *source,
+		rrr_length expected_size
+);
 int rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
 		const struct rrr_msg_stats_packed *source,
 		rrr_length expected_size
+);
+void rrr_msg_stats_pack (
+		struct rrr_msg_stats_packed *target,
+		rrr_length *total_size,
+		const struct rrr_msg_stats *source
 );
 void rrr_msg_stats_pack_and_flip (
 		struct rrr_msg_stats_packed *target,
 		rrr_length *total_size,
 		const struct rrr_msg_stats *source
 );
-
 int rrr_msg_stats_init (
 		struct rrr_msg_stats *message,
 		uint8_t type,
@@ -88,30 +108,33 @@ int rrr_msg_stats_init (
 		const void *data,
 		uint32_t data_size
 );
-
-int rrr_msg_stats_new_empty (
-		struct rrr_msg_stats **message
-);
-
-int rrr_msg_stats_new (
-		struct rrr_msg_stats **message,
-		uint8_t type,
-		uint32_t flags,
-		const char *path_postfix,
+int rrr_msg_stats_init_log (
+		struct rrr_msg_stats *message,
 		const void *data,
 		uint32_t data_size
 );
-
+int rrr_msg_stats_init_event (
+		struct rrr_msg_stats *message,
+		const void *data,
+		uint32_t data_size
+);
+int rrr_msg_stats_init_keepalive (
+		struct rrr_msg_stats *message
+);
+int rrr_msg_stats_init_rrr_msg_preface (
+		struct rrr_msg_stats *message,
+		const char *path_postfix,
+		const char **hops,
+		uint32_t hops_count
+);
 int rrr_msg_stats_set_path (
 		struct rrr_msg_stats *message,
 		const char *path
 );
-
 int rrr_msg_stats_duplicate (
 		struct rrr_msg_stats **target,
 		const struct rrr_msg_stats *source
 );
-
 int rrr_msg_stats_destroy (
 		struct rrr_msg_stats *message
 );

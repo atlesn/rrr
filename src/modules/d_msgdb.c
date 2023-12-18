@@ -59,6 +59,8 @@ struct msgdb_data {
 	rrr_setting_uint directory_levels;
 };
 
+static const rrr_time_ms_t msgdb_tick_interval = RRR_MS(250);
+
 static void msgdb_data_cleanup(void *arg) {
 	struct msgdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->directory);
@@ -83,8 +85,8 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_directory", directory, RRR_MSGDB_DEFAULT_DIRECTORY);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("msgdb_socket", socket);
 
-	if (data->directory == NULL) {
-		if (rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET) <= 0) {
+	if (data->socket == NULL) {
+		if (rrr_asprintf(&data->socket, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET) <= 0) {
 			RRR_MSG_0("rrr_asprintf() failed in %s\n", __func__);
 			ret = 1;
 			goto out;
@@ -133,8 +135,6 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 	struct rrr_instance_runtime_data *thread_data = private_arg;
 	struct msgdb_data *data = thread_data->private_data;
 
-	(void)(custom_tick_callback_arg);
-
 	int ret = 0;
 
 	struct rrr_msgdb_server *msgdb = NULL;
@@ -157,14 +157,11 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 		0
 	};
 
+	callbacks->custom_tick_callback_arg = &tick_callback_data;
+
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			&tick_callback_data
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in msgdb_fork_tick_callback\n");
 		goto out;
@@ -192,7 +189,7 @@ static int msgdb_fork (void *arg) {
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
-			250, // 250ms
+			rrr_time_us_from_ms(msgdb_tick_interval),
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,
@@ -244,8 +241,6 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_msgdb,
-		NULL,
-		NULL,
 		NULL
 };
 
