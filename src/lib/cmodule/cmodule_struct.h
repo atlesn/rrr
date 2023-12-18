@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,18 +30,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_channel;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
+struct rrr_discern_stack_collection;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
 struct rrr_cmodule_worker {
 	uint8_t index;
 
-	rrr_setting_uint spawn_interval_us;
-	rrr_setting_uint sleep_time_us;
-	rrr_setting_uint nothing_happened_limit;
+	rrr_time_us_t spawn_interval;
 
+	enum rrr_cmodule_process_mode process_mode;
 	int do_spawning;
-	int do_processing;
 	int do_drop_on_error;
 
 	// Managed structures
@@ -50,7 +49,8 @@ struct rrr_cmodule_worker {
 	pthread_mutex_t pid_lock;
 
 	pid_t pid;
-	int received_stop_signal;
+	volatile int received_stop_signal;
+	volatile int received_sigusr2_signal;
 
 	int config_complete;
 
@@ -70,16 +70,20 @@ struct rrr_cmodule_worker {
 	// Used by fork only
 	int ping_received;
 	// Used by parent reader thread only. Unprotected, only access from reader thread.
-	uint64_t pong_receive_time;
+	rrr_time_us_t pong_receive_time;
 
 	// Unmanaged pointers provided by application
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
 	struct rrr_event_queue *event_queue_parent;
+	const struct rrr_discern_stack_collection *methods;
 
 	// Both worker and parent destroy this. It is allocated before forking but
 	// the worker also calls destroy to clean up memory for events it created after forking
 	struct rrr_event_queue *event_queue_worker;
+
+	// Created after forking if app periodic function is used
+	rrr_event_handle app_periodic_event;
 };
 
 struct rrr_cmodule {
@@ -94,6 +98,10 @@ struct rrr_cmodule {
 
 	// Created just before event dispatch, not managed
 	rrr_event_handle input_queue_event;
+
+	// Create just before event dispatch in case app periodic
+	// callback is used.
+	rrr_event_handle app_periodic_event;
 
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;

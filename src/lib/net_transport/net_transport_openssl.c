@@ -496,10 +496,10 @@ static int __rrr_net_transport_openssl_connect (
 	}
 
 	struct rrr_net_transport_openssl_connect_callback_data callback_data = {
-			(struct rrr_net_transport_tls *) transport,
-			accept_data,
-			port,
-			host
+		(struct rrr_net_transport_tls *) transport,
+		accept_data,
+		port,
+		host
 	};
 
 	int new_handle = 0;
@@ -507,6 +507,7 @@ static int __rrr_net_transport_openssl_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"ossl outbound",
 			__rrr_net_transport_openssl_connect_callback,
 			&callback_data
 	)) != 0) {
@@ -601,9 +602,9 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 	}
 
 	struct rrr_net_transport_openssl_bind_and_listen_callback_data callback_data = {
-			tls,
-			port,
-			do_ipv6
+		tls,
+		port,
+		do_ipv6
 	};
 
 	rrr_net_transport_handle new_handle;
@@ -611,6 +612,7 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			"ossl listen",
 			__rrr_net_transport_openssl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
@@ -735,6 +737,7 @@ int __rrr_net_transport_openssl_accept (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"ossl accept",
 			__rrr_net_transport_openssl_accept_callback,
 			&callback_data
 	)) != 0) {
@@ -952,7 +955,7 @@ static int __rrr_net_transport_openssl_handshake (
 			return RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 		}
 		if (ret_tmp < 0) {
-			RRR_MSG_0("Fatal error during handshake: %i\n", SSL_get_error(ssl, ret_tmp));
+			RRR_MSG_0("Fatal error during handshake (possible certificate expiration): %i\n", SSL_get_error(ssl, ret_tmp));
 		}
 		else {
 			RRR_SSL_ERR("Handshake failure");
@@ -962,8 +965,11 @@ static int __rrr_net_transport_openssl_handshake (
 
 	if (!SSL_is_server(ssl)) {
 		// TODO : Hostname verification
-
+#ifdef RRR_HAVE_GET1_PEER_CERTIFICATE
+		X509 *cert = SSL_get1_peer_certificate(ssl);
+#else
 		X509 *cert = SSL_get_peer_certificate(ssl);
+#endif
 		if (cert != NULL) {
 			X509_free(cert);
 		}

@@ -42,6 +42,18 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_LUA
+libadd_lua = librrrlua.la
+librrrlua_la_SOURCES = lua/lua.c \
+                       lua/lua_message.c \
+		       lua/lua_config.c \
+		       lua/lua_debug.c \
+		       lua/lua_cmodule.c
+librrrlua_la_CFLAGS = ${LUA_CFLAGS} ${AM_CFLAGS}
+librrrlua_la_LDFLAGS = ${LUA_LDFLAGS}
+lua_extra_ld = ${LUA_LDFLAGS}
+endif
+
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
@@ -59,9 +71,27 @@ librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
 endif
 
+if RRR_WITH_ZLIB
+libadd_zlib = librrrzlib.la
+librrrzlib_la_SOURCES = zlib/rrr_zlib.c
+librrrzlib_la_CFLAGS = ${ZLIB_CFLAGS} ${AM_CFLAGS}
+librrrzlib_la_LDFLAGS = ${ZLIB_LDFLAGS}
+zlib_extra_ld = ${ZLIB_LDFLAGS}
+endif
+
+if RRR_WITH_JS
+libadd_js = librrrjs.la
+librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
+librrrjs_la_CXXFLAGS = ${JS_CXXFLAGS} ${AM_CXXFLAGS}
+librrrjs_la_LDFLAGS = ${JS_LDFLAGS} ${JS_LIBS}
+js_extra_ldflags = ${JS_LDFLAGS}
+js_extra_libadd = $(JS_LIBS)
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
-       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
+       mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
+       mqtt/mqtt_payload.c mqtt/mqtt_usercount.c
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
@@ -78,6 +108,8 @@ http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 
 websocket = websocket/websocket.c
 
+modbus = modbus/rrr_modbus.c
+
 cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
@@ -87,16 +119,16 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c
+       util/increment.c util/sha256.c util/arguments.c util/fs.c
 
-ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
+ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_helper.c
 
 udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
 message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
                  message_holder/message_holder_slot.c
 
-messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
+messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
 helpers = helpers/nullsafe_str.c helpers/string_builder.c
 
@@ -112,25 +144,44 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
+if RRR_WITH_CXX
+lib_cxx=librrrcxx.la
+
+util_cxx = util/Readfile.cxx
+
+event_cxx = event/Event.cxx
+
+librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs ${js_extra_ldflags}
+librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
+endif
+
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
+librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
+                    ${TLS_LDFLAGS} \
+                    ${perl5_extra_ld} \
+                    ${lua_extra_ld} \
+		    ${jsonc_extra_ld} \
+		    ${nghttp2_extra_ld} \
+		    ${python3_extra_ld} \
+		    ${zlib_extra_ld}
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
-                    version.c configuration.c parse.c settings.c instance_config.c common.c \
-                    message_broker.c map.c array.c array_tree.c \
-                    read.c mmap_channel.c rrr_shm.c \
+                    version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
+                    message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
+                    read.c mmap_channel.c rrr_shm.c profiling.c \
                     instances.c instance_friends.c modules.c \
 		    poll_helper.c msgdb_helper.c \
                     random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
-                    serial/serial.c \
-		    rrr_mmap.c \
+                    serial/serial.c hdlc/hdlc.c \
+		    rrr_mmap.c send_loop.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
-                    ${input} ${input_system} ${helpers} ${websocket} \
+                    ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
-lib_LTLIBRARIES = librrr.la ${lib_mysql}
+lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -178,7 +229,9 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
+    ${libadd_lua}                    \
     ${libadd_jsonc}                  \
+    ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
@@ -190,5 +243,14 @@ libadd_all =                         \
     ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}
 
-noinst_LTLIBRARIES = ${libadd_all}
+if RRR_WITH_CXX
+libadd_all_cxx =                     \
+    ${libadd_js}
+endif
+
+noinst_LTLIBRARIES = ${libadd_all} ${libadd_all_cxx}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
+
+if RRR_WITH_CXX
+librrrcxx_la_LIBADD = ${libadd_all_cxx} ${js_extra_libadd} -lpthread -ldl -lm -levent -levent_pthreads
+endif

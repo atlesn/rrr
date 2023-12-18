@@ -38,6 +38,7 @@ const char *rrr_http_transport_str_https = "HTTPS";
 const char *rrr_http_method_str_get = "GET";
 const char *rrr_http_method_str_head = "HEAD";
 const char *rrr_http_method_str_put = "PUT";
+const char *rrr_http_method_str_patch = "PATCH";
 const char *rrr_http_method_str_delete = "DELETE";
 const char *rrr_http_method_str_post = "POST";
 

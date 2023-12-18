@@ -72,11 +72,6 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 		void *data,
 		rrr_biglength size
 );
-int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
-		struct rrr_ip_accept_data **accept_data,
-		struct sockaddr *addr,
-		socklen_t addr_len
-);
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 		int *result_fd,
 		const struct sockaddr *addr,

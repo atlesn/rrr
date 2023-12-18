@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder/message_holder_struct.h"
 #include "message_holder/message_holder.h"
 #include "messages/msg_msg.h"
+#include "message_helper.h"
 
 static int __rrr_poll_intermediate_callback_topic_filter (
 		int *does_match,
@@ -42,14 +43,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 
 	*does_match = 0;
 
-	if (MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message) > 0 && rrr_msg_msg_topic_match (
-			does_match,
-			(const struct rrr_msg_msg *) entry->message,
-			INSTANCE_D_TOPIC(thread_data)
-	) != 0) {
-		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = RRR_MESSAGE_BROKER_ERR;
+	if ((ret = rrr_message_helper_entry_topic_match(does_match, entry, INSTANCE_D_TOPIC(thread_data))) != 0) {
 		goto out;
 	}
 
@@ -77,7 +71,8 @@ static void __rrr_poll_intermediate_callback_nexthop_check (
 ) {
 	*nexthop_ok = rrr_msg_holder_nexthop_ok(entry, INSTANCE_D_INSTANCE(thread_data));
 
-	RRR_DBG_3("Result of nexthop check while polling in instance %s: %s\n",
+	RRR_DBG_3("Result of nexthop check against %i hops while polling in instance %s: %s\n",
+		rrr_msg_holder_nexthop_count(entry),
 		INSTANCE_D_NAME(thread_data),
 		*nexthop_ok ? "OK" : "NOT OK/DROPPED"
 	);
@@ -99,7 +94,7 @@ static int __rrr_poll_intermediate_callback (
 	int does_match = 1;
 	int nexthop_ok = 1;
 
-	if (callback_data->thread_data->init_data.topic_first_token != NULL) {
+	if (INSTANCE_D_TOPIC(callback_data->thread_data) != NULL) {
 		if ((ret = __rrr_poll_intermediate_callback_topic_filter(&does_match, callback_data->thread_data, entry)) != 0) {
 			goto out;
 		}

@@ -32,6 +32,8 @@ struct dummy_data {
 
 static struct dummy_data dummy_data = {0};
 
+static int process_counter = 0;
+
 int config(RRR_CONFIG_ARGS) {
 	struct dummy_data *data = &dummy_data;
 
@@ -65,7 +67,20 @@ int source(RRR_SOURCE_ARGS) {
 }
 
 int process(RRR_PROCESS_ARGS) {
-	RRR_DBG_2("cmodule process timestamp %" PRIu64 "\n", message->timestamp);
+	RRR_DBG_2("cmodule process timestamp %" PRIu64 " method %s message count %i\n",
+		message->timestamp, method, ++process_counter);
+
+	if (process_counter > 1) {
+		rrr_free(message);
+		return 0;
+	}
+
+	if (method == NULL || strcmp(method, "my_method") != 0) {
+		RRR_MSG_0("Incorrect method to cmodule processor function %s<>%s\n",
+			method, "my_method");
+		rrr_free(message);
+		return 1;
+	}
 
 	return rrr_send_and_free(ctx, message, message_addr);
 }

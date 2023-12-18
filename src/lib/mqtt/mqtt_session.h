@@ -237,7 +237,6 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet,
-			int allow_missing_originating_packet,
 			int (*send_now_callback)(struct rrr_mqtt_p *packet, void *arg),
 			void *send_now_callback_arg
 	);

@@ -42,18 +42,17 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 #else*/
 	size_t size = strlen(format) * 2;
 	char *buf = NULL;
+	int retry_count = 0;
 
 	*resultp = NULL;
 
 	retry:
 	RRR_FREE_IF_NOT_NULL(buf);
 	if ((buf = rrr_allocate(size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_vasprintf\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = -1;
 		goto out;
 	}
-
-	int retry_count = 0;
 
 	va_list args_tmp;
 	va_copy(args_tmp, args);
@@ -61,13 +60,13 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	va_end(args_tmp);
 
 	if (ret < 0) {
-		RRR_MSG_0("Error returned from vsnprintf in rrr_asprintf\n");
+		RRR_MSG_0("Error returned from vsnprintf in %s\n", __func__);
 		ret = -1;
 		goto out;
 	}
 	else if ((size_t) ret >= size) {
 		if (++retry_count > 1) {
-			RRR_MSG_0("More than two attempts to format string in rrr_asprintf\n");
+			RRR_MSG_0("More than two attempts to format string in %s\n", __func__);
 			ret = -1;
 			goto out;
 		}

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 #define RRR_MQTT_OK                        RRR_READ_OK
 #define RRR_MQTT_INTERNAL_ERROR            RRR_READ_HARD_ERROR
@@ -38,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE    4096
 #define RRR_MQTT_COMMON_CLOSE_WAIT_TIME_S              1
-#define RRR_MQTT_COMMON_RETRY_INTERVAL_S               5
+#define RRR_MQTT_COMMON_RETRY_INTERVAL_S               3
 #define RRR_MQTT_COMMON_MAX_CONNECTIONS              260
 #define RRR_MQTT_COMMON_FIRST_READ_TIMEOUT_S           2
 #define RRR_MQTT_COMMON_TICK_INTERVAL_S               10
@@ -259,7 +260,6 @@ extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_
 
 void rrr_mqtt_common_will_properties_clear (struct rrr_mqtt_common_will_properties *will_properties);
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
-void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_clear_session_from_connections (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_session *session_to_remove,

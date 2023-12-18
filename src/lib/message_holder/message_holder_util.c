@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../allocator.h"
 #include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 #include "message_holder.h"
 #include "message_holder_util.h"
@@ -155,4 +156,34 @@ int rrr_msg_holder_util_clone_no_locking_no_metadata (
 	}
 
 	return ret;
+}
+
+int rrr_msg_holder_util_index_compare (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	return (a->send_index > b->send_index) - (a->send_index < b->send_index);
+}
+
+void rrr_msg_holder_util_timeout_check (
+		int *ttl_timeout,
+		int *timeout,
+		uint64_t ttl_us,
+		uint64_t timeout_us,
+		struct rrr_msg_holder *entry
+) {
+	// TTL timeout takes precedence if both times have expired
+
+	if (ttl_us > 0 && !rrr_msg_msg_ttl_ok(entry->message, ttl_us)) {
+		*ttl_timeout = 1;
+		*timeout = 0;
+	}
+	else if (timeout_us > 0 && entry->send_time > 0 && entry->send_time < (rrr_time_get_64() - timeout_us)) {
+		*ttl_timeout = 0;
+		*timeout = 1;
+	}
+	else {
+		*ttl_timeout = 0;
+		*timeout = 0;
+	}
 }

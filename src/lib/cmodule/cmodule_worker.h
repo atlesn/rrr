@@ -36,6 +36,20 @@ struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_event_queue;
+struct rrr_discern_stack_collection;
+
+struct rrr_cmodule_worker_callbacks {
+	int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS);
+	void *ping_callback_arg;
+	int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS);
+	void *configuration_callback_arg;
+	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
+	void *process_callback_arg;
+	int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS);
+	void *custom_tick_callback_arg;
+	int (*periodic_callback)(RRR_CMODULE_PERIODIC_CALLBACK_ARGS);
+	void *periodic_callback_arg;
+};
 
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
@@ -54,12 +68,7 @@ void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
 );
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback)(RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		const struct rrr_cmodule_worker_callbacks *callbacks
 );
 int rrr_cmodule_worker_loop_init_wrapper_default (
 		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
@@ -69,12 +78,7 @@ int rrr_cmodule_worker_main (
 		const char *log_prefix,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 );
 struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 		struct rrr_cmodule_worker *worker
@@ -89,11 +93,10 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
-		rrr_setting_uint spawn_interval_us,
-		rrr_setting_uint sleep_time_us,
-		rrr_setting_uint nothing_happened_limit,
+		const struct rrr_discern_stack_collection *methods,
+		rrr_time_us_t spawn_interval,
+		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
-		int do_processing,
 		int do_drop_on_error
 );
 void rrr_cmodule_worker_cleanup (

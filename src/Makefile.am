@@ -1,6 +1,14 @@
+if RRR_WITH_JS
+noinst_js=rrr_js
+endif
+
+if RRR_WITH_LUA
+noinst_lua=rrr_lua
+endif
+
 SUBDIRS = lib modules tests python cmodules
-bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg
-noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb
+bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub
+noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb rrr_readdir rrr_modbus_server ${noinst_js} ${noinst_lua}
 TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
@@ -44,6 +52,10 @@ rrr_http_server_SOURCES = rrr_http_server.c main.c
 rrr_http_server_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_http_server_LDFLAGS = ${ldflags} -pie
 
+rrr_modbus_server_SOURCES = rrr_modbus_server.c main.c
+rrr_modbus_server_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_modbus_server_LDFLAGS = ${ldflags} -pie
+
 rrr_stats_SOURCES = rrr_stats.c main.c
 rrr_stats_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_stats_LDFLAGS = ${ldflags} -pie
@@ -53,9 +65,29 @@ rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_msgdb_LDFLAGS = ${ldflags} -pie
 
+rrr_readdir_SOURCES = rrr_readdir.c main.c paths.c
+rrr_readdir_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_readdir_LDFLAGS = ${ldflags} -pie
+
 rrr_msg_SOURCES = rrr_msg.c main.c
 rrr_msg_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_msg_LDFLAGS = ${ldflags} -pie
+
+rrr_sub_SOURCES = rrr_sub.c main.c
+rrr_sub_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_sub_LDFLAGS = ${ldflags} -pie
+
+if RRR_WITH_LUA
+rrr_lua_SOURCES = rrr_lua.c main.c
+rrr_lua_CFLAGS = ${AM_CFLAGS} ${LUA_CFLAGS} -fpie
+rrr_lua_LDFLAGS = ${ldflags} ${LUA_LDFLAGS} ${LUA_LIBS} -pie
+endif
+
+if RRR_WITH_JS
+rrr_js_SOURCES = rrr_js.cxx
+rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS} -fpie
+rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS} -pie
+endif
 
 if RRR_WITH_PERL5
 all-local:

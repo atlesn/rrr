@@ -44,9 +44,12 @@ struct rrr_perl5_ctx {
 	int (*set_setting)(const char *key, const char *value, void *private_data);
 };
 
-// TODO : Consider removing this struct, it only has one field
 struct rrr_perl5_message_hv {
 	HV *hv;
+};
+
+struct rrr_perl5_method_sv {
+	SV *sv;
 };
 
 struct rrr_perl5_settings_hv {
@@ -72,10 +75,7 @@ int rrr_perl5_new_ctx (
 );
 int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_build_dirs);
 int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
-int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
-
-struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv);
-struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx);
+int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv, SV *sv);
 
 SV *rrr_perl5_deep_dereference(
 		SV *sv
@@ -84,14 +84,23 @@ void rrr_perl5_destruct_settings_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_settings_hv *source
 );
-int rrr_perl5_settings_to_hv (
-		struct rrr_perl5_settings_hv **target,
-		struct rrr_perl5_ctx *ctx,
-		struct rrr_instance_settings *source
-);
 void rrr_perl5_destruct_message_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
+);
+void rrr_perl5_destruct_method_sv (
+		struct rrr_perl5_ctx *ctx,
+		struct rrr_perl5_method_sv *source
+);
+int rrr_perl5_settings_to_hv (
+		struct rrr_perl5_settings_hv *target,
+		struct rrr_perl5_ctx *ctx,
+		struct rrr_instance_settings *source
+);
+int rrr_perl5_method_to_sv (
+		struct rrr_perl5_method_sv *target,
+		struct rrr_perl5_ctx *ctx,
+		const char *method
 );
 int rrr_perl5_hv_to_message (
 		struct rrr_msg_msg **target_final,
@@ -99,8 +108,8 @@ int rrr_perl5_hv_to_message (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 );
-int rrr_perl5_message_to_new_hv (
-		struct rrr_perl5_message_hv **target,
+int rrr_perl5_message_to_hv (
+		struct rrr_perl5_message_hv *target,
 		struct rrr_perl5_ctx *ctx,
 		const struct rrr_msg_msg *message,
 		struct rrr_msg_addr *message_addr,

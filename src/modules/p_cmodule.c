@@ -118,9 +118,9 @@ struct cmodule_run_data {
 
 	struct cmodule_data *data;
 
-	int (*config_function)(RRR_CONFIG_ARGS);
-	int (*source_function)(RRR_SOURCE_ARGS);
-	int (*process_function)(RRR_PROCESS_ARGS);
+	int (*config_method)(RRR_CONFIG_ARGS);
+	int (*source_method)(RRR_SOURCE_ARGS);
+	int (*process_method)(RRR_PROCESS_ARGS);
 	int (*cleanup_function)(RRR_CLEANUP_ARGS);
 };
 
@@ -182,9 +182,9 @@ static int __cmodule_load (
 
 		int function_err = 0;
 
-		GET_FUNCTION(cmodule_config_data,config_function);
-		GET_FUNCTION(cmodule_config_data,source_function);
-		GET_FUNCTION(cmodule_config_data,process_function);
+		GET_FUNCTION(cmodule_config_data,config_method);
+		GET_FUNCTION(cmodule_config_data,source_method);
+		GET_FUNCTION(cmodule_config_data,process_method);
 		GET_FUNCTION(data,cleanup_function);
 
 		if (function_err != 0) {
@@ -228,9 +228,6 @@ static void __cmodule_application_cleanup (void *arg) {
 static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct cmodule_data *data = private_arg;
 
-	(void)(configuration_callback_arg);
-	(void)(process_callback_arg);
-
 	int ret = 0;
 
 	struct cmodule_run_data run_data = {0};
@@ -244,18 +241,15 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 
 	run_data.data = data;
 	run_data.ctx.worker = worker;
+	callbacks->configuration_callback_arg = &run_data;
+	callbacks->process_callback_arg = &run_data;
 
 	pthread_cleanup_push(__cmodule_dl_unload, run_data.dl_ptr);
 	pthread_cleanup_push(__cmodule_application_cleanup, &run_data);
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&run_data,
-			process_callback,
-			&run_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions
@@ -280,13 +274,13 @@ static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_AR
 
 	int ret = 0;
 
-	if (run_data->config_function == NULL) {
+	if (run_data->config_method == NULL) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
 				INSTANCE_D_NAME(run_data->data->thread_data));
 		goto out;
 	}
 
-	if ((ret = run_data->config_function(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
+	if ((ret = run_data->config_method(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
 		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
 				ret, INSTANCE_D_NAME(run_data->data->thread_data));
 		ret = 1;
@@ -312,17 +306,17 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
-		if (run_data->source_function == NULL) {
+		if (run_data->source_method == NULL) {
 			RRR_BUG("BUG: Source function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->source_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->source_method(&run_data->ctx, message_copy, message_addr);
 		// Don't goto out here, print error further down
 	}
 	else {
-		if (run_data->process_function == NULL) {
+		if (run_data->process_method == NULL) {
 			RRR_BUG("BUG: Process function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->process_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->process_method(&run_data->ctx, message_copy, message_addr, method);
 		// Don't goto out here, print error further down
 	}
 
@@ -413,8 +407,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_cmodule,
-		NULL,
-		NULL,
 		NULL
 };
 

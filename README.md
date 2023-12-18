@@ -1,5 +1,4 @@
 ![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr-not-tall.svg)
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/atlesn/rrr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/atlesn/rrr/context:cpp)
 ![Build master](http://www.goliathdns.no/rrr/build-master.svg?a "Build status master")
 ![Build development](http://www.goliathdns.no/rrr/build-development.svg?a "Build status master")
 
@@ -28,10 +27,12 @@ passing messages to each other, and message passing is the only way for the modu
 
 Among other things, RRR can be used to:
 
-- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
-- Transfer messages using HTTP, WebSocket, MQTT, UDP or TCP
-- Modify messages using Perl or Python
-- Save messages using InfluxDB, MySQL or a customized save method
+- **Read**
+  Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
+- **Route**
+  Transfer messages using HTTP, WebSocket, MQTT, UDP or TCP
+- **Record**
+  Modify and process messages using Perl, Python or JavaScript. Save messages using InfluxDB, MySQL or a customized save method.
 
 Application examples may include:
 
@@ -65,27 +66,17 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## NEWS
 
-### v1.23
- - Improve MQTT protocol support and control the MQTT client module by passing command messages
- - Possibility to invert the topic filter for instances
+### v1.29
+ - Use RRR arrays to parse incoming HDLC messages 
+ - New module `modbus` for retrieving data from ModBus servers
+ - New module `lua` for running Lua scripts inside of RRR
+ - Method discern definitions to pass messages into different functions of a script when using Python, JS, Perl or Lua.
+ - Improved debugging tools, hook messages and events using the `rrr_stats` tool
 
-### v1.21
-- JEmalloc enabled by default to mitigate memory fragmentation in long lived RRR sessions
+Refer to `debian/changelog` for a complete list of changes, fixes and features.
 
-### v1.19
-- New module **cacher** to store messages for later use
-
-### v1.17
-- True event driven modules for reduced latency
-
-### v1.16
-- Support for **HTTP/2** in both the RRR HTTP server and client.
-- Improved and simplified backend handling of HTTP requests
-- JSON handling in HTTP modules
-- Option to disable output buffers, will reduce latency when high througput is not needed
-- Option to enable output duplication in all modules
-- Backstop option to stop message loops, allows bus operation
-- New modules **mangler**, **exploder**, **incrementer**
+### v1.27
+ - Support JavaScript modules by using the V8 JS engine
 
 ## SUPPORTED SYSTEMS
 
@@ -128,66 +119,13 @@ forking the GitHub repository.
 
 Some systems have customized branches, choose one of the following if appropriate:
 
-	$ git checkout debian-buster
 	$ git checkout voidlinux
 	$ git checkout alpine
 	$ git checkout freebsd
-	$ git checkout ubuntu (Current LTS release)
-	$ git checkout ubuntu-hirsute
 
 The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
 
 See the *COMPILE* section below for further information.
-
-#### Pre-compiled package for Debian Bullseye amd64/armhf using APT
-
-	$ su -
-	# apt install curl gnupg
-	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
-	# curl -s https://apt.goliathdns.no/debian/bullseye.list > /etc/apt/sources.list.d/goliathdns.list
-	# apt update
-	# apt install rrr
-
-To use Debian Buster, replace "bullseye.list" with "buster.list".
-The i386 platform is available for Buster.
-
-#### Pre-compiled package for Ubuntu Focal amd64 using APT
-
-	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
-	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
-	$ sudo apt update
-	$ sudo apt install rrr
-
-To use Ubuntu Hirsute, replace "focal.list" with "hirsute.list".
-
-#### Pre-compiled Fedora package using yum
-
-	$ sudo su -
-	# curl https://yum.goliathdns.no/goliathdns.repo > /etc/yum.repos.d/goliathdns.repo
-	# yum install rrr
-
-When asked to install the GPG key for the GoliathDNS repository, answer 'yes'.
-
-#### Install from ArchLinux AUR repository
-
-	$ yay -S rrr
-
-The latest RRR release will be downloaded and built. When prompted after compilation, enter your password to complete the installation.
-	
-#### Packages available on the APT and Yum mirrors
-
-- rrr
-- rrr-mod-mysql / rrr-mod-mariadb
-- librrr1
-- librrr1-dbgsym
-- librrr-dev
-
-Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If you need to use for instance
-MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
-on the Ubuntu branch (`git checkout ubuntu`).
-
-Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
-built from the `debian-testing` branch.
 
 ### COMPILE
 
@@ -215,11 +153,14 @@ See `./configure --help` for flags to use for disabling features with dependenci
 	$ make
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
 
-It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
+If you are on Ubuntu, Debian or similar, you can build `.deb` packages. Look online
 on detailed information about this and on which packages you need to build `.deb` packages.
 
 	$ dpkg-buildpackage
 	$ sudo dpkg -i ../rrr*.deb
+
+To build packages for Arch Linux, a `PKGBUILD` file is available in the `arch/` subdirectory.
+RRR is also availabe on AUR.
 
 ### RUN MANUALLY
 

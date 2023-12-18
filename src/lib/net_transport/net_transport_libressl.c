@@ -227,6 +227,7 @@ static int __rrr_net_transport_libressl_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"lssl outbound",
 			__rrr_net_transport_libressl_connect_callback,
 			&callback_data
 	)) != 0) {
@@ -329,6 +330,7 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			"lssl listen",
 			__rrr_net_transport_libressl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
@@ -429,6 +431,7 @@ int __rrr_net_transport_libressl_accept (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"lssl inbound",
 			__rrr_net_transport_libressl_accept_callback,
 			&callback_data
 	)) != 0) {

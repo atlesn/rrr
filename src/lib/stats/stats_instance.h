@@ -70,6 +70,10 @@ void rrr_stats_instance_destroy (
 void rrr_stats_instance_destroy_void (
 		void *instance
 );
+int rrr_stats_instance_push_stream_message (
+		struct rrr_stats_instance *instance,
+		const struct rrr_msg_stats *msg
+);
 int rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		const char *text

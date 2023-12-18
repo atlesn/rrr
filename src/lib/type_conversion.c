@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -110,10 +110,10 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	char *buf = NULL;
 
 	if (source->element_count == 0) {
-		RRR_BUG("BUG: Element count was 0 in __rrr_type_convert_h2str\n");
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
 	}
 	if (source->total_stored_length % sizeof(uint64_t) != 0) {
-		RRR_BUG("BUG: Stored length not divisible by 8 in __rrr_type_convert_h2str\n");
+		RRR_BUG("BUG: Stored length not divisible by 8 in %s\n", __func__);
 	}
 
 	rrr_biglength new_size = 0;
@@ -144,7 +144,7 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 		}
 
 		if ((buf = rrr_allocate((size_t) new_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory in __rrr_type_convert_h2str\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 			goto out;
 		}
@@ -166,7 +166,7 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 			);
 
 			if (number_length <= 0) {
-				RRR_MSG_0("Error from snprintf in __rrr_type_convert_h2str\n");
+				RRR_MSG_0("Error from snprintf in %s\n", __func__);
 				ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 				goto out;
 			}
@@ -283,10 +283,10 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	TYPE_STR_ENSURE();
 
 	if (source->element_count == 0) {
-		RRR_BUG("BUG: Element count was 0 in __rrr_type_convert_str2h\n");
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
 	}
 	if (source->total_stored_length % source->element_count != 0) {
-		RRR_BUG("BUG: Stored length not divisible by element count in __rrr_type_convert_str2h\n");
+		RRR_BUG("BUG: Stored length not divisible by element count in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -319,13 +319,13 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	const rrr_biglength size_new = source->element_count * sizeof(uint64_t);
 
 	if (size_new > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Size exceeds maximum in __rrr_type_convert_str2h\n");
+		RRR_MSG_0("Size exceeds maximum in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if ((data_new = rrr_allocate((size_t) size_new)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_type_convert_str2h\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -451,9 +451,78 @@ static int __rrr_type_convert_vain2str (RRR_TYPE_CONVERT_ARGS) {
 	);
 }
 
+static int __rrr_type_convert_hchar2str (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_H_ENSURE();
+
+	if (source->element_count == 0) {
+		RRR_BUG("BUG: Element count was 0 in %s\n", __func__);
+	}
+	if (source->total_stored_length % sizeof(uint64_t) != 0) {
+		RRR_BUG("BUG: Stored length not divisible by 8 in %s\n", __func__);
+	}
+
+	int ret = 0;
+
+	unsigned char *result_str = NULL;
+
+	if ((result_str = rrr_allocate(source->element_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	for (rrr_length i = 0; i < source->element_count; i++) {
+		const void *data = source->data + (i * sizeof(uint64_t));
+		const uint64_t value = *((uint64_t *) data);
+
+		if (value > 0xff) {
+			if (RRR_TYPE_FLAG_IS_SIGNED(source->flags)) {
+				RRR_DBG_3("  E hchar2str cannot convert value exceeding 255 or negative values (%" PRIi64 " was found)\n", (int64_t) value);
+			}
+			else {
+				RRR_DBG_3("  E hchar2str cannot convert value exceeding 255 or negative values (%" PRIu64 " was found)\n", value);
+			}
+			ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+			goto out;
+		}
+
+		result_str[i] = (unsigned char) value;
+	}
+
+	if ((ret = rrr_type_value_new (
+			target,
+			&rrr_type_definition_str,
+			0,
+			source->tag_length,
+			source->tag,
+			0,
+			NULL,
+			1,
+			NULL,
+			source->element_count
+	)) != 0) {
+		goto out;
+	}
+
+	memcpy((*target)->data, result_str, source->element_count);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result_str);
+	return ret;
+}
+
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
         const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
                 RRR_PASTE(RRR_TYPE_NAME_,from_uc) "2" RRR_PASTE(RRR_TYPE_NAME_,to_uc),           \
+                RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
+                RRR_PASTE(__rrr_type_convert_,name_lc)                                           \
+        }
+
+#define RRR_TYPE_CONVERSION_DEFINE_SPECIAL(name_lc,from_uc,to_uc)                                \
+        const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
+                RRR_QUOTE(name_lc),                                                              \
                 RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
                 &RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
                 &RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
@@ -473,7 +542,8 @@ enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_STR2VAIN,
 	RRR_TYPE_CONVERSION_MSG2BLOB,
 	RRR_TYPE_CONVERSION_VAIN2H,
-	RRR_TYPE_CONVERSION_VAIN2STR
+	RRR_TYPE_CONVERSION_VAIN2STR,
+	RRR_TYPE_CONVERSION_HCHAR2STR
 };
 
 RRR_TYPE_CONVERSION_DEFINE(h2str,H,STR);
@@ -488,6 +558,7 @@ RRR_TYPE_CONVERSION_DEFINE(str2vain,STR,VAIN);
 RRR_TYPE_CONVERSION_DEFINE(vain2h,VAIN,H);
 RRR_TYPE_CONVERSION_DEFINE(vain2str,VAIN,STR);
 RRR_TYPE_CONVERSION_DEFINE(msg2blob,MSG,BLOB);
+RRR_TYPE_CONVERSION_DEFINE_SPECIAL(hchar2str,H,STR);
 
 static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_h2str,
@@ -501,8 +572,8 @@ static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_str2vain,
 		&rrr_type_conversion_msg2blob,
 		&rrr_type_conversion_vain2h,
-		&rrr_type_conversion_vain2str
-
+		&rrr_type_conversion_vain2str,
+		&rrr_type_conversion_hchar2str
 };
 
 static const struct rrr_type_conversion_definition *__rrr_type_convert_definition_get_from_str (
@@ -544,7 +615,7 @@ static int __rrr_type_convert_using_list (
 		const int flags
 ) {
 	if (pos > list->item_count) {
-		RRR_BUG("BUG: Position out of bounds in __rrr_type_convert_using_list\n");
+		RRR_BUG("BUG: Position out of bounds in %s\n", __func__);
 	}
 
 	int ret = 0;
@@ -638,7 +709,7 @@ int rrr_type_conversion_collection_new_from_map (
 	;
 
 	if ((result = rrr_allocate(new_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_type_conversion_collection_new_from_map\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -649,10 +720,10 @@ int rrr_type_conversion_collection_new_from_map (
 
 	RRR_MAP_ITERATE_BEGIN_CONST(map);
 		if (node_tag == NULL || *node_tag == '\0') {
-			RRR_BUG("BUG: Node tag was NULL or empty in rrr_type_conversion_collection_new_from_map\n");
+			RRR_BUG("BUG: Node tag was NULL or empty in %s\n", __func__);
 		}
 		if (wpos == (size_t) map->node_count) {
-			RRR_BUG("BUG: wpos out of bounds in rrr_type_conversion_collection_new_from_map, the map must not change while we use it\n");
+			RRR_BUG("BUG: wpos out of bounds in %s, the map must not change while we use it\n", __func__);
 		}
 
 		if ((result->items[wpos++] = __rrr_type_convert_definition_get_from_str(node_tag)) == NULL) {

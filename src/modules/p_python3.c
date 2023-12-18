@@ -19,6 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Enable assert, python seems to disable it in some header
+#undef NDEBUG
+
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -49,6 +53,66 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_config_data.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
+
+// TODO : Consider using hashmap, but usually there is only a
+//        few methods. Maybe not benefitial (enough).
+struct python3_method {
+	RRR_LL_NODE(struct python3_method);
+	char *name;
+	PyObject *method;
+};
+
+struct python3_method_collection {
+	RRR_LL_HEAD(struct python3_method);
+};
+
+static void python3_method_destroy(struct python3_method *m) {
+	RRR_FREE_IF_NOT_NULL(m->name);
+	Py_XDECREF(m->method);
+	rrr_free(m);
+}
+
+static void python3_method_collection_clear(struct python3_method_collection *c) {
+	RRR_LL_DESTROY(c, struct python3_method, python3_method_destroy(node));
+}
+
+static PyObject *python3_method_collection_get (const struct python3_method_collection *c, const char *name) {
+	RRR_LL_ITERATE_BEGIN(c, const struct python3_method);
+		if (strcmp(node->name, name) == 0) {
+			return node->method;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+static int python3_method_collection_put (struct python3_method_collection *c, const char *name, PyObject *method) {
+	int ret = 0;
+
+	struct python3_method *m;
+
+	if ((m = rrr_allocate(sizeof(*m))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((m->name = rrr_strdup(name)) == NULL) {
+		RRR_MSG_0("Failed to allocate name in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	m->method = method;
+	Py_INCREF(method);
+
+	RRR_LL_APPEND(c, m);
+
+	goto out;
+	out_free:
+		rrr_free(m);
+	out:
+		return ret;
+}
 
 struct python3_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -82,7 +146,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config_data *con
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_module, config, "python3_module");
 
 	if (ret != 0) {
-		RRR_MSG_0("No python3_module specified for python module\n");
+		RRR_MSG_0("No python3_module specified for Python3 instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -95,11 +159,47 @@ int parse_config(struct python3_data *data, struct rrr_instance_config_data *con
 
 struct python3_child_data {
 	struct python3_data *parent_data;
-	PyObject *config_function;
-	PyObject *process_function;
-	PyObject *source_function;
+	PyObject *config_method;
+	PyObject *process_method;
+	PyObject *source_method;
+	struct python3_method_collection *methods;
 	struct python3_fork_runtime *runtime;
+
+	int64_t start_time;
+	int64_t prev_status_time;
+	uint64_t processed;
+	uint64_t processed_total;
 };
+
+static int python3_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
+	struct python3_child_data *data = private_arg;
+
+	(void)(worker);
+
+	// Need status print?
+	int64_t now = (int64_t) rrr_time_get_64();
+	int64_t diff = now - data->prev_status_time;
+	if (diff < 1 * 1000 * 1000) { // 1 Second
+		return 0;
+	}
+
+	// Calculate/print status
+	data->prev_status_time = now;
+
+	double per_sec = ((double) data->processed) / ((double) diff / 1000000);
+	double per_sec_average = ((double) data->processed_total) / ((double) (rrr_time_get_64() - (uint64_t) data->start_time) / 1000000);
+
+	RRR_DBG_1("Python3 instance %s processed per second %.2f average %.2f total %" PRIu64 "\n",
+			INSTANCE_D_NAME(data->parent_data->thread_data),
+			per_sec,
+			per_sec_average,
+			data->processed_total
+	);
+
+	data->processed = 0;
+
+	return 0;
+}
 
 int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	int ret = 0;
@@ -108,7 +208,7 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	PyObject *config = NULL;
 
-	if (data->config_function == NULL) {
+	if (data->config_method == NULL) {
 		goto out;
 	}
 
@@ -122,8 +222,9 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	if ((ret = rrr_py_cmodule_call_application_raw (
-			data->config_function,
+			data->config_method,
 			config,
+			NULL,
 			NULL
 	)) != 0) {
 		RRR_MSG_0("Error from config function in __rrr_py_persistent_send_config \n");
@@ -137,56 +238,114 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 }
 
 int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
-	int ret = 0;
-
 	(void)(worker);
 
+	int ret = 0;
+
 	struct python3_child_data *data = private_arg;
+	struct python3_data *parent_data = data->parent_data;
 
+	PyObject *function = NULL;
 	PyObject *arg_message = NULL;
+	PyObject *arg_method = NULL;
 
-	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
-	if (arg_message == NULL) {
-		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
+	if ((arg_message = rrr_python3_rrr_message_new_from_message_and_address (
+			message,
+			is_spawn_ctx ? NULL : message_addr
+	)) == NULL) {
+		RRR_MSG_0("Could not create python3 message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	PyObject *function = NULL;
-
 	if (is_spawn_ctx) {
-		function = data->source_function;
+		function = data->source_method;
 	}
 	else {
-		function = data->process_function;
+		data->processed++;
+		data->processed_total++;
+
+		if (INSTANCE_D_FLAGS(parent_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH) {
+			function = python3_method_collection_get(data->methods, method);
+		}
+		else {
+			// Third argument for process function is name of any method from method definition
+			if (method != NULL) {
+				if ((arg_method = PyUnicode_FromString(method)) == NULL) {
+					RRR_MSG_0("Could not create python3 method string in %s\n", __func__);
+					ret = 1;
+					goto out;
+				}
+			}
+			else {
+				Py_INCREF(arg_method = Py_None);
+			}
+
+			function = data->process_method;
+		}
 	}
 
-	if (function != NULL) {
-		ret = rrr_py_cmodule_call_application_raw(function, data->runtime->socket, arg_message);
-	}
-	else {
-		RRR_DBG_3("Python3 no functions defined, is_spawn was %i\n", is_spawn_ctx);
+	if (function == NULL) {
+		RRR_BUG("Python3 no functions defined in %s, some error in init wrapper causes functions not to be prepared correctly. is_spawn was %i\n",
+			__func__, is_spawn_ctx);
 	}
 
-	if (ret != 0) {
+	if ((ret = rrr_py_cmodule_call_application_raw (
+			function,
+			data->runtime->socket,
+			arg_message,
+			arg_method
+	)) != 0) {
 		ret = RRR_FIFO_PROTECTED_CALLBACK_ERR | RRR_FIFO_PROTECTED_SEARCH_STOP;
 	}
 
 	out:
 	RRR_Py_XDECREF(arg_message);
+	RRR_Py_XDECREF(arg_method);
 
 	return ret;
 
 }
 
+struct python3_method_name_callback_data {
+	struct python3_data *data;
+	struct python3_method_collection *methods;
+	PyObject *module_dict;
+};
+
+int python3_method_name_callback(const char *stack_name, const char *method_name, void *arg) {
+	struct python3_method_name_callback_data *callback_data = arg;
+	struct python3_data *data = callback_data->data;
+
+	int ret = 0;
+
+	PyObject *method = NULL;
+
+	if ((method = rrr_py_import_function(callback_data->module_dict, method_name)) == NULL) {
+		RRR_MSG_0("Could not find function '%s' from method definition '%s' in module '%s' while starting python3 fork\n",
+				method_name, stack_name, data->python3_module);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = python3_method_collection_put(callback_data->methods, method_name, method)) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_1("python3 instance %s registered method %s from method definition %s\n",
+		INSTANCE_D_NAME(data->thread_data), method_name, stack_name);
+
+	out:
+	Py_XDECREF(method);
+	return ret;
+}
+
 int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	int ret = 0;
 
-	(void)(process_callback_arg);
-	(void)(configuration_callback_arg);
-
 	struct python3_data *data = private_arg;
 	struct python3_child_data child_data = {0};
+	struct python3_method_collection methods = {0};
 
 	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
@@ -195,9 +354,9 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	PyObject *module = NULL;
 	PyObject *module_dict = NULL;
 	PyObject *py_module_name = NULL;
-	PyObject *process_function = NULL;
-	PyObject *source_function = NULL;
-	PyObject *config_function = NULL;
+	PyObject *process_method = NULL;
+	PyObject *source_method = NULL;
+	PyObject *config_method = NULL;
 
 	struct python3_fork_runtime runtime;
 
@@ -206,26 +365,22 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 			worker,
 			data->module_path
 	) != 0) {
-		RRR_MSG_0("Could not initialize python3 runtime in __rrr_py_start_persistent_rw_fork_intermediate\n");
+		RRR_MSG_0("Could not initialize python3 runtime in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	PyEval_RestoreThread(runtime.istate);
 
-//	printf ("New fork main  refcount: %li\n", fork->socket_main->ob_refcnt);
-//	printf ("New fork child refcount: %li\n", fork->socket_child->ob_refcnt);
 
 	py_module_name = PyUnicode_FromString(data->python3_module);
 	module = PyImport_GetModule(py_module_name);
-//	printf ("Module %s already loaded? %p\n", module_name, module);
 	if (module == NULL && (module = PyImport_ImportModule(data->python3_module)) == NULL) {
 		RRR_MSG_0("Could not import module %s while starting thread:\n", data->python3_module);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_runtime;
 	}
-//	printf ("Module %s loaded: %p\n", module_name, module);
 
 	if ((module_dict = PyModule_GetDict(module)) == NULL) { // Borrowed reference
 		RRR_MSG_0("Could not get dictionary of module %s while starting thread:\n", data->python3_module);
@@ -234,61 +389,72 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out_cleanup_runtime;
 	}
 
-	if (cmodule_config_data->config_function != NULL) {
-		if ((config_function = rrr_py_import_function(module_dict, cmodule_config_data->config_function)) == NULL) {
+	if (cmodule_config_data->config_method != NULL) {
+		if ((config_method = rrr_py_import_function(module_dict, cmodule_config_data->config_method)) == NULL) {
 			RRR_MSG_0("Could not get config function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->config_function, data->python3_module);
+					cmodule_config_data->config_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (cmodule_config_data->source_function != NULL) {
-		if ((source_function = rrr_py_import_function(module_dict, cmodule_config_data->source_function)) == NULL) {
+	if (cmodule_config_data->source_method != NULL) {
+		if ((source_method = rrr_py_import_function(module_dict, cmodule_config_data->source_method)) == NULL) {
 			RRR_MSG_0("Could not get source function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->source_function, data->python3_module);
+					cmodule_config_data->source_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (cmodule_config_data->process_function != NULL) {
-		if ((process_function = rrr_py_import_function(module_dict, cmodule_config_data->process_function)) == NULL) {
+	if (cmodule_config_data->process_method != NULL) {
+		if ((process_method = rrr_py_import_function(module_dict, cmodule_config_data->process_method)) == NULL) {
 			RRR_MSG_0("Could not get process function '%s' from module '%s' while starting python3 fork\n",
-					cmodule_config_data->process_function, data->python3_module);
+					cmodule_config_data->process_method, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-/*	if (VL_DEBUGLEVEL_1) {
-		printf ("=== PYTHON3 DUMPING IMPORTED USER MODULE ===========================\n");
-		rrr_py_dump_dict_entries(module_dict);
-		printf ("=== PYTHON3 DUMPING IMPORTED USER MODULE END =======================\n\n");
-	}*/
+	struct python3_method_name_callback_data callback_data = {
+		data,
+		&methods,
+		module_dict
+	};
+
+	if ((ret = rrr_cmodule_helper_methods_iterate (
+			data->thread_data,
+			python3_method_name_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_0("Failed while iterating method names in python3 instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out_cleanup_runtime;
+	}
 
 	child_data.runtime = &runtime;
-	child_data.config_function = config_function;
-	child_data.source_function = source_function;
-	child_data.process_function = process_function;
+	child_data.config_method = config_method;
+	child_data.source_method = source_method;
+	child_data.process_method = process_method;
+	child_data.methods = &methods;
+	child_data.start_time = rrr_time_get_64();
+	callbacks->ping_callback_arg = &child_data;
+	callbacks->configuration_callback_arg = &child_data;
+	callbacks->process_callback_arg = &child_data;
 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
-			configuration_callback,
-			&child_data,
-			process_callback,
-			&child_data,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
+		RRR_MSG_0("Error from worker loop in %s\n", __func__);
 		// Don't goto out, run cleanup functions
 	}
 
 	out_cleanup_runtime:
-		RRR_Py_XDECREF(config_function);
-		RRR_Py_XDECREF(process_function);
-		RRR_Py_XDECREF(source_function);
+		python3_method_collection_clear(&methods);
+		RRR_Py_XDECREF(config_method);
+		RRR_Py_XDECREF(process_method);
+		RRR_Py_XDECREF(source_method);
 		RRR_Py_XDECREF(py_module_name);
 		RRR_Py_XDECREF(module);
 		PyEval_SaveThread();
@@ -320,14 +486,16 @@ static int python3_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_forks_start (
+	if (rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 			thread_data,
 			python3_init_wrapper_callback,
 			data,
+			python3_ping_callback,
+			NULL, // <-- in the init wrapper, this callback arg is set to child_data
 			python3_configuration_callback,
 			NULL, // <-- in the init wrapper, this callback arg is set to child_data
 			python3_process_callback,
-			NULL  // <-- in the init wrapper, this callback is set to child_data
+			NULL  // <-- in the init wrapper, this callback arg is set to child_data
 	) != 0) {
 		RRR_MSG_0("Error while starting python3 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
 		ret = 1;
@@ -377,8 +545,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_python3,
-		NULL,
-		NULL,
 		NULL
 };
 

@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOURCE_ARGS \
 	struct rrr_cmodule_ctx *ctx, struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr
 #define RRR_PROCESS_ARGS \
-	RRR_SOURCE_ARGS
+	RRR_SOURCE_ARGS, const char *method
 #define RRR_CLEANUP_ARGS \
 	struct rrr_cmodule_ctx *ctx
 

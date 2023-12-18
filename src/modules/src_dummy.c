@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 
 #define DUMMY_DEFAULT_SLEEP_INTERVAL_US 50 * 1000
 
@@ -324,6 +325,8 @@ static void dummy_event_write_entry (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (dummy_write_entry (data, 1) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
@@ -462,9 +465,7 @@ static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
-	NULL,
-	dummy_inject,
-	NULL
+	dummy_inject
 };
 
 struct rrr_instance_event_functions event_functions = {

@@ -354,7 +354,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 
 	pthread_cleanup_push(rrr_mqtt_broker_destroy_void, data->mqtt_broker_data);
-	pthread_cleanup_push(rrr_mqtt_broker_notify_pthread_cancel_void, data->mqtt_broker_data);
 
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
@@ -418,7 +417,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 	out_destroy_broker:
 		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
 
 	out_message:
 		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
@@ -429,8 +427,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqttbroker,
-		NULL,
-		NULL,
 		NULL
 };
 

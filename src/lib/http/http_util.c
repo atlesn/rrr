@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
 
+#ifdef RRR_WITH_ZLIB
+#include "../zlib/rrr_zlib.h"
+#endif
+
 #ifdef RRR_WITH_JSONC
 #include "../json/json.h"
 #endif
@@ -1177,6 +1181,9 @@ enum rrr_http_method rrr_http_util_method_str_to_enum (
 	else if ( strcasecmp(method_str, "put") == 0) {
 		method = RRR_HTTP_METHOD_PUT;
 	}
+	else if ( strcasecmp(method_str, "patch") == 0) {
+		method = RRR_HTTP_METHOD_PATCH;
+	}
 	else if ( strcasecmp(method_str, "post") == 0) {
 		method = RRR_HTTP_METHOD_POST;
 	}
@@ -1315,7 +1322,7 @@ const char *rrr_http_util_iana_response_phrase_from_status_code (
 	out_unknown:
 	return "Unknown status";
 }
-
+#ifdef RRR_WITH_JSONC
 int rrr_http_util_json_to_arrays (
 		const char *data,
 		rrr_length data_size,
@@ -1324,3 +1331,70 @@ int rrr_http_util_json_to_arrays (
 ) {
 	return rrr_json_to_arrays (data, data_size, RRR_HTTP_UTIL_JSON_TO_ARRAYS_MAX_LEVELS, callback, callback_arg);
 }
+#endif
+#ifdef RRR_HTTP_UTIL_WITH_ENCODING
+int rrr_http_util_encode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const char *encoding
+) {
+	int ret = 0;
+
+	/* Only one single gzip encoding is supported, and parsing 
+	 * of multiple encodings is not performed. */
+
+#ifdef RRR_WITH_ZLIB
+	if (strcmp(encoding, "gzip") == 0) {
+		if ((ret = rrr_zlib_gzip_compress_nullsafe (
+				output,
+				input
+		)) != 0) {
+			RRR_MSG_0("Compression failed in %s\n", __func__);
+		}
+		goto out;
+	}
+#endif
+
+	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding);
+
+	out:
+	return ret;
+}
+
+int rrr_http_util_decode (
+		struct rrr_nullsafe_str *output,
+		const struct rrr_nullsafe_str *input,
+		const struct rrr_nullsafe_str *encoding
+) {
+	int ret = 0;
+
+	/* Only one single gzip encoding is supported, and parsing 
+	 * of multiple encodings is not performed. */
+
+	if (!(rrr_nullsafe_str_len(input) > 0)) {
+		RRR_BUG("Input had zero length in %s\n", __func__);
+	}
+
+#ifdef RRR_WITH_ZLIB
+	if (rrr_nullsafe_str_cmpto_case(encoding, "gzip") == 0) {
+		if ((ret = rrr_zlib_gzip_decompress_nullsafe (
+				output,
+				input
+		)) != 0) {
+			RRR_MSG_0("Decompression failed in %s\n", __func__);
+		}
+		goto out;
+	}
+#endif
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(encoding_str,encoding);
+	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding_str);
+
+	out:
+	return ret;
+}
+
+const char *rrr_http_util_encodings_get (void) {
+	return "gzip";
+}
+#endif

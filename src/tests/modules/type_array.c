@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/ip/ip.h"
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
+#include "../../lib/map.h"
 
 // Set high to stop test from exiting. Set back to 200 when work is done.
 #define RRR_TEST_TYPE_ARRAY_LOOP_COUNT 200
@@ -113,14 +114,36 @@ struct test_final_data {
 int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
+	const struct rrr_map *array_check_values = callback_data->private_data;
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
 
 	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
+	if (array_check_values != NULL && RRR_LL_COUNT(array_check_values) > 0) {
+		uint16_t version_dummy;
+		if ((ret = rrr_array_message_append_to_array (&version_dummy, &array_tmp, message)) != 0) {
+			RRR_MSG_0("Failed to extract array values in %s return was %i\n", __func__, ret);
+			goto out;
+		}
+
+		RRR_MAP_ITERATE_BEGIN(array_check_values);
+			if (!rrr_array_has_tag (&array_tmp, node_tag)) {
+				RRR_MSG_0("Array value with tag %s missing in message in %s\n", node_tag, __func__);
+				ret = 1;
+				goto out;
+			}
+		RRR_MAP_ITERATE_END();
+	}
+
 	result->result = 2;
 
+	out:
+	rrr_array_clear(&array_tmp);
 	rrr_msg_holder_unlock(entry);
-
-	return 0;
+	return ret;
 }
 
 struct test_poll_callback_intermediate_callback_data {
@@ -385,11 +408,6 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		ret = 1;
 		goto out;
 	}
-
-	rrr_length final_length = 0;
-	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		final_length += node->total_stored_length;
-	RRR_LL_ITERATE_END();
 
 	const struct rrr_type_value *types[13];
 
@@ -679,7 +697,8 @@ int test_array (
 }
 
 int test_anything (
-		RRR_TEST_FUNCTION_ARGS
+		RRR_TEST_FUNCTION_ARGS,
+		const struct rrr_map *array_check_values
 ) {
 	(void)(test_function_data);
 	(void)(instances);
@@ -688,7 +707,10 @@ int test_anything (
 
 	struct rrr_test_result test_result_1 = {1};
 
-	struct rrr_test_callback_data callback_data = { &test_result_1, NULL };
+	struct rrr_test_callback_data callback_data = {
+		&test_result_1,
+		(void *) array_check_values // Cast away const OK
+	};
 
 	// Poll from first output
 	ret |= test_do_poll_loop(

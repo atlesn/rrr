@@ -202,7 +202,7 @@ int rrr_msgdb_client_send (
 				conn->fd, MSG_TYPE_NAME(msg), (long long unsigned int) MSG_TOTAL_SIZE(msg), topic_tmp);
 		}
 		else {
-			RRR_MSG_0("Warning: Failed to allocate memory for debug message in rrr_msgdb_client_send\n");
+			RRR_MSG_0("Warning: Failed to allocate memory for debug message in %s\n", __func__);
 		}
 
 		send_start = rrr_time_get_64();
@@ -248,7 +248,8 @@ static int __rrr_msgdb_client_send_empty (
 
 	rrr_length topic_len = 0;
 	if ((ret = rrr_length_from_size_t_err(&topic_len, strlen(topic))) != 0 || topic_len > UINT16_MAX) {
-		RRR_MSG_0("Topic exceeds maximum length in rrr_msgdb_client_send_empty (%llu>%llu)\n",
+		RRR_MSG_0("Topic exceeds maximum length in %s (%llu>%llu)\n",
+			__func__,
 			(unsigned long long) topic_len,
 			(unsigned long long) UINT16_MAX
 		);
@@ -313,10 +314,12 @@ static void __rrr_msgdb_client_event_periodic (
 		short flags,
 		void *arg
 ) {
+	struct rrr_msgdb_client_conn *conn = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_msgdb_client_conn *conn = arg;
+	RRR_EVENT_HOOK();
 
 	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
 
@@ -348,6 +351,8 @@ static void __rrr_msgdb_client_event_read (
 
 	int ret_tmp = 0;
 	int max = 100;
+
+	RRR_EVENT_HOOK();
 
 	again:
 	if ((ret_tmp = __rrr_msgdb_client_read (
@@ -401,7 +406,7 @@ int rrr_msgdb_client_open (
 				conn,
 				RRR_MSGDB_CLIENT_PING_INTERVAL_S * 1000 * 1000
 		)) != 0) {
-			RRR_MSG_0("Failed to create periodic event in rrr_msgdb_client_open\n");
+			RRR_MSG_0("Failed to create periodic event in %s\n", __func__);
 			goto out_close;
 		}
 

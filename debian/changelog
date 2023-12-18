@@ -1,9 +1,123 @@
-rrr (1.24-3) bullseye; urgency=medium
+rrr (1.29-1) bookworm; urgency=medium
 
-  * RUNNING RELEASE
+  * Changes:
+    * In route definition, the I operator is replaced with D. Existing programs
+      must be updated to prevent warning from being printed.
+    * Changed signatures for processor functions by adding a new last argument
+      'method'. Existing scripts MAY BREAK and should be updated. Refer to
+      the rrr.conf.5 manual page for correct function signatures.
+
+  * Features:
+    * Match generated messages in httpclient with their corresponding message
+      triggering the query by using a report tag
+    * Route messages leaving an instance to specific reader instances by topic
+      or array tags
+    * New parameter in httpclient to control timeout of low priority messages
+      specifically
+    * New array value "hdlc" for parsing HDLC messages
+    * Ability in file module to write to files and devices among other new
+      configuration parameters
+    * New conversion type "hchar2str" in mangler module to convert individual
+      bytes to strings
+    * New OS object in javascript (operating-system) and ability to obtain
+      hostname
+    * New ModBus TCP module
+    * New Lua module
+    * New method on Message object in JS push_tag_object which serializes
+      objects into JSON. Receiving JS instances will automatically de-
+      serialize the JSON added to messages this way.
+    * New parameter methods for cmodules (python3, js, perl5, lua and cmodule)
+      allowing messages content to be identified before being processed. The
+      processor function receives a method name.
+    * Support PATCH requests in httpclient and httpserver
+    * New function console.assert in JS
+    * Hook messages between modules and dump them using rrr_stats 
+    * Hook events and show them using rrr_stats
+    * Set mode on file which are written by the file module
+    * Incrementer can use prefixes ORed with incremented ID
+    * Dump memory profiling using functionallity provided by jemalloc
+ 
+  * Improvements:
+    * Timeout changes in httpclient and rotate deferred to msgdb PUT
+      messages to ensure all are attempted and not the same messages time out
+      repeatedly.
+    * In JS, refuse bare name module imports (require prefix like ./) and
+      process relative paths correctly with respect to directory of importing
+      script.
+    * In httpclient, print stats about dropped messages in periodic function
+      instead of once for every message.
+    * Add warning when buffer entry count exceeds a certain configurable limit
+    * Add statistics data for message broker costumer buffers
+
+  * Fixes:
+    * Raw data messages in JS module now working properly
+    * Crash in JS module upon GC due to null pointer access
+    * Httpclient sometimes spinning on CPU indefinitely after handshaking if
+      there is no data to send on a socket.
+    * Readers were blocked in message broker when writer used do_again during
+      slot write (fast writes from dummy module with buffer=no).
+    * Deadlock in rrr_stats due to printing messages during signal handling
+    * Soft error was ignored in socket client collection also when socket
+      surely was closed, like when 0 bytes were read. This caused the socket
+      not to be closed with following CPU spin due do constant POLLIN event.
+      The soft error is now forced to propagate if bytes read is zero so that
+      only data errors are ignored (which is also intention of higher levels).
+    * Connections were closed in IP module when byte by byte sync was used
+      and the alignment used up all remaining buffered bytes.
+    * Non-working default socket name in msgdb module causing crash
+    * Incorrect tick timer in msgdb causing excessive CPU usage
+    * Memory leak of HV in Perl subroutine call helper function
+
+  * Under the hood:
+    * Use events in file module
+    * Common send loop for file and ip modules
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 17 Dec 2023 08:13:49 +0100
+
+rrr (1.27-1) bullseye; urgency=medium
+
+  * Features:
+    * New module to run JavaScript programs
+    * New parameter in ip module to generate empty messages when new
+      TCP connections are accepted.
+    * New parameter in httpclient to disable HTTP/2 upgrade headers
+
+  * Improvements:
+    * Clarified inconsitency of manual with respect to configuration
+      paramter mqtt_publish_rrr_message
+    * Never send raw array data from mqttclient
+    * Remove stale configuration cmodule parameters sleep_time_ms and
+      nothing_happend_limit which had no effect when used.
+
+  * Fixes:
+    * Handling of websocket topic filters in httpserver
+    * Crash in httpclient when content-encoding: gzip was set from server with
+      zero length body
+    * Build with new major release of OpenSSL
+    * Build with Python 3.11
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 10 Feb 2023 08:59:28 +0100
+
+rrr (1.25-2) bullseye; urgency=medium
+
+  * Under the hood:
+    * Fix misc. code quality issues
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 26 Jun 2022 12:05:57 +0200
+
+rrr (1.25-1) bullseye; urgency=medium
+
+  * Changes:
+    * Argument '-f|--force', force read of unsupported array message version,
+      is removed from rrr_msg utility.
 
   * Features:
     * Add configurable delay between forks during startup
+    * New rrr_sub binary which can read RRR messages in the payload of MQTT
+      messages.
+    * Support gzip compression in HTTP server and client
+    * Default test page in HTTP server
+    * Option in HTTP server to produce 404 responses to /favicon.ico requets
 
   * Improvements:
     * Show IP address of remote host in error message when array data parsing
@@ -19,8 +133,8 @@ rrr (1.24-3) bullseye; urgency=medium
       persistent memory usage in some situations.
 
   * Fixes:
-    * Misc. features in python RRR array handling API not working correctly, in particular
-      handling of multibyte character sets
+    * Misc. features in python RRR array handling API not working correctly,
+      in particular handling of multibyte character sets
     * cmodule test failed if it found the dummy module on the filesystem with
       non-compatible version.
 
@@ -30,7 +144,7 @@ rrr (1.24-3) bullseye; urgency=medium
   * Other:
     * Remove obsolete configuration parameter ip_persistent_connections
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 06 Apr 2022 17:26:52 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 03 Jun 2022 18:19:19 +0200
 
 rrr (1.23-2) bullseye; urgency=medium
 

@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
-#include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -167,12 +167,16 @@ struct rrr_net_transport_handle {
 	rrr_event_handle event_handshake;
 	rrr_event_handle event_read;
 	rrr_event_handle event_read_notify;
+	rrr_event_handle event_noread_check;
 	rrr_event_handle event_write;
 	rrr_event_handle event_first_read_timeout;
 	rrr_event_handle event_hard_read_timeout;
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;
+
+	uint64_t noread_strike_prev_read_bytes;
+	uint64_t noread_strike_count;
 
 	struct rrr_socket_send_chunk_collection send_chunks;
 	int close_when_send_complete;
@@ -188,6 +192,8 @@ struct rrr_net_transport_handle {
 
 	struct sockaddr_storage connected_addr;
 	socklen_t connected_addr_len;
+
+	char description[16];
 
 	// Like SSL data or plain FD
 	void *submodule_private_ptr;

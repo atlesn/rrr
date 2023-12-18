@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -832,6 +832,29 @@ int rrr_settings_check_all_used (
 	return ret;
 }
 
+int rrr_settings_cmpto (
+		int *result,
+		struct rrr_instance_settings *settings,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	*result = 0;
+
+	char *string = NULL;
+
+	if ((ret = rrr_settings_read_string (&string, settings, name)) != 0) {
+		goto out;
+	}
+
+	*result = strcmp(string, value);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(string);
+	return ret;
+}
+
 int rrr_settings_dump (
 		struct rrr_instance_settings *settings
 ) {
@@ -938,6 +961,38 @@ void rrr_settings_update_used (
 	if (callback_data.did_update != 1) {
 		RRR_MSG_0("Warning: Setting %s was not originally set in configuration file, discarding it.\n", name);
 	}
+}
+
+static void __rrr_settings_set_used (
+		struct rrr_instance_settings *settings,
+		const char *name,
+		rrr_u32 used
+) {
+	__rrr_settings_lock(settings);
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		if (!(strcmp(setting->name, name) == 0))
+			continue;
+
+		setting->was_used = used;
+		break;
+	}
+	__rrr_settings_unlock(settings);
+}
+
+void rrr_settings_set_unused (
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	__rrr_settings_set_used(settings, name, 0 /* Unused */);
+}
+
+void rrr_settings_set_used (
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	__rrr_settings_set_used(settings, name, 1 /* Used */);
 }
 
 static int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
