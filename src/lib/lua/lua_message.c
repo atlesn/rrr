@@ -804,6 +804,7 @@ static void __rrr_lua_message_array_value_to_lua (
 			assert(len == sizeof(int64_t));
 			RRR_ASSERT(LDBL_MANT_DIG >= 64,long_double_can_hold_64_bits);
 			RRR_ASSERT(sizeof(lua_Number) >= sizeof(double),double_fits_in_lua_number);
+			RRR_ASSERT(sizeof(uint64_t) >= sizeof(strtoull),uint64_t_can_hold_strtoull_result);
 			if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
 				for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 					int64_t    x = *((int64_t *) (value->data + i));
@@ -827,7 +828,11 @@ static void __rrr_lua_message_array_value_to_lua (
 				for (rrr_length i = 0; i < value->total_stored_length; i += len) {
 					uint64_t   x = *((uint64_t *) (value->data + i));
 					lua_Number n = (lua_Number) x;
-					if ((uint64_t) n != x) {
+					char *end;
+					sprintf(buf, "%Lf", (long double) n);
+					errno = 0;
+					strtoull(buf, &end, 10);
+					if (errno || (uint64_t) n != x) {
 						if (precision_loss_warnings) {
 							RRR_MSG_0("Warning: Precision loss while converting unsigned value '%" PRIu64 "' to Lua number. Passing as string instead.\n",
 								x);
