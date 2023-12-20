@@ -56,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/random.h"
+#include "../lib/stats/stats_instance.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
@@ -2187,6 +2188,18 @@ static void httpclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
 	}
 }
 
+static void httpclient_update_stats(struct httpclient_data *data) {
+	struct rrr_stats_instance *stats = INSTANCE_D_STATS(data->thread_data);
+
+	if (stats->stats_handle == 0) {
+		return;
+	}
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_queue));
+	rrr_stats_instance_post_unsigned_base10_text(stats, "from_senders_queue_count", 0, RRR_LL_COUNT(&data->from_senders_queue));
+	rrr_stats_instance_post_unsigned_base10_text(stats, "low_pri_queue_count", 0, RRR_LL_COUNT(&data->low_pri_queue));
+}
+
 static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -2211,6 +2224,8 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_msgdb_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_timeout_us, &data->from_senders_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
+
+	httpclient_update_stats(data);
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
