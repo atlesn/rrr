@@ -67,6 +67,8 @@ rrr (1.29-1) bookworm; urgency=medium
     * Non-working default socket name in msgdb module causing crash
     * Incorrect tick timer in msgdb causing excessive CPU usage
     * Memory leak of HV in Perl subroutine call helper function
+    * Stale connections in http-client when server accepts connections but does
+      not respond
 
   * Under the hood:
     * Use events in file module
