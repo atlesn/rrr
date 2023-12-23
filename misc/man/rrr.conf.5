@@ -1,4 +1,4 @@
-.Dd 2023-09-16
+.Dd 2023-12-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2196,7 +2196,7 @@ Always present.
 .It http_protocol
 Always present with the value 1 or 2.
 .It http_endpoint
-Always present.
+Always present, given in uppercase letters.
 .It http_body
 Added if a body of non-zero length is present.
 .It http_content_transfer_encoding
@@ -2350,10 +2350,16 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 .PP
 With default configuration, having no parameters specified, no RRR messages will be generated for received requests.
 .PP
-Note that all incoming request have to use
-.B HTTP/1.1
-as protocol version, any other versions will be rejected.
-
+The following protocols are supported by
+.B httpserver,
+and may be used at the clients discretion:
+.PP
+\(bu HTTP/1.0 and HTTP/1.1 where the latter implies keepalive connection
+\(bu Websocket through upgrade from HTTP/1.1
+\(bu HTTP/2 through upgrade from HTTP/1.1
+\(bu HTTP/2 plain mode using HTTP/2 magic
+\(bu HTTP/2 negotiated using TLS/ALPN
+.PP
 .SS httpclient (PAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
 may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
@@ -2386,6 +2392,8 @@ If GET method is used, any query values from RRR messages will be appended to th
 will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
 Defaults to
 .B /.
+Any provided endpoint by means of this parameter or otherwise must contain only characters which are valid for URIs;
+If for instance spaces are to be used in an endpoint, these must be encoded as %20.
 
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
@@ -2469,7 +2477,7 @@ will only be used if the active content type is multipart/form-data.
 
 Values from the message, although they will be attempted converted, should be of the
 .B str
-type, event binary data. The
+type or binary data. The
 .Xt mangler (PA)
 module can be used to convery values if needed.
 The endpoint, method, server or port must not contain any NULL characters.

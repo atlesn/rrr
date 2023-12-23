@@ -48,6 +48,8 @@ rrr (1.29-1) bookworm; urgency=medium
       instead of once for every message.
     * Add warning when buffer entry count exceeds a certain configurable limit
     * Add statistics data for message broker costumer buffers
+    * Print warning and disallow requests in HTTP-client if the endpoints has
+      invalid characters.
 
   * Fixes:
     * Raw data messages in JS module now working properly
@@ -69,6 +71,9 @@ rrr (1.29-1) bookworm; urgency=medium
     * Memory leak of HV in Perl subroutine call helper function
     * Stale connections in http-client when server accepts connections but does
       not respond
+    * Discrepancies in httpserver with respect to timeout and response when
+      waiting for responses from sender modules.
+    * Incorrect header name for access-control-allow-methods in httpserver
 
   * Under the hood:
     * Use events in file module

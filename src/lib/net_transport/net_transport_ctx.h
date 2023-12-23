@@ -47,7 +47,10 @@ struct rrr_read_session;
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 );
-void rrr_net_transport_ctx_notify_read (
+void rrr_net_transport_ctx_notify_read_fast (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_notify_read_slow (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_get_fd (

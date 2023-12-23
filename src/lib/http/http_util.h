@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -129,6 +129,10 @@ int rrr_http_util_uri_endpoint_prepend (
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
 		const struct rrr_nullsafe_str *str
+);
+int rrr_http_util_uri_validate_characters (
+		unsigned char *invalid,
+		const char *str
 );
 void rrr_http_util_nprintf (
 		rrr_length length,
