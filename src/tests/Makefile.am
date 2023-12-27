@@ -12,6 +12,10 @@ if RRR_WITH_ARTNET
 test_artnet = test_artnet.c
 endif
 
+if RRR_WITH_LUA
+test_lua = test_lua.c
+endif
+
 if RRR_WITH_JS
 js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${JS_LDFLAGS}
 js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
@@ -32,6 +36,7 @@ test_SOURCES = test.c \
 	${test_jsonc} \
 	${test_zlib} \
 	${test_artnet} \
+	${test_lua} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \

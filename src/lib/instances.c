@@ -397,6 +397,7 @@ static int __rrr_instance_parse_method (
 
 	struct data {
 		int do_methods_direct_dispatch;
+		int do_methods_double_delivery;
 	} data_tmp;
 
 	struct data *data = &data_tmp;
@@ -418,6 +419,15 @@ static int __rrr_instance_parse_method (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("methods_direct_dispatch", do_methods_direct_dispatch, 0);
 	if (data_tmp.do_methods_direct_dispatch)
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH;
+
+	// Undocumented parameter, used for testing
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("methods_double_delivery", do_methods_double_delivery, 0);
+	if (data_tmp.do_methods_double_delivery) {
+		assert(data_final->misc_flags & RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH);
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY;
+		RRR_MSG_1("Instance %s is configured to use double method delivery in %s\n",
+				INSTANCE_M_NAME(data_final), __func__);
+	}
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Active method definitions for instance %s:\n", INSTANCE_M_NAME(data_final));

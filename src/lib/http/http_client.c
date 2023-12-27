@@ -833,6 +833,9 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			break;
 	};
 
+	// Make sure connection does not time out just after request has been sent
+	rrr_net_transport_ctx_touch(handle);
+
 	goto out;
 	out:
 		rrr_http_application_destroy_if_not_null(&upgraded_app);
@@ -873,7 +876,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	uint16_t concurrent_index = 0;
 	do {
 		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
-	
+
 		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
@@ -925,11 +928,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			)) != 0) {
 				goto out;
 			}
-
 		}
-
-		// Make sure connection does not time out just after request has been sent
-		rrr_net_transport_handle_touch(transport_keepalive, keepalive_handle);
 
 		if ((ret = rrr_net_transport_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
 			goto out;
@@ -950,6 +949,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				__rrr_http_client_request_send_final_transport_ctx_callback,
 				callback_data
 		);
+
 #ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
 		}
 #endif

@@ -238,6 +238,11 @@ if test "x$RRR_WITH_PERL5" != 'xno'; then
 	do_test_simple test_http_graylist.conf
 fi
 
+echo "With lua: $RRR_WITH_LUA"
+if test "x$RRR_WITH_LUA" != 'xno'; then
+	do_test_socket test_lua.conf
+fi
+
 echo "With python3: $RRR_WITH_PYTHON3"
 if test "x$RRR_WITH_PYTHON3" != 'xno'; then
 	do_test_socket test_python3.conf

@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.27-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.27-1", [Full version])
+AC_INIT([Read Route Record],[1.29-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.29-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 27, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 29, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -56,6 +56,7 @@ AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGH
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([artnet],[AS_HELP_STRING([--without-artnet],[build without the libartnet bindings])],[enable_artnet=no],[enable_artnet=yes])
+AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the systemd bindings])],[enable_systemd=no],[enable_systemd=yes])
@@ -142,6 +143,7 @@ SHELL_VARS_INIT([variables.sh])
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
+SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
@@ -159,9 +161,9 @@ AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
+AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
-AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
@@ -752,6 +754,128 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_SUBST([PERL5_INTERPRETER])
 ])
 
+# Make sure Lua-test does not include any libraries
+LIBS=""
+
+AC_MSG_CHECKING([for lua enabled])
+AS_IF([test "x$enable_lua" = xno], [
+	AC_MSG_RESULT([Not compiling with lua])
+], [
+	AC_MSG_RESULT([yes])
+
+	AC_DEFINE([RRR_WITH_LUA], [1], [Enable lua extensions])
+
+	LUA_CFLAGS=`pkg-config --cflags lua --silence-errors`
+	LUA_LDFLAGS=`pkg-config --libs lua --silence-errors`
+
+	AC_MSG_CHECKING([for default Lua libraries and headers])
+	if test "x${LUA_LDFLAGS}" != "x" -a "x${LUA_CFLAGS}" = "x"; then
+		# LDFLAGS is given by pkg-config, but not CFLAGS. This might
+		# indicate that headers are not in includes subdirectory.
+		if echo "x${LUA_LDFLAGS}" | grep -qE '\-llua(\s|$)'; then
+			AC_MSG_RESULT([possibly, must check for headers and symbols])
+			AC_CHECK_HEADERS([lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
+			have_lua_h_set=yes
+			if test "x${LUA_CFLAGS}" = "x"; then
+				# Headers without version number not found
+				LUA_LDFLAGS=""
+			else
+				# Have versionless library and headers without version number
+				# and headers are not in subdirectory.
+				AC_CHECK_LIB([lua], [lua_close], [ ], [
+				      LUA_LDFLAGS=""
+				      LUA_CFLAGS=""
+				])
+			fi
+		else
+			# Library is not versionless, check for specific supported versions
+			AC_MSG_RESULT([no])
+		fi
+	else
+		AC_MSG_RESULT([no])
+	fi
+
+	have_lua_h_set=no
+
+	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+		# Try specific versions
+		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" "  have_lua_h_set=yes ])
+		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
+		if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
+			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" ])
+		fi
+	fi
+
+	AC_MSG_CHECKING([for lua CFLAGS])
+	AS_IF([ test "x${LUA_CFLAGS}" = "x" ],[
+		AC_MSG_ERROR([Could not find Lua headers])
+	],[
+		AC_MSG_RESULT([${LUA_CFLAGS}])
+	])
+
+	AC_MSG_CHECKING([for lua LDFLAGS])
+	AS_IF([ test "x${LUA_LDFLAGS}" = "x" ],[
+		AC_MSG_ERROR([Could not find Lua libraries])
+	],[
+		AC_MSG_RESULT([${LUA_LDFLAGS}])
+	])
+
+	AS_IF([test "$have_lua_h_set" != "yes" ], [
+		AC_DEFINE([HAVE_LUA_H], [1], [Have lua.h in either include path set in CFLAGS or in root include directory])
+	])
+
+	AC_SUBST([LUA_CFLAGS])
+	AC_SUBST([LUA_LDFLAGS])
+
+	AC_MSG_CHECKING([for lua integer size])
+
+	CFLAGS="${LUA_CFLAGS}"
+	AC_RUN_IFELSE([
+		AC_LANG_PROGRAM([[
+			#if defined(HAVE_LUA5_4_LUA_H)
+			#  include <lua5.4/lua.h>
+			#elif defined(HAVE_LUA5_3_LUA_H)
+			#  include <lua5.3/lua.h>
+			#elif defined(HAVE_LUA_H)
+			#  include <lua.h>
+			#else
+			#  error "No HAVE_LUA defined"
+			#endif
+		]],[[
+			#if LUA_MAXINTEGER == LLONG_MAX
+			return 12
+			#elif LUA_MAXINTEGER == LONG_MAX
+			return 11
+			#elif LUA_MAXINTEGER == INT_MAX
+			return 10
+			#else
+			#  error "Could not determing lua integer size"
+			#endif
+		]])
+	], [
+		AC_MSG_ERROR([test did not return non-zero result])
+	], [
+		RES=$?
+		AS_IF([test $RES -eq 12], [
+			AC_MSG_RESULT([long long int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[long long int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[lli],[Printf format for Lua integers])
+		], [test $RES -eq 11], [
+			AC_MSG_RESULT([long int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[long int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[li],[Printf format for Lua integers])
+		], [test $RES -eq 10], [
+			AC_MSG_RESULT([int])
+			AC_DEFINE([RRR_LUA_INTTYPE],[int],[Type for Lua integers])
+			AC_DEFINE([RRR_LUA_INTTYPE_PRI],[i],[Printf format for Lua integers])
+		], [
+			AC_MSG_ERROR([Unexpected return value ${RES}]);
+		])
+	])
+	CFLAGS=""
+])
+
 # Make sure Python-test does not include any libraries
 LIBS=""
 
@@ -769,7 +893,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.11 3.10 3.9 3.8 3.7; do
+		for version_tmp in 3.12 3.11 3.10 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
