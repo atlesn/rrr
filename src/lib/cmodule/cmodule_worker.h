@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -65,6 +65,10 @@ void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
 		unsigned long long int *count,
 		unsigned long long int *write_full_counter,
 		struct rrr_cmodule_worker *worker
+);
+void rrr_cmodule_worker_stats_message_write (
+		struct rrr_cmodule_worker *worker,
+		const struct rrr_msg_stats *msg
 );
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
