@@ -153,6 +153,9 @@ namespace RRR::JS {
 			return function.IsEmpty();
 		}
 		void run(CTX &ctx, int argc, Value argv[]);
+		operator v8::Local<v8::Function>() {
+			return function;
+		}
 	};
 
 	class CTX {

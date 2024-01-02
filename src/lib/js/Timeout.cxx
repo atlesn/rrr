@@ -42,6 +42,7 @@ namespace RRR::JS {
 		if (cleared) {
 			return;
 		}
+
 		cleared = true;
 
 		std::vector<v8::Local<v8::Value>> argv;
@@ -55,6 +56,9 @@ namespace RRR::JS {
 		auto value = function.As<v8::Function>()->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), argc, argc > 0 ? argv.data() : nullptr);
 		// Don't check return value. Let EventQueue deal with any exception.
 		RRR_UNUSED(value);
+
+		// Ensure that GC can clean up function and argument references
+		clear_persistents();
 	}
 
 	bool Timeout::is_complete() const {
@@ -67,7 +71,8 @@ namespace RRR::JS {
 	}
 
 	void TimeoutFactory::construct (Timeout *timeout, const v8::FunctionCallbackInfo<v8::Value> &info) {
-		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto context = info.GetIsolate()->GetCurrentContext();
+		auto ctx = CTX(context, "TimeoutFactory");
 
 		if (info.Length() == 0) {
 			throw E(std::string("Callback argument missing to Timeout constructor"));

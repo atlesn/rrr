@@ -33,6 +33,8 @@ extern "C" {
 #include <forward_list>
 #include <cassert>
 
+#include "../util/Time.hxx"
+
 namespace RRR::JS {
 	class PersistentBus;
 	class Persistable;
@@ -124,6 +126,9 @@ namespace RRR::JS {
 		// Pull a persistent out for temporary use
 		v8::Local<v8::Value> pull_persistent(unsigned long i);
 
+		// Clear all persistents
+		void clear_persistents();
+
 		public:
 		// Receive acknowledgement that a message has been processed by
 		// a sniffer. The acknowledgement may be performed at a later
@@ -185,17 +190,20 @@ namespace RRR::JS {
 		std::shared_ptr<Persistable> t;
 		PersistentBus *bus;
 		v8::Isolate *isolate;
+		int64_t creation_time = 0;
+		std::string name;
 
 		protected:
 		unsigned long push_value(v8::Local<v8::Value> value);
 		v8::Local<v8::Value> pull_value(unsigned long i);
+		void clear_values();
 		void pass(const char *identifier, void *arg) final;
 		int64_t get_unreported_memory();
 		int64_t get_total_memory_finalize();
 		bool is_done() const;
 		void check_complete();
 		static void gc(const v8::WeakCallbackInfo<void> &info);
-		PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus);
+		PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, const std::string &name, Persistable *t, PersistentBus *bus);
 		PersistableHolder(const PersistableHolder &p) = delete;
 	};
 
@@ -229,7 +237,6 @@ namespace RRR::JS {
 	 */
 
 	class PersistentStorage {
-
 		v8::Isolate *isolate;
 
 		std::forward_list<std::unique_ptr<PersistableHolder>> persistents;
@@ -242,7 +249,8 @@ namespace RRR::JS {
 		PersistentStorage(v8::Isolate *isolate);
 		PersistentStorage(const PersistentStorage &p) = delete;
 		void report_memory(int64_t memory);
-		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t);
+		//void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t);
+		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, const std::string &name);
 		void register_sniffer(PersistentSniffer *sniffer);
 		void gc(rrr_biglength *entries_, rrr_biglength *memory_size_);
 	};

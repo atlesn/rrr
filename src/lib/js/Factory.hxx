@@ -90,7 +90,7 @@ namespace RRR::JS {
 
 		obj->SetPrototype(ctx, base).Check();
 
-		persistent_storage.push(isolate, obj, native_obj.release());
+		persistent_storage.push(isolate, obj, native_obj.release(), name);
 
 		return duple;
 	}
