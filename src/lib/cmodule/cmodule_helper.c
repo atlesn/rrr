@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -487,6 +487,15 @@ static int __rrr_cmodule_helper_read_from_fork_stats_callback (
 				&msg
 		)) != 0) {
 			RRR_MSG_0("Failed to push stats message in %s\n", __func__);
+			goto out;
+		}
+	}
+	else if (RRR_STATS_MESSAGE_FLAGS_IS_DEFAULT(&msg)) {
+		if ((ret = rrr_stats_instance_post_message (
+				INSTANCE_D_STATS(callback_data->thread_data),
+				&msg
+		)) != 0) {
+			RRR_MSG_0("Failed to post stats message in %s\n", __func__);
 			goto out;
 		}
 	}

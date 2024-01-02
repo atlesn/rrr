@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -147,7 +147,7 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 	return 0;
 }
 
-static int __rrr_cmodule_worker_hook_write (
+static int __rrr_cmodule_worker_stats_message_write (
 		struct rrr_cmodule_worker *worker,
 		const void *msg,
 		rrr_length msg_size
@@ -193,6 +193,41 @@ static int __rrr_cmodule_worker_hook_write (
 	return ret;
 }
 
+void rrr_cmodule_worker_stats_message_write (
+		struct rrr_cmodule_worker *worker,
+		const struct rrr_msg_stats *msg
+) {
+	struct rrr_msg_stats_packed msg_packed;
+	rrr_length msg_packed_size;
+
+	rrr_msg_stats_pack (
+			&msg_packed,
+			&msg_packed_size,
+			msg
+	);
+
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &msg_packed,
+			RRR_MSG_TYPE_STATS,
+			msg_packed_size,
+			(rrr_u32) (rrr_time_get_64() / 1000 / 1000)
+	);
+
+	if (__rrr_cmodule_worker_stats_message_write (
+			worker,
+			&msg_packed,
+			msg_packed_size
+	)) {
+		RRR_MSG_0("Failed to write stats message in %s\n", __func__);
+		goto out_failure;
+	}
+
+	return;
+
+	out_failure:
+	worker->received_stop_signal = 1;
+}
+
 static void __rrr_cmodule_worker_event_hook(RRR_EVENT_HOOK_ARGS) {
 	struct rrr_cmodule_worker *worker = arg;
 
@@ -231,7 +266,7 @@ static void __rrr_cmodule_worker_event_hook(RRR_EVENT_HOOK_ARGS) {
 			(rrr_u32) (rrr_time_get_64() / 1000 / 1000)
 	);
 
-	if (__rrr_cmodule_worker_hook_write (
+	if (__rrr_cmodule_worker_stats_message_write (
 			worker,
 			&msg_packed,
 			msg_packed_size
@@ -270,7 +305,7 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 		goto out_failure;
 	}
 
-	if (__rrr_cmodule_worker_hook_write (
+	if (__rrr_cmodule_worker_stats_message_write (
 			worker,
 			message_log,
 			message_log->msg_size

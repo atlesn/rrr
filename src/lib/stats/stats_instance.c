@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -166,6 +166,15 @@ void rrr_stats_instance_destroy_void (
 	rrr_stats_instance_destroy(instance);
 }
 
+void rrr_stats_instance_set_post_message_hook (
+		struct rrr_stats_instance *instance,
+		int (*post_message_hook)(RRR_INSTANCE_MESSAGE_HOOK_ARGUMENTS),
+		void *hook_arg
+) {
+	instance->post_message_hook = post_message_hook;
+	instance->hook_arg = hook_arg;
+}
+
 static int __rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		uint8_t type,
@@ -174,10 +183,7 @@ static int __rrr_stats_instance_post_text (
 	int ret = 0;
 	struct rrr_msg_stats message;
 
-	if (instance->stats_handle == 0) {
-		// Not registered with statistics engine
-		goto out;
-	}
+	assert(instance->stats_handle != 0 && "Caller must verify that stats handle is set");
 
 	if (rrr_msg_stats_init (
 			&message,
@@ -192,11 +198,57 @@ static int __rrr_stats_instance_post_text (
 		goto out;
 	}
 
+	if (instance->post_message_hook) {
+		// Use hooking when a thread has forked and messages from the
+		// fork cannot be delivered directly to the stats engine.
+
+		// Hooking could have been done without a stats handle being set,
+		// but this is not useful as this in practice means that the thread
+		// which made the fork, and thus is to receive the stats messages,
+		// also does not have any handle.
+
+		if ((ret = instance->post_message_hook (
+				&message,
+				instance->hook_arg
+		)) != 0) {
+			RRR_MSG_0("Error %i returned from post hook function in %s\n", ret, __func__);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if ((ret = rrr_stats_engine_post_message (
+				instance->engine,
+				instance->stats_handle,
+				RRR_STATS_INSTANCE_PATH_PREFIX,
+				&message
+		)) != 0) {
+			RRR_MSG_0("Error %i returned from post function in %s\n", ret, __func__);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_stats_instance_post_message (
+		struct rrr_stats_instance *instance,
+		const struct rrr_msg_stats *msg
+) {
+	int ret = 0;
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		goto out;
+	}
+
 	if ((ret = rrr_stats_engine_post_message (
 			instance->engine,
 			instance->stats_handle,
 			RRR_STATS_INSTANCE_PATH_PREFIX,
-			&message
+			msg
 	)) != 0) {
 		RRR_MSG_0("Error returned from post function in %s\n", __func__);
 		ret = 1;
@@ -237,6 +289,11 @@ int rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		const char *text
 ) {
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		return 0;
+	}
+
 	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_TEXT, text);
 }
 

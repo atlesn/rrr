@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				     RRR_STATS_MESSAGE_FLAGS_EVENT |	         \
 				     RRR_STATS_MESSAGE_FLAGS_LOG)
 
+#define RRR_STATS_MESSAGE_FLAGS_IS_DEFAULT(message)         (((message)->flags) == 0)
 #define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message)          (((message)->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
 #define RRR_STATS_MESSAGE_FLAGS_IS_RRR_MSG_PREFACE(message) (((message)->flags & RRR_STATS_MESSAGE_FLAGS_RRR_MSG_PREFACE) != 0)
 #define RRR_STATS_MESSAGE_FLAGS_IS_EVENT(message)           (((message)->flags & RRR_STATS_MESSAGE_FLAGS_EVENT) != 0)

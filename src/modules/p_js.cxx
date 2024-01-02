@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -125,21 +125,10 @@ class js_run_data {
 	std::unordered_map<std::string,RRR::JS::Function> methods;
 
 	int64_t start_time = 0;
-	int64_t prev_status_time = 0;
 	rrr_biglength memory_entries = 0;
 	rrr_biglength memory_size = 0;
 	uint64_t processed = 0;
 	uint64_t processed_total = 0;
-
-	bool need_status(int64_t *diff) {
-		int64_t now = (int64_t) rrr_time_get_64();
-		*diff = now - prev_status_time;
-		if (*diff > 1 * 1000 * 1000) { // 1 Second
-			prev_status_time = now;
-			return true;
-		}
-		return false;
-	}
 
 	static void drop(const struct rrr_msg_msg *msg, const struct rrr_msg_addr *msg_addr, void *callback_arg) {
 		js_run_data *run_data = (js_run_data *) callback_arg;
@@ -163,18 +152,12 @@ class js_run_data {
 		E(std::string msg) : RRR::util::E(msg){}
 	};
 
-	void status() {
-		int64_t diff;
-		if (!need_status(&diff)) {
-			return;
-		}
-		double per_sec = ((double) processed) / ((double) diff / 1000000);
-		double per_sec_average = ((double) processed_total) / ((double) (rrr_time_get_64() - start_time) / 1000000);
+	template<typename L> void status (L l) {
+		double average = ((double) processed_total) / ((double) (rrr_time_get_64() - start_time) / 1000000);
 
-		RRR_DBG_1("JS instance %s processed per second %.2f average %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
-				INSTANCE_D_NAME(data->thread_data),
-				per_sec,
-				per_sec_average,
+		l(
+				processed,
+				average,
 				processed_total,
 				memory_entries,
 				memory_size
@@ -182,6 +165,7 @@ class js_run_data {
 
 		processed = 0;
 	}
+
 	void runGC() {
 		persistent_storage.gc(&memory_entries, &memory_size);
 
@@ -398,8 +382,32 @@ static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
 	(void)(worker);
 
 	try {
-		run_data->status();
 		run_data->runGC();
+
+		// Assuming that the periodic function is called every second
+
+		run_data->status([run_data](
+				uint64_t per_sec,
+				double per_sec_average,
+				uint64_t processed_total,
+				rrr_biglength memory_entries,
+				rrr_biglength memory_size
+		){
+			RRR_DBG_1("JS instance %s processed per second %" PRIu64 " average %.2f total %" PRIu64 ", in mem %" PRIrrrbl " bytes %" PRIrrrbl "\n",
+					INSTANCE_D_NAME(run_data->data->thread_data),
+					per_sec,
+					per_sec_average,
+					processed_total,
+					memory_entries,
+					memory_size
+			);
+
+			struct rrr_stats_instance *stats = INSTANCE_D_STATS(run_data->data->thread_data);
+			if (stats->stats_handle != 0) {
+				rrr_stats_instance_post_unsigned_base10_text(stats, "in_mem_persistables", 0, memory_entries);
+				rrr_stats_instance_post_unsigned_base10_text(stats, "in_mem_bytes", 0, memory_size);
+			}
+		});
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
@@ -411,6 +419,17 @@ static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
 	}
 
 	return 0;
+}
+
+static int js_stats_post_message_hook (RRR_INSTANCE_MESSAGE_HOOK_ARGUMENTS) {
+	js_run_data *run_data = (js_run_data *) private_arg;
+
+	int ret = 0;
+
+	rrr_cmodule_worker_stats_message_write(run_data->worker, msg);
+
+	out:
+	return ret;
 }
 
 static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
@@ -445,6 +464,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
 				}
 		);
+
+		rrr_stats_instance_set_post_message_hook (INSTANCE_D_STATS(data->thread_data), js_stats_post_message_hook, &run_data);
 
 		callbacks->configuration_callback  = js_configuration_callback;
 		callbacks->process_callback        = js_process_callback;
