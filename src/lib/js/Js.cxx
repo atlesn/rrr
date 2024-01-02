@@ -833,7 +833,6 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	Function Module::get_function(CTX &ctx, std::string name) {
-		// Force use of MaybeLocal overloads as Local overloads are deprecated
 		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
 		return Program::get_function(ctx, object, name);
 	}

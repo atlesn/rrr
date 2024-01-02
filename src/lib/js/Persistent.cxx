@@ -39,6 +39,10 @@ namespace RRR::JS {
 		return holder->pull_value(i);
 	}
 
+	void Persistable::clear_persistents() {
+		holder->clear_values();
+	}
+
 	PersistableHolder::ValueHolder::ValueHolder(v8::Isolate *isolate, v8::Local<v8::Value> value) :
 		done(false),
 		value(new v8::Persistent<v8::Value>(isolate, value))
@@ -55,6 +59,10 @@ namespace RRR::JS {
 
 	v8::Local<v8::Value> PersistableHolder::pull_value(unsigned long i) {
 		return (*values[i].value).Get(isolate);
+	}
+
+	void PersistableHolder::clear_values() {
+		values.clear();
 	}
 
 	void PersistableHolder::pass(const char *identifier, void *arg) {
@@ -79,6 +87,13 @@ namespace RRR::JS {
 	}
 
 	void PersistableHolder::check_complete() {
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		int64_t time_limit = RRR::util::time_get_i64() - 10 * 1000 * 1000; // 10 seconds
+		if (creation_time < time_limit) {
+			RRR_MSG_1("%s %p Persistent is older than 10 seconds name is %s\n",
+				__PRETTY_FUNCTION__, this, name.c_str());
+		}
+#endif
 		if (!is_weak && t->is_complete()) {
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
 			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values\n", __PRETTY_FUNCTION__, this);
@@ -102,12 +117,14 @@ namespace RRR::JS {
 #endif
 	}
 
-	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
+	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, const std::string &name, Persistable *t, PersistentBus *bus) :
 		t(t),
 		isolate(isolate),
 		values(),
 		bus(bus),
-		is_weak(false)
+		is_weak(false),
+		creation_time(RRR::util::time_get_i64()),
+		name(name)
 	{
 		push_value(obj);
 		t->register_bus(this);
@@ -127,11 +144,12 @@ namespace RRR::JS {
 		assert(total_memory >= 0);
 	}
 
-	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
-		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
+	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, const std::string &name) {
+		persistents.emplace_front(new PersistableHolder(isolate, obj, name, t, &bus));
 		entries++;
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-		RRR_MSG_1("%s %p Persistent is pushed, %lli entries now in storeage\n", __PRETTY_FUNCTION__, persistents.front().get(), entries);
+		RRR_MSG_1("%s %p Persistent with name %s is pushed, %lli entries now in storeage\n",
+			__PRETTY_FUNCTION__, persistents.front().get(), name.c_str(), entries);
 #endif
 	}
 
