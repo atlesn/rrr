@@ -56,9 +56,6 @@ namespace RRR::JS {
 		auto value = function.As<v8::Function>()->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), argc, argc > 0 ? argv.data() : nullptr);
 		// Don't check return value. Let EventQueue deal with any exception.
 		RRR_UNUSED(value);
-
-		// Ensure that GC can clean up function and argument references
-		clear_persistents();
 	}
 
 	bool Timeout::is_complete() const {

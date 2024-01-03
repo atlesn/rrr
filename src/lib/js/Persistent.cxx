@@ -126,16 +126,25 @@ namespace RRR::JS {
 #endif
 		}
 		else if (t->is_complete()) {
+			assert(values.size() >= 1);
+
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values name is %s\n",
+			RRR_MSG_1("%s %p Persistent is complete, setting weak for the first value name is %s\n",
 				__PRETTY_FUNCTION__, this, name.c_str());
 #endif
-			std::for_each(values.begin(), values.end(), [this](auto &holder){
-#ifdef RRR_JS_PERSISTENT_DEBUG_GC
-				RRR_MSG_1("%s %p ValueHolder SetWeak\n", __PRETTY_FUNCTION__, &holder);
-#endif
-				holder.value.get()->template SetWeak<void>(&holder, gc, v8::WeakCallbackType::kParameter);
-			});
+			// SetWeak will cause us to be notified in the
+			// gc() callback after all other references to
+			// the object in the JS code are gone and just
+			// before the JS object is destroyed.
+			auto &holder = values[0];
+			holder.value->template SetWeak<void>(&holder, gc, v8::WeakCallbackType::kParameter);
+
+			// Remove all but the first element (the main object) to prevent dangling references
+			while (values.size() > 1) {
+				values.back().value->Reset();
+				values.pop_back();
+			}
+
 			is_weak = true;
 		}
 	}
