@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Persistent.hxx"
 #include <utility>
+#include <map>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -28,7 +29,11 @@ extern "C" {
 
 #include <v8.h>
 
+// Print noisy debug messages
 // #define RRR_JS_PERSISTENT_DEBUG_GC
+
+// Crash program if limit is exceeded
+#define RRR_JS_PERSISTENT_MAX 10000
 
 namespace RRR::JS {
 	unsigned long Persistable::push_persistent(v8::Local<v8::Value> value) {
@@ -78,25 +83,52 @@ namespace RRR::JS {
 	}
 
 	bool PersistableHolder::is_done() const {
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		int total_count = 0;
+		int done_count = 0;
+#endif
 		bool all_done = true;
-		std::for_each(values.begin(), values.end(), [&all_done](auto &holder){
+		std::for_each(values.begin(), values.end(), [&](auto &holder){
 			if (!holder.done)
 				all_done = false;
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+			else {
+				RRR_MSG_1("%s %p Persistent value %i is done name is %s\n",
+					__PRETTY_FUNCTION__, this, total_count, name.c_str());
+				done_count++;
+			}
+			total_count++;
+#endif
 		});
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		if (done_count > 0) {
+			RRR_MSG_1("%s %p Persistent %i of %i values are done name is %s\n",
+				__PRETTY_FUNCTION__, this, done_count, total_count, name.c_str());
+		}
+		if (all_done) {
+			RRR_MSG_1("%s %p Persistent all done! name is %s\n",
+				__PRETTY_FUNCTION__, this, name.c_str());
+		}
+#endif
 		return all_done;
 	}
 
 	void PersistableHolder::check_complete() {
+		if (is_weak) {
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-		int64_t time_limit = RRR::util::time_get_i64() - 10 * 1000 * 1000; // 10 seconds
-		if (creation_time < time_limit) {
-			RRR_MSG_1("%s %p Persistent is older than 10 seconds name is %s\n",
-				__PRETTY_FUNCTION__, this, name.c_str());
-		}
+			int64_t time_limit = RRR::util::time_get_i64() - 10 * 1000 * 1000; // 10 seconds
+			if (creation_time < time_limit) {
+				RRR_MSG_1("Persistent is still present 10 seconds after weak was set, possible memory leak. Name is %s.\n",
+					__PRETTY_FUNCTION__, this, name.c_str());
+			}
+#else
+			// Already weak, nothing to do
 #endif
-		if (!is_weak && t->is_complete()) {
+		}
+		else if (t->is_complete()) {
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values\n", __PRETTY_FUNCTION__, this);
+			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values name is %s\n",
+				__PRETTY_FUNCTION__, this, name.c_str());
 #endif
 			std::for_each(values.begin(), values.end(), [this](auto &holder){
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
@@ -113,7 +145,8 @@ namespace RRR::JS {
 		holder->done = true;
 		holder->value->Reset();
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-		RRR_MSG_1("%s %p ValueHolder Now GCed by V8\n", __PRETTY_FUNCTION__, holder);
+		RRR_MSG_1("%s %p ValueHolder Now GCed by V8\n",
+			__PRETTY_FUNCTION__, holder);
 #endif
 	}
 
@@ -158,13 +191,29 @@ namespace RRR::JS {
 	}
 
 	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
-		std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
+		int total_count = 0;
+		std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
 			int64_t memory = p->get_unreported_memory();
 			if (memory != 0) {
 				report_memory(memory);
 			}
 			p->check_complete();
+			total_count++;
 		});
+
+		if (total_count > RRR_JS_PERSISTENT_MAX) {
+			std::map<std::string, int> map;
+			RRR_MSG_0("Maximum number of JS persistents (%i>%i) reached in %s, possible memory leak. Dumping count of different persistables by their name:\n",
+				total_count, RRR_JS_PERSISTENT_MAX, __PRETTY_FUNCTION__);
+			std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
+				map[p->name]++;
+			});
+			std::for_each(map.begin(), map.end(), [&](auto &e){
+				RRR_MSG_0("- %s: %i\n", e.first.c_str(), e.second);
+			});
+			RRR_BUG("Refusing to continue.\n");
+		}
+
 		persistents.remove_if([this](auto &p){
 			if (p->is_done()) {
 				entries--;
@@ -172,9 +221,10 @@ namespace RRR::JS {
 				RRR_MSG_1("%s %p Persistent is done, %lli entries left in storage\n", __PRETTY_FUNCTION__, p.get(), entries);
 #endif
 				// Report negative value as memory is now being freed up
-				report_memory(-p->get_total_memory_finalize());
+				report_memory(/* Remember negation minus sign */ - p->get_total_memory_finalize());
+				return true;
 			}
-			return p->is_done();
+			return false;
 		});
 
 		*entries_ = (rrr_biglength) entries;
