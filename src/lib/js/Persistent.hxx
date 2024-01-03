@@ -223,8 +223,9 @@ namespace RRR::JS {
 	 * 1. Persistable and objects are new, memory persists indefinately
 	 * 2. check_complete() of the PersistableHolder is called
 	 *    reguralerly. This function checks if is_complete() of the Persistable
-	 *    is true, and once it is, SetWeak() is called on all V8 objects
-	 *    held by the PersistableHolder, queueing them for garabage collection.
+	 *    is true, and once it is, SetWeak() is called on the main V8 object
+	 *    held by the PersistableHolder, queueing it for garabage collection,
+	 *    while any other values held are cleaned up.
 	 * 3. V8 GC runs, and once weak callback of all objects has run, is_done()
 	 *    of the PersistableHolder returns true. This causes storage to
 	 *    destroy the PersistableHolder and held objects.
