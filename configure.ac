@@ -699,12 +699,12 @@ AS_IF([test "x$enable_lua" = xno], [
 		# Note: Sometimes pkg-config returns good result for libs but not for cflags
 
 		if test "x${LUA_CFLAGS}" != "x"; then
-			header_version=`echo $version | sed -e 's/lua-\?//'`
+			header_version=`echo $version | sed 's/lua-\?//'`
 		fi
 
 		if test "x${LUA_LDFLAGS}" != "x"; then
 			AC_MSG_RESULT([yes])
-			lib_version=`echo $version | sed -e 's/lua-\?//'`
+			lib_version=`echo $version | sed 's/lua-\?//'`
 			break
 		else
 			AC_MSG_RESULT([no])
@@ -747,7 +747,7 @@ AS_IF([test "x$enable_lua" = xno], [
 			for version in lua5.4 lua-5.4 lua5.3 lua-5.3; do
 				AC_MSG_CHECKING([for lua.h in ${base}/${version}])
 				if test -f "${base}/${version}/lua.h"; then
-					header_version=`echo $version | sed -e 's/lua-\?//'`
+					header_version=`echo $version | sed 's/lua-\?//'`
 					LUA_CFLAGS="-I${base}/${version}"
 					AC_MSG_RESULT([yes])
 				else
