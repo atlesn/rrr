@@ -715,14 +715,24 @@ AS_IF([test "x$enable_lua" = xno], [
 
 	have_lua_h_set=no
 
+	header_version=""
+	lib_version=""
+
 	for version in lua lua5.4 lua-5.4 lua5.3 lua-5.3; do
 		LUA_CFLAGS=`pkg-config --cflags $version --silence-errors`
 		LUA_LDFLAGS=`pkg-config --libs $version --silence-errors`
 
 		AC_MSG_CHECKING([for pkgconfig-given Lua libraries and headers with version $version])
 
+		# Note: Sometimes pkg-config returns good result for libs but not for cflags
+
+		if test "x${LUA_CFLAGS}" != "x"; then
+			header_version=`echo $version | sed -e 's/lua-\?//'`
+		fi
+
 		if test "x${LUA_LDFLAGS}" != "x"; then
 			AC_MSG_RESULT([yes])
+			lib_version=`echo $version | sed -e 's/lua-\?//'`
 			break
 		else
 			AC_MSG_RESULT([no])
@@ -757,19 +767,21 @@ AS_IF([test "x$enable_lua" = xno], [
 		AC_MSG_RESULT([no])
 	fi
 
-	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
+	if test "x${LUA_CFLAGS}" = "x"; then
 		# AC_CHECK_HEADERS produces warning "you should use literals"
 		# when used with variables. Work around this by checking paths
 		# manually.
 		for base in /usr/local/include /usr/local; do
-			for dir in lua5.4 lua-5.4 lua5.3 lua-5.3; do
-				AC_MSG_CHECKING([for lua.h in ${base}/${dir}])
-				if test -f "${base}/${dir}/lua.h"; then
-					LUA_CFLAGS="-I${base}/${dir}"
+			for version in lua5.4 lua-5.4 lua5.3 lua-5.3; do
+				AC_MSG_CHECKING([for lua.h in ${base}/${version}])
+				if test -f "${base}/${version}/lua.h"; then
+					header_version=`echo $version | sed -e 's/lua-\?//'`
+					LUA_CFLAGS="-I${base}/${version}"
 					AC_MSG_RESULT([yes])
 				else
 					AC_MSG_RESULT([no])
 				fi
+
 				if test "x${LUA_CFLAGS}" != "x"; then
 					break
 				fi
@@ -778,18 +790,33 @@ AS_IF([test "x$enable_lua" = xno], [
 				break
 			fi
 		done
+	fi
 
-		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
+	if test "x{$LUA_LDFLAGS}" = "x"; then
+		# Don't use loop as that causes warning "you should use literals"
+		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" lib_version="5.4" ])
 		if test "x{$LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_LIB([lua-5.4], [lua_close], [ LUA_LDFLAGS="-llua-5.4" ])
+			AC_CHECK_LIB([lua-5.4], [lua_close], [ LUA_LDFLAGS="-llua-5.4" lib_version="5.4" ])
 		fi
 		if test "x{$LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" ])
+			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" lib_version="5.3" ])
 		fi
 		if test "x{$LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_LIB([lua-5.3], [lua_close], [ LUA_LDFLAGS="-llua-5.3" ])
+			AC_CHECK_LIB([lua-5.3], [lua_close], [ LUA_LDFLAGS="-llua-5.3" lib_version="5.3" ])
 		fi
 		exit 1
+	fi
+
+	AC_MSG_CHECKING([for lua header/lib version mismatch])
+	if test "x${header_version}" != "x" -a "x${lib_version}" != "x"; then
+		if test "x${header_version}" != "x${lib_version}"; then
+			AC_MSG_RESULT(['${header_version}' '${lib_version}' => yes])
+			AC_MSG_ERROR([Lua header and library version mismatch, header is ${header_version} but library is ${lib_version}])
+		else
+			AC_MSG_RESULT(['${header_version}' '${lib_version}' => no])
+		fi
+	else
+		AC_MSG_RESULT(['${header_version}' '${lib_version}' => no])
 	fi
 
 	AC_MSG_CHECKING([for lua CFLAGS])
