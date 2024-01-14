@@ -685,17 +685,31 @@ AS_IF([test "x$enable_lua" = xno], [
 
 	AC_DEFINE([RRR_WITH_LUA], [1], [Enable lua extensions])
 
-	LUA_CFLAGS=`pkg-config --cflags lua --silence-errors`
-	LUA_LDFLAGS=`pkg-config --libs lua --silence-errors`
+	have_lua_h_set=no
 
-	AC_MSG_CHECKING([for default Lua libraries and headers])
+	for version in lua lua5.4 lua-5.4 lua5.3 lua-5.3; do
+		LUA_CFLAGS=`pkg-config --cflags $version --silence-errors`
+		LUA_LDFLAGS=`pkg-config --libs $version --silence-errors`
+
+		AC_MSG_CHECKING([for pkgconfig-given Lua libraries and headers with version $version])
+
+		if test "x${LUA_LDFLAGS}" != "x"; then
+			AC_MSG_RESULT([yes])
+			break
+		else
+			AC_MSG_RESULT([no])
+			LUA_CFLAGS=""
+			LUA_LDFLAGS=""
+		fi
+	done
+
+	AC_MSG_CHECKING([for pkgconfig-given Lua libraries but not headers])
 	if test "x${LUA_LDFLAGS}" != "x" -a "x${LUA_CFLAGS}" = "x"; then
 		# LDFLAGS is given by pkg-config, but not CFLAGS. This might
 		# indicate that headers are not in includes subdirectory.
 		if echo "x${LUA_LDFLAGS}" | grep -qE '\-llua(\s|$)'; then
 			AC_MSG_RESULT([possibly, must check for headers and symbols])
 			AC_CHECK_HEADERS([lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
-			have_lua_h_set=yes
 			if test "x${LUA_CFLAGS}" = "x"; then
 				# Headers without version number not found
 				LUA_LDFLAGS=""
@@ -715,16 +729,39 @@ AS_IF([test "x$enable_lua" = xno], [
 		AC_MSG_RESULT([no])
 	fi
 
-	have_lua_h_set=no
-
 	if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
-		# Try specific versions
-		AC_CHECK_HEADERS([lua5.4/lua.h], [ LUA_CFLAGS=" "  have_lua_h_set=yes ])
+		# AC_CHECK_HEADERS produces warning "you should use literals"
+		# when used with variables. Work around this by checking paths
+		# manually.
+		for base in /usr/local/include /usr/local; do
+			for dir in lua5.4 lua-5.4 lua5.3 lua-5.3; do
+				AC_MSG_CHECKING([for lua.h in ${base}/${dir}])
+				if test -f "${base}/${dir}/lua.h"; then
+					LUA_CFLAGS="-I${base}/${dir}"
+					AC_MSG_RESULT([yes])
+				else
+					AC_MSG_RESULT([no])
+				fi
+				if test "x${LUA_CFLAGS}" != "x"; then
+					break
+				fi
+			done
+			if test "x${LUA_CFLAGS}" != "x"; then
+				break
+			fi
+		done
+
 		AC_CHECK_LIB([lua5.4], [lua_close], [ LUA_LDFLAGS="-llua5.4" ])
-		if test "x${LUA_CFLAGS}" = "x" -o "x{$LUA_LDFLAGS}" = "x"; then
-			AC_CHECK_HEADERS([lua5.3/lua.h], [ LUA_CFLAGS=" " have_lua_h_set=yes ])
+		if test "x{$LUA_LDFLAGS}" = "x"; then
+			AC_CHECK_LIB([lua-5.4], [lua_close], [ LUA_LDFLAGS="-llua-5.4" ])
+		fi
+		if test "x{$LUA_LDFLAGS}" = "x"; then
 			AC_CHECK_LIB([lua5.3], [lua_close], [ LUA_LDFLAGS="-llua5.3" ])
 		fi
+		if test "x{$LUA_LDFLAGS}" = "x"; then
+			AC_CHECK_LIB([lua-5.3], [lua_close], [ LUA_LDFLAGS="-llua-5.3" ])
+		fi
+		exit 1
 	fi
 
 	AC_MSG_CHECKING([for lua CFLAGS])
