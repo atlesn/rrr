@@ -16,6 +16,7 @@
 /src/rrr_msg
 /src/rrr_sub
 /src/rrr_js
+/src/rrr_lua
 /src/rrr_modbus_server
 /src/test.sh
 /src/test.sh.log

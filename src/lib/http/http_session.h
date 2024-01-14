@@ -132,7 +132,8 @@ uint64_t rrr_http_session_transport_ctx_active_transaction_count_get_and_maintai
 void rrr_http_session_transport_ctx_websocket_response_available_notify (
 		struct rrr_net_transport_handle *handle
 );
-int rrr_http_session_transport_ctx_need_tick (
+void rrr_http_session_transport_ctx_need_tick (
+		enum rrr_http_tick_speed *speed,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_tick_client (

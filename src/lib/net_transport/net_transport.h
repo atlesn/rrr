@@ -147,7 +147,7 @@ void rrr_net_transport_event_activate_all_connected_read (
 int rrr_net_transport_is_tls (
 		struct rrr_net_transport *transport
 );
-void rrr_net_transport_notify_read_all_connected (
+void rrr_net_transport_notify_read_fast_all_connected (
 		struct rrr_net_transport *transport
 );
 int rrr_net_transport_iterate_by_mode_and_do (

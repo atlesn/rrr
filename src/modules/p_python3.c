@@ -146,7 +146,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config_data *con
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_module, config, "python3_module");
 
 	if (ret != 0) {
-		RRR_MSG_0("No python3_module specified for python module\n");
+		RRR_MSG_0("No python3_module specified for Python3 instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}

@@ -132,6 +132,12 @@ struct rrr_http_rules {
 	};
 };
 
+enum rrr_http_tick_speed {
+	RRR_HTTP_TICK_SPEED_NO_TICK,
+	RRR_HTTP_TICK_SPEED_FAST,
+	RRR_HTTP_TICK_SPEED_SLOW
+};
+
 extern const char *rrr_http_transport_str_any;
 extern const char *rrr_http_transport_str_http;
 extern const char *rrr_http_transport_str_https;

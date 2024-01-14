@@ -83,7 +83,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Unchecked operation, should not cause dangerous situations.
 // Caller should nevertheless use RRR_DEBUGLEVEL_OK macro first.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \
-	(x == 0 ? 0 : 1 << (x-1))
+	((unsigned int) (x == 0 ? 0 : 1 << (x-1)))
 
 //#define RRR_WITH_SIGNAL_PRINTF
 
@@ -104,6 +104,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
 #	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
+#	define RRR_MSG_0_V(fmt, ap) vprintf(fmt, ap)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
 #	define RRR_DBG_2(...) printf(__VA_ARGS__)
@@ -124,6 +125,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #	define RRR_MSG_LOC(...) \
 	rrr_log_printf(__FILE__, __LINE__, __VA_ARGS__)
+
+#	define RRR_MSG_LOC_V(...) \
+	rrr_log_vprintf(__FILE__, __LINE__, __VA_ARGS__)
 
 #	define RRR_MSG_PLAIN(...) \
 	do {rrr_log_printf_plain (__VA_ARGS__);}while(0)
@@ -162,6 +166,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     do {                                                                                                                       \
         rrr_log_printf (__FILE__, __LINE__, debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);                        \
     } while (0)                                                                                                                \
+
+#	define RRR_MSG_0_V(fmt, ap) \
+	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, fmt, ap);}while(0)
 
 #	define RRR_DBG_X(debuglevel_num, ...)																										\
 	do { if ((rrr_config_global.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
@@ -309,6 +316,14 @@ void rrr_log_printf (
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+void rrr_log_vprintf (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list ap
 );
 void rrr_log_fprintf (
 		FILE *file_target,

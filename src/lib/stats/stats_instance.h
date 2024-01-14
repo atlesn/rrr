@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,6 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     const char *path_postfix,                                  \
     int sticky
 
+#define RRR_INSTANCE_MESSAGE_HOOK_ARGUMENTS                    \
+    const struct rrr_msg_stats *msg,                           \
+    void *private_arg
+
 struct rrr_stats_engine;
 
 struct rrr_stats_instance_rate_counter {
@@ -57,6 +61,8 @@ struct rrr_stats_instance {
 	unsigned int stats_handle;
 	struct rrr_stats_engine *engine;
 	struct rrr_stats_instance_rate_counter_collection rate_counters;
+	int (*post_message_hook)(RRR_INSTANCE_MESSAGE_HOOK_ARGUMENTS);
+	void *hook_arg;
 };
 
 int rrr_stats_instance_new (
@@ -69,6 +75,15 @@ void rrr_stats_instance_destroy (
 );
 void rrr_stats_instance_destroy_void (
 		void *instance
+);
+void rrr_stats_instance_set_post_message_hook (
+		struct rrr_stats_instance *instance,
+		int (*post_message_hook)(RRR_INSTANCE_MESSAGE_HOOK_ARGUMENTS),
+		void *hook_arg
+);
+int rrr_stats_instance_post_message (
+		struct rrr_stats_instance *instance,
+		const struct rrr_msg_stats *msg
 );
 int rrr_stats_instance_push_stream_message (
 		struct rrr_stats_instance *instance,

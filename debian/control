@@ -6,18 +6,19 @@ Build-Depends: debhelper (>= 13),
                dh-autoreconf,
                dh-python,
                libmysqlclient-dev | libmariadbclient-dev-compat,
-               libperl-dev (>= 5.31),
+               libperl-dev (>= 5.36),
                libssl-dev,
                libsystemd-dev,
                libusb-dev,
                pkg-config,
-               python3-dev (>= 3.9),
+               python3-dev (>= 3.11),
                libnghttp2-dev,
                libjson-c-dev,
                libevent-dev,
                libjemalloc-dev,
-	       libnode-dev
-X-Python3-Version: 3.9,3.10
+	       libnode-dev,
+	       liblua5.4-dev
+X-Python3-Version: 3.11,3.12
 Standards-Version: 4.6.0
 Homepage: https://github.com/atlesn/rrr
 
@@ -42,11 +43,12 @@ Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          libssl1.1,
-         python3 (>= 3.9),
+         python3 (>= 3.11),
          libjemalloc2,
          libjson-c5,
          libnghttp2-14,
-	 libnode | libnode72
+	 liblua5.4-0,
+	 libnode | libnode108
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: librrr-dev

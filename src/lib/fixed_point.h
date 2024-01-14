@@ -40,6 +40,12 @@ int rrr_fixp_ldouble_to_fixp (
 		rrr_fixp *target,
 		long double source
 );
+static inline int rrr_fixp_from_ldouble (
+		rrr_fixp *target,
+		long double source
+) {
+	return rrr_fixp_ldouble_to_fixp (target, source);
+}
 int rrr_fixp_to_ldouble (
 		long double *target,
 		rrr_fixp source

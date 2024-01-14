@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Persistent.hxx"
 #include <utility>
+#include <map>
 
 extern "C" {
 #include "../rrr_types.h"
@@ -28,7 +29,11 @@ extern "C" {
 
 #include <v8.h>
 
+// Print noisy debug messages
 // #define RRR_JS_PERSISTENT_DEBUG_GC
+
+// Crash program if limit is exceeded
+#define RRR_JS_PERSISTENT_MAX 10000
 
 namespace RRR::JS {
 	unsigned long Persistable::push_persistent(v8::Local<v8::Value> value) {
@@ -37,6 +42,10 @@ namespace RRR::JS {
 
 	v8::Local<v8::Value> Persistable::pull_persistent(unsigned long i) {
 		return holder->pull_value(i);
+	}
+
+	void Persistable::clear_persistents() {
+		holder->clear_values();
 	}
 
 	PersistableHolder::ValueHolder::ValueHolder(v8::Isolate *isolate, v8::Local<v8::Value> value) :
@@ -57,6 +66,10 @@ namespace RRR::JS {
 		return (*values[i].value).Get(isolate);
 	}
 
+	void PersistableHolder::clear_values() {
+		values.clear();
+	}
+
 	void PersistableHolder::pass(const char *identifier, void *arg) {
 		bus->pass(t, identifier, arg);
 	}
@@ -70,25 +83,68 @@ namespace RRR::JS {
 	}
 
 	bool PersistableHolder::is_done() const {
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		int total_count = 0;
+		int done_count = 0;
+#endif
 		bool all_done = true;
-		std::for_each(values.begin(), values.end(), [&all_done](auto &holder){
+		std::for_each(values.begin(), values.end(), [&](auto &holder){
 			if (!holder.done)
 				all_done = false;
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+			else {
+				RRR_MSG_1("%s %p Persistent value %i is done name is %s\n",
+					__PRETTY_FUNCTION__, this, total_count, name.c_str());
+				done_count++;
+			}
+			total_count++;
+#endif
 		});
+#ifdef RRR_JS_PERSISTENT_DEBUG_GC
+		if (done_count > 0) {
+			RRR_MSG_1("%s %p Persistent %i of %i values are done name is %s\n",
+				__PRETTY_FUNCTION__, this, done_count, total_count, name.c_str());
+		}
+		if (all_done) {
+			RRR_MSG_1("%s %p Persistent all done! name is %s\n",
+				__PRETTY_FUNCTION__, this, name.c_str());
+		}
+#endif
 		return all_done;
 	}
 
 	void PersistableHolder::check_complete() {
-		if (!is_weak && t->is_complete()) {
+		if (is_weak) {
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-			RRR_MSG_1("%s %p Persistent is complete, setting weak for held values\n", __PRETTY_FUNCTION__, this);
+			int64_t time_limit = RRR::util::time_get_i64() - 10 * 1000 * 1000; // 10 seconds
+			if (creation_time < time_limit) {
+				RRR_MSG_1("Persistent is still present 10 seconds after weak was set, possible memory leak. Name is %s.\n",
+					__PRETTY_FUNCTION__, this, name.c_str());
+			}
+#else
+			// Already weak, nothing to do
 #endif
-			std::for_each(values.begin(), values.end(), [this](auto &holder){
+		}
+		else if (t->is_complete()) {
+			assert(values.size() >= 1);
+
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-				RRR_MSG_1("%s %p ValueHolder SetWeak\n", __PRETTY_FUNCTION__, &holder);
+			RRR_MSG_1("%s %p Persistent is complete, setting weak for the first value name is %s\n",
+				__PRETTY_FUNCTION__, this, name.c_str());
 #endif
-				holder.value.get()->template SetWeak<void>(&holder, gc, v8::WeakCallbackType::kParameter);
-			});
+			// SetWeak will cause us to be notified in the
+			// gc() callback after all other references to
+			// the object in the JS code are gone and just
+			// before the JS object is destroyed.
+			auto &holder = values[0];
+			holder.value->template SetWeak<void>(&holder, gc, v8::WeakCallbackType::kParameter);
+
+			// Remove all but the first element (the main object) to prevent dangling references
+			while (values.size() > 1) {
+				values.back().value->Reset();
+				values.pop_back();
+			}
+
 			is_weak = true;
 		}
 	}
@@ -98,16 +154,19 @@ namespace RRR::JS {
 		holder->done = true;
 		holder->value->Reset();
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-		RRR_MSG_1("%s %p ValueHolder Now GCed by V8\n", __PRETTY_FUNCTION__, holder);
+		RRR_MSG_1("%s %p ValueHolder Now GCed by V8\n",
+			__PRETTY_FUNCTION__, holder);
 #endif
 	}
 
-	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, PersistentBus *bus) :
+	PersistableHolder::PersistableHolder(v8::Isolate *isolate, v8::Local<v8::Object> obj, const std::string &name, Persistable *t, PersistentBus *bus) :
 		t(t),
 		isolate(isolate),
 		values(),
 		bus(bus),
-		is_weak(false)
+		is_weak(false),
+		creation_time(RRR::util::time_get_i64()),
+		name(name)
 	{
 		push_value(obj);
 		t->register_bus(this);
@@ -127,11 +186,12 @@ namespace RRR::JS {
 		assert(total_memory >= 0);
 	}
 
-	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t) {
-		persistents.emplace_front(new PersistableHolder(isolate, obj, t, &bus));
+	void PersistentStorage::push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, const std::string &name) {
+		persistents.emplace_front(new PersistableHolder(isolate, obj, name, t, &bus));
 		entries++;
 #ifdef RRR_JS_PERSISTENT_DEBUG_GC
-		RRR_MSG_1("%s %p Persistent is pushed, %lli entries now in storeage\n", __PRETTY_FUNCTION__, persistents.front().get(), entries);
+		RRR_MSG_1("%s %p Persistent with name %s is pushed, %lli entries now in storeage\n",
+			__PRETTY_FUNCTION__, persistents.front().get(), name.c_str(), entries);
 #endif
 	}
 
@@ -140,13 +200,29 @@ namespace RRR::JS {
 	}
 
 	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
-		std::for_each(persistents.begin(), persistents.end(), [this](auto &p){
+		int total_count = 0;
+		std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
 			int64_t memory = p->get_unreported_memory();
 			if (memory != 0) {
 				report_memory(memory);
 			}
 			p->check_complete();
+			total_count++;
 		});
+
+		if (total_count > RRR_JS_PERSISTENT_MAX) {
+			std::map<std::string, int> map;
+			RRR_MSG_0("Maximum number of JS persistents (%i>%i) reached in %s, possible memory leak. Dumping count of different persistables by their name:\n",
+				total_count, RRR_JS_PERSISTENT_MAX, __PRETTY_FUNCTION__);
+			std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
+				map[p->name]++;
+			});
+			std::for_each(map.begin(), map.end(), [&](auto &e){
+				RRR_MSG_0("- %s: %i\n", e.first.c_str(), e.second);
+			});
+			RRR_BUG("Refusing to continue.\n");
+		}
+
 		persistents.remove_if([this](auto &p){
 			if (p->is_done()) {
 				entries--;
@@ -154,9 +230,10 @@ namespace RRR::JS {
 				RRR_MSG_1("%s %p Persistent is done, %lli entries left in storage\n", __PRETTY_FUNCTION__, p.get(), entries);
 #endif
 				// Report negative value as memory is now being freed up
-				report_memory(-p->get_total_memory_finalize());
+				report_memory(/* Remember negation minus sign */ - p->get_total_memory_finalize());
+				return true;
 			}
-			return p->is_done();
+			return false;
 		});
 
 		*entries_ = (rrr_biglength) entries;

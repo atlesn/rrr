@@ -42,6 +42,7 @@ namespace RRR::JS {
 		if (cleared) {
 			return;
 		}
+
 		cleared = true;
 
 		std::vector<v8::Local<v8::Value>> argv;
@@ -67,7 +68,8 @@ namespace RRR::JS {
 	}
 
 	void TimeoutFactory::construct (Timeout *timeout, const v8::FunctionCallbackInfo<v8::Value> &info) {
-		auto ctx = info.GetIsolate()->GetCurrentContext();
+		auto context = info.GetIsolate()->GetCurrentContext();
+		auto ctx = CTX(context, "TimeoutFactory");
 
 		if (info.Length() == 0) {
 			throw E(std::string("Callback argument missing to Timeout constructor"));

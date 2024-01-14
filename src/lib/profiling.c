@@ -74,6 +74,7 @@ static int __rrr_profiling_mallctl_call (const char *name) {
 }
 
 static void __rrr_profiling_stats_callback (void *opaque_data, const char *str) {
+	(void)(opaque_data);
 	RRR_MSG_1("Heap statistics for pid %lli:\n%s\n", (long long int) getpid(), str);
 }
 

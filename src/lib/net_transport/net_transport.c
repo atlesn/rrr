@@ -455,7 +455,8 @@ static void __rrr_net_transport_event_read (
 	}
 
 	EVENT_REMOVE(handle->event_first_read_timeout);
-	EVENT_REMOVE(handle->event_read_notify);
+	EVENT_REMOVE(handle->event_read_notify_fast);
+	EVENT_REMOVE(handle->event_read_notify_slow);
 
 	if ((ret_tmp = handle->transport->read_callback (
 			handle,
@@ -662,14 +663,24 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	// READ NOTIFY
+	// READ NOTIFY FAST/SLOW
 
 	if ((ret = rrr_event_collection_push_periodic (
-			&handle->event_read_notify,
+			&handle->event_read_notify_fast,
 			&handle->events,
 			__rrr_net_transport_event_read,
 			handle,
 			1 * 1000 // 1 ms
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&handle->event_read_notify_slow,
+			&handle->events,
+			__rrr_net_transport_event_read,
+			handle,
+			100 * 1000 // 100 ms
 	)) != 0) {
 		goto out;
 	}
@@ -1096,12 +1107,12 @@ int rrr_net_transport_is_tls (
 	return transport->methods->is_tls();
 }
 
-void rrr_net_transport_notify_read_all_connected (
+void rrr_net_transport_notify_read_fast_all_connected (
 		struct rrr_net_transport *transport
 ) {
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-			rrr_net_transport_ctx_notify_read(node);
+			rrr_net_transport_ctx_notify_read_fast(node);
 		}
 	RRR_LL_ITERATE_END();
 }

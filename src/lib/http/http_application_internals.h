@@ -47,6 +47,7 @@ struct rrr_http_rules;
     struct rrr_http_transaction *transaction
 
 #define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \
+    enum rrr_http_tick_speed *speed,                           \
     struct rrr_http_application *app
 
 #define RRR_HTTP_APPLICATION_TICK_ARGS                         \
@@ -73,7 +74,7 @@ struct rrr_http_application_constants {
 	int (*request_send_possible)(RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
-	int (*need_tick)(RRR_HTTP_APPLICATION_NEED_TICK_ARGS);
+	void (*need_tick)(RRR_HTTP_APPLICATION_NEED_TICK_ARGS);
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);
 };
 
