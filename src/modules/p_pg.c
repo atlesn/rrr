@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -28,16 +29,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event_functions.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/posix.h"
 
 #include "../lib/pg.h"
 
+#define PG_DEFAULT_HOST "localhost"
+#define PG_DEFAULT_PORT 5432
+#define PG_DEFAULT_DB "rrr"
+#define PG_DEFAULT_USER ""
+#define PG_DEFAULT_PASSWORD ""
+
 struct pg_data {
 	struct rrr_instance_runtime_data *thread_data;
+
+	char *host;
+	uint16_t port;
+	char port_str[16];
+	char *db;
+	char *user;
+	char *pass;
+
+	struct rrr_pg_conn *conn;
 };
 
-static void data_cleanup (void *arg) {
+static void pg_data_cleanup (void *arg) {
 	struct pg_data *data = arg;
-	(void)(data);
+
+	RRR_FREE_IF_NOT_NULL(data->host);
+	RRR_FREE_IF_NOT_NULL(data->db);
+	RRR_FREE_IF_NOT_NULL(data->user);
+	RRR_FREE_IF_NOT_NULL(data->pass);
+
+	if (data->conn != NULL) {
+		rrr_pg_destroy(data->conn);
+	}
 }
 
 static int data_init (
@@ -46,7 +71,8 @@ static int data_init (
 ) {
 	int ret = 0;
 
-	memset (data, 0, sizeof (*data));
+	memset (data, '\0', sizeof (*data));
+
 	data->thread_data = thread_data;
 
 	return ret;
@@ -94,9 +120,63 @@ static int parse_config (
 ) {
 	int ret = 0;
 
-	RRR_BUG("parse_config not implemented");
+	// Memory cleaned up by pg_data_cleanup in all cases
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("pg_host", host, PG_DEFAULT_HOST);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("pg_port", port, PG_DEFAULT_PORT);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("pg_db", db, PG_DEFAULT_DB);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("pg_user", user, PG_DEFAULT_USER);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("pg_password", pass, PG_DEFAULT_PASSWORD);
+
+	out:
 	return ret;
+}
+
+int pg_connect_as_needed_and_check (struct pg_data *data) {
+	int ret = 0;
+
+	if (data->conn) {
+		if (rrr_pg_check(data->conn) == 0) {
+			goto out;
+		}
+
+		RRR_DBG_1("pg instance %s connection is broken\n",
+			INSTANCE_D_NAME(data->thread_data));
+
+		rrr_pg_destroy(data->conn);
+		data->conn = NULL;
+	}
+
+	RRR_DBG_1("pg instance %s connecting to %s:%s\n",
+		INSTANCE_D_NAME(data->thread_data), data->host, data->port_str);
+
+	if (rrr_pg_new (&data->conn, data->host, data->port_str, data->db, data->user, data->pass) != 0) {
+		RRR_MSG_0("Failed to create database connection to %s:%s in pg instance %s\n",
+			data->host, data->port_str, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_1("pg instance %s connected to %s:%s\n",
+		INSTANCE_D_NAME(data->thread_data), data->host, data->port_str);
+
+	out:
+	return ret;
+}
+
+int pg_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct pg_data *data = thread_data->private_data;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	// Ignore errors, retry periodically
+	pg_connect_as_needed_and_check (data);
+
+	return 0;
 }
 
 static void *thread_entry_pg (struct rrr_thread *thread) {
@@ -110,9 +190,9 @@ static void *thread_entry_pg (struct rrr_thread *thread) {
 
 	RRR_DBG_1("pg thread data is %p, size of private data: %llu\n", thread_data, (long long unsigned) sizeof(*data));
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(pg_data_cleanup, data);
 
-	RRR_BUG("thread_entry_pg not implemented");
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
 		goto out_message;
@@ -122,6 +202,9 @@ static void *thread_entry_pg (struct rrr_thread *thread) {
 
 	RRR_DBG_1("pg started thread %p\n", thread);
 
+	// Ignore errors, retry periodically
+	pg_connect_as_needed_and_check (data);
+
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
@@ -129,12 +212,12 @@ static void *thread_entry_pg (struct rrr_thread *thread) {
 			thread_data
 	);
 
-	RRR_BUG("Push periodic poll event here");
+	// RRR_BUG("Push periodic poll event here");
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
 			1 * 1000 * 1000, // 1 second
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			pg_event_periodic,
 			thread
 	);
 
@@ -146,9 +229,9 @@ static void *thread_entry_pg (struct rrr_thread *thread) {
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_pg,
-		NULL
+	NULL,
+	thread_entry_pg,
+	NULL
 };
 
 static const char *module_name = "pg";

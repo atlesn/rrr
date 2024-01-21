@@ -22,5 +22,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PG_H
 #define RRR_PG_H
 
+struct rrr_pg_conn;
+
+int rrr_pg_new (
+		struct rrr_pg_conn **result,
+		const char *host,
+		const char *port,
+		const char *db,
+		const char *user,
+		const char *pass
+);
+void rrr_pg_destroy (
+		struct rrr_pg_conn *conn
+);
+int rrr_pg_check (
+		struct rrr_pg_conn *conn
+);
 
 #endif /* RRR_PG_H */

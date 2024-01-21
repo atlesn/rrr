@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -122,6 +122,18 @@ do {rrr_setting_double tmp_double = (default_double);                           
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE(string, target, default_double)                           \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, data->target, default_double)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT(string, target, default_u16)                                \
+    do {RRR_ASSERT(sizeof(data->target)==sizeof(uint16_t),size_of_target_must_be_sizeof_uint16_t);          \
+        data->target = default_u16;                                                                         \
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string,                                                          \
+	    if ((ret = rrr_instance_config_read_optional_port_number(&data->target, config, string)) != 0) {\
+	        goto out;										    \
+	    }                                                                                               \
+            RRR_ASSERT(sizeof(data->RRR_PASTE(target,_str))>=8,size_of_str_target_must_be_at_least_8);      \
+	);												    \
+	sprintf(data->RRR_PASTE(target,_str), "%u", data->target);                                          \
+    } while(0)
 
 enum rrr_instance_config_write_method {
 	RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE,
