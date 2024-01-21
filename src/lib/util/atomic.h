@@ -32,8 +32,8 @@ typedef struct rrr_atomic_u64_s {
 	uint64_t value;
 } rrr_atomic_u64_t;
 
-static inline int rrr_atomic_u32_load(rrr_atomic_u32_t *atomic) {
-	int res;
+static inline uint32_t rrr_atomic_u32_load(rrr_atomic_u32_t *atomic) {
+	uint32_t res;
 	__atomic_load(&atomic->value, &res, __ATOMIC_SEQ_CST);
 	return res;
 }
