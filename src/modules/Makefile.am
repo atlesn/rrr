@@ -8,6 +8,13 @@ mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
 mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS} -lrrrmysql
 endif
 
+if RRR_WITH_PG
+pg = pg.la
+pg_la_SOURCES = p_pg.c
+pg_la_CFLAGS = ${PG_CFLAGS} ${AM_CFLAGS}
+pg_la_LDFLAGS = ${module_ldflags} ${PG_LDFLAGS} -lrrrpg
+endif
+
 if RRR_WITH_PYTHON3
 python3 = python3.la
 python3_la_SOURCES = p_python3.c
@@ -52,7 +59,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la modbus.la \
-	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js}
+	${mysql} ${pg} ${python3} ${voltmonitor} ${perl5} ${lua} ${js}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c

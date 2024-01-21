@@ -253,4 +253,9 @@ if test "x$RRR_WITH_MYSQL" != 'xno'; then
 	do_test_socket test_mysql.conf
 fi
 
+echo "With PostgreSQL: $RRR_WITH_PG"
+if test "x$RRR_WITH_PG" != 'xno'; then
+	do_test_socket test_pg.conf
+fi
+
 echo "Tests complete\n"
