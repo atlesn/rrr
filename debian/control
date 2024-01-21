@@ -17,7 +17,8 @@ Build-Depends: debhelper (>= 13),
                libevent-dev,
                libjemalloc-dev,
 	       libnode-dev,
-	       liblua5.4-dev
+	       liblua5.4-dev,
+	       libpq-dev
 X-Python3-Version: 3.11,3.12
 Standards-Version: 4.6.0
 Homepage: https://github.com/atlesn/rrr
@@ -67,3 +68,12 @@ Depends: libmariadb-dev-compat,
          ${misc:Depends},
          ${shlibs:Depends}
 Description: Read Route Record module for writing to MariaDB SQL Database.
+
+Package: rrr-mod-pg
+Architecture: any
+Multi-Arch: foreign
+Depends: libpq5,
+         rrr (= ${binary:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
+Description: Read Route Record module for writing to PostgreSQL Database.

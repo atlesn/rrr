@@ -18,6 +18,12 @@ librrrmysql_la_SOURCES = mysql.c
 librrrmysql_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} 
 endif
 
+if RRR_WITH_PG
+lib_pg = librrrpg.la
+librrrpg_la_SOURCES = pg.c
+librrrpg_la_LDFLAGS = ${PG_LIBS} ${PG_LDFLAGS}
+endif
+
 if RRR_WITH_OPENSSL
 encryption = rrr_openssl.c
 endif
@@ -181,7 +187,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
-lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
+lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_pg} ${lib_cxx}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c

@@ -54,6 +54,7 @@ AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c 
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
+AC_ARG_WITH([pg],[AS_HELP_STRING([--without-pg],[build without the PostgreSQL bindings])],[enable_pg=no],[enable_pg=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
@@ -145,6 +146,7 @@ SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
+SHELL_VARS_EXPORT([RRR_WITH_PG], $enable_pg)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
 
 SHELL_VARS_OUTPUT
@@ -164,6 +166,7 @@ AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
 AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+AM_CONDITIONAL([RRR_WITH_PG], [test "x$enable_pg" != xno])
 
 AC_CHECK_LIB(rt, shm_open, [ LIBRT_LIBADD="-lrt" ], [ LIBRT_LIBADD="" ])
 AC_SUBST([LIBRT_LIBADD])
@@ -1161,6 +1164,27 @@ AS_IF([test "x$enable_mysql" = xno], [
 		echo "Test returned: `cat conftest.out`";
 		AC_MSG_ERROR([Size test of integers failed, cannot compile with MySQL on this system.])
 	])
+])
+
+# Make sure PostgreSQL-test does not include any libraries
+LIBS=""
+
+AC_MSG_CHECKING([PostgreSQL module inclusion])
+AS_IF([test "x$enable_pg" = xno], [
+	AC_MSG_RESULT([Not compiling with PostgreSQL module])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_PG], [1], [Compile with PostgreSQL module])
+	AC_CHECK_HEADERS([libpq-fe.h])
+	AC_CHECK_LIB(pq, PQconnectdbParams, [], AC_MSG_ERROR([PQconnectdbParams from libpq]))
+
+	PG_CFLAGS=""
+	PG_LDFLAGS=""
+	PG_LIBS="-lpq"
+
+	AC_SUBST([PG_CFLAGS])
+	AC_SUBST([PG_LDFLAGS])
+	AC_SUBST([PG_LIBS])
 ])
 
 AC_MSG_CHECKING([enabled database testing])
