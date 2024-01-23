@@ -41,9 +41,7 @@ Section: libs
 Architecture: any
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
-Depends: ${misc:Depends},
-         ${shlibs:Depends},
-         libssl3,
+Depends: libssl3,
          python3 (>= 3.11),
          libjemalloc2,
          libjson-c5,
@@ -57,15 +55,12 @@ Package: librrr-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
-Depends: librrr1 (= ${binary:Version}),
-         ${misc:Depends}
+Depends: librrr1 (= ${binary:Version})
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: rrr-mod-mariadb
 Architecture: any
 Multi-Arch: foreign
 Depends: libmariadb-dev-compat,
-         rrr (= ${binary:Version}),
-         ${misc:Depends},
-         ${shlibs:Depends}
+         rrr (= ${binary:Version})
 Description: Read Route Record module for writing to MariaDB SQL Database.
