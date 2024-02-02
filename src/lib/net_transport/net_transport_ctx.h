@@ -47,6 +47,9 @@ struct rrr_read_session;
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_ctx_reset_noread_counters (
+		struct rrr_net_transport_handle *handle
+);
 void rrr_net_transport_ctx_notify_read_fast (
 		struct rrr_net_transport_handle *handle
 );

@@ -537,7 +537,10 @@ static void __rrr_net_transport_event_noread_check (
 
 	RRR_ASSERT(RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX > RRR_NET_TRANSPORT_NOREAD_STRIKES_CHECK_EOF_MAX,_absolute_strikes_must_be_greater_than_check_eof_strikes);
 
-	if (handle->noread_strike_count < RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX) {
+	if (handle->noread_strike_count == 0) {
+		// Assume counter has just been reset
+	}
+	else if (handle->noread_strike_count < RRR_NET_TRANSPORT_NOREAD_STRIKES_ABSOLUTE_MAX) {
 		// TODO : Use net transport read function (quic does not work with this)
 		if ((bytes = recv(handle->submodule_fd, &buf, 1, MSG_PEEK)) == 0) {
 			// Assume that remote has closed the connection and that the application
