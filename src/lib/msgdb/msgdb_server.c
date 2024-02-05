@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // to take place during iteration, like communication with clients
 #define RRR_MSGDB_SERVER_ITERATION_INTERVAL_MS 200
 #define RRR_MSGDB_SERVER_ITERATION_MAX_MS 150
+//#define RRR_MSGDB_SERVER_DEBUG_PERFORMANCE
 
 struct rrr_msgdb_server_client;
 
@@ -904,6 +905,10 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	struct rrr_string_builder topic = {0};
 
+#ifdef RRR_MSGDB_SERVER_DEBUG_PERFORMANCE
+	uint64_t time_start = rrr_time_get_64();
+#endif
+
 	if ((ret = rrr_string_builder_append_raw(&topic, MSG_TOPIC_PTR(*msg), MSG_TOPIC_LENGTH(*msg))) != 0) {
 		goto out;
 	}
@@ -947,15 +952,27 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 			goto out;
 	};
 
+#ifdef RRR_MSGDB_SERVER_DEBUG_PERFORMANCE
+	uint64_t time_end = rrr_time_get_64();
+#endif
+
 	// Note that any errors produced while processing the
 	// client request should be masked by setting ret value while
 	// sending ACK. Only fail soft/hard if the sending of the ACK
 	// message fails or if the client sends corrupt messages.
 
 	if (ret == 0) {
+#ifdef RRR_MSGDB_SERVER_DEBUG_PERFORMANCE
+		RRR_MSG_1("msgdb fd %i %s with positive ack took %" PRIu64 " us\n",
+			client->fd, MSG_TYPE_NAME(*msg), time_end - time_start);
+#endif
 		goto out_positive_ack;
 	}
 	else if (ret == RRR_MSGDB_SOFT_ERROR) {
+#ifdef RRR_MSGDB_SERVER_DEBUG_PERFORMANCE
+		RRR_MSG_1("msgdb fd %i %s with negative ack took %" PRIu64 " us\n",
+			client->fd, MSG_TYPE_NAME(*msg), time_end - time_start);
+#endif
 		goto out_negative_ack;
 	}
 
