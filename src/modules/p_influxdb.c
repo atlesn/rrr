@@ -216,15 +216,11 @@ static void influxdb_send_data_callback (
 			handle,
 			RRR_HTTP_CLIENT_USER_AGENT,
 			NULL,
-			NULL,
 			influxdb_receive_http_response,
-			&response_callback_data,
 			NULL, /* Failure callback, not implemented in InfluxDB) */
 			NULL,
 			NULL,
-			NULL,
-			NULL,
-			NULL
+			&response_callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -586,8 +582,15 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			&data->net_transport_config,
 			config,
 			"influxdb",
-			0,
-			RRR_NET_TRANSPORT_PLAIN
+			0, // Disallow multiple transports
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+			0, // Don't allow specifying certificate without transport type being TLS
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN | RRR_NET_TRANSPORT_F_TLS
+#else
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	) != 0) {
 		ret = 1;
 	}

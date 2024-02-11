@@ -142,7 +142,7 @@ int rrr_string_builder_reserve (
 			RRR_MSG_0("Overflow in rrr_string_builder_reserve\n");
 			return 1;
 		}
-		char *new_buf = rrr_reallocate(string_builder->buf, string_builder->size, new_size);
+		char *new_buf = rrr_reallocate(string_builder->buf, new_size);
 		if (new_buf == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_string_builder_reserve\n");
 			return 1;

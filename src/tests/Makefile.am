@@ -17,6 +17,10 @@ js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${JS_LDFLAGS}
 js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
+if RRR_WITH_HTTP3
+test_quic = test_quic.c
+endif
+
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 test_SOURCES = test.c \
@@ -28,10 +32,12 @@ test_SOURCES = test.c \
 	test_parse.c \
 	test_inet.c \
 	test_modbus.c \
+	test_http.c \
 	test_condition.c \
 	${test_jsonc} \
 	${test_zlib} \
 	${test_lua} \
+	${test_quic} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \

@@ -144,19 +144,24 @@ int rrr_mqtt_transport_start (
 
 	struct rrr_net_transport *tmp = NULL;
 
-	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_TLS) {
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				net_transport_config,
 				application_name,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
-				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS,
+				NULL,
+				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not initialize TLS network type in %s\n", __func__);
 			goto out;
 		}
 	}
-	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_PLAIN) {
+	else
+#endif
+	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_PLAIN) {
 		struct rrr_net_transport_config net_transport_config_plain;
 		rrr_net_transport_config_copy_mask_tls(&net_transport_config_plain, net_transport_config);
 		if ((ret = rrr_net_transport_new (
@@ -164,14 +169,16 @@ int rrr_mqtt_transport_start (
 				&net_transport_config_plain,
 				application_name,
 				0,
-				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS,
+				NULL,
+				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not initialize plain network type in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type, __func__);
+		RRR_BUG("Unknown transport type %i to %s\n", net_transport_config->transport_type_p, __func__);
 	}
 
 	transport->transports[transport->transport_count++] = tmp;

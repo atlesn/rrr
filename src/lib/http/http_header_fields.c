@@ -334,6 +334,34 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 	return ret;
 }
 
+static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+		if (!rrr_nullsafe_str_isset(node->value)) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+			RRR_DBG_1("Warning: Empty field '%s' in alt-svc header\n", name);
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		// h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+
+		int found;
+		const char *unquote_field_names[] = {"h3", "h3-29"};
+		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 2);
+		if (found == 0) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+			RRR_DBG_1("Warning: Unknown field '%s' in alt-svc header\n", name);
+		}
+
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		printf("alt-svc: %s = %s\n", name, value);
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
 static const struct rrr_http_header_field_definition definitions[] = {
         {":status",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_unsigned_value},
         {":method",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -365,6 +393,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"sec-websocket-accept",   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_base64_value},
         {"sec-websocket-version",  RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"http2-settings",         RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
+        {"alt-svc",                RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_alt_svc_value},
         {NULL, 0, NULL}
 };
 
@@ -605,6 +634,37 @@ int rrr_http_header_field_new_with_value_nullsafe (
 		return ret;
 }
 
+int rrr_http_header_field_new_with_value_raw (
+		struct rrr_http_header_field **result,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new_raw(&field, name, name_length)) != 0) {
+		RRR_MSG_0("Could not create header field in %s\n", __func__);
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, value_length)) != 0) {
+		RRR_MSG_0("Could not allocate memory for value in %s\n", __func__);
+		goto out_destroy;
+	}
+
+	*result = field;
+
+	goto out;
+	out_destroy:
+		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
+
+}
+
 static const char *__rrr_http_header_field_parse_get_first_position (
 		const char *a,
 		const char *b,
@@ -627,7 +687,7 @@ static const char *__rrr_http_header_field_parse_get_first_position (
 }
 
 enum rrr_http_header_field_parse_line_end_mode {
-	RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_NULL,
+	RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_END,
 	RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_CRLF
 };
 
@@ -637,8 +697,8 @@ static int __rrr_http_header_field_line_end_find (
 		const char *end,
 		enum rrr_http_header_field_parse_line_end_mode line_end_mode
 ) {
-	if (line_end_mode == RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_NULL) {
-		*target = rrr_http_util_strchr(start, end, '\0');
+	if (line_end_mode == RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_END) {
+		*target = end;
 	}
 	else {
 		*target = rrr_http_util_find_crlf(start, end);
@@ -978,6 +1038,7 @@ static int __rrr_http_header_field_parse (
 
 struct rrr_http_header_field_parse_value_callback_data {
 	const char *name;
+	rrr_length name_length;
 };
 
 static int __rrr_http_header_field_parse_value_field_create_callback (CALLBACK_ARGS) {
@@ -992,7 +1053,7 @@ static int __rrr_http_header_field_parse_value_field_create_callback (CALLBACK_A
 		if (rrr_http_header_field_new_raw (
 				field,
 				callback_data->name,
-				rrr_length_from_size_t_bug_const (strlen(callback_data->name))
+				callback_data->name_length
 		) != 0) {
 			return RRR_HTTP_PARSE_HARD_ERR;
 		}
@@ -1030,25 +1091,44 @@ static int __rrr_http_header_field_parse_value_whitespace_check_callback (CALLBA
 	return RRR_HTTP_PARSE_OK;
 }
 
-int rrr_http_header_field_parse_value (
+int rrr_http_header_field_parse_value_raw (
 		struct rrr_http_header_field_collection *target_list,
 		rrr_length *parsed_bytes,
 		const char *name,
-		const char *value
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
 ) {
 	struct rrr_http_header_field_parse_value_callback_data callback_data = {
-		name
+		name,
+		name_length
 	};
 
 	return __rrr_http_header_field_parse (
 			target_list,
 			parsed_bytes,
 			value,
-			value + strlen(value) + 1, // Must include \0 in count
-			RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_NULL,
+			value + value_length,
+			RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_END,
 			__rrr_http_header_field_parse_value_field_create_callback,
 			__rrr_http_header_field_parse_value_whitespace_check_callback,
 			&callback_data
+	);
+}
+
+int rrr_http_header_field_parse_value (
+		struct rrr_http_header_field_collection *target_list,
+		rrr_length *parsed_bytes,
+		const char *name,
+		const char *value
+) {
+	return rrr_http_header_field_parse_value_raw (
+			target_list,
+			parsed_bytes,
+			name,
+			rrr_length_from_biglength_bug_const(strlen(name)),
+			value,
+			rrr_length_from_biglength_bug_const(strlen(value))
 	);
 }
 

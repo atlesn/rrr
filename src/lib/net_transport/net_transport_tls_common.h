@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport.h"
 #include "../ip/ip.h"
+#include "../socket/rrr_socket_graylist.h"
 
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/ssl.h>
@@ -49,12 +50,16 @@ struct rrr_net_transport_tls {
 	struct tls_config *config;
 #endif
 
-	int flags;
+	int flags_tls;
+	int flags_submodule;
+
 	char *certificate_file;
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
 	struct rrr_net_transport_tls_alpn alpn;
+
+	struct rrr_socket_graylist *connect_graylist;
 };
 
 struct rrr_net_transport_tls_data {
@@ -62,22 +67,21 @@ struct rrr_net_transport_tls_data {
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
 
-	char *alpn_selected_proto;
-
 #ifdef RRR_WITH_OPENSSL
 	SSL_CTX *ctx;
 	BIO *web;
+	SSL *ssl;
 #endif
 
 #ifdef RRR_WITH_LIBRESSL
 	struct tls *ctx;
 #endif
-
 };
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
-		int flags,
+		int flags_tls,
+		int flags_submodule,
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,

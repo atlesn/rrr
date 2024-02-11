@@ -848,9 +848,6 @@ static int ip_resolve_push_sendto_callback (
 	*buf = '\0';
 	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
 
-	// If no translation is needed, the original address is copied
-	// rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
-
 	if ( callback_data->ip_data->udp_send_fd_ip6 > 0 &&
 	     ip_resolve_push_sendto_callback_test_fd (
 				callback_data->ip_data,

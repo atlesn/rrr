@@ -58,8 +58,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_LUA
 #	include "test_lua.h"
 #endif
-#ifdef RRR_WITH_NODE
+#ifdef RRR_WITH_JS
 #	include "lib/testjs.h"
+#endif
+#ifdef RRR_WITH_HTTP3
+#	include "test_quic.h"
 #endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
@@ -72,6 +75,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
+#include "test_http.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -132,7 +136,7 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-goto lua;
+
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -202,7 +206,7 @@ goto lua;
 
 	ret |= ret_tmp;
 #endif
-lua:
+
 #ifdef RRR_WITH_LUA
 	TEST_BEGIN("Lua library functions") {
 		ret_tmp = rrr_test_lua();
@@ -210,8 +214,16 @@ lua:
 
 	ret |= ret_tmp;
 #endif
-return ret;
-#ifdef RRR_WITH_NODE
+
+#ifdef RRR_WITH_HTTP3
+	TEST_BEGIN("quic handshake") {
+		ret_tmp = rrr_test_quic();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_JS
 	TEST_BEGIN("js library functions") {
 		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
@@ -275,6 +287,12 @@ return ret;
 
 	TEST_BEGIN("modbus functions") {
 		ret_tmp = rrr_test_modbus();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("http functions") {
+		ret_tmp = rrr_test_http();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

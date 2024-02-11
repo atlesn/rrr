@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -64,6 +64,11 @@ int rrr_nullsafe_str_append_raw (
 		const void *str,
 		rrr_nullsafe_len len
 );
+int rrr_nullsafe_str_new_or_append_raw (
+		struct rrr_nullsafe_str **result,
+		const void *str,
+		rrr_nullsafe_len len
+);
 int rrr_nullsafe_str_append_asprintf (
 		struct rrr_nullsafe_str *nullsafe,
 		const void *format,
@@ -102,6 +107,9 @@ int rrr_nullsafe_str_set (
 		struct rrr_nullsafe_str *nullsafe,
 		const void *src,
 		rrr_nullsafe_len len
+);
+void rrr_nullsafe_str_clear (
+		struct rrr_nullsafe_str *nullsafe
 );
 int rrr_nullsafe_str_chr (
 		const struct rrr_nullsafe_str *nullsafe,
@@ -210,6 +218,12 @@ int rrr_nullsafe_str_with_raw_do (
 		int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
 		void *callback_arg
 );
+int rrr_nullsafe_str_with_raw_do_offset (
+		struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
+		int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
+		void *callback_arg
+);
 int rrr_nullsafe_str_with_raw_null_terminated_do (
 		const struct rrr_nullsafe_str *nullsafe,
 		int (*callback)(const char *str, void *arg),
@@ -220,6 +234,12 @@ int rrr_nullsafe_str_raw_null_terminated_dump (
 );
 int rrr_nullsafe_str_with_raw_do_const (
 		const struct rrr_nullsafe_str *nullsafe,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+);
+int rrr_nullsafe_str_with_raw_do_const_offset (
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
 		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
 		void *callback_arg
 );

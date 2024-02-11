@@ -50,9 +50,11 @@ AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable Libre
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
 AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
+AC_ARG_WITH([quictls-openssl], [AS_HELP_STRING([--without-quictls-openssl], [Disable OpenSSL with QuicTLS support])], [enable_quictls_openssl=no; enable_auto_quic=no], [enable_auto_quic=yes])
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
+AC_ARG_WITH([http3],[AS_HELP_STRING([--with-http3],[build with the NGHTTP3 and NGTCP2 bindings])],[enable_http3=yes],[enable_http3=no])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
@@ -141,6 +143,7 @@ SHELL_VARS_INIT([variables.sh])
 
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
+SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
@@ -206,6 +209,25 @@ AC_RUN_IFELSE([
 	AC_DEFINE([RRR_HAS_PATH_MAX_IN_LINUX_LIMITS_H], [1], [Use linux/limits.h to find PATH_MAX])
 ], [
 	AC_MSG_RESULT([limits.h])
+])
+
+AC_MSG_CHECKING([for IP_PKTINFO])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <netinet/in.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			printf("IP_PKTINFO: %i\n", IP_PKTINFO);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_IP_PKTINFO], [1], [Use Linux style IP_PKTINFO])
+], [
+	AC_MSG_RESULT([no])
 ])
 
 AC_MSG_CHECKING([precense of gettid()])
@@ -298,6 +320,8 @@ AS_IF([test "x$enable_openssl" = xyes], [
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
 
+	HAVE_OPENSSL=yes
+
 	AC_SUBST([TLS_CFLAGS])
 	AC_SUBST([TLS_LDFLAGS])
 	AC_SUBST([TLS_LIBADD])
@@ -342,6 +366,32 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_openssl" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
+
+AC_CHECK_LIB([ssl], [SSL_is_quic], [HAVE_OPENSSL_QUIC=yes], [])
+
+AC_MSG_CHECKING([for automatic QUIC library selection])
+AS_IF([test "x$enable_auto_quic" != xno], [
+	AC_MSG_RESULT([yes])
+	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "x"],[enable_quictls_openssl=yes])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for enabled OpenSSL with QUIC usage])
+AS_IF([test "x$enable_quictls_openssl" = xyes], [
+	AC_MSG_RESULT([yes])
+	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "xyes"],[AC_MSG_ERROR([OpenSSL with QUIC was enabled but not found])])
+	AC_DEFINE([RRR_HAVE_QUIC], [1], [OpenSSL has QUIC bindings])
+], [
+	AC_MSG_RESULT([no])
+])
+
+SHELL_VARS_EXPORT([RRR_HAVE_QUIC], $enable_quictls_openssl)
+
+AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
+
+AM_CONDITIONAL([RRR_WITH_TLS], [test "x$enable_openssl" != xno -o "x$enable_libressl" != xno -o "x$enable_quictls_openssl" != xno ])
 
 # Make sure jemalloc-test does not include any libraries
 LIBS=""
@@ -1103,6 +1153,31 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LDFLAGS])
 	AC_SUBST([NGHTTP2_LIBS])
 ])
+
+AC_MSG_CHECKING([HTTP3 usage with NGHTTP3 and NGTCP2 bindings])
+AS_IF([test "x$enable_http3" = xno], [
+	AC_MSG_RESULT([Not compiling with HTTP3])
+], [
+	AS_IF([test "x$HAVE_OPENSSL_QUIC" != xyes], [AC_MSG_ERROR([OpenSSL with QUIC was not found or disabled])], [])
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_HTTP3], [1], [Compile with NGHTTP3 bindings])
+	AC_CHECK_HEADERS([ngtcp2/ngtcp2.h])
+	AC_CHECK_HEADERS([nghttp3/nghttp3.h])
+	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
+	AC_CHECK_LIB(ngtcp2_crypto_quictls, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_quictls not found]))
+	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
+	HTTP3_CFLAGS=""
+	HTTP3_LDFLAGS="-lnghttp3"
+	NGTCP2_CFLAGS=""
+	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_quictls"
+	AC_SUBST([HTTP3_CFLAGS])
+	AC_SUBST([HTTP3_LDFLAGS])
+	AC_SUBST([NGTCP2_CFLAGS])
+	AC_SUBST([NGTCP2_LDFLAGS])
+])
+
+SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
+AM_CONDITIONAL(RRR_WITH_HTTP3, [test "x$enable_http3" != xno])
 
 # Make sure MySQL-test does not include any libraries
 LIBS=""

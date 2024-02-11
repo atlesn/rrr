@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <strings.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -36,6 +37,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
+#include "../helpers/string_builder.h"
+
+#if defined(RRR_WITH_HTTP3)
+#include "http_application_http3.h"
+#endif
 
 #ifdef RRR_WITH_ZLIB
 #include "../zlib/rrr_zlib.h"
@@ -1419,5 +1425,92 @@ int rrr_http_util_decode (
 
 const char *rrr_http_util_encodings_get (void) {
 	return "gzip";
+}
+#endif
+
+int rrr_http_util_alpn_iterate (
+		const char * const alpn,
+		unsigned int length,
+		int (*callback)(unsigned int i, const char *alpn, unsigned char alpn_length, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	unsigned int i = 0;
+
+	const char *pos = alpn;
+	const char * const end = alpn + length;
+
+	while (pos < end) {
+		unsigned char length = (unsigned char) *pos;
+		pos++;
+		assert(pos + length <= end);
+
+		if ((ret = callback(i, pos, length, callback_arg)) != 0) {
+			goto out;
+		}
+
+		pos += length;
+		i++;
+	}
+
+	assert(pos == end);
+
+	out:
+	return ret;
+}
+
+#if defined(RRR_WITH_HTTP3)
+struct rrr_http_util_make_alt_svc_header_callback_data {
+	struct rrr_string_builder *target;
+	uint16_t quic_port;
+};
+
+static int rrr_http_util_make_alt_svc_header_callback (
+		unsigned int i,
+		const char *alpn,
+		unsigned char length,
+		void *arg
+) {
+	struct rrr_http_util_make_alt_svc_header_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (i > 0 && (ret = rrr_string_builder_append_raw(callback_data->target, ",", 1)) != 0) {
+		goto out;
+	}
+	if ((ret = rrr_string_builder_append_raw(callback_data->target, alpn, length)) != 0) {
+		goto out;
+	}
+	if ((ret = rrr_string_builder_append_format(callback_data->target, "=\":%u\"; ma=3600", callback_data->quic_port)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_util_make_alt_svc_header (
+		struct rrr_string_builder *target,
+		uint16_t quic_port
+) {
+	assert(rrr_string_builder_length(target) == 0);
+
+	const char *alpn;
+	unsigned int length;
+
+	struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
+		target,
+		quic_port
+	};
+
+	rrr_http_application_http3_alpn_protos_get (&alpn, &length);
+
+	return rrr_http_util_alpn_iterate (
+			alpn,
+			length,
+			rrr_http_util_make_alt_svc_header_callback,
+			&callback_data
+	);
 }
 #endif

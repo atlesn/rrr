@@ -39,6 +39,7 @@ struct rrr_http_transaction {
 
 	enum rrr_http_body_format request_body_format;
 
+	struct rrr_nullsafe_str *read_body;
 	struct rrr_nullsafe_str *send_body;
 	rrr_biglength send_body_pos;
 
@@ -47,14 +48,23 @@ struct rrr_http_transaction {
 
 	rrr_biglength remaining_redirects;
 
+	// Managed data for downstream server/client
 	void *application_data;
 	void (*application_data_destroy)(void *arg);
+
+	// Unmanaged data for HTTP protocol layer
+	void *protocol_ptr;
+	int protocol_int;
 
 	rrr_http_unique_id unique_id;
 
 	int need_response;
 
 	int stream_flags;
+
+	// Helper values for use in callbacks
+	enum rrr_http_transport transport_code;
+	enum rrr_http_application_type application_type;
 
 	uint64_t creation_time;
 };
@@ -76,6 +86,11 @@ void rrr_http_transaction_application_data_set (
 		struct rrr_http_transaction *transaction,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
+);
+void rrr_http_transaction_protocol_data_set (
+		struct rrr_http_transaction *transaction,
+		void *protocol_ptr,
+		int protocol_int
 );
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
@@ -127,6 +142,10 @@ int rrr_http_transaction_request_content_type_directive_set (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value
+);
+int rrr_http_transaction_response_alt_svc_set (
+		struct rrr_http_transaction *transaction,
+		const char *alt_svc
 );
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
