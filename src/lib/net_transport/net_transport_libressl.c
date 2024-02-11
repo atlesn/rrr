@@ -595,6 +595,10 @@ static int __rrr_net_transport_libressl_read (
 
 	ret = __rrr_net_transport_libressl_read_raw(buf, bytes_read, handle->submodule_private_ptr, buf_size);
 
+	if (ret == RRR_NET_TRANSPORT_READ_OK && *bytes_read == 0) {
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+	}
+
 	out:
 	return ret;
 }

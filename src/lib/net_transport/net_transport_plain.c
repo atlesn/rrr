@@ -246,8 +246,6 @@ static int __rrr_net_transport_plain_read (
 			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF
 	);
 
-	ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
-
 	*bytes_read = bytes_read_s;
 
 	out:

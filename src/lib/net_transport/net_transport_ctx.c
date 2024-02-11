@@ -410,6 +410,8 @@ int rrr_net_transport_ctx_read (
 ) {
 	int ret = handle->transport->methods->read(bytes_read, handle, buf, buf_size);
 
+	assert((ret || *bytes_read) && "A return value must be set or data must be returned");
+
 	handle->bytes_read_total += *bytes_read;
 
 	return ret;

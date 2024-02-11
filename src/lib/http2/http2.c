@@ -161,13 +161,13 @@ static ssize_t __rrr_http2_recv_callback (
 			(char *) buf,
 			length
 	)) != 0) {
-		ret &= ~(RRR_NET_TRANSPORT_SEND_INCOMPLETE);
+		ret &= ~(RRR_NET_TRANSPORT_READ_INCOMPLETE);
 		if (ret & RRR_NET_TRANSPORT_READ_READ_EOF) {
-			RRR_DBG_3("http2 EOF while sending\n");
+			RRR_DBG_3("http2 EOF while receiving\n");
 			return NGHTTP2_ERR_EOF;
 		}
 		else if (ret != 0) {
-			RRR_DBG_3("http2 recv failed with error %i\n", ret);
+			RRR_DBG_3("http2 receive failed with error %i\n", ret);
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	}
