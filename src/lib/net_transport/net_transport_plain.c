@@ -248,6 +248,10 @@ static int __rrr_net_transport_plain_read (
 
 	*bytes_read = bytes_read_s;
 
+	if (ret == RRR_SOCKET_OK && bytes_read_s == 0) {
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+	}
+
 	out:
 	return ret;
 }
