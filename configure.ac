@@ -150,8 +150,6 @@ SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
 
-SHELL_VARS_OUTPUT
-
 AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
@@ -161,6 +159,7 @@ AM_CONDITIONAL([RRR_WITH_JS], [test "x$enable_js" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
+AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
@@ -260,6 +259,7 @@ AC_SUBST([TLS_LIBADD])
 TLS_CFLAGS=
 TLS_LDFLAGS=
 TLS_LIBADD=
+WITH_TLS=no
 
 CHECK_LIBRESSL_LIBTLS
 
@@ -292,6 +292,8 @@ AS_IF([test "x$enable_libressl" = xyes], [
 	TLS_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
 	TLS_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
 	TLS_LIBADD=$LIBRESSL_LIBTLS_LIBADD
+
+	WITH_TLS=yes
 ], [
 	AC_MSG_RESULT([Not compiling with LibreSSL])
 ])
@@ -325,6 +327,8 @@ AS_IF([test "x$enable_openssl" = xyes], [
 	AC_SUBST([TLS_CFLAGS])
 	AC_SUBST([TLS_LDFLAGS])
 	AC_SUBST([TLS_LIBADD])
+
+	WITH_TLS=yes
 ], [
 	AC_MSG_RESULT([Not compiling with OpenSSL])
 ])
@@ -361,11 +365,17 @@ AC_SUBST([TLS_LIBADD])
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
 SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $enable_libressl)
 SHELL_VARS_EXPORT([RRR_WITH_AUTO_SSL], $enable_auto_ssl)
+SHELL_VARS_EXPORT([RRR_WITH_TLS], $WITH_TLS)
 
 AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_openssl" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
+AM_CONDITIONAL([RRR_WITH_TLS], [test "x$WITH_TLS" != xno])
+
+AS_IF([test "x$WITH_TLS" != "xno"], [
+	AC_DEFINE([RRR_WITH_TLS], [1], [Enable encryption in network modules])
+])
 
 AC_CHECK_LIB([ssl], [SSL_is_quic], [HAVE_OPENSSL_QUIC=yes], [])
 
@@ -1176,9 +1186,6 @@ AS_IF([test "x$enable_http3" = xno], [
 	AC_SUBST([NGTCP2_LDFLAGS])
 ])
 
-SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
-AM_CONDITIONAL(RRR_WITH_HTTP3, [test "x$enable_http3" != xno])
-
 # Make sure MySQL-test does not include any libraries
 LIBS=""
 
@@ -1384,6 +1391,8 @@ AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
+SHELL_VARS_OUTPUT
+
 AC_CONFIG_FILES(
 	Makefile
 	src/Makefile
@@ -1397,6 +1406,7 @@ AC_CONFIG_FILES(
 )
 
 AC_OUTPUT
+
 SHELL_VARS_CLEANUP
 
 # Make sure dependency_libs is always set to empty in new .la files to avoid

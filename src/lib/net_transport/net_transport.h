@@ -261,6 +261,12 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );
+int rrr_net_transport_handle_send_push_const (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const void *data,
+		rrr_biglength size
+);
 int rrr_net_transport_handle_cid_push (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,

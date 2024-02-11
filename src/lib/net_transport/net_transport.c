@@ -1201,6 +1201,22 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 	return ret;
 }
 
+int rrr_net_transport_handle_send_push_const (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const void *data,
+		rrr_biglength size
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_GET();
+
+	ret = rrr_net_transport_ctx_send_push_const(handle, data, size);
+
+	return ret;
+
+}
+
 static int __rrr_net_transport_handle_ptr_cid_push (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_net_transport_connection_id *cid

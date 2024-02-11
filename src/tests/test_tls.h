@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2022-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TEST_QUIC_H
-#define RRR_TEST_QUIC_H
+#ifndef RRR_TEST_TLS_H
+#define RRR_TEST_TLS_H
 
 struct rrr_event_queue;
 
-int rrr_test_quic (struct rrr_event_queue *queue);
+int rrr_test_tls (struct rrr_event_queue *queue);
 
-#endif /* RRR_TEST_QUIC_H */
+#endif /* RRR_TEST_TLS_H */

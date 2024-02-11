@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_parse.h"
 #include "test_inet.h"
 #include "test_modbus.h"
+#ifdef RRR_WITH_TLS
+#	include "test_tls.h"
+#endif
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
 #endif
@@ -131,12 +134,15 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                           '\0',    NULL,                   ""}
 };
 
-int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
+int rrr_test_library_functions (
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_event_queue *event_queue
+) {
 	int ret = 0;
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-
+goto tls;
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -190,6 +196,17 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
+
+#ifdef RRR_WITH_TLS
+	tls:
+	TEST_BEGIN("TLS functions") {
+		ret_tmp = rrr_test_tls(event_queue);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	return ret;
+#endif
 
 #ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
@@ -312,6 +329,7 @@ int rrr_test_fork_executable (const char *fork_executable) {
 int main (int argc, const char **argv, const char **env) {
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler_interrupt = NULL;
+
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
@@ -333,6 +351,7 @@ int main (int argc, const char **argv, const char **env) {
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
+	struct rrr_event_queue *event_queue = NULL;
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
 		&some_fork_has_stopped
 	};
@@ -357,13 +376,18 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_message_broker;
 	}
 
+	if (rrr_event_queue_new (&event_queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_fork_handler;
+	}
+
 	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
 	TEST_MSG("Change to directory %s\n", RRR_TEST_PATH);
 
 	if (chdir(RRR_TEST_PATH) != 0) {
 		TEST_MSG("Error while changing directory\n");
 		ret = 1;
-		goto out_cleanup_message_broker;
+		goto out_cleanup_event_queue;
 	}
 
 	TEST_BEGIN("PARSE CMD") {
@@ -384,7 +408,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
-		ret = rrr_test_library_functions(fork_handler);
+		ret = rrr_test_library_functions(fork_handler, event_queue);
 		goto out_cleanup_cmd;
 	}
 
@@ -517,10 +541,10 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		cmd_destroy(&cmd);
 
-	out_cleanup_message_broker:
-		rrr_message_broker_destroy(message_broker);
+	out_cleanup_event_queue:
+		rrr_event_queue_destroy(event_queue);
 
-//	out_cleanup_fork_handler:
+	out_cleanup_fork_handler:
 		if (is_child) {
 			// Only main runs fork cleanup stuff
 			goto out_cleanup_signal;
@@ -528,6 +552,9 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
+
+	out_cleanup_message_broker:
+		rrr_message_broker_destroy(message_broker);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler_interrupt);
