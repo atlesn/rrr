@@ -23,6 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_event_queue;
 
-int rrr_test_quic (struct rrr_event_queue *queue);
+int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *queue);
 
 #endif /* RRR_TEST_QUIC_H */

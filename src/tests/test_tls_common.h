@@ -55,6 +55,7 @@ int rrr_test_tls_common_init (
 );
 
 int rrr_test_tls_common_dispatch (
+		const volatile int *main_running,
 		struct rrr_event_queue *event_queue,
 		struct rrr_test_tls_common_data_common *data,
 		int (*complete_callback)(struct rrr_test_tls_common_data_common *data),

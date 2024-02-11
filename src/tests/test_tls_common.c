@@ -212,6 +212,7 @@ int rrr_test_tls_common_init (
 }
 
 struct rrr_test_tls_common_periodic_callback_data {
+	const volatile int *main_running;
 	struct rrr_test_tls_common_data_common *data;
 	int (*complete_callback)(struct rrr_test_tls_common_data_common *data);
 	int (*periodic_callback)(struct rrr_test_tls_common_data_common *data);
@@ -220,6 +221,11 @@ struct rrr_test_tls_common_periodic_callback_data {
 static int __rrr_test_tls_common_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_tls_common_periodic_callback_data *cb_data = arg;
 	struct rrr_test_tls_common_data_common *data = cb_data->data;
+
+	if (!*cb_data->main_running) {
+		TEST_MSG("TLS test aborted\n");
+		return RRR_EVENT_ERR;
+	}
 
 	if (rrr_time_get_64() > data->timeout) {
 		TEST_MSG("TLS test timeout after %i seconds\n", RRR_TEST_TLS_COMMON_TIMEOUT_S);
@@ -257,12 +263,14 @@ static int __rrr_test_tls_common_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 }
 
 int rrr_test_tls_common_dispatch (
+		const volatile int *main_running,
 		struct rrr_event_queue *event_queue,
 		struct rrr_test_tls_common_data_common *data,
 		int (*complete_callback)(struct rrr_test_tls_common_data_common *data),
 		int (*periodic_callback)(struct rrr_test_tls_common_data_common *data)
 ) {
 	struct rrr_test_tls_common_periodic_callback_data cb_data = {
+		.main_running = main_running,
 		.data = data,
 		.complete_callback = complete_callback,
 		.periodic_callback = periodic_callback

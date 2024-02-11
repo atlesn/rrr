@@ -135,6 +135,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 int rrr_test_library_functions (
+		const volatile int *main_running,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_event_queue *event_queue
 ) {
@@ -142,7 +143,7 @@ int rrr_test_library_functions (
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
-goto tls;
+
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
@@ -198,14 +199,11 @@ goto tls;
 	ret |= ret_tmp;
 
 #ifdef RRR_WITH_TLS
-	tls:
 	TEST_BEGIN("TLS functions") {
-		ret_tmp = rrr_test_tls(event_queue);
+		ret_tmp = rrr_test_tls(main_running, event_queue);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
-
-	return ret;
 #endif
 
 #ifdef RRR_WITH_JSONC
@@ -234,7 +232,7 @@ goto tls;
 
 #ifdef RRR_WITH_HTTP3
 	TEST_BEGIN("quic handshake") {
-		ret_tmp = rrr_test_quic();
+		ret_tmp = rrr_test_quic(main_running, event_queue);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -390,6 +388,17 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_event_queue;
 	}
 
+	struct sigaction action;
+	action.sa_handler = rrr_signal;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
 	TEST_BEGIN("PARSE CMD") {
 		if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 			ret = 1;
@@ -408,7 +417,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
-		ret = rrr_test_library_functions(fork_handler, event_queue);
+		ret = rrr_test_library_functions(&main_running, fork_handler, event_queue);
 		goto out_cleanup_cmd;
 	}
 
@@ -427,7 +436,6 @@ int main (int argc, const char **argv, const char **env) {
 				&exit_notification_data
 		);
 		if (pid == 0) {
-			rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 			is_child = 1;
 			ret = rrr_test_fork_executable(fork_executable);
 			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
@@ -488,17 +496,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_instances;
 	}
 
-	struct sigaction action;
-	action.sa_handler = rrr_signal;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
-
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-
 	TEST_BEGIN(config_file) {
 		while (  main_running &&
 		        !some_fork_has_stopped &&
@@ -538,8 +535,8 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 	out_cleanup_cmd:
-		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		cmd_destroy(&cmd);
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 	out_cleanup_event_queue:
 		rrr_event_queue_destroy(event_queue);

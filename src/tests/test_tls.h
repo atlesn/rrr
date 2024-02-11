@@ -23,6 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_event_queue;
 
-int rrr_test_tls (struct rrr_event_queue *queue);
+int rrr_test_tls (const volatile int *main_running, struct rrr_event_queue *queue);
 
 #endif /* RRR_TEST_TLS_H */

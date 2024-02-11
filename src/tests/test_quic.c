@@ -243,7 +243,7 @@ static int __rrr_test_quic_complete_callback (
 	return RRR_EVENT_OK;
 }
 
-int rrr_test_quic (struct rrr_event_queue *queue) {
+int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *queue) {
 	int ret = 0;
 
 	/*
@@ -298,6 +298,7 @@ int rrr_test_quic (struct rrr_event_queue *queue) {
 	}
 
 	ret = rrr_test_tls_common_dispatch (
+			main_running,
 			queue,
 			&data,
 			__rrr_test_quic_complete_callback,

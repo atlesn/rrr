@@ -40,11 +40,17 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 			buf,
 			sizeof(buf)
 	)) != 0) {
-		TEST_MSG("rrr_net_transport_ctx_read failed: %d\n", ret);
+		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			TEST_MSG("rrr_net_transport_ctx_read incomplete read for %s\n", data->name);
+			ret = RRR_EVENT_OK;
+			goto out;
+		}
+		TEST_MSG("rrr_net_transport_ctx_read failed for %s: %d\n", data->name, ret);
+		goto out;
 	}
 
 	if (strlen(data->msg_in) != bytes_read || memcmp(data->msg_in, buf, bytes_read) != 0) {
-		TEST_MSG("rrr_net_transport_ctx_read failed, unexpected data\n");
+		TEST_MSG("rrr_net_transport_ctx_read failed for %s: Unexpected data\n", data->name);
 		ret = RRR_EVENT_EXIT;
 		goto out;
 	}
@@ -59,7 +65,7 @@ static int __rrr_test_tls_complete_callback (
 		struct rrr_test_tls_common_data_common *data
 ) {
 	(void)(data);
-	return RRR_EVENT_OK;
+	return RRR_EVENT_EXIT;
 }
 
 static int __rrr_test_tls_periodic_callback (
@@ -103,7 +109,7 @@ static int __rrr_test_tls_periodic_callback (
 	return ret;
 }
 
-int rrr_test_tls (struct rrr_event_queue *queue) {
+int rrr_test_tls (const volatile int *main_running, struct rrr_event_queue *queue) {
 	int ret = 0;
 
 	struct rrr_test_tls_common_data_common data;
@@ -138,6 +144,7 @@ int rrr_test_tls (struct rrr_event_queue *queue) {
 	}
 
 	ret = rrr_test_tls_common_dispatch (
+			main_running,
 			queue,
 			&data,
 			__rrr_test_tls_complete_callback,
