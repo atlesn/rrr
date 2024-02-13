@@ -619,7 +619,7 @@ int rrr_http_util_strtoull_raw (
 			}
 		}
 		else {
-			RRR_BUG("Unkonwn base %i in rrr_http_util_strtoull\n", base);
+			RRR_BUG("Unknown base %i in %s\n", base, __func__);
 		}
 	}
 
@@ -632,7 +632,7 @@ int rrr_http_util_strtoull_raw (
 	}
 
 	if (numbers_end - start > 63) {
-		RRR_MSG_0("Number was too long in __rrr_http_part_strtoull\n");
+		RRR_MSG_0("Number was too long in %s\n", __func__);
 		return 1;
 	}
 
@@ -643,11 +643,11 @@ int rrr_http_util_strtoull_raw (
 	unsigned long long int number = strtoull(buf, &endptr, base);
 
 	if (endptr == NULL) {
-		RRR_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
+		RRR_BUG("Endpointer was NULL in %s\n", __func__);
 	}
 
 	rrr_biglength result_tmp = rrr_length_from_ptr_sub_bug_const(endptr, buf);
-	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_tmp, "__rrr_http_part_strtoull");
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_tmp, "rrr_http_util_strtoull_raw");
 
 	*result = number;
 	*result_len = rrr_length_from_biglength_bug_const(result_tmp);
