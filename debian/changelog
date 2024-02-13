@@ -37,6 +37,7 @@ rrr (1.29-1) bookworm; urgency=medium
     * Set mode on file which are written by the file module
     * Incrementer can use prefixes ORed with incremented ID
     * Dump memory profiling using functionallity provided by jemalloc
+    * Summarize response errors in httpclient sorted by code
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
