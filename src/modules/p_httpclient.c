@@ -2331,6 +2331,8 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			ptr->count,
 			ptr->code
 		);
+
+		ptr->count = 0;
 	}
 
 	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_timeout_us;
