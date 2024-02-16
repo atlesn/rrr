@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../lib/util/posix.h"
 #include "../lib/util/bsd.h"
+#include "../lib/util/posix.h"
 
 #include <stdlib.h>
 #include <unistd.h>

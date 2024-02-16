@@ -18,8 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../util/posix.h"
 #include "../util/bsd.h"
+#include "../util/posix.h"
 
 #include <stdlib.h>
 #include <string.h>

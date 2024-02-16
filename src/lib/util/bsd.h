@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_HAVE_LIBBSD
 #  include <bsd/unistd.h>
 #else
+#  define __BSD_VISIBLE 1
 #  include <unistd.h>
 #endif
 
@@ -39,11 +40,7 @@ static void rrr_setproctitle(const char *fmt, ...) {
 #ifdef RRR_HAVE_SETPROCTITLE_INIT
 #  define rrr_setproctitle_init(a,b,c) setproctitle_init(a,(char**)b,(char**)c)
 #else
-static void rrr_setproctitle_init(int argc, const char *argv[], const char *envp[]) {
-	(void)(argc);
-	(void)(argv);
-	(void)(envp);
-}
+#  define rrr_setproctitle_init(a,b,c) (void)(a); (void)(b); (void)(c);
 #endif
 
 #endif /* RRR_BSD_H */
