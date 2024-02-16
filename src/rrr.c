@@ -19,6 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "lib/util/gnu.h"
+#include "lib/util/posix.h"
+#include "lib/util/bsd.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -60,9 +64,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_mmap_stats.h"
 #include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
-#include "lib/util/gnu.h"
-#include "lib/util/posix.h"
-#include "lib/util/bsd.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
