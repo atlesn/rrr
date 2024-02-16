@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../lib/util/posix.h"
+#include "../lib/util/bsd.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <dlfcn.h>
@@ -39,8 +42,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/rrr_config.h"
-#include "../lib/util/posix.h"
-#include "../lib/util/bsd.h"
 
 #include "test_condition.h"
 #include "test_time.h"
