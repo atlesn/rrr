@@ -1620,6 +1620,9 @@ static int __rrr_http_application_http1_tick (
 
 					__rrr_http_application_http1_transaction_clear(http1);
 				}
+				else {
+					rrr_net_transport_ctx_reset_noread_counters(handle);
+				}
 
 				ret &= ~(RRR_HTTP_NO_RESULT);
 			}

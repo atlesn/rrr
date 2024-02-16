@@ -36,6 +36,12 @@ void rrr_net_transport_ctx_touch (
 	}
 }
 
+void rrr_net_transport_ctx_reset_noread_counters (
+		struct rrr_net_transport_handle *handle
+) {
+	handle->noread_strike_count = 0;
+}
+
 void rrr_net_transport_ctx_notify_read_fast (
 		struct rrr_net_transport_handle *handle
 ) {

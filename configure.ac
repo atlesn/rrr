@@ -193,6 +193,54 @@ AS_IF([test "x$have_freebsd_input" = xno], [
 	AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
 ])
 
+AC_MSG_CHECKING([for libbsd])
+
+have_setproctitle=no
+LIBBSD_LIBS=""
+
+# Check for setproctitle. Should be in unistd.h on both BSD and Linux,
+# but on linux it's in the libbsd library while on BSD it's in libc.
+AC_CHECK_LIB([bsd], [setproctitle], [
+	LIBBSD_LIBS="-lbsd"
+	have_setproctitle=yes
+	AC_DEFINE([RRR_HAVE_LIBBSD], [1], [Have libbsd])
+], [])
+AC_CHECK_LIB([c], [setproctitle], [
+	have_setproctitle=yes
+], [])
+
+AS_IF([test "x$have_setproctitle" != xno], [
+	AC_DEFINE([RRR_HAVE_SETPROCTITLE], [1], [Have setproctitle])
+])
+
+AC_SUBST([LIBBSD_LIBS])
+AM_CONDITIONAL([RRR_HAVE_LIBBSD], ["x$LIBBSD_LIBS" != "x"])
+
+AC_CHECK_LIB([bsd], [setproctitle_init], [
+	AC_DEFINE([RRR_HAVE_SETPROCTITLE_INIT], [1], [Have setproctitle_init])
+], [])
+
+# Check for pthread name setter
+AC_MSG_CHECKING([for pthread_setname_np])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <pthread.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			pthread_t tid = pthread_self();
+			pthread_setname_np(tid, "test");
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_setname_np])
+], [
+	AC_MSG_RESULT([no])
+])
+
+# Check for limits
 AC_MSG_CHECKING([location of limits.h with PATH_MAX])
 AC_RUN_IFELSE([
 	AC_LANG_SOURCE([[

@@ -603,7 +603,9 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 	if (transaction && transaction->need_response) {
 		if ((ret = http2->callbacks.async_response_get_callback(transaction, http2->callbacks.async_response_get_callback_arg)) != 0) {
 			if (ret == RRR_HTTP_NO_RESULT) {
-				// Try again shortly
+				// Try again shortly. Note that we need not worry about the
+				// net transport noread counter since the HTTP2 ping packets
+				// will keep the connection alive.
 				http2->need_slow_tick = 1;
 				ret = 0;
 			}

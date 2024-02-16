@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -613,6 +613,16 @@ static void __rrr_thread_collection_add_thread (
 	RRR_LL_APPEND(collection, thread);
 }
 
+static void __rrr_thread_set_name (
+		const struct rrr_thread *thread
+) {
+	char buf[RRR_THREAD_NAME_MAX_LENGTH * 2 + 8];
+	sprintf(buf, "%s", thread->name);
+	// Maximum length seems to be 16 characters, at least on Linux
+	buf[15] = '\0';
+	rrr_set_thread_name(pthread_self(), buf);
+}
+
 struct watchdog_data {
 	struct rrr_thread *watchdog_thread;
 	struct rrr_thread *watched_thread;
@@ -629,6 +639,8 @@ static void *__rrr_thread_watchdog_entry (
 
 	struct rrr_thread *thread = data.watched_thread;
 	struct rrr_thread *self_thread = data.watchdog_thread;
+
+	__rrr_thread_set_name(self_thread);
 
 	freeze_limit = thread->watchdog_timeout_us;
 
@@ -810,6 +822,8 @@ static void *__rrr_thread_start_routine_intermediate (
 		void *arg
 ) {
 	struct rrr_thread *thread = arg;
+
+	__rrr_thread_set_name(thread);
 
 	// STOPPED must be set at the very end, a  data structures to be freed
 	pthread_cleanup_push(__rrr_thread_state_set_stopped, thread);

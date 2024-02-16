@@ -6,6 +6,8 @@ rrr (1.29-1) bookworm; urgency=medium
     * Changed signatures for processor functions by adding a new last argument
       'method'. Existing scripts MAY BREAK and should be updated. Refer to
       the rrr.conf.5 manual page for correct function signatures.
+    * Set process and thread names on OS-es where this is possible. This can
+      assist when debugging for instance CPU usage.
 
   * Features:
     * Match generated messages in httpclient with their corresponding message

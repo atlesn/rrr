@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fork.h"
 #include "../lib/rrr_config.h"
 #include "../lib/util/posix.h"
+#include "../lib/util/bsd.h"
 
 #include "test_condition.h"
 #include "test_time.h"
@@ -291,9 +292,10 @@ int rrr_test_fork_executable (const char *fork_executable) {
 	return 1;
 }
 
-int main (int argc, const char **argv, const char **env) {
+int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler_interrupt = NULL;
+
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
@@ -309,6 +311,9 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_allocator;
 	}
+
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	struct rrr_stats_engine stats_engine = {0};
