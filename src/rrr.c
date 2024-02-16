@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -61,6 +61,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
 #include "lib/util/gnu.h"
+#include "lib/util/posix.h"
+#include "lib/util/bsd.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
@@ -850,6 +852,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_allocator;
 	}
+
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	int is_child = 0;
@@ -953,6 +958,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 		// CHILD CODE
 		is_child = 1;
+
+		rrr_setproctitle("[%s]", config_string);
 
 		if (main_loop (
 				&cmd,
