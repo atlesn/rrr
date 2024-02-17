@@ -69,7 +69,8 @@ AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build wi
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
-AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.)])],[enable_printf_logging=yes][enable_printf_logging=no])
+AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
+AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for JavaScript enabled])
@@ -421,31 +422,19 @@ AC_DEFUN([V8COMPILE], [
 ])
 
 AC_DEFUN([V8TESTS],[
-	AC_MSG_CHECKING([V8 compilation and linking without pointer compression V8_COMPRESS_POINTERS (default mode for NodeJS)])
-	AC_LANG_CONFTEST([
-		AC_LANG_SOURCE([[
-			#include <v8.h>
-			#include <libplatform/libplatform.h>
-			int main (int argc, char **argv) {
-				std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
-				v8::V8::InitializeICUDefaultLocation(argv[0]);
-				v8::V8::InitializeExternalStartupData(argv[0]);
-				v8::V8::InitializePlatform(platform.get());
-				v8::V8::Initialize();
-				return 0;
-			}
-		]])
-	])
-	V8COMPILE([
-		AC_MSG_RESULT([V8 was not built with pointer compression])
+	AC_MSG_CHECKING([V8 sandboxing enabled])
+	AS_IF([test "x$enable_v8_sandbox" = xyes],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([V8_ENABLE_SANDBOX], [1], [Use sandboxing in V8, this parameter must match with of the V8 library on the system was compiled])
 	],[
-		AC_MSG_RESULT([V8 was maybe built with pointer compression])
+		AC_MSG_RESULT([no])
+	])
 
-		AC_MSG_CHECKING([V8 compilation and linking with pointer compression])
-
+	AC_MSG_CHECKING([V8 compilation and linking without pointer compression V8_COMPRESS_POINTERS (default mode for NodeJS)])
+	AS_IF([test "x$enable_v8_sandbox" = xyes],[
 		AC_LANG_CONFTEST([
 			AC_LANG_SOURCE([[
-				#define V8_COMPRESS_POINTERS 1
+				#define V8_ENABLE_SANDBOX 1
 				#include <v8.h>
 				#include <libplatform/libplatform.h>
 				int main (int argc, char **argv) {
@@ -457,6 +446,69 @@ AC_DEFUN([V8TESTS],[
 					return 0;
 				}
 			]])
+		])
+	],[
+		AC_LANG_CONFTEST([
+			AC_LANG_SOURCE([[
+				#include <v8.h>
+				#include <libplatform/libplatform.h>
+				int main (int argc, char **argv) {
+					std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+					v8::V8::InitializeICUDefaultLocation(argv[0]);
+					v8::V8::InitializeExternalStartupData(argv[0]);
+					v8::V8::InitializePlatform(platform.get());
+					v8::V8::Initialize();
+					return 0;
+				}
+			]])
+		])
+	])
+
+	V8COMPILE([
+		AC_MSG_RESULT([V8 was not built with pointer compression])
+		AS_IF([test "x$enable_v8_sandbox" != xno],[
+			AC_MSG_RESULT("Note: Specified --enable-v8-sandbox was ignored")
+
+		])
+	],[
+		AC_MSG_RESULT([V8 was maybe built with pointer compression])
+
+		AC_MSG_CHECKING([V8 compilation and linking with pointer compression])
+
+		AS_IF([test "x$enable_v8_sandbox" = xyes],[
+			AC_DEFINE([V8_ENABLE_SANDBOX], [1], [Use sandboxing in V8, this parameter must match with of the V8 library on the system was compiled])
+			AC_LANG_CONFTEST([
+				AC_LANG_SOURCE([[
+					#define V8_COMPRESS_POINTERS 1
+					#define V8_ENABLE_SANDBOX 1
+					#include <v8.h>
+					#include <libplatform/libplatform.h>
+					int main (int argc, char **argv) {
+						std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+						v8::V8::InitializeICUDefaultLocation(argv[0]);
+						v8::V8::InitializeExternalStartupData(argv[0]);
+						v8::V8::InitializePlatform(platform.get());
+						v8::V8::Initialize();
+						return 0;
+					}
+				]])
+			])
+		],[
+			AC_LANG_CONFTEST([
+				AC_LANG_SOURCE([[
+					#define V8_COMPRESS_POINTERS 1
+					#include <v8.h>
+					#include <libplatform/libplatform.h>
+					int main (int argc, char **argv) {
+						std::unique_ptr<v8::Platform> platform(v8::platform::NewDefaultPlatform());
+						v8::V8::InitializeICUDefaultLocation(argv[0]);
+						v8::V8::InitializeExternalStartupData(argv[0]);
+						v8::V8::InitializePlatform(platform.get());
+						v8::V8::Initialize();
+						return 0;
+					}
+				]])
+			])
 		])
 		V8COMPILE
 
@@ -542,10 +594,14 @@ AS_IF([test "x$enable_v8" != xno],[
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_JS], [1], [Enable V8])
 
+	pkgconfig_ok=no
 	if test "x$enable_v8" = xyes; then
+		# Note: May return OK but empty string, this is OK
 		v8_cflags=`pkg-config --cflags --silence-errors v8 v8_libbase v8_libplatform`
-		if [[ $? -ne 0 ]]; then
+		if test $? -ne 0; then
 			v8_include_dir_test="/usr/local/include /usr/include"
+		else
+			pkgconfig_ok=yes
 		fi
 	else
 		v8_include_dir_test="$enable_v8/include"
@@ -553,30 +609,39 @@ AS_IF([test "x$enable_v8" != xno],[
 
 	AC_MSG_CHECKING([for V8 include directories])
 
-	if test "x$v8_cflags" = x; then
-		v8_cflags=""
-		for dir in $v8_include_dir_test; do
-			if test -d $dir; then
-				v8_cflags="$v8_cflags -I$dir"
-			fi
-		done
-	fi
-
-	if test "x$v8_cflags" != x; then
-		AC_MSG_RESULT([$v8_cflags])
+	if test "x$pkgconfig_ok" = xyes; then
+		if test "x$v8_cflags" = x; then
+			AC_MSG_RESULT([empty])
+		else
+			AC_MSG_RESULT([$v8_cflags])
+		fi
 	else
-		AC_MSG_ERROR("not found")
+		if test "x$v8_cflags" = x; then
+			for dir in $v8_include_dir_test; do
+				if test -d $dir; then
+					v8_cflags="$v8_cflags -I$dir"
+				fi
+			done
+		fi
+
+		if test "x$v8_cflags" != x; then
+			AC_MSG_RESULT([$v8_cflags])
+		else
+			AC_MSG_ERROR("not found")
+		fi
 	fi
 
 	AC_MSG_CHECKING([for V8 libraries])
 
+	pkgconfig_ok=no
 	if test "x$enable_v8" = xyes; then
 		v8_ldflags=`pkg-config --libs-only-L --silence-errors v8 v8_libbase v8_libplatform`
 		v8_libs=`pkg-config --libs-only-l --silence-errors v8 v8_libbase v8_libplatform`
-		if [[ $? -ne 0 ]]; then
-		echo "result: $?, libs: $v8_libs"
+		if test $? -ne 0; then
 			v8_lib_dir_test="/usr/local/lib /usr/lib"
 			v8_libs="-lv8 -licuuc -licui18n -licudata -lv8_libbase -lv8_libplatform"
+		else
+			pkgconfig_ok=yes
 		fi
 	else
 		v8_lib_dir_test=`ls $enable_v8/out/*`
@@ -591,19 +656,27 @@ AS_IF([test "x$enable_v8" != xno],[
 
 	AC_MSG_CHECKING([for V8 library directories])
 
-	if test "x$v8_lib_dir_test" != x; then
-		v8_ldflags=""
-		for dir in $v8_lib_dir_test; do
-			if test -d $dir; then
-				v8_ldflags="$v8_ldflags -L$dir"
-			fi
-		done
-	fi
-
-	if test "x$v8_ldflags" != x; then
-		AC_MSG_RESULT([$v8_ldflags])
+	if test "x$pkgconfig_ok" = xyes; then
+		if test "x$v8_ldlags" = x; then
+			AC_MSG_RESULT([empty])
+		else
+			AC_MSG_RESULT([$v8_ldlags])
+		fi
 	else
-		AC_MSG_ERROR("not found")
+		if test "x$v8_lib_dir_test" != x; then
+			v8_ldflags=""
+			for dir in $v8_lib_dir_test; do
+				if test -d $dir; then
+					v8_ldflags="$v8_ldflags -L$dir"
+				fi
+			done
+		fi
+
+		if test "x$v8_ldflags" != x; then
+			AC_MSG_RESULT([$v8_ldflags])
+		else
+			AC_MSG_ERROR("not found")
+		fi
 	fi
 
 	JS_CXXFLAGS="$v8_cflags -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
@@ -611,17 +684,25 @@ AS_IF([test "x$enable_v8" != xno],[
 	JS_LIBS="$v8_libs"
 
 	V8TESTS
+
+	AC_MSG_CHECKING([for V8 overrides node usage])
+	AS_IF([test "x$enable_node" != xno], [
+		AC_MSG_RESULT([yes])
+		enable_node=no
+	], [
+		AC_MSG_RESULT([no])
+	])
+
 ],[
 	AC_MSG_RESULT([no])
 ])
 
 AC_MSG_CHECKING([for node usage])
-AS_IF([test "x$enable_node" != xno -o "x$enable_v8" != xno], [
+AS_IF([test "x$enable_node" != xno], [
 	AS_IF([test "x$enable_node" != xno -a "x$enable_v8" != xno], [
 		AC_MSG_ERROR(["Both NodeJS and V8 are enabled, please ensure only one is used."])
 	])
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_JS], [1], [Enable NodeJS])
 	# AC_CHECK_HEADERS does not work for C++ headers with .h suffix, it
 	# only starts C-compiler.
 	AC_MSG_CHECKING([for node include directory])
@@ -644,6 +725,10 @@ AS_IF([test "x$enable_node" != xno -o "x$enable_v8" != xno], [
 	V8TESTS
 ], [
 	AC_MSG_RESULT([no])
+])
+
+AS_IF([test "x$enable_node" != xno -o "x$enable_v8" != xno], [
+	AC_DEFINE([RRR_WITH_JS], [1], [Enable JavaScript])
 ])
 
 AC_SUBST([JS_CXXFLAGS])
