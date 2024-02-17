@@ -71,17 +71,19 @@ namespace RRR::JS {
 		const int max = 10;
 		int i = -1;
 		while (i++ < max) {
-
 			// Get now time each round in case callback is slow
 			int64_t now = RRR::util::time_get_i64();
+			auto it = timeout_events.begin();
+
+			if (it == timeout_events.end()) {
+				break;
+			}
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
 			RRR_MSG_1("%s loop %i there are %llu timeout events\n", __PRETTY_FUNCTION__, i, (unsigned long long) timeout_events.size());
 #endif
 
-			// Start iteration from the beginning every time the list is modified
-			int j = -1;
-			for (auto it = timeout_events.begin(); it != timeout_events.end() && j++ < max; it = timeout_events.begin()) {
+			do {
 				const int64_t it_exec_time = it->get_exec_time();
 
 #ifdef RRR_JS_EVENT_QUEUE_DEBUG
@@ -123,12 +125,7 @@ namespace RRR::JS {
 
 				// The following events cannot have lower execution time
 				goto done;
-			}
-
-			if (j == -1)
-				break;
-			if (j >= max)
-				RRR_MSG_0("Warning: Max inner iterations reached in %s\n", __PRETTY_FUNCTION__);
+			} while(0);
 		}
 
 		done:
