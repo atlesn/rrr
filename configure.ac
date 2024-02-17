@@ -215,7 +215,7 @@ AS_IF([test "x$have_setproctitle" != xno], [
 ])
 
 AC_SUBST([LIBBSD_LIBS])
-AM_CONDITIONAL([RRR_HAVE_LIBBSD], ["x$LIBBSD_LIBS" != "x"])
+AM_CONDITIONAL([RRR_HAVE_LIBBSD], [test "x$LIBBSD_LIBS" != "x"])
 
 AC_CHECK_LIB([bsd], [setproctitle_init], [
 	AC_DEFINE([RRR_HAVE_SETPROCTITLE_INIT], [1], [Have setproctitle_init])
@@ -479,7 +479,6 @@ AC_DEFUN([V8TESTS],[
 		AC_MSG_CHECKING([V8 compilation and linking with pointer compression])
 
 		AS_IF([test "x$enable_v8_sandbox" = xyes],[
-			AC_DEFINE([V8_ENABLE_SANDBOX], [1], [Use sandboxing in V8, this parameter must match with of the V8 library on the system was compiled])
 			AC_LANG_CONFTEST([
 				AC_LANG_SOURCE([[
 					#define V8_COMPRESS_POINTERS 1
