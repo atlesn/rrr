@@ -50,7 +50,6 @@ AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable Libre
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
 AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
-AC_ARG_WITH([quictls-openssl], [AS_HELP_STRING([--without-quictls-openssl], [Disable OpenSSL with QuicTLS support])], [enable_quictls_openssl=no; enable_auto_quic=no], [enable_auto_quic=yes])
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
@@ -1300,18 +1299,18 @@ AC_MSG_CHECKING([HTTP3 usage with NGHTTP3 and NGTCP2 bindings])
 AS_IF([test "x$enable_http3" = xno], [
 	AC_MSG_RESULT([Not compiling with HTTP3])
 ], [
-	AS_IF([test "x$HAVE_OPENSSL_QUIC" != xyes], [AC_MSG_ERROR([OpenSSL with QUIC was not found or disabled])], [])
+	# AS_IF([test "x$HAVE_OPENSSL_QUIC" != xyes], [AC_MSG_ERROR([OpenSSL with QUIC was not found or disabled])], [])
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_HTTP3], [1], [Compile with NGHTTP3 bindings])
 	AC_CHECK_HEADERS([ngtcp2/ngtcp2.h])
 	AC_CHECK_HEADERS([nghttp3/nghttp3.h])
 	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
-	AC_CHECK_LIB(ngtcp2_crypto_quictls, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_quictls not found]))
+	AC_CHECK_LIB(ngtcp2_crypto_gnutls, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_gnutls not found]))
 	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
 	HTTP3_CFLAGS=""
 	HTTP3_LDFLAGS="-lnghttp3"
 	NGTCP2_CFLAGS=""
-	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_quictls"
+	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_gnutls"
 	AC_SUBST([HTTP3_CFLAGS])
 	AC_SUBST([HTTP3_LDFLAGS])
 	AC_SUBST([NGTCP2_CFLAGS])

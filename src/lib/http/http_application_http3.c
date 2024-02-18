@@ -485,7 +485,7 @@ static int __rrr_http_application_http3_response_submit (
 		goto out;
 	}
 
-	rrr_net_transport_handle_notify_read(http3->transport, http3->handle);
+	rrr_net_transport_handle_notify_read_fast(http3->transport, http3->handle);
 
 	out:
 	rrr_map_clear(&headers);
@@ -991,7 +991,7 @@ static int __rrr_http_application_http3_request_send (
 		goto out;
 	}
 
-	rrr_net_transport_ctx_notify_read(handle);
+	rrr_net_transport_ctx_notify_read_fast(handle);
 
 	out:
 	rrr_map_clear(&headers);
@@ -1067,7 +1067,7 @@ static void __rrr_http_application_http3_polite_close (
 	http3->shutdown_state |= RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS;
 	http3->shutdown_time = rrr_time_get_64();
 
-	rrr_net_transport_ctx_notify_read (handle);
+	rrr_net_transport_ctx_notify_read_fast(handle);
 }
 
 static int __rrr_http_application_http3_nghttp3_cb_stream_acked_data (
@@ -1555,7 +1555,7 @@ static int __rrr_http_application_http3_tick (
 		if ((ret = __rrr_http_application_http3_tick_process_shutdown(http3)) != 0) {
 			goto out;
 		}
-		rrr_net_transport_ctx_notify_read_timed(handle, 50 * 1000 /* 50 ms */);
+		rrr_net_transport_ctx_notify_read_slow();
 	}
 
 	http3->rules = rules;
@@ -1574,7 +1574,7 @@ static int __rrr_http_application_http3_tick (
 		}
 		if (callback_data.response_needed_count > 0) {
 			RRR_DBG_3("HTTP3 notify read due to responses needed\n");
-			rrr_net_transport_ctx_notify_read(handle);
+			rrr_net_transport_ctx_notify_read_fast(handle);
 		}
 	}
 

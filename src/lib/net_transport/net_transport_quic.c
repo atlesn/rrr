@@ -1433,6 +1433,7 @@ static int __rrr_net_transport_quic_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			"quic bind",
 			NULL,
 			NULL,
 			__rrr_net_transport_quic_bind_and_listen_callback,
@@ -1870,6 +1871,7 @@ static int __rrr_net_transport_quic_connect_or_modify_resolve_callback (
 				&callback_data->new_handle,
 				(struct rrr_net_transport *) callback_data->tls,
 				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				"quic connect",
 				NULL,
 				NULL,
 				__rrr_net_transport_quic_connect_callback,
@@ -1987,6 +1989,7 @@ static int __rrr_net_transport_quic_accept (
 			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			"quic accept",
 			connection_ids,
 			datagram,
 			__rrr_net_transport_quic_accept_callback,
@@ -2729,7 +2732,7 @@ static int __rrr_net_transport_quic_receive (
 	}
 
 	if (ctx->need_tick) {
-		rrr_net_transport_ctx_notify_tick(handle);
+		rrr_net_transport_ctx_notify_tick_fast(handle);
 		ctx->need_tick = 0;
 	} 
 
