@@ -68,6 +68,12 @@ librrrhttp3_la_SOURCES = http3/http3.c http/http_application_http3.c
 librrrhttp3_la_CFLAGS = ${HTTP3_CFLAGS} ${AM_CFLAGS}
 librrrhttp3_la_LDFLAGS = ${HTTP3_LDFLAGS}
 http3_extra_ld = ${HTTP3_LDFLAGS}
+
+libadd_quic = librrrquic.la
+librrrquic_la_SOURCES = net_transport/net_transport_quic.c
+librrrquic_la_CFLAGS = ${GNUTLS_CFLAGS} ${AM_CFLAGS}
+librrrquic_la_LDFLAGS = ${GNUTLS_LIBS}
+quic_extra_ld = ${GNUTLS_LIBS} ${NGTCP2_LDFLAGS}
 endif
 
 if RRR_WITH_JSONC
@@ -152,11 +158,6 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c
 endif
 
-if RRR_WITH_HTTP3
-net_transport_quic = net_transport/net_transport_quic.c
-ngtcp2_extra_ld = ${NGTCP2_LDFLAGS}
-endif
-
 if RRR_WITH_TLS
 net_transport_tls = net_transport/net_transport_tls_common.c
 endif
@@ -183,7 +184,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${nghttp2_extra_ld} \
 		    ${python3_extra_ld} \
 		    ${zlib_extra_ld} \
-		    ${ngtcp2_extra_ld} \
+		    ${quic_extra_ld} \
 		    ${http3_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
@@ -255,6 +256,7 @@ libadd_all =                         \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
     ${libadd_http3}                  \
+    ${libadd_quic}                   \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
     ${libadd_rrr_fork}               \

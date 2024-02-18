@@ -1301,20 +1301,38 @@ AS_IF([test "x$enable_http3" = xno], [
 ], [
 	# AS_IF([test "x$HAVE_OPENSSL_QUIC" != xyes], [AC_MSG_ERROR([OpenSSL with QUIC was not found or disabled])], [])
 	AC_MSG_RESULT([yes])
+
 	AC_DEFINE([RRR_WITH_HTTP3], [1], [Compile with NGHTTP3 bindings])
+
 	AC_CHECK_HEADERS([ngtcp2/ngtcp2.h])
 	AC_CHECK_HEADERS([nghttp3/nghttp3.h])
+
 	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
 	AC_CHECK_LIB(ngtcp2_crypto_gnutls, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_gnutls not found]))
 	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
+
 	HTTP3_CFLAGS=""
 	HTTP3_LDFLAGS="-lnghttp3"
 	NGTCP2_CFLAGS=""
 	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_gnutls"
+
 	AC_SUBST([HTTP3_CFLAGS])
 	AC_SUBST([HTTP3_LDFLAGS])
 	AC_SUBST([NGTCP2_CFLAGS])
 	AC_SUBST([NGTCP2_LDFLAGS])
+
+	AC_CHECK_HEADERS([gnutls/gnutls.h])
+	AC_CHECK_LIB(gnutls, gnutls_bye, [], AC_MSG_ERROR([gnutls_bye from gnutls not found]))
+
+	GNUTLS_CFLAGS=`pkg-config --cflags gnutls`
+	GNUTLS_LIBS=`pkg-config --libs gnutls`
+
+	if [ test "x$GNUTLS_LIBS" = x ]; then
+		GNUTLS_LIBS="-lgnutls"
+	fi
+
+	AC_SUBST([GNUTLS_CFLAGS])
+	AC_SUBST([GNUTLS_LIBS])
 ])
 
 # Make sure MySQL-test does not include any libraries
