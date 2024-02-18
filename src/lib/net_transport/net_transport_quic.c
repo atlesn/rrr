@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <openssl/err.h>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
-#include <ngtcp2/ngtcp2_crypto_quictls.h>
+//#include <ngtcp2/ngtcp2_crypto_quictls.h>
 #include <assert.h>
 
 #include "../log.h"
@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport_quic.h"
 #include "net_transport_tls_common.h"
-#include "net_transport_openssl_common.h"
+//#include "net_transport_openssl_common.h"
 #include "net_transport_common.h"
 
 #include "../allocator.h"
@@ -98,7 +98,7 @@ enum rrr_net_transport_quic_migration_mode {
 };
 
 struct rrr_net_transport_quic_ctx {
-	SSL *ssl;
+	// SSL *ssl;
 
 	struct rrr_net_transport_tls *transport_tls;
 
@@ -371,7 +371,8 @@ static int __rrr_net_transport_quic_ctx_stream_recv (
 static void __rrr_net_transport_quic_ctx_destroy (
 		struct rrr_net_transport_quic_ctx *ctx
 ) {
-	SSL_free(ctx->ssl);
+	assert(0 && "SSL destroy not implemented");
+	//SSL_free(ctx->ssl);
 	ngtcp2_conn_del(ctx->conn);
 	RRR_LL_DESTROY(&ctx->streams, struct rrr_net_transport_quic_stream, __rrr_net_transport_quic_stream_destroy(node));
 	rrr_free(ctx);
@@ -509,8 +510,9 @@ static int __rrr_net_transport_quic_handle_data_new (
 static void __rrr_net_transport_quic_handle_data_destroy (
 		struct rrr_net_transport_quic_handle_data *handle_data
 ) {
-	if (handle_data->tls_data)
-		rrr_net_transport_openssl_common_ssl_data_destroy(handle_data->tls_data);
+	assert(0 && "SSL destroy not implemented");
+//	if (handle_data->tls_data)
+//		rrr_net_transport_openssl_common_ssl_data_destroy(handle_data->tls_data);
 	if (handle_data->ctx)
 		__rrr_net_transport_quic_ctx_destroy(handle_data->ctx);
 	rrr_free(handle_data);
@@ -1034,13 +1036,15 @@ static int __rrr_net_transport_quic_ctx_new (
 			goto out_free;
 		}
 
-		if ((ctx->ssl = SSL_dup(server_tls->ssl)) == NULL) {
+		assert(0 && "SSL dup not implemented");
+/*		if ((ctx->ssl = SSL_dup(server_tls->ssl)) == NULL) {
 			RRR_SSL_ERR("Could not allocate SSL in QUIC");
 			ret = 1;
 			goto out_destroy_conn;
-		}
+		}*/
 
-		SSL_set_accept_state(ctx->ssl);
+		assert(0 && "SSL set accept state not implemented");
+		/*SSL_set_accept_state(ctx->ssl);*/
 	}
 	else {
 		// New destination connection ID is randomly generated
@@ -1117,14 +1121,15 @@ static int __rrr_net_transport_quic_ctx_new (
 			goto out_free;
 		}
 
-		ctx->ssl = client_tls->ssl;
-
-		SSL_up_ref(ctx->ssl);
+		//ctx->ssl = client_tls->ssl;
+		assert(0 && "SSL up ref not implemented");
+/*		SSL_up_ref(ctx->ssl);
 		SSL_set_connect_state(ctx->ssl);
-		SSL_set_tlsext_host_name(ctx->ssl, remote_hostname);
+		SSL_set_tlsext_host_name(ctx->ssl, remote_hostname);*/
 	}
 
-	ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
+	assert(0 && "Set native ngtcp2 handle not implemented");
+	//ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
 	ngtcp2_ccerr_default(&ctx->last_error);
 
 	ctx->conn_ref.user_data = ctx;
@@ -1133,7 +1138,8 @@ static int __rrr_net_transport_quic_ctx_new (
 	// Additional parameters must be set by __rrr_net_transport_quic_ctx_post_connect_patch
 	// after the transport handle is known.
 
-	SSL_set_app_data(ctx->ssl, &ctx->conn_ref);
+	assert(0 && "SSL set app data not implemented");
+	//SSL_set_app_data(ctx->ssl, &ctx->conn_ref);
 
 	*target = ctx;
 
@@ -1285,13 +1291,15 @@ static int __rrr_net_transport_quic_tls_data_new (
 		struct rrr_net_transport_tls_data **result,
 		struct rrr_net_transport_tls *tls,
 		const struct rrr_ip_data *ip_data,
-		const SSL_METHOD *tls_method
+//		const SSL_METHOD *tls_method
+		const void *tls_method
 ) {
 	int ret = 0;
 
 	struct rrr_net_transport_tls_data *tls_data = NULL;
 
-	if ((tls_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
+	assert(0 && "SSL data new not implemented");
+/*	if ((tls_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in %s\n", __func__);
 		ret = 1;
 		goto out;
@@ -1310,8 +1318,11 @@ static int __rrr_net_transport_quic_tls_data_new (
 		RRR_SSL_ERR("Could not get SSL CTX in QUIC");
 		ret = 1;
 		goto out_destroy;
-	}
+	}*/
 
+	assert(0 && "SSL quic data new not implemented");
+
+/*
 	SSL_CTX *ctx = tls_data->ctx;
 
 	if (ngtcp2_crypto_quictls_configure_server_context(ctx) != 0) {
@@ -1353,12 +1364,13 @@ static int __rrr_net_transport_quic_tls_data_new (
 	SSL_set_quic_transport_version(tls_data->ssl, TLSEXT_TYPE_quic_transport_parameters);
 
 	tls_data->ip_data = *ip_data;
-
+*/
 	*result = tls_data;
 
 	goto out;
 	out_destroy:
-		rrr_net_transport_openssl_common_ssl_data_destroy(tls_data);
+		assert (0 && "SSL data destroy not implemented");
+//		rrr_net_transport_openssl_common_ssl_data_destroy(tls_data);
 	out:
 		return ret;
 }
@@ -1383,11 +1395,12 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		goto out;
 	}
 
+	assert(0 && "SSL data new not implemented, ssl_server_method not present in tls struct");
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			tls,
 			callback_data->ip_data,
-			tls->ssl_server_method
+			NULL //tls->ssl_server_method
 	)) != 0) {
 		goto out_destroy_handle;
 	}
@@ -1680,6 +1693,8 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 		goto out;
 	}
 
+	assert(0 && "SSL quic data new not implemented, ssl_client_method is present in struct");
+/*
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			callback_data->tls,
@@ -1688,6 +1703,7 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 	)) != 0) {
 		goto out_destroy_handle;
 	}
+*/
 
 	if ((ret = __rrr_net_transport_quic_ctx_new_client (
 			&handle_data->ctx,
@@ -1705,7 +1721,8 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 		goto out_destroy_handle;
 	}
 
-	SSL_set_connect_state(handle_data->ctx->ssl);
+	assert(0 && "SSL quic set connect state not implemented");
+//	SSL_set_connect_state(handle_data->ctx->ssl);
 
 	{
 		char buf_addr_remote[128];
@@ -1751,7 +1768,8 @@ static int __rrr_net_transport_quic_modify_callback (RRR_NET_TRANSPORT_MODIFY_CA
 	handle_data->ctx->fd = callback_data->ip_data->fd;
 
 	// This will cause the old FD to be closed
-	rrr_net_transport_openssl_common_ssl_data_ip_replace (handle_data->tls_data, callback_data->ip_data);
+	assert(0 && "SSL quic data ip replace not implemented");
+	// rrr_net_transport_openssl_common_ssl_data_ip_replace (handle_data->tls_data, callback_data->ip_data);
 
 	*submodule_fd = callback_data->ip_data->fd;
 
@@ -2694,7 +2712,8 @@ static int __rrr_net_transport_quic_receive (
 			ret = RRR_NET_TRANSPORT_READ_READ_EOF;
 		}
 		else if (ret_tmp == NGTCP2_ERR_CRYPTO) {
-			ngtcp2_crypto_quictls_get_errors(__rrr_net_transport_quic_quictls_error_cb, ctx);
+			assert(0 && "crypto get errors not implemented");
+			//ngtcp2_crypto_quictls_get_errors(__rrr_net_transport_quic_quictls_error_cb, ctx);
 			ngtcp2_ccerr_set_tls_alert (
 					&ctx->last_error,
 					ngtcp2_conn_get_tls_alert(ctx->conn),
@@ -2943,7 +2962,9 @@ static int __rrr_net_transport_quic_selected_proto_get (
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
 
-	return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, handle_data->ctx->ssl);
+	assert(0 && "Selected proto get not implemented, ssl not present in struct");
+	//return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, NULL/*handle_data->ctx->ssl*/);
+	return 1;
 }
 
 static int __rrr_net_transport_quic_poll (
@@ -3234,8 +3255,9 @@ int rrr_net_transport_quic_new (
 	rrr_openssl_global_register_user();
 
 	(*target)->methods = &tls_methods;
-	(*target)->ssl_client_method = TLS_client_method();
-	(*target)->ssl_server_method = TLS_server_method();
+	assert(0 && "ssl_client_method and ssl_server_method not present in struct, cannot create new QUIC transport");
+//	(*target)->ssl_client_method = TLS_client_method();
+//	(*target)->ssl_server_method = TLS_server_method();
 	(*target)->stream_open_callback = stream_open_callback;
 	(*target)->stream_open_callback_arg_global = stream_open_callback_arg;
 
