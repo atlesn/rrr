@@ -1321,6 +1321,8 @@ AS_IF([test "x$enable_http3" = xno], [
 	AC_SUBST([NGTCP2_CFLAGS])
 	AC_SUBST([NGTCP2_LDFLAGS])
 
+	AC_DEFINE([RRR_WITH_GNUTLS], [1], [Compile with GnuTLS bindings])
+
 	AC_CHECK_HEADERS([gnutls/gnutls.h])
 	AC_CHECK_LIB(gnutls, gnutls_bye, [], AC_MSG_ERROR([gnutls_bye from gnutls not found]))
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2022-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,10 +21,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
-#include <openssl/err.h>
+#include <gnutls/gnutls.h>
+#include <gnutls/dtls.h>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
-//#include <ngtcp2/ngtcp2_crypto_quictls.h>
+#include <ngtcp2/ngtcp2_crypto_gnutls.h>
 #include <assert.h>
 
 #include "../log.h"
@@ -34,11 +35,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport_quic.h"
 #include "net_transport_tls_common.h"
-//#include "net_transport_openssl_common.h"
 #include "net_transport_common.h"
 
 #include "../allocator.h"
-#include "../rrr_openssl.h"
 #include "../rrr_strerror.h"
 #include "../random.h"
 #include "../ip/ip_util.h"
@@ -53,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
 #define RRR_NET_TRANSPORT_QUIC_GROUPS \
     "P-256:X25519:P-384:P-521"
+#define RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE RRR_READ_PERFORMED
+#define RRR_NET_TRANSPORT_GNUTLS_DEFAULT_CA_PATH "/etc/ssl/:/etc/ssl/certs/"
 
 // Enable printf logging in ngtcp2 library
 // #define RRR_NET_TRANSPORT_QUIC_NGTCP2_DEBUG 1
@@ -97,9 +98,11 @@ enum rrr_net_transport_quic_migration_mode {
 	RRR_NET_TRANSPORT_QUIC_PATH_MIGRATION_MODE_VALIDATION
 };
 
-struct rrr_net_transport_quic_ctx {
-	// SSL *ssl;
+struct rrr_net_transport_gnutls_session {
+	gnutls_session_t session;
+};
 
+struct rrr_net_transport_quic_ctx {
 	struct rrr_net_transport_tls *transport_tls;
 
 	rrr_net_transport_handle connected_handle;
@@ -108,6 +111,8 @@ struct rrr_net_transport_quic_ctx {
 	int initial_received;
 	int await_path_validation;
 	int need_tick;
+
+	struct rrr_net_transport_gnutls_session session;
 
 	ngtcp2_conn *conn;
 	ngtcp2_crypto_conn_ref conn_ref;
@@ -127,6 +132,366 @@ struct rrr_net_transport_quic_handle_data {
 	// Used by server connected handle and client handle
 	struct rrr_net_transport_quic_ctx *ctx;
 };
+
+static int __rrr_net_transport_quic_gnutls_client_hello_cb (
+		gnutls_session_t session,
+		unsigned int htype,
+		unsigned when,
+		unsigned int incoming,
+		const gnutls_datum_t *msg
+) {
+	ngtcp2_crypto_conn_ref *conn_ref = gnutls_session_get_ptr(session);
+	struct rrr_net_transport_quic_ctx *ctx = conn_ref->user_data;
+
+	(void)(htype);
+	(void)(when);
+	(void)(incoming);
+	(void)(msg);
+
+	int err;
+	gnutls_datum_t alpn;
+	int match = 0;
+
+	assert(htype == GNUTLS_HANDSHAKE_CLIENT_HELLO);
+	assert(when == GNUTLS_HOOK_POST);
+	assert(incoming == 1);
+
+	if ((err = gnutls_alpn_get_selected_protocol (session, &alpn)) < 0) {
+		RRR_MSG_0("Could not get ALPN in %s: %s\n", __func__, gnutls_strerror(err));
+		return err;
+	}
+
+	for (unsigned int i = 0; i < ctx->transport_tls->alpn_datum_count; i++) {
+		gnutls_datum_t alpn_test = ctx->transport_tls->alpn_datum[i];
+
+		RRR_MSG_1("ALPN FROM CLIENT: %.*s\n", (int) alpn.size, alpn.data);
+		RRR_MSG_1("ALPN FROM SERVER: %.*s\n", (int) alpn_test.size, alpn_test.data);
+
+		if (alpn_test.size == alpn.size && memcmp(alpn_test.data, alpn.data, alpn.size) == 0) {
+			match = 1;
+			break;
+		}
+	}
+
+	if (match) {
+		RRR_MSG_1("ALPN match in %s\n", __func__);
+	}
+	else {
+		RRR_MSG_1("ALPN no match in %s\n", __func__);
+	}
+
+	return 0;
+}
+
+static int __rrr_net_transport_quic_gnutls_session_init_server (
+		struct rrr_net_transport_gnutls_session *session,
+		const struct rrr_net_transport_tls_data *tls_data
+) {
+	int ret = 0;
+
+	int err;
+
+	if ((err = gnutls_init (
+			&session->session,
+			GNUTLS_SERVER |
+			GNUTLS_ENABLE_EARLY_DATA |
+			GNUTLS_NO_AUTO_SEND_TICKET |
+			GNUTLS_NO_END_OF_EARLY_DATA
+	)) < 0) {
+		RRR_MSG_0("Could not initialize GnuTLS server session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out;
+	}
+
+	if ((err = gnutls_priority_set(session->session, tls_data->priority_cache)) < 0) {
+		RRR_MSG_0("Could not set priority in GnuTLS server session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	if ((err = gnutls_session_ticket_enable_server(session->session, &tls_data->ticket_key)) < 0) {
+		RRR_MSG_0("Could not enable session ticket in GnuTLS server session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	gnutls_handshake_set_hook_function (
+			session->session,
+			GNUTLS_HANDSHAKE_CLIENT_HELLO,
+			GNUTLS_HOOK_POST,
+			__rrr_net_transport_quic_gnutls_client_hello_cb
+	);
+
+	if (ngtcp2_crypto_gnutls_configure_server_session(session->session) != 0) {
+		RRR_MSG_0("Could not configure GnuTLS server session in %s\n", __func__);
+		ret = 1;
+		goto out_deinit;
+	}
+
+	// Replay not implemented
+	// gnutls_anti_replay_enable (session->session, 0);
+
+	gnutls_record_set_max_early_data_size(session->session, 0xffffffffu);
+
+	if ((err = gnutls_credentials_set(session->session, GNUTLS_CRD_CERTIFICATE, tls_data->x509_cred)) < 0) {
+		RRR_MSG_0("Could not set credentials in GnuTLS server session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	// Verify client not implemented
+	// gnutls_certificate_server_set_request(session->session, GNUTLS_CERT_IGNORE);
+	// gnutls_certificate_send_x509_rdn_sequence(session->session, 1);
+
+	goto out;
+	out_deinit:
+		gnutls_deinit(session->session);
+	out:
+		return ret;
+}
+
+static int __rrr_net_transport_quic_gnutls_session_init_client (
+		struct rrr_net_transport_gnutls_session *session,
+		const struct rrr_net_transport_tls_data *tls_data,
+		const char *remote_hostname
+) {
+	int ret = 0;
+
+	int err;
+
+	static const char priority[] =
+		"NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+AES-256-GCM:"
+		"+CHACHA20-POLY1305:+AES-128-CCM:-GROUP-ALL:+GROUP-SECP256R1:+GROUP-X25519:"
+		"+GROUP-SECP384R1:"
+		"+GROUP-SECP521R1:" "%" "DISABLE_TLS13_COMPAT_MODE";
+
+	if ((err = gnutls_init (
+			&session->session,
+			GNUTLS_CLIENT |
+			GNUTLS_ENABLE_EARLY_DATA |
+			GNUTLS_NO_END_OF_EARLY_DATA
+	)) < 0) {
+		RRR_MSG_0("Could not initialize GnuTLS client session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out;
+	}
+
+	if (ngtcp2_crypto_gnutls_configure_client_session(session->session) != 0) {
+		RRR_MSG_0("Could not configure GnuTLS client session in %s\n", __func__);
+		ret = 1;
+		goto out_deinit;
+	}
+
+	if ((err = gnutls_priority_set_direct(session->session, priority, NULL)) < 0) {
+		RRR_MSG_0("Could not set priority in GnuTLS client session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	if ((err = gnutls_credentials_set(session->session, GNUTLS_CRD_CERTIFICATE, tls_data->x509_cred)) < 0) {
+		RRR_MSG_0("Could not set credentials in GnuTLS client session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	if ((err = gnutls_server_name_set(session->session, GNUTLS_NAME_DNS, remote_hostname, strlen(remote_hostname))) < 0) {
+		RRR_MSG_0("Could not set server name in GnuTLS client session in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_deinit;
+	}
+
+	goto out;
+	out_deinit:
+		gnutls_deinit(session->session);
+	out:
+		return ret;
+}
+
+static int __rrr_net_transport_gnutls_alpn_setup (
+		struct rrr_net_transport_gnutls_session *session,
+		gnutls_datum_t *alpn_datum,
+		unsigned int alpn_datum_count
+) {
+	int ret = 0;
+
+	int err;
+
+	if (alpn_datum_count == 0)
+		goto out;
+
+	for (unsigned int i = 0; i < alpn_datum_count; i++) {
+		RRR_MSG_1("ALPN in %s: %.*s\n", __func__, (int) alpn_datum[i].size, alpn_datum[i].data);
+	}
+
+	if ((err = gnutls_alpn_set_protocols (
+			session->session,
+			alpn_datum,
+			alpn_datum_count,
+			GNUTLS_ALPN_MANDATORY
+	)) < 0) {
+		RRR_MSG_0("Could not set ALPN in %s: %s\n", __func__, gnutls_strerror(err));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static void __rrr_net_transport_gnutls_session_cleanup (
+		struct rrr_net_transport_gnutls_session *session
+) {
+	gnutls_deinit(session->session);
+}
+
+static int __rrr_net_transport_gnutls_load_verify_locations (
+		struct rrr_net_transport_tls_data *result,
+		const char *ca_file,
+		const char *ca_path
+) {
+	int ret = 0;
+
+	int err;
+	const char *ca_path_use = (ca_path != NULL ? ca_path : RRR_NET_TRANSPORT_GNUTLS_DEFAULT_CA_PATH);
+	const char *ca_file_use = (ca_file != NULL && *ca_file != '\0' ? ca_file : NULL);
+
+	RRR_DBG_1("Using path '%s' for CA certificates in GnuTLS\n", ca_path_use);
+	if (ca_file_use != NULL) {
+		RRR_DBG_1("Using file '%s' as CA certificate in GnuTLS\n", ca_file_use);
+	}
+
+	// Currently, we always set a default path instead of using system paths
+	// gnutls_certificate_set_x509_system_trust(result->x509_cred);
+
+	if ((err = gnutls_certificate_set_x509_trust_dir (result->x509_cred, ca_path_use, GNUTLS_X509_FMT_PEM)) < 0) {
+		RRR_MSG_0("Could not set CA path in %s: %s\n", __func__, gnutls_strerror(err));
+		ret = 1;
+		goto out;
+	}
+
+	if (ca_file_use && (err = gnutls_certificate_set_x509_trust_file (result->x509_cred, ca_file_use, GNUTLS_X509_FMT_PEM)) < 0) {
+		RRR_MSG_0("Could not set CA file in %s: %s\n", __func__, gnutls_strerror(err));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_gnutls_tls_data_new (
+		struct rrr_net_transport_tls_data **result,
+		int flags,
+		const char *certificate_file,
+		const char *private_key_file,
+		const char *ca_file,
+		const char *ca_path
+) {
+	int ret = 0;
+
+	int err;
+	struct rrr_net_transport_tls_data *tls_data = NULL;
+
+	if (((certificate_file == NULL || *certificate_file == '\0') && (private_key_file != NULL && *private_key_file != '\0')) ||
+	    ((private_key_file == NULL || *private_key_file == '\0') && (certificate_file != NULL && *certificate_file != '\0'))
+	) {
+		RRR_BUG("BUG: Certificate file and private key file must both be either set or unset in %s\n", __func__);
+	}
+
+	if ((tls_data = rrr_allocate_zero(sizeof(*tls_data))) == NULL) {
+		RRR_MSG_0("Could not allocate memory for TLS data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((err = gnutls_certificate_allocate_credentials(&tls_data->x509_cred)) < 0) {
+		RRR_MSG_0("Could not allocate credentials in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_free;
+	}
+
+	if ((ret = __rrr_net_transport_gnutls_load_verify_locations (
+			tls_data,
+			ca_file,
+			ca_path
+	)) != 0) {
+		goto out_free_credentials;
+	}
+
+	if (certificate_file && private_key_file && *private_key_file && *certificate_file) {
+		if ((err = gnutls_certificate_set_x509_key_file (
+				tls_data->x509_cred,
+				certificate_file,
+				private_key_file,
+				GNUTLS_X509_FMT_PEM
+		)) < 0) {
+			RRR_MSG_0("Could not set certificate and private key in %s: %s\n",
+				__func__, gnutls_strerror(err));
+			ret = 1;
+			goto out_free_credentials;
+		}
+	}
+
+	if ((err = gnutls_certificate_set_known_dh_params(tls_data->x509_cred, GNUTLS_SEC_PARAM_HIGH)) < 0) {
+		RRR_MSG_0("Could not set DH parameters in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_free_credentials;
+	}
+
+	if ((flags & RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1) != 0) {
+		RRR_BUG("TLS version 1.1 not implemented in GnuTLS in %s\n", __func__);
+	}
+
+	if ((flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
+		RRR_BUG("TLS no cert verify not implemented in GnuTLS in %s\n", __func__);
+		//gnutls_certificate_set_verify_function(tls_data->x509_cred, NULL);
+	}
+
+	if ((err = gnutls_priority_init2 (
+			&tls_data->priority_cache,
+			"%" "DISABLE_TLS13_COMPAT_MODE",
+			NULL,
+			GNUTLS_PRIORITY_INIT_DEF_APPEND
+	)) < 0) {
+		RRR_MSG_0("Could not initialize priority in %s: %s\n",
+			__func__, gnutls_strerror(err));
+		ret = 1;
+		goto out_free_credentials;
+	}
+
+	gnutls_session_ticket_key_generate(&tls_data->ticket_key);
+
+	*result = tls_data;
+
+	goto out;
+//	out_deinit_priority:
+//		gnutls_priority_deinit(tls_data->priority_cache);
+	out_free_credentials:
+		gnutls_certificate_free_credentials(tls_data->x509_cred);
+	out_free:
+		rrr_free(tls_data);
+	out:
+		return ret;
+}
+
+void __rrr_net_transport_gnutls_tls_data_destroy (
+		struct rrr_net_transport_tls_data *tls_data
+) {
+	gnutls_free(tls_data->ticket_key.data);
+	gnutls_priority_deinit(tls_data->priority_cache);
+	gnutls_certificate_free_credentials(tls_data->x509_cred);
+	rrr_free(tls_data);
+}
 
 static void __rrr_net_transport_quic_path_to_ngtcp2_path (
 		ngtcp2_path *target,
@@ -371,8 +736,7 @@ static int __rrr_net_transport_quic_ctx_stream_recv (
 static void __rrr_net_transport_quic_ctx_destroy (
 		struct rrr_net_transport_quic_ctx *ctx
 ) {
-	assert(0 && "SSL destroy not implemented");
-	//SSL_free(ctx->ssl);
+	__rrr_net_transport_gnutls_session_cleanup(&ctx->session);
 	ngtcp2_conn_del(ctx->conn);
 	RRR_LL_DESTROY(&ctx->streams, struct rrr_net_transport_quic_stream, __rrr_net_transport_quic_stream_destroy(node));
 	rrr_free(ctx);
@@ -510,9 +874,8 @@ static int __rrr_net_transport_quic_handle_data_new (
 static void __rrr_net_transport_quic_handle_data_destroy (
 		struct rrr_net_transport_quic_handle_data *handle_data
 ) {
-	assert(0 && "SSL destroy not implemented");
-//	if (handle_data->tls_data)
-//		rrr_net_transport_openssl_common_ssl_data_destroy(handle_data->tls_data);
+	if (handle_data->tls_data)
+		__rrr_net_transport_gnutls_tls_data_destroy(handle_data->tls_data);
 	if (handle_data->ctx)
 		__rrr_net_transport_quic_ctx_destroy(handle_data->ctx);
 	rrr_free(handle_data);
@@ -887,8 +1250,6 @@ static int __rrr_net_transport_quic_ctx_new (
 ) {
 	int ret = 0;
 
-	*target = NULL;
-
 	int ret_tmp;
 	struct rrr_net_transport_quic_ctx *ctx = NULL;
 	ngtcp2_cid scid, dcid;
@@ -897,6 +1258,8 @@ static int __rrr_net_transport_quic_ctx_new (
 
 	char buf_remote_addr[128];
 	char buf_local_addr[128];
+
+	*target = NULL;
 
 	if ((ctx = rrr_allocate_zero(sizeof(*ctx))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
@@ -1036,17 +1399,17 @@ static int __rrr_net_transport_quic_ctx_new (
 			goto out_free;
 		}
 
-		assert(0 && "SSL dup not implemented");
-/*		if ((ctx->ssl = SSL_dup(server_tls->ssl)) == NULL) {
-			RRR_SSL_ERR("Could not allocate SSL in QUIC");
-			ret = 1;
+		if ((ret = __rrr_net_transport_quic_gnutls_session_init_server (
+				&ctx->session,
+				server_tls
+		)) != 0) {
 			goto out_destroy_conn;
-		}*/
-
-		assert(0 && "SSL set accept state not implemented");
-		/*SSL_set_accept_state(ctx->ssl);*/
+		}
 	}
 	else {
+		RRR_DBG_7("net transport quic fd %i new client ctx src %s dst %s\n",
+				fd, buf_local_addr, buf_remote_addr);
+
 		// New destination connection ID is randomly generated
 		rrr_random_bytes(&dcid.data, RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH);
 		dcid.datalen = RRR_NET_TRANSPORT_QUIC_SHORT_CID_LENGTH;
@@ -1056,9 +1419,6 @@ static int __rrr_net_transport_quic_ctx_new (
 
 		// Second CID slot not used
 		connection_ids_new->b.length = 0;
-
-		RRR_DBG_7("net transport quic fd %i new client ctx src %s dst %s\n",
-				fd, buf_local_addr, buf_remote_addr);
 
 		static const ngtcp2_callbacks callbacks = {
 			__rrr_net_transport_quic_ngtcp2_cb_client_initial,
@@ -1121,29 +1481,39 @@ static int __rrr_net_transport_quic_ctx_new (
 			goto out_free;
 		}
 
-		//ctx->ssl = client_tls->ssl;
-		assert(0 && "SSL up ref not implemented");
-/*		SSL_up_ref(ctx->ssl);
-		SSL_set_connect_state(ctx->ssl);
-		SSL_set_tlsext_host_name(ctx->ssl, remote_hostname);*/
+		if ((ret = __rrr_net_transport_quic_gnutls_session_init_client (
+				&ctx->session,
+				client_tls,
+				remote_hostname
+		)) != 0) {
+			goto out_destroy_conn;
+		}
 	}
 
-	assert(0 && "Set native ngtcp2 handle not implemented");
-	//ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->ssl);
+	if ((ret = __rrr_net_transport_gnutls_alpn_setup (
+			&ctx->session,
+			transport_tls->alpn_datum,
+			transport_tls->alpn_datum_count
+	)) != 0) {
+		goto out_deinit_session;
+	}
+
+	ngtcp2_conn_set_tls_native_handle(ctx->conn, ctx->session.session);
 	ngtcp2_ccerr_default(&ctx->last_error);
 
 	ctx->conn_ref.user_data = ctx;
 	ctx->conn_ref.get_conn = __rrr_net_transport_quic_cb_get_conn;
 
+	gnutls_session_set_ptr(ctx->session.session, &ctx->conn_ref);
+
 	// Additional parameters must be set by __rrr_net_transport_quic_ctx_post_connect_patch
 	// after the transport handle is known.
-
-	assert(0 && "SSL set app data not implemented");
-	//SSL_set_app_data(ctx->ssl, &ctx->conn_ref);
 
 	*target = ctx;
 
 	goto out;
+	out_deinit_session:
+		__rrr_net_transport_gnutls_session_cleanup(&ctx->session);
 	out_destroy_conn:
 		ngtcp2_conn_del(ctx->conn);
 	out_free:
@@ -1290,89 +1660,28 @@ static void __rrr_net_tansport_quic_ctx_migrate_start_server (
 static int __rrr_net_transport_quic_tls_data_new (
 		struct rrr_net_transport_tls_data **result,
 		struct rrr_net_transport_tls *tls,
-		const struct rrr_ip_data *ip_data,
-//		const SSL_METHOD *tls_method
-		const void *tls_method
+		const struct rrr_ip_data *ip_data
 ) {
 	int ret = 0;
 
-	struct rrr_net_transport_tls_data *tls_data = NULL;
-
-	assert(0 && "SSL data new not implemented");
-/*	if ((tls_data = rrr_net_transport_openssl_common_ssl_data_new()) == NULL) {
-		RRR_MSG_0("Could not allocate memory for SSL data in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_net_transport_openssl_common_new_ctx (
-			&tls_data->ctx,
-			tls_method,
+	struct rrr_net_transport_tls_data *tls_data;
+	if ((ret = __rrr_net_transport_gnutls_tls_data_new (
+			&tls_data,
 			tls->flags_tls,
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
-			tls->ca_path,
-			&tls->alpn
-	) != 0) {
-		RRR_SSL_ERR("Could not get SSL CTX in QUIC");
-		ret = 1;
-		goto out_destroy;
-	}*/
-
-	assert(0 && "SSL quic data new not implemented");
-
-/*
-	SSL_CTX *ctx = tls_data->ctx;
-
-	if (ngtcp2_crypto_quictls_configure_server_context(ctx) != 0) {
-		RRR_MSG_0("Failed to configure SSL CTX to ngtcp2 in %s\n", __func__);
-		ret = 1;
-		goto out_destroy;
+			tls->ca_path
+	)) != 0) {
+		goto out;
 	}
-
-	if (SSL_CTX_set_ciphersuites(ctx, RRR_NET_TRANSPORT_QUIC_CIPHERS) != 1) {
-		RRR_MSG_0("Failed to set SSL ciphersuites in %s\n", __func__);
-		ret = 1;
-		goto out_destroy;
-	}
-
-	if (SSL_CTX_set1_groups_list(ctx, RRR_NET_TRANSPORT_QUIC_GROUPS) != 1) {
-		RRR_MSG_0("Failed to set SSL groups in %s\n", __func__);
-		ret = 1;
-		goto out_destroy;
-	}
-
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-
-	// The created SSL object is only used as a template and
-	// is copied using SSL_dup as new connections are created.
-	if ((tls_data->ssl = SSL_new(ctx)) == NULL) {
-		RRR_SSL_ERR("Could create SSL in QUIC");
-		ret = 1;
-		goto out_destroy;
-	}
-
-	SSL_set_quic_use_legacy_codepoint(tls_data->ssl, 0);
-
-	SSL_set_alpn_protos (
-			tls_data->ssl,
-			(const uint8_t *) tls->alpn.protos,
-			(unsigned int) tls->alpn.length
-	);
-
-	SSL_set_quic_transport_version(tls_data->ssl, TLSEXT_TYPE_quic_transport_parameters);
 
 	tls_data->ip_data = *ip_data;
-*/
+
 	*result = tls_data;
 
-	goto out;
-	out_destroy:
-		assert (0 && "SSL data destroy not implemented");
-//		rrr_net_transport_openssl_common_ssl_data_destroy(tls_data);
 	out:
-		return ret;
+	return ret;
 }
 
 struct rrr_net_transport_quic_bind_and_listen_callback_data {
@@ -1395,12 +1704,10 @@ static int __rrr_net_transport_quic_bind_and_listen_callback (RRR_NET_TRANSPORT_
 		goto out;
 	}
 
-	assert(0 && "SSL data new not implemented, ssl_server_method not present in tls struct");
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			tls,
-			callback_data->ip_data,
-			NULL //tls->ssl_server_method
+			callback_data->ip_data
 	)) != 0) {
 		goto out_destroy_handle;
 	}
@@ -1693,17 +2000,13 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 		goto out;
 	}
 
-	assert(0 && "SSL quic data new not implemented, ssl_client_method is present in struct");
-/*
 	if ((ret = __rrr_net_transport_quic_tls_data_new (
 			&handle_data->tls_data,
 			callback_data->tls,
-			callback_data->ip_data,
-			callback_data->tls->ssl_client_method
+			callback_data->ip_data
 	)) != 0) {
 		goto out_destroy_handle;
 	}
-*/
 
 	if ((ret = __rrr_net_transport_quic_ctx_new_client (
 			&handle_data->ctx,
@@ -1720,9 +2023,6 @@ static int __rrr_net_transport_quic_connect_callback (RRR_NET_TRANSPORT_ALLOCATE
 	)) != 0) {
 		goto out_destroy_handle;
 	}
-
-	assert(0 && "SSL quic set connect state not implemented");
-//	SSL_set_connect_state(handle_data->ctx->ssl);
 
 	{
 		char buf_addr_remote[128];
@@ -1756,6 +2056,8 @@ struct rrr_net_transport_quic_modify_callback_data {
 static int __rrr_net_transport_quic_modify_callback (RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS) {
 	struct rrr_net_transport_quic_modify_callback_data *callback_data = arg;
 	struct rrr_net_transport_quic_handle_data *handle_data = *submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
+	struct rrr_net_transport_tls_data *tls_data = handle_data->tls_data;
 
 	__rrr_net_transport_quic_ctx_migrate (
 			handle_data->ctx,
@@ -1765,18 +2067,17 @@ static int __rrr_net_transport_quic_modify_callback (RRR_NET_TRANSPORT_MODIFY_CA
 			callback_data->local_addr_len
 	);
 
-	handle_data->ctx->fd = callback_data->ip_data->fd;
+	if (tls_data->ip_data.fd != 0) {
+		rrr_ip_close(&tls_data->ip_data);
+	}
 
-	// This will cause the old FD to be closed
-	assert(0 && "SSL quic data ip replace not implemented");
-	// rrr_net_transport_openssl_common_ssl_data_ip_replace (handle_data->tls_data, callback_data->ip_data);
+	tls_data->ip_data = *callback_data->ip_data;
 
+	ctx->fd = callback_data->ip_data->fd;
 	*submodule_fd = callback_data->ip_data->fd;
 
 	return 0;
 }
-
-#define RRR_NET_TRANSPORT_QUIC_CONNECT_COMPLETE RRR_READ_PERFORMED
 
 struct rrr_net_transport_quic_connect_or_modify_resolve_callback_data {
 	struct rrr_net_transport_tls *tls;
@@ -2961,10 +3262,31 @@ static int __rrr_net_transport_quic_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
 
-	assert(0 && "Selected proto get not implemented, ssl not present in struct");
-	//return rrr_net_transport_openssl_common_alpn_selected_proto_get (proto, NULL/*handle_data->ctx->ssl*/);
-	return 1;
+	int err;
+
+	gnutls_datum_t alpn;
+
+	if ((err = gnutls_alpn_get_selected_protocol (ctx->session.session, &alpn)) != 0) {
+		RRR_MSG_0("Could not get ALPN in %s: %s\n", __func__, gnutls_strerror(err));
+		return 1;
+	}
+
+	if (alpn.size == 0) {
+		*proto = NULL;
+		return 0;
+	}
+
+	if ((*proto = rrr_allocate(alpn.size + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	memcpy(*proto, alpn.data, alpn.size);
+	(*proto)[alpn.size] = '\0';
+
+	return 0;
 }
 
 static int __rrr_net_transport_quic_poll (
@@ -3190,8 +3512,6 @@ static int __rrr_net_transport_quic_pre_destroy (
 static void __rrr_net_transport_quic_destroy (
 		RRR_NET_TRANSPORT_DESTROY_ARGS
 ) {
-	rrr_openssl_global_unregister_user();
-
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 	rrr_net_transport_tls_common_destroy(tls);
 }
@@ -3252,12 +3572,16 @@ int rrr_net_transport_quic_new (
 		return 1;
 	}
 
-	rrr_openssl_global_register_user();
+	assert(sizeof((*target)->alpn_datum) / sizeof((*target)->alpn_datum[0]) == RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX);
+	assert((*target)->alpn.alpn_buf_count <= RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX);
 
+	for (unsigned int i = 0; i < (*target)->alpn.alpn_buf_count; i++) {
+		(*target)->alpn_datum[i].data = (unsigned char *) (*target)->alpn.alpn_buf[i];
+		(*target)->alpn_datum[i].size = strlen((*target)->alpn.alpn_buf[i]);
+	}
+
+	(*target)->alpn_datum_count = (*target)->alpn.alpn_buf_count;
 	(*target)->methods = &tls_methods;
-	assert(0 && "ssl_client_method and ssl_server_method not present in struct, cannot create new QUIC transport");
-//	(*target)->ssl_client_method = TLS_client_method();
-//	(*target)->ssl_server_method = TLS_server_method();
 	(*target)->stream_open_callback = stream_open_callback;
 	(*target)->stream_open_callback_arg_global = stream_open_callback_arg;
 

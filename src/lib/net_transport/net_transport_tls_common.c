@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,6 +37,44 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         flags_tls_checked |= flag;                             \
         flags_tls &= ~(flag);                                  \
     }} while(0)
+
+static int __rrr_net_transport_tls_common_alpn_populate (
+		struct rrr_net_transport_tls_alpn *target,
+		const char *in,
+		unsigned int in_size
+) {
+	int ret = 0;
+
+	if (in == NULL || *in == '\0')
+		goto out;
+
+	if ((target->protos = rrr_allocate(in_size)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for ALPN protos in %s\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(target->protos, in, in_size);
+	target->length = in_size;
+
+	for (unsigned int i = 0; i < target->length; i++) {
+		unsigned char bytes = target->protos[i++];
+
+		assert(i + bytes <= target->length && "ALPN encoding error");
+		assert(target->alpn_buf_count < RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX && "Too many ALPN protocols");
+
+		memcpy(target->alpn_buf[target->alpn_buf_count], target->protos + i, bytes);
+		target->alpn_buf[target->alpn_buf_count][bytes] = '\0';
+
+		target->alpn_buf_count++;
+		i += bytes;
+
+		RRR_MSG_1("ALPN protocol: '%s' length %u\n", target->alpn_buf[target->alpn_buf_count - 1], bytes);
+	}
+
+	out:
+	return ret;
+}
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
@@ -107,14 +145,9 @@ int rrr_net_transport_tls_common_new (
 		}
 	}
 
-	if (alpn_protos != NULL && *alpn_protos != '\0') {
-		if ((result->alpn.protos = rrr_allocate(alpn_protos_length)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
-			ret = 1;
-			goto out_free_strings;
-		}
-		memcpy(result->alpn.protos, alpn_protos, alpn_protos_length);
-		result->alpn.length = alpn_protos_length;
+	if ((ret = __rrr_net_transport_tls_common_alpn_populate(&result->alpn, alpn_protos, alpn_protos_length)) != 0) {
+		RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
+		goto out_free_strings;
 	}
 
 	result->flags_tls = flags_tls_checked;

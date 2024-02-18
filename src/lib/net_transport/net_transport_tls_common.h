@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,8 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip.h"
 #include "../socket/rrr_socket_graylist.h"
 
+#define RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX 6
+
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/ssl.h>
+#endif
+
+#ifdef RRR_WITH_GNUTLS
+#	include <gnutls/gnutls.h>
 #endif
 
 struct rrr_read_session;
@@ -36,10 +42,15 @@ struct rrr_read_session;
 struct rrr_net_transport_tls_alpn {
 	char *protos;
 	unsigned int length;
+	char alpn_buf[RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX][256];
+	unsigned int alpn_buf_count;
 };
 
 struct rrr_net_transport_tls {
 	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_tls);
+
+	struct rrr_net_transport_tls_alpn alpn;
+	struct rrr_socket_graylist *connect_graylist;
 
 #ifdef RRR_WITH_OPENSSL
 	const SSL_METHOD *ssl_client_method;
@@ -50,6 +61,11 @@ struct rrr_net_transport_tls {
 	struct tls_config *config;
 #endif
 
+#ifdef RRR_WITH_GNUTLS
+	gnutls_datum_t alpn_datum[RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX];
+	unsigned int alpn_datum_count;
+#endif
+
 	int flags_tls;
 	int flags_submodule;
 
@@ -57,9 +73,6 @@ struct rrr_net_transport_tls {
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
-	struct rrr_net_transport_tls_alpn alpn;
-
-	struct rrr_socket_graylist *connect_graylist;
 };
 
 struct rrr_net_transport_tls_data {
@@ -75,6 +88,12 @@ struct rrr_net_transport_tls_data {
 
 #ifdef RRR_WITH_LIBRESSL
 	struct tls *ctx;
+#endif
+
+#ifdef RRR_WITH_GNUTLS
+	gnutls_certificate_credentials_t x509_cred;
+	gnutls_priority_t priority_cache;
+	gnutls_datum_t ticket_key;
 #endif
 };
 
@@ -105,6 +124,11 @@ void rrr_net_transport_tls_common_read_remove_read_session (
 void rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated (
 		unsigned char *out_buf,
 		unsigned int out_size,
+		const unsigned char *in,
+		unsigned int in_size
+);
+void rrr_net_transport_tls_common_alpn_populate (
+		struct rrr_net_transport_tls_alpn *target,
 		const unsigned char *in,
 		unsigned int in_size
 );
