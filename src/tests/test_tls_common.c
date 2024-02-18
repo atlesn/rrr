@@ -94,11 +94,12 @@ static void __rrr_test_tls_common_bind_and_listen_callback (RRR_NET_TRANSPORT_BI
 	(void)(arg);
 }
 
-static void __rrr_test_tls_common_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
-	struct rrr_test_tls_common_data *data = arg;
-
-	(void)(socklen);
-
+void rrr_test_tls_common_connect_actions (
+		struct rrr_test_tls_common_data *data,
+    		struct rrr_net_transport_handle *handle,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen
+) {
 	data->transport_handle = rrr_net_transport_ctx_get_handle(handle);
 
 	if (sockaddr->sa_family == AF_INET) {
@@ -110,6 +111,14 @@ static void __rrr_test_tls_common_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CAL
 	else {
 		RRR_BUG("Unknown family %i in %s\n", sockaddr->sa_family, __func__);
 	}
+}
+
+static void __rrr_test_tls_common_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
+	struct rrr_test_tls_common_data *data = arg;
+
+	TEST_MSG("TLS connect callback\n");
+
+	rrr_test_tls_common_connect_actions(data, handle, sockaddr, socklen);
 }
 
 int rrr_test_tls_common_init (

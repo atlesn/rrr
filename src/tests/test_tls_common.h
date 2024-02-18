@@ -45,6 +45,13 @@ struct rrr_test_tls_common_data_common {
 	int flags;
 };
 
+void rrr_test_tls_common_connect_actions (
+		struct rrr_test_tls_common_data *data,
+    		struct rrr_net_transport_handle *handle,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen
+);
+
 int rrr_test_tls_common_init (
 		struct rrr_test_tls_common_data_common *data,
 		const struct rrr_net_transport_config *config_server,

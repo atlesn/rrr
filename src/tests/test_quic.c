@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport_config.h"
 
 #define RRR_TEST_QUIC_FLAGS_STREAM_OPENED (1<<0)
+#define RRR_TEST_QUIC_PORT 8888
 
 static int __rrr_test_quic_read_stream_callback (RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS) {
 	struct rrr_test_tls_common_data *data = arg;
@@ -181,6 +182,14 @@ static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_C
 	return 0;
 }
 
+static void __rrr_test_quic_connect_callback (RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS) {
+	struct rrr_test_tls_common_data *data = arg;
+
+	TEST_MSG("QUIC connect callback\n");
+
+	rrr_test_tls_common_connect_actions(data, handle, sockaddr, socklen);
+}
+
 static int __rrr_test_quic_periodic_callback (
 		struct rrr_test_tls_common_data_common *data
 ) {
@@ -229,7 +238,7 @@ static int __rrr_test_quic_complete_callback (
 				RRR_TEST_QUIC_PORT,
 				"localhost",
 				__rrr_test_quic_connect_callback,
-				data
+				&data->client
 		) != 0) {
 			TEST_MSG("Quic test migration failed\n");
 			return RRR_EVENT_ERR;
