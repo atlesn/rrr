@@ -1555,7 +1555,7 @@ static int __rrr_http_application_http3_tick (
 		if ((ret = __rrr_http_application_http3_tick_process_shutdown(http3)) != 0) {
 			goto out;
 		}
-		rrr_net_transport_ctx_notify_read_slow();
+		rrr_net_transport_ctx_notify_read_slow(handle);
 	}
 
 	http3->rules = rules;
@@ -1593,11 +1593,13 @@ static int __rrr_http_application_http3_tick (
 	return ret;
 }
 
-static int __rrr_http_application_http3_need_tick (
+static void __rrr_http_application_http3_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
-	return !http3->initialized;
+
+	if (!http3->initialized)
+		*speed = RRR_HTTP_TICK_SPEED_FAST;
 }
 
 static const struct rrr_http_application_constants rrr_http_application_http3_constants = {
