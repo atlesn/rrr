@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../lib/util/bsd.h"
+#include "../lib/util/posix.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <dlfcn.h>
@@ -39,7 +42,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/rrr_config.h"
-#include "../lib/util/posix.h"
 
 #include "test_condition.h"
 #include "test_time.h"
@@ -324,7 +326,7 @@ int rrr_test_fork_executable (const char *fork_executable) {
 	return 1;
 }
 
-int main (int argc, const char **argv, const char **env) {
+int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler_interrupt = NULL;
 
@@ -343,6 +345,9 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_allocator;
 	}
+
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	struct rrr_stats_engine stats_engine = {0};
