@@ -487,6 +487,9 @@ static int __rrr_net_transport_gnutls_tls_data_new (
 void __rrr_net_transport_gnutls_tls_data_destroy (
 		struct rrr_net_transport_tls_data *tls_data
 ) {
+	if (tls_data->ip_data.fd != 0) {
+		rrr_ip_close(&tls_data->ip_data);
+	}
 	gnutls_free(tls_data->ticket_key.data);
 	gnutls_priority_deinit(tls_data->priority_cache);
 	gnutls_certificate_free_credentials(tls_data->x509_cred);
