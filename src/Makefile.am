@@ -29,7 +29,7 @@ endif
 
 rrr_SOURCES = rrr.c main.c
 rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"@MODULE_DIR@\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fpie
-rrr_LDFLAGS = ${ldflags} -pie
+rrr_LDFLAGS = ${ldflags} ${LIBBSD_LIBS} -pie
 
 rrr_post_SOURCES = rrr_post.c main.c
 rrr_post_CFLAGS = ${AM_CFLAGS} -fpie

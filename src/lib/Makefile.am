@@ -167,6 +167,7 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
+                    ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
                     ${perl5_extra_ld} \
                     ${artnet_extra_ld} \

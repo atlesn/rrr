@@ -132,9 +132,6 @@ static void __rrr_mmap_free (
 		struct rrr_shm_collection_slave *shm_slave,
 		rrr_mmap_handle handle
 ) {
-	int blocks = 0;
-	int iterations = 0;
-
 	DEFINE_HEAP();
 
 	rrr_mmap_handle block_pos = 0;
@@ -147,12 +144,8 @@ static void __rrr_mmap_free (
 			break;
 		}
 
-		blocks++;
-
 		for (rrr_biglength j = 0; j < 64; j++) {
 			rrr_biglength used_mask = (rrr_biglength) 1 << j;
-
-			iterations++;
 
 			if (index->block_sizes[j] == 0 && (index->block_used_map & used_mask) == used_mask) {
 				// Unusable merged chunk
@@ -690,13 +683,17 @@ void rrr_mmap_collections_maintenance (
 void __rrr_mmap_collection_cleanup (
 		struct rrr_mmap_collection *collection
 ) {
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
 	int count = 0;
+#endif
 
 	LOCK(collection);
 	RRR_MMAP_ITERATE_BEGIN();
 		if (mmap->heap_size != 0) {
 			__rrr_mmap_collection_mmap_cleanup(collection, mmap);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
 			count++;
+#endif
 		}
 	RRR_MMAP_ITERATE_END();
 
