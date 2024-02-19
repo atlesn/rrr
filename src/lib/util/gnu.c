@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -147,6 +147,18 @@ pid_t rrr_gettid(void) {
 	return gettid();
 #else
 	return getpid();
+#endif
+}
+
+void rrr_set_thread_name(pthread_t t, const char *name) {
+#ifdef RRR_HAVE_PTHREAD_SETNAME_NP
+	int err;
+	if ((err = pthread_setname_np(t, name)) != 0) {
+		RRR_MSG_0("Warning: Failed to set thread name: %i\n", err);
+	}
+#else
+	(void)(t);
+	(void)(name);
 #endif
 }
 

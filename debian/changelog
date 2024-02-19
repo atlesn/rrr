@@ -1,4 +1,4 @@
-rrr (1.29-1) bookworm; urgency=medium
+rrr (1.29-2) bookworm; urgency=medium
 
   * Changes:
     * In route definition, the I operator is replaced with D. Existing programs
@@ -6,6 +6,8 @@ rrr (1.29-1) bookworm; urgency=medium
     * Changed signatures for processor functions by adding a new last argument
       'method'. Existing scripts MAY BREAK and should be updated. Refer to
       the rrr.conf.5 manual page for correct function signatures.
+    * Set process and thread names on OS-es where this is possible. This can
+      assist when debugging for instance CPU usage.
 
   * Features:
     * Match generated messages in httpclient with their corresponding message
@@ -80,7 +82,7 @@ rrr (1.29-1) bookworm; urgency=medium
     * Use events in file module
     * Common send loop for file and ip modules
 
- -- Atle Solbakken <atle@goliathdns.no>  Sun, 17 Dec 2023 08:13:49 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 17 Feb 2024 12:58:49 +0100
 
 rrr (1.27-1) bullseye; urgency=medium
 

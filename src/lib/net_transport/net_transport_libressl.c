@@ -550,7 +550,7 @@ static int __rrr_net_transport_libressl_read_message (
 	);
 	*bytes_read += bytes_read_tmp;
 
-	if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT || ret = RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+	if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT || ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 		// OK, no message printed
 	}
 	else {

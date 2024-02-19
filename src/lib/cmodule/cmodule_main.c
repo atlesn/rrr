@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -17,6 +17,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+#include "../util/bsd.h"
+#include "../util/posix.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../mmap_channel.h"
 #include "../discern_stack.h"
-#include "../util/posix.h"
 #include "../util/rrr_time.h"
 
 static void __rrr_cmodule_main_worker_kill (
@@ -185,6 +187,8 @@ int rrr_cmodule_main_worker_fork_start (
 
 	// CHILD PROCESS CODE
 	// Use of global locks OK beyond this point
+
+	rrr_setproctitle("[worker %s]", worker->name);
 
 	ret = rrr_cmodule_worker_main (
 			worker,
