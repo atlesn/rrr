@@ -57,8 +57,8 @@ static int __rrr_net_transport_tls_common_alpn_populate (
 	memcpy(target->protos, in, in_size);
 	target->length = in_size;
 
-	for (unsigned int i = 0; i < target->length; i++) {
-		unsigned char bytes = target->protos[i++];
+	for (unsigned int i = 0, bytes = 0; i < target->length; i += bytes) {
+		bytes = target->protos[i++];
 
 		assert(i + bytes <= target->length && "ALPN encoding error");
 		assert(target->alpn_buf_count < RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX && "Too many ALPN protocols");
@@ -67,9 +67,8 @@ static int __rrr_net_transport_tls_common_alpn_populate (
 		target->alpn_buf[target->alpn_buf_count][bytes] = '\0';
 
 		target->alpn_buf_count++;
-		i += bytes;
 
-		RRR_MSG_1("ALPN protocol: '%s' length %u\n", target->alpn_buf[target->alpn_buf_count - 1], bytes);
+		// RRR_DBG_3("Supported TLS ALPN protocol: '%s' length %u\n", target->alpn_buf[target->alpn_buf_count - 1], bytes);
 	}
 
 	out:
