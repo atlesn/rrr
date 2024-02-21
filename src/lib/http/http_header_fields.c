@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -492,11 +492,63 @@ const struct rrr_http_header_field *rrr_http_header_field_collection_get_with_va
 	return NULL;
 }
 
+int rrr_http_header_field_collection_subvalues_iterate (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+						name, __func__);
+			}
+
+			const struct rrr_http_header_field *field = node;
+			RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+				if (rrr_nullsafe_str_cmpto_case(field->name, name_lowercase) != 0) {
+					RRR_LL_ITERATE_NEXT();
+				}
+				if ((ret = callback(field->name, field->value, callback_arg)) != 0) {
+					goto out;
+				}
+			RRR_LL_ITERATE_END();
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_header_field_collection_has_subvalue_iterate_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		void *arg
+) {
+	const char *name_subvalue_lowercase = arg;
+
+	(void)(name);
+
+	return rrr_nullsafe_str_cmpto_case(value, name_subvalue_lowercase) == 0;
+}
+
 int rrr_http_header_field_collection_has_subvalue (
 		const struct rrr_http_header_field_collection *collection,
 		const char *name_lowercase,
 		const char *name_subvalue_lowercase
 ) {
+	return rrr_http_header_field_collection_subvalues_iterate (
+			collection,
+			name_lowercase,
+			__rrr_http_header_field_collection_has_subvalue_iterate_callback,
+			(void *) name_subvalue_lowercase
+	);
+
+/*
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
 		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
 			if (node->definition == NULL || node->definition->parse == NULL) {
@@ -513,8 +565,8 @@ int rrr_http_header_field_collection_has_subvalue (
 			RRR_LL_ITERATE_END();
 		}
 	RRR_LL_ITERATE_END();
-
 	return 0;
+*/
 }
 
 int rrr_http_header_field_new_raw (

@@ -716,6 +716,29 @@ void rrr_nullsafe_str_output_strip_null_append_null_trim (
 	rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok (buf, buf_size, nullsafe->str, nullsafe->len);
 }
 
+int rrr_nullsafe_str_extract_append_null (
+		char **result,
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	char *str;
+	rrr_nullsafe_len len = nullsafe != NULL ? nullsafe->len : 0;
+
+	if ((str = rrr_allocate(len + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	if (nullsafe != NULL) {
+		memcpy(str, nullsafe->str, len);
+	}
+
+	str[len] = '\0';
+
+	*result = str;
+
+	return 0;
+}
+
 void rrr_nullsafe_str_copyto (
 		rrr_nullsafe_len *written_size,
 		void *target,

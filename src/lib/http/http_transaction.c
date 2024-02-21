@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -286,6 +286,72 @@ int rrr_http_transaction_response_alt_svc_set (
 		const char *alt_svc
 ) {
 	return rrr_http_part_header_field_push_and_replace(transaction->response_part, "alt-svc", alt_svc);
+}
+
+struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
+	char **authority;
+	uint16_t *port;
+	const struct rrr_http_transaction *transaction;
+};
+
+static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		void *arg
+) {
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *name_tmp = NULL;
+	char *value_tmp = NULL;
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&name_tmp, name)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&value_tmp, value)) != 0) {
+		goto out;
+	}
+
+	printf("Alt-Svc: %s: %s\n", name_tmp, value_tmp);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(name_tmp);
+	RRR_FREE_IF_NOT_NULL(value_tmp);
+	return ret;
+}
+
+/*
+int rrr_nullsafe_str_extract_append_null (
+		char **result,
+		const struct rrr_nullsafe_str *nullsafe
+);
+int rrr_http_header_field_collection_subvalues_iterate (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
+		void *callback_arg
+);
+*/
+int rrr_http_transaction_response_alt_svc_get (
+		enum rrr_http_transport *transport_code,
+		char **authority,
+		uint16_t *port,
+		const struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
+		.authority = authority,
+		.port = port,
+		.transaction = transaction
+	};
+
+	return rrr_http_header_field_collection_subvalues_iterate (
+			&transaction->response_part->headers,
+			"alt-svc",
+			__rrr_http_transaction_response_alt_svc_get_iterate_callback,
+			&callback_data
+	);
 }
 
 int rrr_http_transaction_endpoint_path_get (

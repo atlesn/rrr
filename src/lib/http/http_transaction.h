@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -147,6 +147,12 @@ int rrr_http_transaction_response_alt_svc_set (
 		struct rrr_http_transaction *transaction,
 		const char *alt_svc
 );
+int rrr_http_transaction_response_alt_svc_get (
+		enum rrr_http_transport *transport_code,
+		char **authority,
+		uint16_t *port,
+		const struct rrr_http_transaction *transaction
+);
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
 		struct rrr_http_transaction *transaction
@@ -193,7 +199,6 @@ int rrr_http_transaction_request_prepare_wrapper (
 		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
 		void *callback_arg
 );
-
 static inline void rrr_http_transaction_stream_flags_add (
 		struct rrr_http_transaction *transaction,
 		int flags

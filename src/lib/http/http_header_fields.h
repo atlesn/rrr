@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -90,6 +90,12 @@ int rrr_http_header_field_collection_has_subvalue (
 		const struct rrr_http_header_field_collection *collection,
 		const char *name_lowercase,
 		const char *name_subvalue_lowercase
+);
+int rrr_http_header_field_collection_subvalues_iterate (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
+		void *callback_arg
 );
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
