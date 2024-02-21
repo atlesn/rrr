@@ -23,6 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/net_transport/net_transport.h"
 
+#define RRR_TEST_TLS_COMMON_PORT 4433
+#define RRR_TEST_TLS_COMMON_TIMEOUT_S 5
+#define RRR_TEST_TLS_COMMON_PROTOCOL "RRR"
+#define RRR_TEST_TLS_COMMON_ALPN_PROTO "\x03" RRR_TEST_TLS_COMMON_PROTOCOL
+
 extern const char rrr_test_tls_common_request_data[];
 extern const char rrr_test_quic_response_data[];
 

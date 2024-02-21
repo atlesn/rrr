@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport_config.h"
 
 #define RRR_TEST_QUIC_FLAGS_STREAM_OPENED (1<<0)
-#define RRR_TEST_QUIC_PORT 8888
 
 static int __rrr_test_quic_read_stream_callback (RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS) {
 	struct rrr_test_tls_common_data *data = arg;
@@ -235,7 +234,7 @@ static int __rrr_test_quic_complete_callback (
 		if (rrr_net_transport_handle_migrate (
 				data->client.transport,
 				data->client.transport_handle,
-				RRR_TEST_QUIC_PORT,
+				RRR_TEST_TLS_COMMON_PORT,
 				"localhost",
 				__rrr_test_quic_connect_callback,
 				&data->client
