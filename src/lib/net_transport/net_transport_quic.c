@@ -328,7 +328,7 @@ static int __rrr_net_transport_gnutls_alpn_setup (
 		goto out;
 
 	for (unsigned int i = 0; i < alpn_datum_count; i++) {
-		RRR_MSG_1("ALPN in %s: %.*s\n", __func__, (int) alpn_datum[i].size, alpn_datum[i].data);
+		RRR_DBG_7("Registering ALPN[%u] in GnuTLS: %.*s\n", i, (int) alpn_datum[i].size, alpn_datum[i].data);
 	}
 
 	if ((err = gnutls_alpn_set_protocols (

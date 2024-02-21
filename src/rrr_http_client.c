@@ -108,7 +108,7 @@ struct rrr_http_client_data {
 	struct rrr_net_transport_config net_transport_config;
 	rrr_http_unique_id unique_id_counter;
 
-	int redirect_pending;
+	volatile int request_pending;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_stdin;
@@ -443,13 +443,13 @@ static int __rrr_http_client_unique_id_generator_callback (
 }
 
 static int __rrr_http_client_request_send_loop (
-	struct rrr_http_client_data *http_client_data
+		struct rrr_http_client_data *http_client_data
 ) {
 	int ret = 0;
 
 	int retries = 5000;
 	while (--retries && main_running) {
-		if ((ret = rrr_http_client_request_send (
+		ret = rrr_http_client_request_send (
 				&http_client_data->request_data,
 				http_client_data->http_client,
 				&http_client_data->net_transport_config,
@@ -460,11 +460,19 @@ static int __rrr_http_client_request_send_loop (
 				NULL,
 				NULL,
 				NULL
-		)) == 0 || ret != RRR_HTTP_BUSY) {
-			RRR_MSG_0("Could not connect to server %s:%i\n",
-				http_client_data->request_data.server, http_client_data->request_data.http_port);
-			goto out;
-		}
+		);
+
+		switch (ret) {
+			case RRR_HTTP_BUSY:
+				break;
+			case 0:
+				goto out;
+			default:
+				RRR_MSG_0("Could not connect to server %s:%i\n",
+					http_client_data->request_data.server, http_client_data->request_data.http_port);
+				goto out;
+		};
+
 		rrr_event_dispatch_once(http_client_data->queue);
 		rrr_posix_usleep(1000);
 	}
@@ -486,6 +494,12 @@ static int __rrr_http_client_redirect_callback (
 
 	// Continue using protocol provided by server
 	http_client_data->request_data.protocol_version = transaction->response_part->parsed_version;
+
+	// Continue using current transport
+	http_client_data->request_data.transport_force = transaction->transport_code;
+
+	// Continue using any transport parameters given as arguments
+	http_client_data->request_data.upgrade_mode = http_client_data->upgrade_mode;
 
 	EVENT_ACTIVATE(http_client_data->event_redirect);
 
@@ -659,7 +673,7 @@ static void rrr_http_client_event_redirect (
 
 	RRR_EVENT_HOOK();
 
-	data->redirect_pending = 1;
+	data->request_pending = 1;
 
 	rrr_event_dispatch_exit(data->queue);
 }
@@ -836,9 +850,10 @@ int main (int argc, const char **argv, const char **env) {
 	data.request_data.protocol_version = data.protocol_version;
 	data.request_data.upgrade_mode = data.upgrade_mode;
 
-	redirect:
+	// Disables no transaction detection in periodic callback
+	data.request_pending = 1;
 
-	data.redirect_pending = 0;
+	redirect:
 
 	if (__rrr_http_client_request_send_loop (
 			&data
@@ -846,6 +861,9 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+
+	// Enables no transaction detection in periodic callback
+	data.request_pending = 0;
 
 	if ((rrr_event_dispatch (
 			data.queue,
@@ -857,7 +875,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (data.redirect_pending) {
+	if (data.request_pending) {
 		goto redirect;
 	}
 

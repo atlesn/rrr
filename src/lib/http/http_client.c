@@ -644,13 +644,14 @@ static int __rrr_http_client_redirect_callback (
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
-	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s'\n",
+	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s' transport '%s'\n",
 			response_arg,
 			(uri->protocol != NULL ? uri->protocol : "-"),
 			(uri->host != NULL ? uri->host : "-"),
 			(uri->endpoint != NULL ? uri->endpoint : "-"),
 			uri->port,
-			transaction->endpoint_str
+			transaction->endpoint_str,
+			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
 	);
 
 	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
