@@ -192,7 +192,7 @@ static int httpclient_response_code_summary_push (
 
 	if (summaries->size == summaries->count) {
 		size_t size_new = summaries->size + 4;
-		if ((ptr = rrr_reallocate(summaries->codes, summaries->size * sizeof(*ptr), size_new * sizeof(*ptr))) == NULL) {
+		if ((ptr = rrr_reallocate(summaries->codes, size_new * sizeof(*ptr))) == NULL) {
 			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 			return 1;
 		}
