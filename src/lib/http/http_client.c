@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 #include "http_transaction.h"
 #include "http_redirect.h"
+#include "http_service.h"
 
 #include "../event/event.h"
 #include "../net_transport/net_transport.h"
@@ -435,10 +436,11 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	const struct rrr_http_header_field *alt_svc, *location;
+	const struct rrr_http_header_field *location;
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *data_chunks_merged = NULL;
 	struct rrr_nullsafe_str *data_decoded = NULL;
+	struct rrr_http_service_collection alt_svc = {0};
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_chunks_merged, NULL, 0)) != 0) {
 		goto out;
@@ -450,11 +452,17 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
-	// Store alt-svc headers
-	if ((alt_svc = rrr_http_part_header_field_get(response_part, "alt-svc")) != 0) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, alt_svc->value);
-		printf("HTTP client got alt-svc header: %s\n", value);
-	}
+	// Iterate alt-svc headers
+	rrr_http_transaction_response_alt_svc_get (
+			&alt_svc,
+			transaction
+	);
+
+	RRR_LL_ITERATE_BEGIN(&alt_svc,struct rrr_http_service);
+		RRR_MSG_1("HTTP client alt-svc: %s:%u\n", node->uri.host, node->uri.port);
+	RRR_LL_ITERATE_END();
+
+	assert(0 && "Processing of alt svc not implemented\n");
 
 	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
@@ -519,6 +527,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	);
 
 	out:
+	rrr_http_service_collection_clear(&alt_svc);
 	rrr_nullsafe_str_destroy_if_not_null(&data_chunks_merged);
 	rrr_nullsafe_str_destroy_if_not_null(&data_decoded);
 	return ret;

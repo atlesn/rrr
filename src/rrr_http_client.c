@@ -488,10 +488,6 @@ static int __rrr_http_client_redirect_callback (
 
 	int ret = 0;
 
-	enum rrr_http_transport alt_transport_code = 0;
-	char *alt_authority = NULL;
-	uint16_t alt_port = 0;
-
 	if ((ret = rrr_http_client_request_data_reset_from_uri(&http_client_data->request_data, uri)) != 0) {
 		goto out;
 	}
@@ -505,29 +501,9 @@ static int __rrr_http_client_redirect_callback (
 	// Continue using any transport parameters given as arguments
 	http_client_data->request_data.upgrade_mode = http_client_data->upgrade_mode;
 
-	// Iterate alt-svc headers
-
-	rrr_http_transaction_response_alt_svc_get (
-			&alt_transport_code,
-			&alt_authority,
-			&alt_port,
-			transaction
-	);
-
-/*
-	RRR_LL_ITERATE_BEGIN(&transaction->response_part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto(node->name, "alt-svc") == 0) {
-			RRR_LL_ITERATE_BEGIN(&node->fields, struct rrr_http_field);
-				if (rrr_nullsafe_str_cmpto(node->name, "h3") == 0) {
-				}
-			RRR_LL_ITERATE_END();
-		}
-	RRR_LL_ITERATE_END();
-*/
 	EVENT_ACTIVATE(http_client_data->event_redirect);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(alt_authority);
 	return ret;
 }
 

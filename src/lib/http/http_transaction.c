@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part_multipart.h"
 #include "http_fields.h"
 #include "http_util.h"
+#include "http_service.h"
 #include "../util/rrr_time.h"
 
 #define RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE 256
@@ -289,9 +290,8 @@ int rrr_http_transaction_response_alt_svc_set (
 }
 
 struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
-	char **authority;
-	uint16_t *port;
-	const struct rrr_http_transaction *transaction;
+	struct rrr_http_service_collection *services;
+	unsigned long long int age;
 };
 
 static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
@@ -300,11 +300,15 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 		void *arg
 ) {
 	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data *callback_data = arg;
+	struct rrr_http_service *service_last = RRR_LL_LAST(callback_data->services);
 
 	int ret = 0;
 
+	struct rrr_http_uri_flags uri_flags_tmp = {0};
+	struct rrr_http_uri uri_tmp = {0};
 	char *name_tmp = NULL;
 	char *value_tmp = NULL;
+	unsigned long long int expiration = 0;
 
 	if ((ret = rrr_nullsafe_str_extract_append_null(&name_tmp, name)) != 0) {
 		goto out;
@@ -314,36 +318,72 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 		goto out;
 	}
 
-	printf("Alt-Svc: %s: %s\n", name_tmp, value_tmp);
+	if (strcmp(name_tmp, "ma") == 0) {
+		if (!service_last) {
+			RRR_MSG_0("Warning: Found alt-svc 'ma' parameter before protocol, ignoring\n");
+			goto out;
+		}
+		else if (*value_tmp != '\0') {
+			char *end;
+			expiration = strtoull(value_tmp, &end, 10);
+			if (*end != '\0') {
+				RRR_MSG_0("Warning: Could not convery alt-svc 'ma' parameter to number\n");
+				goto out;
+			}
+		}
+
+		if (callback_data->age > 0 && callback_data->age <= expiration) {
+			expiration -= callback_data->age;
+		}
+
+		service_last->expire_time = rrr_time_get_64() + expiration * 1000 * 1000;
+	}
+	else if (strcmp(name_tmp, "persist") == 0) {
+		if (!service_last) {
+			RRR_MSG_0("Warning: Found alt-svc 'persist' parameter before protocol\n");
+			goto out;
+		}
+		RRR_DBG_3("HTTP ignoring alt-svc 'persist' parameter\n");
+	}
+	else if (strcmp(name_tmp, "h3") != 0) {
+		RRR_DBG_3("HTTP ignoring alt-svc entry '%s'\n", name_tmp);
+		goto out;
+	}
+
+	RRR_DBG_3("HTTP registering alt-svc entry %s=\"%s\"\n", name_tmp, value_tmp);
+
+	if ((ret = rrr_http_util_uri_host_parse (
+			&uri_tmp,
+			value
+	)) != 0) {
+		RRR_MSG_0("Warning: Failed to parse value for alt-svc parameter '%s'\n", name_tmp);
+		goto out;
+	}
+
+	if ((ret = rrr_http_service_collection_push (
+			callback_data->services,
+			&uri_tmp,
+			&uri_flags_tmp
+	)) != 0) {
+		goto out;
+	}
 
 	out:
+	rrr_http_util_uri_clear(&uri_tmp);
 	RRR_FREE_IF_NOT_NULL(name_tmp);
 	RRR_FREE_IF_NOT_NULL(value_tmp);
 	return ret;
 }
 
-/*
-int rrr_nullsafe_str_extract_append_null (
-		char **result,
-		const struct rrr_nullsafe_str *nullsafe
-);
-int rrr_http_header_field_collection_subvalues_iterate (
-		const struct rrr_http_header_field_collection *collection,
-		const char *name_lowercase,
-		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
-		void *callback_arg
-);
-*/
 int rrr_http_transaction_response_alt_svc_get (
-		enum rrr_http_transport *transport_code,
-		char **authority,
-		uint16_t *port,
+		struct rrr_http_service_collection *target,
 		const struct rrr_http_transaction *transaction
 ) {
+	unsigned long long age = 0; 
+//	assert(0 && "Get age from header");
 	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
-		.authority = authority,
-		.port = port,
-		.transaction = transaction
+		target,
+		age
 	};
 
 	return rrr_http_header_field_collection_subvalues_iterate (
