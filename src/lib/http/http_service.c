@@ -37,7 +37,9 @@ static void __rrr_http_service_destroy (
 int rrr_http_service_collection_push (
 		struct rrr_http_service_collection *collection,
 		const struct rrr_http_uri *uri,
-		const struct rrr_http_uri_flags *uri_flags
+		const struct rrr_http_uri_flags *uri_flags,
+		enum rrr_http_transport transport,
+		enum rrr_http_application_type application_type
 ) {
 	int ret = 0;
 
@@ -51,6 +53,8 @@ int rrr_http_service_collection_push (
 
 	service->uri = *uri;
 	service->uri_flags = *uri_flags;
+	service->transport = transport;
+	service->application_type = application_type;
 
 	RRR_LL_APPEND(collection, service);
 

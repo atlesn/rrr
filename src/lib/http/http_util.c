@@ -907,7 +907,8 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 		struct rrr_http_uri *uri_new,
 		const char **pos,
 		const char *end,
-		int allow_slash
+		int allow_slash,
+		int force_port
 ) {
 	int ret = 0;
 
@@ -929,8 +930,7 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 		}
 		else if (**pos == '-') {
 			if (result_len_tmp == 0) {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-				RRR_MSG_0("Invalid hostname in URI '%s', cannot begin with '-'\n", name);
+				RRR_MSG_0("Invalid hostname in host:port URI, cannot begin with '-'\n");
 				ret = 1;
 				goto out;
 			}
@@ -940,8 +940,7 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 			break;
 		}
 		else {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-			RRR_MSG_0("Invalid character %c in URI '%s' hostname\n", **pos, name);
+			RRR_MSG_0("Invalid character x%02x in host:port URI\n", **pos);
 			ret = 1;
 			goto out;
 		}
@@ -974,8 +973,7 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 		(*pos)++;
 		unsigned long long port = 0;
 		if (rrr_http_util_strtoull_raw(&port, &result_len_tmp, *pos, end, 10) != 0 || port < 1 || port > 65535) {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-			RRR_MSG_0("Invalid port in URL '%s'\n", name);
+			RRR_MSG_0("Invalid port in host:name URI\n");
 			ret = 1;
 			goto out;
 		}
@@ -984,8 +982,8 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 
 		*pos += result_len_tmp;
 	}
-	else {
-		RRR_MSG_0("Invalid character %c after hostname in host:port URI\n", **pos);
+	else if (force_port) {
+		RRR_MSG_0("Invalid character x%02x after hostname in host:port URI\n", **pos);
 		ret = 1;
 		goto out;
 	}
@@ -1046,7 +1044,7 @@ static int __rrr_http_util_uri_parse_callback (
 				goto out;
 			}
 			if (uri_new->protocol == NULL) {
-				RRR_MSG_0("Could not allocate memory for protocol in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for protocol in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -1065,7 +1063,8 @@ static int __rrr_http_util_uri_parse_callback (
 				uri_new,
 				&pos,
 				end,
-				1 /* Allow slash */
+				1, /* Allow slash */
+				0  /* Don't force port */
 		)) != 0) {
 			goto out;
 		}
@@ -1095,19 +1094,19 @@ static int __rrr_http_util_uri_parse_callback (
 		}
 
 		if (pos != end) {
-			RRR_BUG("BUG: pos was != end after parsing in __rrr_http_util_uri_parse_callback\n");
+			RRR_BUG("BUG: pos was != end after parsing in %s\n", __func__);
 		}
 
 		if (result_len_tmp == 0) {
 			if ((uri_new->endpoint = rrr_strdup("")) == 0) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
 			if ((uri_new->endpoint = rrr_allocate(result_len_tmp + 1)) == 0) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -1153,7 +1152,8 @@ static int __rrr_http_util_uri_host_parse_callback (
 			uri_new,
 			&pos,
 			end,
-			0 /* Don't allow slash */
+			0, /* Don't allow slash */
+			1  /* Force port */
 	)) != 0) {
 		goto out;
 	}

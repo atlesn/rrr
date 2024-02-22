@@ -23,11 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SERVICE_H
 
 #include "http_util.h"
+#include "http_common.h"
 
 struct rrr_http_service {
 	RRR_LL_NODE(struct rrr_http_service);
 	struct rrr_http_uri uri;
 	struct rrr_http_uri_flags uri_flags;
+	enum rrr_http_transport transport;
+	enum rrr_http_application_type application_type;
 	uint64_t expire_time;
 };
 
@@ -38,7 +41,9 @@ struct rrr_http_service_collection {
 int rrr_http_service_collection_push (
 		struct rrr_http_service_collection *collection,
 		const struct rrr_http_uri *uri,
-		const struct rrr_http_uri_flags *uri_flags
+		const struct rrr_http_uri_flags *uri_flags,
+		enum rrr_http_transport transport,
+		enum rrr_http_application_type application_type
 );
 void rrr_http_service_collection_clear (
 		struct rrr_http_service_collection *collection

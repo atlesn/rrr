@@ -309,6 +309,8 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 	char *name_tmp = NULL;
 	char *value_tmp = NULL;
 	unsigned long long int expiration = 0;
+	enum rrr_http_transport transport = RRR_HTTP_TRANSPORT_ANY;
+	enum rrr_http_application_type application = RRR_HTTP_APPLICATION_UNSPECIFIED;
 
 	if ((ret = rrr_nullsafe_str_extract_append_null(&name_tmp, name)) != 0) {
 		goto out;
@@ -318,7 +320,44 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 		goto out;
 	}
 
-	if (strcmp(name_tmp, "ma") == 0) {
+	if (strcmp(name_tmp, "h2") == 0) {
+		transport = RRR_HTTP_TRANSPORT_HTTPS;
+		application = RRR_HTTP_APPLICATION_HTTP2;
+	}
+	else if (strcmp(name_tmp, "h3") == 0 ||
+	         strcmp(name_tmp, "h3-29") == 0 ||
+	         strcmp(name_tmp, "h3-32") == 0
+	) {
+		transport = RRR_HTTP_TRANSPORT_QUIC;
+		application = RRR_HTTP_APPLICATION_HTTP3;
+	}
+
+	if (application != RRR_HTTP_APPLICATION_UNSPECIFIED) {
+		RRR_DBG_3("HTTP registering alt-svc entry %s=\"%s\"\n", name_tmp, value_tmp);
+
+		if ((ret = rrr_http_util_uri_host_parse (
+				&uri_tmp,
+				value
+		)) != 0) {
+			RRR_MSG_0("Warning: Failed to parse value for alt-svc parameter '%s'\n", name_tmp);
+			goto out;
+		}
+
+		if (uri_tmp.port == 80) {
+			transport = RRR_HTTP_TRANSPORT_HTTP;
+		}
+
+		if ((ret = rrr_http_service_collection_push (
+				callback_data->services,
+				&uri_tmp,
+				&uri_flags_tmp,
+				transport,
+				application
+		)) != 0) {
+			goto out;
+		}
+	}
+	else if (strcmp(name_tmp, "ma") == 0) {
 		if (!service_last) {
 			RRR_MSG_0("Warning: Found alt-svc 'ma' parameter before protocol, ignoring\n");
 			goto out;
@@ -337,35 +376,18 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 		}
 
 		service_last->expire_time = rrr_time_get_64() + expiration * 1000 * 1000;
+
+		RRR_DBG_3("HTTP alt-svc absolute expiration is %llu (from %llu)\n", service_last->expire_time, expiration);
 	}
 	else if (strcmp(name_tmp, "persist") == 0) {
 		if (!service_last) {
 			RRR_MSG_0("Warning: Found alt-svc 'persist' parameter before protocol\n");
 			goto out;
 		}
-		RRR_DBG_3("HTTP ignoring alt-svc 'persist' parameter\n");
+		RRR_DBG_3("HTTP ignoring alt-svc 'persist' parameter, not implemented.\n");
 	}
-	else if (strcmp(name_tmp, "h3") != 0) {
+	else {
 		RRR_DBG_3("HTTP ignoring alt-svc entry '%s'\n", name_tmp);
-		goto out;
-	}
-
-	RRR_DBG_3("HTTP registering alt-svc entry %s=\"%s\"\n", name_tmp, value_tmp);
-
-	if ((ret = rrr_http_util_uri_host_parse (
-			&uri_tmp,
-			value
-	)) != 0) {
-		RRR_MSG_0("Warning: Failed to parse value for alt-svc parameter '%s'\n", name_tmp);
-		goto out;
-	}
-
-	if ((ret = rrr_http_service_collection_push (
-			callback_data->services,
-			&uri_tmp,
-			&uri_flags_tmp
-	)) != 0) {
-		goto out;
 	}
 
 	out:

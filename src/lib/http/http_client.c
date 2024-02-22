@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -226,6 +226,11 @@ static void __rrr_http_client_uri_dbl_ptr_destroy_if_not_null (void *arg) {
 	if (uri != NULL) {
 		rrr_http_util_uri_destroy(uri);
 	}
+}
+
+static void __rrr_http_client_alt_svc_clear (void *arg) {
+	struct rrr_http_service_collection *alt_svc = arg;
+	rrr_http_service_collection_clear(alt_svc);
 }
 
 static int __rrr_http_client_request_data_strings_reset (
@@ -452,18 +457,6 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
 
-	// Iterate alt-svc headers
-	rrr_http_transaction_response_alt_svc_get (
-			&alt_svc,
-			transaction
-	);
-
-	RRR_LL_ITERATE_BEGIN(&alt_svc,struct rrr_http_service);
-		RRR_MSG_1("HTTP client alt-svc: %s:%u\n", node->uri.host, node->uri.port);
-	RRR_LL_ITERATE_END();
-
-	assert(0 && "Processing of alt svc not implemented\n");
-
 	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
 		location = rrr_http_part_header_field_get(response_part, "location");
@@ -520,9 +513,18 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 #endif
 
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			&alt_svc,
+			transaction
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
+	}
+
 	ret = http_client->callbacks.final_callback (
 			transaction,
 			data_use,
+			&alt_svc,
 			http_client->callbacks.callback_arg
 	);
 
@@ -626,9 +628,11 @@ static int __rrr_http_client_redirect_callback (
 
 	struct rrr_http_uri *uri = NULL;
 	char *endpoint_path_tmp = NULL;
+	struct rrr_http_service_collection alt_svc = {0};
 
 	pthread_cleanup_push(__rrr_http_client_uri_dbl_ptr_destroy_if_not_null, &uri);
 	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
+	pthread_cleanup_push(__rrr_http_client_alt_svc_clear, &alt_svc);
 
 	if (callback_data->callback == NULL) {
 		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
@@ -642,7 +646,6 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
-
 	if (uri->endpoint == NULL || *(uri->endpoint) != '/') {
 		if ((ret = rrr_http_transaction_endpoint_path_get (&endpoint_path_tmp, transaction)) != 0) {
 			goto out;
@@ -650,6 +653,14 @@ static int __rrr_http_client_redirect_callback (
 		if ((ret = rrr_http_util_uri_endpoint_prepend(uri, endpoint_path_tmp)) != 0) {
 			goto out;
 		}
+	}
+
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			&alt_svc,
+			transaction
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
@@ -663,9 +674,10 @@ static int __rrr_http_client_redirect_callback (
 			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
 	);
 
-	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
+	ret = callback_data->callback(transaction, uri, &alt_svc, callback_data->callback_arg);
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	return ret;
@@ -697,8 +709,8 @@ static int __rrr_http_client_read_callback (
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
-			http_client->callbacks.redirect_callback,
-			http_client->callbacks.callback_arg
+		http_client->callbacks.redirect_callback,
+		http_client->callbacks.callback_arg
 	};
 
 	if ((ret = rrr_http_redirect_collection_iterate (
