@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -70,6 +70,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_INTERVAL_S     30
 #define RRR_HTTPCLIENT_MSGDB_POLL_MAX                    50000
 #define RRR_HTTPCLIENT_INPUT_QUEUE_MAX                   500
+
+struct httpclient_response_code_summary {
+	uint16_t code;
+	rrr_length count;
+};
+
+struct httpclient_response_code_summary_collection {
+	struct httpclient_response_code_summary *codes;
+	size_t size;
+	size_t count;
+};
 
 struct httpclient_transaction_data {
 	char *msg_topic;
@@ -161,6 +172,8 @@ struct httpclient_data {
 
 	rrr_setting_uint silent_put_error_limit_us;
 
+	struct httpclient_response_code_summary_collection response_code_summaries;
+
 	struct rrr_net_transport_config net_transport_config;
 
 	struct rrr_http_client *http_client;
@@ -170,6 +183,46 @@ struct httpclient_data {
 
 	struct rrr_http_client_config http_client_config;
 };
+
+static int httpclient_response_code_summary_push (
+		struct httpclient_response_code_summary_collection *summaries,
+		uint16_t code
+) {
+	struct httpclient_response_code_summary *ptr;
+
+	if (summaries->size == summaries->count) {
+		size_t size_new = summaries->size + 4;
+		if ((ptr = rrr_reallocate(summaries->codes, summaries->size * sizeof(*ptr), size_new * sizeof(*ptr))) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			return 1;
+		}
+		summaries->size = size_new;
+		summaries->codes = ptr;
+	}
+
+	ptr = summaries->codes + summaries->count++;
+
+	memset(ptr, 0, sizeof(*ptr));
+
+	ptr->code = (uint16_t) code;
+
+	return 0;
+}
+
+static int httpclient_response_code_summary_consume (
+		struct httpclient_response_code_summary_collection *summaries,
+		uint16_t code
+) {
+	for (size_t i = 0; i < summaries->count; i++) {
+		struct httpclient_response_code_summary *ptr = summaries->codes + i;
+		if (ptr->code == code) {
+			ptr->count++;
+			return 1;
+		}
+	}
+
+	return 0;
+}
 
 static void httpclient_check_queues_and_activate_event_as_needed (
 	struct httpclient_data *data
@@ -848,6 +901,7 @@ static int httpclient_final_callback (
 	int ret = RRR_HTTP_OK;
 
 	struct rrr_array structured_data = {0};
+	int do_print_error = 1;
 
 	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrr_nullsafe_len " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
 			transaction->response_part->response_code,
@@ -921,10 +975,15 @@ static int httpclient_final_callback (
 		ret |= httpclient_final_callback_receive_404(httpclient_data, transaction->application_data);
 	}
 
+	if (httpclient_response_code_summary_consume (
+				&httpclient_data->response_code_summaries, 
+				transaction->response_part->response_code
+	)) {
+		do_print_error = 0;
+	}
+
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
-
-		int do_print_error = 1;
 
 		if (transaction->method == RRR_HTTP_METHOD_PUT && httpclient_data->silent_put_error_limit_us != 0) {
 			rrr_msg_holder_lock(transaction_data->entry);
@@ -1834,6 +1893,37 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
+static int httpclient_parse_config_response_codes_summary_callback (
+		const char *value,
+		void *arg
+) {
+	struct httpclient_data *data = arg;
+
+	int ret = 0;
+
+	char *endptr;
+	unsigned long long int number = strtoull(value, &endptr, 10);
+
+	if (*endptr != '\0') {
+		RRR_MSG_0("Invalid number '%s'\n", value);
+		ret = 1;
+		goto out;
+	}
+
+	if (number < 100 || number > 999) {
+		RRR_MSG_0("Invalid response code '%s', out of range.\n", value);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = httpclient_response_code_summary_push (&data->response_code_summaries, number)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 #define HTTPCLIENT_OVERRIDE_TAG_GET(parameter)                                                                                                            \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));                                 \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0);                        \
@@ -1897,6 +1987,18 @@ static int httpclient_parse_config (
 	data->silent_put_error_limit_us *= 1000 * 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_low_priority_message_timeout_factor", message_low_pri_timeout_factor, 10);
+
+	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			"http_response_codes_summary",
+			httpclient_parse_config_response_codes_summary_callback,
+			data
+	)) != 0) {
+		RRR_MSG_0("Failed to parse parameter 'http_response_codes_summary' in httpclient instance %s\n",
+			config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (data->message_low_pri_timeout_factor * data->message_queue_timeout_us < data->message_queue_timeout_us) {
 		RRR_MSG_0("Overflow while multiplying parameters http_message_timeout_ms and http_low_priority_message_timeout_factor in httpclient instance %s. Please reduce the values.\n",
@@ -2228,6 +2330,21 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		data->connection_soft_error_dropped_count = 0;
 	}
 
+	for (size_t i = 0; i < data->response_code_summaries.count; i++) {
+		struct httpclient_response_code_summary *ptr = data->response_code_summaries.codes + i;
+
+		if (!ptr->count)
+			continue;
+
+		RRR_MSG_1("httpclient instance %s received %" PRIrrrl " responses with code %u\n",
+			INSTANCE_D_NAME(thread_data),
+			ptr->count,
+			ptr->code
+		);
+
+		ptr->count = 0;
+	}
+
 	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_queue_timeout_us;
 	assert(low_pri_timeout_us >= data->message_queue_timeout_us);
 
@@ -2378,6 +2495,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_map_clear(&data->meta_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
+	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
 }
 
 static int httpclient_data_init (

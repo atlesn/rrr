@@ -1,4 +1,4 @@
-.Dd 2023-12-05
+.Dd 2024-02-13
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2720,11 +2720,16 @@ and does not affect any other parameters.
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
-	
+
 .It http_silent_put_error_limit_s=SECONDS
 If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
 This is useful if failed PUT are stored in a message DB and an error messages need not be printed immediately as the store is attempted again later.
 Defaults to 0 which means that all errors are printed regardless of the age of the messages.
+
+.It http_response_codes_summary=code[,code...]
+If a comma separated list of error codes is specified, any error messages will not be printed for responses with a given code.
+At regular intervals, a normal log message will be printed summarizing the total count of errors per code.
+If not given, one error message for each error response is printed which also includes the request endpoint.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
