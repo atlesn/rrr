@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
+#define RRR_HTTP_SESSION_RESPONSE_POSTPROCESS_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS           \
     struct rrr_net_transport_handle *handle,                   \
     const struct rrr_http_part *request_part,                  \
@@ -104,15 +107,11 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
 		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *callback_arg
 );
 int rrr_http_session_transport_ctx_request_send_possible (
 		int *is_possible,
@@ -150,6 +149,21 @@ int rrr_http_session_transport_ctx_tick_server (
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
+);
+int rrr_http_session_transport_ctx_stream_open (
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),
+		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void **cb_arg,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		int flags,
+		void *stream_open_callback_arg_local
 );
 
 #endif /* RRR_HTTP_SESSION_H */

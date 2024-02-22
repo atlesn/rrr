@@ -1136,8 +1136,15 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			&data->net_transport_config,
 			config,
 			"mqtt",
-			0,
-			RRR_NET_TRANSPORT_PLAIN
+			0, /* Don't allow multiple transports */
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+			0, /* Don't allow to set certificate without transport type being TLS */
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN|RRR_NET_TRANSPORT_F_TLS
+#else
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	)) != 0) {
 		goto out;
 	}
@@ -1151,9 +1158,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	}
 
 	if (data->server_port == 0) {
-		data->server_port = data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+		data->server_port = data->net_transport_config.transport_type_p == RRR_NET_TRANSPORT_TLS
 			? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
 			: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+#else
+		data->server_port = RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+#endif
 	}
 
 	ret = 0;

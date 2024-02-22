@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_common.h"
 #include "../rrr_types.h"
+#include "../util/linked_list.h"
 
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,source) \
 	char name[256]; rrr_nullsafe_str_output_strip_null_append_null_trim(source, name, sizeof(name))
@@ -40,11 +41,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_array;
 struct rrr_nullsafe_str;
+struct rrr_string_builder;
 
 struct rrr_http_uri_flags {
 	uint8_t is_http;
 	uint8_t is_websocket;
 	uint8_t is_tls;
+	uint8_t is_quic;
 };
 
 struct rrr_http_uri {
@@ -52,6 +55,16 @@ struct rrr_http_uri {
 	char *host;
 	uint16_t port;
 	char *endpoint;
+};
+
+struct rrr_http_service {
+	RRR_LL_NODE(struct rrr_http_service);
+	struct rrr_http_uri uri;
+	struct rrr_http_uri_flags uri_flags;
+};
+
+struct rrr_http_service_collection {
+	RRR_LL_HEAD(struct rrr_http_service);
 };
 
 void rrr_http_util_print_where_message (
@@ -172,5 +185,18 @@ int rrr_http_util_decode (
 );
 const char *rrr_http_util_encodings_get (void);
 #endif
+int rrr_http_util_alpn_iterate (
+		const char * const alpn,
+		unsigned int length,
+		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
+		void *callback_arg
+);
+
+#ifdef RRR_WITH_HTTP3
+int rrr_http_util_make_alt_svc_header (
+		struct rrr_string_builder *target,
+		uint16_t quic_port
+);
+#endif /* RRR_WITH_HTTP3 */
 
 #endif /* RRR_HTTP_UTIL_H */

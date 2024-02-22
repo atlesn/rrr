@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_NGHTTP2
 #	include "http_application_http2.h"
 #endif
+#ifdef RRR_WITH_HTTP3
+#	include "http_application_http3.h"
+#endif
 #include "http_application_http1.h"
 
 void rrr_http_application_destroy_if_not_null (
@@ -50,9 +53,10 @@ void rrr_http_application_destroy_if_not_null_void (
 }
 
 uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
-		struct rrr_http_application *app
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle
 ) {
-	return app->constants->active_transaction_count_get_and_maintain(app);
+	return app->constants->active_transaction_count_get_and_maintain(app, handle);
 }
 
 int rrr_http_application_new (
@@ -61,6 +65,9 @@ int rrr_http_application_new (
 		int is_server,
 		const struct rrr_http_application_callbacks *callbacks
 ) {
+#if !defined(RRR_WITH_NGHTTP2) && !defined(RRR_WITH_HTTP3)
+	(void)(is_server);
+#endif
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
 		return rrr_http_application_http1_new(target, callbacks);
 	}
@@ -68,8 +75,11 @@ int rrr_http_application_new (
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
 		return rrr_http_application_http2_new(target, is_server, NULL, 0, callbacks);
 	}
-#else
-	(void)(is_server);
+#endif
+#ifdef RRR_WITH_HTTP3
+	else if (type == RRR_HTTP_APPLICATION_HTTP3) {
+		return rrr_http_application_http3_new(target, is_server, callbacks);
+	}
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);
 	return 1;
@@ -120,7 +130,41 @@ int rrr_http_application_transport_ctx_tick (
 	);
 }
 
-int rrr_http_application_alpn_protos_with_all_do (
+int rrr_http_application_transport_ctx_stream_open (
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),
+		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		void **cb_arg,
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		int flags,
+		void *stream_open_callback_arg_local
+) {
+	return app->constants->stream_open (
+			stream_data,
+			stream_data_destroy,
+			cb_get_message,
+			cb_blocked,
+			cb_shutdown_read,
+			cb_shutdown_write,
+			cb_close,
+			cb_ack,
+			cb_arg,
+			app,
+			handle,
+			stream_id,
+			flags,
+			stream_open_callback_arg_local
+	);
+}
+
+int rrr_http_application_alpn_protos_with_all_tcp_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
 		void *callback_arg
 ) {
@@ -133,6 +177,20 @@ int rrr_http_application_alpn_protos_with_all_do (
 
 	return callback(alpn_protos, alpn_protos_length, callback_arg);
 }
+
+#ifdef RRR_WITH_HTTP3
+int rrr_http_application_alpn_protos_with_http3_do (
+		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
+		void *callback_arg
+) {
+	const char *alpn_protos = NULL;
+	unsigned int alpn_protos_length = 0;
+
+	rrr_http_application_http3_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+
+	return callback(alpn_protos, alpn_protos_length, callback_arg);
+}
+#endif
 
 void rrr_http_application_polite_close (
 		struct rrr_http_application *app,

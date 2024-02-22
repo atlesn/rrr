@@ -396,7 +396,7 @@ static int __rrr_read_message_using_callbacks (
 			rrr_biglength new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
 
 			RRR_SIZE_CHECK(new_size,"Read buffer too big B",ret = RRR_READ_SOFT_ERROR; goto out);
-			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
 
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in %s\n",

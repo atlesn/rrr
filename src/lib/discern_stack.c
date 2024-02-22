@@ -121,7 +121,7 @@ static int __rrr_discern_stack_storage_push (
 	rrr_length new_capacity = rrr_length_add_bug_const(target->size, data_size);
 	if (new_capacity > target->capacity) {
 		void *new_data;
-		if ((new_data = rrr_reallocate(target->data, target->capacity, new_capacity)) == NULL) {
+		if ((new_data = rrr_reallocate(target->data, new_capacity)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;

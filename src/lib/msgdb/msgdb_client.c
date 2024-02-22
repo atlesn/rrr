@@ -398,9 +398,11 @@ int rrr_msgdb_client_open (
 	if (queue != NULL) {
 		rrr_event_collection_init(&conn->events, queue);
 
-		struct rrr_event_handle event = {0};
+		struct rrr_event_handle event_periodic = {0};
+		struct rrr_event_handle event_read = {0};
+
 		if ((ret = rrr_event_collection_push_periodic (
-				&event,
+				&event_periodic,
 				&conn->events,
 				__rrr_msgdb_client_event_periodic,
 				conn,
@@ -410,10 +412,10 @@ int rrr_msgdb_client_open (
 			goto out_close;
 		}
 
-		EVENT_ADD(event);
+		EVENT_ADD(event_periodic);
 
 		if ((ret = rrr_event_collection_push_read (
-				&event,
+				&event_read,
 				&conn->events,
 				conn->fd,
 				__rrr_msgdb_client_event_read,
@@ -423,7 +425,7 @@ int rrr_msgdb_client_open (
 			goto out_close;
 		}
 
-		EVENT_ADD(event);
+		EVENT_ADD(event_read);
 	}
 
 	conn->delivery_callback = delivery_callback;

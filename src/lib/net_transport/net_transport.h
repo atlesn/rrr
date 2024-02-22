@@ -40,9 +40,66 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_net_transport_handle;
+struct rrr_net_transport_data_vector;
+struct rrr_socket_datagram;
+struct rrr_net_transport_connection_id_pair;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
 struct rrr_socket_graylist;
+
+#define RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS     \
+    int64_t *stream_id,                                        \
+    struct rrr_net_transport_vector *data_vector,              \
+    size_t *data_vector_count,                                 \
+    int *fin,                                                  \
+    int64_t stream_id_suggestion,                              \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
+    int64_t stream_id,                                         \
+    int is_blocked,                                            \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS                 \
+    int64_t stream_id,                                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
+    int64_t stream_id,                                         \
+    uint64_t application_error_reason,                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+    int64_t stream_id,                                         \
+    size_t bytes,                                              \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS     \
+    int64_t *stream_id,                                        \
+    struct rrr_net_transport_vector *data_vector,              \
+    size_t *data_vector_count,                                 \
+    int *fin,                                                  \
+    int64_t stream_id_suggestion,                              \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
+    int64_t stream_id,                                         \
+    int is_blocked,                                            \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS                 \
+    int64_t stream_id,                                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
+    int64_t stream_id,                                         \
+    uint64_t application_error_reason,                         \
+    void *arg
+
+#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+    int64_t stream_id,                                         \
+    size_t bytes,                                              \
+    void *arg
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
@@ -66,8 +123,25 @@ struct rrr_socket_graylist;
     struct rrr_net_transport_handle *handle,                   \
     void *arg
 
+#define RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS                             \
+    void **stream_data,                                                         \
+    void (**stream_data_destroy)(void *stream_data),                            \
+    int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS), \
+    int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),         \
+    int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),           \
+    int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),          \
+    int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),             \
+    int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
+    void **cb_arg,                                                              \
+    struct rrr_net_transport_handle *handle,                                    \
+    int64_t stream_id,                                                          \
+    int flags,                                                                  \
+    void *arg_global,                                                           \
+    void *arg_local
+
 #define RRR_NET_TRANSPORT_HEAD(type)                                        \
     RRR_LL_NODE(type);                                                      \
+    enum rrr_net_transport_type transport_type;                             \
     const struct rrr_net_transport_methods *methods;                        \
     struct rrr_socket_graylist *graylist;                                   \
     struct rrr_net_transport_handle_collection handles;                     \
@@ -83,17 +157,38 @@ struct rrr_socket_graylist;
     struct timeval hard_read_timeout_tv;                                    \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
-    void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
+    int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
     void *handshake_complete_callback_arg;                                  \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg;                                                \
-    char application_name[16]
+    int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS); \
+    void *stream_open_callback_arg_global;                                  \
+    char application_name[32]
+
+#define RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS                      \
+    struct rrr_net_transport_handle *handle,                                \
+    void *application_private_ptr
+
+#define RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS                         \
+    struct rrr_net_transport_handle *handle,                                \
+    int64_t stream_id,                                                      \
+    const char *buf,                                                        \
+    size_t buflen,                                                          \
+    int fin,                                                                \
+    void *arg
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
-#define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS               \
-    void **submodule_private_ptr,                              \
-    int *submodule_fd,                                         \
+#define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS                           \
+    void **submodule_private_ptr,                                          \
+    int *submodule_fd,                                                     \
+    const struct rrr_net_transport_connection_id_pair *connection_ids,     \
+    const struct rrr_socket_datagram *datagram,                            \
+    void *arg
+
+#define RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS                             \
+    void **submodule_private_ptr,                                          \
+    int *submodule_fd,                                                     \
     void *arg
 
 int rrr_net_transport_handle_allocate_and_add (
@@ -101,7 +196,14 @@ int rrr_net_transport_handle_allocate_and_add (
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		const char *description,
+		const struct rrr_net_transport_connection_id_pair *connection_ids,
+		const struct rrr_socket_datagram *datagram,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
+		void *submodule_callback_arg
+);
+int rrr_net_transport_handle_ptr_modify (
+		struct rrr_net_transport_handle *handle,
+		int (*submodule_callback)(RRR_NET_TRANSPORT_MODIFY_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );
 #endif
@@ -124,16 +226,61 @@ void rrr_net_transport_handle_touch (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle handle
 );
+void rrr_net_transport_handle_ptr_close_with_reason (
+		struct rrr_net_transport_handle *handle,
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
+);
+void rrr_net_transport_handle_close_with_reason (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle handle,
+		enum rrr_net_transport_close_reason submodule_close_reason,
+		uint64_t application_close_reason,
+		const char *application_close_reason_string
+);
+void rrr_net_transport_handle_ptr_close (
+		struct rrr_net_transport_handle *handle
+);
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
+);
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id *cid
+);
+rrr_net_transport_handle rrr_net_transport_handle_get_by_cid_pair (
+		struct rrr_net_transport *transport,
+		const struct rrr_net_transport_connection_id_pair *cids
 );
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
+);
+int rrr_net_transport_handle_send_push_const (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const void *data,
+		rrr_biglength size
+);
+int rrr_net_transport_handle_cid_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
+);
+int rrr_net_transport_handle_cids_push (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id_pair *cids
+);
+int rrr_net_transport_handle_cid_remove (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const struct rrr_net_transport_connection_id *cid
 );
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
@@ -156,13 +303,23 @@ int rrr_net_transport_iterate_by_mode_and_do (
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );
-int rrr_net_transport_iterate_by_handle_and_do (
+int rrr_net_transport_handle_notify_read_fast (
 		struct rrr_net_transport *transport,
-		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
+		rrr_net_transport_handle transport_handle
 );
-int rrr_net_transport_match_data_set (
+int rrr_net_transport_handle_notify_read_slow (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+);
+int rrr_net_transport_handle_notify_tick_fast (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+);
+int rrr_net_transport_handle_notify_tick_slow (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+);
+int rrr_net_transport_handle_match_data_set (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		const char *string,
@@ -179,12 +336,80 @@ int rrr_net_transport_graylist_exists (
 		const char *string,
 		uint64_t number
 );
-int rrr_net_transport_check_handshake_complete (
+int rrr_net_transport_handle_migrate (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		uint16_t port,
+		const char *host,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+);
+void rrr_net_transport_handle_ptr_application_data_bind (
+		struct rrr_net_transport_handle *handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+);
+void rrr_net_transport_handle_ptr_application_pre_destroy_function_set (
+		struct rrr_net_transport_handle *handle,
+		int (*pre_destroy)(RRR_NET_TRANSPORT_APPLICATION_PRE_DESTROY_ARGS)
+);
+int rrr_net_transport_handle_ptr_read_stream (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS),
+		void *arg
+);
+int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
 );
+int rrr_net_transport_handle_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id
+);
+int rrr_net_transport_handle_stream_data_clear (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id
+);
+int rrr_net_transport_handle_stream_open_local (
+		int64_t *result,
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int flags,
+		void *stream_open_callback_arg_local
+);
+int rrr_net_transport_handle_stream_consume (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		size_t consumed
+);
+int rrr_net_transport_handle_stream_shutdown_read (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+);
+int rrr_net_transport_handle_stream_shutdown_write (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+);
+int rrr_net_transport_handle_streams_iterate (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		int (*callback)(int64_t stream_id, void *stream_data, void *arg),
+		void *arg
+);
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
+);
+enum rrr_net_transport_type rrr_net_transport_type_get (
+		const struct rrr_net_transport *transport
 );
 void rrr_net_transport_stats_get (
 		rrr_length *listening_count,
@@ -205,10 +430,12 @@ int rrr_net_transport_new (
 		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
+		void *read_callback_arg,
+		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
+		void *stream_open_callback_arg
 );
 int rrr_net_transport_new_simple (
 		struct rrr_net_transport **result,

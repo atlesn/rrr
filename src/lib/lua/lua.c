@@ -29,14 +29,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static void *__rrr_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 	struct rrr_lua *lua = ud;
+
 	(void)(lua);
+	(void)(osize);
 
 	if (nsize == 0) {
 		rrr_free(ptr);
 		return NULL;
 	}
 
-	return rrr_reallocate(ptr, osize, nsize);
+	return rrr_reallocate(ptr, nsize);
 }
 
 int rrr_lua_new(struct rrr_lua **result) {

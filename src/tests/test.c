@@ -51,6 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_parse.h"
 #include "test_inet.h"
 #include "test_modbus.h"
+#ifdef RRR_WITH_TLS
+#	include "test_tls.h"
+#endif
 #ifdef RRR_WITH_JSONC
 #	include "test_json.h"
 #endif
@@ -63,8 +66,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_LUA
 #	include "test_lua.h"
 #endif
-#ifdef RRR_WITH_NODE
+#ifdef RRR_WITH_JS
 #	include "lib/testjs.h"
+#endif
+#ifdef RRR_WITH_HTTP3
+#	include "test_quic.h"
 #endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
@@ -77,6 +83,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
+#include "test_http.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -132,7 +139,11 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                           '\0',    NULL,                   ""}
 };
 
-int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
+int rrr_test_library_functions (
+		const volatile int *main_running,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_event_queue *event_queue
+) {
 	int ret = 0;
 	int ret_tmp = 0;
 
@@ -192,6 +203,14 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+#ifdef RRR_WITH_TLS
+	TEST_BEGIN("TLS functions") {
+		ret_tmp = rrr_test_tls(main_running, event_queue);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
 #ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
@@ -224,7 +243,15 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	ret |= ret_tmp;
 #endif
 
-#ifdef RRR_WITH_NODE
+#ifdef RRR_WITH_HTTP3
+	TEST_BEGIN("quic handshake") {
+		ret_tmp = rrr_test_quic(main_running, event_queue);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_JS
 	TEST_BEGIN("js library functions") {
 		ret_tmp = rrr_test_js();
 	} TEST_RESULT(ret_tmp == 0);
@@ -292,6 +319,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("http functions") {
+		ret_tmp = rrr_test_http();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
 }
 
@@ -332,6 +365,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
+	struct rrr_event_queue *event_queue = NULL;
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
 		&some_fork_has_stopped
 	};
@@ -356,14 +390,30 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_message_broker;
 	}
 
+	if (rrr_event_queue_new (&event_queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_fork_handler;
+	}
+
 	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
 	TEST_MSG("Change to directory %s\n", RRR_TEST_PATH);
 
 	if (chdir(RRR_TEST_PATH) != 0) {
 		TEST_MSG("Error while changing directory\n");
 		ret = 1;
-		goto out_cleanup_message_broker;
+		goto out_cleanup_event_queue;
 	}
+
+	struct sigaction action;
+	action.sa_handler = rrr_signal;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
+
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	TEST_BEGIN("PARSE CMD") {
 		if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
@@ -383,7 +433,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
-		ret = rrr_test_library_functions(fork_handler);
+		ret = rrr_test_library_functions(&main_running, fork_handler, event_queue);
 		goto out_cleanup_cmd;
 	}
 
@@ -402,7 +452,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 				&exit_notification_data
 		);
 		if (pid == 0) {
-			rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 			is_child = 1;
 			ret = rrr_test_fork_executable(fork_executable);
 			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
@@ -463,17 +512,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_instances;
 	}
 
-	struct sigaction action;
-	action.sa_handler = rrr_signal;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
-
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-
 	TEST_BEGIN(config_file) {
 		while (  main_running &&
 		        !some_fork_has_stopped &&
@@ -513,13 +551,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 		}
 
 	out_cleanup_cmd:
-		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		cmd_destroy(&cmd);
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
-	out_cleanup_message_broker:
-		rrr_message_broker_destroy(message_broker);
+	out_cleanup_event_queue:
+		rrr_event_queue_destroy(event_queue);
 
-//	out_cleanup_fork_handler:
+	out_cleanup_fork_handler:
 		if (is_child) {
 			// Only main runs fork cleanup stuff
 			goto out_cleanup_signal;
@@ -527,6 +565,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
+
+	out_cleanup_message_broker:
+		rrr_message_broker_destroy(message_broker);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler_interrupt);

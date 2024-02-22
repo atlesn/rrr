@@ -85,22 +85,12 @@ struct rrr_net_transport;
 
 struct rrr_http_client_callbacks {
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
-	void *final_callback_arg;
-
 	int (*failure_callback)(RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS);
-	void *failure_callback_arg;
-
 	int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
-	void *redirect_callback_arg;
-
 	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
-	void *get_response_callback_arg;
-
 	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
-	void *frame_callback_arg;
-
 	int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
+	void *callback_arg;
 };
 
 struct rrr_http_client_request_data {
@@ -130,9 +120,7 @@ struct rrr_http_client_request_callback_data {
 	const char *request_header_host;
 
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
-	void *query_prepare_callback_arg;
-
-	enum rrr_http_application_type application_type;
+	void *callback_arg;
 
 	struct rrr_http_transaction *transaction;
 };
@@ -190,9 +178,8 @@ void rrr_http_client_request_data_cleanup (
 void rrr_http_client_request_data_cleanup_void (
 		void *data
 );
-void rrr_http_client_terminate_if_open (
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle
+int rrr_http_client_connections_close_if_open (
+		struct rrr_http_client *http_client
 );
 int rrr_http_client_request_send (
 		const struct rrr_http_client_request_data *data,
@@ -200,11 +187,9 @@ int rrr_http_client_request_send (
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
-		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
-		void *connection_prepare_callback_arg,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg,
+		void *callback_arg,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 );

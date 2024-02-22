@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -122,6 +122,21 @@ void rrr_http_transaction_application_data_set (
 	*application_data = NULL;
 }
 
+void rrr_http_transaction_protocol_data_set (
+		struct rrr_http_transaction *transaction,
+		void *protocol_ptr,
+		int protocol_int
+) {
+	if (transaction->protocol_int != 0) {
+		RRR_BUG("protocol_int was not 0 in %s\n", __func__);
+	}
+	if (transaction->protocol_ptr != NULL) {
+		RRR_BUG("protocol_ptr was not NULL in %s\n", __func__);
+	}
+	transaction->protocol_ptr = protocol_ptr;
+	transaction->protocol_int = protocol_int;
+}
+
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 ) {
@@ -149,12 +164,16 @@ void rrr_http_transaction_decref_if_not_null (
 
 	if (RRR_DEBUGLEVEL_3) {
 		uint64_t total_time = rrr_time_get_64() - transaction->creation_time;
+//		if (total_time > 1000000) {
+//		assert(0);
+//		}
 		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n", total_time / 1000, transaction->endpoint_str);
 	}
 
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
+	rrr_nullsafe_str_destroy_if_not_null(&transaction->read_body);
 	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_body);
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
@@ -260,6 +279,79 @@ int rrr_http_transaction_request_content_type_directive_set (
 		const char *value
 ) {
 	return rrr_http_part_header_field_push_subvalue(transaction->request_part, "content-type", name, value);
+}
+
+int rrr_http_transaction_response_alt_svc_set (
+		struct rrr_http_transaction *transaction,
+		const char *alt_svc
+) {
+	return rrr_http_part_header_field_push_and_replace(transaction->response_part, "alt-svc", alt_svc);
+}
+
+struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
+	char **authority;
+	uint16_t *port;
+	const struct rrr_http_transaction *transaction;
+};
+
+static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		void *arg
+) {
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *name_tmp = NULL;
+	char *value_tmp = NULL;
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&name_tmp, name)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&value_tmp, value)) != 0) {
+		goto out;
+	}
+
+	printf("Alt-Svc: %s: %s\n", name_tmp, value_tmp);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(name_tmp);
+	RRR_FREE_IF_NOT_NULL(value_tmp);
+	return ret;
+}
+
+/*
+int rrr_nullsafe_str_extract_append_null (
+		char **result,
+		const struct rrr_nullsafe_str *nullsafe
+);
+int rrr_http_header_field_collection_subvalues_iterate (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
+		void *callback_arg
+);
+*/
+int rrr_http_transaction_response_alt_svc_get (
+		enum rrr_http_transport *transport_code,
+		char **authority,
+		uint16_t *port,
+		const struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
+		.authority = authority,
+		.port = port,
+		.transaction = transaction
+	};
+
+	return rrr_http_header_field_collection_subvalues_iterate (
+			&transaction->response_part->headers,
+			"alt-svc",
+			__rrr_http_transaction_response_alt_svc_get_iterate_callback,
+			&callback_data
+	);
 }
 
 int rrr_http_transaction_endpoint_path_get (
