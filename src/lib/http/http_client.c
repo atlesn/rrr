@@ -1097,7 +1097,8 @@ struct rrr_http_client_transport_ctx_stream_open_callback_data {
 	void (**stream_data_destroy)(void *stream_data);
 	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
 	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
+	int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS);
+	int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS);
 	void **cb_arg;
 	int64_t stream_id;
 	int flags;
@@ -1117,7 +1118,8 @@ static int __rrr_http_client_net_transport_cb_stream_open (
 			cb_shutdown_read,
 			cb_shutdown_write,
 			cb_close,
-			cb_ack,
+			cb_write_confirm,
+			cb_ack_confirm,
 			cb_arg,
 			handle,
 			stream_id,

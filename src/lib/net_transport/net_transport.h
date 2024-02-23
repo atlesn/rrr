@@ -69,7 +69,7 @@ struct rrr_socket_graylist;
     uint64_t application_error_reason,                         \
     void *arg
 
-#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+#define RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     size_t bytes,                                              \
     void *arg
@@ -96,7 +96,7 @@ struct rrr_socket_graylist;
     uint64_t application_error_reason,                         \
     void *arg
 
-#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+#define RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     size_t bytes,                                              \
     void *arg
@@ -131,7 +131,8 @@ struct rrr_socket_graylist;
     int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),           \
     int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),          \
     int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),             \
-    int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
+    int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),   \
+    int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),	\
     void **cb_arg,                                                              \
     struct rrr_net_transport_handle *handle,                                    \
     int64_t stream_id,                                                          \

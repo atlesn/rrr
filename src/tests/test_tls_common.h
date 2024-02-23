@@ -40,6 +40,7 @@ struct rrr_test_tls_common_data {
 	int stream_blocked;
 	int complete_in;
 	int complete_out;
+	int complete_out_ack;
 };
 
 struct rrr_test_tls_common_data_common {

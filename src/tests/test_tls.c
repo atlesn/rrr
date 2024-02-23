@@ -88,6 +88,7 @@ static int __rrr_test_tls_periodic_callback (
 		}
 
 		data->client.complete_out = 1;
+		data->client.complete_out_ack = 1;
 	}
 
 	if (data->server.transport_handle > 0 && !data->server.complete_out) {
@@ -103,6 +104,7 @@ static int __rrr_test_tls_periodic_callback (
 		}
 
 		data->server.complete_out = 1;
+		data->server.complete_out_ack = 1;
 	}
 
 	out:
