@@ -54,7 +54,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Misc. initialization failure simulations
 // #define RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_A
 // #define RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_B
-// #define RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_C
 		
 #define RRR_THREAD_WATCHDOG_SLEEPTIME_MS 500
 
@@ -319,7 +318,8 @@ void rrr_thread_collection_destroy (
 		int *ghost_count,
 		struct rrr_thread_collection *collection
 ) {
-	*ghost_count = 0;
+	if (ghost_count != NULL)
+		*ghost_count = 0;
 
 	// No errors allowed in this function
 
@@ -328,8 +328,10 @@ void rrr_thread_collection_destroy (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (rrr_thread_state_check(node, RRR_THREAD_STATE_GHOST)) {
 			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. Not freeing memory.\n",
-					node->name);
-			(*ghost_count)++;
+				node->name);
+
+			if (ghost_count != NULL)
+				(*ghost_count)++;
 		}
 		else {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -895,11 +897,10 @@ static int __rrr_thread_allocate_watchdog_data (
 	return 0;
 }
 
-static int __rrr_thread_allocate_and_start (
+static int __rrr_thread_allocate (
 		struct rrr_thread **target,
 		struct rrr_thread **target_wd,
 		void *(*start_routine) (struct rrr_thread *),
-		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -910,7 +911,6 @@ static int __rrr_thread_allocate_and_start (
 	*target_wd = NULL;
 
 	struct rrr_thread *thread = NULL;
-	struct watchdog_data *watchdog_data = NULL;
 
 	if (strlen(name) > sizeof(thread->name) - 5) {
 		RRR_MSG_0 ("Name for thread was too long: '%s'\n", name);
@@ -927,60 +927,33 @@ static int __rrr_thread_allocate_and_start (
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->start_routine = start_routine;
 	thread->private_data = private_data;
-	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
 
-	if ((ret = __rrr_thread_allocate_watchdog_data(&watchdog_data)) != 0) {
-		goto out_destroy_thread;
-	}
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
 
 #ifdef RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_B
 	ret = 1;
-	goto out_destroy_watchdog_data;
+	goto out_destroy_thread;
 #endif
 
 	if (__rrr_thread_new(&thread->watchdog, 1) != 0) {
 		RRR_MSG_0("Could not allocate watchdog thread\n");
 		ret = 1;
-		goto out_destroy_watchdog_data;
+		goto out_destroy_thread;
 	}
 
 	// Do sprintf in two stages to avoid compile warning
 	if (strlen(name) > 55) {
-		RRR_BUG("BUG: Name of thread too long in __rrr_thread_allocate_and_start\n");
+		RRR_BUG("BUG: Name of thread too long in %s\n", __func__);
 	}
 	sprintf(thread->watchdog->name, "WD: ");
 	sprintf(thread->watchdog->name + strlen(thread->watchdog->name), "%s", name);
-
-	{
-#ifdef RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_C
-		ret = 1;
-		goto out_destroy_watchdog;
-#endif
-
-		int err = (preload_routine != NULL ? preload_routine(thread) : 0);
-
-		if (err != 0) {
-			RRR_MSG_0 ("Error while preloading thread\n");
-			ret = 1;
-			goto out_destroy_watchdog;
-		}
-	}
-
-	watchdog_data->watched_thread = thread;
-	watchdog_data->watchdog_thread = thread->watchdog;
-
-	if ((ret = __rrr_thread_start(thread, &watchdog_data)) != 0) {
-		goto out_destroy_watchdog;
-	}
 
 	*target = thread;
 	*target_wd = thread->watchdog;
 
 	goto out;
-	out_destroy_watchdog:
-		__rrr_thread_destroy(thread->watchdog);
-	out_destroy_watchdog_data:
-		RRR_FREE_IF_NOT_NULL(watchdog_data);
+//	out_destroy_watchdog:
+//		__rrr_thread_destroy(thread->watchdog);
 	out_destroy_thread:
 		__rrr_thread_destroy(thread);
 		thread = NULL;
@@ -996,14 +969,15 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		uint64_t watchdog_timeout_us,
 		void *private_data
 ) {
+	int err;
 	struct rrr_thread *thread = NULL;
 	struct rrr_thread *thread_wd = NULL;
+	struct watchdog_data *watchdog_data = NULL;
 
-	if (__rrr_thread_allocate_and_start (
+	if (__rrr_thread_allocate (
 			&thread,
 			&thread_wd,
 			start_routine,
-			preload_routine,
 			name,
 			watchdog_timeout_us,
 			private_data
@@ -1011,9 +985,32 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		goto out;
 	}
 
+	if (__rrr_thread_allocate_watchdog_data(&watchdog_data) != 0) {
+		goto out_destroy_thread;
+	}
+
+	watchdog_data->watched_thread = thread;
+	watchdog_data->watchdog_thread = thread->watchdog;
+
+	if ((err = (preload_routine != NULL ? preload_routine(thread) : 0)) != 0) {
+		RRR_MSG_0 ("Error while preloading thread\n");
+		goto out_destroy_watchdog_data;
+	}
+
+	if (__rrr_thread_start(thread, &watchdog_data) != 0) {
+		goto out_destroy_watchdog_data;
+	}
+
 	__rrr_thread_collection_add_thread(collection, thread);
 	__rrr_thread_collection_add_thread(collection, thread->watchdog);
 
+	goto out;
+	out_destroy_watchdog_data:
+		RRR_FREE_IF_NOT_NULL(watchdog_data);
+	out_destroy_thread:
+		__rrr_thread_destroy(thread);
+		__rrr_thread_destroy(thread_wd);
+		thread = NULL;
 	out:
 		return thread;
 }
