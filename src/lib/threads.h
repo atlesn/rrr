@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -117,6 +117,9 @@ struct rrr_thread {
 
 	// Start routines
 	void *(*start_routine) (struct rrr_thread *);
+
+	// Cleanup control
+	volatile int started;
 };
 
 struct rrr_thread_collection {
@@ -230,7 +233,7 @@ int rrr_thread_start_condition_helper_fork (
 		int (*fork_callback)(void *arg),
 		void *callback_arg
 );
-int rrr_thread_collection_start_all (
+int rrr_thread_collection_start_signal_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
@@ -241,13 +244,16 @@ void rrr_thread_start_now_with_watchdog (
 void rrr_thread_initialize_now_with_watchdog (
 		struct rrr_thread *thread
 );
-struct rrr_thread *rrr_thread_collection_thread_new (
+struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
+);
+int rrr_thread_collection_start_all (
+		struct rrr_thread_collection *collection
 );
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection

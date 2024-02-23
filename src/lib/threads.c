@@ -282,6 +282,10 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 	// No errors allowed in this function
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		if (!node->started) {
+			RRR_DBG_8 ("Thread %s is not started, not stopping\n", node->name);
+			RRR_LL_ITERATE_NEXT();
+		}
 		if (node->thread == 0) {
 			RRR_BUG("BUG: No thread ID set for thread in %s, initialization function must not produce this state\n", __func__);
 		}
@@ -421,7 +425,7 @@ static int __rrr_thread_wait_for_state_forked (
 	return ret;
 }
 
-static int  __rrr_thread_collection_start_all_wait_for_state_initialized (
+static int  __rrr_thread_collection_start_signal_all_wait_for_state_initialized (
 		struct rrr_thread_collection *collection
 ) {
 	int ret = 0;
@@ -485,7 +489,7 @@ int rrr_thread_start_condition_helper_fork (
 	return ret;
 }
 
-int rrr_thread_collection_start_all (
+int rrr_thread_collection_start_signal_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
@@ -500,7 +504,7 @@ int rrr_thread_collection_start_all (
 	RRR_LL_ITERATE_END();
 
 	/* Wait for all threads to initialize */
-	if ((ret = __rrr_thread_collection_start_all_wait_for_state_initialized (
+	if ((ret = __rrr_thread_collection_start_signal_all_wait_for_state_initialized (
 			collection
 	)) != 0) {
 		goto out;
@@ -543,7 +547,7 @@ int rrr_thread_collection_start_all (
 
 			int do_start = 1;
 			if (start_check_callback != NULL && start_check_callback(&do_start, node, callback_arg) != 0) {
-				RRR_MSG_0("Error from start check callback in rrr_thread_start_all_after_initialized\n");
+				RRR_MSG_0("Error from start check callback in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -862,6 +866,8 @@ static int __rrr_thread_start (
 	}
 	pthread_detach(thread->thread);
 
+	thread->started = 1;
+
 	RRR_DBG_8 ("Started thread %s pthread address %p, it is now detached\n", thread->name, &thread->thread);
 
 	err = pthread_create(&thread->watchdog->thread, NULL, __rrr_thread_watchdog_entry, *watchdog_data);
@@ -874,6 +880,8 @@ static int __rrr_thread_start (
 	// Watchdog thread will free the data immediately
 	*watchdog_data = NULL;
 
+	thread->watchdog->started = 1;
+
 	RRR_DBG_8 ("Thread %s watchdog started\n", thread->name);
 
 	goto out;
@@ -881,6 +889,7 @@ static int __rrr_thread_start (
 		RRR_DBG_8 ("Thread %s cancel and join\n", thread->name);
 		pthread_cancel(thread->thread);
 		pthread_join(thread->thread, NULL);
+		thread->started = 0;
 	out:
 		return ret;
 }
@@ -961,7 +970,7 @@ static int __rrr_thread_allocate (
 		return ret;
 }
 
-struct rrr_thread *rrr_thread_collection_thread_new (
+struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
@@ -972,7 +981,6 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 	int err;
 	struct rrr_thread *thread = NULL;
 	struct rrr_thread *thread_wd = NULL;
-	struct watchdog_data *watchdog_data = NULL;
 
 	if (__rrr_thread_allocate (
 			&thread,
@@ -985,28 +993,15 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 		goto out;
 	}
 
-	if (__rrr_thread_allocate_watchdog_data(&watchdog_data) != 0) {
-		goto out_destroy_thread;
-	}
-
-	watchdog_data->watched_thread = thread;
-	watchdog_data->watchdog_thread = thread->watchdog;
-
 	if ((err = (preload_routine != NULL ? preload_routine(thread) : 0)) != 0) {
 		RRR_MSG_0 ("Error while preloading thread\n");
-		goto out_destroy_watchdog_data;
-	}
-
-	if (__rrr_thread_start(thread, &watchdog_data) != 0) {
-		goto out_destroy_watchdog_data;
+		goto out_destroy_thread;
 	}
 
 	__rrr_thread_collection_add_thread(collection, thread);
 	__rrr_thread_collection_add_thread(collection, thread->watchdog);
 
 	goto out;
-	out_destroy_watchdog_data:
-		RRR_FREE_IF_NOT_NULL(watchdog_data);
 	out_destroy_thread:
 		__rrr_thread_destroy(thread);
 		__rrr_thread_destroy(thread_wd);
@@ -1014,6 +1009,40 @@ struct rrr_thread *rrr_thread_collection_thread_new (
 	out:
 		return thread;
 }
+
+int rrr_thread_collection_start_all (
+		struct rrr_thread_collection *collection
+) {
+	int ret = 0;
+
+	struct watchdog_data *watchdog_data = NULL;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		if (node->is_watchdog == 1) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		RRR_DBG_8 ("Starting thread %s\n", node->name);
+
+		if (__rrr_thread_allocate_watchdog_data(&watchdog_data) != 0) {
+			goto out;
+		}
+
+		watchdog_data->watched_thread = node;
+		watchdog_data->watchdog_thread = node->watchdog;
+
+		if (__rrr_thread_start(node, &watchdog_data) != 0) {
+			RRR_MSG_0 ("Error while starting thread\n");
+			ret = 1;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	RRR_FREE_IF_NOT_NULL(watchdog_data);
+	return ret;
+}
+		
 
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -164,7 +164,7 @@ struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
 		struct rrr_thread *thread
 );
-int rrr_instance_check_threads_stopped(
+int rrr_instance_check_threads_stopped (
 		struct rrr_instance_collection *target
 );
 int rrr_instance_count_library_users (
@@ -207,6 +207,16 @@ int rrr_instances_create_and_start_threads (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
+);
+int rrr_instance_run (
+		struct rrr_instance_collection *instances,
+		struct rrr_instance_config_collection *config,
+		int instance_index,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_event_queue *queue
 );
 int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
