@@ -112,7 +112,7 @@ int rrr_http_session_transport_ctx_server_new (
 	// DO NOT STORE HANDLE POINTER
 
 	// Transport framework responsible for cleaning up
-	rrr_net_transport_ctx_handle_application_data_bind (
+	rrr_net_transport_handle_ptr_application_data_bind (
 			handle,
 			session,
 			__rrr_http_session_destroy_void
@@ -133,15 +133,11 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg,
 		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),
-		void *failure_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -150,27 +146,21 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 	// With keepalive connections, structures are already present in transport handle
 	if (!rrr_net_transport_ctx_handle_has_application_data(handle)) {
 		if ((ret = __rrr_http_session_allocate(&session)) != 0) {
-			RRR_MSG_0("Could not allocate memory in rrr_http_session_transport_ctx_client_new\n");
+			RRR_MSG_0("Could not allocate memory for session in %s\n", __func__);
 			goto out;
 		}
 
 		const struct rrr_http_application_callbacks callbacks = {
 			NULL,
 			NULL,
-			NULL,
-			NULL,
 			websocket_callback,
-			websocket_callback_arg,
 			get_response_callback,
-			get_response_callback_arg,
 			frame_callback,
-			frame_callback_arg,
 			callback,
-			callback_arg,
 			failure_callback,
-			failure_callback_arg,
 			NULL,
-			NULL
+			NULL,
+			callback_arg
 		};
 
 		if ((ret = rrr_http_application_new (
@@ -185,14 +175,14 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		if (user_agent != NULL && *user_agent != '\0') {
 			session->user_agent = rrr_strdup(user_agent);
 			if (session->user_agent == NULL) {
-				RRR_MSG_0("Could not allocate memory in rrr_http_session_new D\n");
+				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
 				ret = 1;
 				goto out;
 			}
 		}
 
 		// Transport framework responsible for cleaning up
-		rrr_net_transport_ctx_handle_application_data_bind (
+		rrr_net_transport_handle_ptr_application_data_bind (
 				handle,
 				session,
 				__rrr_http_session_destroy_void
@@ -254,7 +244,7 @@ uint64_t rrr_http_session_transport_ctx_active_transaction_count_get_and_maintai
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
-	return rrr_http_application_active_transaction_count_get_and_maintain(session->application);
+	return rrr_http_application_active_transaction_count_get_and_maintain(session->application, handle);
 }
 
 void rrr_http_session_transport_ctx_websocket_response_available_notify (
@@ -355,7 +345,6 @@ int rrr_http_session_transport_ctx_tick_server (
 	);
 }
 
-
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -364,4 +353,62 @@ int rrr_http_session_transport_ctx_close_if_open (
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	rrr_http_application_polite_close(session->application, handle);
 	return 0; // Always return 0
+}
+
+struct rrr_http_session_stream_open_transport_ctx_callback_data {
+	void **stream_data;
+	void (**stream_data_destroy)(void *stream_data);
+	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
+	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
+	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
+	void **cb_arg;
+	struct rrr_net_transport *transport;
+	rrr_net_transport_handle handle;
+	int64_t stream_id;
+	int flags;
+	void *stream_open_callback_arg_local;
+};
+
+int rrr_http_session_transport_ctx_stream_open (
+		void (**stream_data),
+		void (**stream_data_destroy)(void *stream_data),
+		int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS),
+		int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS),
+		int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
+		int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),
+		int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),
+		int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),
+		void **cb_arg,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		int flags,
+		void *stream_open_callback_arg_local
+) {
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	RRR_DBG_3("HTTP stream open %li fd %i h %i existing session %p\n",
+			stream_id,
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			session
+	);
+
+	return rrr_http_application_transport_ctx_stream_open (
+			stream_data,
+			stream_data_destroy,
+			cb_get_message,
+			cb_blocked,
+			cb_shutdown_read,
+			cb_shutdown_write,
+			cb_close,
+			cb_write_confirm,
+			cb_ack_confirm,
+			cb_arg,
+			session != NULL ? session->application : NULL, /* Application must create session if it does not exist */
+			handle,
+			stream_id,
+			flags,
+			stream_open_callback_arg_local
+	);
 }

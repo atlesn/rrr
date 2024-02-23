@@ -69,6 +69,17 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 	return 0;
 }
 
+static int __rrr_net_transport_plain_pre_destroy (
+		RRR_NET_TRANSPORT_PRE_DESTROY_ARGS
+) {
+	(void)(submodule_private_ptr);
+
+	return handle->application_pre_destroy != NULL
+		? handle->application_pre_destroy(handle, application_private_ptr)
+		: 0
+	;
+}
+
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
 	rrr_free(plain);
@@ -82,6 +93,9 @@ static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 		RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_plain_allocate_and_add_callback_data *callback_data = arg;
+
+	(void)(connection_ids);
+	(void)(datagram);
 
 	struct rrr_net_transport_plain_data *data = NULL;
 	if (__rrr_net_transport_plain_data_new(&data) != 0) {
@@ -127,6 +141,8 @@ static int __rrr_net_transport_plain_connect (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			"plain outbound",
+			NULL,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {
@@ -230,9 +246,11 @@ static int __rrr_net_transport_plain_read (
 			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF
 	);
 
-	ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
-
 	*bytes_read = bytes_read_s;
+
+	if (ret == RRR_SOCKET_OK && bytes_read_s == 0) {
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+	}
 
 	out:
 	return ret;
@@ -280,6 +298,8 @@ int __rrr_net_transport_plain_bind_and_listen (
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
 			"plain listen",
+			NULL,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
 			&callback_data
 	)) != 0) {
@@ -300,11 +320,14 @@ int __rrr_net_transport_plain_bind_and_listen (
 int __rrr_net_transport_plain_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
+	(void)(connection_ids);
+	(void)(datagram);
+
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	int ret = 0;
 
-	*did_accept = 0;
+	*new_handle = 0;
 
 	struct rrr_ip_data ip_data = {0};
 
@@ -324,12 +347,13 @@ int __rrr_net_transport_plain_accept (
 		&accept_data->ip_data
 	};
 
-	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
-			&new_handle,
+			new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			"plain inbound",
+			NULL,
+			NULL,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
 			&callback_data
 	)) != 0) {
@@ -344,20 +368,18 @@ int __rrr_net_transport_plain_accept (
 		char buf[128];
 		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
 		RRR_DBG_7("Plain transport accepted connection on port %u from %s transport handle %p/%i\n",
-				listen_plain_data->ip_data.port, buf, listen_handle->transport, new_handle);
+				listen_plain_data->ip_data.port, buf, listen_handle->transport, *new_handle);
 	}
 
 	ret = callback (
 			listen_handle->transport,
-			new_handle,
+			*new_handle,
 			(struct sockaddr *) &accept_data->addr,
 			accept_data->len,
 			final_callback,
 			final_callback_arg,
 			callback_arg
 	);
-
-	*did_accept = 1;
 
 	goto out;
 	out_destroy_ip:
@@ -384,21 +406,37 @@ static int __rrr_net_transport_plain_is_tls (void) {
 	return 0;
 }
 
-static void __rrr_net_transport_plain_selected_proto_get (
+static int __rrr_net_transport_plain_selected_proto_get (
 		RRR_NET_TRANSPORT_SELECTED_PROTO_GET_ARGS
 ) {
 	(void)(handle);
 	*proto = NULL;
+	return 0;
 }
 
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
+	NULL,
 	__rrr_net_transport_plain_bind_and_listen,
+	NULL,
+	NULL,
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
+	__rrr_net_transport_plain_pre_destroy,
 	__rrr_net_transport_plain_read_message,
 	__rrr_net_transport_plain_read,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll,
 	__rrr_net_transport_plain_handshake,

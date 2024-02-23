@@ -71,6 +71,20 @@ librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
 
+if RRR_WITH_HTTP3
+libadd_http3 = librrrhttp3.la
+librrrhttp3_la_SOURCES = http3/http3.c http/http_application_http3.c
+librrrhttp3_la_CFLAGS = ${HTTP3_CFLAGS} ${AM_CFLAGS}
+librrrhttp3_la_LDFLAGS = ${HTTP3_LDFLAGS}
+http3_extra_ld = ${HTTP3_LDFLAGS}
+
+libadd_quic = librrrquic.la
+librrrquic_la_SOURCES = net_transport/net_transport_quic.c
+librrrquic_la_CFLAGS = ${GNUTLS_CFLAGS} ${AM_CFLAGS}
+librrrquic_la_LDFLAGS = ${GNUTLS_LIBS}
+quic_extra_ld = ${GNUTLS_LIBS} ${NGTCP2_LDFLAGS}
+endif
+
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
@@ -110,10 +124,10 @@ socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chu
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
        http/http_common.c http/http_query_builder.c http/http_client_config.c \
-       http/http_server.c http/http_header_fields.c \
+       http/http_server.c http/http_header_fields.c http/http_service.c \
        http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
-       http/http_application.c http/http_application_http1.c \
-       http/http_redirect.c
+       http/http_application.c http/http_application_http1.c http/http_application_http2_http3_common.c \
+       http/http_redirect.c http/http_stream.c
 
 websocket = websocket/websocket.c
 
@@ -123,7 +137,7 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
-                net_transport/net_transport_ctx.c net_transport/net_transport_common.c
+                net_transport/net_transport_ctx.c net_transport/net_transport_common.c net_transport/net_transport_connection_id.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
@@ -146,11 +160,15 @@ msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 event = event/event.c event/event_collection.c
 
 if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
+net_transport_openssl = net_transport/net_transport_openssl.c net_transport/net_transport_openssl_common.c
 endif
 
 if RRR_WITH_LIBRESSL
-net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
+net_transport_libressl = net_transport/net_transport_libressl.c
+endif
+
+if RRR_WITH_TLS
+net_transport_tls = net_transport/net_transport_tls_common.c
 endif
 
 if RRR_WITH_CXX
@@ -175,7 +193,10 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${jsonc_extra_ld} \
 		    ${nghttp2_extra_ld} \
 		    ${python3_extra_ld} \
-		    ${zlib_extra_ld}
+		    ${zlib_extra_ld} \
+		    ${quic_extra_ld} \
+		    ${http3_extra_ld}
+librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
@@ -187,7 +208,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-                    ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
+                    ${net_transport} ${net_transport_openssl} ${net_transport_libressl} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
@@ -245,6 +266,8 @@ libadd_all =                         \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
+    ${libadd_http3}                  \
+    ${libadd_quic}                   \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
     ${libadd_rrr_fork}               \

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,20 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
-// Blocks of 64, maximum number of concurrent streams
-#define RRR_HTTP2_STREAM_BLOCKS 3
-#define RRR_HTTP2_STREAM_MAX (RRR_HTTP2_STREAM_BLOCKS * 64)
-
 #define RRR_HTTP2_OK            RRR_READ_OK
 #define RRR_HTTP2_SOFT_ERROR    RRR_READ_SOFT_ERROR
 #define RRR_HTTP2_HARD_ERROR    RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE          RRR_READ_EOF
 #define RRR_HTTP2_BUSY          RRR_READ_INCOMPLETE
-
-#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END   (1<<0)
-#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END      (1<<1)
-#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE  (1<<2)
-#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR  (1<<3)
 
 #define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
     struct rrr_http2_session *session,                         \
@@ -66,6 +57,9 @@ struct rrr_http_header_field_collection;
 struct rrr_net_transport_handle;
 struct rrr_http2_session;
 
+uint64_t rrr_http2_stream_max (
+		void
+);
 int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
@@ -121,12 +115,12 @@ int rrr_http2_data_submission_request_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );
-int rrr_http2_transport_ctx_streams_iterate (
+int rrr_http2_streams_iterate (
 		struct rrr_http2_session *session,
-		int (*callback)(int32_t stream_id, void *application_data, void *arg),
+		int (*callback)(int64_t stream_id, void *application_data, void *arg),
 		void *callback_arg
 );
-uint32_t rrr_http2_streams_count_and_maintain (
+uint64_t rrr_http2_streams_count_and_maintain (
 		struct rrr_http2_session *session
 );
 int rrr_http2_need_tick (

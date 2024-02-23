@@ -736,7 +736,7 @@ int rrr_perl5_hv_to_message (
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
-		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, old_total_len, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
+		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
 		if (new_message == NULL) {
 			RRR_MSG_0("Could not re-allocate memory in %s\n", __func__);
 			ret = 1;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,19 +27,58 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../allocator.h"
 #include "../util/macro_utils.h"
+#include "../socket/rrr_socket_graylist.h"
 #include "net_transport.h"
 #include "net_transport_struct.h"
 #include "net_transport_tls_common.h"
 
-#define CHECK_FLAG(flag)				\
-	do {if ((flags & flag) != 0) {		\
-		flags_checked |= flag;			\
-		flags &= ~(flag);				\
-	}} while(0)
+#define CHECK_FLAG(flag)                                       \
+    do {if ((flags_tls & flag) != 0) {                         \
+        flags_tls_checked |= flag;                             \
+        flags_tls &= ~(flag);                                  \
+    }} while(0)
+
+static int __rrr_net_transport_tls_common_alpn_populate (
+		struct rrr_net_transport_tls_alpn *target,
+		const char *in,
+		unsigned int in_size
+) {
+	int ret = 0;
+
+	if (in == NULL || *in == '\0')
+		goto out;
+
+	if ((target->protos = rrr_allocate(in_size)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for ALPN protos in %s\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(target->protos, in, in_size);
+	target->length = in_size;
+
+	for (unsigned int i = 0, bytes = 0; i < target->length; i += bytes) {
+		bytes = target->protos[i++];
+
+		assert(i + bytes <= target->length && "ALPN encoding error");
+		assert(target->alpn_buf_count < RRR_NET_TRANSPORT_TLS_COMMON_ALPN_MAX && "Too many ALPN protocols");
+
+		memcpy(target->alpn_buf[target->alpn_buf_count], target->protos + i, bytes);
+		target->alpn_buf[target->alpn_buf_count][bytes] = '\0';
+
+		target->alpn_buf_count++;
+
+		// RRR_DBG_3("Supported TLS ALPN protocol: '%s' length %u\n", target->alpn_buf[target->alpn_buf_count - 1], bytes);
+	}
+
+	out:
+	return ret;
+}
 
 int rrr_net_transport_tls_common_new (
 		struct rrr_net_transport_tls **target,
-		int flags,
+		int flags_tls,
+		int flags_submodule,
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
@@ -53,33 +92,31 @@ int rrr_net_transport_tls_common_new (
 
 	int ret = 0;
 
-	int flags_checked = 0;
+	int flags_tls_checked = 0;
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1);
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_ALPN);
-/*
- *
-					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? NULL : alpn_protos),
-					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? 0 : alpn_protos_length)
- */
 
-	if (flags != 0) {
-		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
+	if (flags_tls != 0) {
+		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags_tls);
 	}
 
-	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate_zero(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_tls_new\n");
 		ret = 1;
 		goto out;
 	}
 
-	memset(result, '\0', sizeof(*result));
+	if ((ret = rrr_socket_graylist_new (&result->connect_graylist)) != 0) {
+		RRR_MSG_0("Could not allocate memory for connect graylist in rrr_net_transport_tls_new\n");
+		goto out_free;
+	}
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
 		if ((result->certificate_file = rrr_strdup(certificate_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for certificate file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -87,7 +124,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->private_key_file = rrr_strdup(private_key_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for private key file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -95,7 +132,7 @@ int rrr_net_transport_tls_common_new (
 		if ((result->ca_file = rrr_strdup(ca_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA file file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
@@ -103,31 +140,29 @@ int rrr_net_transport_tls_common_new (
 		if ((result->ca_path = rrr_strdup(ca_path)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA path file in rrr_net_transport_tls_new\n");
 			ret = 1;
-			goto out_free;
+			goto out_free_strings;
 		}
 	}
 
-	if (alpn_protos != NULL && *alpn_protos != '\0') {
-		if ((result->alpn.protos = rrr_allocate(alpn_protos_length)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
-			ret = 1;
-			goto out_free;
-		}
-		memcpy(result->alpn.protos, alpn_protos, alpn_protos_length);
-		result->alpn.length = alpn_protos_length;
+	if ((ret = __rrr_net_transport_tls_common_alpn_populate(&result->alpn, alpn_protos, alpn_protos_length)) != 0) {
+		RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
+		goto out_free_strings;
 	}
 
-	result->flags = flags_checked;
+	result->flags_tls = flags_tls_checked;
+	result->flags_submodule = flags_submodule;
 
 	*target = result;
 
 	goto out;
-	out_free:
+	out_free_strings:
 		RRR_FREE_IF_NOT_NULL(result->alpn.protos);
 		RRR_FREE_IF_NOT_NULL(result->ca_path);
 		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);
 		RRR_FREE_IF_NOT_NULL(result->private_key_file);
+		rrr_socket_graylist_destroy(result->connect_graylist);
+	out_free:
 		rrr_free(result);
 	out:
 		return ret;
@@ -141,6 +176,8 @@ int rrr_net_transport_tls_common_destroy (
 	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
+
+	rrr_socket_graylist_destroy(tls->connect_graylist);
 
 	rrr_free(tls);
 

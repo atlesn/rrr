@@ -38,6 +38,10 @@ struct rrr_http_server {
 	struct rrr_net_transport *transport_https;
 #endif
 
+#if defined(RRR_WITH_HTTP3)
+	struct rrr_net_transport *transport_quic;
+#endif
+
 	struct rrr_http_server_callbacks callbacks;
 
 	struct rrr_http_rules rules;
@@ -71,6 +75,18 @@ int rrr_http_server_start_plain (
 );
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
+		rrr_length send_chunk_count_limit,
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
+);
+#endif
+#if defined(RRR_WITH_HTTP3)
+int rrr_http_server_start_quic (
 		struct rrr_http_server *server,
 		struct rrr_event_queue *queue,
 		uint16_t port,

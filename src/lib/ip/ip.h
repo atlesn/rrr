@@ -30,6 +30,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
 
+#define RRR_IP_SOCKOPT_RECV_TOS            (1<<0)
+#ifdef RRR_HAVE_IP_PKTINFO
+#    define RRR_IP_SOCKOPT_RECV_PKTINFO    (1<<1)
+#else
+#    define RRR_IP_SOCKOPT_RECV_DSTADDR    (1<<1)
+#endif
+
 struct rrr_msg_msg;
 struct rrr_array;
 struct rrr_array_tree;
@@ -48,6 +55,7 @@ struct rrr_ip_send_packet_info {
 struct rrr_ip_data {
 	int fd;
 	uint16_t port;
+	int is_ipv6;
 };
 
 void rrr_ip_network_reset_hard (
@@ -101,6 +109,16 @@ int rrr_ip_accept (
 		struct rrr_ip_data *listen_data,
 		const char *creator,
 		int tcp_nodelay
+);
+int rrr_ip_recvmsg (
+		struct rrr_socket_datagram *datagram,
+		struct rrr_ip_data *data,
+		uint8_t *buf,
+		size_t buf_size
+);
+int rrr_ip_setsockopts (
+		struct rrr_ip_data *data,
+		int flags
 );
 
 #endif

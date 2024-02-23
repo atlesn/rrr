@@ -57,7 +57,8 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, rrr_
 
 	rrr_length new_size = new_majors * sizeof(*(pool->pool));
 
-	uint32_t *new_pool = rrr_reallocate(pool->pool, pool->allocated_majors * sizeof(*(pool->pool)), new_size);
+	// Old size : pool->allocated_majors * sizeof(*(pool->pool))
+	uint32_t *new_pool = rrr_reallocate(pool->pool, new_size);
 	if (new_pool == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return 1;

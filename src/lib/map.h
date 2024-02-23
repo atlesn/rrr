@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,15 +29,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { RRR_LL_ITERATE_BEGIN(map,struct rrr_map_item);				\
 		const char *node_tag = node->tag;							\
 		const char *node_value = node->value;						\
-		const long long int value_size = node->value_size;			\
-		(void)(node_tag); (void)(node_value); (void)(value_size)
+		const long long int value_length = node->value_length;			\
+		(void)(node_tag); (void)(node_value); (void)(value_length)
 
 #define RRR_MAP_ITERATE_BEGIN_CONST(map)							\
 	do { RRR_LL_ITERATE_BEGIN(map,const struct rrr_map_item);		\
 		const char *node_tag = node->tag;							\
 		const char *node_value = node->value;						\
-		const long long int value_size = node->value_size;			\
-		(void)(node_tag); (void)(node_value); (void)(value_size)
+		const long long int value_length = node->value_length;			\
+		(void)(node_tag); (void)(node_value); (void)(value_length)
 
 #define RRR_MAP_ITERATE_END()										\
 	RRR_LL_ITERATE_END(); } while (0)
@@ -72,7 +72,7 @@ struct rrr_map_item {
 	RRR_LL_NODE(struct rrr_map_item);
 	char *tag;
 	char *value;
-	rrr_length value_size;
+	rrr_length value_length;
 };
 
 struct rrr_map {
@@ -138,6 +138,12 @@ int rrr_map_item_add_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
+);
+int rrr_map_item_add_new_with_size (
+		struct rrr_map *map,
+		const char *tag,
+		const void *value,
+		rrr_length value_length
 );
 int rrr_map_item_prepend_new (
 		struct rrr_map *map,

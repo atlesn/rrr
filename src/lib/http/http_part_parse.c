@@ -660,8 +660,11 @@ int rrr_http_part_parse (
 			goto out;
 		}
 	}
+	else if (part->response_code > 0) {
+		RRR_DBG_3("HTTP completed parsing of a header, response code %u\n", part->response_code);
+	}
 	else {
-		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
+		RRR_DBG_3("HTTP completed parsing of a header\n");
 	}
 
 	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(part, "connection");

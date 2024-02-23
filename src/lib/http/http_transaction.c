@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part_multipart.h"
 #include "http_fields.h"
 #include "http_util.h"
+#include "http_service.h"
 #include "../util/rrr_time.h"
 
 #define RRR_HTTP_TRANSACTION_ENCODE_MIN_SIZE 256
@@ -122,6 +123,21 @@ void rrr_http_transaction_application_data_set (
 	*application_data = NULL;
 }
 
+void rrr_http_transaction_protocol_data_set (
+		struct rrr_http_transaction *transaction,
+		void *protocol_ptr,
+		int protocol_int
+) {
+	if (transaction->protocol_int != 0) {
+		RRR_BUG("protocol_int was not 0 in %s\n", __func__);
+	}
+	if (transaction->protocol_ptr != NULL) {
+		RRR_BUG("protocol_ptr was not NULL in %s\n", __func__);
+	}
+	transaction->protocol_ptr = protocol_ptr;
+	transaction->protocol_int = protocol_int;
+}
+
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 ) {
@@ -149,12 +165,16 @@ void rrr_http_transaction_decref_if_not_null (
 
 	if (RRR_DEBUGLEVEL_3) {
 		uint64_t total_time = rrr_time_get_64() - transaction->creation_time;
+//		if (total_time > 1000000) {
+//		assert(0);
+//		}
 		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n", total_time / 1000, transaction->endpoint_str);
 	}
 
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
+	rrr_nullsafe_str_destroy_if_not_null(&transaction->read_body);
 	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_body);
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
@@ -260,6 +280,140 @@ int rrr_http_transaction_request_content_type_directive_set (
 		const char *value
 ) {
 	return rrr_http_part_header_field_push_subvalue(transaction->request_part, "content-type", name, value);
+}
+
+int rrr_http_transaction_response_alt_svc_set (
+		struct rrr_http_transaction *transaction,
+		const char *alt_svc
+) {
+	return rrr_http_part_header_field_push_and_replace(transaction->response_part, "alt-svc", alt_svc);
+}
+
+struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
+	struct rrr_http_service_collection *services;
+	unsigned long long int age;
+};
+
+static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		void *arg
+) {
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data *callback_data = arg;
+	struct rrr_http_service *service_last = RRR_LL_LAST(callback_data->services);
+
+	int ret = 0;
+
+	struct rrr_http_uri_flags uri_flags_tmp = {0};
+	struct rrr_http_uri uri_tmp = {0};
+	char *name_tmp = NULL;
+	char *value_tmp = NULL;
+	unsigned long long int expiration = 0;
+	enum rrr_http_transport transport = RRR_HTTP_TRANSPORT_ANY;
+	enum rrr_http_application_type application = RRR_HTTP_APPLICATION_UNSPECIFIED;
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&name_tmp, name)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_extract_append_null(&value_tmp, value)) != 0) {
+		goto out;
+	}
+
+	if (strcmp(name_tmp, "h2") == 0) {
+		transport = RRR_HTTP_TRANSPORT_HTTPS;
+		application = RRR_HTTP_APPLICATION_HTTP2;
+	}
+	else if (strcmp(name_tmp, "h3") == 0 ||
+	         strcmp(name_tmp, "h3-29") == 0 ||
+	         strcmp(name_tmp, "h3-32") == 0
+	) {
+		transport = RRR_HTTP_TRANSPORT_QUIC;
+		application = RRR_HTTP_APPLICATION_HTTP3;
+	}
+
+	if (application != RRR_HTTP_APPLICATION_UNSPECIFIED) {
+		RRR_DBG_3("HTTP registering alt-svc entry %s=\"%s\"\n", name_tmp, value_tmp);
+
+		if ((ret = rrr_http_util_uri_host_parse (
+				&uri_tmp,
+				value
+		)) != 0) {
+			RRR_MSG_0("Warning: Failed to parse value for alt-svc parameter '%s'\n", name_tmp);
+			goto out;
+		}
+
+		if (uri_tmp.port == 80) {
+			transport = RRR_HTTP_TRANSPORT_HTTP;
+		}
+
+		if ((ret = rrr_http_service_collection_push (
+				callback_data->services,
+				&uri_tmp,
+				&uri_flags_tmp,
+				transport,
+				application
+		)) != 0) {
+			goto out;
+		}
+	}
+	else if (strcmp(name_tmp, "ma") == 0) {
+		if (!service_last) {
+			RRR_MSG_0("Warning: Found alt-svc 'ma' parameter before protocol, ignoring\n");
+			goto out;
+		}
+		else if (*value_tmp != '\0') {
+			char *end;
+			expiration = strtoull(value_tmp, &end, 10);
+			if (*end != '\0') {
+				RRR_MSG_0("Warning: Could not convery alt-svc 'ma' parameter to number\n");
+				goto out;
+			}
+		}
+
+		if (callback_data->age > 0 && callback_data->age <= expiration) {
+			expiration -= callback_data->age;
+		}
+
+		service_last->expire_time = rrr_time_get_64() + expiration * 1000 * 1000;
+
+		RRR_DBG_3("HTTP alt-svc absolute expiration is %llu (from %llu)\n", service_last->expire_time, expiration);
+	}
+	else if (strcmp(name_tmp, "persist") == 0) {
+		if (!service_last) {
+			RRR_MSG_0("Warning: Found alt-svc 'persist' parameter before protocol\n");
+			goto out;
+		}
+		RRR_DBG_3("HTTP ignoring alt-svc 'persist' parameter, not implemented.\n");
+	}
+	else {
+		RRR_DBG_3("HTTP ignoring alt-svc entry '%s'\n", name_tmp);
+	}
+
+	out:
+	rrr_http_util_uri_clear(&uri_tmp);
+	RRR_FREE_IF_NOT_NULL(name_tmp);
+	RRR_FREE_IF_NOT_NULL(value_tmp);
+	return ret;
+}
+
+int rrr_http_transaction_response_alt_svc_get (
+		struct rrr_http_service_collection *target,
+		const struct rrr_http_transaction *transaction
+) {
+	unsigned long long age = 0; 
+//	assert(0 && "Get age from header");
+	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
+		target,
+		age
+	};
+
+	return rrr_http_header_field_collection_subvalues_iterate (
+			&transaction->response_part->headers,
+			"alt-svc",
+			__rrr_http_transaction_response_alt_svc_get_iterate_callback,
+			&callback_data
+	);
 }
 
 int rrr_http_transaction_endpoint_path_get (

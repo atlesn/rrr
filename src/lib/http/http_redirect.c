@@ -132,12 +132,11 @@ int rrr_http_redirect_collection_iterate (
 		}
 		else {
 			RRR_LL_ITERATE_SET_DESTROY();
-			if (ret != 0) {
-				goto out;
+			if (ret != RRR_HTTP_OK) {
+				RRR_LL_ITERATE_LAST();
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; __rrr_http_redirect_collection_entry_destroy(node));
 
-	out:
 	return ret;
 }

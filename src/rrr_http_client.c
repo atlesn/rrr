@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http/http_util.h"
 #include "lib/http/http_client.h"
 #include "lib/http/http_transaction.h"
+#include "lib/http/http_service.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -57,6 +58,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/util/arguments.h"
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S 10
+#define RRR_HTTP_CLIENT_IDLE_TIMEOUT_S 10
+#define RRR_HTTP_CLIENT_IDLE_TIMEOUT_KEEPALIVE_S 60
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
@@ -64,6 +67,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "server",               "{-s|--server[=]HTTP SERVER}"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                 "[-p|--port[=]HTTP PORT]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "endpoint",             "[-e|--endpoint[=]HTTP ENDPOINT]"},
+        {0,                            'k',    "keepalive",            "[-k|--keepalive]"},
         {0,                            'w',    "websocket-upgrade",    "[-w|--websocket-upgrade]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT |
@@ -73,6 +77,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
         {0,                            '0',    "http10-force",         "[-0|--http10-force]"},
         {0,                            '2',    "http2-upgrade",        "[-2|--http2-upgrade]"},
+#ifdef RRR_WITH_HTTP3
+        {0,                            '3',    "http3-force",          "[-3|--http3-force]"},
+#endif
         {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -89,22 +96,28 @@ struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
 	struct rrr_event_queue *queue;
 	struct rrr_http_client *http_client;
+
+	enum rrr_http_transport transport_force;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	enum rrr_http_version protocol_version;
+
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
+	int keepalive;
 	int no_output;
 	struct rrr_net_transport_config net_transport_config;
-	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
 
-	int redirect_pending;
+	volatile int request_pending;
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_stdin;
 	rrr_event_handle event_redirect;
 };
+
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
 
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
@@ -246,6 +259,11 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
+	// Keepalive
+	if (cmd_exists(cmd, "keepalive", 0)) {
+		data->keepalive = 1;
+	}
+
 	// Disable output
 	if (cmd_exists(cmd, "no-output", 0)) {
 		data->no_output = 1;
@@ -262,14 +280,44 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	// Force SSL
 	if (cmd_exists(cmd, "ssl-force", 0)) {
-		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+		// Force SSL
+		if (cmd_exists(cmd, "http3-force", 0)) {
+			RRR_MSG_0("Both ssl force and HTTP/3 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		if (cmd_exists(cmd, "plain-force", 0)) {
+			RRR_MSG_0("Both ssl force and plain force was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
 	}
-
-	// Force Plaintext
-	if (cmd_exists(cmd, "plain-force", 0)) {
-		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	else if (cmd_exists(cmd, "plain-force", 0)) {
+		// Force Plaintext
+		if (cmd_exists(cmd, "http3-force", 0)) {
+			RRR_MSG_0("Both plain force and HTTP/3 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	}
+	else if (cmd_exists(cmd, "http3-force", 0)) {
+		// Use HTTP/3
+		if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+			RRR_MSG_0("Both HTTP/3 and upgrade to websocket was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		if (cmd_exists(cmd, "http10-force", 0)) {
+			RRR_MSG_0("Both HTTP/3 and force HTTP/1.0 was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->transport_force = RRR_HTTP_TRANSPORT_QUIC;
+		data->protocol_version = RRR_HTTP_VERSION_UNSPECIFIED;
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
 	// Force HTTP/1.0
@@ -288,7 +336,9 @@ static int __rrr_http_client_parse_config (
 			&request_data->http_port,
 			cmd,
 			"port",
-			request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS ? 443 : 80
+			data->transport_force == RRR_HTTP_TRANSPORT_HTTPS || data->transport_force == RRR_HTTP_TRANSPORT_QUIC
+				? 443
+				: 80
 	)) != 0) {
 		goto out;
 	}
@@ -313,6 +363,8 @@ static int __rrr_http_client_final_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
+	(void)(alt_svc);
+
 	int ret = 0;
 
 	rrr_nullsafe_len data_start = 0;
@@ -322,26 +374,26 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	http_client_data->final_callback_count++;
-
 	if (transaction->response_part->response_code == 101 &&
 		EVENT_INITIALIZED(http_client_data->event_stdin) &&
 		rrr_http_client_active_transaction_count_get(http_client_data->http_client) > 0
 	) {
 		EVENT_ADD(http_client_data->event_stdin);
 	}
-	else if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
-		RRR_MSG_0("Error response from server: %i %s\n",
-				transaction->response_part->response_code,
-				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
-		);
+	else {
+		if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+			RRR_MSG_0("Error response from server: %i %s\n",
+					transaction->response_part->response_code,
+					rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+			);
+		}
 	}
 
 	if (http_client_data->no_output) {
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
+	RRR_DBG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
@@ -394,13 +446,13 @@ static int __rrr_http_client_unique_id_generator_callback (
 }
 
 static int __rrr_http_client_request_send_loop (
-	struct rrr_http_client_data *http_client_data
+		struct rrr_http_client_data *http_client_data
 ) {
 	int ret = 0;
 
 	int retries = 5000;
-	while (--retries) {
-		if ((ret = rrr_http_client_request_send (
+	while (--retries && main_running) {
+		ret = rrr_http_client_request_send (
 				&http_client_data->request_data,
 				http_client_data->http_client,
 				&http_client_data->net_transport_config,
@@ -410,18 +462,58 @@ static int __rrr_http_client_request_send_loop (
 				NULL,
 				NULL,
 				NULL,
-				NULL,
-				NULL,
 				NULL
-		)) == 0 || ret != RRR_HTTP_BUSY) {
-			goto out;
-		}
+		);
+
+		switch (ret) {
+			case RRR_HTTP_BUSY:
+				break;
+			case 0:
+				goto out;
+			default:
+				RRR_MSG_0("Could not connect to server %s:%i\n",
+					http_client_data->request_data.server, http_client_data->request_data.http_port);
+				goto out;
+		};
+
 		rrr_event_dispatch_once(http_client_data->queue);
 		rrr_posix_usleep(1000);
 	}
 
 	out:
 	return ret;
+}
+
+static void __rrr_http_client_alt_svc_select (
+		struct rrr_http_client_data *http_client_data,
+		const struct rrr_http_transaction *transaction,
+		const struct rrr_http_service_collection *alt_svc
+) {
+	enum rrr_http_transport transport_new = transaction->transport_code;
+	enum rrr_http_application_type application_new = transaction->application_type;
+
+	RRR_ASSERT(RRR_HTTP_TRANSPORT_QUIC > RRR_HTTP_TRANSPORT_HTTPS && RRR_HTTP_TRANSPORT_HTTPS > RRR_HTTP_TRANSPORT_HTTP,transport_codes_must_be_in_order);
+	RRR_ASSERT(RRR_HTTP_APPLICATION_HTTP3 > RRR_HTTP_APPLICATION_HTTP2 && RRR_HTTP_APPLICATION_HTTP2 > RRR_HTTP_APPLICATION_HTTP1,application_codes_must_be_in_order);
+
+	RRR_LL_ITERATE_BEGIN(alt_svc, struct rrr_http_service);
+		if (node->transport >= transport_new && node->application_type >= application_new) {
+			RRR_DBG_2("alt-svc: Selecting transport %s and application %s over %s and %s\n",
+				RRR_HTTP_TRANSPORT_TO_STR(node->transport),
+				RRR_HTTP_APPLICATION_TO_STR(node->application_type),
+				RRR_HTTP_TRANSPORT_TO_STR(transport_new),
+				RRR_HTTP_APPLICATION_TO_STR(application_new)
+			);
+			transport_new = node->transport;
+			application_new = node->application_type;
+		}
+	RRR_LL_ITERATE_END();
+
+	if (transport_new == RRR_HTTP_TRANSPORT_HTTP && application_new == RRR_HTTP_APPLICATION_HTTP2) {
+		RRR_DBG_1("Using plain HTTP2 for next request\n");
+		http_client_data->request_data.do_plain_http2 = 1;
+	}
+
+	http_client_data->request_data.transport_force = transport_new;
 }
 
 static int __rrr_http_client_redirect_callback (
@@ -437,6 +529,18 @@ static int __rrr_http_client_redirect_callback (
 
 	// Continue using protocol provided by server
 	http_client_data->request_data.protocol_version = transaction->response_part->parsed_version;
+
+	// Continue using any transport parameters given as arguments
+	http_client_data->request_data.upgrade_mode = http_client_data->upgrade_mode;
+
+	// Select any better transport from alt-svc or continue
+	// with the same one if transport is forced
+	if (http_client_data->transport_force == RRR_HTTP_TRANSPORT_ANY) {
+		__rrr_http_client_alt_svc_select(http_client_data, transaction, alt_svc);
+	}
+	else {
+		http_client_data->transport_force = transaction->transport_code;
+	}
 
 	EVENT_ACTIVATE(http_client_data->event_redirect);
 
@@ -610,7 +714,7 @@ static void rrr_http_client_event_redirect (
 
 	RRR_EVENT_HOOK();
 
-	data->redirect_pending = 1;
+	data->request_pending = 1;
 
 	rrr_event_dispatch_exit(data->queue);
 }
@@ -630,9 +734,6 @@ static void rrr_http_client_event_stdin (
 	rrr_http_client_websocket_response_available_notify(data->http_client);
 }
 
-static volatile int main_running = 1;
-static volatile int sigusr2 = 0;
-
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
@@ -641,6 +742,7 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
 	if (!main_running) {
+		RRR_DBG_1("Signal received, exiting.\n");
 		return RRR_EVENT_EXIT;
 	}
 
@@ -649,10 +751,12 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		sigusr2 = 0;
 	}
 
-	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
-		if (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) {
-			return RRR_EVENT_EXIT;
-		}
+	if ( ( rrr_http_client_active_transaction_count_get(data->http_client) == 0) &&
+	     (!EVENT_INITIALIZED(data->event_stdin) || !EVENT_PENDING(data->event_stdin)) &&
+	     (!data->keepalive)
+	) {
+		RRR_DBG_1("No more transactions, exiting.\n");
+		return RRR_EVENT_EXIT;
 	}
 
 	rrr_allocator_maintenance_nostats();
@@ -717,19 +821,21 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.net_transport_config.transport_type = RRR_NET_TRANSPORT_BOTH;
+	data.net_transport_config.transport_type_f = RRR_NET_TRANSPORT_F_PLAIN;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	data.net_transport_config.transport_type_f |= RRR_NET_TRANSPORT_F_TLS;
+#endif
+#if defined(RRR_WITH_HTTP3)
+	data.net_transport_config.transport_type_f |= RRR_NET_TRANSPORT_F_QUIC;
+#endif
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,
-			&data,
 			__rrr_http_client_failure_callback,
-			&data,
 			__rrr_http_client_redirect_callback,
-			&data,
 			__rrr_http_client_send_websocket_frame_callback,
-			&data,
 			__rrr_http_client_receive_websocket_frame_callback,
-			&data,
 			__rrr_http_client_unique_id_generator_callback,
 			&data
 	};
@@ -771,7 +877,9 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_http_client_new (
 			&data.http_client,
 			data.queue,
-			5000,   // 5s idle timeout
+			data.keepalive
+				? RRR_HTTP_CLIENT_IDLE_TIMEOUT_KEEPALIVE_S * 1000
+				: RRR_HTTP_CLIENT_IDLE_TIMEOUT_S * 1000,
 			0,      // No send chunk limit
 			&callbacks
 	) != 0) {
@@ -779,12 +887,14 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.request_data.upgrade_mode = data.upgrade_mode;
+	data.request_data.transport_force = data.transport_force;
 	data.request_data.protocol_version = data.protocol_version;
+	data.request_data.upgrade_mode = data.upgrade_mode;
+
+	// Disables no transaction detection in periodic callback
+	data.request_pending = 1;
 
 	redirect:
-
-	data.redirect_pending = 0;
 
 	if (__rrr_http_client_request_send_loop (
 			&data
@@ -792,6 +902,9 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+
+	// Enables no transaction detection in periodic callback
+	data.request_pending = 0;
 
 	if ((rrr_event_dispatch (
 			data.queue,
@@ -803,7 +916,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (data.redirect_pending) {
+	if (data.request_pending) {
 		goto redirect;
 	}
 

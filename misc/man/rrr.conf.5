@@ -2157,14 +2157,22 @@ The following configuration parameters are available in the
 module:
 .PP
 .Bl -tag -width -indent
-.It http_server_transport_type={tls|plain|both}
-Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
+.It http_server_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain, tls
+and
+.B quic.
+If not given, 'plain' is assumed.
 
 .It http_server_port_tls=PORT
-Port to use for TLS listening, defaults to 443.
+TCP port to use for TLS listening, defaults to 443.
 
 .It http_server_port_plain=PORT
-Port to use for plaintext listening, defaults to 80.
+TCP port to use for plaintext listening, defaults to 80.
+
+.It http_server_port_quic=PORT
+TCP port to use for TLS listening, defaults to 443 (UDP).
 
 .It http_server_request_max_mb=MEGABYTES
 Maximum size in megabytes for requests. A value of 0 indicates unlimited request size. Defaults to 10.
@@ -2198,7 +2206,7 @@ The following array values will be present in generated messages:
 .It http_method
 Always present.
 .It http_protocol
-Always present with the value 1 or 2.
+Always present with the value 1, 2 or 3.
 .It http_endpoint
 Always present, given in uppercase letters.
 .It http_body
@@ -2399,11 +2407,9 @@ Defaults to
 Any provided endpoint by means of this parameter or otherwise must contain only characters which are valid for URIs;
 If for instance spaces are to be used in an endpoint, these must be encoded as %20.
 
-.It http_transport_type={tls|plain|both}
-If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
-.B enforced,
-which means that redirects fro the server to a different transport type than the chosen one will be rejected.
-Use 'both' or leave unspecified for automatic transport type.
+.It http_transport_type={tls|plain|quic}
+Force a specific transport type.
+If not given, the transport type will be chosen automatically.
 
 .It http_response_max_mb=MEGABYTES
 Maximum size in megabytes for responses. A value of 0 indicates unlimited response size. Defaults to 10.
@@ -2628,10 +2634,11 @@ PUT messages which are stored in the message DB will be retried at the next mess
 Defaults to 'no' which means that connecting will be retried until a timeout is reached or indefinitely.
 
 .It http_message_timeout_ms=MILLISECONDS
-Timeout for deferred messages, defaults to 0 which means no timeout.
-Messages being defered to fhe message DB (see
+When a message has been in the send queue for more than the specified amount of milliseconds without any response from the server, it is dropped.
+Messages which has been handed over to a message DB (see
 .Xr http_msgdb_socket
-) will not get affected by this parameter, as the timer is reset every time they are read back from the DB.
+), will be added back to the queue at a later time and the timer will be reset for these.
+
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
 If the timeout is set too high or is not set, messages may accumulate in memory.
 
@@ -3023,8 +3030,13 @@ TCP port to listen on (listens on all interfaces). Defaults to 1883.
 .It mqtt_broker_port_tls=PORT
 TCP port to listen on for TLS connections (listens on all interfaces). Defaults to 8883.
 
-.It mqtt_broker_transport_type={plain|tls|both}
-The transport type to use when listening. Defaults to 'plain'.
+.It mqtt_broker_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain
+and
+.B tls.
+If not given, 'plain' is assumed.
 
 .It mqtt_broker_tls_*
 Refer to the
