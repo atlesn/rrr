@@ -165,21 +165,19 @@ static int __rrr_net_transport_quic_gnutls_client_hello_cb (
 	for (unsigned int i = 0; i < ctx->transport_tls->alpn_datum_count; i++) {
 		gnutls_datum_t alpn_test = ctx->transport_tls->alpn_datum[i];
 
-		RRR_MSG_1("ALPN FROM CLIENT: %.*s\n", (int) alpn.size, alpn.data);
-		RRR_MSG_1("ALPN FROM SERVER: %.*s\n", (int) alpn_test.size, alpn_test.data);
-
 		if (alpn_test.size == alpn.size && memcmp(alpn_test.data, alpn.data, alpn.size) == 0) {
+			RRR_DBG_7("net transport quic fd %i h %i alpn match for %.*s\n",
+				ctx->fd, htype, (int) alpn.size, alpn.data);
 			match = 1;
 			break;
 		}
 	}
 
-	if (match) {
-		RRR_MSG_1("ALPN match in %s\n", __func__);
+	if (!match) {
+		RRR_DBG_7("net transport quic fd %i h %i alpn no match\n", ctx->fd, htype);
 	}
-	else {
-		RRR_MSG_1("ALPN no match in %s\n", __func__);
-	}
+
+	// TODO : Return error if no match?
 
 	return 0;
 }

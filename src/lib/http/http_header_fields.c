@@ -356,7 +356,6 @@ static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_D
 
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
-		printf("alt-svc: %s = %s\n", name, value);
 	RRR_LL_ITERATE_END();
 
 	return ret;
