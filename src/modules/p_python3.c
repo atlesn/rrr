@@ -213,7 +213,10 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	// NOTE : The python config object operates on the original settings structure
-	config = rrr_python3_config_new (rrr_cmodule_worker_get_settings(worker));
+	config = rrr_python3_config_new (
+		rrr_cmodule_worker_get_settings(worker),
+		rrr_cmodule_worker_get_settings_used(worker)
+	);
 
 	if (config == NULL) {
 		RRR_MSG_0("Could not create config object in __rrr_py_persistent_send_config \n");

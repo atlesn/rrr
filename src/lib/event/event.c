@@ -348,8 +348,6 @@ int rrr_event_dispatch (
 		tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
 		tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
 
-		printf("Add periodic event %p to queue %p\n", queue->periodic_event, queue->event_base);
-
 		if (event_add(queue->periodic_event, &tv_interval)) {
 			RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
 			ret = 1;

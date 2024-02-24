@@ -209,13 +209,13 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 	data->do_transport_tls = (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS) != 0;
 #endif
 
-	if (rrr_settings_exists(config->settings, "mqtt_broker_port") && !data->do_transport_plain) {
+	if (rrr_instance_config_setting_exists(config, "mqtt_broker_port") && !data->do_transport_plain) {
 		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_settings_exists(config->settings, "mqtt_broker_port_tls") && !data->do_transport_tls) {
+	if (rrr_instance_config_setting_exists(config, "mqtt_broker_port_tls") && !data->do_transport_tls) {
 		RRR_MSG_0("mqtt_broker_port_tls was set but TLS transport method was not enabled in mqtt broker instance %s\n", config->name);
 		ret = 1;
 		goto out;

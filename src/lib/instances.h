@@ -154,6 +154,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
+#define INSTANCE_D_SETTINGS_USED(thread_data) &thread_data->init_data.instance_config->settings_used
 #define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \

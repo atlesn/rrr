@@ -1085,8 +1085,8 @@ static int __rrr_instances_runtime_data_create (
 	*runtime_data_target = runtime_data;
 
 	goto out;
-	out_destroy_runtime_data:
-		rrr_instance_runtime_data_destroy(runtime_data);
+//	out_destroy_runtime_data:
+//		rrr_instance_runtime_data_destroy(runtime_data);
 	out:
 		return ret;
 }
