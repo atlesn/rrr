@@ -1132,7 +1132,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	if ((rrr_net_transport_config_parse(
+	if ((rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"mqtt",
@@ -1148,6 +1148,9 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	)) != 0) {
 		goto out;
 	}
+
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)
+		data->net_transport_config.transport_type_p = RRR_NET_TRANSPORT_TLS;
 
 	if ((ret = rrr_instance_config_read_optional_port_number (
 			&data->server_port,
