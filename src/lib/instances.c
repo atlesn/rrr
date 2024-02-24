@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -588,7 +588,8 @@ static int __rrr_instance_add_senders (
 		goto out;
 	}
 
-	RRR_DBG_1("Added %d collection\n", rrr_instance_friend_collection_count(&instance->senders));
+	RRR_DBG_1("Added %d instances to friend collection of instance %s\n",
+		rrr_instance_friend_collection_count(&instance->senders), INSTANCE_M_NAME(instance));
 
 	out:
 	return ret;
@@ -1118,15 +1119,14 @@ static int __rrr_instances_create_threads (
 	}
 
 	// Create thread collection
-	if (rrr_thread_collection_new (&thread_collection) != 0) {
+	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
-		ret = 1;
 		goto out;
 	}
 
 	// Initialize thread data and runtime data
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		if (__rrr_instances_runtime_data_create (
+		if ((ret = __rrr_instances_runtime_data_create (
 				&runtime_data,
 				node,
 				config,
@@ -1134,10 +1134,9 @@ static int __rrr_instances_create_threads (
 				stats,
 				message_broker,
 				fork_handler
-		) != 0) {
+		)) != 0) {
 			RRR_MSG_0("Error while creating thread for instance %s\n",
 				node->config->name);
-			ret = 1;
 			goto out_destroy_collection;
 		}
 
@@ -1153,10 +1152,6 @@ static int __rrr_instances_create_threads (
 				node->module_data->instance_name);
 			ret = 1;
 			goto out_destroy_runtime_data;
-		}
-
-		if (rrr_thread_collection_start_all(thread_collection) != 0) {
-			goto out_destroy_collection;
 		}
 
 		runtime_data = NULL;
@@ -1175,6 +1170,10 @@ static int __rrr_instances_create_threads (
 			goto out_destroy_collection;
 		}
 	RRR_LL_ITERATE_END();
+
+	if ((ret = rrr_thread_collection_start_all(thread_collection)) != 0) {
+		goto out_destroy_collection;
+	}
 
 	*thread_collection_target = thread_collection;
 
@@ -1217,7 +1216,7 @@ int rrr_instances_create_and_start_threads (
 		goto out;
 	}
 
-	if (rrr_thread_collection_start_signal_all (
+	if (rrr_thread_collection_signal_start_procedure_all (
 			thread_collection,
 			__rrr_instance_collection_start_threads_check_wait_for_callback,
 			&callback_data

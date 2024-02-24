@@ -222,6 +222,7 @@ void rrr_thread_collection_destroy (
 		int *ghost_count,
 		struct rrr_thread_collection *collection
 );
+/* TODO : Rename, replace 'start' with 'signal' */
 void rrr_thread_start_condition_helper_nofork (
 		struct rrr_thread *thread
 );
@@ -233,15 +234,15 @@ int rrr_thread_start_condition_helper_fork (
 		int (*fork_callback)(void *arg),
 		void *callback_arg
 );
-int rrr_thread_collection_start_signal_all (
+int rrr_thread_collection_signal_start_procedure_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-void rrr_thread_start_now_with_watchdog (
+void rrr_thread_signal_start_now_with_watchdog (
 		struct rrr_thread *thread
 );
-void rrr_thread_initialize_now_with_watchdog (
+void rrr_thread_signal_initialize_now_with_watchdog (
 		struct rrr_thread *thread
 );
 struct rrr_thread *rrr_thread_collection_thread_create_and_preload (

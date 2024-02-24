@@ -489,7 +489,7 @@ int rrr_thread_start_condition_helper_fork (
 	return ret;
 }
 
-int rrr_thread_collection_start_signal_all (
+int rrr_thread_collection_signal_start_procedure_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
@@ -535,13 +535,14 @@ int rrr_thread_collection_start_signal_all (
 	/* Start all threads based on callback condition */
 	int must_retry = 0;
 	do {
-		if (must_retry == 1) {
+		if (must_retry) {
 			rrr_posix_usleep(5000); // 5 ms
 		}
+
 		must_retry = 0;
 
 		RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-			if (node->is_watchdog == 1) {
+			if (node->is_watchdog) {
 				RRR_LL_ITERATE_NEXT();
 			}
 
@@ -560,7 +561,7 @@ int rrr_thread_collection_start_signal_all (
 				must_retry = 1;
 			}
 		RRR_LL_ITERATE_END();
-	} while (must_retry == 1);
+	} while (must_retry);
 
 	/* Double check that everything was started */
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
@@ -1018,7 +1019,7 @@ int rrr_thread_collection_start_all (
 	struct watchdog_data *watchdog_data = NULL;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		if (node->is_watchdog == 1) {
+		if (node->is_watchdog) {
 			RRR_LL_ITERATE_NEXT();
 		}
 
