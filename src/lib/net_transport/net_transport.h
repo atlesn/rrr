@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -156,6 +156,7 @@ struct rrr_socket_graylist;
     struct timeval first_read_timeout_tv;                                   \
     struct timeval soft_read_timeout_tv;                                    \
     struct timeval hard_read_timeout_tv;                                    \
+    int shutdown;                                                           \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
@@ -415,6 +416,9 @@ enum rrr_net_transport_type rrr_net_transport_type_get (
 void rrr_net_transport_stats_get (
 		rrr_length *listening_count,
 		rrr_length *connected_count,
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_shutdown (
 		struct rrr_net_transport *transport
 );
 int rrr_net_transport_new (

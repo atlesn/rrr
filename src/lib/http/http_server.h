@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -98,6 +98,12 @@ int rrr_http_server_start_quic (
 );
 #endif
 void rrr_http_server_response_available_notify (
+		struct rrr_http_server *server
+);
+void rrr_http_server_start_shutdown (
+		struct rrr_http_server *server
+);
+int rrr_http_server_shutdown_complete (
 		struct rrr_http_server *server
 );
 

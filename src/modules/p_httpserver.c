@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -71,6 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
 #define RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT     100000
+#define RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS        2000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -119,6 +120,8 @@ struct httpserver_data {
 	char *cache_control_header;
 
 	pthread_mutex_t oustanding_responses_lock;
+
+	uint64_t shutdown_time;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -329,6 +332,35 @@ static int httpserver_parse_config (
 
 	out:
 	return ret;
+}
+
+static int httpserver_shutdown_complete (struct httpserver_data *data) {
+	return rrr_http_server_shutdown_complete(data->http_server);
+}
+
+static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
+		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
+			INSTANCE_D_NAME(data->thread_data));
+		return RRR_EVENT_EXIT;
+	}
+
+	if (httpserver_shutdown_complete(data)) {
+		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
+			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
+}
+
+static void httpserver_start_shutdown (struct httpserver_data *data) {
+	data->shutdown_time = rrr_time_get_64();
+	rrr_http_server_start_shutdown(data->http_server);
 }
 
 static int httpserver_start_listening (struct httpserver_data *data) {
@@ -1940,6 +1972,21 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			httpserver_event_periodic,
 			thread
 	);
+
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
+
+	httpserver_start_shutdown(data);
+
+	if (!httpserver_shutdown_complete(data)) {
+		rrr_event_dispatch (
+				INSTANCE_D_EVENTS(thread_data),
+				100 * 1000,
+				httpserver_event_shutdown,
+				thread
+		);
+	}
+
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n", thread, INSTANCE_D_NAME(thread_data));
 
 	out_message:
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
