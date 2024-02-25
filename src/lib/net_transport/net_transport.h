@@ -241,9 +241,6 @@ void rrr_net_transport_handle_close_with_reason (
 		uint64_t application_close_reason,
 		const char *application_close_reason_string
 );
-void rrr_net_transport_handle_ptr_close (
-		struct rrr_net_transport_handle *handle
-);
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,

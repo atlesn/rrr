@@ -1119,6 +1119,7 @@ void rrr_http2_transport_ctx_terminate (
 	session->callback_data = callback_data;
 
 	nghttp2_session_terminate_session(session->session, 0);
+	nghttp2_session_send(session->session);
 }
 
 int rrr_http2_upgrade_request_settings_pack (

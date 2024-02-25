@@ -351,7 +351,15 @@ int rrr_http_session_transport_ctx_close_if_open (
 ) {
 	(void)(arg);
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	RRR_DBG_3("HTTP polite close fd %i h %i session %p\n",
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			session
+	);
+
 	rrr_http_application_polite_close(session->application, handle);
+
 	return 0; // Always return 0
 }
 
