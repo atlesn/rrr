@@ -39,6 +39,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../helpers/string_builder.h"
 
+#if defined(RRR_WITH_NGHTTP2)
+#include "http_application_http2.h"
+#endif
+
 #if defined(RRR_WITH_HTTP3)
 #include "http_application_http3.h"
 #endif
@@ -1594,13 +1598,12 @@ int rrr_http_util_alpn_iterate (
 	return ret;
 }
 
-#if defined(RRR_WITH_HTTP3)
 struct rrr_http_util_make_alt_svc_header_callback_data {
 	struct rrr_string_builder *target;
-	uint16_t quic_port;
+	uint16_t port;
 };
 
-static int rrr_http_util_make_alt_svc_header_callback (
+static int __rrr_http_util_make_alt_svc_header_callback (
 		unsigned int i,
 		const char *alpn,
 		unsigned char length,
@@ -1608,15 +1611,24 @@ static int rrr_http_util_make_alt_svc_header_callback (
 ) {
 	struct rrr_http_util_make_alt_svc_header_callback_data *callback_data = arg;
 
+	(void)(i);
+
 	int ret = 0;
 
-	if (i > 0 && (ret = rrr_string_builder_append_raw(callback_data->target, ",", 1)) != 0) {
+	// Only add h2, h3, h3-29 etc. and not http/2 or http/1.1
+	if (memchr(alpn, '/', length) != NULL) {
 		goto out;
+	}
+
+	if (rrr_string_builder_length(callback_data->target) > 0) {
+		if ((ret = rrr_string_builder_append_raw(callback_data->target, ",", 1)) != 0) {
+			goto out;
+		}
 	}
 	if ((ret = rrr_string_builder_append_raw(callback_data->target, alpn, length)) != 0) {
 		goto out;
 	}
-	if ((ret = rrr_string_builder_append_format(callback_data->target, "=\":%u\"; ma=3600", callback_data->quic_port)) != 0) {
+	if ((ret = rrr_string_builder_append_format(callback_data->target, "=\":%u\"; ma=3600", callback_data->port)) != 0) {
 		goto out;
 	}
 
@@ -1626,25 +1638,64 @@ static int rrr_http_util_make_alt_svc_header_callback (
 
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,
+		uint16_t tls_port,
 		uint16_t quic_port
 ) {
+	(void)(tls_port);
+	(void)(quic_port);
+
+	int ret = 0;
+
+	assert(tls_port > 0 || quic_port > 0);
 	assert(rrr_string_builder_length(target) == 0);
+	
+#if defined(RRR_WITH_NGHTTP2)
+	if (tls_port > 0) {
+		const char *alpn = NULL;
+		unsigned int length = 0;
 
-	const char *alpn;
-	unsigned int length;
+		struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
+			target,
+			tls_port
+		};
 
-	struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
-		target,
-		quic_port
-	};
+		rrr_http_application_http2_alpn_protos_get (&alpn, &length);
 
-	rrr_http_application_http3_alpn_protos_get (&alpn, &length);
-
-	return rrr_http_util_alpn_iterate (
-			alpn,
-			length,
-			rrr_http_util_make_alt_svc_header_callback,
-			&callback_data
-	);
-}
+		if ((ret = rrr_http_util_alpn_iterate (
+				alpn,
+				length,
+				__rrr_http_util_make_alt_svc_header_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
 #endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (quic_port > 0) {
+		const char *alpn = NULL;
+		unsigned int length = 0;
+
+		struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
+			target,
+			quic_port
+		};
+
+		rrr_http_application_http3_alpn_protos_get (&alpn, &length);
+
+		if ((ret = rrr_http_util_alpn_iterate (
+				alpn,
+				length,
+				__rrr_http_util_make_alt_svc_header_callback,
+				&callback_data
+		)) != 0 ) {
+			goto out;
+		}
+	}
+#endif
+
+	goto out;
+	out:
+	return ret;
+}

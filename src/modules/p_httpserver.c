@@ -220,12 +220,6 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
-
-	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC) {
-		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_quic)) != 0) {
-			goto out;
-		}
-	}
 #endif
 
 	data->port_plain = RRR_HTTPSERVER_DEFAULT_PORT_PLAIN;
@@ -245,6 +239,12 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
+
+	if (data->net_transport_config.transport_type_f & (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)) {
+		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_tls, data->port_quic)) != 0) {
+			goto out;
+		}
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
 	data->request_max_size = data->request_max_mb;
@@ -1224,7 +1224,6 @@ static int httpserver_async_response_get_callback (
 static int httpserver_response_postprocess_callback (
 		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
 ) {
-#if RRR_WITH_HTTP3
 	struct httpserver_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -1233,18 +1232,15 @@ static int httpserver_response_postprocess_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_response_alt_svc_set(transaction, rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header))) != 0) {
+	if ((ret = rrr_http_transaction_response_alt_svc_set (
+			transaction,
+			rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header)
+	)) != 0) {
 		goto out;
 	}
 
 	out:
 	return ret;
-#else
-	(void)(transaction);
-	(void)(arg);
-
-	return 0;
-#endif
 }
 
 static int httpserver_receive_callback (

@@ -188,12 +188,10 @@ int rrr_http_util_alpn_iterate (
 		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
 		void *callback_arg
 );
-
-#ifdef RRR_WITH_HTTP3
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,
+		uint16_t tls_port,
 		uint16_t quic_port
 );
-#endif /* RRR_WITH_HTTP3 */
 
 #endif /* RRR_HTTP_UTIL_H */
