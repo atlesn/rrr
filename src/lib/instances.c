@@ -623,6 +623,7 @@ int rrr_instance_collection_count (
 static void __rrr_instance_runtime_data_destroy (
 		struct rrr_instance_runtime_data *data
 ) {
+	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
 	free(data);
 }
 
@@ -693,7 +694,6 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 			&data->message_broker_handle,
 			init_data->message_broker,
 			init_data->module->instance_name,
-			init_data->events,
 			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0,
 			__rrr_instance_message_broker_entry_postprocess_callback,
 			data
@@ -825,8 +825,6 @@ static void __rrr_instance_thread_intermediate_cleanup (
 
 	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n",
 		thread, thread_data->cmodule);
-
-	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data));
 
 	if (thread_data->stats != NULL) {
 		rrr_stats_instance_destroy(thread_data->stats);
@@ -1149,14 +1147,35 @@ static int __rrr_instances_create_threads (
 			goto out_destroy;
 		}
 
-		if ((ret = rrr_thread_managed_data_push(thread, runtime_data, __rrr_instance_runtime_data_destroy_void)) != 0) {
+		// Runtime data is destroyed by the thread itself after it has
+		// been started. Otherwise, it is destroyed by main thread.
+		if ((ret = rrr_thread_managed_data_push (
+				thread,
+				runtime_data,
+				__rrr_instance_runtime_data_destroy_void
+		)) != 0) {
 			goto out_destroy;
 		}
 		runtime_data = NULL;
 
-		if ((ret = rrr_thread_managed_data_push(thread, events, rrr_event_queue_destroy_void)) != 0) {
+		// The message broker depends on the queue for message passing.
+		// There may be race conditions during unregistering since the
+		// each broker costumer is refcounted. To avoid adding checks
+		// for unregister event with locks, we let the lifetime of the
+		// queue follow the costumer.
+		if ((ret = rrr_message_broker_costumer_managed_data_push (
+				message_broker,
+				INSTANCE_M_NAME(node),
+				events,
+				rrr_event_queue_destroy_void
+		)) != 0) {
 			goto out_destroy;
 		}
+		rrr_message_broker_costumer_event_queue_set (
+				message_broker,
+				INSTANCE_M_NAME(node),
+				events
+		);
 		events = NULL;
 
 		// Set shortcut

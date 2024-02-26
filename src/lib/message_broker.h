@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -81,10 +81,20 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
-		struct rrr_event_queue *events,
 		int no_buffer,
 		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
+);
+void rrr_message_broker_costumer_event_queue_set (
+		struct rrr_message_broker *broker,
+		const char *name,
+		struct rrr_event_queue *events
+);
+int rrr_message_broker_costumer_managed_data_push (
+		struct rrr_message_broker *broker,
+		const char *name,
+		void *data,
+		void (*destroy)(void *data)
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
