@@ -683,7 +683,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2\n",
 			thread, INSTANCE_D_NAME(thread_data));
 
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

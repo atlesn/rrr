@@ -384,7 +384,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
@@ -430,7 +430,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+	return NULL;
 }
 
 static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {

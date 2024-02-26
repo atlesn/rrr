@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "fifo_protected.h"
 #include "poll_helper.h"
-#include "event.h"
 #include "util/linked_list.h"
 #include "message_holder/message_holder.h"
 
@@ -53,6 +52,7 @@ struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
 struct rrr_message_broker_costumer;
 struct rrr_message_broker;
+struct rrr_event_queue;
 
 struct rrr_message_broker_hooks {
 	void (*pre_buffer)(RRR_MESSAGE_BROKER_HOOK_MSG_ARGS);
@@ -81,6 +81,7 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
+		struct rrr_event_queue *events,
 		int no_buffer,
 		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg

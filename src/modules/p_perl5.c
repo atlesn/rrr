@@ -457,7 +457,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	if (perl5_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	pthread_cleanup_push(data_cleanup, data);
@@ -481,7 +481,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread);
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

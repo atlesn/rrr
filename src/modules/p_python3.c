@@ -517,7 +517,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1("python3 instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -542,7 +542,8 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

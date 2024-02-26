@@ -509,13 +509,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	if (ipclient_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("ipclient thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(ipclient_data_cleanup, data);
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -570,11 +569,9 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread);
 
-//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
-	pthread_exit(0);
-
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

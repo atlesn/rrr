@@ -1907,7 +1907,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	if (httpserver_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("httpserver thread thread_data is %p\n", thread_data);
@@ -1988,8 +1988,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
 	pthread_cleanup_pop(1);
-
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

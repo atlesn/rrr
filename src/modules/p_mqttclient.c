@@ -2187,7 +2187,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	if ((init_ret = mqttclient_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initialize data in MQTT client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("MQTT client instance %s thread %p, disabling processing of input queue until connection with broker is established.\n",
@@ -2342,7 +2342,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		RRR_DBG_1 ("MQTT client %p instance %s exiting\n",
 				thread, INSTANCE_D_NAME(thread_data));
 		pthread_cleanup_pop(1);
-		pthread_exit(0);
+		return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

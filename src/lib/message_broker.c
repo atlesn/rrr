@@ -64,12 +64,12 @@ struct rrr_message_broker_costumer {
 	struct rrr_fifo_protected main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
 	struct rrr_msg_holder_slot *slot;
+	struct rrr_event_queue *events;
 	char *name;
 	int usercount;
 	int flags;
 	int split_buffers_active;
 	uint64_t unique_counter;
-	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 	struct rrr_message_broker_costumer *senders[RRR_MESSAGE_BROKER_SENDERS_MAX];
 	int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg);
@@ -219,7 +219,6 @@ static void __rrr_message_broker_costumer_destroy (
 		rrr_msg_holder_slot_destroy(costumer->slot);
 	}
 
-	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_protected_destroy(&costumer->main_queue);
 	rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
@@ -296,15 +295,9 @@ static int __rrr_message_broker_costumer_new (
 		goto out_destroy_fifo;
 	}
 
-	if ((ret = rrr_event_queue_new(&costumer->events)) != 0){
-		RRR_MSG_0("Could not create event queue in %s\n", __func__);
-		ret = 1;
-		goto out_destroy_split_buffer_lock;
-	}
-
 	if (no_buffer) {
 		if ((ret = rrr_msg_holder_slot_new(&costumer->slot)) != 0) {
-			goto out_cleanup_events;
+			goto out_destroy_split_buffer_lock;
 		}
 	}
 
@@ -314,8 +307,6 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
-	out_cleanup_events:
-		rrr_event_queue_destroy(costumer->events);
 	out_destroy_split_buffer_lock:
 		rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
@@ -469,6 +460,7 @@ int rrr_message_broker_costumer_register (
 		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
+		struct rrr_event_queue *events,
 		int no_buffer,
 		int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
@@ -490,6 +482,7 @@ int rrr_message_broker_costumer_register (
 		goto out;
 	}
 
+	costumer->events = events;
 	costumer->entry_pre_buffer_hook = entry_pre_buffer_hook;
 	costumer->callback_arg = callback_arg;
 

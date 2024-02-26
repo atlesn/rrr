@@ -469,7 +469,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 				&cmd,
 				&stats_engine,
 				message_broker,
-				fork_handler
+				fork_handler,
+				&main_running
 		)) != 0) {
 			goto out_cleanup_instances;
 		}
