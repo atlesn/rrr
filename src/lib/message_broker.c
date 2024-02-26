@@ -93,12 +93,6 @@ struct rrr_message_broker {
 	struct rrr_message_broker_hooks hooks;
 };
 
-struct rrr_event_queue *rrr_message_broker_event_queue_get (
-		struct rrr_message_broker_costumer *costumer
-) {
-	return costumer->events;
-}
-
 static void __rrr_message_broker_split_buffer_node_destroy (
 		struct rrr_message_broker_split_buffer_node *node
 ) {

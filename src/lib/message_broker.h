@@ -157,9 +157,6 @@ int rrr_message_broker_get_fifo_stats (
 		struct rrr_fifo_protected_stats *target,
 		struct rrr_message_broker_costumer *costumer
 );
-struct rrr_event_queue *rrr_message_broker_event_queue_get (
-		struct rrr_message_broker_costumer *costumer
-);
 int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		struct rrr_message_broker_costumer *costumer,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),

@@ -778,7 +778,7 @@ static int __rrr_instance_add_senders_to_broker (
 ) {
 	int ret = 0;
 
-	struct rrr_message_broker_costumer *handle = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+	struct rrr_message_broker_costumer *handle = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(instance));
 
 	if (handle == NULL) {
 		RRR_BUG("BUG: Target costumer not found in %s\n", __func__);
@@ -810,15 +810,14 @@ static int __rrr_instance_add_senders_to_broker (
 // protected by mutexes and may not be changed by the threads themselves.
 static int __rrr_instance_before_start_tasks (
 		struct rrr_message_broker *broker,
-		struct rrr_instance *instance
+		struct rrr_instance *instance,
+		struct rrr_event_queue *events
 ) {
 	int ret = 0;
 
-	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
-
 	if (instance->module_data->event_functions.broker_data_available != NULL) {
 		rrr_event_function_set (
-			rrr_message_broker_event_queue_get(self),
+			events,
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			instance->module_data->event_functions.broker_data_available,
 			"broker data available"
@@ -828,7 +827,7 @@ static int __rrr_instance_before_start_tasks (
 	struct rrr_instance *faulty_instance = NULL;
 	if (__rrr_instance_add_senders_to_broker(&faulty_instance, broker, instance) != 0) {
 		RRR_MSG_0("Failed to add senders of instance %s. Faulty sender was %s.\n",
-			instance->config->name, (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
+			INSTANCE_M_NAME(instance), (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
 		goto out;
 	}
 
@@ -1061,9 +1060,11 @@ static int __rrr_instances_create_threads (
 	int ret = 0;
 
 	struct rrr_thread_collection *thread_collection;
-	struct rrr_instance_runtime_data *runtime_data;
-	struct rrr_event_queue *events;
+	struct rrr_instance_runtime_data *runtime_data = NULL;
+	struct rrr_event_queue *events = NULL;
+	struct rrr_event_queue **events_ptr = NULL;
 	struct rrr_thread *thread;
+	int i;
 
 	if (RRR_LL_COUNT(instances) == 0) {
 		RRR_MSG_0("No instances started, exiting\n");
@@ -1077,7 +1078,14 @@ static int __rrr_instances_create_threads (
 		goto out;
 	}
 
+	if ((events_ptr = rrr_allocate_zero(sizeof(*events_ptr) * RRR_LL_COUNT(instances))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out_destroy;
+	}
+
 	// Initialize thread data and runtime data
+	i = 0;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		RRR_DBG_1("Initializing instance %p '%s'\n",
 			node, INSTANCE_M_NAME(node));
@@ -1085,6 +1093,8 @@ static int __rrr_instances_create_threads (
 		if ((ret = rrr_event_queue_new (&events)) != 0) {
 			goto out_destroy;
 		}
+
+		events_ptr[i] = events;
 
 		if ((runtime_data = __rrr_instance_runtime_data_new (
 				node,
@@ -1149,17 +1159,26 @@ static int __rrr_instances_create_threads (
 
 		// Set shortcut
 		node->thread = thread;
+
+		i++;
 	RRR_LL_ITERATE_END();
 
 	// Task which needs to be performed when all instances have been initialized, but
 	// which cannot be performed after threads have started.
+	i = 0;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		RRR_DBG_1("Before start tasks instance %p '%s'\n",
-			node, node->config->name);
+			node, INSTANCE_M_NAME(node));
 
-		if ((ret = __rrr_instance_before_start_tasks(message_broker, node)) != 0) {
+		if ((ret = __rrr_instance_before_start_tasks (
+				message_broker,
+				node,
+				events_ptr[i]
+		)) != 0) {
 			goto out_destroy;
 		}
+
+		i++;
 	RRR_LL_ITERATE_END();
 
 	*thread_collection_target = thread_collection;
@@ -1170,6 +1189,7 @@ static int __rrr_instances_create_threads (
 			__rrr_instance_runtime_data_destroy(runtime_data);
 		if (events != NULL)
 			rrr_event_queue_destroy(events);
+		RRR_FREE_IF_NOT_NULL(events_ptr);
 		rrr_thread_collection_destroy(NULL, thread_collection);
 	out:
 		return ret;
@@ -1292,9 +1312,9 @@ int rrr_instance_run (
 	instance->thread = thread;
 
 	RRR_DBG_1("Before start tasks instance %p '%s' in single mode\n",
-		instance, instance->config->name);
+		instance, INSTANCE_M_NAME(instance));
 
-	if ((ret = __rrr_instance_before_start_tasks(message_broker, instance)) != 0) {
+	if ((ret = __rrr_instance_before_start_tasks(message_broker, instance, events)) != 0) {
 		goto out_destroy;
 	}
 
@@ -1303,7 +1323,7 @@ int rrr_instance_run (
 	rrr_thread_run(thread);
 
 	RRR_DBG_1("Cleanup tasks instance %p '%s' in single mode\n",
-		instance, instance->config->name);
+		instance, INSTANCE_M_NAME(instance));
 
 	goto out_destroy;
 	out_destroy:
