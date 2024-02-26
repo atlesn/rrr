@@ -292,6 +292,8 @@ int rrr_http_transaction_response_alt_svc_set (
 struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
 	struct rrr_http_service_collection *services;
 	unsigned long long int age;
+	const char *match_server;
+	uint16_t match_port;
 };
 
 static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
@@ -399,13 +401,17 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 
 int rrr_http_transaction_response_alt_svc_get (
 		struct rrr_http_service_collection *target,
-		const struct rrr_http_transaction *transaction
+		const struct rrr_http_transaction *transaction,
+		const char *match_server,
+		uint16_t match_port
 ) {
 	unsigned long long age = 0; 
-//	assert(0 && "Get age from header");
+//	TODO : Get age from header and subtract from ma field value  assert(0 && "Get age from header");
 	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
 		target,
-		age
+		age,
+		match_server,
+		match_port
 	};
 
 	return rrr_http_header_field_collection_subvalues_iterate (

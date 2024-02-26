@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_service {
 	RRR_LL_NODE(struct rrr_http_service);
+	char *match_server;
+	uint16_t match_port;
 	struct rrr_http_uri uri;
 	struct rrr_http_uri_flags uri_flags;
 	enum rrr_http_transport transport;
@@ -40,6 +42,8 @@ struct rrr_http_service_collection {
 
 int rrr_http_service_collection_push (
 		struct rrr_http_service_collection *collection,
+		const char *match_server,
+		uint16_t match_port,
 		const struct rrr_http_uri *uri,
 		const struct rrr_http_uri_flags *uri_flags,
 		enum rrr_http_transport transport,

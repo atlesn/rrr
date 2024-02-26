@@ -150,7 +150,9 @@ int rrr_http_transaction_response_alt_svc_set (
 );
 int rrr_http_transaction_response_alt_svc_get (
 		struct rrr_http_service_collection *target,
-		const struct rrr_http_transaction *transaction
+		const struct rrr_http_transaction *transaction,
+		const char *match_server,
+		uint16_t match_port
 );
 int rrr_http_transaction_endpoint_path_get (
 		char **result,

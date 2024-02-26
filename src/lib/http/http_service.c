@@ -30,12 +30,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static void __rrr_http_service_destroy (
 		struct rrr_http_service *service
 ) {
+	rrr_free(service->match_server);
 	rrr_http_util_uri_clear(&service->uri);
 	rrr_free(service);
 }
 
 int rrr_http_service_collection_push (
 		struct rrr_http_service_collection *collection,
+		const char *match_server,
+		uint16_t match_port,
 		const struct rrr_http_uri *uri,
 		const struct rrr_http_uri_flags *uri_flags,
 		enum rrr_http_transport transport,
@@ -51,15 +54,33 @@ int rrr_http_service_collection_push (
 		goto out;
 	}
 
-	service->uri = *uri;
+	if ((ret = rrr_http_util_uri_dup (&service->uri, uri)) != 0) {
+		RRR_MSG_0("Failed to duplicate URI in %s\n", __func__);
+		goto out_free;
+	}
+
+	if ((service->match_server = rrr_strdup(match_server)) == NULL) {
+		RRR_MSG_0("Failed to duplicate match_server in %s\n", __func__);
+		ret = 1;
+		goto out_clear_uri;
+	}
+
+	service->match_port = match_port;
 	service->uri_flags = *uri_flags;
 	service->transport = transport;
 	service->application_type = application_type;
 
 	RRR_LL_APPEND(collection, service);
 
+	goto out;
+	// out_free_match_server:
+	//	rrr_free(service->match_server);
+	out_clear_uri:
+		rrr_http_util_uri_clear(&service->uri);
+	out_free:
+		rrr_free(service);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_http_service_collection_clear (

@@ -430,12 +430,69 @@ static int __rrr_http_client_chunks_iterate_callback (
 	);
 }
 
+uint64_t __rrr_http_client_net_transport_match_data_make (
+		const uint16_t port,
+		const uint16_t index
+) {
+	return (uint64_t) ((port << 16 ) | index);
+}
+
+uint16_t __rrr_http_client_net_transport_match_data_port_get (
+		const uint64_t match_data
+) {
+	return (uint16_t) (match_data >> 16);
+}
+
+struct rrr_http_client_receive_match_data_callback_data {
+	struct rrr_http_transaction *transaction;
+	struct rrr_http_service_collection *alt_svc;
+};
+
+static int __rrr_http_client_receive_match_data_callback (
+		const char *string,
+		uint64_t number,
+		void *arg
+) {
+	struct rrr_http_client_receive_match_data_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			callback_data->alt_svc,
+			callback_data->transaction,
+			string,
+			__rrr_http_client_net_transport_match_data_port_get(number)
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_receive_alt_svc_get (
+		struct rrr_http_service_collection *alt_svc,
+		struct rrr_net_transport_handle *handle,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_client_receive_match_data_callback_data callback_data = {
+		transaction,
+		alt_svc
+	};
+
+	return rrr_net_transport_ctx_with_match_data_do (
+			handle,
+			__rrr_http_client_receive_match_data_callback,
+			&callback_data
+	);
+}
+
 static int __rrr_http_client_receive_http_part_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_client *http_client = arg;
 
-	(void)(handle);
 	(void)(overshoot_bytes);
 	(void)(next_application_type);
 
@@ -479,7 +536,13 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
-		if ((ret = rrr_http_redirect_collection_push (&http_client->redirects, transaction, location->value)) != 0) {
+XXX wrap with handle match data
+
+		if ((ret = rrr_http_redirect_collection_push (
+				&http_client->redirects,
+				transaction,
+				location->value
+		)) != 0) {
 			goto out;
 		}
 		rrr_http_transaction_incref(transaction);
@@ -513,11 +576,12 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 #endif
 
-	if ((ret = rrr_http_transaction_response_alt_svc_get (
+	if ((ret = __rrr_http_client_receive_alt_svc_get (
 			&alt_svc,
+			handle,
 			transaction
-	) != 0)) {
-		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+	)) != 0) {
+		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
 		goto out;
 	}
 
@@ -655,11 +719,12 @@ static int __rrr_http_client_redirect_callback (
 		}
 	}
 
-	if ((ret = rrr_http_transaction_response_alt_svc_get (
+	if ((ret = __rrr_http_client_receive_alt_svc_get (
 			&alt_svc,
+			handle,
 			transaction
-	) != 0)) {
-		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+	)) != 0) {
+		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
 		goto out;
 	}
 
@@ -765,7 +830,10 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	enum rrr_http_tick_speed tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
+	if ( upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 &&
+	     callback_data->data->method != RRR_HTTP_METHOD_GET &&
+	    !rrr_net_transport_ctx_is_tls(handle)
+	) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
@@ -944,13 +1012,6 @@ void __rrr_http_client_request_send_connect_callback (
 	*result = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 }
 
-uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
-		const uint16_t port,
-		const uint16_t index
-) {
-	return (uint64_t) ((port << 16 ) | index);
-}
-
 static int __rrr_http_client_request_send_intermediate_connect (
 		struct rrr_net_transport *transport_keepalive,
 		struct rrr_http_client_request_callback_data *callback_data,
@@ -961,7 +1022,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 
 	uint16_t concurrent_index = 0;
 	do {
-		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
+		const uint64_t match_data = __rrr_http_client_net_transport_match_data_make(port_to_use, concurrent_index);
 
 		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,

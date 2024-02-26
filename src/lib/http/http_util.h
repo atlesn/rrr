@@ -118,6 +118,10 @@ rrr_length rrr_http_util_count_whsp (
 		const char *start,
 		const char *end
 );
+int rrr_http_util_uri_dup (
+		struct rrr_http_uri *uri_result,
+		const struct rrr_http_uri *uri
+);
 void rrr_http_util_uri_clear (
 		struct rrr_http_uri *uri
 );

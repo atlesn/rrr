@@ -501,3 +501,11 @@ enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
 ) {
 	return rrr_net_transport_type_get(handle->transport);
 }
+
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
+) {
+	return callback(handle->match_string, handle->match_number, arg);
+}

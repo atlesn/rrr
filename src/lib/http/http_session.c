@@ -141,7 +141,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 ) {
 	int ret = 0;
 
-	struct rrr_http_session *session = NULL;
+	struct rrr_http_session *session;
 
 	// With keepalive connections, structures are already present in transport handle
 	if (!rrr_net_transport_ctx_handle_has_application_data(handle)) {
@@ -169,7 +169,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 				0, // Is not server
 				&callbacks
 		)) != 0) {
-			goto out;
+			goto out_destroy_session;
 		}
 
 		if (user_agent != NULL && *user_agent != '\0') {
@@ -177,7 +177,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			if (session->user_agent == NULL) {
 				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
 				ret = 1;
-				goto out;
+				goto out_destroy_session;
 			}
 		}
 
@@ -188,17 +188,12 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 				__rrr_http_session_destroy_void
 		);
 	}
-	else {
-		session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
-	}
 
-	session = NULL;
-
-	out:
-	if (session != NULL) {
+	goto out;
+	out_destroy_session:
 		__rrr_http_session_destroy(session);
-	}
-	return ret;
+	out:
+		return ret;
 }
 
 int rrr_http_session_transport_ctx_request_send_possible (

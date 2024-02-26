@@ -223,5 +223,10 @@ int rrr_net_transport_ctx_selected_proto_get (
 enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
 		const struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
+);
 
 #endif /* RRR_WITH_NET_TRANSPORT_CTX_H */
