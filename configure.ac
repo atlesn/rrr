@@ -53,7 +53,7 @@ AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable O
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
-AC_ARG_WITH([http3],[AS_HELP_STRING([--with-http3],[build with the NGHTTP3 and NGTCP2 bindings])],[enable_http3=yes],[enable_http3=no])
+AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
@@ -336,6 +336,17 @@ AS_IF([test "x$enable_libressl" = xyes], [
 
 	AC_MSG_CHECKING([LibreSSL LIBADD])
 	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
+
+	AC_CHECK_HEADERS([libressl/tls.h],[have_libressl_tls_h_subfolder=yes])
+	AC_CHECK_HEADERS([tls.h],[have_libressl_tls_h=yes])
+
+	if test "x$have_libressl_tls_h_subfolder" = "xyes"; then
+		AC_DEFINE([RRR_HAVE_TLS_H_SUBFOLDER], [1], [LibreSSL tls.h is present and is in a subfolder])
+	elif test "x$have_libressl_tls_h" = "xyes"; then
+		AC_DEFINE([RRR_HAVE_TLS_H], [1], [LibreSSL tls.h is present and is not in a subfolder])
+	else
+		AC_MSG_ERROR([Could not locate tls.h for LibreSSL])
+	fi
 
 	TLS_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
 	TLS_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
