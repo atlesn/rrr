@@ -347,8 +347,8 @@ static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_D
 		// h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
 
 		int found;
-		const char *unquote_field_names[] = {"h3", "h3-29", "h3-32", "ma", "persist"};
-		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 5);
+		const char *unquote_field_names[] = {"h2", "h3", "h3-29", "h3-32", "ma", "persist"};
+		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 6);
 		if (found == 0) {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
 			RRR_DBG_1("Warning: Unknown field '%s' in alt-svc header\n", name);
