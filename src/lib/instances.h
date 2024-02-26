@@ -69,6 +69,7 @@ struct rrr_instance {
 
 #define INSTANCE_I_ROUTES(instance) (&instance->routes)
 #define INSTANCE_I_METHODS(instance) (&instance->methods)
+#define INSTANCE_I_MISC_FLAGS(instance) instance->misc_flags
 
 #define INSTANCE_M_NAME(instance) instance->module_data->instance_name
 #define INSTANCE_M_MODULE_TYPE(instance) instance->module_data->type
@@ -104,6 +105,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 #define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
 #define INSTANCE_D_METHODS(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->methods)
+#define INSTANCE_D_MISC_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;

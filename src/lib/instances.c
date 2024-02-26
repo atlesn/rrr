@@ -663,18 +663,37 @@ static int __rrr_instance_iterate_route_instances_callback (
 }
 
 static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
-		struct rrr_instance_runtime_init_data *init_data
+		struct rrr_instance *instance,
+		struct rrr_instance_config_collection *config,
+		struct cmd_data *cmd,
+		struct rrr_event_queue *events,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler,
+		volatile const int *main_running
 ) {
-	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
-
-	struct rrr_instance_runtime_data *data = rrr_allocate(sizeof(*data));
-	if (data == NULL) {
+	struct rrr_instance_runtime_data *data;
+      
+	if ((data = rrr_allocate_zero(sizeof(*data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
-		return NULL;
+		goto out;
 	}
 
-	memset(data, '\0', sizeof(*data));
-	data->init_data = *init_data;
+	data->init_data = (struct rrr_instance_runtime_init_data) {
+		.module = instance->module_data,
+		.senders = &instance->senders,
+		.cmd_data = cmd,
+		.global_config = config,
+		.instance_config = instance->config,
+		.events = events,
+		.stats = stats,
+		.message_broker = message_broker,
+		.fork_handler = fork_handler,
+		.topic_first_token = instance->topic_first_token,
+		.topic_str = instance->topic_filter,
+		.instance = instance,
+		.main_running = main_running
+	};
 
 	// Verify that instances mentioned in any routes are readers of this instance
 	if (rrr_discern_stack_collection_iterate_destination_names (
@@ -685,16 +704,16 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		goto out_free;
 	}
 
-	if (init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+	if (INSTANCE_I_MISC_FLAGS(instance) & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
 		RRR_DBG_1("%s instance %s buffer is disabled, starting with one-slot buffer\n",
-			init_data->instance->module_data->module_name, init_data->instance->module_data->instance_name);
+			INSTANCE_M_MODULE_NAME(instance), INSTANCE_M_NAME(instance));
 	}
 
 	if (rrr_message_broker_costumer_register (
 			&data->message_broker_handle,
-			init_data->message_broker,
-			init_data->module->instance_name,
-			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0,
+			message_broker,
+			INSTANCE_M_NAME(instance),
+			(INSTANCE_I_MISC_FLAGS(instance) & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0,
 			__rrr_instance_message_broker_entry_postprocess_callback,
 			data
 	) != 0) {
@@ -1023,59 +1042,6 @@ static int __rrr_instance_collection_start_threads_check_wait_for_callback (
 	return 0;
 }
 
-static int __rrr_instances_runtime_data_create (
-		struct rrr_instance_runtime_data **runtime_data_target,
-		struct rrr_instance *instance,
-		struct rrr_instance_config_collection *config,
-		struct cmd_data *cmd,
-		struct rrr_event_queue *events,
-		struct rrr_stats_engine *stats,
-		struct rrr_message_broker *message_broker,
-		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
-) {
-	int ret = 0;
-
-	struct rrr_instance_runtime_data *runtime_data;
-
-	if (instance->module_data == NULL) {
-		RRR_BUG("BUG: Dynamic data was NULL in %s\n", __func__);
-	}
-
-	struct rrr_instance_runtime_init_data init_data;
-	init_data.module = instance->module_data;
-	init_data.senders = &instance->senders;
-	init_data.cmd_data = cmd;
-	init_data.global_config = config;
-	init_data.instance_config = instance->config;
-	init_data.events = events;
-	init_data.stats = stats;
-	init_data.message_broker = message_broker;
-	init_data.fork_handler = fork_handler;
-	init_data.topic_first_token = instance->topic_first_token;
-	init_data.topic_str = instance->topic_filter;
-	init_data.instance = instance;
-	init_data.main_running = main_running;
-
-	RRR_DBG_1("Initializing instance %p '%s'\n",
-		instance, instance->config->name);
-
-	if ((runtime_data = __rrr_instance_runtime_data_new(&init_data)) == NULL) {
-		RRR_MSG_0("Error while creating runtime data for instance %s\n",
-			INSTANCE_M_NAME(instance));
-		ret = 1;
-		goto out;
-	}
-
-	*runtime_data_target = runtime_data;
-
-	goto out;
-//	out_destroy_runtime_data:
-//		__rrr_instance_runtime_data_destroy(runtime_data);
-	out:
-		return ret;
-}
-
 // This function allocates runtime data and thread data.
 // - runtime data is ALWAYS destroyed by the thread. If a thread does not
 //   start, we must BUG() out
@@ -1113,12 +1079,14 @@ static int __rrr_instances_create_threads (
 
 	// Initialize thread data and runtime data
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		RRR_DBG_1("Initializing instance %p '%s'\n",
+			node, INSTANCE_M_NAME(node));
+
 		if ((ret = rrr_event_queue_new (&events)) != 0) {
 			goto out_destroy;
 		}
 
-		if ((ret = __rrr_instances_runtime_data_create (
-				&runtime_data,
+		if ((runtime_data = __rrr_instance_runtime_data_new (
 				node,
 				config,
 				cmd,
@@ -1127,10 +1095,11 @@ static int __rrr_instances_create_threads (
 				message_broker,
 				fork_handler,
 				main_running
-		)) != 0) {
-			RRR_MSG_0("Error while creating thread runtime data for instance %s\n",
-				node->config->name);
-			goto out_destroy;
+		)) == NULL) {
+			RRR_MSG_0("Error while creating runtime data for instance %s\n",
+				INSTANCE_M_NAME(node));
+			ret = 1;
+			goto out;
 		}
 
 		if ((thread = rrr_thread_collection_thread_create_and_preload (
@@ -1284,8 +1253,7 @@ int rrr_instance_run (
 		goto out;
 	}
 
-	if ((ret = __rrr_instances_runtime_data_create (
-			&runtime_data,
+	if ((runtime_data = __rrr_instance_runtime_data_new (
 			instance,
 			config,
 			cmd,
@@ -1294,10 +1262,11 @@ int rrr_instance_run (
 			message_broker,
 			fork_handler,
 			main_running
-	)) != 0) {
-		RRR_MSG_0("Error while creating thread runtime data for instance %s\n",
-			instance->config->name);
-		goto out_destroy;
+	)) == NULL) {
+		RRR_MSG_0("Error while creating runtime data for instance %s\n",
+			INSTANCE_M_NAME(instance));
+		ret = 1;
+		goto out;
 	}
 
 	if ((thread = rrr_thread_collection_thread_create_and_preload (
