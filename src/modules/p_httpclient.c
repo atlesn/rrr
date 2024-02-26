@@ -98,6 +98,7 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection from_senders_queue;
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
+	struct rrr_msg_holder_collection periodic_request_queue;
 
 	int low_pri_queue_need_rotate;
 	int from_msgdb_queue_need_rotate;
@@ -166,11 +167,13 @@ struct httpclient_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_msgdb_poll;
 	rrr_event_handle event_queue_process;
+	rrr_event_handle event_periodic_request;
 
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
 
 	rrr_setting_uint silent_put_error_limit_us;
+	rrr_setting_uint request_interval_us;
 
 	struct httpclient_response_code_summary_collection response_code_summaries;
 
@@ -229,7 +232,8 @@ static void httpclient_check_queues_and_activate_event_as_needed (
 ) {
 	if ( RRR_LL_COUNT(&data->from_msgdb_queue) > 0 ||
 	     RRR_LL_COUNT(&data->from_senders_queue) > 0 ||
-	     RRR_LL_COUNT(&data->low_pri_queue) > 0
+	     RRR_LL_COUNT(&data->low_pri_queue) > 0 ||
+	     RRR_LL_COUNT(&data->periodic_request_queue) > 0
 	) {
 		if (!EVENT_PENDING(data->event_queue_process)) {
 			EVENT_ADD(data->event_queue_process);
@@ -1985,6 +1989,8 @@ static int httpclient_parse_config (
 	data->message_queue_timeout_us *= 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_silent_put_error_limit_s", silent_put_error_limit_us, 0);
 	data->silent_put_error_limit_us *= 1000 * 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_request_interval_ms", request_interval_us, 0);
+	data->request_interval_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_low_priority_message_timeout_factor", message_low_pri_timeout_factor, 10);
 
@@ -2307,6 +2313,7 @@ static void httpclient_update_stats(struct httpclient_data *data) {
 		return;
 	}
 
+	rrr_stats_instance_post_unsigned_base10_text(stats, "periodic_request_queue_count", 0, RRR_LL_COUNT(&data->periodic_request_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "from_senders_queue_count", 0, RRR_LL_COUNT(&data->from_senders_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "low_pri_queue_count", 0, RRR_LL_COUNT(&data->low_pri_queue));
@@ -2317,8 +2324,9 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	RRR_DBG_1("httpclient instance %s from msgdb queue %i from senders queue %i low pri queue %i\n",
+	RRR_DBG_1("httpclient instance %s queues: periodic %i from msgdb %i senders %i low pri %i\n",
 		INSTANCE_D_NAME(thread_data),
+		RRR_LL_COUNT(&data->periodic_request_queue),
 		RRR_LL_COUNT(&data->from_msgdb_queue),
 		RRR_LL_COUNT(&data->from_senders_queue),
 		RRR_LL_COUNT(&data->low_pri_queue)
@@ -2348,6 +2356,7 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	const rrr_setting_uint low_pri_timeout_us = data->message_low_pri_timeout_factor * data->message_queue_timeout_us;
 	assert(low_pri_timeout_us >= data->message_queue_timeout_us);
 
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->periodic_request_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_senders_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
@@ -2397,6 +2406,7 @@ static void httpclient_event_msgdb_poll (
 	// are empty (avoid dupes). In high traffic situations, it make
 	// take some time before the msgdb is polled.
 	if ( rrr_http_client_active_transaction_count_get(data->http_client) == 0 &&
+	     RRR_LL_COUNT(&data->periodic_request_queue) == 0 &&
 	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
 	     RRR_LL_COUNT(&data->low_pri_queue) == 0
@@ -2452,10 +2462,14 @@ static void httpclient_event_queue_process (
 	httpclient_queue_process(&data->from_msgdb_queue, data);
 
 	// Normal flow when there are not errors. Need not rotating.
+	httpclient_queue_process(&data->periodic_request_queue, data);
 	httpclient_queue_process(&data->from_senders_queue, data);
 
 	// Process low pri if other queues are empty. Needs rotating.
-	if (RRR_LL_COUNT(&data->from_msgdb_queue) == 0 && RRR_LL_COUNT(&data->from_senders_queue) == 0) {
+	if (RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
+	    RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
+	    RRR_LL_COUNT(&data->periodic_request_queue) == 0
+	) {
 		httpclient_event_queue_process_check_rotate(data, &data->low_pri_queue_need_rotate, &data->low_pri_queue);
 		httpclient_queue_process(&data->low_pri_queue, data);
 	}
@@ -2466,6 +2480,65 @@ static void httpclient_event_queue_process (
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
 }
+
+static void httpclient_event_periodic_request (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	RRR_EVENT_HOOK();
+
+	struct httpclient_data *data = arg;
+
+	struct rrr_msg_holder *entry = NULL;
+	struct rrr_msg_msg *msg = NULL;
+
+	if (rrr_msg_msg_new_empty (
+			&msg,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			0,
+			0
+	) != 0) {
+		RRR_MSG_0("Failed to create message for periodic request in httpclient instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (rrr_msg_holder_new (
+			&entry,
+			MSG_TOTAL_SIZE(msg),
+			NULL,
+			0,
+			0,
+			msg
+	) != 0) {
+		RRR_MSG_0("Failed to create message holder for periodic request in httpclient instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+	msg = NULL;
+
+	RRR_DBG_2("httpclient instance %s generating periodic request\n", INSTANCE_D_NAME(data->thread_data));
+
+	// Important : Set queue_time for correct timeout behavior
+	entry->queue_time = rrr_time_get_64();
+
+	rrr_msg_holder_incref(entry);
+	RRR_LL_APPEND(&data->periodic_request_queue, entry);
+
+	httpclient_check_queues_and_activate_event_as_needed(data);
+
+	out:
+	if (entry != NULL)
+		rrr_msg_holder_decref(entry);
+	RRR_FREE_IF_NOT_NULL(msg);
+}
+
 
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
@@ -2482,6 +2555,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
+	rrr_msg_holder_collection_clear(&data->periodic_request_queue);
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->report_tag);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
@@ -2538,6 +2612,15 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	RRR_DBG_1 ("httpclient started thread %p\n", thread_data);
+
+	{
+		int has_senders = rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) > 0 ? 1 : 0;
+		if (!has_senders && data->request_interval_us == 0) {
+			RRR_MSG_0("httpclient instance %s has no senders specified but this requires a request interval to be set in http_request_interval_ms\n",
+				INSTANCE_D_NAME(thread_data));
+			goto out_message;
+		}
+	}
 
 	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
 
@@ -2637,6 +2720,20 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	if (data->request_interval_us > 0) {
+		if (rrr_event_collection_push_periodic (
+				&data->event_periodic_request,
+				&data->events,
+				httpclient_event_periodic_request,
+				data,
+				data->request_interval_us
+		) != 0) {
+			RRR_MSG_0("Failed to create periodic request event in httpclient\n");
+			goto out_message;
+		}
+		EVENT_ADD(data->event_periodic_request);
+	}
+
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
@@ -2677,7 +2774,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = RRR_MODULE_TYPE_PROCESSOR;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
