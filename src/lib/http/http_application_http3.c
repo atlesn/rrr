@@ -43,6 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Replace with RTT times to or otherwise per spec
 #define RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_PROGRESSION_INTERVAL_US (250 * 1000) /* 250 ms */
 
+enum rrr_http_application_http3_init_state {
+	RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_NONE                       = 0,
+	RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND                      = 1<<0
+};
+
 enum rrr_http_application_http3_shutdown_state {
 	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NONE                   = 0,
 	RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS   = 1<<0,
@@ -54,8 +59,8 @@ struct rrr_http_application_http3 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct nghttp3_conn *conn;
 	int is_server;
-	int initialized;
 	enum rrr_http_application_http3_shutdown_state shutdown_state;
+	enum rrr_http_application_http3_init_state init_state;
 	uint64_t shutdown_time;
 	struct rrr_net_transport *transport;
 	rrr_net_transport_handle handle;
@@ -874,7 +879,9 @@ static int __rrr_http_application_http3_request_send_possible (
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) application;
 
-	*is_possible = http3->initialized && !(http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS);
+	*is_possible =
+		 (http3->init_state & RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND) &&
+		!(http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS);
 
 	return 0;
 }
@@ -1072,6 +1079,16 @@ static void __rrr_http_application_http3_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
 	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
+
+	if (!(http3->init_state & RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND)) {
+		RRR_DBG_3("HTTP3 polite close not possible, control streams are not bound yet\n");
+		return;
+	}
+
+	if (http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS) {
+		RRR_DBG_3("HTTP3 polite close already active\n");
+		return;
+	}
 
 	RRR_DBG_3("HTTP3 sumbit polite close\n");
 
@@ -1392,7 +1409,7 @@ static int __rrr_http_application_http3_nghttp3_cb_shutdown (
 
 	(void)(conn);
 
-	if (http3->shutdown_time)
+	if (http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS)
 		return 0;
 
 	if (stream_id == NGHTTP3_SHUTDOWN_NOTICE_STREAM_ID ||
@@ -1562,14 +1579,14 @@ static int __rrr_http_application_http3_tick (
 
 	int ret = 0;
 
-	if (!http3->initialized) {
+	if (!(http3->init_state & RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND)) {
 		if ((ret = __rrr_http_application_http3_initialize(http3, handle)) != 0) {
 			goto out;
 		}
-		http3->initialized = 1;
+		http3->init_state |= RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND;
 	}
 
-	if (http3->shutdown_time != 0) {
+	if (http3->shutdown_state & RRR_HTTP_APPLICATION_HTTP3_SHUTDOWN_STATE_NO_NEW_LOCAL_STREAMS) {
 		if ((ret = __rrr_http_application_http3_tick_process_shutdown(http3)) != 0) {
 			goto out;
 		}
@@ -1616,8 +1633,9 @@ static void __rrr_http_application_http3_need_tick (
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) app;
 
-	if (!http3->initialized)
+	if (!(http3->init_state & RRR_HTTP_APPLICATION_HTTP3_INIT_STATE_BOUND)) {
 		*speed = RRR_HTTP_TICK_SPEED_FAST;
+	}
 }
 
 static const struct rrr_http_application_constants rrr_http_application_http3_constants = {
