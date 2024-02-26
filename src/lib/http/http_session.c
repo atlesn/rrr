@@ -302,9 +302,11 @@ static int __rrr_http_session_transport_ctx_tick (
 	}
 
 	if (upgraded_app) {
-		RRR_DBG_3("HTTP upgrade transition from %s to %s\n",
+		RRR_DBG_3("HTTP upgrade transition from %s to %s fd %i h %i\n",
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
-				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
+				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app)),
+				RRR_NET_TRANSPORT_CTX_FD(handle),
+				RRR_NET_TRANSPORT_CTX_HANDLE(handle)
 		);
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 		rrr_net_transport_ctx_notify_read_fast(handle);
@@ -351,23 +353,17 @@ int rrr_http_session_transport_ctx_close_if_open (
 ) {
 	(void)(arg);
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	RRR_DBG_3("HTTP polite close fd %i h %i session %p\n",
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			session
+	);
+
 	rrr_http_application_polite_close(session->application, handle);
+
 	return 0; // Always return 0
 }
-
-struct rrr_http_session_stream_open_transport_ctx_callback_data {
-	void **stream_data;
-	void (**stream_data_destroy)(void *stream_data);
-	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
-	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
-	void **cb_arg;
-	struct rrr_net_transport *transport;
-	rrr_net_transport_handle handle;
-	int64_t stream_id;
-	int flags;
-	void *stream_open_callback_arg_local;
-};
 
 int rrr_http_session_transport_ctx_stream_open (
 		void (**stream_data),
@@ -377,7 +373,8 @@ int rrr_http_session_transport_ctx_stream_open (
 		int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
 		int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),
 		int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),
-		int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),
+		int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),
+		int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),
 		void **cb_arg,
 		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,
@@ -401,7 +398,8 @@ int rrr_http_session_transport_ctx_stream_open (
 			cb_shutdown_read,
 			cb_shutdown_write,
 			cb_close,
-			cb_ack,
+			cb_write_confirm,
+			cb_ack_confirm,
 			cb_arg,
 			session != NULL ? session->application : NULL, /* Application must create session if it does not exist */
 			handle,

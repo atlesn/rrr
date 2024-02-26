@@ -81,7 +81,7 @@ static int __rrr_test_quic_read_callback (RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_
 static int __rrr_test_quic_cb_get_message (RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS) {
 	struct rrr_test_tls_common_data *data = arg;
 
-	TEST_MSG("%s stream %" PRIi64 " get message comeplete %i blocked %i\n",
+	TEST_MSG("%s stream %" PRIi64 " get message complete %i blocked %i\n",
 		data->name, stream_id_suggestion, data->complete_out, data->stream_blocked);
 
 	if (data->complete_out || data->stream_blocked || stream_id_suggestion < 0) {
@@ -135,14 +135,14 @@ static int __rrr_test_quic_cb_stream_close (RRR_NET_TRANSPORT_STREAM_CLOSE_CALLB
 	return 0;
 }
 
-static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
+static int __rrr_test_quic_cb_write_confirm (RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS) {
 	struct rrr_test_tls_common_data *data = arg;
 
 	(void)(stream_id);
 	(void)(arg);
 
 	if (bytes != strlen(data->msg_out)) {
-		TEST_MSG("%s stream %" PRIi64 " ACK message error bytes were %llu expected %llu\n",
+		TEST_MSG("%s stream %" PRIi64 " write message error bytes were %llu expected %llu\n",
 			data->name,
 			stream_id,
 			(unsigned long long) bytes,
@@ -151,10 +151,34 @@ static int __rrr_test_quic_cb_ack (RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS) {
 		return 1;
 	}
 
-	TEST_MSG("Stream %" PRIi64 " ACK message %llu bytes\n",
-		stream_id, (unsigned long long) bytes);
+	TEST_MSG("%s stream %" PRIi64 " write confirm message %llu bytes\n",
+		data->name, stream_id, (unsigned long long) bytes);
 
 	data->complete_out = 1;
+
+	return 0;
+}
+
+static int __rrr_test_quic_cb_ack_confirm (RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS) {
+	struct rrr_test_tls_common_data *data = arg;
+
+	(void)(stream_id);
+	(void)(arg);
+
+	if (bytes != strlen(data->msg_out)) {
+		TEST_MSG("%s stream %" PRIi64 " ACK confirm message error bytes were %llu expected %llu\n",
+			data->name,
+			stream_id,
+			(unsigned long long) bytes,
+			(unsigned long long) strlen(data->msg_out)
+		);
+		return 1;
+	}
+
+	TEST_MSG("%s stream %" PRIi64 " ACK confirm message %llu bytes\n",
+		data->name, stream_id, (unsigned long long) bytes);
+
+	data->complete_out_ack = 1;
 
 	return 0;
 }
@@ -173,7 +197,8 @@ static int __rrr_test_quic_stream_open_callback (RRR_NET_TRANSPORT_STREAM_OPEN_C
 	*cb_shutdown_read = __rrr_test_quic_cb_stream_shutdown_read;
 	*cb_shutdown_write = __rrr_test_quic_cb_stream_shutdown_write;
 	*cb_close = __rrr_test_quic_cb_stream_close;
-	*cb_ack = __rrr_test_quic_cb_ack;
+	*cb_write_confirm = __rrr_test_quic_cb_write_confirm;
+	*cb_ack_confirm = __rrr_test_quic_cb_ack_confirm;
 	*cb_arg = arg_global;
 
 	TEST_MSG("%s stream %" PRIi64 " open local or remote arg %p\n", data->name, stream_id, arg_global);
@@ -228,6 +253,8 @@ static int __rrr_test_quic_complete_callback (
 		data->server.complete_in = 0;
 		data->client.complete_out = 0;
 		data->server.complete_out = 0;
+		data->client.complete_out_ack = 0;
+		data->server.complete_out_ack = 0;
 		data->client.stream_blocked = 0;
 		data->server.stream_blocked = 0;
 

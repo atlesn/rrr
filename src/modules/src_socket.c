@@ -86,7 +86,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	int ret = 0;
 
 	// Socket path
-	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
+	if (rrr_instance_config_get_string_noconvert(&data->socket_path, config, "socket_path") != 0) {
 		RRR_MSG_0("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
 		ret = 1;
 		goto out;

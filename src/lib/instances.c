@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -588,7 +588,8 @@ static int __rrr_instance_add_senders (
 		goto out;
 	}
 
-	RRR_DBG_1("Added %d collection\n", rrr_instance_friend_collection_count(&instance->senders));
+	RRR_DBG_1("Added %d instances to friend collection of instance %s\n",
+		rrr_instance_friend_collection_count(&instance->senders), INSTANCE_M_NAME(instance));
 
 	out:
 	return ret;
@@ -1041,11 +1042,149 @@ static int __rrr_instance_collection_start_threads_check_wait_for_callback (
 	return 0;
 }
 
+static int __rrr_instances_runtime_data_create (
+		struct rrr_instance_runtime_data **runtime_data_target,
+		struct rrr_instance *instance,
+		struct rrr_instance_config_collection *config,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
+) {
+	int ret = 0;
+
+	struct rrr_instance_runtime_data *runtime_data;
+
+	if (instance->module_data == NULL) {
+		RRR_BUG("BUG: Dynamic data was NULL in %s\n", __func__);
+	}
+
+	struct rrr_instance_runtime_init_data init_data;
+	init_data.module = instance->module_data;
+	init_data.senders = &instance->senders;
+	init_data.cmd_data = cmd;
+	init_data.global_config = config;
+	init_data.instance_config = instance->config;
+	init_data.stats = stats;
+	init_data.message_broker = message_broker;
+	init_data.fork_handler = fork_handler;
+	init_data.topic_first_token = instance->topic_first_token;
+	init_data.topic_str = instance->topic_filter;
+	init_data.instance = instance;
+
+	RRR_DBG_1("Initializing instance %p '%s'\n",
+		instance, instance->config->name);
+
+	if ((runtime_data = __rrr_instance_runtime_data_new(&init_data)) == NULL) {
+		RRR_MSG_0("Error while creating runtime data for instance %s\n",
+			INSTANCE_M_NAME(instance));
+		ret = 1;
+		goto out;
+	}
+
+	*runtime_data_target = runtime_data;
+
+	goto out;
+//	out_destroy_runtime_data:
+//		rrr_instance_runtime_data_destroy(runtime_data);
+	out:
+		return ret;
+}
+
 // This function allocates runtime data and thread data.
 // - runtime data is ALWAYS destroyed by the thread. If a thread does not
 //   start, we must BUG() out
 // - thread data is freed by main unless thread has become ghost in which the
 //   thread will free it if it wakes up
+
+static int __rrr_instances_create_threads (
+		struct rrr_thread_collection **thread_collection_target,
+		struct rrr_instance_collection *instances,
+		struct rrr_instance_config_collection *config,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
+) {
+	int ret = 0;
+
+	struct rrr_thread_collection *thread_collection;
+	struct rrr_instance_runtime_data *runtime_data;
+	struct rrr_thread *thread;
+
+	if (RRR_LL_COUNT(instances) == 0) {
+		RRR_MSG_0("No instances started, exiting\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Create thread collection
+	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
+		RRR_MSG_0("Could not create thread collection\n");
+		goto out;
+	}
+
+	// Initialize thread data and runtime data
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		if ((ret = __rrr_instances_runtime_data_create (
+				&runtime_data,
+				node,
+				config,
+				cmd,
+				stats,
+				message_broker,
+				fork_handler
+		)) != 0) {
+			RRR_MSG_0("Error while creating thread for instance %s\n",
+				node->config->name);
+			goto out_destroy_collection;
+		}
+
+		if ((thread = rrr_thread_collection_thread_create_and_preload (
+				thread_collection,
+				__rrr_instance_thread_entry_intermediate,
+				__rrr_instance_thread_preload,
+				node->module_data->instance_name,
+				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
+				runtime_data
+		)) == NULL) {
+			RRR_MSG_0("Error while starting instance %s\n",
+				node->module_data->instance_name);
+			ret = 1;
+			goto out_destroy_runtime_data;
+		}
+
+		runtime_data = NULL;
+
+		// Set shortcut
+		node->thread = thread;
+	RRR_LL_ITERATE_END();
+
+	// Task which needs to be performed when all instances have been initialized, but
+	// which cannot be performed after threads have started.
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		RRR_DBG_1("Before start tasks instance %p '%s'\n",
+			node, node->config->name);
+
+		if ((ret = __rrr_instance_before_start_tasks(message_broker, node)) != 0) {
+			goto out_destroy_collection;
+		}
+	RRR_LL_ITERATE_END();
+
+	if ((ret = rrr_thread_collection_start_all(thread_collection)) != 0) {
+		goto out_destroy_collection;
+	}
+
+	*thread_collection_target = thread_collection;
+
+	goto out;
+	out_destroy_runtime_data:
+		rrr_instance_runtime_data_destroy(runtime_data);
+	out_destroy_collection:
+		rrr_thread_collection_destroy(NULL, thread_collection);
+	out:
+		return ret;
+}
 
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
@@ -1058,89 +1197,26 @@ int rrr_instances_create_and_start_threads (
 ) {
 	int ret = 0;
 
-	struct rrr_thread_collection *thread_collection = NULL;
-
-	struct rrr_instance_runtime_data *runtime_data_tmp = NULL;
-
-	if (RRR_LL_COUNT(instances) == 0) {
-		RRR_MSG_0("No instances started, exiting\n");
-		ret = 1;
-		goto out;
-	}
-
-	// Create thread collection
-	if (rrr_thread_collection_new (&thread_collection) != 0) {
-		RRR_MSG_0("Could not create thread collection\n");
-		ret = 1;
-		goto out;
-	}
-
-	// Initialize thread data and runtime data
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		struct rrr_instance *instance = node;
-
-		if (instance->module_data == NULL) {
-			RRR_BUG("BUG: Dynamic data was NULL in %s\n", __func__);
-		}
-
-		struct rrr_instance_runtime_init_data init_data;
-		init_data.module = instance->module_data;
-		init_data.senders = &instance->senders;
-		init_data.cmd_data = cmd;
-		init_data.global_config = config;
-		init_data.instance_config = instance->config;
-		init_data.stats = stats;
-		init_data.message_broker = message_broker;
-		init_data.fork_handler = fork_handler;
-		init_data.topic_first_token = instance->topic_first_token;
-		init_data.topic_str = instance->topic_filter;
-		init_data.instance = instance;
-
-		RRR_DBG_1("Initializing instance %p '%s'\n",
-			instance, instance->config->name);
-
-		if ((runtime_data_tmp = __rrr_instance_runtime_data_new(&init_data)) == NULL) {
-			RRR_MSG_0("Error while creating runtime data for instance %s\n",
-				INSTANCE_M_NAME(instance));
-			ret = 1;
-			goto out_destroy_collection;
-		}
-
-		struct rrr_thread *thread = rrr_thread_collection_thread_new (
-				thread_collection,
-				__rrr_instance_thread_entry_intermediate,
-				__rrr_instance_thread_preload,
-				instance->module_data->instance_name,
-				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
-				runtime_data_tmp
-		);
-
-		if (thread == NULL) {
-			RRR_MSG_0("Error while starting instance %s\n",
-				instance->module_data->instance_name);
-			ret = 1;
-			goto out_destroy_collection;
-		}
-
-		runtime_data_tmp = NULL;
-
-		// Set shortcuts
-		node->thread = thread;
-	RRR_LL_ITERATE_END();
-
-	// Task which needs to be performed when all instances have been initialized, but
-	// which cannot be performed after threads have started.
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		RRR_DBG_1("Before start tasks instance %p '%s'\n",
-			node, node->config->name);
-		if ((ret = __rrr_instance_before_start_tasks(message_broker, node)) != 0) {
-			goto out_destroy_collection;
-		}
-	RRR_LL_ITERATE_END();
+	struct rrr_thread_collection *thread_collection;
+	int ghost_count = 0;
 
 	struct rrr_instance_collection_start_threads_check_wait_for_callback_data callback_data = { instances };
 
-	if (rrr_thread_collection_start_all (
+	if (__rrr_instances_create_threads (
+			&thread_collection,
+			instances,
+			config,
+			cmd,
+			stats,
+			message_broker,
+			fork_handler
+	) != 0) {
+		RRR_MSG_0("Error while creating threads\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_thread_collection_signal_start_procedure_all (
 			thread_collection,
 			__rrr_instance_collection_start_threads_check_wait_for_callback,
 			&callback_data
@@ -1154,18 +1230,30 @@ int rrr_instances_create_and_start_threads (
 
 	goto out;
 	out_destroy_collection:
-		{
-			int ghost_count = 0;
-			rrr_thread_collection_destroy(&ghost_count, thread_collection);
-			if (ghost_count > 0) {
-				RRR_MSG_0("Warning: %i threads were ghost during destruction of collection in %s\n", ghost_count, __func__);
-			}
+		rrr_thread_collection_destroy(&ghost_count, thread_collection);
+		if (ghost_count > 0) {
+			RRR_MSG_0("Warning: %i threads were ghost during destruction of collection in %s\n", ghost_count, __func__);
 		}
 	out:
-		if (runtime_data_tmp != NULL) {
-			rrr_instance_runtime_data_destroy(runtime_data_tmp);
-		}
 		return ret;
+}
+
+int rrr_instance_run (
+		struct rrr_instance_collection *instances,
+		struct rrr_instance_config_collection *config,
+		int instance_index,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_event_queue *queue
+) {
+	int ret = 0;
+
+	struct rrr_instance *instance = RRR_LL_AT(instances, instance_index);
+
+	out:
+	return ret;
 }
 
 int rrr_instances_create_from_config (

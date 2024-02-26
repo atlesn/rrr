@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -71,6 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
 #define RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT     100000
+#define RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS        2000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -119,6 +120,8 @@ struct httpserver_data {
 	char *cache_control_header;
 
 	pthread_mutex_t oustanding_responses_lock;
+
+	uint64_t shutdown_time;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -217,12 +220,6 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
-
-	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC) {
-		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_quic)) != 0) {
-			goto out;
-		}
-	}
 #endif
 
 	data->port_plain = RRR_HTTPSERVER_DEFAULT_PORT_PLAIN;
@@ -242,6 +239,12 @@ static int httpserver_parse_config (
 			goto out;
 		}
 	);
+
+	if (data->net_transport_config.transport_type_f & (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)) {
+		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_tls, data->port_quic)) != 0) {
+			goto out;
+		}
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
 	data->request_max_size = data->request_max_mb;
@@ -329,6 +332,35 @@ static int httpserver_parse_config (
 
 	out:
 	return ret;
+}
+
+static int httpserver_shutdown_complete (struct httpserver_data *data) {
+	return rrr_http_server_shutdown_complete(data->http_server);
+}
+
+static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
+		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
+			INSTANCE_D_NAME(data->thread_data));
+		return RRR_EVENT_EXIT;
+	}
+
+	if (httpserver_shutdown_complete(data)) {
+		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
+			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
+}
+
+static void httpserver_start_shutdown (struct httpserver_data *data) {
+	data->shutdown_time = rrr_time_get_64();
+	rrr_http_server_start_shutdown(data->http_server);
 }
 
 static int httpserver_start_listening (struct httpserver_data *data) {
@@ -1192,7 +1224,6 @@ static int httpserver_async_response_get_callback (
 static int httpserver_response_postprocess_callback (
 		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
 ) {
-#if RRR_WITH_HTTP3
 	struct httpserver_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -1201,18 +1232,15 @@ static int httpserver_response_postprocess_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_response_alt_svc_set(transaction, rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header))) != 0) {
+	if ((ret = rrr_http_transaction_response_alt_svc_set (
+			transaction,
+			rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header)
+	)) != 0) {
 		goto out;
 	}
 
 	out:
 	return ret;
-#else
-	(void)(transaction);
-	(void)(arg);
-
-	return 0;
-#endif
 }
 
 static int httpserver_receive_callback (
@@ -1940,6 +1968,21 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			httpserver_event_periodic,
 			thread
 	);
+
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
+
+	httpserver_start_shutdown(data);
+
+	if (!httpserver_shutdown_complete(data)) {
+		rrr_event_dispatch (
+				INSTANCE_D_EVENTS(thread_data),
+				100 * 1000,
+				httpserver_event_shutdown,
+				thread
+		);
+	}
+
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n", thread, INSTANCE_D_NAME(thread_data));
 
 	out_message:
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);

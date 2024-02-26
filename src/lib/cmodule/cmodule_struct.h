@@ -23,12 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	
 #include "../event/event.h"
 #include "../message_holder/message_holder_collection.h"
+#include "../settings.h"
 
 #include "cmodule_config_data.h"
 #include "cmodule_defines.h"
 
 struct rrr_mmap_channel;
-struct rrr_instance_settings;
 struct rrr_fork_handler;
 struct rrr_discern_stack_collection;
 struct rrr_msg_msg;
@@ -67,13 +67,15 @@ struct rrr_cmodule_worker {
 
 	uint64_t total_msg_processed;
 
+	struct rrr_settings *settings;
+	struct rrr_settings_used settings_used;
+
 	// Used by fork only
 	int ping_received;
 	// Used by parent reader thread only. Unprotected, only access from reader thread.
 	rrr_time_us_t pong_receive_time;
 
 	// Unmanaged pointers provided by application
-	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
 	struct rrr_event_queue *event_queue_parent;
 	const struct rrr_discern_stack_collection *methods;

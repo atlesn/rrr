@@ -344,17 +344,20 @@ int rrr_event_dispatch (
 
 	struct timeval tv_interval = {0};
 
-	tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
-	tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
+	if (function_periodic != NULL) {
+		tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
+		tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
 
-	if (event_add(queue->periodic_event, &tv_interval)) {
-		RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
-		ret = 1;
-		goto out;
+		if (event_add(queue->periodic_event, &tv_interval)) {
+			RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
+			ret = 1;
+			goto out;
+		}
+
+		queue->callback_periodic = function_periodic;
+		queue->callback_arg = callback_arg;
 	}
 
-	queue->callback_periodic = function_periodic;
-	queue->callback_arg = callback_arg;
 	queue->callback_ret = 0;
 
 	if ((ret = event_base_dispatch(queue->event_base)) != 0) {

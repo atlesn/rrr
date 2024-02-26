@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ struct rrr_socket_graylist;
     uint64_t application_error_reason,                         \
     void *arg
 
-#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+#define RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     size_t bytes,                                              \
     void *arg
@@ -96,7 +96,7 @@ struct rrr_socket_graylist;
     uint64_t application_error_reason,                         \
     void *arg
 
-#define RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS             \
+#define RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS         \
     int64_t stream_id,                                         \
     size_t bytes,                                              \
     void *arg
@@ -131,7 +131,8 @@ struct rrr_socket_graylist;
     int (**cb_shutdown_read)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),           \
     int (**cb_shutdown_write)(RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS),          \
     int (**cb_close)(RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS),             \
-    int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS),                 \
+    int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),   \
+    int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS),	\
     void **cb_arg,                                                              \
     struct rrr_net_transport_handle *handle,                                    \
     int64_t stream_id,                                                          \
@@ -155,6 +156,7 @@ struct rrr_socket_graylist;
     struct timeval first_read_timeout_tv;                                   \
     struct timeval soft_read_timeout_tv;                                    \
     struct timeval hard_read_timeout_tv;                                    \
+    int shutdown;                                                           \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
@@ -238,9 +240,6 @@ void rrr_net_transport_handle_close_with_reason (
 		enum rrr_net_transport_close_reason submodule_close_reason,
 		uint64_t application_close_reason,
 		const char *application_close_reason_string
-);
-void rrr_net_transport_handle_ptr_close (
-		struct rrr_net_transport_handle *handle
 );
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
@@ -414,6 +413,9 @@ enum rrr_net_transport_type rrr_net_transport_type_get (
 void rrr_net_transport_stats_get (
 		rrr_length *listening_count,
 		rrr_length *connected_count,
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_shutdown (
 		struct rrr_net_transport *transport
 );
 int rrr_net_transport_new (

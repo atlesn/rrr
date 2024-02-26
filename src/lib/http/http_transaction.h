@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_part;
 struct rrr_http_header_field;
+struct rrr_http_service_collection;
 
 struct rrr_http_transaction {
 	int usercount;
@@ -148,9 +149,7 @@ int rrr_http_transaction_response_alt_svc_set (
 		const char *alt_svc
 );
 int rrr_http_transaction_response_alt_svc_get (
-		enum rrr_http_transport *transport_code,
-		char **authority,
-		uint16_t *port,
+		struct rrr_http_service_collection *target,
 		const struct rrr_http_transaction *transaction
 );
 int rrr_http_transaction_endpoint_path_get (

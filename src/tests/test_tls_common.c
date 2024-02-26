@@ -248,17 +248,21 @@ static int __rrr_test_tls_common_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		}
 	}
 
-	TEST_MSG("CCI %s SCI %s CCO %s SCO %s\n",
+	TEST_MSG("CCI %s SCI %s CCO %s SCO %s CCA %s SCA %s\n",
 		data->client.complete_in ? "Y" : "-",
 		data->server.complete_in ? "Y" : "-",
 		data->client.complete_out ? "Y" : "-",
-		data->server.complete_out ? "Y" : "-"
+		data->server.complete_out ? "Y" : "-",
+		data->client.complete_out_ack ? "Y" : "-",
+		data->server.complete_out_ack ? "Y" : "-"
 	);
 
 	if ( data->client.complete_in &&
 	     data->server.complete_in &&
 	     data->client.complete_out &&
-	     data->server.complete_out
+	     data->server.complete_out &&
+	     data->client.complete_out_ack &&
+	     data->server.complete_out_ack
 	) {
 		return cb_data->complete_callback(data);
 	}

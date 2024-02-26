@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -55,16 +55,6 @@ struct rrr_http_uri {
 	char *host;
 	uint16_t port;
 	char *endpoint;
-};
-
-struct rrr_http_service {
-	RRR_LL_NODE(struct rrr_http_service);
-	struct rrr_http_uri uri;
-	struct rrr_http_uri_flags uri_flags;
-};
-
-struct rrr_http_service_collection {
-	RRR_LL_HEAD(struct rrr_http_service);
 };
 
 void rrr_http_util_print_where_message (
@@ -128,6 +118,9 @@ rrr_length rrr_http_util_count_whsp (
 		const char *start,
 		const char *end
 );
+void rrr_http_util_uri_clear (
+		struct rrr_http_uri *uri
+);
 void rrr_http_util_uri_destroy (
 		struct rrr_http_uri *uri
 );
@@ -141,6 +134,10 @@ int rrr_http_util_uri_endpoint_prepend (
 );
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
+		const struct rrr_nullsafe_str *str
+);
+int rrr_http_util_uri_host_parse (
+		struct rrr_http_uri *uri_result,
 		const struct rrr_nullsafe_str *str
 );
 int rrr_http_util_uri_validate_characters (
@@ -191,12 +188,10 @@ int rrr_http_util_alpn_iterate (
 		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
 		void *callback_arg
 );
-
-#ifdef RRR_WITH_HTTP3
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,
+		uint16_t tls_port,
 		uint16_t quic_port
 );
-#endif /* RRR_WITH_HTTP3 */
 
 #endif /* RRR_HTTP_UTIL_H */

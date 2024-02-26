@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 #include "http_transaction.h"
 #include "http_redirect.h"
+#include "http_service.h"
 
 #include "../event/event.h"
 #include "../net_transport/net_transport.h"
@@ -225,6 +226,11 @@ static void __rrr_http_client_uri_dbl_ptr_destroy_if_not_null (void *arg) {
 	if (uri != NULL) {
 		rrr_http_util_uri_destroy(uri);
 	}
+}
+
+static void __rrr_http_client_alt_svc_clear (void *arg) {
+	struct rrr_http_service_collection *alt_svc = arg;
+	rrr_http_service_collection_clear(alt_svc);
 }
 
 static int __rrr_http_client_request_data_strings_reset (
@@ -435,10 +441,11 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	const struct rrr_http_header_field *alt_svc, *location;
+	const struct rrr_http_header_field *location;
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *data_chunks_merged = NULL;
 	struct rrr_nullsafe_str *data_decoded = NULL;
+	struct rrr_http_service_collection alt_svc = {0};
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_chunks_merged, NULL, 0)) != 0) {
 		goto out;
@@ -449,12 +456,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 
 	const struct rrr_nullsafe_str *data_use = data_chunks_merged;
-
-	// Store alt-svc headers
-	if ((alt_svc = rrr_http_part_header_field_get(response_part, "alt-svc")) != 0) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, alt_svc->value);
-		printf("HTTP client got alt-svc header: %s\n", value);
-	}
 
 	// Moved-codes. Maybe this parsing is too permissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
@@ -512,13 +513,23 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 #endif
 
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			&alt_svc,
+			transaction
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
+	}
+
 	ret = http_client->callbacks.final_callback (
 			transaction,
 			data_use,
+			&alt_svc,
 			http_client->callbacks.callback_arg
 	);
 
 	out:
+	rrr_http_service_collection_clear(&alt_svc);
 	rrr_nullsafe_str_destroy_if_not_null(&data_chunks_merged);
 	rrr_nullsafe_str_destroy_if_not_null(&data_decoded);
 	return ret;
@@ -617,9 +628,11 @@ static int __rrr_http_client_redirect_callback (
 
 	struct rrr_http_uri *uri = NULL;
 	char *endpoint_path_tmp = NULL;
+	struct rrr_http_service_collection alt_svc = {0};
 
 	pthread_cleanup_push(__rrr_http_client_uri_dbl_ptr_destroy_if_not_null, &uri);
 	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
+	pthread_cleanup_push(__rrr_http_client_alt_svc_clear, &alt_svc);
 
 	if (callback_data->callback == NULL) {
 		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
@@ -633,7 +646,6 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
-
 	if (uri->endpoint == NULL || *(uri->endpoint) != '/') {
 		if ((ret = rrr_http_transaction_endpoint_path_get (&endpoint_path_tmp, transaction)) != 0) {
 			goto out;
@@ -641,6 +653,14 @@ static int __rrr_http_client_redirect_callback (
 		if ((ret = rrr_http_util_uri_endpoint_prepend(uri, endpoint_path_tmp)) != 0) {
 			goto out;
 		}
+	}
+
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			&alt_svc,
+			transaction
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
@@ -654,9 +674,10 @@ static int __rrr_http_client_redirect_callback (
 			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
 	);
 
-	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
+	ret = callback_data->callback(transaction, uri, &alt_svc, callback_data->callback_arg);
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	return ret;
@@ -688,8 +709,8 @@ static int __rrr_http_client_read_callback (
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
-			http_client->callbacks.redirect_callback,
-			http_client->callbacks.callback_arg
+		http_client->callbacks.redirect_callback,
+		http_client->callbacks.callback_arg
 	};
 
 	if ((ret = rrr_http_redirect_collection_iterate (
@@ -1076,7 +1097,8 @@ struct rrr_http_client_transport_ctx_stream_open_callback_data {
 	void (**stream_data_destroy)(void *stream_data);
 	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
 	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
+	int (**cb_write_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS);
+	int (**cb_ack_confirm)(RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS);
 	void **cb_arg;
 	int64_t stream_id;
 	int flags;
@@ -1096,7 +1118,8 @@ static int __rrr_http_client_net_transport_cb_stream_open (
 			cb_shutdown_read,
 			cb_shutdown_write,
 			cb_close,
-			cb_ack,
+			cb_write_confirm,
+			cb_ack_confirm,
 			cb_arg,
 			handle,
 			stream_id,

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -297,7 +297,8 @@ static int __rrr_http_server_stream_open_callback (
 			cb_shutdown_read,
 			cb_shutdown_write,
 			cb_close,
-			cb_ack,
+			cb_write_confirm,
+			cb_ack_confirm,
 			cb_arg,
 			handle,
 			stream_id,
@@ -877,4 +878,86 @@ void rrr_http_server_response_available_notify (
 		rrr_net_transport_event_activate_all_connected_read(server->transport_https);
 	}
 #endif
+#if defined(RRR_WITH_HTTP3)
+	if (server->transport_quic) {
+		rrr_net_transport_event_activate_all_connected_read(server->transport_quic);
+	}
+#endif
+}
+
+void rrr_http_server_start_shutdown (
+		struct rrr_http_server *server
+) {
+	if (server->transport_http) {
+		rrr_net_transport_shutdown(server->transport_http);
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_http,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (server->transport_https) {
+		rrr_net_transport_shutdown(server->transport_https);
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_https,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#endif
+#if defined(RRR_WITH_HTTP3)
+	if (server->transport_quic) {
+		rrr_net_transport_shutdown(server->transport_quic);
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_quic,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#endif
+}
+	
+int rrr_http_server_shutdown_complete (
+		struct rrr_http_server *server
+) {
+	rrr_length total = 0;
+	rrr_length tmp = 0;
+	rrr_length dummy = 0;
+
+	if (server->transport_http) {
+		rrr_net_transport_stats_get (
+				&dummy,
+				&tmp,
+				server->transport_http
+		);
+		total += tmp;
+	}
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (server->transport_https) {
+		rrr_net_transport_stats_get (
+				&dummy,
+				&tmp,
+				server->transport_https
+		);
+		total += tmp;
+	}
+#endif
+#if defined(RRR_WITH_HTTP3)
+	if (server->transport_quic) {
+		rrr_net_transport_stats_get (
+				&dummy,
+				&tmp,
+				server->transport_quic
+		);
+		total += tmp;
+	}
+#endif
+
+	RRR_DBG_1("HTTP server shutdown complete check, %" PRIrrrl " active connections left\n", total);
+
+	return total == 0;
 }

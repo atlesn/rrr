@@ -693,12 +693,29 @@ static int __rrr_http_application_http3_net_transport_cb_stream_close (
 	return 0;
 }
 
-static int __rrr_http_application_http3_net_transport_cb_stream_ack (
-		RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS
+static int __rrr_http_application_http3_net_transport_cb_stream_write_confirm (
+		RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS
 ) {
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
-	int ret = 0;
+	int ret_tmp;
+
+	if ((ret_tmp = nghttp3_conn_add_write_offset (
+			http3->conn,
+			stream_id,
+			bytes
+	)) != 0) {
+		RRR_MSG_0("Error from nghttp3 in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	return 0;
+}
+
+static int __rrr_http_application_http3_net_transport_cb_stream_ack_confirm (
+		RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS
+) {
+    	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
 	int ret_tmp;
 
@@ -708,12 +725,10 @@ static int __rrr_http_application_http3_net_transport_cb_stream_ack (
 			bytes
 	)) != 0) {
 		RRR_MSG_0("Error from nghttp3 in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
-		ret = 1;
-		goto out;
+		return 1;
 	}
 
-	out:
-	return ret;
+	return 0;
 }
 
 static int __rrr_http_application_http3_stream_open (
@@ -823,7 +838,8 @@ static int __rrr_http_application_http3_stream_open (
 	*cb_shutdown_read = __rrr_http_application_http3_net_transport_cb_stream_shutdown_read;
 	*cb_shutdown_write = __rrr_http_application_http3_net_transport_cb_stream_shutdown_write;
 	*cb_close = __rrr_http_application_http3_net_transport_cb_stream_close;
-	*cb_ack = __rrr_http_application_http3_net_transport_cb_stream_ack;
+	*cb_write_confirm = __rrr_http_application_http3_net_transport_cb_stream_write_confirm;
+	*cb_ack_confirm = __rrr_http_application_http3_net_transport_cb_stream_ack_confirm;
 	*cb_arg = http3;
 
 	out:
@@ -1085,6 +1101,8 @@ static int __rrr_http_application_http3_nghttp3_cb_stream_acked_data (
 
 	(void)(transport);
 	(void)(transport_handle);
+
+	// printf("Stream acked data %li %llu\n", stream_id, (unsigned long long) datalen);
 
 	transaction->send_body_pos += datalen;
 

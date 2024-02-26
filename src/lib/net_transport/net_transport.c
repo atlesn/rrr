@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1108,12 +1108,6 @@ void rrr_net_transport_handle_close_with_reason (
 	RRR_LL_ITERATE_END();
 }
 
-void rrr_net_transport_handle_ptr_close (
-		struct rrr_net_transport_handle *handle
-) {
-	__rrr_net_transport_handle_close(handle);
-}
-
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
@@ -1339,10 +1333,21 @@ static void __rrr_net_transport_event_accept (
 	struct rrr_net_transport_handle *listen_handle = arg;
 	rrr_net_transport_handle new_handle = 0;
 
-	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
+
+	if (listen_handle->transport->shutdown) {
+		RRR_DBG_7("net transport fd %i [%s] new connection not accepted due to shutdown\n",
+				listen_handle->submodule_fd,
+				listen_handle->transport->application_name
+		);
+
+		// Prevent spamming on the event as nothing is accepted
+		EVENT_REMOVE(listen_handle->event_read);
+
+		return;
+	}
 
 	int ret_tmp = listen_handle->transport->methods->accept (
 			&new_handle,
@@ -1419,6 +1424,14 @@ static int __rrr_net_transport_handle_decode_server (
 		)) != 0) {
 			goto out;
 		}
+		goto out;
+	}
+
+	if (listen_handle->transport->shutdown) {
+		RRR_DBG_7("net transport fd %i [%s] datagram for new connection dropped due to shutdown\n",
+				listen_handle->submodule_fd,
+				listen_handle->transport->application_name
+		);
 		goto out;
 	}
 
@@ -2202,6 +2215,12 @@ void rrr_net_transport_stats_get (
 			rrr_length_inc_bug(connected_count);
 		}
 	RRR_LL_ITERATE_END();
+}
+
+void rrr_net_transport_shutdown (
+		struct rrr_net_transport *transport
+) {
+	transport->shutdown = 1;
 }
 
 static int __rrr_net_transport_new (

@@ -347,8 +347,8 @@ static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_D
 		// h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
 
 		int found;
-		const char *unquote_field_names[] = {"h3", "h3-29"};
-		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 2);
+		const char *unquote_field_names[] = {"h3", "h3-29", "h3-32", "ma", "persist"};
+		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 5);
 		if (found == 0) {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
 			RRR_DBG_1("Warning: Unknown field '%s' in alt-svc header\n", name);
@@ -356,7 +356,6 @@ static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_D
 
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
-		printf("alt-svc: %s = %s\n", name, value);
 	RRR_LL_ITERATE_END();
 
 	return ret;
@@ -501,23 +500,25 @@ int rrr_http_header_field_collection_subvalues_iterate (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
-			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
-						name, __func__);
-			}
-
-			const struct rrr_http_header_field *field = node;
-			RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-				if (rrr_nullsafe_str_cmpto_case(field->name, name_lowercase) != 0) {
-					RRR_LL_ITERATE_NEXT();
-				}
-				if ((ret = callback(field->name, field->value, callback_arg)) != 0) {
-					goto out;
-				}
-			RRR_LL_ITERATE_END();
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) != 0) {
+			RRR_LL_ITERATE_NEXT();
 		}
+
+		if (node->definition == NULL || node->definition->parse == NULL) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+			RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in %s, definition must be added\n",
+					name, __func__);
+		}
+
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+
+		const struct rrr_http_header_field *field = node;
+		RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+			if ((ret = callback(node->name, node->value, callback_arg)) != 0) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
 	RRR_LL_ITERATE_END();
 
 	out:

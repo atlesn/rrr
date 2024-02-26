@@ -369,6 +369,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
 		&some_fork_has_stopped
 	};
+	struct rrr_instance_collection instances = {0};
+	struct rrr_thread_collection *collection = NULL;
 	int is_child = 0;
 
 	struct cmd_data cmd;
@@ -415,13 +417,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
-	TEST_BEGIN("PARSE CMD") {
-		if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
-			ret = 1;
-		}
-	} TEST_RESULT(ret == 0);
-	if (ret == 1) {
-		// Some data might have been stored also upon error
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -443,59 +439,41 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_cmd;
 	}
 
-	if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
-		pid_t pid = -1;
-		TEST_MSG("forking and running external executable\n");
-		pid = rrr_fork (
-				fork_handler,
-				rrr_fork_default_exit_notification,
-				&exit_notification_data
-		);
-		if (pid == 0) {
-			is_child = 1;
-			ret = rrr_test_fork_executable(fork_executable);
-			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
-			while (main_running) {
-				rrr_posix_usleep(50000);
-				rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+	TEST_BEGIN(config_file) {
+		if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
+			pid_t pid = -1;
+			TEST_MSG("forking and running external executable\n");
+			pid = rrr_fork (
+					fork_handler,
+					rrr_fork_default_exit_notification,
+					&exit_notification_data
+			);
+			if (pid == 0) {
+				is_child = 1;
+				ret = rrr_test_fork_executable(fork_executable);
+				TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
+				while (main_running) {
+					rrr_posix_usleep(50000);
+					rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
+				}
+				goto out_cleanup_cmd;
 			}
+			if (pid < 0) {
+				TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out_cleanup_cmd;
+			}
+		}
+
+		if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0 || config == NULL) {
 			goto out_cleanup_cmd;
 		}
-		if (pid < 0) {
-			TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out_cleanup_cmd;
+
+		if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
+			goto out_cleanup_config;
 		}
-	}
 
-	TEST_BEGIN("configuration loading") {
-		ret = rrr_instance_config_parse_file(&config, config_file);
-	} TEST_RESULT(ret == 0);
-
-	if (config == NULL) {
-		ret = 1;
-		goto out_cleanup_cmd;
-	}
-
-	struct rrr_instance_collection instances = {0};
-
-	if (ret != 0) {
-		goto out_cleanup_config;
-	}
-
-	TEST_BEGIN("process instances from config") {
-		if (rrr_instances_create_from_config(&instances, config, library_paths) != 0) {
-			ret = 1;
-		}
-	} TEST_RESULT(ret == 0);
-
-	if (ret != 0) {
-		goto out_cleanup_instances;
-	}
-
-	struct rrr_thread_collection *collection = NULL;
-	TEST_BEGIN("start threads") {
-		if (rrr_instances_create_and_start_threads (
+		if ((ret = rrr_instances_create_and_start_threads (
 				&collection,
 				&instances,
 				config,
@@ -503,16 +481,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 				&stats_engine,
 				message_broker,
 				fork_handler
-		) != 0) {
-			ret = 1;
+		)) != 0) {
+			goto out_cleanup_instances;
 		}
-	} TEST_RESULT(ret == 0);
 
-	if (ret != 0) {
-		goto out_cleanup_instances;
-	}
-
-	TEST_BEGIN(config_file) {
 		while (  main_running &&
 		        !some_fork_has_stopped &&
 		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)

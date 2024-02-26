@@ -44,6 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_shm.h"
 #include "lib/profiling.h"
 #include "lib/event/event.h"
+#include "lib/event/event_collection.h"
+#include "lib/event/event_collection_struct.h"
 #include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -115,6 +117,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "config",                "{CONFIGURATION FILE OR DIRECTORY}"},
 		{0,                            'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+		{0,                            'S',    "single-thread",         "[-S|--single-thread]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "start-interval",        "[-t|--start-interval]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
 		{0,                            'E',    "event-hooks",           "[-E|--event-hooks]"},
@@ -459,14 +462,71 @@ static int main_loop_stats_handle_reset (struct stats_data *stats_data) {
 	return 0;
 }
 
-static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+static int main_loop_periodic_maintenance (
+		struct stats_data *stats_data,
+		struct rrr_fork_handler *fork_handler
+) {
+	int ret = 0;
+
+	rrr_config_set_debuglevel_orig();
+
+	rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
+
+	if (main_mmap_periodic(stats_data) != 0) {
+		RRR_MSG_0("Error while posting mmap statistics in main loop\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (sigusr2) {
+		rrr_profiling_dump();
+		sigusr2 = 0;
+	}
+
+	out:
+	return ret;
+}
+
+static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *arg) {
 	struct main_loop_event_callback_data *callback_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (!main_running) {
+		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
+		rrr_event_dispatch_exit(callback_data->queue);
+		return;
+	}
+
+	if (main_loop_periodic_maintenance (
+			callback_data->stats_data,
+			callback_data->fork_handler
+	) != 0) {
+		rrr_event_dispatch_break(callback_data->queue);
+		return;
+	}
+}
+
+static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
+	struct main_loop_event_callback_data *callback_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (!main_running) {
+		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
+		if (*(callback_data->collection) != NULL) {
+			goto out_destroy_thread_collection;
+		}
+		else {
+			goto out_event_exit;
+		}
+	}
 
 	// Note : Thread collection must be destroyed and pointer set to NULL
 	//        before we return from this function, and if not, we will
 	//        bugtrap.
-
-	rrr_config_set_debuglevel_orig();
 
 	if (*(callback_data->collection) == NULL) {
 		main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
@@ -493,13 +553,6 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 		}
 	}
-
-	if (!main_running) {
-		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
-		goto out_destroy_thread_collection;
-	}
-
-	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
 
 	if (rrr_instance_check_threads_stopped(callback_data->instances)) {
 		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
@@ -531,24 +584,21 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		callback_data->prev_periodic_time = now_time;
 	}
 
-	if (main_mmap_periodic(callback_data->stats_data) != 0) {
-		RRR_MSG_0("Error while posting mmap statistics in main loop\n");
+	if (main_loop_periodic_maintenance (
+			callback_data->stats_data,
+			callback_data->fork_handler
+	) != 0) {
 		goto out_destroy_thread_collection;
 	}
 
-	if (sigusr2) {
-		rrr_profiling_dump();
-		sigusr2 = 0;
-	}
-
-	return RRR_EVENT_OK;
+	return;
 
 	out_destroy_thread_collection:
 		rrr_config_set_debuglevel_on_exit();
 		main_loop_thread_collection_destroy(callback_data->collection, callback_data->config_file);
 	out_event_exit:
 		rrr_config_set_debuglevel_on_exit();
-		return RRR_EVENT_EXIT;
+		rrr_event_dispatch_exit(callback_data->queue);
 }
 
 // We have one loop per fork and one fork per configuration file
@@ -556,7 +606,8 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
-		struct rrr_fork_handler *fork_handler
+		struct rrr_fork_handler *fork_handler,
+		int single_thread
 ) {
 	int ret = 0;
 
@@ -564,6 +615,8 @@ static int main_loop (
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_message_broker_hooks hooks = {0};
 	struct rrr_event_queue *queue = NULL;
+	struct rrr_event_collection events = {0};
+	rrr_event_handle event_periodic = {0};
 
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_instance_collection instances = {0};
@@ -625,12 +678,13 @@ static int main_loop (
 				&stats_data,
 				queue
 		);
-
 	}
 
 	if ((ret = rrr_message_broker_new(&message_broker, &hooks)) != 0) {
 		goto out_destroy_stats_engine;
 	}
+
+	rrr_event_collection_init(&events, queue);
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
@@ -647,21 +701,77 @@ static int main_loop (
 		queue
 	};
 
-	ret = rrr_event_dispatch (
-			queue,
-			250 * 1000, // 250 ms
-			main_loop_periodic,
-			&event_callback_data
-	);
+	if (single_thread) {
+		if (RRR_LL_COUNT(&instances) > 1) {
+			RRR_MSG_0("Single thread mode is enabled, but there are more than one instance in the configuration file\n");
+			ret = 1;
+			goto out_clear_events;
+		}
 
-	RRR_DBG_1 ("Main loop finished with code %i\n", ret);
+		if (rrr_event_collection_push_periodic (
+				&event_periodic,
+				&events,
+				main_loop_periodic_single,
+				&event_callback_data,
+				250 * 1000 // 250 ms
+		) != 0) {
+			RRR_MSG_0("Could not push periodic event\n");
+			ret = 1;
+			goto out_clear_events;
+		}
 
-	rrr_config_set_debuglevel_on_exit();
-	
-	if (ret == RRR_EVENT_ERR) {
-		main_loop_thread_collection_destroy(&collection, config_file);
-	} else if (collection != NULL) {
-		RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
+		EVENT_ADD(event_periodic);
+
+		RRR_DBG_1("Starting single instance in main loop\n");
+
+		ret = rrr_instance_run (
+				&instances,
+				config,
+				0,
+				cmd,
+				&stats_data.engine,
+				message_broker,
+				fork_handler,
+				queue
+		);
+
+		RRR_DBG_1 ("Main loop finished with code %i\n", ret);
+
+		rrr_config_set_debuglevel_on_exit();
+	}
+	else {
+		if (rrr_event_collection_push_periodic (
+				&event_periodic,
+				&events,
+				main_loop_periodic,
+				&event_callback_data,
+				250 * 1000 // 250 ms
+		) != 0) {
+			RRR_MSG_0("Could not push periodic event\n");
+			ret = 1;
+			goto out_clear_events;
+		}
+
+		EVENT_ADD(event_periodic);
+
+		RRR_DBG_1("Starting dispatch in main loop\n");
+
+		ret = rrr_event_dispatch (
+				queue,
+				0,
+				NULL,
+				&event_callback_data
+		);
+
+		RRR_DBG_1 ("Main loop finished with code %i\n", ret);
+
+		rrr_config_set_debuglevel_on_exit();
+		
+		if (ret == RRR_EVENT_ERR) {
+			main_loop_thread_collection_destroy(&collection, config_file);
+		} else if (collection != NULL) {
+			RRR_BUG("Thread collection was not cleared after loop finished in %s\n", __func__);
+		}
 	}
 
 	if (stats_data.log_hook_handle != 0) {
@@ -674,15 +784,18 @@ static int main_loop (
 
 	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 
-#ifndef RRR_NO_MODULE_UNLOAD
-	rrr_instance_unload_all(&instances);
-#endif
-	rrr_message_broker_destroy(message_broker);
-
+	out_clear_events:
+		rrr_event_collection_clear(&events);
+//	out_destroy_message_broker:
+		rrr_message_broker_destroy(message_broker);
 	out_destroy_stats_engine:
 		rrr_stats_engine_cleanup(&stats_data.engine);
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		// TODO : Unload and instnace collection clear should be the same function
+#ifndef RRR_NO_MODULE_UNLOAD
+		rrr_instance_unload_all(&instances);
+#endif
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
 		rrr_instance_config_collection_destroy(config);
@@ -916,6 +1029,21 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
+	if (cmd_exists(&cmd, "single-thread", 0)) {
+		if (RRR_MAP_COUNT(&config_file_map) > 1) {
+			RRR_MSG_0("Single-thread mode is active, but more than one configuration file was specified\n");
+			ret = EXIT_FAILURE;
+			goto out_cleanup_signal;
+		}
+
+		const struct rrr_map_item *node = RRR_LL_FIRST(&config_file_map);
+		const char *config_string = node->tag;
+
+		rrr_setproctitle("[%s]", config_string);
+
+		goto out_cleanup_signal;
+	}
+
 	// Load configuration and fork
 	int config_i = 0;
 	RRR_MAP_ITERATE_BEGIN(&config_file_map);
@@ -965,7 +1093,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 		if (main_loop (
 				&cmd,
 				config_string,
-				fork_handler
+				fork_handler,
+				0 /* Not single thread mode */
 		) != 0) {
 			ret = EXIT_FAILURE;
 		}

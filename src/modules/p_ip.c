@@ -261,7 +261,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	}
 
 	// Default target protocol
-	if ((ret = rrr_settings_get_string_noconvert_silent(&protocol, config->settings, "ip_target_protocol")) != 0) {
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&protocol, config, "ip_target_protocol")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name);
 			ret = 1;

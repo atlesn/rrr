@@ -1692,8 +1692,8 @@ static void __rrr_http_application_http1_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
 	(void)(app);
-	(void)(handle);
-	return;
+	rrr_net_transport_ctx_close_now_set(handle);
+	rrr_net_transport_ctx_notify_read_fast(handle);
 }
 
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {

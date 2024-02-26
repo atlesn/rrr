@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
 #include "../helpers/string_builder.h"
+
+#if defined(RRR_WITH_NGHTTP2)
+#include "http_application_http2.h"
+#endif
 
 #if defined(RRR_WITH_HTTP3)
 #include "http_application_http3.h"
@@ -782,12 +786,18 @@ rrr_length rrr_http_util_count_whsp (
 	return ret;
 }
 
-void rrr_http_util_uri_destroy (
+void rrr_http_util_uri_clear (
 		struct rrr_http_uri *uri
 ) {
 	RRR_FREE_IF_NOT_NULL(uri->endpoint);
 	RRR_FREE_IF_NOT_NULL(uri->host);
 	RRR_FREE_IF_NOT_NULL(uri->protocol);
+}
+
+void rrr_http_util_uri_destroy (
+		struct rrr_http_uri *uri
+) {
+	rrr_http_util_uri_clear(uri);
 	rrr_free(uri);
 }
 
@@ -897,6 +907,103 @@ int rrr_http_util_uri_endpoint_prepend (
 	return ret;
 }
 
+static int __rrr_http_util_uri_parse_hostname_and_port (
+		struct rrr_http_uri *uri_new,
+		const char **pos,
+		const char *end,
+		int allow_slash,
+		int force_port
+) {
+	int ret = 0;
+
+	const char *str = *pos;
+	rrr_slength len = end - *pos;
+	rrr_length result_len_tmp = 0;
+
+	assert(len >= 0);
+
+	if (len == 0) {
+		RRR_MSG_0("Empty value for host:port URI\n");
+		ret = 1;
+		goto out;
+	}
+
+	while (*pos < end) {
+		if (__rrr_http_util_is_alphanumeric((unsigned char) **pos) || **pos == '.') {
+			// OK, increment result
+		}
+		else if (**pos == '-') {
+			if (result_len_tmp == 0) {
+				RRR_MSG_0("Invalid hostname in host:port URI, cannot begin with '-'\n");
+				ret = 1;
+				goto out;
+			}
+			// OK, increment result
+		}
+		else if ((allow_slash && **pos == '/') || **pos == ':') {
+			break;
+		}
+		else {
+			RRR_MSG_0("Invalid character x%02x in host:port URI\n", **pos);
+			ret = 1;
+			goto out;
+		}
+
+		if (++result_len_tmp == 0) {
+			RRR_MSG_0("Length overflow while parsing HTTP URI\n");
+			ret = 1;
+			goto out;
+		}
+
+		(*pos)++;
+	}
+
+	if (result_len_tmp > 0) {
+		if (result_len_tmp + 1 == 0) {
+			RRR_MSG_0("Allocation overflow while parsing HTTP URI\n");
+			ret = 1;
+			goto out;
+		}
+		if ((uri_new->host = rrr_allocate(result_len_tmp + 1)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for hostname in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+		memcpy(uri_new->host, str, result_len_tmp);
+		uri_new->host[result_len_tmp] = '\0';
+	}
+
+	if (**pos == ':') {
+		(*pos)++;
+		unsigned long long port = 0;
+		if (rrr_http_util_strtoull_raw(&port, &result_len_tmp, *pos, end, 10) != 0 || port < 1 || port > 65535) {
+			RRR_MSG_0("Invalid port in host:name URI\n");
+			ret = 1;
+			goto out;
+		}
+
+		uri_new->port = (uint16_t) port;
+
+		*pos += result_len_tmp;
+	}
+	else if (force_port) {
+		RRR_MSG_0("Invalid character x%02x after hostname in host:port URI\n", **pos);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+#define VERIFY_LENGTH()                                                  \
+  do {if (len > RRR_LENGTH_MAX) {                                        \
+    RRR_MSG_0("HTTP URI too long to be parsed (%" PRIrrrbl ">%llu)\n",   \
+      len, (unsigned long long) RRR_LENGTH_MAX);                         \
+    ret = 1;                                                             \
+    goto out;                                                            \
+  }}while(0) 
+
 static int __rrr_http_util_uri_parse_callback (
 		const void *str,
 		rrr_nullsafe_len len,
@@ -906,12 +1013,7 @@ static int __rrr_http_util_uri_parse_callback (
 
 	int ret = 0;
 
-	if (len > RRR_LENGTH_MAX) {
-		RRR_MSG_0("HTTP URI too long to be parsed (%" PRIrrrbl ">%llu)\n",
-			len, (unsigned long long) RRR_LENGTH_MAX);
-		ret = 1;
-		goto out;
-	}
+	VERIFY_LENGTH();
 
 	const char *pos = str;
 	const char *end = str + len;
@@ -946,7 +1048,7 @@ static int __rrr_http_util_uri_parse_callback (
 				goto out;
 			}
 			if (uri_new->protocol == NULL) {
-				RRR_MSG_0("Could not allocate memory for protocol in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for protocol in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -960,69 +1062,15 @@ static int __rrr_http_util_uri_parse_callback (
 	}
 
 	// Parse hostname if protocol is present
-	const char *hostname_begin = pos;
 	if (uri_new->protocol != NULL) {
-		rrr_length result_len_tmp = 0;
-		while (pos < end) {
-			if (__rrr_http_util_is_alphanumeric((unsigned char) *pos) || *pos == '.') {
-				// OK, increment result
-			}
-			else if (*pos == '-') {
-				if (result_len_tmp == 0) {
-					RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-					RRR_MSG_0("Invalid hostname in URI '%s', cannot begin with '-'\n", name);
-					ret = 1;
-					goto out;
-				}
-				// OK, increment result
-			}
-			else if (*pos == '/' || *pos == ':') {
-				break;
-			}
-			else {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-				RRR_MSG_0("Invalid character %c in URI '%s' hostname\n", *pos, name);
-				ret = 1;
-				goto out;
-			}
-
-			if (++result_len_tmp == 0) {
-				RRR_MSG_0("Length overflow while parsing HTTP URI\n");
-				ret = 1;
-				goto out;
-			}
-
-			pos++;
-		}
-
-		if (result_len_tmp > 0) {
-			if (result_len_tmp + 1 == 0) {
-				RRR_MSG_0("Allocation overflow while parsing HTTP URI\n");
-				ret = 1;
-				goto out;
-			}
-			if ((uri_new->host = rrr_allocate(result_len_tmp + 1)) == NULL) {
-				RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_util_uri_parse_callback\n");
-				ret = 1;
-				goto out;
-			}
-			memcpy(uri_new->host, hostname_begin, result_len_tmp);
-			uri_new->host[result_len_tmp] = '\0';
-		}
-
-		if (*pos == ':') {
-			pos++;
-			unsigned long long port = 0;
-			if (rrr_http_util_strtoull_raw(&port, &result_len_tmp, pos, end, 10) != 0 || port < 1 || port > 65535) {
-				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-				RRR_MSG_0("Invalid port in URL '%s'\n", name);
-				ret = 1;
-				goto out;
-			}
-
-			uri_new->port = (uint16_t) port;
-
-			pos += result_len_tmp;
+		if ((ret = __rrr_http_util_uri_parse_hostname_and_port (
+				uri_new,
+				&pos,
+				end,
+				1, /* Allow slash */
+				0  /* Don't force port */
+		)) != 0) {
+			goto out;
 		}
 	}
 
@@ -1050,19 +1098,19 @@ static int __rrr_http_util_uri_parse_callback (
 		}
 
 		if (pos != end) {
-			RRR_BUG("BUG: pos was != end after parsing in __rrr_http_util_uri_parse_callback\n");
+			RRR_BUG("BUG: pos was != end after parsing in %s\n", __func__);
 		}
 
 		if (result_len_tmp == 0) {
 			if ((uri_new->endpoint = rrr_strdup("")) == 0) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
 			if ((uri_new->endpoint = rrr_allocate(result_len_tmp + 1)) == 0) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
+				RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
 				ret = 1;
 				goto out;
 			}
@@ -1075,47 +1123,123 @@ static int __rrr_http_util_uri_parse_callback (
 	return ret;
 }
 
-int rrr_http_util_uri_parse (
-		struct rrr_http_uri **uri_result,
-		const struct rrr_nullsafe_str *str
+static int __rrr_http_util_uri_host_parse_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
 ) {
+	struct rrr_http_uri *uri_new = arg;
+
 	int ret = 0;
-	struct rrr_http_uri *uri_new = NULL;
 
-	*uri_result = NULL;
+	VERIFY_LENGTH();
 
-	if (!rrr_nullsafe_str_isset(str)) {
-		RRR_BUG("BUG: str was NULL in rrr_http_uri_parse\n");
+	const char *pos = str;
+	const char *end = str + len;
+	const char *new_pos = NULL;
+	rrr_length result_len_tmp = 0;
+
+	// Protocol is not allowed
+	if (rrr_http_util_strcasestr(&new_pos, &result_len_tmp, pos, end, "://") == 0) {
+		RRR_MSG_0("Separator :// not allowed in host:port URI\n");
+		ret = 1;
+		goto out;
+	}
+	else if (rrr_http_util_strcasestr(&new_pos, &result_len_tmp, pos, end, "//") == 0) {
+		RRR_MSG_0("Separator // not allowed in host:port URI\n");
+		ret = 1;
+		goto out;
 	}
 
+	// Parse hostname and port
+	if ((ret = __rrr_http_util_uri_parse_hostname_and_port (
+			uri_new,
+			&pos,
+			end,
+			0, /* Don't allow slash */
+			1  /* Force port */
+	)) != 0) {
+		goto out;
+	}
+
+	// Port is required by RFC7838, and hostname is not required
+	if (uri_new->port == 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
+		RRR_MSG_0("Port number was zero in host:port URI '%s'\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	if (end != pos) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
+		RRR_MSG_0("Invalid characters at end of host:port URI '%s'\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_util_uri_parse_final (
+		struct rrr_http_uri *uri_result,
+		const struct rrr_nullsafe_str *str,
+		int (*parse_method)(const void *str, rrr_nullsafe_len len, void *arg)
+) {
+	int ret = 0;
+
 	unsigned char invalid;
+
+	if (!rrr_nullsafe_str_isset(str)) {
+		RRR_BUG("BUG: str was NULL in %s\n", __func__);
+	}
+
 	if (__rrr_http_util_uri_validate_characters(&invalid, str) != 0) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str);
 		RRR_MSG_0("Invalid characters in URI '%s' (first invalid character is 0x%02x)\n",
-				name, invalid);
+			name, invalid);
 		ret = 1;
 		goto out;
 	}
 
-	if ((uri_new = rrr_allocate(sizeof(*uri_new))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http_uri_parse\n");
+	if ((ret = rrr_nullsafe_str_with_raw_do_const(str, parse_method, uri_result)) != 0) {
+		goto out;
+	}
+
+	if (uri_result->port == 0 && uri_result->protocol != NULL) {
+		if (rrr_posix_strcasecmp(uri_result->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_result->protocol, "wss") == 0) {
+			uri_result->port = 443;
+		}
+		else if (rrr_posix_strcasecmp(uri_result->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_result->protocol, "ws") == 0) {
+			uri_result->port = 80;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_util_uri_parse_allocate (
+		struct rrr_http_uri **uri_result,
+		const struct rrr_nullsafe_str *str,
+		int (*parse_method)(const void *str, rrr_nullsafe_len len, void *arg)
+) {
+	int ret = 0;
+
+	struct rrr_http_uri *uri_new = NULL;
+
+	if ((uri_new = rrr_allocate_zero(sizeof(*uri_new))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	memset(uri_new, '\0', sizeof(*uri_new));
-
-	if ((ret = rrr_nullsafe_str_with_raw_do_const(str, __rrr_http_util_uri_parse_callback, uri_new)) != 0) {
-		goto out_destroy;
-	}
-
-	if (uri_new->port == 0 && uri_new->protocol != NULL) {
-		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "wss") == 0) {
-			uri_new->port = 443;
-		}
-		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "ws") == 0) {
-			uri_new->port = 80;
-		}
+	if ((ret = __rrr_http_util_uri_parse_final (
+			uri_new,
+			str,
+			parse_method
+	)) != 0) {
+			goto out_destroy;
 	}
 
 	*uri_result = uri_new;
@@ -1125,6 +1249,20 @@ int rrr_http_util_uri_parse (
 		rrr_http_util_uri_destroy(uri_new);
 	out:
 		return ret;
+}
+
+int rrr_http_util_uri_parse (
+		struct rrr_http_uri **uri_result,
+		const struct rrr_nullsafe_str *str
+) {
+	return __rrr_http_util_uri_parse_allocate(uri_result, str, __rrr_http_util_uri_parse_callback);
+}
+
+int rrr_http_util_uri_host_parse (
+		struct rrr_http_uri *uri_result,
+		const struct rrr_nullsafe_str *str
+) {
+	return __rrr_http_util_uri_parse_final(uri_result, str, __rrr_http_util_uri_host_parse_callback);
 }
 
 static int __rrr_http_util_uri_validate_characters_nullsafe_callback (
@@ -1460,13 +1598,12 @@ int rrr_http_util_alpn_iterate (
 	return ret;
 }
 
-#if defined(RRR_WITH_HTTP3)
 struct rrr_http_util_make_alt_svc_header_callback_data {
 	struct rrr_string_builder *target;
-	uint16_t quic_port;
+	uint16_t port;
 };
 
-static int rrr_http_util_make_alt_svc_header_callback (
+static int __rrr_http_util_make_alt_svc_header_callback (
 		unsigned int i,
 		const char *alpn,
 		unsigned char length,
@@ -1474,15 +1611,24 @@ static int rrr_http_util_make_alt_svc_header_callback (
 ) {
 	struct rrr_http_util_make_alt_svc_header_callback_data *callback_data = arg;
 
+	(void)(i);
+
 	int ret = 0;
 
-	if (i > 0 && (ret = rrr_string_builder_append_raw(callback_data->target, ",", 1)) != 0) {
+	// Only add h2, h3, h3-29 etc. and not http/2 or http/1.1
+	if (memchr(alpn, '/', length) != NULL) {
 		goto out;
+	}
+
+	if (rrr_string_builder_length(callback_data->target) > 0) {
+		if ((ret = rrr_string_builder_append_raw(callback_data->target, ",", 1)) != 0) {
+			goto out;
+		}
 	}
 	if ((ret = rrr_string_builder_append_raw(callback_data->target, alpn, length)) != 0) {
 		goto out;
 	}
-	if ((ret = rrr_string_builder_append_format(callback_data->target, "=\":%u\"; ma=3600", callback_data->quic_port)) != 0) {
+	if ((ret = rrr_string_builder_append_format(callback_data->target, "=\":%u\"; ma=3600", callback_data->port)) != 0) {
 		goto out;
 	}
 
@@ -1492,25 +1638,64 @@ static int rrr_http_util_make_alt_svc_header_callback (
 
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,
+		uint16_t tls_port,
 		uint16_t quic_port
 ) {
+	(void)(tls_port);
+	(void)(quic_port);
+
+	int ret = 0;
+
+	assert(tls_port > 0 || quic_port > 0);
 	assert(rrr_string_builder_length(target) == 0);
+	
+#if defined(RRR_WITH_NGHTTP2)
+	if (tls_port > 0) {
+		const char *alpn = NULL;
+		unsigned int length = 0;
 
-	const char *alpn;
-	unsigned int length;
+		struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
+			target,
+			tls_port
+		};
 
-	struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
-		target,
-		quic_port
-	};
+		rrr_http_application_http2_alpn_protos_get (&alpn, &length);
 
-	rrr_http_application_http3_alpn_protos_get (&alpn, &length);
-
-	return rrr_http_util_alpn_iterate (
-			alpn,
-			length,
-			rrr_http_util_make_alt_svc_header_callback,
-			&callback_data
-	);
-}
+		if ((ret = rrr_http_util_alpn_iterate (
+				alpn,
+				length,
+				__rrr_http_util_make_alt_svc_header_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
 #endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (quic_port > 0) {
+		const char *alpn = NULL;
+		unsigned int length = 0;
+
+		struct rrr_http_util_make_alt_svc_header_callback_data callback_data = {
+			target,
+			quic_port
+		};
+
+		rrr_http_application_http3_alpn_protos_get (&alpn, &length);
+
+		if ((ret = rrr_http_util_alpn_iterate (
+				alpn,
+				length,
+				__rrr_http_util_make_alt_svc_header_callback,
+				&callback_data
+		)) != 0 ) {
+			goto out;
+		}
+	}
+#endif
+
+	goto out;
+	out:
+	return ret;
+}

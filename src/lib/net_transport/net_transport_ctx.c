@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -244,6 +244,15 @@ int rrr_net_transport_ctx_close_when_send_complete_get (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->close_when_send_complete;
+}
+
+void rrr_net_transport_ctx_close_now_set (
+		struct rrr_net_transport_handle *handle
+) {
+	handle->close_now = 1;
+
+	RRR_DBG_7("net transport fd %i [%s] close now activated\n",
+			handle->submodule_fd, handle->transport->application_name);
 }
 
 int rrr_net_transport_ctx_send_push (
