@@ -57,13 +57,15 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                  "[-p|--port[=]HTTP PORT]"},
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
         {0,                            'P',    "plain-disable",         "[-P|--plain-disable]"},
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
         {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "ssl-port",              "[-s|--ssl-port[=]HTTPS PORT]"},
-        {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "quic-port",             "[-q|--quic-port[=]QUIC PORT]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "certificate",           "[-c|--certificate[=]PEM SSL CERTIFICATE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'k',    "key",                   "[-k|--key[=]PEM SSL PRIVATE KEY]"},
         {0,                            'N',    "no-cert-verify",        "[-N|--no-cert-verify]"},
+#endif
+#if defined(RRR_WITH_HTTP3)
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "quic-port",             "[-q|--quic-port[=]QUIC PORT]"},
 #endif
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -75,14 +77,14 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_server_data {
 	uint16_t http_port;
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	char *certificate_file;
-	char *private_key_file;
 	uint16_t https_port;
 	uint16_t quic_port;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+	char *certificate_file;
+	char *private_key_file;
 	int ssl_no_cert_verify;
-	int plain_disable;
 #endif
+	int plain_disable;
 };
 
 static void __rrr_http_server_data_init (struct rrr_http_server_data *data) {
@@ -104,7 +106,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	uint64_t port_tmp;
 	const char *port;
 
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
 	// Certificate file
 	const char *certificate = cmd_get_value(cmd, "certificate", 0);
 	if (cmd_get_value (cmd, "certificate", 1) != NULL) {
@@ -137,11 +139,6 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		}
 	}
 
-	// No plain method
-	if (cmd_exists(cmd, "plain-disable", 0)) {
-		data->plain_disable = 1;
-	}
-
 	// No certificate verification
 	if (cmd_exists(cmd, "no-cert-verify", 0)) {
 		data->ssl_no_cert_verify = 1;
@@ -160,6 +157,8 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 
+#endif
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	// HTTPS port
 	port = cmd_get_value(cmd, "ssl-port", 0);
 	port_tmp = 0;
@@ -182,7 +181,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	}
 	data->https_port = (uint16_t) port_tmp;
 #endif
-#ifdef RRR_WITH_HTTP3
+#if defined(RRR_WITH_HTTP3)
 	// QUIC port
 	port = cmd_get_value(cmd, "quic-port", 0);
 	port_tmp = 0;
@@ -205,7 +204,6 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	}
 	data->quic_port = (uint16_t) port_tmp;
 #endif
-
 	// HTTP port
 	port = cmd_get_value(cmd, "port", 0);
 	port_tmp = 0;
@@ -231,6 +229,16 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	}
 	data->http_port = (uint16_t) port_tmp;
 
+	// No plain method
+	if (cmd_exists(cmd, "plain-disable", 0)) {
+		if (data->http_port > 0) {
+			RRR_MSG_0("A port was specified with --port while --plain-disable was active\n");
+			ret = 1;
+			goto out;
+		}
+		data->plain_disable = 1;
+	}
+
 	out:
 	return ret;
 }
@@ -241,19 +249,19 @@ static volatile int sigusr2 = 0;
 static int __rrr_http_server_response_postprocess_callback (
 		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
 ) {
-#if RRR_WITH_HTTP3
 	struct rrr_http_server_data *data = arg;
 
 	int ret = 0;
 
 	struct rrr_string_builder alt_svc_header = {0};
 
-	if (data->quic_port == 0) {
+	if (data->quic_port == 0 && data->https_port == 0) {
 		goto out;
 	}
 
 	if ((ret = rrr_http_util_make_alt_svc_header (
 			&alt_svc_header,
+			data->https_port,
 			data->quic_port
 	)) != 0) {
 		goto out;
@@ -263,7 +271,7 @@ static int __rrr_http_server_response_postprocess_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_response_alt_svc_set(
+	if ((ret = rrr_http_transaction_response_alt_svc_set (
 			transaction,
 			rrr_string_builder_buf(&alt_svc_header)
 	)) != 0) {
@@ -273,12 +281,6 @@ static int __rrr_http_server_response_postprocess_callback (
 	out:
 	rrr_string_builder_clear(&alt_svc_header);
 	return ret;
-#else
-	(void)(transaction);
-	(void)(arg);
-
-	return 0;
-#endif
 }
 
 int rrr_http_server_signal_handler(int s, void *arg) {
@@ -451,19 +453,11 @@ int main (int argc, const char **argv, const char **env) {
 	}
 #endif
 
-#if defined(RRR_WITH_HTTP3)
 	if (transport_count == 0) {
-		RRR_MSG_0("Neither HTTP, HTTPS nor QUIC is active, check arguments.\n");
+		RRR_MSG_0("No listening mode is active, check arguments.\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-#elif defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	if (transport_count == 0) {
-		RRR_MSG_0("Neither HTTP or HTTPS are active, check arguments.\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-#endif
 
 	rrr_signal_default_signal_actions_register();
 
