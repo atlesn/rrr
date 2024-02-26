@@ -45,6 +45,8 @@ struct rrr_http_server {
 	struct rrr_http_server_callbacks callbacks;
 
 	struct rrr_http_rules rules;
+
+	int shutdown_started;
 };
 
 void rrr_http_server_destroy (

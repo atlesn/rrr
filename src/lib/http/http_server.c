@@ -558,6 +558,41 @@ static int __rrr_http_server_response_postprocess_callback (
 	return ret;
 }
 
+static void __rrr_http_server_close_connections (
+		struct rrr_http_server *server
+) {
+	if (server->transport_http) {
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_http,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (server->transport_https) {
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_https,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#endif
+#if defined(RRR_WITH_HTTP3)
+	if (server->transport_quic) {
+		rrr_net_transport_iterate_by_mode_and_do (
+				server->transport_quic,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				rrr_http_session_transport_ctx_close_if_open,
+				NULL
+		);
+	}
+#endif
+
+	server->shutdown_started = 1;
+}
+
 static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
@@ -570,6 +605,10 @@ static int __rrr_http_server_read_callback (
 	rrr_biglength received_bytes = 0;
 
 	enum rrr_http_tick_speed tick_speed;
+
+	if (http_server->shutdown_started) {
+		__rrr_http_server_close_connections(http_server);
+	}
 
 	again:
 
@@ -890,35 +929,21 @@ void rrr_http_server_start_shutdown (
 ) {
 	if (server->transport_http) {
 		rrr_net_transport_shutdown(server->transport_http);
-		rrr_net_transport_iterate_by_mode_and_do (
-				server->transport_http,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				rrr_http_session_transport_ctx_close_if_open,
-				NULL
-		);
 	}
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https) {
 		rrr_net_transport_shutdown(server->transport_https);
-		rrr_net_transport_iterate_by_mode_and_do (
-				server->transport_https,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				rrr_http_session_transport_ctx_close_if_open,
-				NULL
-		);
 	}
 #endif
 #if defined(RRR_WITH_HTTP3)
 	if (server->transport_quic) {
 		rrr_net_transport_shutdown(server->transport_quic);
-		rrr_net_transport_iterate_by_mode_and_do (
-				server->transport_quic,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				rrr_http_session_transport_ctx_close_if_open,
-				NULL
-		);
 	}
 #endif
+
+	__rrr_http_server_close_connections(server);
+
+	server->shutdown_started = 1;
 }
 	
 int rrr_http_server_shutdown_complete (
