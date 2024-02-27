@@ -1408,8 +1408,6 @@ static int httpclient_session_method_prepare_callback (
 	struct httpclient_data *data = callback_data->data;
 	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
 
-	(void)(transaction);
-
 	return httpclient_choose_method (chosen_method, data, array_from_msg);
 }
 

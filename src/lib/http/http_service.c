@@ -30,28 +30,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static void __rrr_http_service_destroy (
 		struct rrr_http_service *service
 ) {
-	rrr_free(service->match_server);
+	rrr_free(service->match_string);
 	rrr_http_util_uri_clear(&service->uri);
 	rrr_free(service);
 }
 
-int rrr_http_service_collection_push (
+int rrr_http_service_collection_push_unique (
 		struct rrr_http_service_collection *collection,
-		const char *match_server,
-		uint16_t match_port,
-		const struct rrr_http_uri *uri,
-		const struct rrr_http_uri_flags *uri_flags,
-		enum rrr_http_transport transport,
-		enum rrr_http_application_type application_type
+		const char *match_string,
+		uint64_t match_number,
+		const struct rrr_http_uri *uri
 ) {
 	int ret = 0;
 
+	int existing = 0;
 	struct rrr_http_service *service;
+	char *match_string_new;
 
-	if ((service = rrr_allocate_zero(sizeof(*service))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_service);
+		if (match_number != node->match_number)
+			RRR_LL_ITERATE_NEXT();
+		if (strcmp(match_string, match_string) != 0)
+			RRR_LL_ITERATE_NEXT();
+		if (uri->transport != node->uri.transport)
+			RRR_LL_ITERATE_NEXT();
+		if (uri->application_type != node->uri.application_type)
+			RRR_LL_ITERATE_NEXT();
+
+		service = node;
+
+		existing = 1;
+
+		RRR_LL_ITERATE_BREAK();
+	RRR_LL_ITERATE_END();
+
+	if (existing) {
+		rrr_free(service->match_string);
+	}
+	else {
+		if ((service = rrr_allocate_zero(sizeof(*service))) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_http_util_uri_dup (&service->uri, uri)) != 0) {
@@ -59,22 +80,22 @@ int rrr_http_service_collection_push (
 		goto out_free;
 	}
 
-	if ((service->match_server = rrr_strdup(match_server)) == NULL) {
-		RRR_MSG_0("Failed to duplicate match_server in %s\n", __func__);
+	if ((match_string_new = rrr_strdup(match_string)) == NULL) {
+		RRR_MSG_0("Failed to duplicate match_string in %s\n", __func__);
 		ret = 1;
 		goto out_clear_uri;
 	}
 
-	service->match_port = match_port;
-	service->uri_flags = *uri_flags;
-	service->transport = transport;
-	service->application_type = application_type;
+	service->match_string = match_string_new;
+	service->match_number = match_number;
 
-	RRR_LL_APPEND(collection, service);
+	if (!existing) {
+		RRR_LL_APPEND(collection, service);
+	}
 
 	goto out;
-	// out_free_match_server:
-	//	rrr_free(service->match_server);
+	// out_free_match_string:
+	//	rrr_free(service->match_string);
 	out_clear_uri:
 		rrr_http_util_uri_clear(&service->uri);
 	out_free:

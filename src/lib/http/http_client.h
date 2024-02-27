@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS                    \
     const struct rrr_http_transaction *transaction,            \
     const struct rrr_nullsafe_str *response_data,              \
-    const struct rrr_http_service_collection *alt_svc,         \
     void *arg
 
 #define RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS                  \
@@ -48,12 +47,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS                 \
     const struct rrr_http_transaction *transaction,            \
     const struct rrr_http_uri *uri,                            \
-    const struct rrr_http_service_collection *alt_svc,         \
     void *arg
 
 #define RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS           \
     enum rrr_http_method *chosen_method,                       \
-    struct rrr_http_transaction *transaction,                  \
     void *arg
 
 #define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS            \

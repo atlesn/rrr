@@ -27,12 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_service {
 	RRR_LL_NODE(struct rrr_http_service);
-	char *match_server;
-	uint16_t match_port;
+	char *match_string;
+	uint64_t match_number;
 	struct rrr_http_uri uri;
-	struct rrr_http_uri_flags uri_flags;
-	enum rrr_http_transport transport;
-	enum rrr_http_application_type application_type;
 	uint64_t expire_time;
 };
 
@@ -40,14 +37,11 @@ struct rrr_http_service_collection {
 	RRR_LL_HEAD(struct rrr_http_service);
 };
 
-int rrr_http_service_collection_push (
+int rrr_http_service_collection_push_unique (
 		struct rrr_http_service_collection *collection,
-		const char *match_server,
-		uint16_t match_port,
-		const struct rrr_http_uri *uri,
-		const struct rrr_http_uri_flags *uri_flags,
-		enum rrr_http_transport transport,
-		enum rrr_http_application_type application_type
+		const char *match_string,
+		uint64_t match_number,
+		const struct rrr_http_uri *uri
 );
 void rrr_http_service_collection_clear (
 		struct rrr_http_service_collection *collection

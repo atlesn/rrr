@@ -1189,9 +1189,9 @@ static int __rrr_instances_create_threads (
 			__rrr_instance_runtime_data_destroy(runtime_data);
 		if (events != NULL)
 			rrr_event_queue_destroy(events);
-		RRR_FREE_IF_NOT_NULL(events_ptr);
 		rrr_thread_collection_destroy(NULL, thread_collection);
 	out:
+		RRR_FREE_IF_NOT_NULL(events_ptr);
 		return ret;
 }
 

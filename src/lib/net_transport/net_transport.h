@@ -335,6 +335,11 @@ int rrr_net_transport_graylist_exists (
 		const char *string,
 		uint64_t number
 );
+void rrr_net_transport_graylist_remove (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+);
 int rrr_net_transport_handle_migrate (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,

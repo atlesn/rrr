@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -107,6 +107,20 @@ int rrr_socket_graylist_push (
 		uint64_t graylist_period_us
 ) {
 	return __rrr_socket_graylist_push(target, addr, len, graylist_period_us);
+}
+
+void rrr_socket_graylist_remove (
+		struct rrr_socket_graylist *target,
+		const struct sockaddr *addr,
+		socklen_t len
+) {
+	RRR_LL_ITERATE_BEGIN(target, struct rrr_socket_graylist_entry);
+		if (node->addr_len == len) {
+			if (memcmp(&node->addr, addr, len) == 0) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(target, 0; rrr_free(node));
 }
 
 void rrr_socket_graylist_destroy (

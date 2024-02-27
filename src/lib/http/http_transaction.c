@@ -224,13 +224,6 @@ void rrr_http_transaction_query_fields_dump (
 	rrr_http_field_collection_dump(&transaction->request_part->fields);
 }
 
-void rrr_http_transaction_method_set (
-		struct rrr_http_transaction *transaction,
-		enum rrr_http_method method
-) {
-	transaction->method = method;
-}
-
 int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
@@ -292,8 +285,8 @@ int rrr_http_transaction_response_alt_svc_set (
 struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data {
 	struct rrr_http_service_collection *services;
 	unsigned long long int age;
-	const char *match_server;
-	uint16_t match_port;
+	const char *match_string;
+	uint64_t match_number;
 };
 
 static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
@@ -306,7 +299,6 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 
 	int ret = 0;
 
-	struct rrr_http_uri_flags uri_flags_tmp = {0};
 	struct rrr_http_uri uri_tmp = {0};
 	char *name_tmp = NULL;
 	char *value_tmp = NULL;
@@ -339,7 +331,9 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 
 		if ((ret = rrr_http_util_uri_host_parse (
 				&uri_tmp,
-				value
+				value,
+				transport,
+				application
 		)) != 0) {
 			RRR_MSG_0("Warning: Failed to parse value for alt-svc parameter '%s'\n", name_tmp);
 			goto out;
@@ -349,12 +343,11 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 			transport = RRR_HTTP_TRANSPORT_HTTP;
 		}
 
-		if ((ret = rrr_http_service_collection_push (
+		if ((ret = rrr_http_service_collection_push_unique (
 				callback_data->services,
-				&uri_tmp,
-				&uri_flags_tmp,
-				transport,
-				application
+				callback_data->match_string,
+				callback_data->match_number,
+				&uri_tmp
 		)) != 0) {
 			goto out;
 		}
@@ -402,16 +395,16 @@ static int __rrr_http_transaction_response_alt_svc_get_iterate_callback (
 int rrr_http_transaction_response_alt_svc_get (
 		struct rrr_http_service_collection *target,
 		const struct rrr_http_transaction *transaction,
-		const char *match_server,
-		uint16_t match_port
+		const char *match_string,
+		uint64_t match_number
 ) {
 	unsigned long long age = 0; 
 //	TODO : Get age from header and subtract from ma field value  assert(0 && "Get age from header");
 	struct rrr_http_transaction_response_alt_svc_get_iterate_callback_data callback_data = {
 		target,
 		age,
-		match_server,
-		match_port
+		match_string,
+		match_number
 	};
 
 	return rrr_http_header_field_collection_subvalues_iterate (

@@ -119,10 +119,6 @@ int rrr_http_transaction_query_field_add (
 void rrr_http_transaction_query_fields_dump (
 		struct rrr_http_transaction *transaction
 );
-void rrr_http_transaction_method_set (
-		struct rrr_http_transaction *transaction,
-		enum rrr_http_method method
-);
 int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
@@ -151,8 +147,8 @@ int rrr_http_transaction_response_alt_svc_set (
 int rrr_http_transaction_response_alt_svc_get (
 		struct rrr_http_service_collection *target,
 		const struct rrr_http_transaction *transaction,
-		const char *match_server,
-		uint16_t match_port
+		const char *match_string,
+		uint64_t match_number
 );
 int rrr_http_transaction_endpoint_path_get (
 		char **result,

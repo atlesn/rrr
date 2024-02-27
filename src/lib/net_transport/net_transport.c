@@ -1971,6 +1971,19 @@ int rrr_net_transport_graylist_exists (
 	return rrr_socket_graylist_exists(transport->graylist, (const struct sockaddr *) &addr, addr_len);
 }
 
+void rrr_net_transport_graylist_remove (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+) {
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+
+	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
+
+	rrr_socket_graylist_remove(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+}
+
 int rrr_net_transport_handle_migrate (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
