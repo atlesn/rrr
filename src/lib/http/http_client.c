@@ -1076,7 +1076,6 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				// Mask errors and leave graylisted. Possibly, alt-svc selector may
 				// resolve the situation by checking the graylist.
 				ret = RRR_HTTP_BUSY;
-				printf("BUSY C ================\n");
 				goto out;
 			}
 
@@ -1101,7 +1100,6 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
 				goto out;
 			}
-			printf("BUSY B ================\n");
 			ret = RRR_HTTP_BUSY;
 			goto out;
 		}
@@ -1127,10 +1125,6 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				server_to_use,
 				match_number
 		);
-
-		if (ret == RRR_HTTP_BUSY) {
-			printf("BUSY A ================ %i\n", concurrent_index);
-		}
 
 #ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
 		}

@@ -65,33 +65,7 @@ struct rrr_socket_graylist;
     void *arg
 
 #define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
-    int64_t stream_id,                                         \
-    uint64_t application_error_reason,                         \
-    void *arg
-
-#define RRR_NET_TRANSPORT_STREAM_CONFIRM_CALLBACK_ARGS         \
-    int64_t stream_id,                                         \
-    size_t bytes,                                              \
-    void *arg
-
-#define RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS     \
-    int64_t *stream_id,                                        \
-    struct rrr_net_transport_vector *data_vector,              \
-    size_t *data_vector_count,                                 \
-    int *fin,                                                  \
-    int64_t stream_id_suggestion,                              \
-    void *arg
-
-#define RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS         \
-    int64_t stream_id,                                         \
-    int is_blocked,                                            \
-    void *arg
-
-#define RRR_NET_TRANSPORT_STREAM_CALLBACK_ARGS                 \
-    int64_t stream_id,                                         \
-    void *arg
-
-#define RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS           \
+    struct rrr_net_transport_handle *handle,                   \
     int64_t stream_id,                                         \
     uint64_t application_error_reason,                         \
     void *arg

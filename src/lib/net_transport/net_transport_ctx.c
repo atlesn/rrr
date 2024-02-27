@@ -411,6 +411,14 @@ uint64_t rrr_net_transport_ctx_stream_count (
 	return handle->transport->methods->stream_count(handle);
 }
 
+int rrr_net_transport_ctx_extend_max_streams (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t n
+) {
+	return handle->transport->methods->extend_max_streams(handle, stream_id, n);
+}
+
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,

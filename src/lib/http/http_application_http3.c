@@ -686,12 +686,17 @@ static int __rrr_http_application_http3_net_transport_cb_stream_close (
     	struct rrr_http_application_http3 *http3 = (struct rrr_http_application_http3 *) arg;
 
 	int ret_tmp;
+
 	if ((ret_tmp = nghttp3_conn_close_stream (
 			http3->conn,
 			stream_id,
 			application_error_reason
 	)) != 0) {
 		RRR_MSG_0("Error from nghttp3 during stream close in %s: %s\n", __func__, nghttp3_strerror(ret_tmp));
+		return 1;
+	}
+
+	if (rrr_net_transport_ctx_extend_max_streams (handle, stream_id, 1) != 0) {
 		return 1;
 	}
 
