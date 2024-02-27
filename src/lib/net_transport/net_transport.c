@@ -1936,7 +1936,8 @@ int rrr_net_transport_graylist_push (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number,
-		uint64_t period_us
+		uint64_t period_us,
+		int flags
 ) {
 	int ret = 0;
 
@@ -1949,7 +1950,8 @@ int rrr_net_transport_graylist_push (
 			transport->graylist,
 			(const struct sockaddr *) &addr,
 			addr_len,
-			period_us
+			period_us,
+			flags
 	)) != 0) {
 		goto out;
 	}
@@ -1958,7 +1960,9 @@ int rrr_net_transport_graylist_push (
 	return ret;
 }
 
-int rrr_net_transport_graylist_exists (
+void rrr_net_transport_graylist_get (
+		int *count,
+		int *flags,
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
@@ -1968,20 +1972,22 @@ int rrr_net_transport_graylist_exists (
 
 	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
 
-	return rrr_socket_graylist_exists(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	*count = rrr_socket_graylist_count(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	rrr_socket_graylist_get(flags, transport->graylist, (const struct sockaddr *) &addr, addr_len);
 }
 
-void rrr_net_transport_graylist_remove (
+void rrr_net_transport_graylist_flags_clear (
 		struct rrr_net_transport *transport,
 		const char *string,
-		uint64_t number
+		uint64_t number,
+		int flags
 ) {
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 
 	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
 
-	rrr_socket_graylist_remove(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	rrr_socket_graylist_flags_clear(transport->graylist, (const struct sockaddr *) &addr, addr_len, flags);
 }
 
 int rrr_net_transport_handle_migrate (

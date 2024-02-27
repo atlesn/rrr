@@ -302,17 +302,21 @@ int rrr_net_transport_graylist_push (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number,
-		uint64_t period_us
+		uint64_t period_us,
+		int flags
 );
-int rrr_net_transport_graylist_exists (
+void rrr_net_transport_graylist_get (
+		int *count,
+		int *flags,
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
 );
-void rrr_net_transport_graylist_remove (
+void rrr_net_transport_graylist_flags_clear (
 		struct rrr_net_transport *transport,
 		const char *string,
-		uint64_t number
+		uint64_t number,
+		int flags
 );
 int rrr_net_transport_handle_migrate (
 		struct rrr_net_transport *transport,

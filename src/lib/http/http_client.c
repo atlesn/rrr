@@ -52,8 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS 1000
-//#define RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS    500
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS    1000
+
+#define RRR_HTTP_CLIENT_GRAYLIST_F_SHORT   (1<<0)
+#define RRR_HTTP_CLIENT_GRAYLIST_F_LONG    (1<<1)
 
 struct rrr_http_client {
 	struct rrr_event_queue *events;
@@ -1025,11 +1028,23 @@ static int __rrr_http_client_request_send_intermediate_connect (
 ) {
 	int ret = 0;
 
-	uint16_t concurrent_index = 0;
-	do {
+	int graylist_count;
+	int graylist_flags;
+
+	for (uint16_t concurrent_index = 0; concurrent_index < callback_data->data->concurrent_connections; concurrent_index++) {
+		// Graylisting for connection attempts on each concurrent index/server combination
 		const uint64_t match_number = __rrr_http_client_net_transport_match_number_make (
 				port_to_use,
 				concurrent_index,
+				callback_data->transaction->application_type
+		);
+
+		// Graylisting checks in alt-svc selector uses index 0 only. It needs to know:
+		// - How many connection attempts are currently in handshaking (happens with non-reachable UDP servers); and
+		// - A connection attempt has failed explicitly (happens with non-reachable TCP servers)
+		const uint64_t match_number_common = __rrr_http_client_net_transport_match_number_make (
+				port_to_use,
+				0,
 				callback_data->transaction->application_type
 		);
 
@@ -1040,44 +1055,62 @@ static int __rrr_http_client_request_send_intermediate_connect (
 		);
 
 		if (keepalive_handle == 0) {
-			// Prevent multiple simultaneous connection attempts
-			// to the same host which would cause delays.
-			if (rrr_net_transport_graylist_exists (
+			rrr_net_transport_graylist_get (
+					&graylist_count,
+					&graylist_flags,
 					transport_keepalive,
 					server_to_use,
 					match_number
-			)) {
+			);
+
+			if (graylist_count > 0) {
 				RRR_DBG_3("HTTP client not making connection to %s:%" PRIu16 " due to destination being graylisted\n",
 						server_to_use, port_to_use);
 				ret = RRR_HTTP_BUSY;
-				goto out;
-			}
-
-			if ((ret = rrr_net_transport_graylist_push (
-						transport_keepalive,
-						server_to_use,
-						match_number,
-						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS * 1000
-			)) != 0) {
-				RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
-				goto out;
+				goto next;
 			}
 
 			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
 					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
 
-			if (rrr_net_transport_connect (
+			if ((ret = rrr_net_transport_connect (
 					transport_keepalive,
 					port_to_use,
 					server_to_use,
 					__rrr_http_client_request_send_connect_callback,
 					&keepalive_handle
-			) != 0) {
-				// Mask errors and leave graylisted. Possibly, alt-svc selector may
-				// resolve the situation by checking the graylist.
-				ret = RRR_HTTP_BUSY;
+			)) != 0) {
+				if ((ret = rrr_net_transport_graylist_push (
+						transport_keepalive,
+						server_to_use,
+						match_number,
+						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
+						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+				)) != 0) {
+					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+					goto out;
+				}
+
+				if ((ret = rrr_net_transport_graylist_push (
+						transport_keepalive,
+						server_to_use,
+						match_number_common,
+						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
+						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+				)) != 0) {
+					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+					goto out;
+				}
+
 				goto out;
 			}
+
+			rrr_net_transport_graylist_flags_clear (
+					transport_keepalive,
+					server_to_use,
+					match_number,
+					RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+			);
 
 			if ((ret = rrr_net_transport_handle_match_data_set (
 					transport_keepalive,
@@ -1090,28 +1123,32 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			}
 		}
 
-		if (rrr_net_transport_handle_check_handshake_complete(transport_keepalive, keepalive_handle) != RRR_READ_OK) {
+		if ((ret = rrr_net_transport_handle_check_handshake_complete (
+				transport_keepalive,
+				keepalive_handle
+		)) != RRR_READ_OK) {
 			if ((ret = rrr_net_transport_graylist_push (
-						transport_keepalive,
-						server_to_use,
-						match_number,
-						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS * 1000
+					transport_keepalive,
+					server_to_use,
+					match_number_common,
+					RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS * 1000,
+					RRR_HTTP_CLIENT_GRAYLIST_F_SHORT
 			)) != 0) {
 				RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
 				goto out;
 			}
+
 			ret = RRR_HTTP_BUSY;
-			goto out;
+
+			goto next;
 		}
 
-#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
-		if (concurrent_index == 0) {
-			RRR_MSG_1("HTTP client debug unused connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
-					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
-			ret = RRR_HTTP_BUSY;
-		}
-		else {
-#endif
+		rrr_net_transport_graylist_flags_clear (
+				transport_keepalive,
+				server_to_use,
+				match_number_common,
+				RRR_HTTP_CLIENT_GRAYLIST_F_SHORT
+		);
 
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
 				transport_keepalive,
@@ -1120,16 +1157,11 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				callback_data
 		);
 
-		rrr_net_transport_graylist_remove (
-				transport_keepalive,
-				server_to_use,
-				match_number
-		);
-
-#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		next:
+		if (ret != RRR_HTTP_BUSY) {
+			break;
 		}
-#endif
-	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < callback_data->data->concurrent_connections);
+	}
 
 	out:
 		return ret;
@@ -1142,13 +1174,16 @@ static void __rrr_http_client_alt_svc_select (
 		uint16_t *port_to_use,
 		struct rrr_http_client *http_client,
 		const struct rrr_http_service_collection *alt_svc,
-		const enum rrr_http_transport transport_force
+		const enum rrr_http_transport transport_force,
+		const int concurrent_max
 ) {
 	enum rrr_http_transport transport_new = *transport_to_use;
 	enum rrr_http_application_type application_new = *application_to_use;
 	const char *server_new = *server_to_use;
 	uint16_t port_new = *port_to_use;
 	struct rrr_net_transport *transport_keepalive;
+	int graylist_count;
+	int graylist_flags;
 
 	RRR_ASSERT(RRR_HTTP_TRANSPORT_QUIC > RRR_HTTP_TRANSPORT_HTTPS && RRR_HTTP_TRANSPORT_HTTPS > RRR_HTTP_TRANSPORT_HTTP,transport_codes_must_be_in_order);
 	RRR_ASSERT(RRR_HTTP_APPLICATION_HTTP3 > RRR_HTTP_APPLICATION_HTTP2 && RRR_HTTP_APPLICATION_HTTP2 > RRR_HTTP_APPLICATION_HTTP1,application_codes_must_be_in_order);
@@ -1175,19 +1210,33 @@ static void __rrr_http_client_alt_svc_select (
 		if (*server_to_use != NULL && node->match_string != NULL && strcmp(*server_to_use, node->match_string) != 0)
 			RRR_LL_ITERATE_NEXT();
 
-		if (rrr_net_transport_graylist_exists (
+		rrr_net_transport_graylist_get (
+				&graylist_count,
+				&graylist_flags,
 				transport_keepalive,
 				server_tmp,
-				__rrr_http_client_net_transport_match_number_make(node->uri.port, 0, node->uri.application_type)
-		)) {
+				__rrr_http_client_net_transport_match_number_make (
+						node->uri.port,
+						0,
+						node->uri.application_type
+				)
+		);
+
+		// Don't use alternative service if:
+		// - Connection attempt 0 has failed explicitly (connection refused, timeout); or
+		// - All connections are currently in handshaking
+		if (graylist_flags & RRR_HTTP_CLIENT_GRAYLIST_F_LONG || graylist_count >= concurrent_max) {
+/* Noisy
 			RRR_DBG_3("HTTP alt-svc transport %s application %s server %s port %u is graylisted, not using\n",
 				RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
 				RRR_HTTP_APPLICATION_TO_STR(node->uri.application_type),
 				server_tmp,
 				node->uri.port
 			);
+*/
 			RRR_LL_ITERATE_NEXT();
 		}
+		
 
 		RRR_DBG_3("HTTP selecting alt-svc transport %s and application %s over %s and %s\n",
 			RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
@@ -1517,7 +1566,8 @@ static int __rrr_http_client_request_send_intermediate_alt_svc_select (
 			&port_to_use,
 			http_client,
 			&http_client->alt_svc,
-			data->transport_force
+			data->transport_force,
+			data->concurrent_connections
 	);
 
 	transaction->application_type = application_type;

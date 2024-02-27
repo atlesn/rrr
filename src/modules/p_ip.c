@@ -759,7 +759,8 @@ static int ip_connect_raw_callback (
 			ip_data->tcp_graylist,
 			addr,
 			addr_len,
-			ip_data->close_grace_ms * 1000
+			ip_data->close_grace_ms * 1000,
+			1
 	);
 
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
@@ -1603,7 +1604,8 @@ static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARG
 				ip_data->tcp_graylist,
 				addr,
 				addr_len,
-				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU
+				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU,
+				1
 		);
 	}
 }

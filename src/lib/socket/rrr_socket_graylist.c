@@ -40,13 +40,17 @@ struct rrr_socket_graylist_entry {
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	uint64_t expire_time;
+	int flags;
 };
 
-int rrr_socket_graylist_exists (
+void rrr_socket_graylist_get (
+		int *flags,
 		struct rrr_socket_graylist *list,
 		const struct sockaddr *addr,
 		socklen_t len
 ) {
+	*flags = 0;
+
 	uint64_t time_now = rrr_time_get_64();
 	RRR_LL_ITERATE_BEGIN(list, struct rrr_socket_graylist_entry);
 		if (time_now > node->expire_time) {
@@ -54,18 +58,48 @@ int rrr_socket_graylist_exists (
 		}
 		else if (node->addr_len == len) {
 			if (memcmp(&node->addr, addr, len) == 0) {
-				return 1;
+				*flags |= node->flags;
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; rrr_free(node));
-	return 0;
+}
+
+int rrr_socket_graylist_count (
+		struct rrr_socket_graylist *list,
+		const struct sockaddr *addr,
+		socklen_t len
+) {
+	int count = 0;
+
+	uint64_t time_now = rrr_time_get_64();
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_socket_graylist_entry);
+		if (time_now > node->expire_time) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->addr_len == len) {
+			if (memcmp(&node->addr, addr, len) == 0) {
+				count++;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; rrr_free(node));
+
+	return count;
+}
+
+int rrr_socket_graylist_exists (
+		struct rrr_socket_graylist *list,
+		const struct sockaddr *addr,
+		socklen_t len
+) {
+	return rrr_socket_graylist_count(list, addr, len) > 0;
 }
 
 static int __rrr_socket_graylist_push (
 		struct rrr_socket_graylist *target,
 		const struct sockaddr *addr,
 		socklen_t len,
-		uint64_t graylist_period_us
+		uint64_t graylist_period_us,
+		int flags
 ) {
 	int ret = 0;
 
@@ -91,6 +125,7 @@ static int __rrr_socket_graylist_push (
 	memcpy (&new_entry->addr, addr, len);
 	new_entry->addr_len = len;
 	new_entry->expire_time = rrr_time_get_64() + graylist_period_us;
+	new_entry->flags = flags;
 
 	RRR_LL_APPEND(target, new_entry);
 	new_entry = NULL;
@@ -104,21 +139,26 @@ int rrr_socket_graylist_push (
 		struct rrr_socket_graylist *target,
 		const struct sockaddr *addr,
 		socklen_t len,
-		uint64_t graylist_period_us
+		uint64_t graylist_period_us,
+		int flags
 ) {
-	return __rrr_socket_graylist_push(target, addr, len, graylist_period_us);
+	return __rrr_socket_graylist_push(target, addr, len, graylist_period_us, flags);
 }
 
-void rrr_socket_graylist_remove (
+void rrr_socket_graylist_flags_clear (
 		struct rrr_socket_graylist *target,
 		const struct sockaddr *addr,
-		socklen_t len
+		socklen_t len,
+		int flags
 ) {
 	RRR_LL_ITERATE_BEGIN(target, struct rrr_socket_graylist_entry);
 		if (node->addr_len == len) {
 			if (memcmp(&node->addr, addr, len) == 0) {
-				RRR_LL_ITERATE_SET_DESTROY();
+				node->flags &= ~(flags);
 			}
+		}
+		if (node->flags == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(target, 0; rrr_free(node));
 }
