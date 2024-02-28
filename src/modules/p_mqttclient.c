@@ -1132,7 +1132,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	if ((rrr_net_transport_config_parse(
+	if ((rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"mqtt",
@@ -1148,6 +1148,9 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	)) != 0) {
 		goto out;
 	}
+
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)
+		data->net_transport_config.transport_type_p = RRR_NET_TRANSPORT_TLS;
 
 	if ((ret = rrr_instance_config_read_optional_port_number (
 			&data->server_port,
@@ -2184,7 +2187,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	if ((init_ret = mqttclient_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initialize data in MQTT client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("MQTT client instance %s thread %p, disabling processing of input queue until connection with broker is established.\n",
@@ -2339,7 +2342,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		RRR_DBG_1 ("MQTT client %p instance %s exiting\n",
 				thread, INSTANCE_D_NAME(thread_data));
 		pthread_cleanup_pop(1);
-		pthread_exit(0);
+		return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

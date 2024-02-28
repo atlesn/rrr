@@ -45,6 +45,7 @@ struct buffer_data {
 	rrr_setting_uint message_ttl_seconds;
 	uint64_t message_ttl_us;
 	struct rrr_poll_helper_counters counters;
+	int encourage_stop_received;
 };
 
 static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -73,12 +74,17 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			(long long unsigned int) message->timestamp
 	);
 
-	ret = rrr_message_broker_incref_and_write_entry_unsafe (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
 			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
 			NULL,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-	);
+	)) == RRR_THREAD_STOP) {
+		// The stop signal might not propagate all the way
+		// throug the poll stack. Save it here and check
+		// in the data available event.
+		data->encourage_stop_received = 1;
+	}
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data);
 
@@ -93,6 +99,10 @@ static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
+
+	if (data->encourage_stop_received) {
+		return RRR_THREAD_STOP;
+	}
 
 	return rrr_poll_do_poll_delete (amount, thread_data, buffer_poll_callback);
 }
@@ -141,8 +151,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);
-
-	pthread_exit(0);
+	return NULL;
 }
 
 static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {

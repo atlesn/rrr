@@ -347,10 +347,11 @@ static int dummy_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
+	int single_thread_mode = 0;
 
 	if (dummy_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
@@ -358,6 +359,11 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_cleanup_push(dummy_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
+
+	if (rrr_thread_signal_check (thread, RRR_THREAD_SIGNAL_START_SINGLE_MODE)) {
+		RRR_DBG_1 ("Dummy instance %s is being run in single thread mode\n", INSTANCE_D_NAME(thread_data));
+		single_thread_mode = 1;
+	}
 
 	if (dummy_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -412,6 +418,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	// Busy-loop operation
 	const int count = (data->no_sleeping ? 50 : 1);
 	int count_extra = 0;
+	uint64_t time_last_dispatch = rrr_time_get_64();
 	while (1) {
 		const uint64_t time_now = rrr_time_get_64();
 
@@ -434,6 +441,25 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 			}
 			goto dispatch;
 		}
+
+		if (single_thread_mode) {
+			// Check main running directly
+			if (!INSTANCE_D_MAIN_RUNNING(thread_data)) {
+				break;
+			}
+
+			// Run any periodic events
+			if (time_now - time_last_dispatch > 250 * 1000) {
+				// NOTE : If there are periodic events with long intervals, this
+				//        will reduce throughput as event framework might wait
+				//        for a timeout. Possibly improve this.
+				if (rrr_event_dispatch_once (INSTANCE_D_EVENTS(thread_data)) != 0) {
+					break;
+				}
+				time_last_dispatch = time_now;
+			}
+		}
+	
 	}
 
 	goto out_cleanup;
@@ -446,9 +472,9 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		);
 
 	out_cleanup:
-		RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+		RRR_DBG_1 ("Thread dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 		pthread_cleanup_pop(1);
-		pthread_exit(0);
+		return NULL;
 }
 
 static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,7 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <libressl/tls.h>
+#ifdef RRR_HAVE_TLS_H_SUBFOLDER
+#  include <libressl/tls.h>
+#elif RRR_HAVE_TLS_H
+#  include <tls.h>
+#else
+#  error "Neither RRR_HAVE_TLS_H_SUBFOLDER nor RRR_HAVE_TLS_H is set"
+#endif
 #include <poll.h>
 #include <string.h>
 #include <errno.h>
@@ -720,6 +726,7 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_pre_destroy,
 	__rrr_net_transport_libressl_read_message,
 	__rrr_net_transport_libressl_read,
+	NULL,
 	NULL,
 	NULL,
 	NULL,

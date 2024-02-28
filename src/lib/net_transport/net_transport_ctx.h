@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -114,6 +114,9 @@ void rrr_net_transport_ctx_close_when_send_complete_set (
 int rrr_net_transport_ctx_close_when_send_complete_get (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_ctx_close_now_set (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
@@ -180,6 +183,11 @@ int rrr_net_transport_ctx_streams_iterate (
 uint64_t rrr_net_transport_ctx_stream_count (
 		struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_extend_max_streams (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t n
+);
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -219,6 +227,11 @@ int rrr_net_transport_ctx_selected_proto_get (
 );
 enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
 		const struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
 );
 
 #endif /* RRR_WITH_NET_TRANSPORT_CTX_H */

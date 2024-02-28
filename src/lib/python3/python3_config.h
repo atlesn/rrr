@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,8 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_headers.h"
 
-struct rrr_instance_settings;
+struct rrr_settings;
+struct rrr_settings_used;
 
-PyObject *rrr_python3_config_new (struct rrr_instance_settings *settings);
+PyObject *rrr_python3_config_new (struct rrr_settings *settings, struct rrr_settings_used *settings_used);
 
 #endif /* RRR_PYTHON3_CONFIG_H */

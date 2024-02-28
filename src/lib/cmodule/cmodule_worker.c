@@ -322,7 +322,7 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 }
 
 static int __rrr_cmodule_worker_send_setting_to_parent (
-		struct rrr_setting_packed *setting,
+		const struct rrr_setting_packed *setting,
 		void *arg
 ) {
 	struct rrr_cmodule_worker *worker = arg;
@@ -848,7 +848,12 @@ int rrr_cmodule_worker_loop_start (
 			goto out;
 		}
 
-		if ((ret = rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker)) != 0) {
+		if ((ret = rrr_settings_iterate_packed (
+				worker->settings,
+				&worker->settings_used,
+				__rrr_cmodule_worker_send_setting_to_parent,
+				worker
+		)) != 0) {
 			goto out;
 		}
 
@@ -1004,16 +1009,23 @@ struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 	return worker->event_queue_worker;
 }
 
-struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
+struct rrr_settings *rrr_cmodule_worker_get_settings (
 		struct rrr_cmodule_worker *worker
 ) {
 	return worker->settings;
 }
 
+struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
+		struct rrr_cmodule_worker *worker
+) {
+	return &worker->settings_used;
+}
+
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
 		const char *name,
-		struct rrr_instance_settings *settings,
+		const struct rrr_settings *settings,
+		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
@@ -1053,6 +1065,21 @@ int rrr_cmodule_worker_init (
 		goto out_free_name;
 	}
 
+	if ((worker->settings = rrr_settings_copy (settings)) == NULL) {
+		RRR_MSG_0("Could not copy settings in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_pid_lock;
+	}
+
+	if ((ret = rrr_settings_used_copy (
+			&worker->settings_used,
+			settings_used,
+			settings
+	)) != 0) {
+		RRR_MSG_0("Could not copy settings used in %s\n", __func__);
+		goto out_destroy_settings;
+	}
+
 	rrr_event_function_set (
 			event_queue_worker,
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
@@ -1062,7 +1089,6 @@ int rrr_cmodule_worker_init (
 
 
 	worker->event_queue_worker = event_queue_worker;
-	worker->settings = settings;
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
@@ -1078,8 +1104,12 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-//	out_destroy_pid_lock:
-//		pthread_mutex_destroy(&worker->pid_lock);
+//	out_cleanup_settings_used:
+//		rrr_settings_used_cleanup(&worker->settings_used);
+	out_destroy_settings:
+		rrr_settings_destroy(worker->settings);
+	out_destroy_pid_lock:
+		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
 		rrr_free(worker->name);
 	out_destroy_channel_to_parent:
@@ -1098,6 +1128,9 @@ int rrr_cmodule_worker_init (
 void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker
 ) {
+	rrr_settings_used_cleanup(&worker->settings_used);
+	rrr_settings_destroy(worker->settings);
+
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -246,6 +246,15 @@ int rrr_net_transport_ctx_close_when_send_complete_get (
 	return handle->close_when_send_complete;
 }
 
+void rrr_net_transport_ctx_close_now_set (
+		struct rrr_net_transport_handle *handle
+) {
+	handle->close_now = 1;
+
+	RRR_DBG_7("net transport fd %i [%s] close now activated\n",
+			handle->submodule_fd, handle->transport->application_name);
+}
+
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
@@ -402,6 +411,14 @@ uint64_t rrr_net_transport_ctx_stream_count (
 	return handle->transport->methods->stream_count(handle);
 }
 
+int rrr_net_transport_ctx_extend_max_streams (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t n
+) {
+	return handle->transport->methods->extend_max_streams(handle, stream_id, n);
+}
+
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -491,4 +508,12 @@ enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
 		const struct rrr_net_transport_handle *handle
 ) {
 	return rrr_net_transport_type_get(handle->transport);
+}
+
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
+) {
+	return callback(handle->match_string, handle->match_number, arg);
 }

@@ -363,8 +363,6 @@ static int __rrr_http_client_final_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(alt_svc);
-
 	int ret = 0;
 
 	rrr_nullsafe_len data_start = 0;
@@ -484,38 +482,6 @@ static int __rrr_http_client_request_send_loop (
 	return ret;
 }
 
-static void __rrr_http_client_alt_svc_select (
-		struct rrr_http_client_data *http_client_data,
-		const struct rrr_http_transaction *transaction,
-		const struct rrr_http_service_collection *alt_svc
-) {
-	enum rrr_http_transport transport_new = transaction->transport_code;
-	enum rrr_http_application_type application_new = transaction->application_type;
-
-	RRR_ASSERT(RRR_HTTP_TRANSPORT_QUIC > RRR_HTTP_TRANSPORT_HTTPS && RRR_HTTP_TRANSPORT_HTTPS > RRR_HTTP_TRANSPORT_HTTP,transport_codes_must_be_in_order);
-	RRR_ASSERT(RRR_HTTP_APPLICATION_HTTP3 > RRR_HTTP_APPLICATION_HTTP2 && RRR_HTTP_APPLICATION_HTTP2 > RRR_HTTP_APPLICATION_HTTP1,application_codes_must_be_in_order);
-
-	RRR_LL_ITERATE_BEGIN(alt_svc, struct rrr_http_service);
-		if (node->transport >= transport_new && node->application_type >= application_new) {
-			RRR_DBG_2("alt-svc: Selecting transport %s and application %s over %s and %s\n",
-				RRR_HTTP_TRANSPORT_TO_STR(node->transport),
-				RRR_HTTP_APPLICATION_TO_STR(node->application_type),
-				RRR_HTTP_TRANSPORT_TO_STR(transport_new),
-				RRR_HTTP_APPLICATION_TO_STR(application_new)
-			);
-			transport_new = node->transport;
-			application_new = node->application_type;
-		}
-	RRR_LL_ITERATE_END();
-
-	if (transport_new == RRR_HTTP_TRANSPORT_HTTP && application_new == RRR_HTTP_APPLICATION_HTTP2) {
-		RRR_DBG_1("Using plain HTTP2 for next request\n");
-		http_client_data->request_data.do_plain_http2 = 1;
-	}
-
-	http_client_data->request_data.transport_force = transport_new;
-}
-
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -535,12 +501,12 @@ static int __rrr_http_client_redirect_callback (
 
 	// Select any better transport from alt-svc or continue
 	// with the same one if transport is forced
-	if (http_client_data->transport_force == RRR_HTTP_TRANSPORT_ANY) {
-		__rrr_http_client_alt_svc_select(http_client_data, transaction, alt_svc);
-	}
-	else {
+//	if (http_client_data->transport_force == RRR_HTTP_TRANSPORT_ANY) {
+//		__rrr_http_client_alt_svc_select(http_client_data, transaction, alt_svc);
+//	}
+//	else {
 		http_client_data->transport_force = transaction->transport_code;
-	}
+//	}
 
 	EVENT_ACTIVATE(http_client_data->event_redirect);
 

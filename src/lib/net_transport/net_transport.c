@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1108,12 +1108,6 @@ void rrr_net_transport_handle_close_with_reason (
 	RRR_LL_ITERATE_END();
 }
 
-void rrr_net_transport_handle_ptr_close (
-		struct rrr_net_transport_handle *handle
-) {
-	__rrr_net_transport_handle_close(handle);
-}
-
 rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
@@ -1339,10 +1333,21 @@ static void __rrr_net_transport_event_accept (
 	struct rrr_net_transport_handle *listen_handle = arg;
 	rrr_net_transport_handle new_handle = 0;
 
-	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
+
+	if (listen_handle->transport->shutdown) {
+		RRR_DBG_7("net transport fd %i [%s] new connection not accepted due to shutdown\n",
+				listen_handle->submodule_fd,
+				listen_handle->transport->application_name
+		);
+
+		// Prevent spamming on the event as nothing is accepted
+		EVENT_REMOVE(listen_handle->event_read);
+
+		return;
+	}
 
 	int ret_tmp = listen_handle->transport->methods->accept (
 			&new_handle,
@@ -1419,6 +1424,14 @@ static int __rrr_net_transport_handle_decode_server (
 		)) != 0) {
 			goto out;
 		}
+		goto out;
+	}
+
+	if (listen_handle->transport->shutdown) {
+		RRR_DBG_7("net transport fd %i [%s] datagram for new connection dropped due to shutdown\n",
+				listen_handle->submodule_fd,
+				listen_handle->transport->application_name
+		);
 		goto out;
 	}
 
@@ -1923,7 +1936,8 @@ int rrr_net_transport_graylist_push (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number,
-		uint64_t period_us
+		uint64_t period_us,
+		int flags
 ) {
 	int ret = 0;
 
@@ -1936,7 +1950,8 @@ int rrr_net_transport_graylist_push (
 			transport->graylist,
 			(const struct sockaddr *) &addr,
 			addr_len,
-			period_us
+			period_us,
+			flags
 	)) != 0) {
 		goto out;
 	}
@@ -1945,7 +1960,9 @@ int rrr_net_transport_graylist_push (
 	return ret;
 }
 
-int rrr_net_transport_graylist_exists (
+void rrr_net_transport_graylist_get (
+		int *count,
+		int *flags,
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
@@ -1955,7 +1972,22 @@ int rrr_net_transport_graylist_exists (
 
 	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
 
-	return rrr_socket_graylist_exists(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	*count = rrr_socket_graylist_count(transport->graylist, (const struct sockaddr *) &addr, addr_len);
+	rrr_socket_graylist_get(flags, transport->graylist, (const struct sockaddr *) &addr, addr_len);
+}
+
+void rrr_net_transport_graylist_flags_clear (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number,
+		int flags
+) {
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+
+	__rrr_net_transport_graylist_addr_make(&addr, &addr_len, string, number);
+
+	rrr_socket_graylist_flags_clear(transport->graylist, (const struct sockaddr *) &addr, addr_len, flags);
 }
 
 int rrr_net_transport_handle_migrate (
@@ -2202,6 +2234,12 @@ void rrr_net_transport_stats_get (
 			rrr_length_inc_bug(connected_count);
 		}
 	RRR_LL_ITERATE_END();
+}
+
+void rrr_net_transport_shutdown (
+		struct rrr_net_transport *transport
+) {
+	transport->shutdown = 1;
 }
 
 static int __rrr_net_transport_new (

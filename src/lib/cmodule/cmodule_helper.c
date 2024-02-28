@@ -517,10 +517,11 @@ static int __rrr_cmodule_helper_read_from_fork_setting_callback (
 	int ret = 0;
 
 	rrr_settings_update_used (
+			&callback_data->worker->settings_used,
 			callback_data->worker->settings,
 			setting_packed->name,
 			(setting_packed->was_used != 0 ? 1 : 0),
-			rrr_settings_iterate_nolock
+			rrr_settings_iterate
 	);
 
 	return ret;
@@ -1029,6 +1030,7 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 			INSTANCE_D_CMODULE(thread_data),
 			INSTANCE_D_NAME(thread_data),
 			INSTANCE_D_SETTINGS(thread_data),
+			INSTANCE_D_SETTINGS_USED(thread_data),
 			INSTANCE_D_EVENTS(thread_data),
 			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,

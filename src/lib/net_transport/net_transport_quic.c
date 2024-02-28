@@ -2701,7 +2701,7 @@ static int __rrr_net_transport_quic_read_stream (
 				RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " closing now\n",
 						ctx->fd, ctx->connected_handle, node->stream_id);
 
-				if ((ret = node->cb_close(node->stream_id, node->app_error_code, node->cb_arg)) != 0) {
+				if ((ret = node->cb_close(handle, node->stream_id, node->app_error_code, node->cb_arg)) != 0) {
 					goto out;
 				}
 
@@ -3097,6 +3097,8 @@ static int __rrr_net_transport_quic_stream_open_local (
 			NULL
 	)) != 0) {
 		if (ret_tmp == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+			RRR_DBG_7("net transport quic fd %i h %i stream id %" PRIi64 " blocked\n",
+				ctx->fd, ctx->connected_handle, stream_id);
 			ret = RRR_NET_TRANSPORT_READ_BUSY;
 		}
 		else {
@@ -3189,15 +3191,45 @@ static uint64_t __rrr_net_transport_quic_stream_count (
 	return rrr_length_from_slength_bug_const(RRR_LL_COUNT(&handle_data->ctx->streams));
 }
 
+static int __rrr_net_transport_quic_stream_extend_max_streams (
+		RRR_NET_TRANSPORT_EXTEND_MAX_STREAMS_ARGS
+) {
+	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+
+	if (ngtcp2_conn_is_local_stream(handle_data->ctx->conn, stream_id)) {
+		return 0;
+	}
+
+	if (ngtcp2_is_bidi_stream(stream_id)) {
+		RRR_DBG_7("net transport quic fd %i h %i extend max bidi streams by %llu\n",
+			handle_data->ctx->fd,
+			handle->handle,
+			(unsigned long long) n);
+
+		ngtcp2_conn_extend_max_streams_bidi(handle_data->ctx->conn, n);
+	}
+	else {
+		RRR_DBG_7("net transport quic fd %i h %i extend max uni streams by %llu\n",
+			handle_data->ctx->fd,
+			handle->handle,
+			(unsigned long long) n);
+
+		ngtcp2_conn_extend_max_streams_uni(handle_data->ctx->conn, n);
+	}
+
+	return 0;
+}
+
 static int __rrr_net_transport_quic_stream_consume (
 		RRR_NET_TRANSPORT_STREAM_CONSUME_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
 
+	int ret_tmp;
+
 	RRR_DBG_7("net transport quic fd %i h %i stream %" PRIi64 " consume %llu bytes\n",
 		handle_data->ctx->fd, handle->handle, stream_id, consumed);
 
-	int ret_tmp;
 	if ((ret_tmp = ngtcp2_conn_extend_max_stream_offset(handle_data->ctx->conn, stream_id, consumed)) != 0) {
 		if (ret_tmp != NGTCP2_ERR_STREAM_NOT_FOUND) {
 			RRR_MSG_0("Error from ngtcp2 in %s: %s\n", __func__, ngtcp2_strerror(ret_tmp));
@@ -3554,6 +3586,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_stream_data_get,
 	__rrr_net_transport_quic_stream_data_clear,
 	__rrr_net_transport_quic_stream_count,
+	__rrr_net_transport_quic_stream_extend_max_streams,
 	__rrr_net_transport_quic_stream_consume,
 	__rrr_net_transport_quic_stream_do_shutdown_read,
 	__rrr_net_transport_quic_stream_do_shutdown_write,

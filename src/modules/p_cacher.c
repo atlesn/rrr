@@ -902,7 +902,8 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	RRR_DBG_1 ("Thread cacher %p exiting\n", thread);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

@@ -141,7 +141,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 ) {
 	int ret = 0;
 
-	struct rrr_http_session *session = NULL;
+	struct rrr_http_session *session;
 
 	// With keepalive connections, structures are already present in transport handle
 	if (!rrr_net_transport_ctx_handle_has_application_data(handle)) {
@@ -169,7 +169,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 				0, // Is not server
 				&callbacks
 		)) != 0) {
-			goto out;
+			goto out_destroy_session;
 		}
 
 		if (user_agent != NULL && *user_agent != '\0') {
@@ -177,7 +177,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			if (session->user_agent == NULL) {
 				RRR_MSG_0("Could not allocate memory for user agent in %s\n");
 				ret = 1;
-				goto out;
+				goto out_destroy_session;
 			}
 		}
 
@@ -188,17 +188,12 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 				__rrr_http_session_destroy_void
 		);
 	}
-	else {
-		session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
-	}
 
-	session = NULL;
-
-	out:
-	if (session != NULL) {
+	goto out;
+	out_destroy_session:
 		__rrr_http_session_destroy(session);
-	}
-	return ret;
+	out:
+		return ret;
 }
 
 int rrr_http_session_transport_ctx_request_send_possible (
@@ -302,9 +297,11 @@ static int __rrr_http_session_transport_ctx_tick (
 	}
 
 	if (upgraded_app) {
-		RRR_DBG_3("HTTP upgrade transition from %s to %s\n",
+		RRR_DBG_3("HTTP upgrade transition from %s to %s fd %i h %i\n",
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
-				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
+				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app)),
+				RRR_NET_TRANSPORT_CTX_FD(handle),
+				RRR_NET_TRANSPORT_CTX_HANDLE(handle)
 		);
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 		rrr_net_transport_ctx_notify_read_fast(handle);
@@ -351,23 +348,17 @@ int rrr_http_session_transport_ctx_close_if_open (
 ) {
 	(void)(arg);
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	RRR_DBG_3("HTTP polite close fd %i h %i session %p\n",
+			RRR_NET_TRANSPORT_CTX_FD(handle),
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			session
+	);
+
 	rrr_http_application_polite_close(session->application, handle);
+
 	return 0; // Always return 0
 }
-
-struct rrr_http_session_stream_open_transport_ctx_callback_data {
-	void **stream_data;
-	void (**stream_data_destroy)(void *stream_data);
-	int (**cb_get_message)(RRR_NET_TRANSPORT_STREAM_GET_MESSAGE_CALLBACK_ARGS);
-	int (**cb_blocked)(RRR_NET_TRANSPORT_STREAM_BLOCKED_CALLBACK_ARGS);
-	int (**cb_ack)(RRR_NET_TRANSPORT_STREAM_ACK_CALLBACK_ARGS);
-	void **cb_arg;
-	struct rrr_net_transport *transport;
-	rrr_net_transport_handle handle;
-	int64_t stream_id;
-	int flags;
-	void *stream_open_callback_arg_local;
-};
 
 int rrr_http_session_transport_ctx_stream_open (
 		void (**stream_data),

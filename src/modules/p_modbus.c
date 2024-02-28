@@ -1239,7 +1239,7 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Thread modbus %p exiting\n", thread);
 
-	pthread_exit(0);
+	return NULL;
 }
 
 static int modbus_inject (RRR_MODULE_INJECT_SIGNATURE) {

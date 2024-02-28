@@ -528,7 +528,7 @@ void rrr_perl5_destruct_message_hv (
 int rrr_perl5_settings_to_hv (
 		struct rrr_perl5_settings_hv *target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_instance_settings *source
+		struct rrr_settings *source
 ) {
 	int ret = 0;
 

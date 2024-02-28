@@ -55,6 +55,8 @@ struct rrr_http_uri {
 	char *host;
 	uint16_t port;
 	char *endpoint;
+	enum rrr_http_transport transport;
+	enum rrr_http_application_type application_type;
 };
 
 void rrr_http_util_print_where_message (
@@ -118,6 +120,10 @@ rrr_length rrr_http_util_count_whsp (
 		const char *start,
 		const char *end
 );
+int rrr_http_util_uri_dup (
+		struct rrr_http_uri *uri_result,
+		const struct rrr_http_uri *uri
+);
 void rrr_http_util_uri_clear (
 		struct rrr_http_uri *uri
 );
@@ -138,7 +144,9 @@ int rrr_http_util_uri_parse (
 );
 int rrr_http_util_uri_host_parse (
 		struct rrr_http_uri *uri_result,
-		const struct rrr_nullsafe_str *str
+		const struct rrr_nullsafe_str *str,
+		enum rrr_http_transport transport,
+		enum rrr_http_application_type application_type
 );
 int rrr_http_util_uri_validate_characters (
 		unsigned char *invalid,
@@ -188,12 +196,10 @@ int rrr_http_util_alpn_iterate (
 		int (*callback)(unsigned int i, const char *alpn, unsigned char length, void *arg),
 		void *callback_arg
 );
-
-#ifdef RRR_WITH_HTTP3
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,
+		uint16_t tls_port,
 		uint16_t quic_port
 );
-#endif /* RRR_WITH_HTTP3 */
 
 #endif /* RRR_HTTP_UTIL_H */

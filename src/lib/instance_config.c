@@ -57,6 +57,7 @@ int rrr_instance_config_string_set (
 static void __rrr_instance_config_destroy (
 		struct rrr_instance_config_data *config
 ) {
+	rrr_settings_used_cleanup(&config->settings_used);
 	rrr_settings_destroy(config->settings);
 	rrr_free(config->name);
 	rrr_free(config);
@@ -94,6 +95,11 @@ static int __rrr_instance_config_new (
 		goto out_free_name;
 	}
 
+	if ((ret = rrr_settings_used_init(&instance_config->settings_used, instance_config->settings)) != 0) {
+		RRR_MSG_0("Could not initialize settings used structure in %s\n", __func__);
+		goto out_free_settings;
+	}
+
 	instance_config->global_array_trees = global_array_trees;
 	instance_config->global_routes = global_routes;
 	instance_config->global_methods = global_methods;
@@ -101,8 +107,10 @@ static int __rrr_instance_config_new (
 	*result = instance_config;
 
 	goto out;
-//	out_free_settings:
-//		rrr_settings_destroy(instance_config->settings);
+//	out_cleanup_settings_used:
+//		rrr_settings_used_cleanup(&instance_config->settings_used);
+	out_free_settings:
+		rrr_settings_destroy(instance_config->settings);
 	out_free_name:
 		rrr_free(instance_config->name);
 	out_free_config:
@@ -159,13 +167,13 @@ static int __rrr_instance_config_read_port_number (
 	*target = 0;
 
 	rrr_setting_uint tmp_uint = 0;
-	ret = rrr_settings_read_unsigned_integer (&tmp_uint, source->settings, name);
+	ret = rrr_settings_read_unsigned_integer (&tmp_uint, &source->settings_used, source->settings, name);
 
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			char *tmp_string;
 
-			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
+			rrr_settings_read_string (&tmp_string, &source->settings_used, source->settings, name); // Ignore error
 			RRR_MSG_0("Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
@@ -215,11 +223,11 @@ int rrr_instance_config_read_port_number (
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config_data *config
 ) {
-	int ret = rrr_settings_check_all_used (config->settings);
+	int ret = rrr_settings_check_all_used (config->settings, &config->settings_used);
 
 	if (ret != 0) {
 		RRR_MSG_0("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
-				config->name);
+			config->name);
 	}
 
 	return ret;
@@ -239,7 +247,7 @@ static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fai
 	char *name_tmp = NULL;
 	char *target_str_tmp = NULL;
 
-	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, config->settings, cmd_key)) != 0) {
+	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, &config->settings_used, config->settings, cmd_key)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			goto out;
 		}
@@ -607,7 +615,7 @@ static int __rrr_instance_config_parse_comma_separated_to_map_check_unary_all (
 	*is_all = 0;
 
 	int result = 0;
-	if ((ret = rrr_settings_cmpto(&result, config->settings, string, "*")) != 0) {
+	if ((ret = rrr_settings_cmpto(&result, &config->settings_used, config->settings, string, "*")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			ret = 0;
 		}
@@ -656,7 +664,7 @@ int rrr_instance_config_parse_optional_write_method (
 	*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
 
  	if ((string_write_rrr_message != NULL) &&
-	    (ret = rrr_settings_check_yesno(&yesno, config->settings, string_write_rrr_message)) != 0
+	    (ret = rrr_settings_check_yesno(&yesno, &config->settings_used, config->settings, string_write_rrr_message)) != 0
 	) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse yes/no parameter '%s' of instance %s\n",
@@ -713,7 +721,7 @@ int rrr_instance_config_parse_optional_utf8 (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_settings_get_string_noconvert_silent(target, config->settings, string)) != 0) {
+	if ((ret = rrr_settings_get_string_noconvert_silent(target, &config->settings_used, config->settings, string)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			if (def != NULL && (*target = rrr_strdup(def)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
@@ -994,7 +1002,7 @@ static int __rrr_instance_config_friend_collection_populate_from_config_callback
 int rrr_instance_config_friend_collection_populate_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 ) {
 	int ret = 0;
@@ -1005,6 +1013,7 @@ int rrr_instance_config_friend_collection_populate_from_config (
 	};
 
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
+			&config->settings_used,
 			config->settings,
 			setting,
 			&__rrr_instance_config_friend_collection_populate_from_config_callback,
@@ -1021,7 +1030,7 @@ int rrr_instance_config_friend_collection_populate_receivers_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances_all,
 		const struct rrr_instance *instance,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 ) {
 	int ret = 0;

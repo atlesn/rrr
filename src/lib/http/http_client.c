@@ -52,8 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS 1000
-//#define RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS    500
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS    1000
+
+#define RRR_HTTP_CLIENT_GRAYLIST_F_SHORT   (1<<0)
+#define RRR_HTTP_CLIENT_GRAYLIST_F_LONG    (1<<1)
 
 struct rrr_http_client {
 	struct rrr_event_queue *events;
@@ -68,6 +71,7 @@ struct rrr_http_client {
 	struct rrr_net_transport *transport_keepalive_quic;
 
 	struct rrr_http_redirect_collection redirects;
+	struct rrr_http_service_collection alt_svc;
 
 	struct rrr_http_client_callbacks callbacks;
 };
@@ -118,6 +122,7 @@ void rrr_http_client_destroy (
 		rrr_net_transport_destroy(client->transport_keepalive_quic);
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
+	rrr_http_service_collection_clear(&client->alt_svc);
 	rrr_free(client);
 }
 
@@ -430,12 +435,72 @@ static int __rrr_http_client_chunks_iterate_callback (
 	);
 }
 
+uint64_t __rrr_http_client_net_transport_match_number_make (
+		uint16_t port,
+		uint16_t index,
+		enum rrr_http_application_type application_type
+) {
+	assert(application_type <= 0xff && application_type >= 0 && "Application type out of bounds");
+
+	return (uint64_t) (((uint64_t) application_type << 32) | ((uint64_t) port << 16 ) | index);
+}
+
+uint64_t __rrr_http_client_net_transport_match_number_mask_away_index (
+		uint64_t number
+) {
+	return number & 0xffffffffffff0000;
+}
+
+struct rrr_http_client_receive_match_data_callback_data {
+	struct rrr_http_transaction *transaction;
+	struct rrr_http_service_collection *alt_svc;
+};
+
+static int __rrr_http_client_receive_match_data_callback (
+		const char *string,
+		uint64_t number,
+		void *arg
+) {
+	struct rrr_http_client_receive_match_data_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_http_transaction_response_alt_svc_get (
+			callback_data->alt_svc,
+			callback_data->transaction,
+			string,
+			__rrr_http_client_net_transport_match_number_mask_away_index(number)
+	) != 0)) {
+		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_receive_alt_svc_get (
+		struct rrr_http_service_collection *alt_svc,
+		struct rrr_net_transport_handle *handle,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_client_receive_match_data_callback_data callback_data = {
+		transaction,
+		alt_svc
+	};
+
+	return rrr_net_transport_ctx_with_match_data_do (
+			handle,
+			__rrr_http_client_receive_match_data_callback,
+			&callback_data
+	);
+}
+
 static int __rrr_http_client_receive_http_part_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_client *http_client = arg;
 
-	(void)(handle);
 	(void)(overshoot_bytes);
 	(void)(next_application_type);
 
@@ -445,7 +510,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *data_chunks_merged = NULL;
 	struct rrr_nullsafe_str *data_decoded = NULL;
-	struct rrr_http_service_collection alt_svc = {0};
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_chunks_merged, NULL, 0)) != 0) {
 		goto out;
@@ -479,7 +543,13 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
-		if ((ret = rrr_http_redirect_collection_push (&http_client->redirects, transaction, location->value)) != 0) {
+assert(0 && "wrap with handle match data");
+
+		if ((ret = rrr_http_redirect_collection_push (
+				&http_client->redirects,
+				transaction,
+				location->value
+		)) != 0) {
 			goto out;
 		}
 		rrr_http_transaction_incref(transaction);
@@ -513,23 +583,22 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 #endif
 
-	if ((ret = rrr_http_transaction_response_alt_svc_get (
-			&alt_svc,
+	if ((ret = __rrr_http_client_receive_alt_svc_get (
+			&http_client->alt_svc,
+			handle,
 			transaction
-	) != 0)) {
-		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+	)) != 0) {
+		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
 		goto out;
 	}
 
 	ret = http_client->callbacks.final_callback (
 			transaction,
 			data_use,
-			&alt_svc,
 			http_client->callbacks.callback_arg
 	);
 
 	out:
-	rrr_http_service_collection_clear(&alt_svc);
 	rrr_nullsafe_str_destroy_if_not_null(&data_chunks_merged);
 	rrr_nullsafe_str_destroy_if_not_null(&data_decoded);
 	return ret;
@@ -655,13 +724,17 @@ static int __rrr_http_client_redirect_callback (
 		}
 	}
 
-	if ((ret = rrr_http_transaction_response_alt_svc_get (
+	assert(0 && "Get alt svc");
+/*
+	if ((ret = __rrr_http_client_receive_alt_svc_get (
 			&alt_svc,
+			handle,
 			transaction
-	) != 0)) {
-		RRR_MSG_0("Error while iterating alt-svc headers in %s\n", __func__);
+	)) != 0) {
+		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
 		goto out;
 	}
+*/
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
 	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s' transport '%s'\n",
@@ -674,7 +747,7 @@ static int __rrr_http_client_redirect_callback (
 			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
 	);
 
-	ret = callback_data->callback(transaction, uri, &alt_svc, callback_data->callback_arg);
+	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -765,7 +838,10 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	enum rrr_http_tick_speed tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
+	if ( upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 &&
+	     callback_data->data->method != RRR_HTTP_METHOD_GET &&
+	    !rrr_net_transport_ctx_is_tls(handle)
+	) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
@@ -944,90 +1020,135 @@ void __rrr_http_client_request_send_connect_callback (
 	*result = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 }
 
-uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
-		const uint16_t port,
-		const uint16_t index
-) {
-	return (uint64_t) ((port << 16 ) | index);
-}
-
 static int __rrr_http_client_request_send_intermediate_connect (
 		struct rrr_net_transport *transport_keepalive,
 		struct rrr_http_client_request_callback_data *callback_data,
-		const char *server_to_use,
+		const char * const server_to_use,
 		const uint16_t port_to_use
 ) {
 	int ret = 0;
 
-	uint16_t concurrent_index = 0;
-	do {
-		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
+	int graylist_count;
+	int graylist_flags;
+
+	for (uint16_t concurrent_index = 0; concurrent_index < callback_data->data->concurrent_connections; concurrent_index++) {
+		// Graylisting for connection attempts on each concurrent index/server combination
+		const uint64_t match_number = __rrr_http_client_net_transport_match_number_make (
+				port_to_use,
+				concurrent_index,
+				callback_data->transaction->application_type
+		);
+
+		// Graylisting checks in alt-svc selector uses index 0 only. It needs to know:
+		// - How many connection attempts are currently in handshaking (happens with non-reachable UDP servers); and
+		// - A connection attempt has failed explicitly (happens with non-reachable TCP servers)
+		const uint64_t match_number_common = __rrr_http_client_net_transport_match_number_make (
+				port_to_use,
+				0,
+				callback_data->transaction->application_type
+		);
 
 		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
-				match_data
+				match_number
 		);
 
 		if (keepalive_handle == 0) {
-			// Prevent multiple simultaneous connection attempts
-			// to the same host which would cause delays.
-			if (rrr_net_transport_graylist_exists (
+			rrr_net_transport_graylist_get (
+					&graylist_count,
+					&graylist_flags,
 					transport_keepalive,
 					server_to_use,
-					port_to_use
-			)) {
+					match_number
+			);
+
+			if (graylist_count > 0) {
 				RRR_DBG_3("HTTP client not making connection to %s:%" PRIu16 " due to destination being graylisted\n",
 						server_to_use, port_to_use);
 				ret = RRR_HTTP_BUSY;
-				goto out;
+				goto next;
 			}
 
 			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
 					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
 
-			if (rrr_net_transport_connect (
+			if ((ret = rrr_net_transport_connect (
 					transport_keepalive,
 					port_to_use,
 					server_to_use,
 					__rrr_http_client_request_send_connect_callback,
 					&keepalive_handle
-			) != 0) {
+			)) != 0) {
 				if ((ret = rrr_net_transport_graylist_push (
-							transport_keepalive,
-							server_to_use,
-							port_to_use,
-							RRR_HTTP_CLIENT_GRAYLIST_PERIOD_MS * 1000
+						transport_keepalive,
+						server_to_use,
+						match_number,
+						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
+						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
 				)) != 0) {
 					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
 					goto out;
 				}
-				ret = RRR_HTTP_SOFT_ERROR;
+
+				if ((ret = rrr_net_transport_graylist_push (
+						transport_keepalive,
+						server_to_use,
+						match_number_common,
+						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
+						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+				)) != 0) {
+					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+					goto out;
+				}
+
 				goto out;
 			}
+
+			rrr_net_transport_graylist_flags_clear (
+					transport_keepalive,
+					server_to_use,
+					match_number,
+					RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+			);
 
 			if ((ret = rrr_net_transport_handle_match_data_set (
 					transport_keepalive,
 					keepalive_handle,
 					server_to_use,
-					match_data
+					match_number
 			)) != 0) {
+				RRR_MSG_0("Failed to set match data in %s\n", __func__);
 				goto out;
 			}
 		}
 
-		if ((ret = rrr_net_transport_handle_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
-			goto out;
+		if ((ret = rrr_net_transport_handle_check_handshake_complete (
+				transport_keepalive,
+				keepalive_handle
+		)) != RRR_READ_OK) {
+			if ((ret = rrr_net_transport_graylist_push (
+					transport_keepalive,
+					server_to_use,
+					match_number_common,
+					RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS * 1000,
+					RRR_HTTP_CLIENT_GRAYLIST_F_SHORT
+			)) != 0) {
+				RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
+				goto out;
+			}
+
+			ret = RRR_HTTP_BUSY;
+
+			goto next;
 		}
 
-#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
-		if (concurrent_index == 0) {
-			RRR_MSG_1("HTTP client debug unused connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
-					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
-			ret = RRR_HTTP_BUSY;
-		}
-		else {
-#endif
+		rrr_net_transport_graylist_flags_clear (
+				transport_keepalive,
+				server_to_use,
+				match_number_common,
+				RRR_HTTP_CLIENT_GRAYLIST_F_SHORT
+		);
 
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
 				transport_keepalive,
@@ -1036,59 +1157,117 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				callback_data
 		);
 
-#ifdef RRR_HTTP_CLIENT_DEBUG_UNUSED_CONNECTION
+		next:
+		if (ret != RRR_HTTP_BUSY) {
+			break;
 		}
-#endif
-	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < callback_data->data->concurrent_connections);
+	}
 
 	out:
 		return ret;
 }
 
-static int __rrr_http_client_request_send_transport_keepalive_select (
-		struct rrr_net_transport **transport_keepalive_use,
+static void __rrr_http_client_alt_svc_select (
+		enum rrr_http_transport *transport_to_use,
+		enum rrr_http_application_type *application_to_use,
+		const char **server_to_use,
+		uint16_t *port_to_use,
 		struct rrr_http_client *http_client,
+		const struct rrr_http_service_collection *alt_svc,
 		const enum rrr_http_transport transport_force,
-		const enum rrr_http_transport transport_code
+		const int concurrent_max
 ) {
-	int ret = 0;
+	enum rrr_http_transport transport_new = *transport_to_use;
+	enum rrr_http_application_type application_new = *application_to_use;
+	const char *server_new = *server_to_use;
+	uint16_t port_new = *port_to_use;
+	struct rrr_net_transport *transport_keepalive;
+	int graylist_count;
+	int graylist_flags;
 
-	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-		*transport_keepalive_use = http_client->transport_keepalive_tls;
-#else
-		RRR_MSG_0("Warning: HTTPS was requested but RRR was not compiled with OpenSSL or LibreSSL support, aborting request\n");
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-#endif
-	}
-	else if (transport_code == RRR_HTTP_TRANSPORT_QUIC) {
-#ifdef RRR_WITH_HTTP3
-		*transport_keepalive_use = http_client->transport_keepalive_quic;
-#else
-		RRR_MSG_0("Warning: QUIC was requested but RRR was not compiled with HTTP3 support, aborting request\n");
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-#endif
-	}
-	else if (transport_force != RRR_HTTP_TRANSPORT_ANY && transport_force != transport_code) {
-		RRR_MSG_0("Warning: Transport type %s was forced while %s was attempted (possibly following redirect), aborting request\n",
-				RRR_HTTP_TRANSPORT_TO_STR(transport_force), RRR_HTTP_TRANSPORT_TO_STR(transport_code));
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
-	else {
-		*transport_keepalive_use = http_client->transport_keepalive_plain;
+	RRR_ASSERT(RRR_HTTP_TRANSPORT_QUIC > RRR_HTTP_TRANSPORT_HTTPS && RRR_HTTP_TRANSPORT_HTTPS > RRR_HTTP_TRANSPORT_HTTP,transport_codes_must_be_in_order);
+	RRR_ASSERT(RRR_HTTP_APPLICATION_HTTP3 > RRR_HTTP_APPLICATION_HTTP2 && RRR_HTTP_APPLICATION_HTTP2 > RRR_HTTP_APPLICATION_HTTP1,application_codes_must_be_in_order);
+
+	RRR_LL_ITERATE_BEGIN(alt_svc, struct rrr_http_service);
+		const char *server_tmp = node->uri.host != NULL && *node->uri.host != '\0' ? node->uri.host : *server_to_use;
+
+		assert(node->uri.transport > RRR_HTTP_TRANSPORT_ANY && node->uri.transport <= RRR_HTTP_TRANSPORT_QUIC);
+
+		if (node->uri.transport == RRR_HTTP_TRANSPORT_HTTP && !(transport_keepalive = http_client->transport_keepalive_plain))
+			RRR_LL_ITERATE_NEXT();
+		if (node->uri.transport == RRR_HTTP_TRANSPORT_HTTPS && !(transport_keepalive = http_client->transport_keepalive_tls))
+			RRR_LL_ITERATE_NEXT();
+		if (node->uri.transport == RRR_HTTP_TRANSPORT_QUIC && !(transport_keepalive = http_client->transport_keepalive_quic))
+			RRR_LL_ITERATE_NEXT();
+
+		if (transport_force != RRR_HTTP_TRANSPORT_ANY && transport_force != node->uri.transport)
+			RRR_LL_ITERATE_NEXT();
+		if (node->uri.transport < transport_new || node->uri.application_type < application_new)
+			RRR_LL_ITERATE_NEXT();
+
+		if (__rrr_http_client_net_transport_match_number_make(*port_to_use, 0, *application_to_use) != node->match_number)
+			RRR_LL_ITERATE_NEXT();
+		if (*server_to_use != NULL && node->match_string != NULL && strcmp(*server_to_use, node->match_string) != 0)
+			RRR_LL_ITERATE_NEXT();
+
+		rrr_net_transport_graylist_get (
+				&graylist_count,
+				&graylist_flags,
+				transport_keepalive,
+				server_tmp,
+				__rrr_http_client_net_transport_match_number_make (
+						node->uri.port,
+						0,
+						node->uri.application_type
+				)
+		);
+
+		// Don't use alternative service if:
+		// - Connection attempt 0 has failed explicitly (connection refused, timeout); or
+		// - All connections are currently in handshaking
+		if (graylist_flags & RRR_HTTP_CLIENT_GRAYLIST_F_LONG || graylist_count >= concurrent_max) {
+/* Noisy
+			RRR_DBG_3("HTTP alt-svc transport %s application %s server %s port %u is graylisted, not using\n",
+				RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
+				RRR_HTTP_APPLICATION_TO_STR(node->uri.application_type),
+				server_tmp,
+				node->uri.port
+			);
+*/
+			RRR_LL_ITERATE_NEXT();
+		}
+		
+
+		RRR_DBG_3("HTTP selecting alt-svc transport %s and application %s over %s and %s\n",
+			RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
+			RRR_HTTP_APPLICATION_TO_STR(node->uri.application_type),
+			RRR_HTTP_TRANSPORT_TO_STR(transport_new),
+			RRR_HTTP_APPLICATION_TO_STR(application_new)
+		);
+
+		RRR_DBG_3("HTTP selecting alt-svc server %s and port %u over %s and %u\n",
+			server_tmp,
+			node->uri.port,
+			server_new,
+			port_new
+		);
+
+		transport_new = node->uri.transport;
+		application_new = node->uri.application_type;
+		server_new = server_tmp;
+		port_new = node->uri.port;
+	RRR_LL_ITERATE_END();
+
+	if (transport_new == RRR_HTTP_TRANSPORT_HTTP && application_new == RRR_HTTP_APPLICATION_HTTP2) {
+		RRR_DBG_3("HTTP using plain HTTP2 for next request\n");
+		// TODO : Do something with data->do_plain_http2???
+
 	}
 
-	if (*transport_keepalive_use == NULL) {
-		RRR_MSG_0("No transport found for HTTP transport %s, transport is not supported\n", RRR_HTTP_TRANSPORT_TO_STR(transport_code));
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
+	*transport_to_use = transport_new;
+	*application_to_use = application_new;
+	*server_to_use = server_new;
+	*port_to_use = port_new;
 }
 
 #ifdef RRR_WITH_HTTP3
@@ -1267,6 +1446,145 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 	return ret;
 }
 
+static int __rrr_http_client_request_send_intermediate_transport_select (
+		struct rrr_http_client_request_callback_data *callback_data,
+		enum rrr_http_transport transport_code,
+		const char * const server_to_use,
+		const uint16_t port_to_use
+) {
+	struct rrr_http_client *http_client = callback_data->http_client;
+	struct rrr_http_transaction *transaction = callback_data->transaction;
+	const struct rrr_http_client_request_data *data = callback_data->data;
+
+	int ret = 0;
+
+	struct rrr_net_transport *transport_keepalive_to_use = NULL;
+
+	switch (transport_code) {
+		case RRR_HTTP_TRANSPORT_HTTPS: {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+			transport_keepalive_to_use = http_client->transport_keepalive_tls;
+#else
+			RRR_MSG_0("Warning: HTTPS was requested but RRR was not compiled with OpenSSL or LibreSSL support, aborting request\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+#endif
+		} break;
+		case RRR_HTTP_TRANSPORT_QUIC: {
+#ifdef RRR_WITH_HTTP3
+			transport_keepalive_to_use = http_client->transport_keepalive_quic;
+#else
+			RRR_MSG_0("Warning: QUIC was requested but RRR was not compiled with HTTP3 support, aborting request\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+#endif
+		} break;
+		default: {
+			if (data->transport_force != RRR_HTTP_TRANSPORT_ANY && data->transport_force != transport_code) {
+				// Note that this should not happen after transport changes
+				// as a consequence of alt-svc header. The alt-svc select
+				// function should check the transport force paramenter
+				// and ignore mismatch suggestions.
+
+				RRR_MSG_0("Warning: Transport type %s was forced while %s was attempted (possibly following redirect), aborting request\n",
+					RRR_HTTP_TRANSPORT_TO_STR(data->transport_force),
+					RRR_HTTP_TRANSPORT_TO_STR(transport_code)
+				);
+
+				ret = RRR_HTTP_SOFT_ERROR;
+
+				goto out;
+			}
+
+			transport_keepalive_to_use = http_client->transport_keepalive_plain;
+			transport_code = RRR_HTTP_TRANSPORT_HTTP;
+		} break;
+	}
+
+	if (transport_keepalive_to_use == NULL) {
+		RRR_MSG_0("No transport found for HTTP transport %s, transport is not supported\n", RRR_HTTP_TRANSPORT_TO_STR(transport_code));
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	transaction->transport_code = transport_code;
+
+	assert(server_to_use != NULL);
+	assert(port_to_use > 0);
+	assert(transaction->transport_code > 0);
+	assert(transaction->method > 0);
+	assert(transaction->application_type > 0);
+
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' version '%s' upgrade mode '%s'\n",
+			server_to_use,
+			port_to_use,
+			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code),
+			RRR_HTTP_METHOD_TO_STR(transaction->method),
+			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
+			RRR_HTTP_APPLICATION_TO_STR(transaction->application_type),
+			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
+			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
+	);
+
+	if ((ret = __rrr_http_client_request_send_intermediate_connect (
+			transport_keepalive_to_use,
+			callback_data,
+			server_to_use,
+			port_to_use
+	)) != 0) {
+		if (ret == RRR_HTTP_BUSY) {
+			RRR_DBG_3("HTTP application temporarily busy during request to server %s port %u transport %s in http client\n",
+				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
+		}
+		else {
+			RRR_DBG_2("HTTP request to server %s port %u transport %s failed in http client, return was %i\n",
+				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_request_send_intermediate_alt_svc_select (
+		struct rrr_http_client_request_callback_data *callback_data,
+		enum rrr_http_transport transport_code,
+		enum rrr_http_application_type application_type,
+		const char *server_to_use,
+		uint16_t port_to_use
+) {
+	struct rrr_http_client *http_client = callback_data->http_client;
+	struct rrr_http_transaction *transaction = callback_data->transaction;
+	const struct rrr_http_client_request_data *data = callback_data->data;
+
+	int ret = 0;
+
+	__rrr_http_client_alt_svc_select (
+			&transport_code,
+			&application_type,
+			&server_to_use,
+			&port_to_use,
+			http_client,
+			&http_client->alt_svc,
+			data->transport_force,
+			data->concurrent_connections
+	);
+
+	transaction->application_type = application_type;
+
+	if ((ret = __rrr_http_client_request_send_intermediate_transport_select (
+			callback_data,
+			transport_code,
+			server_to_use,
+			port_to_use
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 // Note that data in the struct may change if there are any redirects
 // Note that query prepare callback is not called if raw request data is set
 int rrr_http_client_request_send (
@@ -1286,6 +1604,10 @@ int rrr_http_client_request_send (
 	struct rrr_http_transaction *transaction = NULL;
 	char *server_to_free = NULL;
 	char *request_header_host_to_free = NULL;
+	uint16_t port_to_use;
+	enum rrr_http_transport transport_code;
+	const char *server_to_use;
+	enum rrr_http_application_type application_type;
 
 	if ((ret = rrr_http_transaction_new (
 			&transaction,
@@ -1311,8 +1633,8 @@ int rrr_http_client_request_send (
 	}
 #endif
 
-	uint16_t port_to_use = data->http_port;
-	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
+	port_to_use = data->http_port;
+	transport_code = RRR_HTTP_TRANSPORT_ANY;
 
 	if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
@@ -1324,14 +1646,6 @@ int rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_QUIC;
 	}
 
-	struct rrr_http_client_request_callback_data callback_data = {
-		.http_client = http_client,
-		.query_prepare_callback = query_prepare_callback,
-		.callback_arg = callback_arg,
-		.data = data,
-		.transaction = transaction
-	};
-
 	if (port_to_use == 0) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS || transport_code == RRR_HTTP_TRANSPORT_QUIC) {
 			port_to_use = 443;
@@ -1341,7 +1655,7 @@ int rrr_http_client_request_send (
 		}
 	}
 
-	const char *server_to_use = data->server;
+	server_to_use = data->server;
 
 	if (connection_prepare_callback != NULL) {
 		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, callback_arg)) != 0) {
@@ -1375,11 +1689,10 @@ int rrr_http_client_request_send (
 		goto out;
 	}
 
-	callback_data.request_header_host = request_header_host_to_free;
-
-	enum rrr_http_application_type application_type = transport_code == RRR_HTTP_TRANSPORT_QUIC
+	application_type = (transport_code == RRR_HTTP_TRANSPORT_QUIC
 		? RRR_HTTP_APPLICATION_HTTP3
-		: RRR_HTTP_APPLICATION_HTTP1;
+		: RRR_HTTP_APPLICATION_HTTP1
+	);
 
 #ifdef RRR_WITH_NGHTTP2
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
@@ -1397,31 +1710,17 @@ int rrr_http_client_request_send (
 	}
 #endif /* RRR_WITH_NGHTTP2 */
 
-	transaction->transport_code = transport_code;
-	transaction->application_type = application_type;
-
 	if (method_prepare_callback != NULL) {
 		enum rrr_http_method chosen_method = data->method;
-		if ((ret = method_prepare_callback(&chosen_method, transaction, callback_arg)) != 0) {
+		if ((ret = method_prepare_callback(&chosen_method, callback_arg)) != 0) {
 			if (ret != RRR_HTTP_NO_RESULT) {
 				goto out;
 			}
 		}
 		else {
-			rrr_http_transaction_method_set(transaction, chosen_method);
+			transaction->method = chosen_method;
 		}
 	}
-
-	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' version '%s' upgrade mode '%s'\n",
-			server_to_use,
-			port_to_use,
-			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
-			RRR_HTTP_METHOD_TO_STR(transaction->method),
-			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
-			RRR_HTTP_APPLICATION_TO_STR(transaction->application_type),
-			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
-			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
-	);
 
 	if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure (
 			http_client,
@@ -1431,31 +1730,22 @@ int rrr_http_client_request_send (
 		goto out;
 	}
 
-	struct rrr_net_transport *transport_keepalive_to_use = NULL;
+	struct rrr_http_client_request_callback_data callback_data = {
+		.http_client = http_client,
+		.query_prepare_callback = query_prepare_callback,
+		.callback_arg = callback_arg,
+		.data = data,
+		.transaction = transaction,
+		.request_header_host = request_header_host_to_free
+	};
 
-	if ((ret = __rrr_http_client_request_send_transport_keepalive_select (
-			&transport_keepalive_to_use,
-			http_client,
-			data->transport_force,
-			transport_code
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_http_client_request_send_intermediate_connect (
-			transport_keepalive_to_use,
+	if ((ret = __rrr_http_client_request_send_intermediate_alt_svc_select (
 			&callback_data,
+			transport_code,
+			application_type,
 			server_to_use,
 			port_to_use
 	)) != 0) {
-		if (ret == RRR_HTTP_BUSY) {
-			RRR_DBG_3("HTTP application temporarily busy during request to server %s port %u transport %s in http client\n",
-				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
-		}
-		else {
-			RRR_DBG_2("HTTP request to server %s port %u transport %s failed in http client, return was %i\n",
-				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
-		}
 		goto out;
 	}
 
