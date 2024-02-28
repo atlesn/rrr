@@ -1078,14 +1078,16 @@ static int httpserver_async_response_process (
 				break;
 		};
 
-		if (value_content_type != 0) {
+		if (value_content_type != NULL) {
 			VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
 			if ((ret = httpserver_async_response_get_process_string_value (&content_type_to_free, value_content_type)) != 0) {
 				RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 				goto out;
 			}
-			content_type_to_use = content_type_to_free;
+			if (*content_type_to_free != '\0') {
+				content_type_to_use = content_type_to_free;
+			}
 		}
 
 		if (content_type_to_use != NULL) {
