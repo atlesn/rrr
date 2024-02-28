@@ -241,7 +241,11 @@ static int httpserver_parse_config (
 	);
 
 	if (data->net_transport_config.transport_type_f & (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)) {
-		if ((ret = rrr_http_util_make_alt_svc_header(&data->alt_svc_header, data->port_tls, data->port_quic)) != 0) {
+		if ((ret = rrr_http_util_make_alt_svc_header (
+				&data->alt_svc_header,
+				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS ? data->port_tls : 0,
+				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC ? data->port_quic : 0
+		)) != 0) {
 			goto out;
 		}
 	}
