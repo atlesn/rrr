@@ -194,7 +194,7 @@ static int httpserver_parse_config (
 		)) != 0) {
 			goto out;
 		}
-		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLSISH)) {
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)) {
 			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
 					config->name);
 			ret = 1;
