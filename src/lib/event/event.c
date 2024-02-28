@@ -468,6 +468,12 @@ void rrr_event_queue_destroy (
 	rrr_free(queue);
 }
 
+void rrr_event_queue_destroy_void (
+		void *queue
+) {
+	rrr_event_queue_destroy(queue);
+}
+
 #ifdef RRR_WITH_LIBEVENT_DEBUG
 static int debug_active = 0;
 #endif

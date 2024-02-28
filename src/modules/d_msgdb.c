@@ -213,7 +213,7 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 	if ((init_ret = msgdb_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initialize data in msgdb instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("msgdb thread data is %p\n", thread_data);
@@ -235,7 +235,7 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 	out_message:
 		RRR_DBG_1 ("Thread msgdb %p exiting\n", thread);
 		pthread_cleanup_pop(1);
-		pthread_exit(0);
+		return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

@@ -463,16 +463,27 @@ static int main_loop_stats_handle_reset (struct stats_data *stats_data) {
 }
 
 static int main_loop_periodic_maintenance (
-		struct stats_data *stats_data,
-		struct rrr_fork_handler *fork_handler
+		struct main_loop_event_callback_data *callback_data
 ) {
 	int ret = 0;
 
+	const uint64_t now_time = rrr_time_get_64();
+	if (now_time - callback_data->prev_periodic_time >= 1000000) {
+		// One second interval tasks
+		rrr_message_broker_report_buffers (
+			callback_data->message_broker,
+			main_loop_periodic_message_broker_report_buffer_callback,
+			main_loop_periodic_message_broker_report_buffer_split_buffer_callback,
+			callback_data
+		);
+		callback_data->prev_periodic_time = now_time;
+	}
+
 	rrr_config_set_debuglevel_orig();
 
-	rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
+	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
 
-	if (main_mmap_periodic(stats_data) != 0) {
+	if (main_mmap_periodic(callback_data->stats_data) != 0) {
 		RRR_MSG_0("Error while posting mmap statistics in main loop\n");
 		ret = 1;
 		goto out;
@@ -495,14 +506,12 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 
 	if (!main_running) {
 		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
+		rrr_config_set_debuglevel_on_exit();
 		rrr_event_dispatch_exit(callback_data->queue);
 		return;
 	}
 
-	if (main_loop_periodic_maintenance (
-			callback_data->stats_data,
-			callback_data->fork_handler
-	) != 0) {
+	if (main_loop_periodic_maintenance (callback_data) != 0) {
 		rrr_event_dispatch_break(callback_data->queue);
 		return;
 	}
@@ -538,7 +547,8 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 				callback_data->cmd,
 				&callback_data->stats_data->engine,
 				callback_data->message_broker,
-				callback_data->fork_handler
+				callback_data->fork_handler,
+				&main_running
 		) != 0) {
 			goto out_event_exit;
 		}
@@ -572,22 +582,7 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 		}
 	}
 
-	const uint64_t now_time = rrr_time_get_64();
-	if (now_time - callback_data->prev_periodic_time >= 1000000) {
-		// One second interval tasks
-		rrr_message_broker_report_buffers (
-			callback_data->message_broker,
-			main_loop_periodic_message_broker_report_buffer_callback,
-			main_loop_periodic_message_broker_report_buffer_split_buffer_callback,
-			callback_data
-		);
-		callback_data->prev_periodic_time = now_time;
-	}
-
-	if (main_loop_periodic_maintenance (
-			callback_data->stats_data,
-			callback_data->fork_handler
-	) != 0) {
+	if (main_loop_periodic_maintenance (callback_data) != 0) {
 		goto out_destroy_thread_collection;
 	}
 
@@ -606,6 +601,7 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
+		struct rrr_event_queue *queue,
 		struct rrr_fork_handler *fork_handler,
 		int single_thread
 ) {
@@ -614,7 +610,6 @@ static int main_loop (
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_message_broker_hooks hooks = {0};
-	struct rrr_event_queue *queue = NULL;
 	struct rrr_event_collection events = {0};
 	rrr_event_handle event_periodic = {0};
 
@@ -624,13 +619,9 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
-	if ((ret = rrr_event_queue_new(&queue)) != 0) {
-		goto out;
-	}
-
 	if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
-		goto out_destroy_events;
+		goto out;
 	}
 
 	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
@@ -668,6 +659,8 @@ static int main_loop (
 		}
 
 		if (cmd_exists(cmd, "event-hooks", 0)) {
+			RRR_DBG_1("Enabling event hooks for statistics\n");
+
 			rrr_event_hook_enable ();
 			rrr_event_hook_set (main_loop_event_hook, &stats_data);
 		}
@@ -729,10 +722,11 @@ static int main_loop (
 				config,
 				0,
 				cmd,
+				queue,
 				&stats_data.engine,
 				message_broker,
 				fork_handler,
-				queue
+				&main_running
 		);
 
 		RRR_DBG_1 ("Main loop finished with code %i\n", ret);
@@ -799,8 +793,6 @@ static int main_loop (
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
 		rrr_instance_config_collection_destroy(config);
-	out_destroy_events:
-		rrr_event_queue_destroy(queue);
 	out:
 		return ret;
 }
@@ -1041,79 +1033,99 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 		rrr_setproctitle("[%s]", config_string);
 
-		goto out_cleanup_signal;
-	}
-
-	// Load configuration and fork
-	int config_i = 0;
-	RRR_MAP_ITERATE_BEGIN(&config_file_map);
-	 	 // We fork one child for every specified config file
-
-		if (config_i > 0 && rrr_config_global.start_interval > 0) {
-			RRR_DBG_1("Delaying next fork by %lu milliseconds per arguments.\n",
-				(long unsigned int) rrr_config_global.start_interval);
-
-			const size_t delay_us = (unsigned long int) rrr_config_global.start_interval / 10 * 1000;
-			for (int i = 0; i < 10; i++) {
-				if (rrr_posix_usleep(delay_us) != 0) {
-					RRR_DBG_1("Delayed startup aborted\n");
-					RRR_LL_ITERATE_LAST();
-					main_running = 0;
-				}
-			}
-		}
-
-		const char *config_string = node->tag;
-
-		// This message is to force creation of a common log fd prior to
-		// forking for log libraries requiring this (like SystemD journald)
-		if (RRR_DEBUGLEVEL_1 || rrr_config_global.do_journald_output) {
-			RRR_MSG_1("RRR starting configuration <%s>\n", config_string);
-		}
-
-		pid_t pid = rrr_fork (
-				fork_handler,
-				rrr_fork_default_exit_notification,
-				&exit_notification_data
-		);
-		if (pid < 0) {
-			RRR_MSG_0("Could not fork child process in main(): %s\n", rrr_strerror(errno));
+		if (rrr_event_queue_new(&queue) != 0) {
 			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}
-		else if (pid > 0) {
-			goto increment;
-		}
-
-		// CHILD CODE
-		is_child = 1;
-
-		rrr_setproctitle("[%s]", config_string);
 
 		if (main_loop (
 				&cmd,
 				config_string,
+				queue,
 				fork_handler,
-				0 /* Not single thread mode */
+				1 /* Single thread mode */
 		) != 0) {
 			ret = EXIT_FAILURE;
 		}
 
-		if (is_child) {
+		goto out_destroy_events;
+	}
+	else {
+		// Load configuration and fork
+		int config_i = 0;
+		RRR_MAP_ITERATE_BEGIN(&config_file_map);
+			 // We fork one child for every specified config file
+
+			if (config_i > 0 && rrr_config_global.start_interval > 0) {
+				RRR_DBG_1("Delaying next fork by %lu milliseconds per arguments.\n",
+					(long unsigned int) rrr_config_global.start_interval);
+
+				const size_t delay_us = (unsigned long int) rrr_config_global.start_interval / 10 * 1000;
+				for (int i = 0; i < 10; i++) {
+					if (rrr_posix_usleep(delay_us) != 0) {
+						RRR_DBG_1("Delayed startup aborted\n");
+						RRR_LL_ITERATE_LAST();
+						main_running = 0;
+					}
+				}
+			}
+
+			const char *config_string = node->tag;
+
+			// This message is to force creation of a common log fd prior to
+			// forking for log libraries requiring this (like SystemD journald)
+			if (RRR_DEBUGLEVEL_1 || rrr_config_global.do_journald_output) {
+				RRR_MSG_1("RRR starting configuration <%s>\n", config_string);
+			}
+
+			pid_t pid = rrr_fork (
+					fork_handler,
+					rrr_fork_default_exit_notification,
+					&exit_notification_data
+			);
+			if (pid < 0) {
+				RRR_MSG_0("Could not fork child process in main(): %s\n", rrr_strerror(errno));
+				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+			else if (pid > 0) {
+				goto increment;
+			}
+
+			// CHILD CODE
+			rrr_setproctitle("[%s]", config_string);
+
+			is_child = 1;
+
+			if (rrr_event_queue_new(&queue) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_destroy_events;
+			}
+
+			if (main_loop (
+					&cmd,
+					config_string,
+					queue,
+					fork_handler,
+					0 /* Not single thread mode */
+			) != 0) {
+				ret = EXIT_FAILURE;
+			}
+
+			goto out_destroy_events;
+
+			increment:
+			config_i++;
+		RRR_MAP_ITERATE_END();
+
+		// Create queue after forking to prevent it and it's FDs from existing in the forks
+		if (rrr_event_queue_new(&queue) != 0) {
+			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}
-
-		increment:
-		config_i++;
-	RRR_MAP_ITERATE_END();
+	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-
-	// Create queue after forking to prevent it and it's FDs from existing in the forks
-	if (rrr_event_queue_new(&queue) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
-	}
 
 	struct main_periodic_callback_data callback_data = {
 		fork_handler
@@ -1126,12 +1138,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 			&callback_data
 	);
 
+	out_destroy_events:
+		rrr_event_queue_destroy(queue);
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-
-		if (queue != NULL) {
-			rrr_event_queue_destroy(queue);
-		}
 
 		rrr_signal_handler_remove(signal_handler);
 		rrr_signal_handler_remove(signal_handler_fork);

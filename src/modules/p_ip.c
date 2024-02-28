@@ -759,7 +759,8 @@ static int ip_connect_raw_callback (
 			ip_data->tcp_graylist,
 			addr,
 			addr_len,
-			ip_data->close_grace_ms * 1000
+			ip_data->close_grace_ms * 1000,
+			1
 	);
 
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
@@ -1603,7 +1604,8 @@ static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARG
 				ip_data->tcp_graylist,
 				addr,
 				addr_len,
-				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU
+				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU,
+				1
 		);
 	}
 }
@@ -1748,7 +1750,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	if (ip_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
@@ -1836,7 +1838,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name);
 
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

@@ -100,6 +100,9 @@ ssize_t rrr_event_hook_string_format (
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );
+void rrr_event_queue_destroy_void (
+		void *queue
+);
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );

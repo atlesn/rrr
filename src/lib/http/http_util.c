@@ -786,6 +786,45 @@ rrr_length rrr_http_util_count_whsp (
 	return ret;
 }
 
+int rrr_http_util_uri_dup (
+		struct rrr_http_uri *uri_result,
+		const struct rrr_http_uri *uri
+) {
+	int ret = 0;
+
+	rrr_http_util_uri_clear (uri_result);
+
+	if (uri->protocol != NULL && (uri_result->protocol = rrr_strdup(uri->protocol)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for protocol in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	if (uri->host != NULL && (uri_result->host = rrr_strdup(uri->host)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for host in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	if (uri_result->endpoint != NULL && (uri_result->endpoint = rrr_strdup(uri->endpoint)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for endpoint in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	uri_result->port = uri->port;
+	uri_result->transport = uri->transport;
+	uri_result->application_type = uri->application_type;
+
+	goto out;
+	out_free:
+		RRR_FREE_IF_NOT_NULL(uri_result->endpoint);
+		RRR_FREE_IF_NOT_NULL(uri_result->host);
+		RRR_FREE_IF_NOT_NULL(uri_result->protocol);
+	out:
+		return ret;
+}
+
 void rrr_http_util_uri_clear (
 		struct rrr_http_uri *uri
 ) {
@@ -1260,9 +1299,21 @@ int rrr_http_util_uri_parse (
 
 int rrr_http_util_uri_host_parse (
 		struct rrr_http_uri *uri_result,
-		const struct rrr_nullsafe_str *str
+		const struct rrr_nullsafe_str *str,
+		enum rrr_http_transport transport,
+		enum rrr_http_application_type application_type
 ) {
-	return __rrr_http_util_uri_parse_final(uri_result, str, __rrr_http_util_uri_host_parse_callback);
+	int ret = 0;
+
+	if ((ret = __rrr_http_util_uri_parse_final(uri_result, str, __rrr_http_util_uri_host_parse_callback)) != 0) {
+		goto out;
+	}
+
+	uri_result->transport = transport;
+	uri_result->application_type = application_type;
+
+	out:
+	return ret;
 }
 
 static int __rrr_http_util_uri_validate_characters_nullsafe_callback (

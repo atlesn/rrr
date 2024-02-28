@@ -57,9 +57,55 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		
 #define RRR_THREAD_WATCHDOG_SLEEPTIME_MS 500
 
+static void __rrr_thread_managed_data_cleanup (
+		struct rrr_thread *thread
+) {
+	RRR_DBG_8 ("Thread %s managed data cleanup\n", thread->name);
+
+	RRR_LL_ITERATE_BEGIN(&thread->managed_data, struct rrr_thread_managed_data);
+		node->destroy(node->data);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&thread->managed_data, 0; rrr_free(node));
+}
+
+static void __rrr_thread_managed_data_cleanup_if_not_started (
+		struct rrr_thread *thread
+) {
+	if (thread->started) {
+		RRR_DBG_8 ("Thread %s not cleaning up managed as it is started. Thread must clean up itself.\n", thread->name);
+		return;
+	}
+	__rrr_thread_managed_data_cleanup(thread);
+}
+
+int rrr_thread_managed_data_push (
+		struct rrr_thread *thread,
+		void *data,
+		void (*destroy)(void *data)
+) {
+	int ret = 0;
+
+	struct rrr_thread_managed_data *managed_data;
+
+	if ((managed_data = rrr_allocate_zero (sizeof(*managed_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	managed_data->data = data;
+	managed_data->destroy = destroy;
+
+	RRR_LL_PUSH(&thread->managed_data, managed_data);
+
+	out:
+	return ret;
+}
+
 static int __rrr_thread_destroy (
 		struct rrr_thread *thread
 ) {
+	__rrr_thread_managed_data_cleanup_if_not_started(thread);
 	pthread_cond_destroy(&thread->signal_cond);
 	pthread_mutex_destroy(&thread->signal_cond_mutex);
 	rrr_free(thread);
@@ -286,9 +332,7 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 			RRR_DBG_8 ("Thread %s is not started, not stopping\n", node->name);
 			RRR_LL_ITERATE_NEXT();
 		}
-		if (node->thread == 0) {
-			RRR_BUG("BUG: No thread ID set for thread in %s, initialization function must not produce this state\n", __func__);
-		}
+
 		if (node->is_watchdog) {
 			// Setting encourage stop to watchdog makes it skip initial 1 second
 			// startup grace should it not already have been started
@@ -298,6 +342,7 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 		}
 
+		// Signals are set both in single thread mode and multi thread mode
 		rrr_atomic_u32_fetch_or(&node->state_and_signal,
 			RRR_THREAD_SIGNAL_ENCOURAGE_STOP |
 			RRR_THREAD_SIGNAL_START_INITIALIZE |
@@ -487,6 +532,23 @@ int rrr_thread_start_condition_helper_fork (
 	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 
 	return ret;
+}
+
+void rrr_thread_collection_signal_start_no_procedure_all (
+		struct rrr_thread_collection *collection
+) {
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		if (node->is_watchdog)
+			continue;
+		if (i++ > 0)
+			RRR_BUG("BUG: More than one thread in %s\n", __func__);
+
+		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_SINGLE_MODE);
+		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_INITIALIZE);
+		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	RRR_LL_ITERATE_END();
 }
 
 int rrr_thread_collection_signal_start_procedure_all (
@@ -816,6 +878,7 @@ static void __rrr_thread_cleanup (
 	if (rrr_thread_state_check(thread, RRR_THREAD_STATE_GHOST)) {
 		RRR_MSG_0 ("Thread %s waking up after being ghost\n", thread->name);
 	}
+	__rrr_thread_managed_data_cleanup(thread);
 }
 
 static void __rrr_thread_state_set_stopped (
@@ -893,6 +956,16 @@ static int __rrr_thread_start (
 		thread->started = 0;
 	out:
 		return ret;
+}
+
+void rrr_thread_run (
+		struct rrr_thread *thread
+) {
+	RRR_DBG_8("Thread %s starting run\n", thread->name);
+
+	thread->started = 1;
+
+	__rrr_thread_start_routine_intermediate(thread);
 }
 
 static int __rrr_thread_allocate_watchdog_data (

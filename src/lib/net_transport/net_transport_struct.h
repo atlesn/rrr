@@ -185,6 +185,11 @@ struct rrr_nullsafe_str;
 #define RRR_NET_TRANSPORT_STREAM_COUNT_ARGS                    \
     struct rrr_net_transport_handle *handle
 
+#define RRR_NET_TRANSPORT_EXTEND_MAX_STREAMS_ARGS              \
+    struct rrr_net_transport_handle *handle,                   \
+    int64_t stream_id,                                         \
+    size_t n
+
 #define RRR_NET_TRANSPORT_STREAM_CONSUME_ARGS                  \
     struct rrr_net_transport_handle *handle,                   \
     int64_t stream_id,                                         \
@@ -274,6 +279,10 @@ struct rrr_net_transport_methods {
 	// Count number of open streams on stream-oriented transport handle. Note
 	// that only streams which the submodule actually keeps track of is counted.
 	uint64_t (*stream_count)(RRR_NET_TRANSPORT_STREAM_COUNT_ARGS);
+
+	// Extend the maximum number of remote streams. The stream_id argument should
+	// indicate which type of stream is to be extended (e.g. a recently closed stream)
+	int (*extend_max_streams)(RRR_NET_TRANSPORT_EXTEND_MAX_STREAMS_ARGS);
 
 	// Must be called 
 	int (*stream_consume)(RRR_NET_TRANSPORT_STREAM_CONSUME_ARGS);

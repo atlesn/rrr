@@ -52,6 +52,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Tell a thread politely to cancel */
 #define RRR_THREAD_SIGNAL_ENCOURAGE_STOP        (1<<19)
 
+/* Inform a thread that it is being run in single thread mode */
+#define RRR_THREAD_SIGNAL_START_SINGLE_MODE     (1<<20)
+
 /* Can only be set in thread control */
 #define RRR_THREAD_STATE_NEW                    (1<<0)
 
@@ -93,6 +96,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_OK     RRR_READ_OK
 #define RRR_THREAD_STOP   RRR_READ_EOF
 
+struct rrr_thread_managed_data {
+	RRR_LL_NODE(struct rrr_thread_managed_data);
+	void *data;
+	void (*destroy)(void *data);
+};
+
+struct rrr_thread_managed_data_collection {
+	RRR_LL_HEAD(struct rrr_thread_managed_data);
+};
+
 struct rrr_thread {
 	RRR_LL_NODE(struct rrr_thread);
 
@@ -118,6 +131,9 @@ struct rrr_thread {
 	// Start routines
 	void *(*start_routine) (struct rrr_thread *);
 
+	// External data to clean up
+	struct rrr_thread_managed_data_collection managed_data;
+
 	// Cleanup control
 	volatile int started;
 };
@@ -125,6 +141,12 @@ struct rrr_thread {
 struct rrr_thread_collection {
 	RRR_LL_HEAD(struct rrr_thread);
 };
+
+int rrr_thread_managed_data_push (
+		struct rrr_thread *thread,
+		void *data,
+		void (*destroy)(void *data)
+);
 
 static inline int rrr_thread_signal_check (
 		struct rrr_thread *thread,
@@ -234,6 +256,9 @@ int rrr_thread_start_condition_helper_fork (
 		int (*fork_callback)(void *arg),
 		void *callback_arg
 );
+void rrr_thread_collection_signal_start_no_procedure_all (
+		struct rrr_thread_collection *collection
+);
 int rrr_thread_collection_signal_start_procedure_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
@@ -255,6 +280,9 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 );
 int rrr_thread_collection_start_all (
 		struct rrr_thread_collection *collection
+);
+void rrr_thread_run (
+		struct rrr_thread *thread
 );
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection

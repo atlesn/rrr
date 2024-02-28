@@ -183,6 +183,11 @@ int rrr_net_transport_ctx_streams_iterate (
 uint64_t rrr_net_transport_ctx_stream_count (
 		struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_extend_max_streams (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t n
+);
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -222,6 +227,11 @@ int rrr_net_transport_ctx_selected_proto_get (
 );
 enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
 		const struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
 );
 
 #endif /* RRR_WITH_NET_TRANSPORT_CTX_H */

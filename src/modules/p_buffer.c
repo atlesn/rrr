@@ -151,8 +151,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);
-
-	pthread_exit(0);
+	return NULL;
 }
 
 static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {

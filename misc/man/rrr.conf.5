@@ -2373,9 +2373,10 @@ and may be used at the clients discretion:
 \(bu HTTP/2 negotiated using TLS/ALPN
 .PP
 .SS httpclient (PAI)
-This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
-may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
-use any data sent from the server, any data received is ignored.
+This module takes RRR messages from other modules and sends them to an HTTP server.
+Array values in received messages may be sent as HTTP form fields.
+GET and POST are supported using either HTTP or HTTPS.
+This module does not, by default, use any data sent from the server, any data received is ignored.
 .PP
 The following configuration parameters are available in the
 .B httpclient
@@ -2406,6 +2407,12 @@ Defaults to
 .B /.
 Any provided endpoint by means of this parameter or otherwise must contain only characters which are valid for URIs;
 If for instance spaces are to be used in an endpoint, these must be encoded as %20.
+
+.It http_request_interval_ms=MILLISECONDS
+If set to a value greater than 0, a request will be generated at the given interval.
+The given or default parameters **http_server**, **http_port** and **http_endpoint** will be used for each request.
+Generated requests will be added to a seperate queue and are subject to configured timeouts and may fail depending on configured restrictions or requirements.
+If set to 0 or left unset, no interval requests will be made.
 
 .It http_transport_type={tls|plain|quic}
 Force a specific transport type.

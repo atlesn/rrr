@@ -231,7 +231,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 
 	// No plain method
 	if (cmd_exists(cmd, "plain-disable", 0)) {
-		if (data->http_port > 0) {
+		if (cmd_exists(cmd, "port", 0) && data->http_port > 0) {
 			RRR_MSG_0("A port was specified with --port while --plain-disable was active\n");
 			ret = 1;
 			goto out;

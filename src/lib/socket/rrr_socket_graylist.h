@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,6 +30,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_socket_graylist;
 struct rrr_socket_graylist_entry;
 
+void rrr_socket_graylist_get (
+		int *flags,
+		struct rrr_socket_graylist *list,
+		const struct sockaddr *addr,
+		socklen_t len
+);
+int rrr_socket_graylist_count (
+		struct rrr_socket_graylist *list,
+		const struct sockaddr *addr,
+		socklen_t len
+);
 int rrr_socket_graylist_exists (
 		struct rrr_socket_graylist *list,
 		const struct sockaddr *addr,
@@ -39,7 +50,14 @@ int rrr_socket_graylist_push (
 		struct rrr_socket_graylist *target,
 		const struct sockaddr *addr,
 		socklen_t len,
-		uint64_t graylist_period_us
+		uint64_t graylist_period_us,
+		int flags
+);
+void rrr_socket_graylist_flags_clear (
+		struct rrr_socket_graylist *target,
+		const struct sockaddr *addr,
+		socklen_t len,
+		int flags
 );
 void rrr_socket_graylist_destroy (
 		struct rrr_socket_graylist *target

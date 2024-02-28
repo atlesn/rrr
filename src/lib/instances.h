@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_stats_instance;
 struct rrr_cmodule;
 struct rrr_fork_handler;
+struct rrr_event_queue;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_mqtt_topic_token;
@@ -68,6 +69,7 @@ struct rrr_instance {
 
 #define INSTANCE_I_ROUTES(instance) (&instance->routes)
 #define INSTANCE_I_METHODS(instance) (&instance->methods)
+#define INSTANCE_I_MISC_FLAGS(instance) instance->misc_flags
 
 #define INSTANCE_M_NAME(instance) instance->module_data->instance_name
 #define INSTANCE_M_MODULE_TYPE(instance) instance->module_data->type
@@ -103,6 +105,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 #define INSTANCE_D_ROUTES(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->routes)
 #define INSTANCE_D_METHODS(thread_data) &(INSTANCE_D_INSTANCE(thread_data)->methods)
+#define INSTANCE_D_MISC_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;
@@ -112,12 +115,14 @@ struct rrr_instance_runtime_init_data {
 	struct rrr_instance_config_collection *global_config;
 	struct rrr_instance_module_data *module;
 	struct rrr_instance_friend_collection *senders;
+	struct rrr_event_queue *events;
 	struct rrr_stats_engine *stats;
 	struct rrr_message_broker *message_broker;
 	struct rrr_fork_handler *fork_handler;
 	const struct rrr_mqtt_topic_token *topic_first_token;
 	const char *topic_str;
 	struct rrr_instance *instance;
+	volatile const int *main_running;
 };
 
 struct rrr_instance_runtime_data {
@@ -150,7 +155,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
 #define INSTANCE_D_BROKER_ARGS(thread_data) INSTANCE_D_HANDLE(thread_data)
-#define INSTANCE_D_EVENTS(thread_data) rrr_message_broker_event_queue_get(INSTANCE_D_HANDLE(thread_data))
+#define INSTANCE_D_EVENTS(thread_data) thread_data->init_data.events
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
@@ -160,6 +165,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 #define INSTANCE_D_INSTANCES(thread_data) thread_data->init_data.module->all_instances
+#define INSTANCE_D_MAIN_RUNNING(thread_data) (*thread_data->init_data.main_running)
 
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
@@ -197,9 +203,6 @@ struct rrr_instance *rrr_instance_find (
 int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 );
-void rrr_instance_runtime_data_destroy (
-		struct rrr_instance_runtime_data *data
-);
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
@@ -207,17 +210,19 @@ int rrr_instances_create_and_start_threads (
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
-		struct rrr_fork_handler *fork_handler
+		struct rrr_fork_handler *fork_handler,
+		volatile const int *main_running
 );
 int rrr_instance_run (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
 		int instance_index,
 		struct cmd_data *cmd,
+		struct rrr_event_queue *events,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		struct rrr_event_queue *queue
+		volatile const int *main_running
 );
 int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
