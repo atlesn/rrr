@@ -77,14 +77,6 @@ enum rrr_net_transport_type_f {
 #endif
 };
 
-#if (defined (RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)) && defined(RRR_WITH_HTTP3)
-#  define RRR_NET_TRANSPORT_F_TLSISH (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)
-#elif defined (RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
-#  define RRR_NET_TRANSPORT_F_TLSISH (RRR_NET_TRANSPORT_F_TLS)
-#elif defined (RRR_WITH_HTTP3)
-#  error "RRR_WITH_HTTP3 defined without RRR_WITH_LIBRESSL or RRR_WITH_OPENSSL"
-#endif
-
 enum rrr_net_transport_socket_mode {
 	RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
 	RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
