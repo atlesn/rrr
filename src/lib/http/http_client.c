@@ -52,7 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS    500
+#define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_SHORT_MS    200
 #define RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS    1000
 
 #define RRR_HTTP_CLIENT_GRAYLIST_F_SHORT   (1<<0)
@@ -1032,16 +1032,61 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	int graylist_flags;
 
 	for (uint16_t concurrent_index = 0; concurrent_index < callback_data->data->concurrent_connections; concurrent_index++) {
-		// Graylisting for connection attempts on each concurrent index/server combination
+		// Match number with index used to look up any existing handle in the transport
 		const uint64_t match_number = __rrr_http_client_net_transport_match_number_make (
 				port_to_use,
 				concurrent_index,
 				callback_data->transaction->application_type
 		);
 
-		// Graylisting checks in alt-svc selector uses index 0 only. It needs to know:
-		// - How many connection attempts are currently in handshaking (happens with non-reachable UDP servers); and
-		// - A connection attempt has failed explicitly (happens with non-reachable TCP servers)
+		/*
+		 * LONG and SHORT graylist periodis are added whenever a connection attempt is made for each
+		 * given server and service. Only one connection attempt can be made for each target. If a
+		 * service is connected but BUSY, another connection is made. This usually only happens for
+		 * HTTP1.
+		 *
+		 * In case of failing connection attempts of main and alternative services, the following
+		 * algorithm applies:
+		 *
+		 * - During LONG timeout for a target, no new connection attempts may be made.
+		 * - After the SHORT period has expired (and before LONG timeout has expired), the alt-svc
+		 *   selector will not suggest a graylisted service.
+		 * - During the SHORT timeout, the alt-svc selector will still suggest the service to allow
+		 *   any handshaking to complete.
+		 *
+		 * The SHORT timeout must be short enough to allow trying multiple alternative services
+		 * within a LONG timeout. It should be set to LONG / 5.
+		 *
+		 * If all of plain, tls and quic modes are active and the latter two are reported by the
+		 * server as alternative services, the following timeline describes how connection
+		 * attempts for the different services will be made over time if none of them are reachable.
+		 * C indicates connection attempt while H indicates handshaking.
+		 *
+		 *     HTTP1 |                   | SHORT ->| LONG --- --------- --------- -------->|   ...
+		 *           |                   | C (H)       (H)       (H)                       |   ...
+		 *     HTTP2 |         | SHORT ->| LONG --- --------- --------- -------->| SHORT ->|   ...
+		 *           |         | C (H)   |                                       | C           ...
+		 *     HTTP3 | SHORT ->| LONG --- --------- --------- -------->| SHORT ->| LONG ---    ...
+		 *           | C  H    |                                       | C H H H |             ...
+		 *
+		 * 1. The highest protocol, HTTP3, is selected first. Since there is no immediate
+		 *    feedback for UDP connections, handshaking will continue during the SHORT timeout
+		 *    period. After the SHORT timeout, HTTP3 is no longer selected.
+		 *
+		 * 2. The second highest protocol, HTTP2, is selected. It will either immediately fail
+		 *    due to connection refused/timeout or fail during later handshaking. After the
+		 *    SHORT timeout, HTTP2 is no longer selected.
+		 *
+		 * 3. HTTP1 is not an alternative service, and it will be used when neither of HTTP2 and
+		 *    HTTP3 are selected. HTTP3 will be used again later when its LONG timeout has passed.
+		 *
+		 *  HTTP2 may also be implicitly selected in place of HTTP1 if TLS is used and the server
+		 *  reports HTTP2 in the ALPN. In both cases, in case of TLS, handshaking will occur until
+		 *  another service is selected.
+		 */
+
+		// Match number without index used for preventing multiple connection attempts to the same
+		// server and for graylisting checks in alt-svc selector.
 		const uint64_t match_number_common = __rrr_http_client_net_transport_match_number_make (
 				port_to_use,
 				0,
@@ -1060,7 +1105,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 					&graylist_flags,
 					transport_keepalive,
 					server_to_use,
-					match_number
+					match_number_common
 			);
 
 			if (graylist_count > 0) {
@@ -1071,62 +1116,23 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			}
 
 			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
-					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
-
-			if ((ret = rrr_net_transport_connect (
-					transport_keepalive,
+					server_to_use,
 					port_to_use,
-					server_to_use,
-					__rrr_http_client_request_send_connect_callback,
-					&keepalive_handle
-			)) != 0) {
-				if ((ret = rrr_net_transport_graylist_push (
-						transport_keepalive,
-						server_to_use,
-						match_number,
-						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
-						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
-				)) != 0) {
-					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
-					goto out;
-				}
-
-				if ((ret = rrr_net_transport_graylist_push (
-						transport_keepalive,
-						server_to_use,
-						match_number_common,
-						RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
-						RRR_HTTP_CLIENT_GRAYLIST_F_LONG
-				)) != 0) {
-					RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
-					goto out;
-				}
-
-				goto out;
-			}
-
-			rrr_net_transport_graylist_flags_clear (
-					transport_keepalive,
-					server_to_use,
-					match_number,
-					RRR_HTTP_CLIENT_GRAYLIST_F_LONG
+					concurrent_index + 1,
+					callback_data->data->concurrent_connections
 			);
 
-			if ((ret = rrr_net_transport_handle_match_data_set (
+			if ((ret = rrr_net_transport_graylist_push (
 					transport_keepalive,
-					keepalive_handle,
 					server_to_use,
-					match_number
+					match_number_common,
+					RRR_HTTP_CLIENT_GRAYLIST_PERIOD_LONG_MS * 1000,
+					RRR_HTTP_CLIENT_GRAYLIST_F_LONG
 			)) != 0) {
-				RRR_MSG_0("Failed to set match data in %s\n", __func__);
+				RRR_MSG_0("Failed to add to graylist in %s\n", __func__);
 				goto out;
 			}
-		}
 
-		if ((ret = rrr_net_transport_handle_check_handshake_complete (
-				transport_keepalive,
-				keepalive_handle
-		)) != RRR_READ_OK) {
 			if ((ret = rrr_net_transport_graylist_push (
 					transport_keepalive,
 					server_to_use,
@@ -1138,17 +1144,42 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				goto out;
 			}
 
-			ret = RRR_HTTP_BUSY;
+			if ((ret = rrr_net_transport_connect (
+					transport_keepalive,
+					port_to_use,
+					server_to_use,
+					__rrr_http_client_request_send_connect_callback,
+					&keepalive_handle
+			)) != 0) {
+				goto out;
+			}
 
-			goto next;
+			if ((ret = rrr_net_transport_handle_match_data_set (
+					transport_keepalive,
+					keepalive_handle,
+					server_to_use,
+					match_number
+			)) != 0) {
+				RRR_MSG_0("Failed to set match data in %s\n", __func__);
+				goto out;
+			}
+		}
+		else {
+			RRR_DBG_3("HTTP client existing connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
+					server_to_use,
+					port_to_use,
+					concurrent_index + 1,
+					callback_data->data->concurrent_connections
+			);
 		}
 
-		rrr_net_transport_graylist_flags_clear (
+		if ((ret = rrr_net_transport_handle_check_handshake_complete (
 				transport_keepalive,
-				server_to_use,
-				match_number_common,
-				RRR_HTTP_CLIENT_GRAYLIST_F_SHORT
-		);
+				keepalive_handle
+		)) != RRR_READ_OK) {
+			ret = RRR_HTTP_BUSY;
+			goto next;
+		}
 
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
 				transport_keepalive,
@@ -1222,21 +1253,19 @@ static void __rrr_http_client_alt_svc_select (
 				)
 		);
 
-		// Don't use alternative service if:
-		// - Connection attempt 0 has failed explicitly (connection refused, timeout); or
-		// - All connections are currently in handshaking
-		if (graylist_flags & RRR_HTTP_CLIENT_GRAYLIST_F_LONG || graylist_count >= concurrent_max) {
-/* Noisy
+		// Don't use alternative service if it is LONG graylisted after
+		// SHORT graylisting has expired.
+		if ( (graylist_flags & RRR_HTTP_CLIENT_GRAYLIST_F_LONG) &&
+		    !(graylist_flags & RRR_HTTP_CLIENT_GRAYLIST_F_SHORT)
+		) {
 			RRR_DBG_3("HTTP alt-svc transport %s application %s server %s port %u is graylisted, not using\n",
 				RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
 				RRR_HTTP_APPLICATION_TO_STR(node->uri.application_type),
 				server_tmp,
 				node->uri.port
 			);
-*/
 			RRR_LL_ITERATE_NEXT();
 		}
-		
 
 		RRR_DBG_3("HTTP selecting alt-svc transport %s and application %s over %s and %s\n",
 			RRR_HTTP_TRANSPORT_TO_STR(node->uri.transport),
