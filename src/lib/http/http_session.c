@@ -349,13 +349,22 @@ int rrr_http_session_transport_ctx_close_if_open (
 	(void)(arg);
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
-	RRR_DBG_3("HTTP polite close fd %i h %i session %p\n",
-			RRR_NET_TRANSPORT_CTX_FD(handle),
-			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
-			session
-	);
+	if (session != NULL) {
+		RRR_DBG_3("HTTP polite close fd %i h %i session %p\n",
+				RRR_NET_TRANSPORT_CTX_FD(handle),
+				RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+				session
+		);
 
-	rrr_http_application_polite_close(session->application, handle);
+		rrr_http_application_polite_close(session->application, handle);
+	}
+	else {
+		RRR_DBG_3("HTTP non-polite close fd %i h %i (session does not yet exist)\n",
+				RRR_NET_TRANSPORT_CTX_FD(handle),
+				RRR_NET_TRANSPORT_CTX_HANDLE(handle)
+		);
+		rrr_net_transport_ctx_close_now_set(handle);
+	}
 
 	return 0; // Always return 0
 }
