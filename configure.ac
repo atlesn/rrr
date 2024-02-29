@@ -480,7 +480,7 @@ AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([V8COMPILE], [
 	cxx_flags="$TEST_CXXFLAGS $JS_CXXFLAGS $FREEBSD_CXXFLAGS -w"
-	ld_flags="$AM_LDFLAGS $JS_LDFLAGS $JS_LIBS"
+	ld_flags="$JS_LDFLAGS $JS_LIBS $AM_LDFLAGS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags > /dev/null 2>&1 && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([present])

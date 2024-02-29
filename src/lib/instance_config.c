@@ -40,6 +40,57 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			
 #define RRR_INSTANCE_CONFIG_MAX_SETTINGS 32
 
+struct rrr_instance_config_update_used_callback_data {
+	struct rrr_instance_config_data *config;
+	const char *name;
+	int was_used;
+	int did_update;
+};
+
+static int __rrr_instance_config_update_used_callback (
+		int *was_used,
+		const struct rrr_setting *setting,
+		void *callback_args
+) {
+	struct rrr_instance_config_update_used_callback_data *callback_data = callback_args;
+
+	if (strcmp (setting->name, callback_data->name) == 0) {
+		if (*was_used && !callback_data->was_used) {
+			RRR_MSG_0("Warning: Setting %s in instace %s was marked as used, but it has changed to not used during configuration\n",
+				setting->name, callback_data->config->name);
+		}
+		*was_used = callback_data->was_used;
+		callback_data->did_update = 1;
+	}
+
+	return 0;
+}
+
+void rrr_instance_config_update_used (
+		struct rrr_instance_config_data *config,
+		const char *name,
+		int was_used
+) {
+	struct rrr_instance_config_update_used_callback_data callback_data = {
+		config,
+		name,
+		was_used,
+		0
+	};
+
+	rrr_settings_iterate (
+			&config->settings_used,
+			config->settings,
+			__rrr_instance_config_update_used_callback,
+			&callback_data
+	);
+
+	if (callback_data.did_update != 1) {
+		RRR_MSG_0("Warning: Setting %s in instance %s was not originally set in configuration file, discarding it.\n",
+			name, config->name);
+	}
+}
+
 int rrr_instance_config_string_set (
 		char **target,
 		const char *prefix,

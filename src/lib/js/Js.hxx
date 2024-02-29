@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -107,6 +107,13 @@ namespace RRR::JS {
 		String(v8::Isolate *isolate, const char *data, int size);
 		String(v8::Isolate *isolate, v8::Local<v8::String> str);
 		String(v8::Isolate *isolate, std::string str);
+
+		template<typename L> static String newFromCharWithCleanup(v8::Isolate *isolate, char *str, L cleanup) noexcept {
+			auto str_str = std::string(str);
+			cleanup(str);
+			return String(isolate, str_str);
+		}
+
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
 		operator std::string();

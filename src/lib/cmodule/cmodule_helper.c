@@ -514,17 +514,13 @@ static int __rrr_cmodule_helper_read_from_fork_setting_callback (
 ) {
 	(void)(data_size);
 
-	int ret = 0;
-
-	rrr_settings_update_used (
-			&callback_data->worker->settings_used,
-			callback_data->worker->settings,
+	rrr_instance_config_update_used (
+			INSTANCE_D_CONFIG(callback_data->thread_data),
 			setting_packed->name,
-			(setting_packed->was_used != 0 ? 1 : 0),
-			rrr_settings_iterate
+			setting_packed->was_used
 	);
 
-	return ret;
+	return 0;
 }
 
 static int __rrr_cmodule_helper_read_from_fork_control_callback (

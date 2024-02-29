@@ -938,55 +938,6 @@ int rrr_settings_iterate (
 	return ret;
 }
 
-struct rrr_settings_update_used_callback_data {
-	const char *name;
-	int was_used;
-	int did_update;
-};
-
-static int __rrr_settings_update_used_callback (
-		int *was_used,
-		const struct rrr_setting *setting,
-		void *callback_args
-) {
-	struct rrr_settings_update_used_callback_data *callback_data = callback_args;
-
-	if (strcmp (setting->name, callback_data->name) == 0) {
-		if (*was_used && !callback_data->was_used) {
-			RRR_MSG_0("Warning: Setting %s was marked as used, but configuration function changed it to not used\n", setting->name);
-		}
-		*was_used = callback_data->was_used;
-		callback_data->did_update = 1;
-	}
-
-	return 0;
-}
-
-void rrr_settings_update_used (
-		struct rrr_settings_used *used,
-		const struct rrr_settings *settings,
-		const char *name,
-		int was_used,
-		int (*iterator)(
-				struct rrr_settings_used *used,
-				const struct rrr_settings *settings,
-				int (*callback)(int *was_used, const struct rrr_setting *setting, void *callback_args),
-				void *callback_args
-		)
-) {
-	struct rrr_settings_update_used_callback_data callback_data = {
-		name,
-		was_used,
-		0
-	};
-
-	iterator(used, settings, __rrr_settings_update_used_callback, &callback_data);
-
-	if (callback_data.did_update != 1) {
-		RRR_MSG_0("Warning: Setting %s was not originally set in configuration file, discarding it.\n", name);
-	}
-}
-
 static void __rrr_settings_set_used (
 		struct rrr_settings_used *used,
 		const struct rrr_settings *settings,

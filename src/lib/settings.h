@@ -220,18 +220,6 @@ int rrr_settings_iterate_packed (
 		int (*callback)(const struct rrr_setting_packed *setting_packed, void *callback_arg),
 		void *callback_arg
 );
-void rrr_settings_update_used (
-		struct rrr_settings_used *used,
-		const struct rrr_settings *settings,
-		const char *name,
-		int was_used,
-		int (*iterator)(
-				struct rrr_settings_used *used,
-				const struct rrr_settings *settings,
-				int (*callback)(int *was_used, const struct rrr_setting *setting, void *callback_args),
-				void *callback_args
-		)
-);
 void rrr_settings_set_used (
 		struct rrr_settings_used *used,
 		const struct rrr_settings *settings,

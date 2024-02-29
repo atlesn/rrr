@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,11 +20,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Config.hxx"
-#include "../InstanceConfig.hxx"
 #include "BackingStore.hxx"
 #include "Js.hxx"
 
 extern "C" {
+#include "../settings.h"
 #include "../allocator.h"
 };
 
@@ -49,7 +49,7 @@ namespace RRR::JS {
 
 		info.GetReturnValue().Set(v8::Boolean::New(
 			isolate,
-			rrr_settings_exists(config->settings_used, config->settings, name_str.c_str());
+			rrr_settings_exists(config->settings_used, config->settings, name_str.c_str())
 		));
 	}
 
@@ -67,14 +67,27 @@ namespace RRR::JS {
 			return;
 		}
 
-		auto parameter = String(isolate, info[0]->ToString(ctx).ToLocalChecked());
-		auto instance_config = InstanceConfig(config->config);
-		if (!instance_config.has(parameter)) {
-			isolate->ThrowException(v8::Exception::TypeError(String(isolate, std::string("configuration parameter '") + (std::string) parameter + "' not found")));
+		std::string name_str = String(isolate, info[0]->ToString(ctx).ToLocalChecked());
+
+		if (!rrr_settings_exists(config->settings_used, config->settings, name_str.c_str())) {
+			isolate->ThrowException(v8::Exception::TypeError(
+				String(isolate, std::string("configuration parameter '") + std::string(name_str) + "' not found"))
+			);
 			return;
 		}
 
-		info.GetReturnValue().Set((v8::Local<v8::String>) String(isolate, instance_config.get(parameter)));
+		char *value;
+
+		if (rrr_settings_get_string_noconvert_silent(&value, config->settings_used, config->settings, name_str.c_str())) {
+			isolate->ThrowException(v8::Exception::TypeError(
+				String(isolate, std::string("configuration parameter '") + std::string(name_str) + "' could not be retrieved"))
+			);
+			return;
+		}
+
+		info.GetReturnValue().Set((v8::Local<v8::String>) String::newFromCharWithCleanup(isolate, value, [](char *value){
+			rrr_free(value);
+		}));
 	}
 
 	void ConfigFactory::new_internal_precheck () {

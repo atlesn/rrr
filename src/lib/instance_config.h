@@ -245,6 +245,11 @@ static inline void rrr_instance_config_set_unused (
 	rrr_settings_set_unused(&source->settings_used, source->settings, name);
 }
 
+void rrr_instance_config_update_used (
+		struct rrr_instance_config_data *config,
+		const char *name,
+		int was_used
+);
 int rrr_instance_config_string_set (
 		char **target,
 		const char *prefix,
