@@ -579,7 +579,7 @@ static void *thread_entry_js (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread_data);
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {
