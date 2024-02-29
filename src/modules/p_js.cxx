@@ -183,9 +183,9 @@ class js_run_data {
 	bool hasProcess() const {
 		return !process.empty();
 	}
-	void runConfig(struct rrr_instance_config_data *instance_config) {
+	void runConfig(struct rrr_settings *settings, struct rrr_settings_used *settings_used) {
 		auto scope = RRR::JS::Scope(ctx);
-		auto cfg = cfg_factory.new_external(ctx, instance_config);
+		auto cfg = cfg_factory.new_external(ctx, settings, settings_used);
 		RRR::JS::Value arg(cfg.first());
 		config.run(ctx, 1, &arg);
 		ctx.trycatch_ok([](std::string msg) {
@@ -326,7 +326,10 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	try {
-		run_data->runConfig(INSTANCE_D_CONFIG(run_data->data->thread_data));
+		struct rrr_settings *settings = rrr_cmodule_worker_get_settings(run_data->worker);
+		struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_settings_used(run_data->worker);
+
+		run_data->runConfig(settings, settings_used);
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));

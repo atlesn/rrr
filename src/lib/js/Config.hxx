@@ -36,7 +36,8 @@ namespace RRR::JS {
 		friend class ConfigFactory;
 
 		private:
-		struct rrr_instance_config_data *config = nullptr;
+		struct rrr_settings *settings = nullptr;
+		struct rrr_settings_used *settings_used = nullptr;
 
 		protected:
 		int64_t get_total_memory() final {
@@ -46,8 +47,12 @@ namespace RRR::JS {
 		static void cb_has(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 
-		void set_config(struct rrr_instance_config_data *config) {
-			this->config = config;
+		void set_config (
+				struct rrr_settings *settings,
+				struct rrr_settings_used *settings_used
+		) {
+			this->settings = settings;
+			this->settings_used = settings_used;
 		}
 	};
 
@@ -64,7 +69,8 @@ namespace RRR::JS {
 		ConfigFactory(CTX &ctx, PersistentStorage &persistent_storage);
 		Duple<v8::Local<v8::Object>, Config *> new_external (
 				v8::Isolate *isolate,
-				struct rrr_instance_config_data *config
+				struct rrr_settings *settings,
+				struct rrr_settings_used *settings_used
 		);
 	};
 } // namespace RRR::JS

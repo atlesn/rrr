@@ -45,9 +45,11 @@ namespace RRR::JS {
 			return;
 		}
 
+		std::string name_str = String(isolate, info[0]->ToString(ctx).ToLocalChecked());
+
 		info.GetReturnValue().Set(v8::Boolean::New(
 			isolate,
-			InstanceConfig(config->config).has(String(isolate, info[0]->ToString(ctx).ToLocalChecked()))
+			rrr_settings_exists(config->settings_used, config->settings, name_str.c_str());
 		));
 	}
 
@@ -95,11 +97,12 @@ namespace RRR::JS {
 
 	Duple<v8::Local<v8::Object>, Config *> ConfigFactory::new_external (
 			v8::Isolate *isolate,
-			struct rrr_instance_config_data *config
+			struct rrr_settings *settings,
+			struct rrr_settings_used *settings_used
 	) {
 		auto duple = new_internal(isolate, new_external_function(isolate));
 
-		duple.second()->set_config(config);
+		duple.second()->set_config(settings, settings_used);
 
 		return duple;
 	}
