@@ -354,6 +354,11 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 
 	// Join with the watchdogs. The other threads might be in hung up state.
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		if (!node->started) {
+			RRR_DBG_8 ("Thread watchdog %s is not started, not stopping\n", node->name);
+			RRR_LL_ITERATE_NEXT();
+		}
+
 		if (node->is_watchdog) {
 			RRR_DBG_8 ("Joining with thread watchdog %s\n", node->name);
 			void *ret;
