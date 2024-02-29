@@ -91,6 +91,7 @@ struct rrr_settings *rrr_settings_copy (
 		const struct rrr_settings *source
 ) {
 	struct rrr_settings *settings;
+	void *data;
 
 	if ((settings = rrr_settings_new(source->settings_max)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
@@ -103,13 +104,13 @@ struct rrr_settings *rrr_settings_copy (
 	for (unsigned int i = 0; i < source->settings_count; i++) {
 		const struct rrr_setting *setting_source = &source->settings[i];
 		struct rrr_setting *setting_target = &settings->settings[i];
-		void *data;
 
-		if ((data = rrr_allocate(setting_source->data_size)) == NULL) {
+		if ((data = rrr_allocate_zero(setting_source->data_size)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			goto out_destroy;
 		}
 
+		memcpy(data, setting_source->data, setting_source->data_size);
 		memcpy(setting_target, setting_source, sizeof(*setting_target));
 
 		setting_target->data = data;
@@ -1081,6 +1082,8 @@ int rrr_settings_iterate_packed (
 
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		setting = &settings->settings[i];
+
+		printf("Setting %s was used %d\n", setting->name, used->was_used[i]);
 
 		if (__rrr_setting_pack(&setting_packed, setting, used->was_used[i]) != 0) {
 			RRR_MSG_0("Could not pack setting in %s\n", __func__);
