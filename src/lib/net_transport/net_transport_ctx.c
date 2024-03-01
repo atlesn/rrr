@@ -363,16 +363,6 @@ int rrr_net_transport_ctx_stream_open_local (
 	);
 }
 
-int rrr_net_transport_ctx_stream_open_remote (
-		int64_t stream_id,
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->transport->methods->stream_open_remote (
-			stream_id,
-			handle
-	);
-}
-
 int rrr_net_transport_ctx_stream_consume (
 		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,

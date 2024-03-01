@@ -3127,20 +3127,6 @@ static int __rrr_net_transport_quic_stream_open_local (
 	return ret;
 }
 
-static int __rrr_net_transport_quic_stream_open_remote (
-		RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS
-) {
-	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
-	struct rrr_net_transport_quic_ctx *ctx = handle_data->ctx;
-
-	int ret = 0;
-
-	RRR_BUG("%s", __func__);
-
-	out:
-	return ret;
-}
-
 static int __rrr_net_transport_quic_stream_data_get (
 		RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS
 ) {
@@ -3582,7 +3568,6 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_quic_read_stream,
 	__rrr_net_transport_quic_receive,
 	__rrr_net_transport_quic_stream_open_local,
-	__rrr_net_transport_quic_stream_open_remote,
 	__rrr_net_transport_quic_stream_data_get,
 	__rrr_net_transport_quic_stream_data_clear,
 	__rrr_net_transport_quic_stream_count,

@@ -130,6 +130,8 @@ static int __rrr_test_quic_cb_stream_shutdown_write (RRR_NET_TRANSPORT_STREAM_CA
 static int __rrr_test_quic_cb_stream_close (RRR_NET_TRANSPORT_STREAM_CLOSE_CALLBACK_ARGS) {
 	struct rrr_test_tls_common_data *data = arg;
 
+	(void)(handle);
+
 	TEST_MSG("%s stream %" PRIi64 " close reason %" PRIu64 "\n", data->name, stream_id, application_error_reason);
 
 	return 0;

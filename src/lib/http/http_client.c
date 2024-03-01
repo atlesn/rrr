@@ -1205,8 +1205,7 @@ static void __rrr_http_client_alt_svc_select (
 		uint16_t *port_to_use,
 		struct rrr_http_client *http_client,
 		const struct rrr_http_service_collection *alt_svc,
-		const enum rrr_http_transport transport_force,
-		const int concurrent_max
+		const enum rrr_http_transport transport_force
 ) {
 	enum rrr_http_transport transport_new = *transport_to_use;
 	enum rrr_http_application_type application_new = *application_to_use;
@@ -1595,8 +1594,7 @@ static int __rrr_http_client_request_send_intermediate_alt_svc_select (
 			&port_to_use,
 			http_client,
 			&http_client->alt_svc,
-			data->transport_force,
-			data->concurrent_connections
+			data->transport_force
 	);
 
 	transaction->application_type = application_type;

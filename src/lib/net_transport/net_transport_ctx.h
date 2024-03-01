@@ -156,10 +156,6 @@ int rrr_net_transport_ctx_stream_open_local (
 		int flags,
 		void *stream_open_callback_arg_local
 );
-int rrr_net_transport_ctx_stream_open_remote (
-		int64_t stream_id,
-		struct rrr_net_transport_handle *handle
-);
 int rrr_net_transport_ctx_stream_consume (
 		struct rrr_net_transport_handle *handle,
 		int64_t stream_id,

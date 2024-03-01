@@ -268,7 +268,6 @@ struct rrr_net_transport_methods {
 	// Causes the stream_open callback given to rrr_net_transport_new to be called from which the
 	// application must return data delivery callbacks.
 	int (*stream_open_local)(RRR_NET_TRANSPORT_STREAM_OPEN_LOCAL_ARGS);
-	int (*stream_open_remote)(RRR_NET_TRANSPORT_STREAM_OPEN_REMOTE_ARGS);
 
 	// Retrieve application stream data
 	int (*stream_data_get)(RRR_NET_TRANSPORT_STREAM_DATA_GET_ARGS);
