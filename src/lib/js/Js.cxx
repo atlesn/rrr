@@ -898,15 +898,24 @@ v8::Local<v8::FixedArray> import_assertions,
 		// This function creates the module so that the identity
 		// hash may be found. The caller then registers the module 
 		// using this before calling compile().
-		auto export_names = std::vector<v8::Local<v8::String>>();
-		export_names.emplace_back(String(ctx, "default"));
 
+		const std::array<v8::Local<v8::String>,1> export_names = { String(ctx, "default") };
+
+#ifdef RRR_HAVE_V8_MEMORYSPAN_IN_CSM
 		mod = v8::Module::CreateSyntheticModule (
 			ctx,
 			String(ctx, get_path_()),
 			export_names,
 			evaluation_steps_callback
 		);
+#else
+		mod = v8::Module::CreateSyntheticModule (
+			ctx,
+			String(ctx, get_path_()),
+			std::vector(export_names.begin(), export_names.end()),
+			evaluation_steps_callback
+		);
+#endif
 
 		if (ctx.trycatch_ok([](auto msg){
 			throw E(std::string("Failed to create JSON module: ") + msg);

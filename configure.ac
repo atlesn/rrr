@@ -590,7 +590,6 @@ AC_DEFUN([V8TESTS],[
 		AC_LANG_SOURCE([[
 			#include <v8.h>
 			int main (int argc, char **argv) {
-				auto size = sizeof(v8::BackingStore);
 				return sizeof(v8::BackingStore) == 0;
 			}
 		]])
@@ -623,6 +622,31 @@ AC_DEFUN([V8TESTS],[
 	])
 	V8COMPILE([
 		AC_DEFINE([RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK], [1], [Have FixedArray in ResolveModuleCallback])
+	],[
+		# Not found, no action required
+	])
+
+	AC_MSG_CHECKING([V8 has MemorySpan in CreateSyntheticModule])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-script.h>
+
+			int main (int argc, char **argv) {
+				if (0) {
+					auto dummy = v8::Module::CreateSyntheticModule (
+							nullptr,
+							v8::String::NewFromUtf8(nullptr, "test").ToLocalChecked(),
+							v8::MemorySpan<const v8::Local<v8::String>>(),
+							nullptr
+					);
+				}
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_MEMORYSPAN_IN_CSM], [1], [Have MemorySpan in CreateSyntheticModule])
 	],[
 		# Not found, no action required
 	])
