@@ -2306,6 +2306,7 @@ static int __rrr_net_transport_new (
 			}
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
+					config->transport_subtype_p,
 					flags,
 					config->tls_certificate_file,
 					config->tls_key_file,

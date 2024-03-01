@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,16 +22,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_NET_TRANSPORT_TLS_H
 #define RRR_NET_TRANSPORT_TLS_H
 
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+
 #include "net_transport_defines.h"
 
+#ifdef RRR_WITH_LIBRESSL
+#	include "net_transport_libressl.h"
+#endif
 #ifdef RRR_WITH_OPENSSL
 #	include "net_transport_openssl.h"
-#else
-#	include "net_transport_libressl.h"
 #endif
 
 static inline int rrr_net_transport_tls_new (
 		struct rrr_net_transport_tls **target,
+		enum rrr_net_transport_subtype subtype,
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
@@ -45,11 +49,40 @@ static inline int rrr_net_transport_tls_new (
 		alpn_protos_length = 0;
 	}
 
-#ifdef RRR_WITH_OPENSSL
-	return rrr_net_transport_openssl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length);
-#else
-	return rrr_net_transport_libressl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length);
+	switch (subtype) {
+		case RRR_NET_TRANSPORT_TLS_NONE:
+#ifdef RRR_WITH_LIBRESSL
+		case RRR_NET_TRANSPORT_TLS_LIBRESSL:
+			return rrr_net_transport_libressl_new (
+					target,
+					flags,
+					certificate_file,
+					private_key_file,
+					ca_file,
+					ca_path,
+					alpn_protos,
+					alpn_protos_length
+			);
 #endif
+#ifdef RRR_WITH_OPENSSL
+		case RRR_NET_TRANSPORT_TLS_OPENSSL:
+			return rrr_net_transport_openssl_new (
+					target,
+					flags,
+					certificate_file,
+					private_key_file,
+					ca_file,
+					ca_path,
+					alpn_protos,
+					alpn_protos_length
+			);
+#endif
+		default:
+			RRR_BUG("BUG: Unknown subtype %i in %s", subtype, __func__);
+			break;
+	};
 }
+
+#endif /* RRR_WITH_LIBRESSL || RRR_WITH_OPENSSL */
 
 #endif /* RRR_NET_TRANSPORT_TLS_H */

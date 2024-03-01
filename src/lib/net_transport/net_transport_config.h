@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_defines.h"
 
 #define RRR_NET_TRANSPORT_CONFIG_PLAIN_INITIALIZER \
-    {NULL, NULL, NULL, NULL, RRR_NET_TRANSPORT_PLAIN, RRR_NET_TRANSPORT_F_PLAIN}
+    {NULL, NULL, NULL, NULL, RRR_NET_TRANSPORT_PLAIN, RRR_NET_TRANSPORT_F_PLAIN, 0}
 
 struct rrr_instance_config_data;
 
@@ -37,6 +37,8 @@ struct rrr_net_transport_config {
 
 	enum rrr_net_transport_type transport_type_p;
 	enum rrr_net_transport_type_f transport_type_f;
+
+	enum rrr_net_transport_subtype transport_subtype_p;
 };
 
 void rrr_net_transport_config_cleanup (

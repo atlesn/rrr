@@ -1349,7 +1349,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 			NULL,
 			NULL,
 			RRR_NET_TRANSPORT_PLAIN,
-			RRR_NET_TRANSPORT_F_PLAIN
+			RRR_NET_TRANSPORT_F_PLAIN,
+			0
 	};
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_HTTP3)

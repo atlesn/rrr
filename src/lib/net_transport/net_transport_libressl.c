@@ -68,9 +68,9 @@ static void __rrr_net_transport_libressl_data_destroy (
 		return;
 	}
 
-	if (data->ctx != NULL) {
-		tls_close(data->ctx);
-		tls_free(data->ctx);
+	if (data->l_ctx != NULL) {
+		tls_close(data->l_ctx);
+		tls_free(data->l_ctx);
 	}
 
 	if (data->ip_data.fd > 0) {
@@ -162,25 +162,25 @@ static int __rrr_net_transport_libressl_connect_callback (
 		goto out;
 	}
 
-	if ((data->ctx = tls_client()) == NULL) {
+	if ((data->l_ctx = tls_client()) == NULL) {
 		RRR_MSG_0("Failed to create TLS client in __rrr_net_transport_libressl_connect_callback\n");
 		ret = 1;
 		goto out_destroy_data;
 	}
 
-	if (tls_configure(data->ctx, callback_data->tls->config) != 0) {
+	if (tls_configure(data->l_ctx, callback_data->tls->config) != 0) {
 		RRR_MSG_0("TLS configuration failed in __rrr_net_transport_libressl_connect_callback\n");
 		ret = 1;
 		goto out_config_error;
 	}
 
 	if (tls_connect_fds (
-			data->ctx,
+			data->l_ctx,
 			callback_data->accept_data->ip_data.fd,
 			callback_data->accept_data->ip_data.fd,
 			callback_data->server_name
 	) < 0) {
-		RRR_MSG_0("Failed to connect fds in __rrr_net_transport_libressl_connect_callback: %s\n", tls_error(data->ctx));
+		RRR_MSG_0("Failed to connect fds in __rrr_net_transport_libressl_connect_callback: %s\n", tls_error(data->l_ctx));
 		ret = 1;
 		goto out_destroy_data;
 	}
@@ -291,13 +291,13 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 		goto out_destroy_data;
 	}
 
-	if ((data->ctx = tls_server()) == NULL) {
+	if ((data->l_ctx = tls_server()) == NULL) {
 		RRR_MSG_0("Failed to create TLS server in __rrr_net_transport_libressl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out_destroy_data;
 	}
 
-	if (tls_configure(data->ctx, callback_data->tls->config) != 0) {
+	if (tls_configure(data->l_ctx, callback_data->tls->config) != 0) {
 		RRR_MSG_0("TLS configuration failed in __rrr_net_transport_libressl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out_config_error;
@@ -366,7 +366,7 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 struct rrr_net_transport_libressl_accept_callback_data {
 	struct rrr_ip_accept_data *accept_data;
 	struct rrr_net_transport_tls *tls;
-	struct tls *ctx;
+	struct tls *l_ctx;
 };
 
 int __rrr_net_transport_libressl_accept_callback (
@@ -390,8 +390,8 @@ int __rrr_net_transport_libressl_accept_callback (
 	}
 
 	if (tls_accept_socket (
-			callback_data->ctx,
-			&new_data->ctx,
+			callback_data->l_ctx,
+			&new_data->l_ctx,
 			callback_data->accept_data->ip_data.fd
 	) < 0) {
 		RRR_MSG_0("Failed to bind fd with TLS in __rrr_net_transport_libressl_accept_callback\n");
@@ -439,7 +439,7 @@ int __rrr_net_transport_libressl_accept (
 	struct rrr_net_transport_libressl_accept_callback_data callback_data = {
 		accept_data,
 		tls,
-		data->ctx
+		data->l_ctx
 	};
 
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
@@ -507,7 +507,7 @@ static int __rrr_net_transport_libressl_read_raw (
 ) {
 	int ret = RRR_READ_OK;
 
-	ssize_t result = tls_read(tls_data->ctx, buf, read_step_max_size);
+	ssize_t result = tls_read(tls_data->l_ctx, buf, read_step_max_size);
 	if (result == 0) {
 		ret = RRR_READ_EOF;
 	}
@@ -516,7 +516,7 @@ static int __rrr_net_transport_libressl_read_raw (
 			goto out;
 		}
 
-		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_raw: %s\n", tls_error(tls_data->ctx));
+		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_raw: %s\n", tls_error(tls_data->l_ctx));
 		ret = RRR_READ_SOFT_ERROR;
 	}
 
@@ -637,7 +637,7 @@ static int __rrr_net_transport_libressl_send (
 			goto out;
 		}
 		else if ((pfd.revents & (pfd.events|POLLHUP))) {
-			ssize_t bytes = tls_write(tls_data->ctx, data, size);
+			ssize_t bytes = tls_write(tls_data->l_ctx, data, size);
 			if (bytes == TLS_WANT_POLLIN) {
 				pfd.events = POLLIN;
 			}
@@ -645,7 +645,7 @@ static int __rrr_net_transport_libressl_send (
 				pfd.events = POLLOUT;
 			}
 			else if (bytes < 0) {
-				RRR_DBG_7("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->ctx));
+				RRR_DBG_7("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->l_ctx));
 				ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 				goto out;
 			}
@@ -680,7 +680,7 @@ static int __rrr_net_transport_libressl_handshake (
 	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
 
 	int ret_tmp;
-	if ((ret_tmp = tls_handshake(tls_data->ctx)) != 0) {
+	if ((ret_tmp = tls_handshake(tls_data->l_ctx)) != 0) {
 		return (ret_tmp == TLS_WANT_POLLIN || ret_tmp == TLS_WANT_POLLOUT
 			? RRR_NET_TRANSPORT_SEND_INCOMPLETE :
 			RRR_NET_TRANSPORT_SEND_SOFT_ERROR
@@ -699,7 +699,7 @@ static int __rrr_net_transport_libressl_selected_proto_get (
 ) {
 	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
 
-	const char *proto_source = tls_conn_alpn_selected(tls_data->ctx);
+	const char *proto_source = tls_conn_alpn_selected(tls_data->l_ctx);
 	char *proto_new = NULL;
 
 	*proto = NULL;

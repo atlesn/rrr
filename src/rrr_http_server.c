@@ -392,7 +392,8 @@ int main (int argc, const char **argv, const char **env) {
 				NULL,
 				NULL,
 				RRR_NET_TRANSPORT_TLS,
-				RRR_NET_TRANSPORT_F_TLS
+				RRR_NET_TRANSPORT_F_TLS,
+				RRR_NET_TRANSPORT_TLS_NONE
 		};
 
 		int flags = 0;
@@ -427,7 +428,8 @@ int main (int argc, const char **argv, const char **env) {
 				NULL,
 				NULL,
 				RRR_NET_TRANSPORT_QUIC,
-				RRR_NET_TRANSPORT_F_QUIC
+				RRR_NET_TRANSPORT_F_QUIC,
+				RRR_NET_TRANSPORT_TLS_NONE
 		};
 
 		int flags = 0;

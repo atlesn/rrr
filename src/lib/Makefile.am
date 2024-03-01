@@ -18,13 +18,6 @@ librrrmysql_la_SOURCES = mysql.c
 librrrmysql_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} 
 endif
 
-if RRR_WITH_OPENSSL
-encryption = rrr_openssl.c
-endif
-if RRR_WITH_OPENSSL_CRYPT
-encryption = rrr_openssl.c
-endif
-
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_message.c \
@@ -102,6 +95,40 @@ js_extra_ldflags = ${JS_LDFLAGS}
 js_extra_libadd = $(JS_LIBS)
 endif
 
+if RRR_WITH_TLS
+net_transport_tls = net_transport/net_transport_tls_common.c
+endif
+
+if RRR_WITH_OPENSSL_CRYPT
+libadd_rrr_crypto = librrr_crypto.la
+librrr_crypto_la_SOURCES = rrr_openssl.c
+librrr_crypto_la_CFLAGS = ${CRYPTO_CFLAGS} ${AM_CFLAGS}
+librrr_crypto_la_LDFLAGS = ${CRYPTO_LDFLAGS}
+librrr_crypto_la_LIBADD = ${CRYPTO_LIBADD}
+rrr_crypto_extra_ld = ${CRYPTO_LDFLAGS}
+rrr_crypto_extra_libadd = ${CRYPTO_LIBADD}
+endif
+
+if RRR_WITH_OPENSSL
+libadd_openssl = libopenssl.la
+libopenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_transport/net_transport_openssl.c
+libopenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
+libopenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
+libopenssl_la_LIBADD = ${OPENSSL_LIBS}
+openssl_extra_ld = ${OPENSSL_LDFLAGS}
+openssl_extra_libadd = ${OPENSSL_LIBS}
+endif
+
+if RRR_WITH_LIBRESSL
+libadd_libressl = liblibressl.la
+liblibressl_la_SOURCES = net_transport/net_transport_libressl.c
+liblibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
+liblibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
+liblibressl_la_LIBADD = ${LIBRESSL_LIBADD}
+libressl_extra_ld = ${LIBRESSL_LDFLAGS}
+libressl_extra_libadd = ${LIBRESSL_LIBADD}
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
        mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
@@ -150,18 +177,6 @@ msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
 event = event/event.c event/event_collection.c
 
-if RRR_WITH_OPENSSL
-net_transport_openssl = net_transport/net_transport_openssl.c net_transport/net_transport_openssl_common.c
-endif
-
-if RRR_WITH_LIBRESSL
-net_transport_libressl = net_transport/net_transport_libressl.c
-endif
-
-if RRR_WITH_TLS
-net_transport_tls = net_transport/net_transport_tls_common.c
-endif
-
 if RRR_WITH_CXX
 lib_cxx=librrrcxx.la
 
@@ -174,7 +189,7 @@ librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrrcxx_la_SOURCES = Array.cxx ${util_cxx} ${event_cxx}
 endif
 
-librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_CFLAGS = ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
@@ -185,7 +200,10 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${python3_extra_ld} \
 		    ${zlib_extra_ld} \
 		    ${quic_extra_ld} \
-		    ${http3_extra_ld}
+		    ${http3_extra_ld} \
+		    ${openssl_extra_ld} \
+		    ${libressl_extra_ld} \
+		    ${rrr_crypto_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
@@ -197,7 +215,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
-                    ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
+                    ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_openssl} ${net_transport_libressl} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
@@ -265,7 +283,10 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}	             \
+    ${libadd_openssl}                \
+    ${libadd_libressl}               \
+    ${libadd_rrr_crypto}
 
 if RRR_WITH_CXX
 libadd_all_cxx =                     \
@@ -273,7 +294,18 @@ libadd_all_cxx =                     \
 endif
 
 noinst_LTLIBRARIES = ${libadd_all} ${libadd_all_cxx}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD =                   \
+    ${libadd_all}                    \
+    ${JOURNALD_LIBS}                 \
+    ${LIBRT_LIBADD}                  \
+    ${openssl_extra_libadd}          \
+    ${libressl_extra_libadd}         \
+    ${rrr_crypto_extra_libadd}       \
+    -lpthread                        \
+    -ldl                             \
+    -lm                              \
+    -levent                          \
+    -levent_pthreads
 
 if RRR_WITH_CXX
 librrrcxx_la_LIBADD = ${libadd_all_cxx} ${js_extra_libadd} -lpthread -ldl -lm -levent -levent_pthreads

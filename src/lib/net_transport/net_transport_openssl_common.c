@@ -54,8 +54,8 @@ void rrr_net_transport_openssl_common_ssl_data_destroy (
 			assert(ssl_data->web == NULL);
 			SSL_free(ssl_data->ssl);
 		}
-		if (ssl_data->ctx != NULL) {
-			SSL_CTX_free(ssl_data->ctx);
+		if (ssl_data->o_ctx != NULL) {
+			SSL_CTX_free(ssl_data->o_ctx);
 		}
 		if (ssl_data->ip_data.fd != 0) {
 			rrr_ip_close(&ssl_data->ip_data);

@@ -81,13 +81,13 @@ struct rrr_net_transport_tls_data {
 	socklen_t socklen;
 
 #ifdef RRR_WITH_OPENSSL
-	SSL_CTX *ctx;
+	SSL_CTX *o_ctx;
 	BIO *web;
 	SSL *ssl;
 #endif
 
 #ifdef RRR_WITH_LIBRESSL
-	struct tls *ctx;
+	struct tls *l_ctx;
 #endif
 
 #ifdef RRR_WITH_GNUTLS

@@ -311,7 +311,8 @@ int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *que
 		NULL,
 		NULL,
 		RRR_NET_TRANSPORT_QUIC,
-		RRR_NET_TRANSPORT_F_QUIC
+		RRR_NET_TRANSPORT_F_QUIC,
+		0
 	};
 
 	static const struct rrr_net_transport_config config_client = {
@@ -320,7 +321,8 @@ int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *que
 		"../../misc/ssl/rootca/goliathdns.no.crt",
 		"../../misc/ssl/rootca",
 		RRR_NET_TRANSPORT_QUIC,
-		RRR_NET_TRANSPORT_F_QUIC
+		RRR_NET_TRANSPORT_F_QUIC,
+		0
 	};
 
 	if ((ret = rrr_test_tls_common_init (

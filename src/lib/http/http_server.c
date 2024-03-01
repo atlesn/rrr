@@ -822,7 +822,8 @@ int rrr_http_server_start_plain (
 			NULL,
 			NULL,
 			RRR_NET_TRANSPORT_PLAIN,
-			RRR_NET_TRANSPORT_F_PLAIN
+			RRR_NET_TRANSPORT_F_PLAIN,
+			0
 	};
 
 	ret = __rrr_http_server_start (

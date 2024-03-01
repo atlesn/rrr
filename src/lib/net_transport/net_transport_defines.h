@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -63,6 +63,16 @@ enum rrr_net_transport_type {
 #endif
 #if defined(RRR_WITH_HTTP3)
 	RRR_NET_TRANSPORT_QUIC     = 4
+#endif
+};
+
+enum rrr_net_transport_subtype {
+	RRR_NET_TRANSPORT_TLS_NONE
+#if defined(RRR_WITH_OPENSSL)
+	, RRR_NET_TRANSPORT_TLS_OPENSSL
+#endif
+#if defined(RRR_WITH_LIBRESSL)
+	, RRR_NET_TRANSPORT_TLS_LIBRESSL
 #endif
 };
 

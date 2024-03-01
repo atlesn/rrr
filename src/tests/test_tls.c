@@ -116,13 +116,16 @@ int rrr_test_tls (const volatile int *main_running, struct rrr_event_queue *queu
 
 	struct rrr_test_tls_common_data_common data;
 
+	// TODO : Try both LibreSSL and OpenSSL
+
 	static const struct rrr_net_transport_config config_server = {
 		"../../misc/ssl/rrr.crt",
 		"../../misc/ssl/rrr.key",
 		NULL,
 		NULL,
 		RRR_NET_TRANSPORT_TLS,
-		RRR_NET_TRANSPORT_F_TLS
+		RRR_NET_TRANSPORT_F_TLS,
+		RRR_NET_TRANSPORT_TLS_NONE
 	};
 
 	static const struct rrr_net_transport_config config_client = {
@@ -131,7 +134,8 @@ int rrr_test_tls (const volatile int *main_running, struct rrr_event_queue *queu
 		"../../misc/ssl/rootca/goliathdns.no.crt",
 		"../../misc/ssl/rootca",
 		RRR_NET_TRANSPORT_TLS,
-		RRR_NET_TRANSPORT_F_TLS
+		RRR_NET_TRANSPORT_F_TLS,
+		RRR_NET_TRANSPORT_TLS_NONE
 	};
 
 	if ((ret = rrr_test_tls_common_init (

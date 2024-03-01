@@ -163,7 +163,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	}
 
 	if (rrr_net_transport_openssl_common_new_ctx (
-			&ssl_data->ctx,
+			&ssl_data->o_ctx,
 			tls->ssl_client_method,
 			tls->flags_tls,
 			tls->certificate_file,
@@ -177,7 +177,7 @@ int __rrr_net_transport_openssl_connect_callback (
 		goto out_destroy_ssl_data;
 	}
 
-	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 1)) == NULL) {
+	if ((ssl_data->web = BIO_new_ssl(ssl_data->o_ctx, 1)) == NULL) {
 		RRR_SSL_ERR("Could not get BIO in __rrr_net_transport_openssl_connect_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
@@ -335,7 +335,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	}
 
 	if (rrr_net_transport_openssl_common_new_ctx (
-			&ssl_data->ctx,
+			&ssl_data->o_ctx,
 			tls->ssl_server_method,
 			tls->flags_tls,
 			tls->certificate_file,
@@ -354,7 +354,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 
 	goto out;
 //	out_destroy_ctx:
-//		SSL_CTX_free(ssl_data->ctx);
+//		SSL_CTX_free(ssl_data->o_ctx);
 	out_destroy_ip:
 		rrr_ip_close(&ssl_data->ip_data);
 	out_free_ssl_data:
@@ -435,7 +435,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	}
 
 	if (rrr_net_transport_openssl_common_new_ctx (
-			&ssl_data->ctx,
+			&ssl_data->o_ctx,
 			tls->ssl_server_method,
 			tls->flags_tls,
 			tls->certificate_file,
@@ -449,7 +449,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 		goto out_destroy;
 	}
 
-	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 0)) == NULL) {
+	if ((ssl_data->web = BIO_new_ssl(ssl_data->o_ctx, 0)) == NULL) {
 		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
 		goto out_destroy;
