@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
+#include "../lib/cmodule/cmodule_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/util/readfile.h"
@@ -140,19 +141,23 @@ static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct lua_data *parent_data = data->parent_data;
 	const char *function = data->cmodule_config_data->config_method;
 
-	(void)(worker);
-
 	int ret = 0;
 
 	int ret_tmp;
+	struct rrr_instance_config_data instance_config = {0};
+
+	rrr_instance_config_move_from_settings (
+			&instance_config,
+			&worker->settings_used,
+			&worker->settings
+	);
 
 	if (function == NULL || *function == '\0')
 		goto out;
 
-	if ((ret = rrr_lua_config_push_new (data->lua, INSTANCE_D_CONFIG(parent_data->thread_data))) != 0) {
+	if ((ret = rrr_lua_config_push_new (data->lua, &instance_config)) != 0) {
 		RRR_MSG_0("Error pushing config in %s in Lua instance %s\n",
 			__func__, INSTANCE_D_NAME(parent_data->thread_data));
-		ret = 1;
 		goto out;
 	}
 
@@ -164,6 +169,11 @@ static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 	
 	out:
+	rrr_instance_config_move_to_settings (
+			&worker->settings_used,
+			&worker->settings,
+			&instance_config
+	);
 	return ret;
 }
 

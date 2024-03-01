@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -245,6 +245,16 @@ static inline void rrr_instance_config_set_unused (
 	rrr_settings_set_unused(&source->settings_used, source->settings, name);
 }
 
+void rrr_instance_config_move_from_settings (
+		struct rrr_instance_config_data *config,
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings
+);
+void rrr_instance_config_move_to_settings (
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings,
+		struct rrr_instance_config_data *config
+);
 void rrr_instance_config_update_used (
 		struct rrr_instance_config_data *config,
 		const char *name,
@@ -270,6 +280,9 @@ int rrr_instance_config_read_port_number (
 		const char *name
 );
 int rrr_instance_config_check_all_settings_used (
+		struct rrr_instance_config_data *config
+);
+void rrr_instance_config_verify_all_settings_used (
 		struct rrr_instance_config_data *config
 );
 int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (

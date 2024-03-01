@@ -676,11 +676,19 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 			if (complete_count == cmodule->worker_count) {
 				RRR_DBG_1("Instance %s child config function (if any) complete for all %u workers, checking for unused values\n",
 						INSTANCE_D_NAME(thread_data), cmodule->worker_count);
-				rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(thread_data));
+
+				if (INSTANCE_D_CMODULE(thread_data)->config_data.do_require_all_settings_used) {
+					rrr_instance_config_verify_all_settings_used(INSTANCE_D_CONFIG(thread_data));
+				}
+				else {
+					rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(thread_data));
+				}
+
 				cmodule->config_check_complete_message_printed = 1;
 				cmodule->config_check_complete = 1;
 			}
 		}
+
 		if (++worker_i == cmodule->worker_count) {
 			worker_i = 0;
 		}
@@ -1003,6 +1011,10 @@ int rrr_cmodule_helper_parse_config (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_log_prefix");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, log_prefix);
+
+	/* Undocumented parameter for test suite. Program will bug if settings are still unused after configuration */
+	RRR_INSTANCE_CONFIG_STRING_SET("_require_all_settings_used");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_require_all_settings_used, 0);
 
 	RRR_INSTANCE_CONFIG_PREFIX_END();
 

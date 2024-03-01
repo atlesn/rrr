@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt/mqtt_topic.h"
 			
 #define RRR_INSTANCE_CONFIG_MAX_SETTINGS 32
+
+void rrr_instance_config_move_from_settings (
+		struct rrr_instance_config_data *config,
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings
+) {
+	assert(config->settings == NULL);
+
+	memcpy(&config->settings_used, settings_used, sizeof(config->settings_used));
+	memset(settings_used, '\0', sizeof(*settings_used));
+
+	config->settings = *settings;
+	*settings = NULL;
+}
+
+void rrr_instance_config_move_to_settings (
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings,
+		struct rrr_instance_config_data *config
+) {
+	memcpy(settings_used, &config->settings_used, sizeof(*settings_used));
+	memset(&config->settings_used, '\0', sizeof(config->settings_used));
+
+	*settings = config->settings;
+	config->settings = NULL;
+}
 
 struct rrr_instance_config_update_used_callback_data {
 	struct rrr_instance_config_data *config;
@@ -282,6 +308,15 @@ int rrr_instance_config_check_all_settings_used (
 	}
 
 	return ret;
+}
+
+void rrr_instance_config_verify_all_settings_used (
+		struct rrr_instance_config_data *config
+) {
+	if (rrr_settings_check_all_used (config->settings, &config->settings_used) != 0) {
+		RRR_BUG("BUG: Not all settings of instance %s were used in %s, abort.\n",
+			__func__, config->name);
+	}
 }
 
 static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (

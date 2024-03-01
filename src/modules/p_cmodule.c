@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
+#include "../lib/cmodule/cmodule_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
@@ -124,14 +125,14 @@ struct cmodule_run_data {
 	int (*cleanup_function)(RRR_CLEANUP_ARGS);
 };
 
-#define GET_FUNCTION(from,name)															\
-	do { if (from->name != NULL && *(from->name) != '\0') {								\
-		if ((run_data->name = dlsym(handle, from->name)) == NULL) {						\
-			RRR_MSG_0("Could not load function '%s' from cmodule instance %s: %s\n",	\
-					from->name, INSTANCE_D_NAME(data->thread_data), dlerror());			\
-			function_err = 1;															\
-		}																				\
-	} } while(0)
+#define GET_FUNCTION(from,name)                                                                                                \
+    do { if (from->name != NULL && *(from->name) != '\0') {                                                                    \
+        if ((run_data->name = dlsym(handle, from->name)) == NULL) {                                                            \
+            RRR_MSG_0("Could not load function '%s' from cmodule instance %s: %s\n",                                           \
+                    from->name, INSTANCE_D_NAME(data->thread_data), dlerror());                                                \
+            function_err = 1;                                                                                                  \
+        }                                                                                                                      \
+    } } while(0)                                                                                                               \
 
 static void __cmodule_dl_unload (
 		void *handle
@@ -270,9 +271,15 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct cmodule_run_data *run_data = private_arg;
 
-	(void)(worker);
-
 	int ret = 0;
+
+	struct rrr_instance_config_data instance_config = {0};
+
+	rrr_instance_config_move_from_settings (
+			&instance_config,
+			&worker->settings_used,
+			&worker->settings
+	);
 
 	if (run_data->config_method == NULL) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
@@ -280,14 +287,18 @@ static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_AR
 		goto out;
 	}
 
-	if ((ret = run_data->config_method(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
+	if ((ret = run_data->config_method(&run_data->ctx, &instance_config)) != 0) {
 		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
 				ret, INSTANCE_D_NAME(run_data->data->thread_data));
-		ret = 1;
 		goto out;
 	}
 
 	out:
+	rrr_instance_config_move_to_settings (
+			&worker->settings_used,
+			&worker->settings,
+			&instance_config
+	);
 	return ret;
 }
 

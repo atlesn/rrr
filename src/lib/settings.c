@@ -1034,8 +1034,6 @@ int rrr_settings_iterate_packed (
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		setting = &settings->settings[i];
 
-		printf("Setting %s was used %d\n", setting->name, used->was_used[i]);
-
 		if (__rrr_setting_pack(&setting_packed, setting, used->was_used[i]) != 0) {
 			RRR_MSG_0("Could not pack setting in %s\n", __func__);
 			ret = 1;
