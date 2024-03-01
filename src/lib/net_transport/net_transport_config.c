@@ -219,7 +219,9 @@ int rrr_net_transport_config_parse (
 	}
 
 	if ( data->tls_certificate_file != NULL &&
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 	     !(data->transport_type_f & RRR_NET_TRANSPORT_F_TLS) &&
+#endif
 #if defined(RRR_WITH_HTTP3)
 	     !(data->transport_type_f & RRR_NET_TRANSPORT_F_QUIC) &&
 #endif

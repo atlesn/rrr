@@ -98,35 +98,34 @@ endif
 if RRR_WITH_TLS
 net_transport_tls = net_transport/net_transport_tls_common.c
 endif
+if RRR_WITH_HTTP3
+net_transport_tls = net_transport/net_transport_tls_common.c
+endif
 
 if RRR_WITH_OPENSSL_CRYPT
-libadd_rrr_crypto = librrr_crypto.la
-librrr_crypto_la_SOURCES = rrr_openssl.c
-librrr_crypto_la_CFLAGS = ${CRYPTO_CFLAGS} ${AM_CFLAGS}
-librrr_crypto_la_LDFLAGS = ${CRYPTO_LDFLAGS}
-librrr_crypto_la_LIBADD = ${CRYPTO_LIBADD}
-rrr_crypto_extra_ld = ${CRYPTO_LDFLAGS}
-rrr_crypto_extra_libadd = ${CRYPTO_LIBADD}
+libadd_rrrcrypto = librrrcrypto.la
+librrrcrypto_la_SOURCES = rrr_openssl.c
+librrrcrypto_la_CFLAGS = ${CRYPTO_CFLAGS} ${AM_CFLAGS}
+librrrcrypto_la_LDFLAGS = ${CRYPTO_LDFLAGS}
+librrrcrypto_la_LIBADD = ${CRYPTO_LIBADD}
 endif
 
 if RRR_WITH_OPENSSL
-libadd_openssl = libopenssl.la
-libopenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_transport/net_transport_openssl.c
-libopenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
-libopenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
-libopenssl_la_LIBADD = ${OPENSSL_LIBS}
-openssl_extra_ld = ${OPENSSL_LDFLAGS}
-openssl_extra_libadd = ${OPENSSL_LIBS}
+lib_openssl = librrropenssl.la
+librrropenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_transport/net_transport_openssl.c
+librrropenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
+librrropenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
+librrropenssl_la_LIBADD = ${OPENSSL_LIBADD}
+openssl_extra_libadd = -lrrropenssl
 endif
 
 if RRR_WITH_LIBRESSL
-libadd_libressl = liblibressl.la
-liblibressl_la_SOURCES = net_transport/net_transport_libressl.c
-liblibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
-liblibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
-liblibressl_la_LIBADD = ${LIBRESSL_LIBADD}
-libressl_extra_ld = ${LIBRESSL_LDFLAGS}
-libressl_extra_libadd = ${LIBRESSL_LIBADD}
+lib_libressl = librrrlibressl.la
+librrrlibressl_la_SOURCES = net_transport/net_transport_libressl.c
+librrrlibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
+librrrlibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
+librrrlibressl_la_LIBADD = ${LIBRESSL_LIBADD}
+libressl_extra_libadd = -lrrrlibressl
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -200,10 +199,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${python3_extra_ld} \
 		    ${zlib_extra_ld} \
 		    ${quic_extra_ld} \
-		    ${http3_extra_ld} \
-		    ${openssl_extra_ld} \
-		    ${libressl_extra_ld} \
-		    ${rrr_crypto_extra_ld}
+		    ${http3_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
@@ -221,7 +217,12 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
-lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
+lib_LTLIBRARIES =           \
+        librrr.la           \
+	${lib_mysql}        \
+	${lib_cxx}          \
+	${lib_libressl}     \
+	${lib_openssl}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -284,9 +285,7 @@ libadd_all =                         \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}	             \
-    ${libadd_openssl}                \
-    ${libadd_libressl}               \
-    ${libadd_rrr_crypto}
+    ${libadd_rrrcrypto}
 
 if RRR_WITH_CXX
 libadd_all_cxx =                     \
@@ -300,7 +299,6 @@ librrr_la_LIBADD =                   \
     ${LIBRT_LIBADD}                  \
     ${openssl_extra_libadd}          \
     ${libressl_extra_libadd}         \
-    ${rrr_crypto_extra_libadd}       \
     -lpthread                        \
     -ldl                             \
     -lm                              \

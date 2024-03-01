@@ -65,7 +65,7 @@ AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/r
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
 AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
-AC_ARG_ENABLE([tls-disable],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
+AC_ARG_ENABLE([tls],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -306,11 +306,11 @@ LIBRESSL_LIBADD=
 
 OPENSSL_CFLAGS=
 OPENSSL_LDFLAGS=
-OPENSSL_LIBS=
+OPENSSL_LIBADD=
 
 CRYPTO_CFLAGS=
 CRYPTO_LDFLAGS=
-CRYPTO_LIBS=
+CRYPTO_LIBADD=
 
 WITH_LIBRESSL=no
 WITH_OPENSSL=no
@@ -321,6 +321,8 @@ AC_MSG_CHECKING([for TLS usage])
 AS_IF([test "x$enable_tls" != "xno"], [
 	AC_MSG_RESULT([yes])
 
+	AC_DEFINE([RRR_WITH_TLS], [1], [Enable encryption in network modules])
+
 	AC_MSG_CHECKING([for LibreSSL enabled])
 	AS_IF([test "x$enable_libressl" != xno], [
 		AC_MSG_RESULT([yes])
@@ -330,14 +332,18 @@ AS_IF([test "x$enable_tls" != "xno"], [
 		AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" != "x"],[
 			AC_DEFINE([RRR_WITH_LIBRESSL], [1], [Enable encryption in network modules with LibreSSL])
 
+			LIBRESSL_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
+			LIBRESSL_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
+			LIBRESSL_LIBADD=$LIBRESSL_LIBTLS_LIBADD
+
 			AC_MSG_CHECKING([LibreSSL CFLAGS])
-			AC_MSG_RESULT([$LIBRESSL_LIBTLS_CFLAGS])
+			AC_MSG_RESULT([$LIBRESSL_CFGFLAGS])
 
 			AC_MSG_CHECKING([LibreSSL LDFLAGS])
-			AC_MSG_RESULT([$LIBRESSL_LIBTLS_LDFLAGS])
+			AC_MSG_RESULT([$LIBRESSL_LDFLAGS])
 
 			AC_MSG_CHECKING([LibreSSL LIBADD])
-			AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
+			AC_MSG_RESULT([$LIBRESSL_LIBADD])
 
 			AC_CHECK_HEADERS([libressl/tls.h],[have_libressl_tls_h_subfolder=yes])
 			AC_CHECK_HEADERS([tls.h],[have_libressl_tls_h=yes])
@@ -349,10 +355,6 @@ AS_IF([test "x$enable_tls" != "xno"], [
 			else
 				AC_MSG_ERROR([Could not locate tls.h for LibreSSL])
 			fi
-
-			LIBRESSL_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
-			LIBRESSL_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
-			LIBRESSL_LIBADD=$LIBRESSL_LIBTLS_LIBADD
 
 			WITH_LIBRESSL=yes
 			WITH_TLS=yes
@@ -383,6 +385,16 @@ AS_IF([test "x$enable_tls" != "xno"], [
 			WITH_TLS=yes
 		], [])
 
+		OPENSSL_LIBADD=$OPENSSL_LIBS
+
+		AC_MSG_CHECKING([OpenSSL CFLAGS])
+		AC_MSG_RESULT([$OPENSSL_CFLAGS])
+
+		AC_MSG_CHECKING([OpenSSL LDFLAGS])
+		AC_MSG_RESULT([$OPENSSL_LDFLAGS])
+
+		AC_MSG_CHECKING([OpenSSL LIBADD])
+		AC_MSG_RESULT([$OPENSSL_LIBADD])
 	], [
 		AC_MSG_RESULT([no])
 	])
@@ -409,15 +421,15 @@ AS_IF([test "x$enable_tls" != "xno"], [
 
 		AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
 
-		AS_IF([test "x$WITH_LIBRESSL" = xyes], [
-			CRYPTO_CFLAGS=$LIBRESSL_CFLAGS
-			CRYPTO_LDFLAGS=$LIBRESSL_LDFLAGS
-			CRYPTO_LIBADD=$LIBRESSL_LIBADD
-		], [
-			CRYPTO_CFLAGS=$OPENSSL_CFLAGS
-			CRYPTO_LDFLAGS=$OPENSSL_LDFLAGS
-			CRYPTO_LIBADD=$OPENSSL_LIBS
-		])
+#		AS_IF([test "x$WITH_LIBRESSL" = xyes], [
+#			CRYPTO_CFLAGS=$LIBRESSL_CFLAGS
+#			CRYPTO_LDFLAGS=$LIBRESSL_LDFLAGS
+#			CRYPTO_LIBADD=$LIBRESSL_LIBADD
+#		], [
+#			CRYPTO_CFLAGS=$OPENSSL_CFLAGS
+#			CRYPTO_LDFLAGS=$OPENSSL_LDFLAGS
+#			CRYPTO_LIBADD=$OPENSSL_LIBADD
+#		])
 	], [
 		AC_MSG_RESULT([no])
 	])
@@ -428,7 +440,7 @@ AS_IF([test "x$enable_tls" != "xno"], [
 	AS_IF([test "x$enable_encryption" != "xno" ], [
 		AC_MSG_RESULT([yes])
 
-		AC_MSG_ERROR([Cannot compile with encryption, no TLS method used])
+		AC_MSG_ERROR([Cannot compile with encryption, no TLS method used. Consider using --without-encription.])
 
 		AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
 
@@ -446,18 +458,17 @@ AS_IF([test "x$enable_tls" != "xno"], [
 	])
 ])
 
-
 AC_SUBST([LIBRESSL_CFLAGS])
 AC_SUBST([LIBRESSL_LDFLAGS])
 AC_SUBST([LIBRESSL_LIBADD])
 
 AC_SUBST([OPENSSL_CFLAGS])
 AC_SUBST([OPENSSL_LDFLAGS])
-AC_SUBST([OPENSSL_LIBS])
+AC_SUBST([OPENSSL_LIBADD])
 
 AC_SUBST([CRYPTO_CFLAGS])
 AC_SUBST([CRYPTO_LDFLAGS])
-AC_SUBST([CRYPTO_LIBS])
+AC_SUBST([CRYPTO_LIBADD])
 
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $WITH_OPENSSL)
 SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $WITH_LIBRESSL)
@@ -468,36 +479,6 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$WITH_OPENSSL" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$WITH_LIBRESSL" != xno])
 AM_CONDITIONAL([RRR_WITH_TLS], [test "x$WITH_TLS" != xno])
-
-AS_IF([test "x$WITH_TLS" != "xno"], [
-	AC_DEFINE([RRR_WITH_TLS], [1], [Enable encryption in network modules])
-])
-
-AC_CHECK_LIB([ssl], [SSL_is_quic], [HAVE_OPENSSL_QUIC=yes], [])
-
-AC_MSG_CHECKING([for automatic QUIC library selection])
-AS_IF([test "x$enable_auto_quic" != xno], [
-	AC_MSG_RESULT([yes])
-	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "x"],[enable_quictls_openssl=yes])
-], [
-	AC_MSG_RESULT([no])
-])
-
-AC_MSG_CHECKING([for enabled OpenSSL with QUIC usage])
-AS_IF([test "x$enable_quictls_openssl" = xyes], [
-	AC_MSG_RESULT([yes])
-	AS_IF([test "x$HAVE_OPENSSL_QUIC" != "xyes"],[AC_MSG_ERROR([OpenSSL with QUIC was enabled but not found])])
-	AC_DEFINE([RRR_HAVE_QUIC], [1], [OpenSSL has QUIC bindings])
-], [
-	AC_MSG_RESULT([no])
-])
-
-SHELL_VARS_EXPORT([RRR_HAVE_QUIC], $enable_quictls_openssl)
-
-AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
-AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
-
-AM_CONDITIONAL([RRR_WITH_TLS], [test "x$enable_openssl" != xno -o "x$enable_libressl" != xno -o "x$enable_quictls_openssl" != xno ])
 
 # Make sure jemalloc-test does not include any libraries
 LIBS=""

@@ -197,6 +197,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN|RRR_NET_TRANSPORT_F_TLS
 #else
+			0,
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN
 #endif
@@ -383,6 +384,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (data->do_transport_tls) {
 		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_tls);
@@ -402,6 +404,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			goto out_destroy_broker;
 		}
 	}
+#endif
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

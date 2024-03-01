@@ -721,6 +721,9 @@ static int __rrr_http_server_start (
 	const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
 	const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
 
+	if (0) {
+		// Placeholder due to defines
+	}
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (net_transport_config->transport_type_p == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {

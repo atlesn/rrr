@@ -362,11 +362,9 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	int transport_count = 0;
 
 	if (data.plain_disable != 1) {
-#endif
 		if (rrr_http_server_start_plain (
 				http_server,
 				events,
@@ -378,10 +376,8 @@ int main (int argc, const char **argv, const char **env) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 		transport_count++;
 	}
-#endif
 
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (data.https_port > 0) {

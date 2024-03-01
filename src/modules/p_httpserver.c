@@ -240,15 +240,33 @@ static int httpserver_parse_config (
 		}
 	);
 
-	if (data->net_transport_config.transport_type_f & (RRR_NET_TRANSPORT_F_TLS|RRR_NET_TRANSPORT_F_QUIC)) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+	if (data->net_transport_config.transport_type_f & (
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+		RRR_NET_TRANSPORT_F_TLS |
+#endif
+#if defined(RRR_WITH_HTTP3)
+		RRR_NET_TRANSPORT_F_QUIC |
+#endif
+		0
+	)) {
 		if ((ret = rrr_http_util_make_alt_svc_header (
 				&data->alt_svc_header,
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS ? data->port_tls : 0,
+#else
+				0,
+#endif
+#if defined(RRR_WITH_HTTP3)
 				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC ? data->port_quic : 0
+#else
+				0
+#endif
 		)) != 0) {
 			goto out;
 		}
 	}
+#endif
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
 	data->request_max_size = data->request_max_mb;

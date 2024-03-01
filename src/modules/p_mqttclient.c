@@ -1142,6 +1142,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN|RRR_NET_TRANSPORT_F_TLS
 #else
+			0,
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN
 #endif
@@ -1149,8 +1150,10 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)
 		data->net_transport_config.transport_type_p = RRR_NET_TRANSPORT_TLS;
+#endif
 
 	if ((ret = rrr_instance_config_read_optional_port_number (
 			&data->server_port,

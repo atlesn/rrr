@@ -588,6 +588,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN | RRR_NET_TRANSPORT_F_TLS
 #else
+			0,
 			RRR_NET_TRANSPORT_PLAIN,
 			RRR_NET_TRANSPORT_F_PLAIN
 #endif
