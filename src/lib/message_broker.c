@@ -75,6 +75,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_message_broker_split_buffer_collection split_buffers;
 	struct rrr_msg_holder_slot *slot;
 	struct rrr_event_queue *events;
+	rrr_event_receiver_handle events_handle;
 	char *name;
 	int usercount;
 	int split_buffers_active;
@@ -512,7 +513,8 @@ int rrr_message_broker_costumer_register (
 void rrr_message_broker_costumer_event_queue_set (
 		struct rrr_message_broker *broker,
 		const char *name,
-		struct rrr_event_queue *events
+		struct rrr_event_queue *events,
+		rrr_event_receiver_handle events_handle
 ) {
 	struct rrr_message_broker_costumer *costumer;
 
@@ -526,6 +528,7 @@ void rrr_message_broker_costumer_event_queue_set (
 	assert(costumer->events == NULL && "Double call to message broker event queue set");
 
 	costumer->events = events;
+	costumer->events_handle = events_handle;
 
 	pthread_mutex_unlock(&broker->lock);
 }
@@ -636,6 +639,7 @@ static int __rrr_message_broker_write_notifications_send_final (
 ) {
 	return rrr_event_pass (
 			listener->events,
+			listener->events_handle,
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			amount,
 			check_cancel_callback,

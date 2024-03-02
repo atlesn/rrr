@@ -417,16 +417,15 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	RRR_DBG_2("socket instance %s listening on socket %s\n",
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			thread
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
 	out_message:
 	RRR_DBG_1 ("socket instance %s received encourage stop\n",
-			INSTANCE_D_NAME(thread_data));
+		INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -447,6 +446,8 @@ static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
+	NULL,
+	NULL,
 	NULL
 };
 

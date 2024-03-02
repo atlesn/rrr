@@ -2251,11 +2251,10 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		EVENT_ADD(data->event_stats);
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			file_periodic,
-			thread
+			file_periodic
 	);
 
 	out_cleanup:
@@ -2267,6 +2266,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_file,
+	NULL,
+	NULL,
 	NULL
 };
 

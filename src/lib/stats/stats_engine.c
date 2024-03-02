@@ -482,7 +482,8 @@ static int __rrr_stats_engine_event_pass_str_hook_retry_callback (
 // To provide memory fence, this must be called prior to any thread starting or forking
 int rrr_stats_engine_init (
 		struct rrr_stats_engine *stats,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle queue_handle
 ) {
 	int ret = 0;
 	char *filename = NULL;
@@ -575,6 +576,7 @@ int rrr_stats_engine_init (
 
 	rrr_event_function_set_with_arg (
 			queue,
+			queue_handle,
 			RRR_EVENT_FUNCTION_STR_HOOK_DATA_AVAILABLE,
 			__rrr_stats_engine_event_str_hook_data_available,
 			stats,
@@ -583,6 +585,7 @@ int rrr_stats_engine_init (
 
 	rrr_event_function_set_with_arg (
 			queue,
+			queue_handle,
 			RRR_EVENT_FUNCTION_MSG_HOOK_DATA_AVAILABLE,
 			__rrr_stats_engine_event_msg_hook_data_available,
 			stats,
@@ -593,6 +596,7 @@ int rrr_stats_engine_init (
 			filename, stats->log_hook_handle);
 
 	stats->queue = queue;
+	stats->queue_handle = queue_handle;
 	stats->initialized = 1;
 
 	goto out_final;
@@ -933,6 +937,7 @@ int rrr_stats_engine_push_stream_message (
 	if (write_amount > 0) {
 		ret |= rrr_event_pass (
 				stats->queue,
+				stats->queue_handle,
 				RRR_EVENT_FUNCTION_STR_HOOK_DATA_AVAILABLE,
 				write_amount,
 				 __rrr_stats_engine_event_pass_str_hook_retry_callback,
@@ -995,6 +1000,7 @@ static int __rrr_stats_engine_push_rrr_message (
 	if (write_amount > 0) {
 		ret |= rrr_event_pass (
 				stats->queue,
+				stats->queue_handle,
 				RRR_EVENT_FUNCTION_MSG_HOOK_DATA_AVAILABLE,
 				write_amount,
 				__rrr_stats_engine_event_pass_msg_hook_retry_callback,

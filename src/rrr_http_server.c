@@ -323,6 +323,7 @@ int main (int argc, const char **argv, const char **env) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_http_server *http_server = NULL;
 	struct rrr_event_queue *events = NULL;
+	rrr_event_receiver_handle events_handle;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_server_data_init(&data);
@@ -330,6 +331,15 @@ int main (int argc, const char **argv, const char **env) {
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
 	if (rrr_event_queue_new(&events) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (rrr_event_receiver_new (
+			&events_handle,
+			events,
+			NULL
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -461,7 +471,17 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
-	if (rrr_event_dispatch(events, 100000, rrr_http_server_event_periodic, NULL) != 0) {
+	if (rrr_event_function_periodic_set (
+			events,
+			events_handle,
+			100 * 1000, // 100ms,
+			rrr_http_server_event_periodic
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (rrr_event_dispatch(events) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

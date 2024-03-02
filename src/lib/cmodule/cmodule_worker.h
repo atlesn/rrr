@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "cmodule_defines.h"
+#include "../event/event.h"
 
 struct rrr_cmodule;
 struct rrr_cmodule_worker;
@@ -99,7 +100,9 @@ int rrr_cmodule_worker_init (
 		const struct rrr_settings *settings,
 		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *event_queue_parent,
+		rrr_event_receiver_handle event_queue_parent_handle,
 		struct rrr_event_queue *event_queue_worker,
+		rrr_event_receiver_handle event_queue_worker_handle,
 		struct rrr_fork_handler *fork_handler,
 		const struct rrr_discern_stack_collection *methods,
 		rrr_time_us_t spawn_interval,

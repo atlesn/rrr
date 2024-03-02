@@ -280,6 +280,7 @@ static int __rrr_mmap_channel_allocate (
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
+		rrr_event_receiver_handle queue_notify_handle,
 		size_t data_size,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg,
@@ -356,6 +357,7 @@ int rrr_mmap_channel_write_using_callback (
 	if (queue_notify != NULL) {
 		if ((ret = rrr_event_pass (
 				queue_notify,
+				queue_notify_handle,
 				RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 				1,
 				check_cancel_callback,
@@ -388,6 +390,7 @@ static int __rrr_mmap_channel_write_callback (void *target_ptr, void *arg) {
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
+		rrr_event_receiver_handle queue_notify_handle,
 		const void *data,
 		size_t data_size,
 		int (*check_cancel_callback)(void *arg),
@@ -400,6 +403,7 @@ int rrr_mmap_channel_write (
 	return rrr_mmap_channel_write_using_callback (
 			target,
 			queue_notify,
+			queue_notify_handle,
 			data_size,
 			__rrr_mmap_channel_write_callback,
 			&callback_data,

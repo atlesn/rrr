@@ -602,6 +602,7 @@ static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle queue_handle,
 		struct rrr_fork_handler *fork_handler,
 		int single_thread
 ) {
@@ -641,7 +642,7 @@ static int main_loop (
 	}
 
 	if (cmd_exists(cmd, "stats", 0)) {
-		if ((ret = rrr_stats_engine_init(&stats_data.engine, queue)) != 0) {
+		if ((ret = rrr_stats_engine_init(&stats_data.engine, queue, queue_handle)) != 0) {
 			RRR_MSG_0("Could not initialize statistics engine\n");
 			goto out_destroy_instance_metadata;
 		}
@@ -751,10 +752,7 @@ static int main_loop (
 		RRR_DBG_1("Starting dispatch in main loop\n");
 
 		ret = rrr_event_dispatch (
-				queue,
-				0,
-				NULL,
-				&event_callback_data
+				queue
 		);
 
 		RRR_DBG_1 ("Main loop finished with code %i\n", ret);
@@ -966,6 +964,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	int is_child = 0;
 
 	struct rrr_event_queue *queue = NULL;
+	rrr_event_receiver_handle queue_handle;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -1038,10 +1037,16 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_cleanup_signal;
 		}
 
+		if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_destroy_events;
+		}
+
 		if (main_loop (
 				&cmd,
 				config_string,
 				queue,
+				queue_handle,
 				fork_handler,
 				1 /* Single thread mode */
 		) != 0) {
@@ -1099,6 +1104,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			if (rrr_event_queue_new(&queue) != 0) {
 				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+
+			if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
+				ret = EXIT_FAILURE;
 				goto out_destroy_events;
 			}
 
@@ -1106,6 +1116,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 					&cmd,
 					config_string,
 					queue,
+					queue_handle,
 					fork_handler,
 					0 /* Not single thread mode */
 			) != 0) {
@@ -1123,6 +1134,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}
+
+		if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_destroy_events;
+		}
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
@@ -1131,12 +1147,23 @@ int main (int argc, const char *argv[], const char *env[]) {
 		fork_handler
 	};
 
-	rrr_event_dispatch (
+	if (rrr_event_function_periodic_set (
 			queue,
+			queue_handle,
 			250 * 1000, // 250 ms
-			main_periodic,
+			main_periodic
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_events;
+	}
+
+	rrr_event_receiver_callback_arg_set (
+			queue,
+			queue_handle,
 			&callback_data
 	);
+
+	rrr_event_dispatch(queue);
 
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);

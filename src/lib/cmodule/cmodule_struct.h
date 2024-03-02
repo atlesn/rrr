@@ -75,14 +75,16 @@ struct rrr_cmodule_worker {
 	// Used by parent reader thread only. Unprotected, only access from reader thread.
 	rrr_time_us_t pong_receive_time;
 
-	// Unmanaged pointers provided by application
+	// Unmanaged data provided by application
 	struct rrr_fork_handler *fork_handler;
 	struct rrr_event_queue *event_queue_parent;
+	rrr_event_receiver_handle event_queue_parent_handle;
 	const struct rrr_discern_stack_collection *methods;
 
 	// Both worker and parent destroy this. It is allocated before forking but
 	// the worker also calls destroy to clean up memory for events it created after forking
 	struct rrr_event_queue *event_queue_worker;
+	rrr_event_receiver_handle event_queue_worker_handle;
 
 	// Created after forking if app periodic function is used
 	rrr_event_handle app_periodic_event;

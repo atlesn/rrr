@@ -420,6 +420,7 @@ int main (int argc, const char **argv, const char **env) {
 	struct cmd_data cmd;
 	struct rrr_sub_data data = {0};
 	struct rrr_event_queue *events = NULL;
+	rrr_event_receiver_handle events_handle;
 	struct rrr_mqtt_common_init_data mqtt_init_data = {
 		NULL, /* Client name */
 		RRR_MQTT_COMMON_RETRY_INTERVAL_S * 1000 * 1000,
@@ -443,6 +444,15 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
+	if (rrr_event_receiver_new (
+			&events_handle,
+			events,
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_event;
+	}
+
 	if (__rrr_sub_init (
 			&data,
 			&cmd,
@@ -458,12 +468,17 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_data;
 	}
 
-	if (rrr_event_dispatch (
+	if (rrr_event_function_periodic_set (
 			events,
+			events_handle,
 			250 * 1000, // 250 ms
-			__rrr_sub_periodic,
-			&data
+			__rrr_sub_periodic
 	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_data;
+	}
+
+	if (rrr_event_dispatch (events) != 0) {
 		ret = EXIT_FAILURE;
 	}
 

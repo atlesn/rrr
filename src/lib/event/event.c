@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -41,6 +41,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Uncomment to debug event processing
 //#define RRR_WITH_LIBEVENT_DEBUG
+
+#define SET_RECEIVER()                                                    \
+    assert(receiver_h < queue->receiver_count);                           \
+    struct rrr_event_receiver *receiver = queue->receivers + receiver_h
 
 struct rrr_event_hook_config rrr_event_hooking = {0};
 
@@ -101,51 +105,72 @@ void rrr_event_queue_fds_get (
 		size_t *fds_count,
 		struct rrr_event_queue *queue
 ) {
-	size_t wpos = 0;
-	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		fds[wpos++] = RRR_SOCKET_EVENTFD_READ_FD(&queue->functions[i].eventfd);
-		fds[wpos++] = RRR_SOCKET_EVENTFD_WRITE_FD(&queue->functions[i].eventfd);
+	size_t sum = 0;
+	for (rrr_event_receiver_handle receiver_h = 0; receiver_h < queue->receiver_count; receiver_h++) {
+		SET_RECEIVER();
+		size_t wpos = 0;
+		for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+			fds[wpos++] = RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd);
+			fds[wpos++] = RRR_SOCKET_EVENTFD_WRITE_FD(&receiver->functions[i].eventfd);
+		}
+		sum += wpos;
 	}
-	*fds_count = wpos;
+	*fds_count = sum;
 }
 
 void rrr_event_function_set (
-		struct rrr_event_queue *handle,
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
 		const char *description
 ) {
+	SET_RECEIVER();
+
 	if (function == NULL) {
-		RRR_BUG("BUG: Function was NULL in rrr_event_function_set\n");
+		RRR_BUG("BUG: Function was NULL in %s\n", __func__);
 	}
-	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p (%s)\n", handle, code, function, description);
-	handle->functions[code].function = function;
+
+	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %u->%p (%s)\n",
+		queue, receiver_h, code, function, description);
+
+	receiver->functions[code].function = function;
 }
 
 void rrr_event_function_set_with_arg (
-		struct rrr_event_queue *handle,
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
 		void *arg,
 		const char *description
 ) {
+	SET_RECEIVER();
+
 	if (function == NULL) {
-		RRR_BUG("BUG: Function was NULL in rrr_event_function_set_with_arg\n");
+		RRR_BUG("BUG: Function was NULL in %s\n", __func__);
 	}
-	handle->functions[code].function = function;
-	handle->functions[code].function_arg = arg;
-	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p(%p) (%s)\n", handle, code, function, arg, description);
+
+	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %u->%p(%p) (%s)\n",
+		queue, receiver_h, code, function, arg, description);
+
+	receiver->functions[code].function = function;
+	receiver->functions[code].function_arg = arg;
 }
 
 int rrr_event_function_priority_set (
-		struct rrr_event_queue *handle,
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t code,
 		enum rrr_event_priority priority
 ) {
-	if (event_priority_set(handle->functions[code].signal_event, (int) priority) != 0) {
-		RRR_MSG_0("Failed to set priority rrr_event_function_priority_set\n");
+	SET_RECEIVER();
+
+	if (event_priority_set(receiver->functions[code].signal_event, (int) priority) != 0) {
+		RRR_MSG_0("Failed to set priority %s\n", __func__);
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -154,20 +179,20 @@ static void __rrr_event_periodic (
 		short flags,
 		void *arg
 ) {
-	struct rrr_event_queue *queue = arg;
+	struct rrr_event_receiver *receiver = arg;
 
 	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p periodic fd %i pid %llu tid %llu\n",
-		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] periodic fd %i pid %llu tid %llu\n",
+		receiver->queue, receiver->receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
-	if ( queue->callback_periodic != NULL &&
-	    (queue->callback_ret = queue->callback_periodic(queue->callback_arg)) != 0
+	if ( receiver->callback_periodic != NULL &&
+	    (receiver->queue->callback_ret = receiver->callback_periodic(receiver->callback_arg)) != 0
 	) {
-		event_base_loopbreak(queue->event_base);
+		event_base_loopbreak(receiver->queue->event_base);
 	}
 }
 
@@ -176,19 +201,19 @@ static void __rrr_event_unpause (
 		short flags,
 		void *arg
 ) {
-	struct rrr_event_queue *queue = arg;
+	struct rrr_event_receiver *receiver = arg;
 
 	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p unpause fd %i pid %llu tid %llu\n",
-		queue, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] unpause fd %i pid %llu tid %llu\n",
+		receiver->queue, receiver->receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		if (queue->functions[i].is_paused) {
-			event_add(queue->functions[i].signal_event, NULL);
+		if (receiver->functions[i].is_paused) {
+			event_add(receiver->functions[i].signal_event, NULL);
 		}
 	}
 }
@@ -200,6 +225,8 @@ static void __rrr_event_signal_event (
 ) {
  	struct rrr_event_function *function = arg;
 	struct rrr_event_queue *queue = function->queue;
+	rrr_event_receiver_handle receiver_h = function->receiver_h;
+	struct rrr_event_receiver *receiver = queue->receivers + receiver_h;
 
 	(void)(fd);
 	(void)(flags);
@@ -210,61 +237,62 @@ static void __rrr_event_signal_event (
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p function %u fd %i pid %llu tid %llu\n",
-		queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u fd %i pid %llu tid %llu\n",
+		queue, receiver_h, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if (function->callback_pause) {
 		function->callback_pause(&is_paused_new, function->is_paused, function->callback_pause_arg);
 	}
 
 	if (!is_paused_new && function->is_paused) {
-		RRR_DBG_9_PRINTF("EQ DISP %p function %u unpaused\n",
-				queue, function->index);
-
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u unpaused\n",
+			queue, receiver_h, function->index);
 		function->is_paused = 0;
 	}
 	else if (is_paused_new) {
 		if (!function->is_paused) {
-			RRR_DBG_9_PRINTF("EQ DISP %p function %u paused\n",
-				queue, function->index);
-
+			RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u paused\n",
+				queue, receiver_h, function->index);
 			function->is_paused = 1;
 		}
 
 		event_del(function->signal_event);
 
-		if (!event_pending(queue->unpause_event, EV_TIMEOUT, NULL)) {
+		if (!event_pending(receiver->unpause_event, EV_TIMEOUT, NULL)) {
 			struct timeval tv = { 0, 50 }; // 50 us
-			event_add(queue->unpause_event, &tv);
+			event_add(receiver->unpause_event, &tv);
 		}
 
 		goto out;
 	}
 
-	if (queue->deferred_amount[function->index] > 0) {
-		count = queue->deferred_amount[function->index];
-		queue->deferred_amount[function->index] = 0;
+	if (receiver->deferred_amount[function->index] > 0) {
+		count = receiver->deferred_amount[function->index];
+		receiver->deferred_amount[function->index] = 0;
 	}
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
-				RRR_DBG_9_PRINTF("EQ DISP %p fd %i not ready\n", queue, (int) fd);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] fd %i not ready\n",
+					queue, receiver_h, (int) fd);
 				// OK, nothing to do
 			}
 			else {
-				RRR_DBG_9_PRINTF("EQ DISP %p error from eventfd read, ending loop\n", queue);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] error from eventfd read, ending loop\n",
+					queue, receiver_h);
 				event_base_loopbreak(queue->event_base);
 			}
 		}
 	}
 
 	if (function->function == NULL) {
-		RRR_DBG_9_PRINTF("EQ DISP %p function not registered\n", queue);
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] function not registered\n",
+			queue, receiver_h);
 		goto out;
 	}
 
-	RRR_DBG_9_PRINTF("EQ DISP %p count %" PRIu64 " function %p\n",
-		queue, count, function->function);
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] count %" PRIu64 " function %p\n",
+		queue, receiver_h, count, function->function);
 
 	int retries = 5;
 	while (count > 0 && retries--) {
@@ -277,16 +305,21 @@ static void __rrr_event_signal_event (
 				&amount,
 				function->function_arg != NULL
 					? function->function_arg
-					: queue->callback_arg
+					: receiver->callback_arg
 		)) != 0) {
 			if (ret == RRR_EVENT_EXIT) {
-				RRR_DBG_9_PRINTF("EQ DISP %p exit command from callback, ending loop\n", queue);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] exit command from callback, ending loop\n",
+					queue, receiver_h);
 			}
 			else {
-				RRR_DBG_9_PRINTF("EQ DISP %p error %i from callback, ending loop\n", queue, ret);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] error %i from callback, ending loop\n",
+					queue, receiver_h, ret);
 			}
+
 			queue->callback_ret = ret;
+
 			event_base_loopbreak(queue->event_base);
+
 			goto out;
 		}
 
@@ -301,15 +334,15 @@ static void __rrr_event_signal_event (
 			count += amount;
 		}
 
-		RRR_DBG_9_PRINTF("EQ DISP %p => count %" PRIu64 " (remaining)\n",
-			queue, count);
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] => count %" PRIu64 " (remaining)\n",
+			queue, receiver_h, count);
 	}
 
 	if (count > 0) {
-		RRR_DBG_9_PRINTF("EQ PASS %p => count %" PRIu64 " (deferred)\n",
-			queue, count);
+		RRR_DBG_9_PRINTF("EQ PASS %p[%u] => count %" PRIu64 " (deferred)\n",
+			queue, receiver_h, count);
 
-		queue->deferred_amount[function->index] = count;
+		receiver->deferred_amount[function->index] = count;
 
 		event_active(function->signal_event, 0, 0);
 	}
@@ -320,12 +353,15 @@ static void __rrr_event_signal_event (
 
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t code,
 		void (*callback)(RRR_EVENT_FUNCTION_PAUSE_ARGS),
 		void *callback_arg
 ) {
-	queue->functions[code].callback_pause = callback;
-	queue->functions[code].callback_pause_arg = callback_arg;
+	SET_RECEIVER();
+
+	receiver->functions[code].callback_pause = callback;
+	receiver->functions[code].callback_pause_arg = callback_arg;
 }
 
 int rrr_event_dispatch_once (
@@ -334,34 +370,56 @@ int rrr_event_dispatch_once (
 	return (event_base_loop(queue->event_base, EVLOOP_ONCE) < 0);
 }
 
-int rrr_event_dispatch (
+int rrr_event_function_periodic_set (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		unsigned int periodic_interval_us,
-		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
-		void *callback_arg
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
 ) {
 	int ret = 0;
 
 	struct timeval tv_interval = {0};
+	SET_RECEIVER();
 
-	if (function_periodic != NULL) {
-		tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
-		tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
+	assert(receiver->callback_periodic == NULL);
 
-		if (event_add(queue->periodic_event, &tv_interval)) {
-			RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
-			ret = 1;
-			goto out;
-		}
+	tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
+	tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
 
-		queue->callback_periodic = function_periodic;
-		queue->callback_arg = callback_arg;
+	if (event_add(receiver->periodic_event, &tv_interval)) {
+		RRR_MSG_0("Failed to add periodic event in %s\n", __func__);
+		ret = 1;
+		goto out;
 	}
+
+	receiver->callback_periodic = function_periodic;
+
+	out:
+	return ret;
+}
+
+void rrr_event_function_periodic_clear (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+) {
+	SET_RECEIVER();
+
+	assert(receiver->callback_periodic != NULL);
+
+	event_del(receiver->periodic_event);
+
+	receiver->callback_periodic = NULL;
+}
+
+int rrr_event_dispatch (
+		struct rrr_event_queue *queue
+) {
+	int ret = 0;
 
 	queue->callback_ret = 0;
 
 	if ((ret = event_base_dispatch(queue->event_base)) != 0) {
-		RRR_MSG_0("Error from event_base_dispatch in rrr_event_dispatch: %i\n", ret);
+		RRR_MSG_0("Error from event_base_dispatch in %s: %i\n", __func__, ret);
 		ret = 1;
 		goto out;
 	}
@@ -399,6 +457,7 @@ void rrr_event_dispatch_restart (
 
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t function,
 		uint8_t amount,
 		int (*retry_callback)(void *arg),
@@ -406,22 +465,24 @@ int rrr_event_pass (
 ) {
 	int ret = 0;
 
+	SET_RECEIVER();
+
 	if (function > RRR_EVENT_FUNCTION_MAX) {
-		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
+		RRR_BUG("BUG: Function out of range in %s\n", __func__);
 	}
 
 	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
 		queue, function, amount);
 
 	retry:
-	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
+	if ((ret = rrr_socket_eventfd_write(&receiver->functions[function].eventfd, amount)) != 0) {
 		if (ret == RRR_SOCKET_NOT_READY) {
 			if (retry_callback != NULL && ((ret = retry_callback(retry_callback_arg)) != 0)) {
 				goto out;
 			}
 			goto retry;
 		}
-		RRR_MSG_0("Failed to pass event in rrr_event_pass, return was %i\n", ret);
+		RRR_MSG_0("Failed to pass event in %s, return was %i\n", __func__, ret);
 		ret = RRR_EVENT_ERR;
 		goto out;
 	}
@@ -434,17 +495,172 @@ void rrr_event_count (
 		int64_t *eventfd_count,
 		uint64_t *deferred_count,
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		uint8_t function
 ) {
+	SET_RECEIVER();
+
 #ifdef RRR_SOCKET_EVENTFD_DEBUG
-	rrr_socket_eventfd_count(eventfd_count, &queue->functions[function].eventfd);
+	rrr_socket_eventfd_count(eventfd_count, &receiver->functions[function].eventfd);
 #else
 	*eventfd_count = 0;
 #endif
 
 	// Note : No locking, race conditions may occur. Usually only the
 	//        reader updates the deferred counter.
-	*deferred_count = queue->deferred_amount[function];
+	*deferred_count = receiver->deferred_amount[function];
+}
+
+static int __rrr_event_receiver_init (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
+		void *callback_arg
+) {
+	int ret = 0;
+
+	SET_RECEIVER();
+
+	memset(receiver, '\0', sizeof(*receiver));
+
+	receiver->queue = queue;
+	receiver->receiver_h = receiver_h;
+	receiver->callback_arg = callback_arg;
+
+	if ((receiver->periodic_event = event_new (
+			queue->event_base,
+			-1,
+			EV_TIMEOUT|EV_PERSIST,
+			__rrr_event_periodic,
+			receiver
+	)) == NULL) {
+		RRR_MSG_0("Failed to create periodic event in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((receiver->unpause_event = event_new (
+			queue->event_base,
+			-1,
+			EV_TIMEOUT,
+			__rrr_event_unpause,
+			receiver
+	)) == NULL) {
+		RRR_MSG_0("Failed to create unpause event in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_periodic_event;
+	}
+
+	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
+
+	for (unsigned short i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		RRR_ASSERT(sizeof(i)<=sizeof(receiver->functions[0].index), sizeof_loop_counter_exceeds_size_in_function_struct);
+
+		receiver->functions[i].queue = queue;
+		if ((ret = rrr_socket_eventfd_init(&receiver->functions[i].eventfd)) != 0) {
+			break;
+		}
+		if ((receiver->functions[i].signal_event = event_new (
+				queue->event_base,
+				RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd),
+				EV_READ | EV_PERSIST,
+				__rrr_event_signal_event,
+				&receiver->functions[i]
+		)) == NULL) {
+			RRR_MSG_0("Failed to create signal event in %s\n", __func__);
+			ret = 1;
+			break;
+		}
+		if (event_add (receiver->functions[i].signal_event, NULL) != 0) {
+			RRR_MSG_0("Failed to add signal event in %s\n", __func__);
+			ret = 1;
+			break;
+		}
+		receiver->functions[i].index = i;
+
+		RRR_DBG_9_PRINTF(" -      function %llu fds %i<-%i\n",
+				(long long unsigned int) i,
+				RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd),
+				RRR_SOCKET_EVENTFD_WRITE_FD(&receiver->functions[i].eventfd)
+		);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to initialize event FDs in %s\n", __func__);
+		ret = 1;
+		goto out_cleanup_eventfd;
+	}
+
+	goto out;
+	out_cleanup_eventfd:
+		for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+			rrr_socket_eventfd_cleanup(&receiver->functions[i].eventfd);
+			if (receiver->functions[i].signal_event != NULL) {
+				event_free(receiver->functions[i].signal_event);
+			}
+		}
+		event_free(receiver->unpause_event);
+	out_destroy_periodic_event:
+		event_free(receiver->periodic_event);
+	out:
+		return ret;
+}
+
+int rrr_event_receiver_new (
+		rrr_event_receiver_handle *result,
+		struct rrr_event_queue *queue,
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_event_receiver *receivers_new;
+
+	rrr_event_receiver_handle receiver_h = queue->receiver_count++;
+
+	if ((receivers_new = rrr_reallocate (queue->receivers, sizeof(*receivers_new) * queue->receiver_count)) == NULL) {
+		RRR_MSG_0("Failed to allocate receivers in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	queue->receivers = receivers_new;
+
+	if ((ret = __rrr_event_receiver_init (queue, receiver_h, callback_arg)) != 0) {
+		goto out_error;
+	}
+
+	*result = receiver_h;
+
+	goto out;
+	out_error:
+		queue->receiver_count--;
+	out:
+		return ret;
+}
+
+void rrr_event_receiver_callback_arg_set (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
+		void *callback_arg
+) {
+	SET_RECEIVER();
+	receiver->callback_arg = callback_arg;
+}
+
+static void __rrr_event_receiver_destroy (
+		struct rrr_event_receiver *receiver
+) {
+	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		rrr_socket_eventfd_cleanup(&receiver->functions[i].eventfd);
+		if (receiver->functions[i].signal_event != NULL) {
+			event_free(receiver->functions[i].signal_event);
+		}
+	}
+	if (receiver->periodic_event != NULL) {
+		event_free(receiver->periodic_event);
+	}
+	if (receiver->unpause_event != NULL) {
+		event_free(receiver->unpause_event);
+	}
 }
 
 void rrr_event_queue_destroy (
@@ -452,18 +668,13 @@ void rrr_event_queue_destroy (
 ) {
 	RRR_DBG_9_PRINTF("EQ DSTY %p\n", queue);
 
-	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		rrr_socket_eventfd_cleanup(&queue->functions[i].eventfd);
-		if (queue->functions[i].signal_event != NULL) {
-			event_free(queue->functions[i].signal_event);
+	if (queue->receiver_count > 0) {
+		for (size_t i = 0; i < queue->receiver_count; i++) {
+			__rrr_event_receiver_destroy(queue->receivers + i);
 		}
+		rrr_free(queue->receivers);
 	}
-	if (queue->periodic_event != NULL) {
-		event_free(queue->periodic_event);
-	}
-	if (queue->unpause_event != NULL) {
-		event_free(queue->unpause_event);
-	}
+
 	event_base_free(queue->event_base);
 	rrr_free(queue);
 }
@@ -498,20 +709,20 @@ int rrr_event_queue_new (
 	struct rrr_event_queue *queue = NULL;
 
 	if ((cfg = event_config_new()) == NULL) {
-		RRR_MSG_0("Could not create event config in rrr_event_queue_new\n");
+		RRR_MSG_0("Could not create event config in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	// epoll does not work with UNIX files, use poll instead
 	if (event_config_avoid_method(cfg, "epoll") != 0) {
-		RRR_MSG_0("event_config_avoid_method() failed in rrr_event_queue_new\n");
+		RRR_MSG_0("event_config_avoid_method() failed in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
 	if ((queue = rrr_allocate(sizeof(*queue))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -519,94 +730,20 @@ int rrr_event_queue_new (
 	memset(queue, '\0', sizeof(*queue));
 
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
-		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
+		RRR_MSG_0("Could not create event base in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
 
 	if (event_base_priority_init (queue->event_base, RRR_EVENT_PRIORITY_COUNT) != 0) {
-		RRR_MSG_0("Failed to initialize priority queues in rrr_event_queue_new\n");
+		RRR_MSG_0("Failed to initialize priority queues in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_event_base;
-	}
-
-	if ((queue->periodic_event = event_new (
-			queue->event_base,
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
-			__rrr_event_periodic,
-			queue
-	)) == NULL) {
-		RRR_MSG_0("Failed to create periodic event in rrr_event_queue_new\n");
-		ret = 1;
-		goto out_destroy_event_base;
-	}
-
-	if ((queue->unpause_event = event_new (
-			queue->event_base,
-			-1,
-			EV_TIMEOUT,
-			__rrr_event_unpause,
-			queue
-	)) == NULL) {
-		RRR_MSG_0("Failed to create unpause event in rrr_event_queue_new\n");
-		ret = 1;
-		goto out_destroy_periodic_event;
-	}
-
-	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
-
-	for (unsigned short i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		RRR_ASSERT(sizeof(i)<=sizeof(queue->functions[0].index), sizeof_loop_counter_exceeds_size_in_function_struct);
-
-		queue->functions[i].queue = queue;
-		if ((ret = rrr_socket_eventfd_init(&queue->functions[i].eventfd)) != 0) {
-			break;
-		}
-		if ((queue->functions[i].signal_event = event_new (
-				queue->event_base,
-				RRR_SOCKET_EVENTFD_READ_FD(&queue->functions[i].eventfd),
-				EV_READ | EV_PERSIST,
-				__rrr_event_signal_event,
-				&queue->functions[i]
-		)) == NULL) {
-			RRR_MSG_0("Failed to create signal event in rrr_event_queue_new\n");
-			ret = 1;
-			break;
-		}
-		if (event_add (queue->functions[i].signal_event, NULL) != 0) {
-			RRR_MSG_0("Failed to add signal event in rrr_event_queue_new\n");
-			ret = 1;
-			break;
-		}
-		queue->functions[i].index = i;
-
-		RRR_DBG_9_PRINTF(" -      function %llu fds %i<-%i\n",
-				(long long unsigned int) i,
-				RRR_SOCKET_EVENTFD_READ_FD(&queue->functions[i].eventfd),
-				RRR_SOCKET_EVENTFD_WRITE_FD(&queue->functions[i].eventfd)
-		);
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Failed to initialize event FDs in rrr_event_queue_new\n");
-		ret = 1;
-		goto out_cleanup_eventfd;
 	}
 
 	*target = queue;
 
 	goto out;
-	out_cleanup_eventfd:
-		for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-			rrr_socket_eventfd_cleanup(&queue->functions[i].eventfd);
-			if (queue->functions[i].signal_event != NULL) {
-				event_free(queue->functions[i].signal_event);
-			}
-		}
-		event_free(queue->unpause_event);
-	out_destroy_periodic_event:
-		event_free(queue->periodic_event);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
 	out_free:

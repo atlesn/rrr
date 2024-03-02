@@ -539,7 +539,9 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_voltmonitor,
-		inject
+		inject,
+		NULL,
+		NULL
 };
 
 static const char *module_name = "voltmonitor";

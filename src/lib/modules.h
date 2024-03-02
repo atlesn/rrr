@@ -65,6 +65,10 @@ struct rrr_module_operations {
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+
+	// Main functions for single thread mode
+	int (*init)(struct rrr_thread *thread);
+	void (*deinit)(struct rrr_thread *thread);
 };
 
 void rrr_module_unload (

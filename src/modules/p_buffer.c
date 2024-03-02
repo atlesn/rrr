@@ -142,11 +142,10 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("buffer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			thread
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
 	out_message:
@@ -176,7 +175,9 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_buffer,
-		buffer_inject
+		buffer_inject,
+		NULL,
+		NULL
 };
 
 struct rrr_instance_event_functions event_functions = {

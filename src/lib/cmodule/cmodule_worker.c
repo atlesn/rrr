@@ -84,6 +84,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
+			worker->event_queue_parent_handle,
 			message,
 			message_addr,
 			rrr_cmodule_channel_wait_time,
@@ -159,6 +160,7 @@ static int __rrr_cmodule_worker_stats_message_write (
 		ret = rrr_mmap_channel_write (
 				worker->channel_to_parent,
 				worker->event_queue_parent,
+				worker->event_queue_parent_handle,
 				msg,
 				msg_size,
 				__rrr_cmodule_worker_check_cancel_callback,
@@ -335,6 +337,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
+			worker->event_queue_parent_handle,
 			setting,
 			sizeof(*setting),
 			__rrr_cmodule_worker_check_cancel_callback,
@@ -618,6 +621,7 @@ int __rrr_cmodule_worker_send_pong (
 	ret = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
+			worker->event_queue_parent_handle,
 			&msg,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
@@ -806,12 +810,23 @@ static int __rrr_cmodule_worker_loop (
 		EVENT_ADD(event_periodic);
 	}
 
-	ret_tmp = rrr_event_dispatch (
+	if (rrr_event_function_periodic_set (
 			worker->event_queue_worker,
+			worker->event_queue_worker_handle,
 			100 * 1000, // 100 ms
-			__rrr_cmodule_worker_event_periodic,
+			__rrr_cmodule_worker_event_periodic
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in %s\n", __func__);
+		goto out_cleanup_events;
+	}
+
+	rrr_event_receiver_callback_arg_set (
+			worker->event_queue_worker,
+			worker->event_queue_worker_handle,
 			&callback_data
 	);
+
+	ret_tmp = rrr_event_dispatch (worker->event_queue_worker);
 
 	RRR_DBG_1("child worker loop %s complete, received_stop_signal is %i ret is %i\n",
 			worker->name,
@@ -871,6 +886,7 @@ int rrr_cmodule_worker_loop_start (
 	if (rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
+			worker->event_queue_parent_handle,
 			&control_msg,
 			sizeof(control_msg),
 			__rrr_cmodule_worker_check_cancel_callback,
@@ -1027,7 +1043,9 @@ int rrr_cmodule_worker_init (
 		const struct rrr_settings *settings,
 		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *event_queue_parent,
+		rrr_event_receiver_handle event_queue_parent_handle,
 		struct rrr_event_queue *event_queue_worker,
+		rrr_event_receiver_handle event_queue_worker_handle,
 		struct rrr_fork_handler *fork_handler,
 		const struct rrr_discern_stack_collection *methods,
 		rrr_time_us_t spawn_interval,
@@ -1082,6 +1100,7 @@ int rrr_cmodule_worker_init (
 
 	rrr_event_function_set (
 			event_queue_worker,
+			event_queue_worker_handle,
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			__rrr_cmodule_worker_event_mmap_channel_data_available,
 			"mmap channel data available (worker)"
@@ -1090,6 +1109,8 @@ int rrr_cmodule_worker_init (
 
 	worker->event_queue_worker = event_queue_worker;
 	worker->event_queue_parent = event_queue_parent;
+	worker->event_queue_worker_handle = event_queue_worker_handle;
+	worker->event_queue_parent_handle = event_queue_parent_handle;
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
 	worker->spawn_interval = spawn_interval;

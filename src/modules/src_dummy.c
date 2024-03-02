@@ -464,11 +464,10 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 	goto out_cleanup;
 	dispatch:
-		rrr_event_dispatch (
-				INSTANCE_D_EVENTS(thread_data),
+		rrr_event_function_periodic_set_and_dispatch (
+				INSTANCE_D_EVENTS_H(thread_data),
 				1 * 1000 * 1000,
-				dummy_event_periodic,
-				thread
+				dummy_event_periodic
 		);
 
 	out_cleanup:

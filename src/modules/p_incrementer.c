@@ -675,11 +675,10 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("incrementer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 s
-			incrementer_event_periodic,
-			thread
+			incrementer_event_periodic
 	);
 
 	out_message:
@@ -693,6 +692,8 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_incrementer,
+		NULL,
+		NULL,
 		NULL
 };
 

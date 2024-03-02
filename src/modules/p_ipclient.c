@@ -548,17 +548,16 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	}
 
 	rrr_event_callback_pause_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			ipclient_pause_check,
 			data
 	);
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			ipclient_event_periodic,
-			thread
+			ipclient_event_periodic
 	);
 
 	if (data->need_network_restart) {
@@ -577,6 +576,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_ipclient,
+		NULL,
+		NULL,
 		NULL
 };
 

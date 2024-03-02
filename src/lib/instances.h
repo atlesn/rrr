@@ -129,6 +129,7 @@ struct rrr_instance_runtime_data {
 	struct rrr_instance_runtime_init_data init_data;
 
 	struct rrr_message_broker_costumer *message_broker_handle;
+	rrr_event_receiver_handle events_handle;
 
 	void *private_data;
 	void *preload_data;
@@ -156,6 +157,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
 #define INSTANCE_D_BROKER_ARGS(thread_data) INSTANCE_D_HANDLE(thread_data)
 #define INSTANCE_D_EVENTS(thread_data) thread_data->init_data.events
+#define INSTANCE_D_EVENTS_H(thread_data) thread_data->init_data.events, thread_data->events_handle
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings

@@ -1986,11 +1986,10 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			httpserver_event_periodic,
-			thread
+			httpserver_event_periodic
 	);
 
 	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
@@ -1998,11 +1997,10 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	httpserver_start_shutdown(data);
 
 	if (!httpserver_shutdown_complete(data)) {
-		rrr_event_dispatch (
-				INSTANCE_D_EVENTS(thread_data),
+		rrr_event_function_periodic_set_and_dispatch (
+				INSTANCE_D_EVENTS_H(thread_data),
 				100 * 1000,
-				httpserver_event_shutdown,
-				thread
+				httpserver_event_shutdown
 		);
 	}
 
@@ -2018,6 +2016,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_httpserver,
+		NULL,
+		NULL,
 		NULL
 };
 

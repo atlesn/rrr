@@ -406,11 +406,10 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 #endif
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			mqttbroker_event_periodic,
-			thread
+			mqttbroker_event_periodic
 	);
 
 	// If clients run on the same machine, we hope they close the connection first
@@ -429,6 +428,8 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqttbroker,
+		NULL,
+		NULL,
 		NULL
 };
 

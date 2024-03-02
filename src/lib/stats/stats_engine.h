@@ -78,6 +78,7 @@ struct rrr_stats_engine {
 	struct rrr_stats_log_stream log_stream;
 
 	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
 	struct rrr_event_collection events;
 	rrr_event_handle event_periodic;
 
@@ -88,7 +89,8 @@ struct rrr_stats_engine {
 
 int rrr_stats_engine_init (
 		struct rrr_stats_engine *stats,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle queue_handle
 );
 void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats);
 int rrr_stats_engine_tick (struct rrr_stats_engine *stats);

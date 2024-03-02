@@ -293,11 +293,10 @@ static void *thread_entry_mangler (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mangler instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			thread
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
 	out_message:
@@ -311,6 +310,8 @@ static void *thread_entry_mangler (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mangler,
+		NULL,
+		NULL,
 		NULL
 };
 

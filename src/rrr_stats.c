@@ -109,6 +109,7 @@ struct rrr_stats_data {
 	struct rrr_socket_client_collection *connections;
 
 	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
 	struct rrr_event_collection events;
 
 	rrr_event_handle event_keepalive;
@@ -188,6 +189,15 @@ static int __rrr_stats_data_init (
 	if ((ret = rrr_event_queue_new(&data->queue)) != 0) {
 		RRR_MSG_0("Could not create event queue in %s\n", __func__);
 		goto out_clear_stats_tree;
+	}
+
+	if ((ret = rrr_event_receiver_new (
+			&data->queue_handle,
+			data->queue,
+			data
+	)) != 0) {
+		RRR_MSG_0("Could not create event receiver in %s\n", __func__);
+		goto out_destroy_event_queue;
 	}
 
 	rrr_event_collection_init(&data->events, data->queue);
@@ -931,12 +941,17 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
-	if (rrr_event_dispatch (
+	if (rrr_event_function_periodic_set (
 			data.queue,
+			data.queue_handle,
 			1 * 1000 * 1000, // 1s
-			__rrr_stats_event_periodic,
-			&data
+			__rrr_stats_event_periodic
 	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_data;
+	}
+
+	if (rrr_event_dispatch (data.queue) != 0) {
 		ret = EXIT_FAILURE;
 	}
 

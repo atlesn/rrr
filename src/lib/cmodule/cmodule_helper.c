@@ -143,6 +143,7 @@ static int __rrr_cmodule_helper_send_ping_worker (
 	if ((ret_tmp = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
+			worker->event_queue_worker_handle,
 			&msg,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
@@ -208,6 +209,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
+			worker->event_queue_worker_handle,
 			message,
 			&addr_msg,
 			full_wait_time,
@@ -893,14 +895,14 @@ static void __rrr_cmodule_helper_loop (
 	}
 
 	rrr_event_callback_pause_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			__rrr_cmodule_helper_event_pause_check,
 			thread_data
 	);
 
 	if (rrr_event_function_priority_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			RRR_EVENT_PRIORITY_HIGH
 	)) {
@@ -908,12 +910,15 @@ static void __rrr_cmodule_helper_loop (
 		goto out;
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	if (rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 s
-			__rrr_cmodule_helper_event_periodic,
-			INSTANCE_D_THREAD(thread_data)
-	);
+			__rrr_cmodule_helper_event_periodic
+	) != 0) {
+		goto out;
+	}
+
+	rrr_event_dispatch (INSTANCE_D_EVENTS(thread_data));
 
 	out:
 	pthread_cleanup_pop(1);
@@ -1028,7 +1033,7 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	rrr_event_function_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			__rrr_cmodule_helper_event_mmap_channel_data_available,
 			"mmap channel data available (helper)"
@@ -1039,7 +1044,7 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 			INSTANCE_D_NAME(thread_data),
 			INSTANCE_D_SETTINGS(thread_data),
 			INSTANCE_D_SETTINGS_USED(thread_data),
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,

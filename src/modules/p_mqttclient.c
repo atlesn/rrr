@@ -1799,16 +1799,11 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 }
 		
 static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
-	int ret;
-
-	ret = rrr_event_dispatch (
-			INSTANCE_D_EVENTS(data->thread_data),
-			1 * 100 * 1000, // 100 ms
-			mqttclient_wait_send_allowed_event_periodic,
-			INSTANCE_D_THREAD(data->thread_data)
+	return rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(data->thread_data),
+			100 * 1000, // 100 ms
+			mqttclient_wait_send_allowed_event_periodic
 	);
-
-	return ret;
 }
 
 static int mqttclient_wait_disconnect_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -1852,11 +1847,10 @@ static int mqttclient_wait_disconnect_event_periodic (RRR_EVENT_FUNCTION_PERIODI
 }
 		
 static void mqttclient_wait_disconnect (struct mqtt_client_data *data) {
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(data->thread_data),
-			1 * 100 * 1000, // 100 ms
-			mqttclient_wait_disconnect_event_periodic,
-			INSTANCE_D_THREAD(data->thread_data)
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(data->thread_data),
+			100 * 1000, // 100 ms
+			mqttclient_wait_disconnect_event_periodic
 	);
 }
 
@@ -1939,11 +1933,10 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, uint8_t clean
 		data->send_disabled = 0;
 		data->poll_discard_enabled = 1;
 
-		ret = rrr_event_dispatch (
-				INSTANCE_D_EVENTS(data->thread_data),
-				1 * 100 * 1000, // 100 ms
-				mqttclient_event_discard_complete,
-				INSTANCE_D_THREAD(data->thread_data)
+		ret = rrr_event_function_periodic_set_and_dispatch (
+				INSTANCE_D_EVENTS_H(data->thread_data),
+				100 * 1000, // 100 ms
+				mqttclient_event_discard_complete
 		);
 
 		data->poll_discard_enabled = 0;
@@ -2312,7 +2305,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	data->send_disabled = 0;
 
 	rrr_event_callback_pause_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			mqttclient_event_callback_pause,
 			thread
@@ -2322,11 +2315,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto reconnect;
 	}
 
-	ret_tmp = rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
-			1 * 100 * 1000, // 100 ms
-			mqttclient_event_periodic,
-			thread
+	ret_tmp = rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
+			100 * 1000, // 100 ms
+			mqttclient_event_periodic
 	);
 
 	if (ret_tmp != 0 || rrr_thread_signal_encourage_stop_check(thread)) {
@@ -2351,6 +2343,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
+		NULL,
+		NULL,
 		NULL
 };
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,26 +33,42 @@ struct rrr_event_queue;
 struct rrr_event_function {
 	int (*function)(RRR_EVENT_FUNCTION_ARGS);
 	void *function_arg;
+
 	void (*callback_pause)(RRR_EVENT_FUNCTION_PAUSE_ARGS);
 	void *callback_pause_arg;
+
 	struct rrr_socket_eventfd eventfd;
+
 	struct event *signal_event;
+
 	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle receiver_h;
+
 	unsigned short index;
 	unsigned short is_paused;
 };
 
-struct rrr_event_queue {
-	struct event_base *event_base;
-
+struct rrr_event_receiver {
 	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
 	uint64_t deferred_amount[RRR_EVENT_FUNCTION_MAX + 1];
 
 	struct event *periodic_event;
 	struct event *unpause_event;
 
+	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle receiver_h;
+
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
+
+	// Callback arg is for periodic function and also for other
+	// functions if no specific function arg is given
 	void *callback_arg;
+};
+
+struct rrr_event_queue {
+	struct event_base *event_base;
+	struct rrr_event_receiver *receivers;
+	rrr_event_receiver_handle receiver_count;
 	int callback_ret;
 };
 

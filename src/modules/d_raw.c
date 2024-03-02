@@ -180,11 +180,10 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			raw_event_periodic,
-			thread
+			raw_event_periodic
 	);
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
@@ -196,6 +195,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_raw,
+		NULL,
+		NULL,
 		NULL
 };
 

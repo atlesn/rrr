@@ -96,6 +96,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	rrr_strerror_init();
 
 	struct rrr_event_queue *queue = NULL;
+	rrr_event_receiver_handle queue_handle;
 	struct rrr_msgdb_server *server = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct cmd_data cmd;
@@ -143,11 +144,28 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
+	if ((ret = rrr_event_receiver_new (
+			&queue_handle,
+			queue,
+			NULL
+	)) != 0) {
+		goto out_cleanup_signal;
+	}
+
 	if ((ret = rrr_msgdb_server_new(&server, queue, directory, socket, (unsigned int) levels)) != 0) {
 		goto out_cleanup_signal;
 	}
 
-	ret = rrr_event_dispatch(queue, 100000, rrr_msgdb_periodic, NULL);
+	if ((ret = rrr_event_function_periodic_set (
+			queue,
+			queue_handle,
+			100 * 1000, // 100 ms
+			rrr_msgdb_periodic
+	)) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	ret = rrr_event_dispatch(queue);
 
 	rrr_config_set_debuglevel_on_exit();
 

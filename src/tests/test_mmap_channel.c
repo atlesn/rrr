@@ -96,6 +96,7 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 			if ((ret = rrr_mmap_channel_write (
 					mmap_channel_to_parent,
 					NULL,
+					0,
 					test_data_success,
 					sizeof(test_data_success),
 					NULL,
@@ -118,6 +119,7 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 	if ((ret = rrr_mmap_channel_write (
 			mmap_channel_to_fork,
 			NULL,
+			0,
 			test_data,
 			sizeof(test_data),
 			NULL,

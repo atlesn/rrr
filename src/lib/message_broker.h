@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "util/linked_list.h"
 #include "message_holder/message_holder.h"
+#include "event/event.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
 #define RRR_MESSAGE_BROKER_POST		RRR_MESSAGE_BROKER_OK
@@ -88,7 +89,8 @@ int rrr_message_broker_costumer_register (
 void rrr_message_broker_costumer_event_queue_set (
 		struct rrr_message_broker *broker,
 		const char *name,
-		struct rrr_event_queue *events
+		struct rrr_event_queue *events,
+		rrr_event_receiver_handle events_handle
 );
 int rrr_message_broker_costumer_managed_data_push (
 		struct rrr_message_broker *broker,

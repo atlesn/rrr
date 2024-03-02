@@ -1744,18 +1744,16 @@ static void ip_event_setup (
 	);
 }
 
-static void *thread_entry_ip (struct rrr_thread *thread) {
+static int ip_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (ip_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
+		return 1;
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(ip_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -1825,14 +1823,36 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
-			100 * 1000, // 100 ms
-			ip_function_periodic,
-			thread
-	);
+	return 0;
 
 	out_message:
+	ip_data_cleanup(data);
+	RRR_DBG_1 ("ip instance %s failed to initialize\n", thread_data->init_data.instance_config->name);
+	return 1;
+}
+
+static void ip_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
+
+	ip_data_cleanup(data);
+}
+
+static void *thread_entry_ip (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (ip_init(thread) != 0) {
+		return NULL;
+	}
+
+	pthread_cleanup_push(ip_data_cleanup, data);
+
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
+			100 * 1000, // 100 ms
+			ip_function_periodic
+	);
 
 	pthread_cleanup_pop(1);
 
@@ -1844,7 +1864,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_ip,
-	NULL
+	NULL,
+	ip_init,
+	ip_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {

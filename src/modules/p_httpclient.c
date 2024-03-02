@@ -2733,17 +2733,16 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	}
 
 	rrr_event_callback_pause_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			httpclient_pause_check,
 			thread_data
 	);
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			httpclient_event_periodic,
-			thread
+			httpclient_event_periodic
 	);
 
 	out_message:
@@ -2757,6 +2756,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_httpclient,
+		NULL,
+		NULL,
 		NULL
 };
 

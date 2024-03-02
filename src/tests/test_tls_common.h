@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_TLS_COMMON_H
 
 #include "../lib/net_transport/net_transport.h"
+#include "../lib/event/event.h"
 
 #define RRR_TEST_TLS_COMMON_PORT 4433
 #define RRR_TEST_TLS_COMMON_TIMEOUT_S 5

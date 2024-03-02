@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
+#include "../event/event.h"
 #include "../rrr_inttypes.h"
 #include "../rrr_types.h"
 
@@ -41,6 +42,7 @@ int rrr_cmodule_channel_count (
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
+		rrr_event_receiver_handle notify_queue_handle,
 		const struct rrr_msg *message,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
@@ -48,6 +50,7 @@ int rrr_cmodule_channel_send_message_simple (
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
+		rrr_event_receiver_handle notify_queue_handle,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
 		rrr_time_us_t full_wait_time,

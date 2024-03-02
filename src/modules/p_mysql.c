@@ -978,7 +978,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
 	rrr_event_callback_pause_set (
-			INSTANCE_D_EVENTS(thread_data),
+			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			mysql_pause_check,
 			thread_data
@@ -995,11 +995,10 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
+	rrr_event_function_periodic_set_and_dispatch (
+			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			thread
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
 	out_message:
@@ -1014,6 +1013,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mysql,
+		NULL,
+		NULL,
 		NULL
 };
 

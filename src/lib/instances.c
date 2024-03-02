@@ -673,7 +673,7 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		volatile const int *main_running
 ) {
 	struct rrr_instance_runtime_data *data;
-      
+
 	if ((data = rrr_allocate_zero(sizeof(*data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		goto out;
@@ -811,13 +811,15 @@ static int __rrr_instance_add_senders_to_broker (
 static int __rrr_instance_before_start_tasks (
 		struct rrr_message_broker *broker,
 		struct rrr_instance *instance,
-		struct rrr_event_queue *events
+		struct rrr_event_queue *events,
+		rrr_event_receiver_handle events_handle
 ) {
 	int ret = 0;
 
 	if (instance->module_data->event_functions.broker_data_available != NULL) {
 		rrr_event_function_set (
 			events,
+			events_handle,
 			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 			instance->module_data->event_functions.broker_data_available,
 			"broker data available"
@@ -1061,6 +1063,7 @@ static int __rrr_instances_create_threads (
 
 	struct rrr_thread_collection *thread_collection;
 	struct rrr_instance_runtime_data *runtime_data = NULL;
+	struct rrr_instance_runtime_data **runtime_data_ptr = NULL;
 	struct rrr_event_queue *events = NULL;
 	struct rrr_event_queue **events_ptr = NULL;
 	struct rrr_thread *thread;
@@ -1079,6 +1082,12 @@ static int __rrr_instances_create_threads (
 	}
 
 	if ((events_ptr = rrr_allocate_zero(sizeof(*events_ptr) * RRR_LL_COUNT(instances))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out_destroy;
+	}
+
+	if ((runtime_data_ptr = rrr_allocate_zero(sizeof(*runtime_data_ptr) * RRR_LL_COUNT(instances))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out_destroy;
@@ -1112,6 +1121,8 @@ static int __rrr_instances_create_threads (
 			goto out;
 		}
 
+		runtime_data_ptr[i] = runtime_data;
+
 		if ((thread = rrr_thread_collection_thread_create_and_preload (
 				thread_collection,
 				__rrr_instance_thread_entry_intermediate,
@@ -1123,6 +1134,12 @@ static int __rrr_instances_create_threads (
 			RRR_MSG_0("Error while creating thread for instance %s\n",
 				node->module_data->instance_name);
 			ret = 1;
+			goto out_destroy;
+		}
+
+		// Get event receiver handle and set default callback argument
+		if ((ret = rrr_event_receiver_new (&runtime_data->events_handle, events, thread)) != 0) {
+			RRR_MSG_0("Failed to create receiver in %s\n", __func__);
 			goto out_destroy;
 		}
 
@@ -1153,7 +1170,8 @@ static int __rrr_instances_create_threads (
 		rrr_message_broker_costumer_event_queue_set (
 				message_broker,
 				INSTANCE_M_NAME(node),
-				events
+				events,
+				runtime_data_ptr[i]->events_handle
 		);
 		events = NULL;
 
@@ -1173,7 +1191,8 @@ static int __rrr_instances_create_threads (
 		if ((ret = __rrr_instance_before_start_tasks (
 				message_broker,
 				node,
-				events_ptr[i]
+				events_ptr[i],
+				runtime_data_ptr[i]->events_handle
 		)) != 0) {
 			goto out_destroy;
 		}
@@ -1191,6 +1210,7 @@ static int __rrr_instances_create_threads (
 			rrr_event_queue_destroy(events);
 		rrr_thread_collection_destroy(NULL, thread_collection);
 	out:
+		RRR_FREE_IF_NOT_NULL(runtime_data_ptr);
 		RRR_FREE_IF_NOT_NULL(events_ptr);
 		return ret;
 }
@@ -1267,6 +1287,7 @@ int rrr_instance_run (
 	struct rrr_thread_collection *thread_collection;
 	struct rrr_instance_runtime_data *runtime_data;
 	struct rrr_thread *thread;
+	rrr_event_receiver_handle events_handle;
 
 	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
@@ -1286,7 +1307,7 @@ int rrr_instance_run (
 		RRR_MSG_0("Error while creating runtime data for instance %s\n",
 			INSTANCE_M_NAME(instance));
 		ret = 1;
-		goto out;
+		goto out_destroy;
 	}
 
 	if ((thread = rrr_thread_collection_thread_create_and_preload (
@@ -1303,6 +1324,16 @@ int rrr_instance_run (
 		goto out_destroy;
 	}
 
+	if ((ret = rrr_event_receiver_new (
+			&events_handle,
+			events,
+			thread
+	)) != 0) {
+		goto out_destroy;
+	}
+
+	runtime_data->events_handle = events_handle;
+
 	if ((ret = rrr_thread_managed_data_push(thread, runtime_data, __rrr_instance_runtime_data_destroy_void)) != 0) {
 		goto out_destroy;
 	}
@@ -1314,7 +1345,12 @@ int rrr_instance_run (
 	RRR_DBG_1("Before start tasks instance %p '%s' in single mode\n",
 		instance, INSTANCE_M_NAME(instance));
 
-	if ((ret = __rrr_instance_before_start_tasks(message_broker, instance, events)) != 0) {
+	if ((ret = __rrr_instance_before_start_tasks (
+			message_broker,
+			instance,
+			events,
+			events_handle
+	)) != 0) {
 		goto out_destroy;
 	}
 

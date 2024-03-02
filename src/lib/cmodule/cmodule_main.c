@@ -125,6 +125,7 @@ int rrr_cmodule_main_worker_fork_start (
 		const struct rrr_settings *settings,
 		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *notify_queue,
+		rrr_event_receiver_handle notify_queue_handle,
 		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
@@ -141,9 +142,19 @@ int rrr_cmodule_main_worker_fork_start (
 	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
 
 	struct rrr_event_queue *worker_queue = NULL;
+	rrr_event_receiver_handle worker_queue_handle;
+
 	if ((ret = rrr_event_queue_new(&worker_queue)) != 0) {
 		RRR_MSG_0("Failed to create event queue in rrr_cmodule_main_worker_fork_start\n");
 		goto out_parent;
+	}
+
+	if ((ret = rrr_event_receiver_new (
+			&worker_queue_handle,
+			worker_queue,
+			NULL
+	)) != 0) {
+		goto out_parent_destroy_event_queue;
 	}
 
 	if ((ret = rrr_cmodule_worker_init (
@@ -152,7 +163,9 @@ int rrr_cmodule_main_worker_fork_start (
 			settings,
 			settings_used,
 			notify_queue,
+			notify_queue_handle,
 			worker_queue,
+			worker_queue_handle,
 			cmodule->fork_handler,
 			methods,
 			cmodule->config_data.worker_spawn_interval,

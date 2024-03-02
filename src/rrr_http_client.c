@@ -95,6 +95,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
 	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
 	struct rrr_http_client *http_client;
 
 	enum rrr_http_transport transport_force;
@@ -809,7 +810,15 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_event_queue_new(&data.queue) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
+	}
 
+	if (rrr_event_receiver_new (
+			&data.queue_handle,
+			data.queue,
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	rrr_event_collection_init(&data.events, data.queue);
@@ -872,12 +881,18 @@ int main (int argc, const char **argv, const char **env) {
 	// Enables no transaction detection in periodic callback
 	data.request_pending = 0;
 
-	if ((rrr_event_dispatch (
+	if (rrr_event_function_periodic_set (
 			data.queue,
-			100000,
-			rrr_http_client_event_periodic,
-			&data
-	) & ~(RRR_EVENT_EXIT)) != 0) {
+			data.queue_handle,
+			100 * 1000, // 100 ms
+			rrr_http_client_event_periodic
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+
+	if ((rrr_event_dispatch(data.queue) & ~(RRR_EVENT_EXIT)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

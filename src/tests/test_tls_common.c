@@ -277,6 +277,10 @@ int rrr_test_tls_common_dispatch (
 		int (*complete_callback)(struct rrr_test_tls_common_data_common *data),
 		int (*periodic_callback)(struct rrr_test_tls_common_data_common *data)
 ) {
+	int ret = 0;
+
+	rrr_event_receiver_handle event_queue_handle;
+
 	struct rrr_test_tls_common_periodic_callback_data cb_data = {
 		.main_running = main_running,
 		.data = data,
@@ -284,12 +288,29 @@ int rrr_test_tls_common_dispatch (
 		.periodic_callback = periodic_callback
 	};
 
-	return rrr_event_dispatch (
+	if ((ret = rrr_event_receiver_new (
+			&event_queue_handle,
 			event_queue,
-			250 * 1000, // 250 ms
-			__rrr_test_tls_common_periodic,
 			&cb_data
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_event_function_periodic_set (
+			event_queue,
+			event_queue_handle,
+			250 * 1000, // 250 ms
+			__rrr_test_tls_common_periodic
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_event_dispatch (event_queue)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 void rrr_test_tls_common_cleanup (

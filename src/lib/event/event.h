@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -52,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_ERR    RRR_READ_HARD_ERROR
 #define RRR_EVENT_EXIT   RRR_READ_EOF
 
+typedef unsigned int rrr_event_receiver_handle;
+
 enum rrr_event_priority {
 	RRR_EVENT_PRIORITY_HIGH,
 	RRR_EVENT_PRIORITY_MID,
@@ -97,6 +99,16 @@ ssize_t rrr_event_hook_string_format (
 		int flags,
 		const char *extra
 );
+int rrr_event_receiver_new (
+		rrr_event_receiver_handle *result,
+		struct rrr_event_queue *queue,
+		void *callback_arg
+);
+void rrr_event_receiver_callback_arg_set (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver,
+		void *callback_arg
+);
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );
@@ -116,12 +128,14 @@ void rrr_event_queue_fds_get (
 );
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
+		rrr_event_receiver_handle receiver,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
 		const char *description
 );
 void rrr_event_function_set_with_arg (
 		struct rrr_event_queue *handle,
+		rrr_event_receiver_handle receiver,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
 		void *arg,
@@ -129,11 +143,13 @@ void rrr_event_function_set_with_arg (
 );
 int rrr_event_function_priority_set (
 		struct rrr_event_queue *handle,
+		rrr_event_receiver_handle receiver,
 		uint8_t code,
 		enum rrr_event_priority priority
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver,
 		uint8_t code,
 		void (*callback)(RRR_EVENT_FUNCTION_PAUSE_ARGS),
 		void *callback_arg
@@ -141,12 +157,41 @@ void rrr_event_callback_pause_set (
 int rrr_event_dispatch_once (
 		struct rrr_event_queue *queue
 );
-int rrr_event_dispatch (
+int rrr_event_function_periodic_set (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
 		unsigned int periodic_interval_us,
-		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
-		void *arg
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
 );
+void rrr_event_function_periodic_clear (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+);
+int rrr_event_dispatch (
+		struct rrr_event_queue *queue
+);
+static inline int rrr_event_function_periodic_set_and_dispatch (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
+		unsigned int periodic_interval_us,
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
+) {
+	int ret = 0;
+
+	if ((ret = rrr_event_function_periodic_set (
+			queue,
+			receiver_h,
+			periodic_interval_us,
+			function_periodic
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_event_dispatch(queue);
+
+	out:
+	return ret;
+}
 void rrr_event_dispatch_break (
 		struct rrr_event_queue *queue
 );
@@ -158,6 +203,7 @@ void rrr_event_dispatch_restart (
 );
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver,
 		uint8_t function,
 		uint8_t amount,
 		int (*retry_callback)(void *arg),
@@ -167,6 +213,7 @@ void rrr_event_count (
 		int64_t *eventfd_count,
 		uint64_t *deferred_count,
 		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver,
 		uint8_t function
 );
 static inline void rrr_event_handle_clear (

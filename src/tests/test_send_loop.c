@@ -143,6 +143,7 @@ int rrr_test_send_loop(void) {
 	int ttl_reached;
 	int timeout_reached;
 	int result = 0;
+	rrr_event_receiver_handle queue_handle;
 
 	memset(msg, '\0', sizeof(msg));
 	memset(entry, '\0', sizeof(entry));
@@ -150,6 +151,15 @@ int rrr_test_send_loop(void) {
 	if ((ret = rrr_event_queue_new (&queue)) != 0) {
 		TEST_MSG("Failed to create event queue in %s\n", __func__);
 		goto out_final;
+	}
+
+	if ((ret = rrr_event_receiver_new (
+			&queue_handle,
+			queue,
+			NULL
+	)) != 0) {
+		TEST_MSG("Failed to create event receiver in %s\n", __func__);
+		goto out_destroy_event_queue;
 	}
 
 	if ((ret = rrr_send_loop_new (
@@ -270,11 +280,11 @@ int rrr_test_send_loop(void) {
 	// The periodic event in send loop should re-add the event. Note that
 	// the timer starts when the send loop is created, hence we should run
 	// this early in the test.
-	if (rrr_event_dispatch (
+	if (rrr_event_function_periodic_set_and_dispatch (
 			queue,
+			queue_handle,
 			100 * 1000, // 100 ms. Send loop should not before  250 ms
-			__rrr_test_send_loop_periodic,
-			NULL
+			__rrr_test_send_loop_periodic
 	) != 1) {
 		TEST_MSG("- Unexpected return from event dispatch\n");
 		ret |= 1;
@@ -285,16 +295,20 @@ int rrr_test_send_loop(void) {
 		ret |= 1;
 	}
 
+	rrr_event_function_periodic_clear(queue, queue_handle);
+
 	// Loop should run once within this dispatch
-	if (rrr_event_dispatch (
+	if (rrr_event_function_periodic_set_and_dispatch (
 			queue,
+			queue_handle,
 			200 * 1000, // 200 ms. Send loop should run within 250 ms
-			__rrr_test_send_loop_periodic,
-			NULL
+			__rrr_test_send_loop_periodic
 	) != 1) {
 		TEST_MSG("- Unexpected return from event dispatch\n");
 		ret |= 1;
 	}
+
+	rrr_event_function_periodic_clear(queue, queue_handle);
 
 	if (rrr_send_loop_count(send_loop) != 0) {
 		TEST_MSG("- Count not zero after dispatch\n");
