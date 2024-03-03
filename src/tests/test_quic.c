@@ -304,7 +304,6 @@ int rrr_test_quic (const volatile int *main_running, struct rrr_event_queue *que
 	 */
 
 	struct rrr_test_tls_common_data_common data;
-	rrr_event_receiver_handle queue_handle;
 
 	static const struct rrr_net_transport_config config_server = {
 		"../../misc/ssl/rrr.crt",

@@ -295,8 +295,6 @@ int rrr_test_send_loop(void) {
 		ret |= 1;
 	}
 
-	rrr_event_function_periodic_clear(queue, queue_handle);
-
 	// Loop should run once within this dispatch
 	if (rrr_event_function_periodic_set_and_dispatch (
 			queue,
@@ -307,8 +305,6 @@ int rrr_test_send_loop(void) {
 		TEST_MSG("- Unexpected return from event dispatch\n");
 		ret |= 1;
 	}
-
-	rrr_event_function_periodic_clear(queue, queue_handle);
 
 	if (rrr_send_loop_count(send_loop) != 0) {
 		TEST_MSG("- Count not zero after dispatch\n");

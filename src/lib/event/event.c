@@ -370,6 +370,20 @@ int rrr_event_dispatch_once (
 	return (event_base_loop(queue->event_base, EVLOOP_ONCE) < 0);
 }
 
+static void __rrr_event_function_periodic_clear (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+) {
+	SET_RECEIVER();
+
+	if (receiver->callback_periodic == NULL)
+		return;
+
+	event_del(receiver->periodic_event);
+
+	receiver->callback_periodic = NULL;
+}
+
 int rrr_event_function_periodic_set (
 		struct rrr_event_queue *queue,
 		rrr_event_receiver_handle receiver_h,
@@ -381,7 +395,7 @@ int rrr_event_function_periodic_set (
 	struct timeval tv_interval = {0};
 	SET_RECEIVER();
 
-	assert(receiver->callback_periodic == NULL);
+	__rrr_event_function_periodic_clear(queue, receiver_h);
 
 	tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
 	tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
@@ -396,19 +410,6 @@ int rrr_event_function_periodic_set (
 
 	out:
 	return ret;
-}
-
-void rrr_event_function_periodic_clear (
-		struct rrr_event_queue *queue,
-		rrr_event_receiver_handle receiver_h
-) {
-	SET_RECEIVER();
-
-	assert(receiver->callback_periodic != NULL);
-
-	event_del(receiver->periodic_event);
-
-	receiver->callback_periodic = NULL;
 }
 
 int rrr_event_dispatch (
@@ -431,6 +432,29 @@ int rrr_event_dispatch (
 		ret = 1;
 		goto out;
 	}
+
+	out:
+	return ret;
+}
+
+int rrr_event_function_periodic_set_and_dispatch (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h,
+		unsigned int periodic_interval_us,
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
+) {
+	int ret = 0;
+
+	if ((ret = rrr_event_function_periodic_set (
+			queue,
+			receiver_h,
+			periodic_interval_us,
+			function_periodic
+	)) != 0) {
+		goto out;
+	}
+
+	ret = rrr_event_dispatch(queue);
 
 	out:
 	return ret;

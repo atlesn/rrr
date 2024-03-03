@@ -163,35 +163,15 @@ int rrr_event_function_periodic_set (
 		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
 );
-void rrr_event_function_periodic_clear (
-		struct rrr_event_queue *queue,
-		rrr_event_receiver_handle receiver_h
-);
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue
 );
-static inline int rrr_event_function_periodic_set_and_dispatch (
+int rrr_event_function_periodic_set_and_dispatch (
 		struct rrr_event_queue *queue,
 		rrr_event_receiver_handle receiver_h,
 		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS)
-) {
-	int ret = 0;
-
-	if ((ret = rrr_event_function_periodic_set (
-			queue,
-			receiver_h,
-			periodic_interval_us,
-			function_periodic
-	)) != 0) {
-		goto out;
-	}
-
-	rrr_event_dispatch(queue);
-
-	out:
-	return ret;
-}
+);
 void rrr_event_dispatch_break (
 		struct rrr_event_queue *queue
 );
