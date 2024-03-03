@@ -48,6 +48,8 @@ static void __test_module_result_set (int result) {
 struct test_module_data {
 	rrr_setting_uint exit_delay_ms;
 
+	uint64_t start_time;
+
 	char *test_method;
 	struct rrr_map array_check_values;
 
@@ -102,6 +104,19 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 	return ret;
 }
 
+int test_dummy_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (rrr_time_get_64() - data->start_time > 1 * 1000 * 1000 /* 1 second */) {
+		__test_module_result_set(2);
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
+}
+
 int test_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
@@ -129,43 +144,67 @@ int test_init (struct rrr_thread *thread) {
 
 	rrr_thread_watchdog_time_update(thread);
 
-	data->callback_data.array_check_values = &data->array_check_values;
-	data->callback_data.config = &data->test_function_data;
+	struct rrr_test_callback_data callback_data = {
+		.array_check_values = &data->array_check_values,
+		.config = &data->test_function_data,
+		.result = &test_module_result
+	};
+
+	memcpy(&data->callback_data, &callback_data, sizeof(callback_data));
+
+	data->start_time = rrr_time_get_64();
 
 	if (strcmp(data->test_method, "test_dummy") == 0) {
-		rrr_posix_usleep(1000000); // 1s
-		ret = 0;
+		if ((ret = rrr_event_function_periodic_set (
+				INSTANCE_D_EVENTS_H(thread_data),
+				50 * 1000, // 50 ms
+				test_dummy_periodic
+		)) != 0) {
+			goto out;
+		}
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {
-		ret = test_array (
+		if ((ret = test_array (
 				thread_data,
 				&data->callback_data
-		);
-		TEST_MSG("Result from array test: %i\n", ret);
+		)) != 0) {
+			goto out;
+		}
 	}
 	else if (strcmp(data->test_method, "test_averager") == 0) {
-		ret = test_averager (
+		if ((ret = test_averager (
 				thread_data,
 				&data->callback_data
-		);
-		TEST_MSG("Result from averager test: %i\n", ret);
+		)) != 0) {
+			goto out;
+		}
 	}
 	else if (strcmp(data->test_method, "test_anything") == 0) {
-		ret = test_anything (
+		if ((ret = test_anything (
 				thread_data,
 				&data->callback_data
-		);
-		TEST_MSG("Result from anything test: %i\n", ret);
+		)) != 0) {
+			goto out;
+		}
 	}
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
-		ret = test_type_array_mysql (
+		if ((ret = test_type_array_mysql (
 				thread_data,
 				&data->callback_data
-		);
-		TEST_MSG("Result from MySQL test: %i\n", ret);
+		)) != 0) {
+			goto out;
+		}
 #else
 		TEST_MSG("MySQL test not enabled in configuration with --enable-database-testing\n");
+
+		if ((ret = rrr_event_function_periodic_set (
+				INSTANCE_D_EVENTS_H(thread_data),
+				50 * 1000, // 50 ms
+				test_dummy_periodic
+		)) != 0) {
+			goto out;
+		}
 #endif
 	}
 	else {
@@ -190,7 +229,7 @@ void test_deinit (struct rrr_thread *thread) {
 		data->callback_data.cleanup(data->callback_data.cleanup_arg);
 	}
 
-	if (data->callback_data.result == 2) {
+	if (test_module_result_get() == 2) {
 		__test_module_result_set(0);
 	}
 	else {

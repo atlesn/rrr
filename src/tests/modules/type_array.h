@@ -36,7 +36,7 @@ struct rrr_test_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_test_function_data *config;
 
-	int result;
+	volatile int * const result;
 	int loop_i;
 
 	int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);

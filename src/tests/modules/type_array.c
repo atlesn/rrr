@@ -130,7 +130,7 @@ int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		RRR_MAP_ITERATE_END();
 	}
 
-	callback_data->result = 2;
+	*callback_data->result = 2;
 
 	out:
 	rrr_array_clear(&array_tmp);
@@ -192,16 +192,16 @@ static void __test_event_poll_cb (
 		return;
 	}
 
-	if (callback_data->result == 3) {
+	if (*callback_data->result == 3) {
 		// Message is to be ignored
-		callback_data->result = 1;
+		*callback_data->result = 1;
 	}
 	else {
 		TEST_MSG("Result of polling: %i\n",
-			callback_data->result);
+			*callback_data->result);
 	}
 
-	if (callback_data->result == 2) {
+	if (*callback_data->result == 2) {
 		// Successful test
 		rrr_event_dispatch_exit(INSTANCE_D_EVENTS(thread_data));
 		return;
@@ -304,7 +304,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		const struct rrr_type_value *value = NULL;
 		if ((value = rrr_array_value_get_by_tag(&array_tmp, "measurement")) != NULL) {
 			// Copies of the original four point measurements should arrive first
-			callback_data->result++;
+			(*callback_data->result)++;
 		}
 		else {
 			uint64_t value_average;
@@ -316,7 +316,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_min, &array_tmp, "min", 0);
 
 			// Average message arrives later
-			if (callback_data->result != 4) {
+			if (*callback_data->result != 4) {
 				TEST_MSG("Received average result in test_averager_callback but not all four point measurements were received prior to that\n");
 				ret = 1;
 				goto out;
@@ -335,7 +335,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-			callback_data->result = 2;
+			*callback_data->result = 2;
 		}
 	}
 	else {
@@ -388,7 +388,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	if (!MSG_IS_ARRAY(message)) {
 		// Ignore non-array messages
 		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
-		callback_data->result = 3;
+		*callback_data->result = 3;
 		ret = 0;
 		goto out;
 	}
@@ -650,7 +650,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	callback_data->result = 2;
+	*callback_data->result = 2;
 
 	out:
 		RRR_FREE_IF_NOT_NULL(final_data_raw);
@@ -686,7 +686,7 @@ int test_type_array_mysql_and_network_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_DBG_2("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
-	callback_data->result = 2;
+	*callback_data->result = 2;
 
 	struct rrr_msg_msg *result_message = entry->message;
 	if (!MSG_IS_TAG(result_message)) {
