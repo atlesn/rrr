@@ -1199,7 +1199,6 @@ static int __rrr_instances_create_threads (
 		)) != 0) {
 			goto out_destroy;
 		}
-		events = NULL;
 
 		rrr_message_broker_costumer_event_queue_set (
 				message_broker,
@@ -1207,6 +1206,8 @@ static int __rrr_instances_create_threads (
 				events,
 				runtime_data_ptr[i]->events_handle
 		);
+
+		events = NULL;
 
 		// Set shortcut
 		node->thread = thread;
