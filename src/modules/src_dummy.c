@@ -235,28 +235,6 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 	return (ret != 0 ? ret : (--(callback_data->count) > 0 ? RRR_MESSAGE_BROKER_AGAIN : 0));
 }
 
-static int dummy_periodic (
-		struct dummy_data *data
-) {
-	uint64_t time_now = rrr_time_get_64();
-
-	uint64_t period = time_now - data->generated_count_time;
-	if (period == 0)
-		period++;
-	long double per_second = ((long double) data->generated_count / (long double) period) * 1000 * 1000;
-
-	RRR_DBG_1("dummy instance %s messages per second %.02Lf total %" PRIrrrbl " of %" PRIrrrbl " generation deficit %i\n",
-		INSTANCE_D_NAME(data->thread_data), per_second, data->generated_count_total, data->max_generated, data->count_extra);
-
-	data->generated_count = 0;
-	data->generated_count_time = time_now;
-
-	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 0, "generated", data->generated_count_to_stats);
-	data->generated_count_to_stats = 0;
-
-	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
-}
-
 struct dummy_check_cancel_callback_data {
 	struct dummy_data *data;
 	int check_cancel_count;
@@ -298,10 +276,6 @@ static int dummy_write_entry (
 		data,
 		0
 	};
-
-	if ((ret = rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data))) != 0) {
-		goto out;
-	}
 
 	do {
 		if ((ret = rrr_message_broker_write_entry (
@@ -348,7 +322,13 @@ static void dummy_event_write_entry (
 		const uint64_t time_now = rrr_time_get_64();
 
 		if (dummy_write_entry(data, count + data->count_extra) != 0) {
-			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+			if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
+				// Prevent error from being returned from thread in case of normal shutdown
+				EVENT_REMOVE(data->event_write_entry);
+			}
+			else {
+				rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+			}
 			return;
 		}
 
@@ -377,7 +357,30 @@ static int dummy_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data;
 
-	return dummy_periodic(data);
+	uint64_t time_now, period;
+	long double per_second;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data)) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	time_now = rrr_time_get_64();
+
+	period = time_now - data->generated_count_time;
+	if (period == 0)
+		period++;
+	per_second = ((long double) data->generated_count / (long double) period) * 1000 * 1000;
+
+	RRR_DBG_1("dummy instance %s messages per second %.02Lf total %" PRIrrrbl " of %" PRIrrrbl " generation deficit %i\n",
+		INSTANCE_D_NAME(data->thread_data), per_second, data->generated_count_total, data->max_generated, data->count_extra);
+
+	data->generated_count = 0;
+	data->generated_count_time = time_now;
+
+	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 0, "generated", data->generated_count_to_stats);
+	data->generated_count_to_stats = 0;
+
+	return RRR_EVENT_OK;
 }
 
 static int dummy_init (struct rrr_thread *thread) {
