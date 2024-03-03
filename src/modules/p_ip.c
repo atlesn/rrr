@@ -1823,11 +1823,19 @@ static int ip_init (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	if (rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
+			100 * 1000, // 100 ms
+			ip_function_periodic
+	) != 0) {
+		goto out_message;
+	}
+
 	return 0;
 
 	out_message:
 	ip_data_cleanup(data);
-	RRR_DBG_1 ("ip instance %s failed to initialize\n", thread_data->init_data.instance_config->name);
+	RRR_DBG_1 ("ip instance %s failed to initialize\n", INSTANCE_D_NAME(thread_data));
 	return 1;
 }
 
@@ -1836,34 +1844,14 @@ static void ip_deinit (struct rrr_thread *thread) {
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
 	ip_data_cleanup(data);
-}
 
-static void *thread_entry_ip (struct rrr_thread *thread) {
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
-
-	if (ip_init(thread) != 0) {
-		return NULL;
-	}
-
-	pthread_cleanup_push(ip_data_cleanup, data);
-
-	rrr_event_function_periodic_set_and_dispatch (
-			INSTANCE_D_EVENTS_H(thread_data),
-			100 * 1000, // 100 ms
-			ip_function_periodic
-	);
-
-	pthread_cleanup_pop(1);
-
-	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name);
-
-	return NULL;
+	RRR_DBG_1 ("Thread ip %p instance %s exiting\n",
+			thread, INSTANCE_D_NAME(thread_data));
 }
 
 static struct rrr_module_operations module_operations = {
 	NULL,
-	thread_entry_ip,
+	NULL,
 	NULL,
 	ip_init,
 	ip_deinit

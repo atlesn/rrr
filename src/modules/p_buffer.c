@@ -124,17 +124,18 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 	return ret;
 }
 
-static void *thread_entry_buffer (struct rrr_thread *thread) {
+static int buffer_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
-	RRR_DBG_1 ("buffer thread thread_data is %p\n", thread_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
 	buffer_data_init(data, thread_data);
 
+	RRR_DBG_1 ("buffer thread data is %p\n", thread_data);
+
 	if (buffer_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
-		goto out_message;
+		return 1;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -142,15 +143,21 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("buffer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
-	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);
-	return NULL;
+	return 0;
+}
+
+static void buffer_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(data);
 }
 
 static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -174,10 +181,10 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_buffer,
-		buffer_inject,
 		NULL,
-		NULL
+		buffer_inject,
+		buffer_init,
+		buffer_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {

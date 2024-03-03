@@ -144,7 +144,7 @@ int rrr_cmodule_main_worker_fork_start (
 	struct rrr_event_queue *worker_queue = NULL;
 	rrr_event_receiver_handle worker_queue_handle;
 
-	if ((ret = rrr_event_queue_new(&worker_queue)) != 0) {
+	if ((ret = rrr_event_queue_new(&worker_queue, 1)) != 0) {
 		RRR_MSG_0("Failed to create event queue in rrr_cmodule_main_worker_fork_start\n");
 		goto out_parent;
 	}

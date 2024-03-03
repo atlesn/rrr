@@ -898,60 +898,90 @@ static rrr_length __rrr_instance_count_receivers_of_self (
 	return callback_data.count;
 }
 
-static void *__rrr_instance_thread_entry_intermediate (
+static int __rrr_instance_thread_init (
 		struct rrr_thread *thread
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	int ret = 0;
+
+	struct rrr_cmodule *cmodule;
+	struct rrr_stats_instance *stats;
+
+	// Set shortcut TODO : Is also done somewhere else
+	assert(thread_data->thread == NULL);
 	thread_data->thread = thread;
 
-	pthread_cleanup_push(__rrr_instance_thread_intermediate_cleanup, thread);
-
-	if (rrr_cmodule_new (
-			&thread_data->cmodule,
+	if ((ret = rrr_cmodule_new (
+			&cmodule,
 			INSTANCE_D_NAME(thread_data),
 			INSTANCE_D_FORK(thread_data)
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not initialize cmodule in %s\n", __func__);
 		goto out;
 	}
 
-	RRR_DBG_8("Thread %p intermediate cmodule is %p\n",
-		thread, thread_data->cmodule);
+	RRR_DBG_8("Thread %p init cmodule is %p\n",
+		thread, cmodule);
 
-	if (rrr_stats_instance_new (
-			&thread_data->stats,
+	if ((ret = rrr_stats_instance_new (
+			&stats,
 			INSTANCE_D_STATS_ENGINE(thread_data),
 			INSTANCE_D_NAME(thread_data)
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not initialize stats engine for instance %s in %s\n",
 			INSTANCE_D_NAME(thread_data), __func__);
-		goto out;
+		goto out_destroy_cmodule;
 	}
 
-	RRR_DBG_8("Thread %p intermediate stats is %p\n",
-		thread, thread_data->stats);
+	RRR_DBG_8("Thread %p init stats is %p\n",
+		thread, stats);
 
-	if (rrr_stats_instance_post_default_stickies(thread_data->stats) != 0) {
+	if ((ret = rrr_stats_instance_post_default_stickies(stats)) != 0) {
 		RRR_MSG_0("Error while posting default sticky statistics instance %s in %s\n",
 			INSTANCE_D_NAME(thread_data), __func__);
-		goto out;
+		goto out_destroy_stats;
 	}
 
-	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, event queue %p instance %p\n",
+	thread_data->cmodule = cmodule;
+	thread_data->stats = stats;
+
+	if ((ret = INSTANCE_D_MODULE(thread_data)->operations.init(thread)) != 0) {
+		goto out_destroy_stats;
+	}
+
+	goto out;
+	out_destroy_stats:
+		rrr_stats_instance_destroy(stats);
+	out_destroy_cmodule:
+		rrr_cmodule_destroy(cmodule);
+	out:
+		return ret;
+}
+
+static int __rrr_instance_thread_run (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	assert(thread->init_complete);
+
+	RRR_DBG_1("Instance %s starting event loop PID %llu, TID %llu, thread %p, event queue %p instance %p\n",
 		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, INSTANCE_D_EVENTS(thread_data), thread_data);
 
-	// Ignore return value
-	thread_data->init_data.module->operations.thread_entry(thread);
+	return rrr_event_dispatch(INSTANCE_D_EVENTS(thread_data));
+}
 
-	// Keep out label ABOVE cleanup_pops
-	out:
+static void __rrr_instance_thread_deinit (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	pthread_cleanup_pop(1);
+	assert(thread->init_complete);
 
-	// Don't put code here, modules usually call pthread_exit which means we
-	// only do the cleanup function
+	INSTANCE_D_MODULE(thread_data)->operations.deinit(thread);
 
-	return NULL;
+	__rrr_instance_thread_intermediate_cleanup(thread);
 }
 
 static int __rrr_instance_thread_preload_enable_duplication_as_needed (
@@ -1099,7 +1129,7 @@ static int __rrr_instances_create_threads (
 		RRR_DBG_1("Initializing instance %p '%s'\n",
 			node, INSTANCE_M_NAME(node));
 
-		if ((ret = rrr_event_queue_new (&events)) != 0) {
+		if ((ret = rrr_event_queue_new (&events, 1)) != 0) {
 			goto out_destroy;
 		}
 
@@ -1125,7 +1155,9 @@ static int __rrr_instances_create_threads (
 
 		if ((thread = rrr_thread_collection_thread_create_and_preload (
 				thread_collection,
-				__rrr_instance_thread_entry_intermediate,
+				__rrr_instance_thread_init,
+				__rrr_instance_thread_run,
+				__rrr_instance_thread_deinit,
 				__rrr_instance_thread_preload,
 				node->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
@@ -1167,13 +1199,14 @@ static int __rrr_instances_create_threads (
 		)) != 0) {
 			goto out_destroy;
 		}
+		events = NULL;
+
 		rrr_message_broker_costumer_event_queue_set (
 				message_broker,
 				INSTANCE_M_NAME(node),
 				events,
 				runtime_data_ptr[i]->events_handle
 		);
-		events = NULL;
 
 		// Set shortcut
 		node->thread = thread;
@@ -1269,10 +1302,9 @@ int rrr_instances_create_and_start_threads (
 		return ret;
 }
 
-int rrr_instance_run (
+int rrr_instance_collection_run (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
-		int instance_index,
 		struct cmd_data *cmd,
 		struct rrr_event_queue *events,
 		struct rrr_stats_engine *stats,
@@ -1280,13 +1312,12 @@ int rrr_instance_run (
 		struct rrr_fork_handler *fork_handler,
 		volatile const int *main_running
 ) {
-	struct rrr_instance *instance = RRR_LL_AT(instances, instance_index);
-
 	int ret = 0;
 
 	struct rrr_thread_collection *thread_collection;
-	struct rrr_instance_runtime_data *runtime_data;
-	struct rrr_thread *thread;
+	struct rrr_instance_runtime_data *runtime_data = NULL;
+	struct rrr_instance_runtime_data **runtime_data_ptr = NULL;
+	struct rrr_thread *thread = NULL;
 	rrr_event_receiver_handle events_handle;
 
 	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
@@ -1294,77 +1325,113 @@ int rrr_instance_run (
 		goto out;
 	}
 
-	if ((runtime_data = __rrr_instance_runtime_data_new (
-			instance,
-			config,
-			cmd,
-			events,
-			stats,
-			message_broker,
-			fork_handler,
-			main_running
-	)) == NULL) {
-		RRR_MSG_0("Error while creating runtime data for instance %s\n",
-			INSTANCE_M_NAME(instance));
+	if ((runtime_data_ptr = rrr_allocate_zero(sizeof(*runtime_data_ptr) * RRR_LL_COUNT(instances))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out_destroy;
 	}
 
-	if ((thread = rrr_thread_collection_thread_create_and_preload (
-			thread_collection,
-			__rrr_instance_thread_entry_intermediate,
-			__rrr_instance_thread_preload,
-			instance->module_data->instance_name,
-			RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
-			runtime_data
-	)) == NULL) {
-		RRR_MSG_0("Error while creating thread for instance %s\n",
-			instance->module_data->instance_name);
-		ret = 1;
-		goto out_destroy;
-	}
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
 
-	if ((ret = rrr_event_receiver_new (
-			&events_handle,
-			events,
-			thread
-	)) != 0) {
-		goto out_destroy;
-	}
+		if ((runtime_data_ptr[i] = runtime_data = __rrr_instance_runtime_data_new (
+				instance,
+				config,
+				cmd,
+				events,
+				stats,
+				message_broker,
+				fork_handler,
+				main_running
+		)) == NULL) {
+			RRR_MSG_0("Error while creating runtime data for instance %s\n",
+				INSTANCE_M_NAME(instance));
+			ret = 1;
+			goto out_destroy;
+		}
 
-	runtime_data->events_handle = events_handle;
+		if ((thread = rrr_thread_collection_thread_create_and_preload (
+				thread_collection,
+				__rrr_instance_thread_init,
+				NULL,
+				__rrr_instance_thread_deinit,
+				__rrr_instance_thread_preload,
+				instance->module_data->instance_name,
+				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
+				runtime_data
+		)) == NULL) {
+			RRR_MSG_0("Error while creating thread for instance %s\n",
+				instance->module_data->instance_name);
+			ret = 1;
+			goto out_destroy;
+		}
 
-	if ((ret = rrr_thread_managed_data_push(thread, runtime_data, __rrr_instance_runtime_data_destroy_void)) != 0) {
-		goto out_destroy;
-	}
-	runtime_data = NULL;
+		if ((ret = rrr_event_receiver_new (
+				&events_handle,
+				events,
+				thread
+		)) != 0) {
+			goto out_destroy;
+		}
 
-	// Set shortcut
-	instance->thread = thread;
+		rrr_message_broker_costumer_event_queue_set (
+				message_broker,
+				INSTANCE_M_NAME(instance),
+				events,
+				events_handle
+		);
 
-	RRR_DBG_1("Before start tasks instance %p '%s' in single mode\n",
-		instance, INSTANCE_M_NAME(instance));
+		runtime_data->events_handle = events_handle;
 
-	if ((ret = __rrr_instance_before_start_tasks (
-			message_broker,
-			instance,
-			events,
-			events_handle
-	)) != 0) {
-		goto out_destroy;
-	}
+		// Set shortcut
+		instance->thread = thread;
+
+		i++;
+	RRR_LL_ITERATE_END();
+
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
+		RRR_DBG_1("Before start tasks instance %p '%s' in single thread mode\n",
+			instance, INSTANCE_M_NAME(instance));
+
+		if ((ret = __rrr_instance_before_start_tasks (
+				message_broker,
+				instance,
+				events,
+				events_handle
+		)) != 0) {
+			goto out_destroy;
+		}
+	RRR_LL_ITERATE_END();
 
 	rrr_thread_collection_signal_start_no_procedure_all(thread_collection);
 
-	rrr_thread_run(thread);
+	if ((ret = rrr_thread_collection_init_all(thread_collection)) != 0) {
+		RRR_MSG_0("Error while initializing all instances in single thread mode\n");
+		ret = 1;
+		goto out_destroy;
+	}
 
-	RRR_DBG_1("Cleanup tasks instance %p '%s' in single mode\n",
-		instance, INSTANCE_M_NAME(instance));
+	RRR_DBG_1("Event loop starting with %i instances in single thread mode\n",
+		RRR_LL_COUNT(instances));
 
-	goto out_destroy;
+	if ((ret = rrr_event_dispatch (events)) != 0) {
+		RRR_MSG_0("Error returned from dispatch in single thread mode\n");
+		goto out_deinit;
+	}
+
+	RRR_DBG_1("Event loop complete in single thread mode\n");
+
+	goto out_deinit;
+	out_deinit:
+		rrr_thread_collection_deinit_all(thread_collection);
 	out_destroy:
-		if (runtime_data != NULL)
-			__rrr_instance_runtime_data_destroy(runtime_data);
+		for (int i = 0; i < RRR_LL_COUNT(instances); i++) {
+			if (runtime_data_ptr[i] != NULL)
+				__rrr_instance_runtime_data_destroy(runtime_data_ptr[i]);
+		}
+		RRR_FREE_IF_NOT_NULL(runtime_data_ptr);
 		rrr_thread_collection_destroy(NULL, thread_collection);
 	out:
 		return ret;

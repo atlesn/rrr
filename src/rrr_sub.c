@@ -439,7 +439,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_event_queue_new(&events) != 0) {
+	if (rrr_event_queue_new(&events, 1) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_cmd;
 	}

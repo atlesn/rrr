@@ -54,6 +54,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 typedef unsigned int rrr_event_receiver_handle;
 
+struct rrr_event_queue;
+
 enum rrr_event_priority {
 	RRR_EVENT_PRIORITY_HIGH,
 	RRR_EVENT_PRIORITY_MID,
@@ -81,8 +83,6 @@ static inline void rrr_event_hook (const char *source_func, int fd, short flags)
 
 #define RRR_EVENT_HOOK() \
 	rrr_event_hook(__PRETTY_FUNCTION__, fd, flags)
-
-struct rrr_event_queue;
 
 void rrr_event_hook_set (
 		void (*hook)(RRR_EVENT_HOOK_ARGS),
@@ -116,7 +116,8 @@ void rrr_event_queue_destroy_void (
 		void *queue
 );
 int rrr_event_queue_new (
-		struct rrr_event_queue **target
+		struct rrr_event_queue **target,
+		rrr_event_receiver_handle receiver_max
 );
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue

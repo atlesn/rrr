@@ -330,7 +330,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
-	if (rrr_event_queue_new(&events) != 0) {
+	if (rrr_event_queue_new(&events, 1) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

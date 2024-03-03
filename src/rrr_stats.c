@@ -186,7 +186,7 @@ static int __rrr_stats_data_init (
 		goto out;
 	}
 
-	if ((ret = rrr_event_queue_new(&data->queue)) != 0) {
+	if ((ret = rrr_event_queue_new(&data->queue, 1)) != 0) {
 		RRR_MSG_0("Could not create event queue in %s\n", __func__);
 		goto out_clear_stats_tree;
 	}

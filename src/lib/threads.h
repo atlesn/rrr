@@ -128,14 +128,19 @@ struct rrr_thread {
 	pthread_mutex_t signal_cond_mutex;
 	pthread_cond_t signal_cond;
 
-	// Start routines
-	void *(*start_routine) (struct rrr_thread *);
+	// Routines
+	int (*init)(struct rrr_thread *);
+	int (*run)(struct rrr_thread *);
+	void (*deinit)(struct rrr_thread *);
 
-	// External data to clean up
-	struct rrr_thread_managed_data_collection managed_data;
+	// Deinit control
+	int init_complete;
 
 	// Cleanup control
 	volatile int started;
+
+	// External data to clean up
+	struct rrr_thread_managed_data_collection managed_data;
 };
 
 struct rrr_thread_collection {
@@ -272,7 +277,9 @@ void rrr_thread_signal_initialize_now_with_watchdog (
 );
 struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
-		void *(*start_routine) (struct rrr_thread *),
+		int (*init)(struct rrr_thread *),
+		int (*run)(struct rrr_thread *),
+		void (*deinit)(struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -283,6 +290,12 @@ int rrr_thread_collection_start_all (
 );
 void rrr_thread_run (
 		struct rrr_thread *thread
+);
+void rrr_thread_collection_deinit_all (
+		struct rrr_thread_collection *collection
+);
+int rrr_thread_collection_init_all (
+		struct rrr_thread_collection *collection
 );
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection

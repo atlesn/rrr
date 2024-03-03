@@ -807,7 +807,7 @@ int main (int argc, const char **argv, const char **env) {
 			&data
 	};
 
-	if (rrr_event_queue_new(&data.queue) != 0) {
+	if (rrr_event_queue_new(&data.queue, 1) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

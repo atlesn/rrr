@@ -46,6 +46,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     assert(receiver_h < queue->receiver_count);                           \
     struct rrr_event_receiver *receiver = queue->receivers + receiver_h
 
+#define SET_ENVELOPE()                                                    \
+    struct rrr_event_queue *queue = envelope->queue;                      \
+    rrr_event_receiver_handle receiver_h = envelope->receiver_h
+
 struct rrr_event_hook_config rrr_event_hooking = {0};
 
 void rrr_event_hook_set (
@@ -179,7 +183,9 @@ static void __rrr_event_periodic (
 		short flags,
 		void *arg
 ) {
-	struct rrr_event_receiver *receiver = arg;
+	struct rrr_event_receiver_envelope *envelope = arg;
+	SET_ENVELOPE();
+	SET_RECEIVER();
 
 	(void)(fd);
 	(void)(flags);
@@ -187,12 +193,12 @@ static void __rrr_event_periodic (
 	RRR_EVENT_HOOK();
 
 	RRR_DBG_9_PRINTF("EQ DISP %p[%u] periodic fd %i pid %llu tid %llu\n",
-		receiver->queue, receiver->receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+		queue, receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if ( receiver->callback_periodic != NULL &&
-	    (receiver->queue->callback_ret = receiver->callback_periodic(receiver->callback_arg)) != 0
+	    (queue->callback_ret = receiver->callback_periodic(receiver->callback_arg)) != 0
 	) {
-		event_base_loopbreak(receiver->queue->event_base);
+		event_base_loopbreak(queue->event_base);
 	}
 }
 
@@ -201,7 +207,9 @@ static void __rrr_event_unpause (
 		short flags,
 		void *arg
 ) {
-	struct rrr_event_receiver *receiver = arg;
+	struct rrr_event_receiver_envelope *envelope = arg;
+	SET_ENVELOPE();
+	SET_RECEIVER();
 
 	(void)(fd);
 	(void)(flags);
@@ -209,7 +217,7 @@ static void __rrr_event_unpause (
 	RRR_EVENT_HOOK();
 
 	RRR_DBG_9_PRINTF("EQ DISP %p[%u] unpause fd %i pid %llu tid %llu\n",
-		receiver->queue, receiver->receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+		queue, receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		if (receiver->functions[i].is_paused) {
@@ -224,9 +232,9 @@ static void __rrr_event_signal_event (
 		void *arg
 ) {
  	struct rrr_event_function *function = arg;
-	struct rrr_event_queue *queue = function->queue;
-	rrr_event_receiver_handle receiver_h = function->receiver_h;
-	struct rrr_event_receiver *receiver = queue->receivers + receiver_h;
+	struct rrr_event_receiver_envelope *envelope = &function->receiver_e;
+	SET_ENVELOPE();
+	SET_RECEIVER();
 
 	(void)(fd);
 	(void)(flags);
@@ -535,6 +543,17 @@ void rrr_event_count (
 	*deferred_count = receiver->deferred_amount[function];
 }
 
+static void __rrr_event_receiver_envelope_init (
+		struct rrr_event_receiver_envelope *envelope,
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+) {
+	memset(envelope, '\0', sizeof(*envelope));
+
+	envelope->queue = queue;
+	envelope->receiver_h = receiver_h;
+}
+
 static int __rrr_event_receiver_init (
 		struct rrr_event_queue *queue,
 		rrr_event_receiver_handle receiver_h,
@@ -544,10 +563,11 @@ static int __rrr_event_receiver_init (
 
 	SET_RECEIVER();
 
+	RRR_DBG_9_PRINTF("EQ INIT %p[%u] thread ID %llu\n",
+		queue, receiver_h, (long long unsigned) rrr_gettid());
+
 	memset(receiver, '\0', sizeof(*receiver));
 
-	receiver->queue = queue;
-	receiver->receiver_h = receiver_h;
 	receiver->callback_arg = callback_arg;
 
 	if ((receiver->periodic_event = event_new (
@@ -555,7 +575,7 @@ static int __rrr_event_receiver_init (
 			-1,
 			EV_TIMEOUT|EV_PERSIST,
 			__rrr_event_periodic,
-			receiver
+			queue->receiver_envelopes + receiver_h
 	)) == NULL) {
 		RRR_MSG_0("Failed to create periodic event in %s\n", __func__);
 		ret = 1;
@@ -567,22 +587,24 @@ static int __rrr_event_receiver_init (
 			-1,
 			EV_TIMEOUT,
 			__rrr_event_unpause,
-			receiver
+			queue->receiver_envelopes + receiver_h
 	)) == NULL) {
 		RRR_MSG_0("Failed to create unpause event in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_periodic_event;
 	}
 
-	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
+	__rrr_event_receiver_envelope_init (queue->receiver_envelopes + receiver_h, queue, receiver_h);
 
 	for (unsigned short i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		RRR_ASSERT(sizeof(i)<=sizeof(receiver->functions[0].index), sizeof_loop_counter_exceeds_size_in_function_struct);
 
-		receiver->functions[i].queue = queue;
+		__rrr_event_receiver_envelope_init(&receiver->functions[i].receiver_e, queue, receiver_h);
+
 		if ((ret = rrr_socket_eventfd_init(&receiver->functions[i].eventfd)) != 0) {
 			break;
 		}
+
 		if ((receiver->functions[i].signal_event = event_new (
 				queue->event_base,
 				RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd),
@@ -594,11 +616,13 @@ static int __rrr_event_receiver_init (
 			ret = 1;
 			break;
 		}
+
 		if (event_add (receiver->functions[i].signal_event, NULL) != 0) {
 			RRR_MSG_0("Failed to add signal event in %s\n", __func__);
 			ret = 1;
 			break;
 		}
+
 		receiver->functions[i].index = i;
 
 		RRR_DBG_9_PRINTF(" -      function %llu fds %i<-%i\n",
@@ -636,17 +660,12 @@ int rrr_event_receiver_new (
 ) {
 	int ret = 0;
 
-	struct rrr_event_receiver *receivers_new;
-
-	rrr_event_receiver_handle receiver_h = queue->receiver_count++;
-
-	if ((receivers_new = rrr_reallocate (queue->receivers, sizeof(*receivers_new) * queue->receiver_count)) == NULL) {
-		RRR_MSG_0("Failed to allocate receivers in %s\n", __func__);
-		ret = 1;
-		goto out;
+	if (queue->receiver_count == queue->receiver_max) {
+		RRR_BUG("BUG: Max receivers breached in %s (%u)\n",
+			__func__, queue->receiver_max);
 	}
 
-	queue->receivers = receivers_new;
+	rrr_event_receiver_handle receiver_h = queue->receiver_count++;
 
 	if ((ret = __rrr_event_receiver_init (queue, receiver_h, callback_arg)) != 0) {
 		goto out_error;
@@ -697,6 +716,7 @@ void rrr_event_queue_destroy (
 			__rrr_event_receiver_destroy(queue->receivers + i);
 		}
 		rrr_free(queue->receivers);
+		rrr_free(queue->receiver_envelopes);
 	}
 
 	event_base_free(queue->event_base);
@@ -714,7 +734,8 @@ static int debug_active = 0;
 #endif
 
 int rrr_event_queue_new (
-		struct rrr_event_queue **target
+		struct rrr_event_queue **target,
+		rrr_event_receiver_handle receiver_max
 ) {
 	int ret = 0;
 
@@ -745,13 +766,11 @@ int rrr_event_queue_new (
 		goto out;
 	}
 
-	if ((queue = rrr_allocate(sizeof(*queue))) == NULL) {
+	if ((queue = rrr_allocate_zero(sizeof(*queue))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
-
-	memset(queue, '\0', sizeof(*queue));
 
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in %s\n", __func__);
@@ -765,9 +784,29 @@ int rrr_event_queue_new (
 		goto out_destroy_event_base;
 	}
 
+	if (receiver_max > 0) {
+		if ((queue->receivers = rrr_allocate_zero(sizeof(*queue->receivers) * receiver_max)) == NULL) {
+			RRR_MSG_0("Could not allocate receivers in %s\n", __func__);
+			ret = 1;
+			goto out_destroy_event_base;
+		}
+
+		if ((queue->receiver_envelopes = rrr_allocate_zero(sizeof(*queue->receiver_envelopes) * receiver_max)) == NULL) {
+			RRR_MSG_0("Could not allocate envelopes in %s\n", __func__);
+			ret = 1;
+			goto out_destroy_receivers;
+		}
+
+		queue->receiver_max = receiver_max;
+	}
+
 	*target = queue;
 
 	goto out;
+//	out_destroy_envelopes:
+//		rrr_free(queue->receiver_envelopes);
+	out_destroy_receivers:
+		rrr_free(queue->receivers);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
 	out_free:

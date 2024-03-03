@@ -421,6 +421,7 @@ static int __rrr_thread_wait_for_state_initialized (
 		RRR_MSG_0 ("Thread %s did not transition to INITIALIZED in time, state is now %" PRIu32 "\n",
 				thread->name, __rrr_thread_state_get(thread));
 		ret = 1;
+		assert(0);
 		goto out;
 	}
 
@@ -542,12 +543,9 @@ int rrr_thread_start_condition_helper_fork (
 void rrr_thread_collection_signal_start_no_procedure_all (
 		struct rrr_thread_collection *collection
 ) {
-	int i = 0;
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog)
 			continue;
-		if (i++ > 0)
-			RRR_BUG("BUG: More than one thread in %s\n", __func__);
 
 		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_SINGLE_MODE);
 		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_INITIALIZE);
@@ -893,27 +891,76 @@ static void __rrr_thread_state_set_stopped (
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPED);
 }
 
+static int __rrr_thread_wait_for_signal_and_init (
+		int *encourage_stop,
+		struct rrr_thread *thread
+) {
+	int ret = 0;
+
+	*encourage_stop = 0;
+
+	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
+	if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
+		RRR_DBG_8("Thread %p/%s received encourage stop before initializing, exiting\n", thread, thread->name);
+		*encourage_stop = 1;
+		goto out;
+	}
+
+	RRR_DBG_8("Thread %p/%s TID %llu received initialize signal, proceeding to init\n",
+		thread, thread->name, (long long unsigned int) rrr_gettid());
+
+	if ((ret = thread->init(thread)) != 0) {
+		RRR_MSG_0 ("Error from initialization function of thread %p/%s TID %llu\n",
+			thread, thread->name, (long long unsigned int) rrr_gettid());
+		goto out;
+	}
+
+	RRR_DBG_8("Thread %p/%s TID %llu init complete\n",
+		thread, thread->name, (long long unsigned int) rrr_gettid());
+
+	thread->init_complete = 1;
+
+	out:
+	return ret;
+}
+
+static void __rrr_thread_deinit (
+		struct rrr_thread *thread
+) {
+	if (!thread->init_complete)
+		return;
+	thread->deinit(thread);
+}
+
 static void *__rrr_thread_start_routine_intermediate (
 		void *arg
 ) {
 	struct rrr_thread *thread = arg;
 
+	int encourage_stop = 0;
+
 	__rrr_thread_set_name(thread);
 
-	// STOPPED must be set at the very end, a  data structures to be freed
+	// STOPPED must be set at the very end as it allows data structures to be freed
+
 	pthread_cleanup_push(__rrr_thread_state_set_stopped, thread);
 	pthread_cleanup_push(__rrr_thread_cleanup, thread);
 
-	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
-	if (!rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
-		RRR_DBG_8("Thread %p/%s TID %llu received initialize signal, proceeding\n",
-				thread, thread->name, (long long unsigned int) rrr_gettid());
-		thread->start_routine(thread);
-	}
-	else {
-		RRR_DBG_8("Thread %p/%s received encourage stop before initializing, exiting\n", thread, thread->name);
+	if (__rrr_thread_wait_for_signal_and_init(&encourage_stop, thread) != 0 || encourage_stop) {
+		goto out_cleanup;
 	}
 
+	if (thread->run(thread) != 0) {
+		RRR_MSG_0 ("Error from run function of thread %p/%s TID %llu\n",
+			thread, thread->name, (long long unsigned int) rrr_gettid());
+	}
+
+	RRR_DBG_8("Thread %p/%s TID %llu run complete, proceeding ot deinit\n",
+		thread, thread->name, (long long unsigned int) rrr_gettid());
+
+	__rrr_thread_deinit(thread);
+
+	out_cleanup:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
@@ -988,7 +1035,9 @@ static int __rrr_thread_allocate_watchdog_data (
 static int __rrr_thread_allocate (
 		struct rrr_thread **target,
 		struct rrr_thread **target_wd,
-		void *(*start_routine) (struct rrr_thread *),
+		int (*init)(struct rrr_thread *),
+		int (*run)(struct rrr_thread *),
+		void (*deinit)(struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1013,7 +1062,9 @@ static int __rrr_thread_allocate (
 	sprintf(thread->name, "%s", name);
 
 	thread->watchdog_timeout_us = watchdog_timeout_us;
-	thread->start_routine = start_routine;
+	thread->init = init;
+	thread->run = run;
+	thread->deinit = deinit;
 	thread->private_data = private_data;
 
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
@@ -1051,7 +1102,9 @@ static int __rrr_thread_allocate (
 
 struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
-		void *(*start_routine) (struct rrr_thread *),
+		int (*init)(struct rrr_thread *),
+		int (*run)(struct rrr_thread *),
+		void (*deinit)(struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -1064,7 +1117,9 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 	if (__rrr_thread_allocate (
 			&thread,
 			&thread_wd,
-			start_routine,
+			init,
+			run,
+			deinit,
 			name,
 			watchdog_timeout_us,
 			private_data
@@ -1121,8 +1176,41 @@ int rrr_thread_collection_start_all (
 	RRR_FREE_IF_NOT_NULL(watchdog_data);
 	return ret;
 }
-		
 
+void rrr_thread_collection_deinit_all (
+		struct rrr_thread_collection *collection
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		// Function only does something if needed
+		__rrr_thread_deinit(node);
+	RRR_LL_ITERATE_END();
+
+}
+
+int rrr_thread_collection_init_all (
+		struct rrr_thread_collection *collection
+) {
+	int ret = 0;
+
+	int encourage_stop = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		if (node->is_watchdog) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if ((ret = __rrr_thread_wait_for_signal_and_init(&encourage_stop, node)) != 0 || encourage_stop) {
+			goto out_deinit;
+		}
+	RRR_LL_ITERATE_END();
+
+	goto out;
+	out_deinit:
+		rrr_thread_collection_deinit_all(collection);
+	out:
+		return ret;
+}
+		
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection
 ) {

@@ -70,7 +70,7 @@ struct dummy_data {
 	unsigned int generated_count_to_stats;
 	rrr_setting_uint generated_count_total;
 
-	uint64_t next_periodic_time;
+	int count_extra;
 };
 
 static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -240,8 +240,6 @@ static int dummy_periodic (
 	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 0, "generated", data->generated_count_to_stats);
 	data->generated_count_to_stats = 0;
 
-	data->next_periodic_time = rrr_time_get_64() + 1 * 1000 * 1000;
-	
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
 }
 
@@ -256,10 +254,6 @@ static int dummy_check_cancel (void *arg) {
 
 	if (callback_data->check_cancel_count++ != 0) {
 		sched_yield();
-	}
-
-	if (rrr_time_get_64() > data->next_periodic_time) {
-		return dummy_periodic(data);
 	}
 
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
@@ -327,8 +321,30 @@ static void dummy_event_write_entry (
 
 	RRR_EVENT_HOOK();
 
-	if (dummy_write_entry (data, 1) != 0) {
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	if (data->sleep_interval_us < DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
+		// Busy-loop operation
+		const int count = (data->no_sleeping ? 50 : 1);
+
+		const uint64_t time_now = rrr_time_get_64();
+
+		// Check cancel callback will run the periodic function
+
+		if (dummy_write_entry(data, count + data->count_extra) != 0) {
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+			return;
+		}
+
+		if (!data->no_sleeping) {
+			rrr_posix_usleep(data->sleep_interval_us);
+			data->count_extra = (int) ((rrr_time_get_64() - time_now) / data->sleep_interval_us);
+			EVENT_ACTIVATE(data->event_write_entry);
+		}
+	}
+	else {
+		if (dummy_write_entry (data, 1) != 0) {
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+			return;
+		}
 	}
 
 	if (dummy_check_complete(data)) {
@@ -344,29 +360,23 @@ static int dummy_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return dummy_periodic(data);
 }
 
-static void *thread_entry_dummy (struct rrr_thread *thread) {
+static int dummy_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
-	int single_thread_mode = 0;
+
+	int ret = 0;
 
 	if (dummy_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
+		return 1;
 	}
 
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(dummy_data_cleanup, data);
-
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (rrr_thread_signal_check (thread, RRR_THREAD_SIGNAL_START_SINGLE_MODE)) {
-		RRR_DBG_1 ("Dummy instance %s is being run in single thread mode\n", INSTANCE_D_NAME(thread_data));
-		single_thread_mode = 1;
-	}
-
-	if (dummy_parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
+	if ((ret = dummy_parse_config(data, thread_data->init_data.instance_config)) != 0) {
+		RRR_MSG_0("Configuration parse failed for dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
 
@@ -384,26 +394,21 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	}
 
 	if (data->array_tag != NULL && *(data->array_tag) != '\0') {
-		if (rrr_array_push_value_vain_with_tag(&data->array_template, data->array_tag) != 0) {
+		if ((ret = rrr_array_push_value_vain_with_tag(&data->array_template, data->array_tag)) != 0) {
 			RRR_MSG_0("Failed to push vain value to template array in dummy instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			goto out_cleanup;
 		}
 	}
 
-	if (data->no_generation) {
-		goto dispatch;
-	}
-
-	if (!data->no_sleeping && data->sleep_interval_us >= DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
-		// Event operation
-		if (rrr_event_collection_push_periodic (
+	if (!data->no_generation) {
+		if ((ret = rrr_event_collection_push_periodic (
 				&data->event_write_entry,
 				&data->events,
 				dummy_event_write_entry,
 				thread,
 				data->sleep_interval_us
-		) != 0) {
+		)) != 0) {
 			RRR_MSG_0("Failed to create write event in dummy instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_cleanup;
@@ -411,69 +416,27 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 		EVENT_ADD(data->event_write_entry);
 		EVENT_ACTIVATE(data->event_write_entry);
-
-		goto dispatch;
 	}
 
-	// Busy-loop operation
-	const int count = (data->no_sleeping ? 50 : 1);
-	int count_extra = 0;
-	uint64_t time_last_dispatch = rrr_time_get_64();
-	while (1) {
-		const uint64_t time_now = rrr_time_get_64();
+	rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
+			1 * 1000 * 1000,
+			dummy_event_periodic
+	);
 
-		// Check cancel callback will run the periodic function
-
-		if (dummy_write_entry(data, count + count_extra) != 0) {
-			break;
-		}
-
-		if (!data->no_sleeping) {
-			rrr_posix_usleep(data->sleep_interval_us);
-			count_extra = (int) ((rrr_time_get_64() - time_now) / data->sleep_interval_us);
-		}
-
-		if (dummy_check_complete(data)) {
-			// Run the next periodic function at the correct time before going to dispatch
-			rrr_posix_usleep(data->next_periodic_time - rrr_time_get_64());
-			if (dummy_periodic(data) != 0) {
-				break;
-			}
-			goto dispatch;
-		}
-
-		if (single_thread_mode) {
-			// Check main running directly
-			if (!INSTANCE_D_MAIN_RUNNING(thread_data)) {
-				break;
-			}
-
-			// Run any periodic events
-			if (time_now - time_last_dispatch > 250 * 1000) {
-				// NOTE : If there are periodic events with long intervals, this
-				//        will reduce throughput as event framework might wait
-				//        for a timeout. Possibly improve this.
-				if (rrr_event_dispatch_once (INSTANCE_D_EVENTS(thread_data)) != 0) {
-					break;
-				}
-				time_last_dispatch = time_now;
-			}
-		}
-	
-	}
-
-	goto out_cleanup;
-	dispatch:
-		rrr_event_function_periodic_set_and_dispatch (
-				INSTANCE_D_EVENTS_H(thread_data),
-				1 * 1000 * 1000,
-				dummy_event_periodic
-		);
-
+	goto out;
 	out_cleanup:
+		dummy_data_cleanup(data);
+	out:
 		RRR_DBG_1 ("Thread dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-		pthread_cleanup_pop(1);
-		return NULL;
+		return ret;
+}
+
+void dummy_deinit(struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
+
+	dummy_data_cleanup(data);
 }
 
 static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -489,8 +452,10 @@ static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static struct rrr_module_operations module_operations = {
 	NULL,
-	thread_entry_dummy,
-	dummy_inject
+	NULL,
+	dummy_inject,
+	dummy_init,
+	dummy_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {

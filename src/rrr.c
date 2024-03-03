@@ -601,8 +601,6 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
-		struct rrr_event_queue *queue,
-		rrr_event_receiver_handle queue_handle,
 		struct rrr_fork_handler *fork_handler,
 		int single_thread
 ) {
@@ -613,6 +611,9 @@ static int main_loop (
 	struct rrr_message_broker_hooks hooks = {0};
 	struct rrr_event_collection events = {0};
 	rrr_event_handle event_periodic = {0};
+
+	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
 
 	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_instance_collection instances = {0};
@@ -641,15 +642,23 @@ static int main_loop (
 		goto out_destroy_instance_metadata;
 	}
 
+	if ((ret = rrr_event_queue_new (&queue, RRR_LL_COUNT(&instances) + 1)) != 0) {
+		goto out_destroy_instance_metadata;
+	}
+
+	if ((ret = rrr_event_receiver_new (&queue_handle, queue, NULL)) != 0) {
+		goto out_destroy_events;
+	}
+
 	if (cmd_exists(cmd, "stats", 0)) {
 		if ((ret = rrr_stats_engine_init(&stats_data.engine, queue, queue_handle)) != 0) {
 			RRR_MSG_0("Could not initialize statistics engine\n");
-			goto out_destroy_instance_metadata;
+			goto out_destroy_events;
 		}
 
 		if ((ret = rrr_stats_engine_handle_obtain(&stats_data.handle, &stats_data.engine)) != 0) {
 			RRR_MSG_0("Error while obtaining statistics handle\n");
-			goto out_destroy_instance_metadata;
+			goto out_destroy_events;
 		}
 
 		if (cmd_exists(cmd, "message-hooks", 0)) {
@@ -696,11 +705,11 @@ static int main_loop (
 	};
 
 	if (single_thread) {
-		if (RRR_LL_COUNT(&instances) > 1) {
+/*		if (RRR_LL_COUNT(&instances) > 1) {
 			RRR_MSG_0("Single thread mode is enabled, but there are more than one instance in the configuration file\n");
 			ret = 1;
 			goto out_clear_events;
-		}
+		}*/
 
 		if (rrr_event_collection_push_periodic (
 				&event_periodic,
@@ -716,12 +725,11 @@ static int main_loop (
 
 		EVENT_ADD(event_periodic);
 
-		RRR_DBG_1("Starting single instance in main loop\n");
+		RRR_DBG_1("Starting single thread mode in main loop\n");
 
-		ret = rrr_instance_run (
+		ret = rrr_instance_collection_run (
 				&instances,
 				config,
-				0,
 				cmd,
 				queue,
 				&stats_data.engine,
@@ -782,6 +790,8 @@ static int main_loop (
 		rrr_message_broker_destroy(message_broker);
 	out_destroy_stats_engine:
 		rrr_stats_engine_cleanup(&stats_data.engine);
+	out_destroy_events:
+		rrr_event_queue_destroy(queue);
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		// TODO : Unload and instnace collection clear should be the same function
@@ -1032,28 +1042,16 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 		rrr_setproctitle("[%s]", config_string);
 
-		if (rrr_event_queue_new(&queue) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
-
-		if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_destroy_events;
-		}
-
 		if (main_loop (
 				&cmd,
 				config_string,
-				queue,
-				queue_handle,
 				fork_handler,
 				1 /* Single thread mode */
 		) != 0) {
 			ret = EXIT_FAILURE;
 		}
 
-		goto out_destroy_events;
+		goto out_cleanup_signal;
 	}
 	else {
 		// Load configuration and fork
@@ -1102,35 +1100,23 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
-			if (rrr_event_queue_new(&queue) != 0) {
-				ret = EXIT_FAILURE;
-				goto out_cleanup_signal;
-			}
-
-			if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
-				ret = EXIT_FAILURE;
-				goto out_destroy_events;
-			}
-
 			if (main_loop (
 					&cmd,
 					config_string,
-					queue,
-					queue_handle,
 					fork_handler,
 					0 /* Not single thread mode */
 			) != 0) {
 				ret = EXIT_FAILURE;
 			}
 
-			goto out_destroy_events;
+			goto out_cleanup_signal;
 
 			increment:
 			config_i++;
 		RRR_MAP_ITERATE_END();
 
 		// Create queue after forking to prevent it and it's FDs from existing in the forks
-		if (rrr_event_queue_new(&queue) != 0) {
+		if (rrr_event_queue_new(&queue, 1) != 0) {
 			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}

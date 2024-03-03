@@ -30,6 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_event_queue;
 
+struct rrr_event_receiver_envelope {
+	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle receiver_h;
+};
+
 struct rrr_event_function {
 	int (*function)(RRR_EVENT_FUNCTION_ARGS);
 	void *function_arg;
@@ -41,8 +46,7 @@ struct rrr_event_function {
 
 	struct event *signal_event;
 
-	struct rrr_event_queue *queue;
-	rrr_event_receiver_handle receiver_h;
+	struct rrr_event_receiver_envelope receiver_e;
 
 	unsigned short index;
 	unsigned short is_paused;
@@ -55,8 +59,7 @@ struct rrr_event_receiver {
 	struct event *periodic_event;
 	struct event *unpause_event;
 
-	struct rrr_event_queue *queue;
-	rrr_event_receiver_handle receiver_h;
+	struct rrr_event_receiver_envelope receiver_e;
 
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
 
@@ -68,7 +71,9 @@ struct rrr_event_receiver {
 struct rrr_event_queue {
 	struct event_base *event_base;
 	struct rrr_event_receiver *receivers;
+	struct rrr_event_receiver_envelope *receiver_envelopes;
 	rrr_event_receiver_handle receiver_count;
+	rrr_event_receiver_handle receiver_max;
 	int callback_ret;
 };
 

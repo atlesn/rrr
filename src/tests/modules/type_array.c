@@ -38,6 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_mysql.h"
 #endif
 
+#include "../../lib/event/event_collection.h"
+#include "../../lib/event/event_collection_struct.h"
 #include "../../lib/instances.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
@@ -53,15 +55,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Set high to stop test from exiting. Set back to 200 when work is done.
 #define RRR_TEST_TYPE_ARRAY_LOOP_COUNT 200
-
-struct rrr_test_result {
-	int result;
-};
-
-struct rrr_test_callback_data {
-	struct rrr_test_result *test_result;
-	void *private_data;
-};
 
 /* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
 
@@ -112,9 +105,8 @@ struct test_final_data {
 	struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data
 
 int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
-	const struct rrr_map *array_check_values = callback_data->private_data;
+	const struct rrr_map *array_check_values = callback_data->array_check_values;
 
 	int ret = 0;
 
@@ -138,7 +130,7 @@ int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		RRR_MAP_ITERATE_END();
 	}
 
-	result->result = 2;
+	callback_data->result = 2;
 
 	out:
 	rrr_array_clear(&array_tmp);
@@ -147,8 +139,8 @@ int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 }
 
 struct test_poll_callback_intermediate_callback_data {
-		int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);
-		struct rrr_test_callback_data *callback_data;
+	int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);
+	struct rrr_test_callback_data *callback_data;
 };
 
 int test_poll_callback_intermediate (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -156,60 +148,91 @@ int test_poll_callback_intermediate (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return callback_data->callback(entry, callback_data->callback_data);
 }
 
-int test_do_poll_loop (
-		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(TEST_POLL_CALLBACK_SIGNATURE),
-		struct rrr_test_callback_data *callback_data
+static void __test_event_poll_cb (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
 ) {
-	int ret = 0;
+	struct rrr_test_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
 
-	struct rrr_test_result *test_result = callback_data->test_result;
+	(void)(fd);
+	(void)(flags);
+
+	int ret;
+	uint16_t amount;
+
+	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+		return;
+	}
+
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
+
+	TEST_MSG("Test result polling try: %i of %i\n",
+			callback_data->loop_i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 	struct test_poll_callback_intermediate_callback_data callback_data_intermediate = {
-		callback,
-		callback_data
+		callback_data->callback,
+		callback_data->callback_arg
 	};
 
-	// Poll from output
-	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
-		if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 0) {
-			break;
-		}
+	amount = 100;
 
-		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
-
-		TEST_MSG("Test result polling try: %i of %i\n",
-				i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
-
-		uint16_t amount = 100;
-
-
-		ret = rrr_poll_do_poll_delete_custom_arg (
+	ret = rrr_poll_do_poll_delete_custom_arg (
 			&amount,
 			thread_data,
 			test_poll_callback_intermediate,
 			&callback_data_intermediate
-		);
+	);
 
-
-		if (ret != 0) {
-			TEST_MSG("Error from poll_delete function in test_type_array\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (test_result->result == 3) {
-			// Ignore this message
-			ret = 0;
-			test_result->result = 1;
-		}
-		else {
-			TEST_MSG("Result of polling: %i\n",
-					test_result->result);
-		}
-
-		rrr_posix_usleep(100 * 1000); // 100ms
+	if (ret != 0) {
+		TEST_MSG("Error from poll_delete function in %s\n", __func__);
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+		return;
 	}
+
+	if (callback_data->result == 3) {
+		// Message is to be ignored
+		callback_data->result = 1;
+	}
+	else {
+		TEST_MSG("Result of polling: %i\n",
+			callback_data->result);
+	}
+
+	if (callback_data->result == 2) {
+		// Successful test
+		rrr_event_dispatch_exit(INSTANCE_D_EVENTS(thread_data));
+		return;
+	}
+
+	callback_data->loop_i++;
+}
+
+static int __test_init_poll_loop (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_test_callback_data *callback_data
+) {
+	int ret = 0;
+
+	struct rrr_event_collection events = {0};
+	rrr_event_handle event;
+
+	rrr_event_collection_init(&events, INSTANCE_D_EVENTS(thread_data));
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&event,
+			&events,
+			__test_event_poll_cb,
+			callback_data,
+			100 * 1000 // 100 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to push periodic event in %s\n", __func__);
+		goto out;
+	}
+
+	EVENT_ADD(event);
 
 	out:
 	return ret;
@@ -261,8 +284,6 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 }
 
 int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_test_result *result = callback_data->test_result;
-
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	int ret = 0;
@@ -283,7 +304,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		const struct rrr_type_value *value = NULL;
 		if ((value = rrr_array_value_get_by_tag(&array_tmp, "measurement")) != NULL) {
 			// Copies of the original four point measurements should arrive first
-			result->result++;
+			callback_data->result++;
 		}
 		else {
 			uint64_t value_average;
@@ -295,7 +316,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_min, &array_tmp, "min", 0);
 
 			// Average message arrives later
-			if (result->result != 4) {
+			if (callback_data->result != 4) {
 				TEST_MSG("Received average result in test_averager_callback but not all four point measurements were received prior to that\n");
 				ret = 1;
 				goto out;
@@ -314,7 +335,7 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-			result->result = 2;
+			callback_data->result = 2;
 		}
 	}
 	else {
@@ -332,37 +353,17 @@ int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 int test_averager (
 		RRR_TEST_FUNCTION_ARGS
 ) {
-	(void)(test_function_data);
-	(void)(instances);
-
 	// Preconditions for this test:
 	// - Sender of the averager module is a voltmonitor module with configuration
 	//   parameter vm_do_spawn_test_messages
 
-	int ret = 0;
+	callback_data->callback = test_averager_callback;
+	callback_data->callback_arg = callback_data;
 
-	struct rrr_test_result test_result = {0};
-
-	struct rrr_test_callback_data callback_data = { &test_result, NULL };
-
-	// Poll from first output
-	ret |= test_do_poll_loop(
-			self_thread_data,
-			test_averager_callback,
-			&callback_data
-	);
-	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
-
-	ret |= (test_result.result == 2 ? 0 : 1);
-
-	return ret;
+	return __test_init_poll_loop (thread_data, callback_data);
 }
 
 #define TEST_DATA_ELEMENTS 13
-
-struct rrr_test_type_array_callback_data {
-	const struct rrr_test_function_data *config;
-};
 
 /*
  *  The main output receives an identical message_1 as the one we sent in,
@@ -371,11 +372,7 @@ struct rrr_test_type_array_callback_data {
 int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	struct rrr_test_result *result = callback_data->test_result;
-	struct rrr_test_type_array_callback_data *array_callback_data = callback_data->private_data;
-	const struct rrr_test_function_data *config = array_callback_data->config;
-
-	result->result = 1;
+	const struct rrr_test_function_data *config = callback_data->config;
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
@@ -391,7 +388,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	if (!MSG_IS_ARRAY(message)) {
 		// Ignore non-array messages
 		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
-		result->result = 3;
+		callback_data->result = 3;
 		ret = 0;
 		goto out;
 	}
@@ -653,7 +650,7 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	result->result = 2;
+	callback_data->result = 2;
 
 	out:
 		RRR_FREE_IF_NOT_NULL(final_data_raw);
@@ -668,77 +665,28 @@ int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 int test_array (
 		RRR_TEST_FUNCTION_ARGS
 ) {
-	(void)(instances);
+	callback_data->callback = test_type_array_callback;
+	callback_data->callback_arg = callback_data;
 
-	int ret = 0;
-
-	struct rrr_test_result test_result_1 = {1};
-
-	struct rrr_test_type_array_callback_data array_callback_data = { test_function_data };
-	struct rrr_test_callback_data callback_data = { &test_result_1, &array_callback_data };
-
-	// Poll from first output
-	ret |= test_do_poll_loop(
-			self_thread_data,
-			test_type_array_callback,
-			&callback_data
-	);
-	if (ret != 0) {
-		goto out;
-	}
-
-	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result_1.result);
-
-	// Error if result is not two from both polls
-	ret |= (test_result_1.result != 2);
-
-	out:
-	return ret;
+	return __test_init_poll_loop (thread_data, callback_data);
 }
 
 int test_anything (
-		RRR_TEST_FUNCTION_ARGS,
-		const struct rrr_map *array_check_values
+		RRR_TEST_FUNCTION_ARGS
 ) {
-	(void)(test_function_data);
-	(void)(instances);
+	callback_data->callback = test_anything_callback;
+	callback_data->callback_arg = callback_data;
 
-	int ret = 0;
-
-	struct rrr_test_result test_result_1 = {1};
-
-	struct rrr_test_callback_data callback_data = {
-		&test_result_1,
-		(void *) array_check_values // Cast away const OK
-	};
-
-	// Poll from first output
-	ret |= test_do_poll_loop(
-			self_thread_data,
-			test_anything_callback,
-			&callback_data
-	);
-	if (ret != 0) {
-		goto out;
-	}
-	TEST_MSG("Result of test_anything, should be 2: %i\n", test_result_1.result);
-
-	// Error if result is not two from both polls
-	ret |= (test_result_1.result != 2);
-
-	out:
-	return ret;
+	return __test_init_poll_loop (thread_data, callback_data);
 }
 
 #ifdef RRR_WITH_MYSQL
 int test_type_array_mysql_and_network_callback (TEST_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_test_result *test_result = callback_data->test_result;
-
 	int ret = 0;
 
 	RRR_DBG_2("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
-	test_result->result = 2;
+	callback_data->result = 2;
 
 	struct rrr_msg_msg *result_message = entry->message;
 	if (!MSG_IS_TAG(result_message)) {
@@ -858,16 +806,14 @@ void test_type_array_mysql_data_cleanup(void *arg) {
 int test_type_array_mysql (
 		RRR_TEST_FUNCTION_ARGS
 ) {
-	(void)(test_function_data);
+	(void)(thread_data);
 
 	int ret = 0;
 
-	struct rrr_test_result test_result = {1};
-	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_msg_holder *entry = NULL;
+	struct test_type_array_mysql_data *mysql_data;
 
 	struct rrr_instance *mysql = NULL;
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+	RRR_LL_ITERATE_BEGIN(INSTANCE_D_INSTANCES(callback_data->thread_data), struct rrr_instance);
 		struct rrr_instance *instance = node;
 		if (strcmp(INSTANCE_M_MODULE_NAME(instance), "mysql") == 0) {
 			mysql = instance;
@@ -880,44 +826,37 @@ int test_type_array_mysql (
 		goto out;
 	}
 
-	ret = test_type_array_mysql_steal_config(&mysql_data, mysql);
+	if ((mysql_data = rrr_allocate_zero(sizeof(*mysql_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for callback data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	ret = test_type_array_mysql_steal_config(mysql_data, mysql);
 	if (ret != 0) {
 		RRR_MSG_0("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
 		ret = 1;
-		goto out;
+		goto out_cleanup;
 	}
 
 	TEST_MSG("The error message_1 'Failed to prepare statement' is fine, it might show up before the table is created\n");
-	ret = test_type_array_setup_mysql (&mysql_data);
+	ret = test_type_array_setup_mysql (mysql_data);
 	if (ret != 0) {
 		RRR_MSG_0("Failed to setup MySQL test environment\n");
 		ret = 1;
-		goto out;
+		goto out_cleanup;
 	}
 
-	struct rrr_test_callback_data callback_data = { &test_result, NULL };
+	callback_data->callback = test_type_array_mysql_and_network_callback;
+	callback_data->callback_arg = mysql_data;
+	callback_data->cleanup = test_type_array_mysql_data_cleanup;
+	callback_data->cleanup_arg = mysql_data;
 
-	TEST_MSG("Polling MySQL\n");
-	ret |= test_do_poll_loop(
-			self_thread_data,
-			test_type_array_mysql_and_network_callback,
-			&callback_data
-	);
-	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
-
-	if (test_result.result != 2) {
-		RRR_MSG_0("Result was not OK from test_type_array_mysql_and_network_callback\n");
-		ret = 1;
-		goto out;
-	}
-
+	goto out;
+	out_cleanup:
+		test_type_array_mysql_data_cleanup(&mysql_data);
 	out:
-	test_type_array_mysql_data_cleanup(&mysql_data);
-	if (entry != NULL) {
-		rrr_msg_holder_decref_while_locked_and_unlock(entry);
-	}
-
-	return ret;
+		return ret;
 }
 
 #endif

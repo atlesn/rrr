@@ -106,7 +106,7 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 
 	dlerror();
 
-	int (*get_test_result)(void) = dlsym(handle, "get_test_module_result");
+	int (*get_test_result)(void) = dlsym(handle, "test_module_result_get");
 
 	if (get_test_result == NULL) {
 		RRR_MSG_0("Could not find test result function in test module: %s\n", dlerror());
@@ -381,7 +381,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_message_broker;
 	}
 
-	if (rrr_event_queue_new (&event_queue) != 0) {
+	// Set receiver count higher if needed by tests
+	if (rrr_event_queue_new (&event_queue, 2) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_fork_handler;
 	}

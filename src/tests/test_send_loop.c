@@ -148,7 +148,7 @@ int rrr_test_send_loop(void) {
 	memset(msg, '\0', sizeof(msg));
 	memset(entry, '\0', sizeof(entry));
 
-	if ((ret = rrr_event_queue_new (&queue)) != 0) {
+	if ((ret = rrr_event_queue_new (&queue, 1)) != 0) {
 		TEST_MSG("Failed to create event queue in %s\n", __func__);
 		goto out_final;
 	}

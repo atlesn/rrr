@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_msg_msg;
+struct rrr_msg_holder;
 struct rrr_instance_collection;
 struct rrr_instance_runtime_data;
 struct rrr_map;
@@ -31,10 +32,24 @@ struct rrr_test_function_data {
 	int do_blob_field_divide;
 };
 
+struct rrr_test_callback_data {
+	struct rrr_instance_runtime_data *thread_data;
+	const struct rrr_test_function_data *config;
+
+	int result;
+	int loop_i;
+
+	int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);
+	void *callback_arg;
+	void (*cleanup)(void *arg);
+	void *cleanup_arg;
+
+	const struct rrr_map *array_check_values;
+};
+
 #define RRR_TEST_FUNCTION_ARGS                                 \
-    const struct rrr_test_function_data *test_function_data,   \
-    struct rrr_instance_collection *instances,                 \
-    struct rrr_instance_runtime_data *self_thread_data
+    struct rrr_instance_runtime_data *thread_data,             \
+    struct rrr_test_callback_data *callback_data
 
 int test_averager (
 		RRR_TEST_FUNCTION_ARGS
@@ -45,8 +60,7 @@ int test_array (
 );
 
 int test_anything (
-		RRR_TEST_FUNCTION_ARGS,
-		const struct rrr_map *array_check_values
+		RRR_TEST_FUNCTION_ARGS
 );
 
 int test_type_array_mysql (

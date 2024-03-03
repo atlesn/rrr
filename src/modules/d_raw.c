@@ -134,12 +134,12 @@ static int raw_event_periodic (void *arg) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
-void data_init(struct raw_data *data) {
+static void raw_data_init(struct raw_data *data) {
 	memset (data, '\0', sizeof(*data));
 	data->start_time = rrr_time_get_64();
 }
 
-int parse_config (struct raw_data *data, struct rrr_instance_config_data *config) {
+static int raw_parse_config (struct raw_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 	int yesno = 0;
 
@@ -161,43 +161,57 @@ int parse_config (struct raw_data *data, struct rrr_instance_config_data *config
 	return ret;
 }
 
-static void *thread_entry_raw (struct rrr_thread *thread) {
+static int raw_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 
-	data_init(raw_data);
+	raw_data_init(raw_data);
 
 	RRR_DBG_1 ("Raw thread data is %p\n", thread_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
+	if (raw_parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Error while parsing configuration for raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
+		goto out_message;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			raw_event_periodic
-	);
+	) != 0) {
+		goto out_message;
+	}
+
+	return 0;
+
+	out_message:
+	RRR_DBG_1 ("raw instance %s failed to initialize\n", INSTANCE_D_NAME(thread_data));
+	return 1;
+}
+
+static void raw_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(data);
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
 			thread, INSTANCE_D_NAME(thread_data));
-
-	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_raw,
 		NULL,
 		NULL,
-		NULL
+		raw_init,
+		raw_deinit
 };
 
 static struct rrr_instance_event_functions event_functions = {

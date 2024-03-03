@@ -215,10 +215,9 @@ int rrr_instances_create_and_start_threads (
 		struct rrr_fork_handler *fork_handler,
 		volatile const int *main_running
 );
-int rrr_instance_run (
+int rrr_instance_collection_run (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
-		int instance_index,
 		struct cmd_data *cmd,
 		struct rrr_event_queue *events,
 		struct rrr_stats_engine *stats,
