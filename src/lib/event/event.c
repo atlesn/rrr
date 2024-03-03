@@ -711,7 +711,7 @@ void rrr_event_queue_destroy (
 ) {
 	RRR_DBG_9_PRINTF("EQ DSTY %p\n", queue);
 
-	if (queue->receiver_count > 0) {
+	if (queue->receiver_max > 0) {
 		for (size_t i = 0; i < queue->receiver_count; i++) {
 			__rrr_event_receiver_destroy(queue->receivers + i);
 		}
