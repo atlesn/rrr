@@ -127,8 +127,8 @@ int rrr_signal_handler(int s, void *arg) {
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
         {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
-        {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{0,                           'S',    "single-thread",         "[-S|--single-thread]"},
+/*      {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"}, // Not used by test program */
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUGLEVEL]"},
@@ -343,10 +343,8 @@ static int rrr_test_main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_ERR;
 	}
 
-	if (rrr_config_global.no_thread_restart &&
-	    rrr_instance_check_threads_stopped(callback_data->instances) > 0
-	) {
-		return RRR_EVENT_ERR;
+	if (rrr_instance_check_threads_stopped(callback_data->instances)) {
+		return RRR_EVENT_EXIT;
 	}
 
 	rrr_fork_handle_sigchld_and_notify_if_needed (callback_data->fork_handler, 0);
