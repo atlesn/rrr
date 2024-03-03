@@ -838,7 +838,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	int ret = 0;
 
-	// Do again is not beneficial when slot writing as the readed must get the
+	// Do again is not beneficial when slot writing as the reader must get the
 	// written slot first, hence we should not spin and try to write another
 	// entry immediately.
 	int do_again_ignore;
