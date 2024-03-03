@@ -128,6 +128,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
         {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+	{0,                           'S',    "single-thread",         "[-S|--single-thread]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUGLEVEL]"},
@@ -326,6 +327,142 @@ int rrr_test_fork_executable (const char *fork_executable) {
 	return 1;
 }
 
+struct main_loop_event_callback_data {
+	struct rrr_instance_collection *instances;
+	struct rrr_fork_handler *fork_handler;
+};
+
+static int rrr_test_main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct main_loop_event_callback_data *callback_data = arg;
+
+	if (!main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	if (some_fork_has_stopped) {
+		return RRR_EVENT_ERR;
+	}
+
+	if (rrr_config_global.no_thread_restart &&
+	    rrr_instance_check_threads_stopped(callback_data->instances) > 0
+	) {
+		return RRR_EVENT_ERR;
+	}
+
+	rrr_fork_handle_sigchld_and_notify_if_needed (callback_data->fork_handler, 0);
+
+	if (sigusr2) {
+		RRR_MSG_0("Received SIGUSR2, but this is not implemented in the test suite\n");
+		sigusr2 = 0;
+	}
+
+	return RRR_EVENT_OK;
+}
+
+static int rrr_test_main_loop (
+		const char *config_file,
+		struct rrr_fork_handler *fork_handler,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats_engine,
+		struct rrr_message_broker *message_broker,
+		int single_thread
+) {
+	int ret = 0;
+
+	struct rrr_instance_collection instances = {0};
+	struct rrr_thread_collection *collection;
+	struct rrr_instance_config_collection *config;
+	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
+
+	struct main_loop_event_callback_data callback_data = {
+		&instances,
+		fork_handler
+	};
+
+	if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0 || config == NULL) {
+		goto out;
+	}
+
+	if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
+		goto out_cleanup_config;
+	}
+
+	if ((ret = rrr_event_queue_new (&queue, RRR_LL_COUNT(&instances) + 1)) != 0) {
+		goto out_cleanup_instances;
+	}
+
+	if ((ret = rrr_event_receiver_new (
+			&queue_handle,
+			queue,
+			&callback_data
+	)) != 0) {
+		goto out_destroy_events;
+	}
+
+	if ((ret = rrr_event_function_periodic_set (
+			queue,
+			queue_handle,
+			250 * 1000, // 250 ms
+			rrr_test_main_loop_periodic
+	)) != 0) {
+		goto out_destroy_events;
+	}
+
+	if (single_thread) {
+		if ((ret = rrr_instance_collection_run (
+				&instances,
+				config,
+				cmd,
+				queue,
+				stats_engine,
+				message_broker,
+				fork_handler,
+				&main_running
+		)) != 0) {
+			goto out_destroy_events;
+		}
+	}
+	else {
+		if ((ret = rrr_instances_create_and_start_threads (
+				&collection,
+				&instances,
+				config,
+				cmd,
+				stats_engine,
+				message_broker,
+				fork_handler,
+				&main_running
+		)) != 0) {
+			goto out_destroy_events;
+		}
+
+		if ((ret = rrr_event_dispatch(queue)) != 0) {
+			goto out_destroy_events;
+		}
+
+		int ghost_count = 0;
+		rrr_thread_collection_destroy(&ghost_count, collection);
+		if (ghost_count > 0) {
+			RRR_MSG_0("%i threads were ghost during cleanup\n", ghost_count);
+		}
+	}
+
+	ret = main_get_test_result(&instances);
+
+	out_destroy_events:
+		rrr_event_queue_destroy(queue);
+	out_cleanup_instances:
+		rrr_instance_collection_clear(&instances);
+
+		// Don't unload modules in the test suite
+		// rrr_instance_unload_all(instances);
+	out_cleanup_config:
+		rrr_instance_config_collection_destroy(config);
+	out:
+		return ret;
+}
+
 int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler_interrupt = NULL;
@@ -351,15 +488,12 @@ int main (int argc, const char *argv[], const char *env[]) {
 	rrr_strerror_init();
 
 	struct rrr_stats_engine stats_engine = {0};
-	struct rrr_message_broker *message_broker = NULL;
-	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
 	struct rrr_event_queue *event_queue = NULL;
+	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
 		&some_fork_has_stopped
 	};
-	struct rrr_instance_collection instances = {0};
-	struct rrr_thread_collection *collection = NULL;
 	int is_child = 0;
 
 	struct cmd_data cmd;
@@ -415,7 +549,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_cmd;
 	}
 
-	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
+	RRR_DBG_1("RRR test debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
@@ -429,89 +563,50 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_cmd;
 	}
 
-	TEST_BEGIN(config_file) {
-		if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
-			pid_t pid = -1;
-			TEST_MSG("forking and running external executable\n");
-			pid = rrr_fork (
-					fork_handler,
-					rrr_fork_default_exit_notification,
-					&exit_notification_data
-			);
-			if (pid == 0) {
-				is_child = 1;
-				ret = rrr_test_fork_executable(fork_executable);
-				TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
-				while (main_running) {
-					rrr_posix_usleep(50000);
-					rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
-				}
-				goto out_cleanup_cmd;
+	if ((fork_executable = cmd_get_value(&cmd, "fork-executable", 0)) != NULL) {
+		pid_t pid = -1;
+		TEST_MSG("forking and running external executable\n");
+		pid = rrr_fork (
+				fork_handler,
+				rrr_fork_default_exit_notification,
+				&exit_notification_data
+		);
+		if (pid == 0) {
+			is_child = 1;
+			ret = rrr_test_fork_executable(fork_executable);
+			TEST_MSG("Child fork did not execute external program, waiting to be signalled to stop\n");
+			while (main_running) {
+				rrr_posix_usleep(50000);
+				rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 			}
-			if (pid < 0) {
-				TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
-				ret = 1;
-				goto out_cleanup_cmd;
-			}
-		}
-
-		if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0 || config == NULL) {
 			goto out_cleanup_cmd;
 		}
-
-		if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
-			goto out_cleanup_config;
+		if (pid < 0) {
+			TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out_cleanup_cmd;
 		}
+	}
 
-		if ((ret = rrr_instances_create_and_start_threads (
-				&collection,
-				&instances,
-				config,
+	TEST_BEGIN(config_file) {
+		if ((ret = rrr_test_main_loop (
+				config_file,
+				fork_handler,
 				&cmd,
 				&stats_engine,
 				message_broker,
-				fork_handler,
-				&main_running
+				cmd_exists(&cmd, "single-thread", 0)
+
 		)) != 0) {
-			goto out_cleanup_instances;
+			goto out_cleanup_cmd;
 		}
-
-		while (  main_running &&
-		        !some_fork_has_stopped &&
-		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)
-		) {
-			rrr_posix_usleep(100000);
-			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
-			if (sigusr2) {
-				RRR_MSG_0("Received SIGUSR2, but this is not implemented in test suite\n");
-				sigusr2 = 0;
-			}
-		}
-
-		ret = main_get_test_result(&instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
-		int ghost_count = 0;
-		rrr_thread_collection_destroy(&ghost_count, collection);
-		if (ghost_count > 0) {
-			RRR_MSG_0("%i threads were ghost during cleanup\n", ghost_count);
-		}
 	} TEST_RESULT(ret == 0);
 
-	goto out_cleanup_instances;
-
-	out_cleanup_instances:
-		rrr_instance_collection_clear(&instances);
-
-		// Don't unload modules in the test suite
-		//rrr_instance_unload_all(instances);
-
-	out_cleanup_config:
-		if (config != NULL) {
-			rrr_instance_config_collection_destroy(config);
-		}
+	goto out_cleanup_cmd;
 
 	out_cleanup_cmd:
 		cmd_destroy(&cmd);
