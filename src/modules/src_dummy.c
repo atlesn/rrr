@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -66,6 +66,7 @@ struct dummy_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_write_entry;
 
+	uint64_t generated_count_time;
 	unsigned int generated_count;
 	unsigned int generated_count_to_stats;
 	rrr_setting_uint generated_count_total;
@@ -164,6 +165,10 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC("dummy_topic", topic, topic_len);
 
+	if (data->no_sleeping) {
+		data->sleep_interval_us = 1;
+	}
+
 	out:
 	return ret;
 }
@@ -184,7 +189,7 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 	uint64_t time = rrr_time_get_64();
 
 	if (RRR_LL_COUNT(&data->array_template) > 0) {
-		if ((ret = rrr_array_new_message_from_array(
+		if ((ret = rrr_array_new_message_from_array (
 			&reading,
 			&data->array_template,
 			rrr_time_get_64(),
@@ -233,9 +238,18 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 static int dummy_periodic (
 		struct dummy_data *data
 ) {
-	RRR_DBG_1("dummy instance %s messages per second %i total %" PRIrrrbl " of %" PRIrrrbl "\n",
-			INSTANCE_D_NAME(data->thread_data), data->generated_count, data->generated_count_total, data->max_generated);
+	uint64_t time_now = rrr_time_get_64();
+
+	uint64_t period = time_now - data->generated_count_time;
+	if (period == 0)
+		period++;
+	long double per_second = ((long double) data->generated_count / (long double) period) * 1000 * 1000;
+
+	RRR_DBG_1("dummy instance %s messages per second %.02Lf total %" PRIrrrbl " of %" PRIrrrbl " generation deficit %i\n",
+		INSTANCE_D_NAME(data->thread_data), per_second, data->generated_count_total, data->max_generated, data->count_extra);
+
 	data->generated_count = 0;
+	data->generated_count_time = time_now;
 
 	rrr_stats_instance_update_rate (INSTANCE_D_STATS(data->thread_data), 0, "generated", data->generated_count_to_stats);
 	data->generated_count_to_stats = 0;
@@ -289,23 +303,30 @@ static int dummy_write_entry (
 		goto out;
 	}
 
-	if ((ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(data->thread_data),
-			NULL,
-			0,
-			0,
-			NULL,
-			dummy_write_message_callback,
-			&callback_data,
-			dummy_check_cancel,
-			&cancel_callback_data
-	)) != 0) {
-		goto out;
-	}
+	do {
+		if ((ret = rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				NULL,
+				0,
+				0,
+				NULL,
+				dummy_write_message_callback,
+				&callback_data,
+				dummy_check_cancel,
+				&cancel_callback_data
+		)) != 0) {
+			goto out;
+		}
+
+		// There is not point of calling multiple times
+		// in this loop if we get ratelimited by the broker.
+	} while (data->no_ratelimit && callback_data.count > 0);
 
 	out:
 	return ret;
 }
+		
+static uint64_t prev_time_now = 0;
 
 static void dummy_event_write_entry (
 		evutil_socket_t fd,
@@ -321,13 +342,10 @@ static void dummy_event_write_entry (
 
 	RRR_EVENT_HOOK();
 
-	if (data->sleep_interval_us < DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
-		// Busy-loop operation
+	if (data->no_sleeping || data->sleep_interval_us < DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
 		const int count = (data->no_sleeping ? 50 : 1);
 
 		const uint64_t time_now = rrr_time_get_64();
-
-		// Check cancel callback will run the periodic function
 
 		if (dummy_write_entry(data, count + data->count_extra) != 0) {
 			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
@@ -336,9 +354,11 @@ static void dummy_event_write_entry (
 
 		if (!data->no_sleeping) {
 			rrr_posix_usleep(data->sleep_interval_us);
-			data->count_extra = (int) ((rrr_time_get_64() - time_now) / data->sleep_interval_us);
-			EVENT_ACTIVATE(data->event_write_entry);
 		}
+
+		data->count_extra = (int) ((rrr_time_get_64() - time_now) / data->sleep_interval_us);
+
+		prev_time_now = time_now;
 	}
 	else {
 		if (dummy_write_entry (data, 1) != 0) {
@@ -382,6 +402,14 @@ static int dummy_init (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	if (rrr_thread_signal_check (thread, RRR_THREAD_SIGNAL_START_SINGLE_MODE)) {
+		RRR_DBG_1 ("Dummy instance %s is being run in single thread mode\n", INSTANCE_D_NAME(thread_data));
+		if (data->no_ratelimit) {
+			RRR_MSG_0("Warning: Dummy instance %s has ratelimit disabled in single thread mode, the output buffer might fill up excessively\n",
+				INSTANCE_D_NAME(thread_data));
+		}
+	}
+
 	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
 	if (data->no_sleeping == 1) {
 		if (data->no_ratelimit) {
@@ -417,6 +445,8 @@ static int dummy_init (struct rrr_thread *thread) {
 		EVENT_ADD(data->event_write_entry);
 		EVENT_ACTIVATE(data->event_write_entry);
 	}
+
+	data->generated_count_time = rrr_time_get_64();
 
 	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
