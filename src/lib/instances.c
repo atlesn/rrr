@@ -1320,6 +1320,7 @@ int rrr_instance_collection_run (
 	struct rrr_instance_runtime_data **runtime_data_ptr = NULL;
 	struct rrr_thread *thread = NULL;
 	rrr_event_receiver_handle events_handle;
+	int i;
 
 	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
@@ -1332,7 +1333,7 @@ int rrr_instance_collection_run (
 		goto out_destroy;
 	}
 
-	int i = 0;
+	i = 0;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
 
@@ -1391,6 +1392,7 @@ int rrr_instance_collection_run (
 		i++;
 	RRR_LL_ITERATE_END();
 
+	i = 0;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
 		RRR_DBG_1("Before start tasks instance %p '%s' in single thread mode\n",
@@ -1400,10 +1402,12 @@ int rrr_instance_collection_run (
 				message_broker,
 				instance,
 				events,
-				events_handle
+				runtime_data_ptr[i]->events_handle
 		)) != 0) {
 			goto out_destroy;
 		}
+
+		i++;
 	RRR_LL_ITERATE_END();
 
 	rrr_thread_collection_signal_start_no_procedure_all(thread_collection);
