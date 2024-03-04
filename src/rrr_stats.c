@@ -194,6 +194,7 @@ static int __rrr_stats_data_init (
 	if ((ret = rrr_event_receiver_new (
 			&data->queue_handle,
 			data->queue,
+			"stats",
 			data
 	)) != 0) {
 		RRR_MSG_0("Could not create event receiver in %s\n", __func__);

@@ -135,8 +135,8 @@ void rrr_event_function_set (
 		RRR_BUG("BUG: Function was NULL in %s\n", __func__);
 	}
 
-	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %u->%p (%s)\n",
-		queue, receiver_h, code, function, description);
+	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %s %u->%p (%s)\n",
+		queue, receiver_h, receiver->name, code, function, description);
 
 	receiver->functions[code].function = function;
 }
@@ -155,8 +155,8 @@ void rrr_event_function_set_with_arg (
 		RRR_BUG("BUG: Function was NULL in %s\n", __func__);
 	}
 
-	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %u->%p(%p) (%s)\n",
-		queue, receiver_h, code, function, arg, description);
+	RRR_DBG_9_PRINTF("EQ SETF %p[%u] %s %u->%p(%p) (%s)\n",
+		queue, receiver_h, receiver->name, code, function, arg, description);
 
 	receiver->functions[code].function = function;
 	receiver->functions[code].function_arg = arg;
@@ -192,8 +192,8 @@ static void __rrr_event_periodic (
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p[%u] periodic fd %i pid %llu tid %llu\n",
-		queue, receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s periodic fd %i pid %llu tid %llu\n",
+		queue, receiver_h, receiver->name, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if ( receiver->callback_periodic != NULL &&
 	    (queue->callback_ret = receiver->callback_periodic(receiver->callback_arg)) != 0
@@ -216,8 +216,8 @@ static void __rrr_event_unpause (
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p[%u] unpause fd %i pid %llu tid %llu\n",
-		queue, receiver_h, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s unpause fd %i pid %llu tid %llu\n",
+		queue, receiver_h, receiver->name, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	for (uint8_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		if (receiver->functions[i].is_paused) {
@@ -245,22 +245,22 @@ static void __rrr_event_signal_event (
 
 	RRR_EVENT_HOOK();
 
-	RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u fd %i pid %llu tid %llu\n",
-		queue, receiver_h, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s function %u fd %i pid %llu tid %llu\n",
+		queue, receiver_h, receiver->name, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 
 	if (function->callback_pause) {
 		function->callback_pause(&is_paused_new, function->is_paused, function->callback_pause_arg);
 	}
 
 	if (!is_paused_new && function->is_paused) {
-		RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u unpaused\n",
-			queue, receiver_h, function->index);
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s function %u unpaused\n",
+			queue, receiver_h, receiver->name, function->index);
 		function->is_paused = 0;
 	}
 	else if (is_paused_new) {
 		if (!function->is_paused) {
-			RRR_DBG_9_PRINTF("EQ DISP %p[%u] function %u paused\n",
-				queue, receiver_h, function->index);
+			RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s function %u paused\n",
+				queue, receiver_h, receiver->name, function->index);
 			function->is_paused = 1;
 		}
 
@@ -281,26 +281,26 @@ static void __rrr_event_signal_event (
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
-				RRR_DBG_9_PRINTF("EQ DISP %p[%u] fd %i not ready\n",
-					queue, receiver_h, (int) fd);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s fd %i not ready\n",
+					queue, receiver_h, receiver->name, (int) fd);
 				// OK, nothing to do
 			}
 			else {
-				RRR_DBG_9_PRINTF("EQ DISP %p[%u] error from eventfd read, ending loop\n",
-					queue, receiver_h);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s error from eventfd read, ending loop\n",
+					queue, receiver_h, receiver->name);
 				event_base_loopbreak(queue->event_base);
 			}
 		}
 	}
 
 	if (function->function == NULL) {
-		RRR_DBG_9_PRINTF("EQ DISP %p[%u] function not registered\n",
-			queue, receiver_h);
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s function not registered\n",
+			queue, receiver_h, receiver->name);
 		goto out;
 	}
 
-	RRR_DBG_9_PRINTF("EQ DISP %p[%u] count %" PRIu64 " function %p\n",
-		queue, receiver_h, count, function->function);
+	RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s count %" PRIu64 " function %p\n",
+		queue, receiver_h, receiver->name, count, function->function);
 
 	int retries = 5;
 	while (count > 0 && retries--) {
@@ -316,12 +316,12 @@ static void __rrr_event_signal_event (
 					: receiver->callback_arg
 		)) != 0) {
 			if (ret == RRR_EVENT_EXIT) {
-				RRR_DBG_9_PRINTF("EQ DISP %p[%u] exit command from callback, ending loop\n",
-					queue, receiver_h);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s exit command from callback, ending loop\n",
+					queue, receiver_h, receiver->name);
 			}
 			else {
-				RRR_DBG_9_PRINTF("EQ DISP %p[%u] error %i from callback, ending loop\n",
-					queue, receiver_h, ret);
+				RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s error %i from callback, ending loop\n",
+					queue, receiver_h, receiver->name, ret);
 			}
 
 			queue->callback_ret = ret;
@@ -342,13 +342,13 @@ static void __rrr_event_signal_event (
 			count += amount;
 		}
 
-		RRR_DBG_9_PRINTF("EQ DISP %p[%u] => count %" PRIu64 " (remaining)\n",
-			queue, receiver_h, count);
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s => count %" PRIu64 " (remaining)\n",
+			queue, receiver_h, receiver->name, count);
 	}
 
 	if (count > 0) {
-		RRR_DBG_9_PRINTF("EQ PASS %p[%u] => count %" PRIu64 " (deferred)\n",
-			queue, receiver_h, count);
+		RRR_DBG_9_PRINTF("EQ PASS %p[%u] %s => count %" PRIu64 " (deferred)\n",
+			queue, receiver_h, receiver->name, count);
 
 		receiver->deferred_amount[function->index] = count;
 
@@ -503,8 +503,8 @@ int rrr_event_pass (
 		RRR_BUG("BUG: Function out of range in %s\n", __func__);
 	}
 
-	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
-		queue, function, amount);
+	RRR_DBG_9_PRINTF("EQ PASS %p[%u] %s function %u amount %u\n",
+		queue, receiver_h, receiver->name, function, amount);
 
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&receiver->functions[function].eventfd, amount)) != 0) {
@@ -557,17 +557,20 @@ static void __rrr_event_receiver_envelope_init (
 static int __rrr_event_receiver_init (
 		struct rrr_event_queue *queue,
 		rrr_event_receiver_handle receiver_h,
+		const char *name,
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	SET_RECEIVER();
 
-	RRR_DBG_9_PRINTF("EQ INIT %p[%u] thread ID %llu\n",
-		queue, receiver_h, (long long unsigned) rrr_gettid());
+	RRR_DBG_9_PRINTF("EQ INIT %p[%u] %s thread ID %llu\n",
+		queue, receiver_h, name, (long long unsigned) rrr_gettid());
 
 	memset(receiver, '\0', sizeof(*receiver));
 
+	strncpy(receiver->name, name, sizeof(receiver->name));
+	receiver->name[sizeof(receiver->name) - 1] = '\0';
 	receiver->callback_arg = callback_arg;
 
 	if ((receiver->periodic_event = event_new (
@@ -656,6 +659,7 @@ static int __rrr_event_receiver_init (
 int rrr_event_receiver_new (
 		rrr_event_receiver_handle *result,
 		struct rrr_event_queue *queue,
+		const char *name,
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -667,7 +671,7 @@ int rrr_event_receiver_new (
 
 	rrr_event_receiver_handle receiver_h = queue->receiver_count++;
 
-	if ((ret = __rrr_event_receiver_init (queue, receiver_h, callback_arg)) != 0) {
+	if ((ret = __rrr_event_receiver_init (queue, receiver_h, name, callback_arg)) != 0) {
 		goto out_error;
 	}
 

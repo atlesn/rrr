@@ -152,6 +152,7 @@ int rrr_cmodule_main_worker_fork_start (
 	if ((ret = rrr_event_receiver_new (
 			&worker_queue_handle,
 			worker_queue,
+			name,
 			NULL
 	)) != 0) {
 		goto out_parent_destroy_event_queue;

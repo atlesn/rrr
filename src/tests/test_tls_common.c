@@ -291,6 +291,7 @@ int rrr_test_tls_common_dispatch (
 	if ((ret = rrr_event_receiver_new (
 			&event_queue_handle,
 			event_queue,
+			"test_tls_common",
 			&cb_data
 	)) != 0) {
 		goto out;

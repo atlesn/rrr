@@ -815,6 +815,7 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_event_receiver_new (
 			&data.queue_handle,
 			data.queue,
+			"main",
 			&data
 	) != 0) {
 		ret = EXIT_FAILURE;

@@ -646,7 +646,12 @@ static int main_loop (
 		goto out_destroy_instance_metadata;
 	}
 
-	if ((ret = rrr_event_receiver_new (&queue_handle, queue, NULL)) != 0) {
+	if ((ret = rrr_event_receiver_new (
+			&queue_handle,
+			queue,
+			"main",
+			NULL
+	)) != 0) {
 		goto out_destroy_events;
 	}
 
@@ -1121,7 +1126,12 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_cleanup_signal;
 		}
 
-		if (rrr_event_receiver_new(&queue_handle, queue, NULL) != 0) {
+		if (rrr_event_receiver_new (
+				&queue_handle,
+				queue,
+				"main",
+				NULL
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out_destroy_events;
 		}

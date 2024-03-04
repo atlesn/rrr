@@ -66,6 +66,8 @@ struct rrr_event_receiver {
 	// Callback arg is for periodic function and also for other
 	// functions if no specific function arg is given
 	void *callback_arg;
+
+	char name[32];
 };
 
 struct rrr_event_queue {

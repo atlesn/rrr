@@ -102,6 +102,7 @@ ssize_t rrr_event_hook_string_format (
 int rrr_event_receiver_new (
 		rrr_event_receiver_handle *result,
 		struct rrr_event_queue *queue,
+		const char *name,
 		void *callback_arg
 );
 void rrr_event_receiver_callback_arg_set (

@@ -156,6 +156,7 @@ int rrr_test_send_loop(void) {
 	if ((ret = rrr_event_receiver_new (
 			&queue_handle,
 			queue,
+			"test",
 			NULL
 	)) != 0) {
 		TEST_MSG("Failed to create event receiver in %s\n", __func__);

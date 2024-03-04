@@ -1170,7 +1170,12 @@ static int __rrr_instances_create_threads (
 		}
 
 		// Get event receiver handle and set default callback argument
-		if ((ret = rrr_event_receiver_new (&runtime_data->events_handle, events, thread)) != 0) {
+		if ((ret = rrr_event_receiver_new (
+				&runtime_data->events_handle,
+				events,
+				node->module_data->instance_name,
+				thread
+		)) != 0) {
 			RRR_MSG_0("Failed to create receiver in %s\n", __func__);
 			goto out_destroy;
 		}
@@ -1372,6 +1377,7 @@ int rrr_instance_collection_run (
 		if ((ret = rrr_event_receiver_new (
 				&events_handle,
 				events,
+				instance->module_data->instance_name,
 				thread
 		)) != 0) {
 			goto out_destroy;

@@ -147,6 +147,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	if ((ret = rrr_event_receiver_new (
 			&queue_handle,
 			queue,
+			"main",
 			NULL
 	)) != 0) {
 		goto out_cleanup_signal;

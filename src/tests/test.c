@@ -393,6 +393,7 @@ static int rrr_test_main_loop (
 	if ((ret = rrr_event_receiver_new (
 			&queue_handle,
 			queue,
+			config_file,
 			&callback_data
 	)) != 0) {
 		goto out_destroy_events;

@@ -338,6 +338,7 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_event_receiver_new (
 			&events_handle,
 			events,
+			"main",
 			NULL
 	) != 0) {
 		ret = EXIT_FAILURE;
