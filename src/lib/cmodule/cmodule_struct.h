@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_STRUCT_H
 	
 #include "../event/event.h"
+#include "../event/event_collection_struct.h"
 #include "../message_holder/message_holder_collection.h"
 #include "../settings.h"
 
@@ -99,6 +100,8 @@ struct rrr_cmodule {
 	int config_check_complete_message_printed;
 
 	struct rrr_msg_holder_collection input_queue;
+
+	struct rrr_event_collection helper_events;
 
 	// Created just before event dispatch, not managed
 	rrr_event_handle input_queue_event;

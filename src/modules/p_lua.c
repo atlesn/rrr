@@ -63,16 +63,12 @@ struct lua_data {
 	int do_precision_loss_warnings;
 };
 
-int data_init (
+void data_init (
 		struct lua_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
 	memset (data, '\0', sizeof(*data));
-
 	data->thread_data = thread_data;
-
-	return ret;
 }
 
 void data_cleanup(void *arg) {
@@ -377,14 +373,8 @@ int lua_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		return ret;
 }
 
-struct lua_fork_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-	pid_t *fork_pid;
-};
-
 static int lua_fork (void *arg) {
-	struct lua_fork_callback_data *callback_data = arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct lua_data *data = thread_data->private_data;
 
 	int ret = 0;
@@ -419,48 +409,49 @@ static int lua_fork (void *arg) {
 	return ret;
 }
 
-static void *thread_entry_lua (struct rrr_thread *thread) {
+static int lua_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct lua_data *data = thread_data->private_data = thread_data->private_memory;
 
-	pthread_cleanup_push(data_cleanup, data);
-
-	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in lua instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	data_init(data, thread_data);
 
 	RRR_DBG_1("lua instance %s\n", INSTANCE_D_NAME(thread_data));
 
-	pid_t fork_pid = 0;
-
-	struct lua_fork_callback_data fork_callback_data = {
-		thread_data,
-		&fork_pid
-	};
-
-	if (rrr_thread_start_condition_helper_fork(thread, lua_fork, &fork_callback_data) != 0) {
+	if (rrr_thread_start_condition_helper_fork(thread, lua_fork, thread_data) != 0) {
 		goto out_message;
 	}
 
 	RRR_DBG_1 ("lua instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
-	);
+	if (rrr_cmodule_helper_init (thread_data) != 0) {
+		RRR_MSG_0("Failed to initialize cmodule in lua instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
+		data_cleanup(data);
+		return 1;
+}
+
+static void lua_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct lua_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("lua instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
-	pthread_cleanup_pop(1);
+	rrr_cmodule_helper_deinit(thread_data);
 
-	return NULL;
+	data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 	NULL,
-	thread_entry_lua,
-	NULL
+	NULL,
+	NULL,
+	lua_init,
+	lua_deinit
 };
 
 static const char *module_name = "lua";

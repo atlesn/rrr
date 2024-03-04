@@ -844,34 +844,34 @@ int rrr_cmodule_helper_methods_iterate (
 	);
 }
 
-static void __rrr_cmodule_helper_loop (
+static int __rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
-	struct rrr_event_collection events = {0};
-	rrr_event_collection_init(&events, INSTANCE_D_EVENTS(thread_data));
+	int ret = 0;
 
-	pthread_cleanup_push(rrr_event_collection_clear_void, &events);
+	rrr_event_collection_init(&cmodule->helper_events, INSTANCE_D_EVENTS(thread_data));
 
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.process_mode != RRR_CMODULE_PROCESS_MODE_NONE) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
-			goto out;
+			ret = 1;
+			goto out_clear_collection;
 		}
 	}
 
-	if (rrr_event_collection_push_periodic (
-				&cmodule->input_queue_event,
-				&events,
-				__rrr_cmodule_helper_event_input_queue,
-				thread_data,
-				2000 // 2 ms
-		) != 0) {
+	if ((ret = rrr_event_collection_push_periodic (
+			&cmodule->input_queue_event,
+			&cmodule->helper_events,
+			__rrr_cmodule_helper_event_input_queue,
+			thread_data,
+			2000 // 2 ms
+	)) != 0) {
 		RRR_MSG_0("Failed to create input queue event in %s\n", __func__);
-		goto out;
+		goto out_clear_collection;
 	}
 
 	if (app_periodic_callback) {
@@ -880,15 +880,15 @@ static void __rrr_cmodule_helper_loop (
 			app_periodic_callback
 		};
 
-		if (rrr_event_collection_push_periodic (
-					&cmodule->app_periodic_event,
-					&events,
-					__rrr_cmodule_helper_event_app_periodic_callback,
-					&callback_data,
-					1000 * 1000 // 1000 ms
-		) != 0) {
+		if ((ret = rrr_event_collection_push_periodic (
+				&cmodule->app_periodic_event,
+				&cmodule->helper_events,
+				__rrr_cmodule_helper_event_app_periodic_callback,
+				&callback_data,
+				1000 * 1000 // 1000 ms
+		)) != 0) {
 			RRR_MSG_0("Failed to create app periodic callback event in %s\n", __func__);
-			goto out;
+			goto out_clear_collection;
 		}
 
 		EVENT_ADD(cmodule->app_periodic_event);
@@ -901,41 +901,49 @@ static void __rrr_cmodule_helper_loop (
 			thread_data
 	);
 
-	if (rrr_event_function_priority_set (
+	if ((ret = rrr_event_function_priority_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			RRR_EVENT_PRIORITY_HIGH
-	)) {
+	)) != 0) {
 		RRR_MSG_0("Failed to set mmap event priority in %s\n", __func__);
-		goto out;
+		goto out_clear_collection;
 	}
 
-	if (rrr_event_function_periodic_set (
+	if ((ret = rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 s
 			__rrr_cmodule_helper_event_periodic
-	) != 0) {
-		goto out;
+	)) != 0) {
+		RRR_MSG_0("Failed to set periodic function in %s\n", __func__);
+		goto out_clear_collection;
 	}
 
-	rrr_event_dispatch (INSTANCE_D_EVENTS(thread_data));
-
+	goto out;
+	out_clear_collection:
+		rrr_event_collection_clear(&cmodule->helper_events);
 	out:
-	pthread_cleanup_pop(1);
-	return;
+		return ret;
 }
 
-void rrr_cmodule_helper_loop (
+int rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	__rrr_cmodule_helper_loop(thread_data, NULL);
+	return __rrr_cmodule_helper_init(thread_data, NULL);
 }
 
-void rrr_cmodule_helper_loop_with_periodic (
+int rrr_cmodule_helper_init_with_periodic (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
-	__rrr_cmodule_helper_loop(thread_data, app_periodic_callback);
+	return __rrr_cmodule_helper_init(thread_data, app_periodic_callback);
+}
+
+void rrr_cmodule_helper_deinit (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+	rrr_event_collection_clear(&cmodule->helper_events);
 }
 
 int rrr_cmodule_helper_parse_config (

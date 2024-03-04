@@ -501,13 +501,8 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	return ret;
 }
 
-struct js_fork_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-};
-
 static int js_fork (void *arg) {
-	struct js_fork_callback_data *callback_data = (struct js_fork_callback_data *) arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) arg;
 	struct js_data *data = (struct js_data *) thread_data->private_data;
 
 	int ret = 0;
@@ -547,45 +542,56 @@ static int js_main_periodic_callback(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_AR
 	return 0;
 }
 
-static void *thread_entry_js (struct rrr_thread *thread) {
+static int js_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
 	struct js_data *data = (struct js_data *) thread_data->private_memory;
+
 	thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("js thread thread_data is %p\n", thread_data);
 
 	js_data_init(data, thread_data);
 
-	pthread_cleanup_push(js_data_cleanup, data);
-
-	struct js_fork_callback_data fork_callback_data = {
-		thread_data
-	};
-
-	if (rrr_thread_start_condition_helper_fork(thread, js_fork, &fork_callback_data) != 0) {
+	if (rrr_thread_start_condition_helper_fork(thread, js_fork, thread_data) != 0) {
 		goto out_message;
 	}
 
 	RRR_DBG_1 ("js instance %s started thread %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop_with_periodic (
+	if (rrr_cmodule_helper_init_with_periodic (
 			thread_data,
 			js_main_periodic_callback
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to initialize cmodule in js instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
-	RRR_DBG_1 ("js instance %s stopping thread %p\n",
-			INSTANCE_D_NAME(thread_data), thread_data);
+		js_data_cleanup(data);
+		return 1;
+}
 
-	pthread_cleanup_pop(1);
-	return NULL;
+static void js_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
+	struct js_data *data = (struct js_data *) thread_data->private_memory;
+
+	RRR_DBG_1 ("js instance %s stopping thread %p\n",
+		INSTANCE_D_NAME(thread_data), thread_data);
+
+	rrr_cmodule_helper_deinit(thread_data);
+
+	js_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_js,
-		NULL
+		NULL,
+		NULL,
+		js_init,
+		js_deinit
 };
 
 static const char *module_name = "cmodule";

@@ -67,16 +67,12 @@ static void msgdb_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->socket);
 }
 
-static int msgdb_data_init (
+static void msgdb_data_init (
 		struct msgdb_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
-	int ret = 0;
-
 	data->thread_data = thread_data;
-
-	return ret;
 }
 
 static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_config_data *config) {
@@ -205,20 +201,13 @@ static int msgdb_fork (void *arg) {
 
 }
 
-static void *thread_entry_msgdb (struct rrr_thread *thread) {
+static int msgdb_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct msgdb_data *data = thread_data->private_data = thread_data->private_memory;
 
-	int init_ret = 0;
-	if ((init_ret = msgdb_data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initialize data in msgdb instance %s flags %i\n",
-			INSTANCE_D_NAME(thread_data), init_ret);
-		return NULL;
-	}
+	msgdb_data_init(data, thread_data);
 
 	RRR_DBG_1 ("msgdb thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(msgdb_data_cleanup, data);
 
 	if (rrr_thread_start_condition_helper_fork(thread, msgdb_fork, thread_data) != 0) {
 		goto out_message;
@@ -228,22 +217,35 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("msgdb started thread %p\n", thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
-	);
+	if (rrr_cmodule_helper_init(thread_data) != 0) {
+		RRR_MSG_0("Failed to initialize cmodule in msgdb instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
-		RRR_DBG_1 ("Thread msgdb %p exiting\n", thread);
-		pthread_cleanup_pop(1);
-		return NULL;
+		msgdb_data_cleanup(data);
+		return 1;
+}
+
+static void msgdb_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct msgdb_data *data = thread_data->private_data = thread_data->private_memory;
+
+	RRR_DBG_1 ("Thread msgdb %p exiting\n", thread);
+
+	rrr_cmodule_helper_deinit(thread_data);
+
+	msgdb_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_msgdb,
-		NULL,
-		NULL,
-		NULL
+	NULL,
+	NULL,
+	NULL,
+	msgdb_init,
+	msgdb_deinit
 };
 
 static const char *module_name = "msgdb";

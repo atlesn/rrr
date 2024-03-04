@@ -60,12 +60,15 @@ int rrr_cmodule_helper_methods_iterate (
 		int (*method_callback)(const char *stack_name, const char *method_name, void *arg),
 		void *callback_arg
 );
-void rrr_cmodule_helper_loop (
+int rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data
 );
-void rrr_cmodule_helper_loop_with_periodic (
+int rrr_cmodule_helper_init_with_periodic (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
+);
+void rrr_cmodule_helper_deinit (
+		struct rrr_instance_runtime_data *thread_data
 );
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,

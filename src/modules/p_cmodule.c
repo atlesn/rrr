@@ -84,13 +84,8 @@ static void cmodule_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->cleanup_function);
 }
 
-static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_runtime_data *thread_data) {
-	int ret = 0;
+static void cmodule_data_init(struct cmodule_data *data, struct rrr_instance_runtime_data *thread_data) {
 	data->thread_data = thread_data;
-	if (ret != 0) {
-		cmodule_data_cleanup(data);
-	}
-	return ret;
 }
 
 static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_config_data *config) {
@@ -342,13 +337,8 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	return ret;
 }
 
-struct cmodule_fork_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-};
-
 static int cmodule_fork (void *arg) {
-	struct cmodule_fork_callback_data *callback_data = arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct cmodule_data *data = thread_data->private_data;
 
 	int ret = 0;
@@ -379,49 +369,51 @@ static int cmodule_fork (void *arg) {
 	return ret;
 }
 
-static void *thread_entry_cmodule (struct rrr_thread *thread) {
+static int cmodule_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (cmodule_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	cmodule_data_init(data, thread_data);
 
 	RRR_DBG_1 ("cmodule thread thread_data is %p\n", thread_data);
 
-	pthread_cleanup_push(cmodule_data_cleanup, data);
-
-	struct cmodule_fork_callback_data fork_callback_data = {
-		thread_data
-	};
-
-	if (rrr_thread_start_condition_helper_fork(thread, cmodule_fork, &fork_callback_data) != 0) {
+	if (rrr_thread_start_condition_helper_fork(thread, cmodule_fork, thread_data) != 0) {
 		goto out_message;
 	}
 
 	RRR_DBG_1 ("cmodule instance %s started thread %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
-	);
+	if (rrr_cmodule_helper_init (thread_data) != 0) {
+		RRR_MSG_0("Failed to initialize cmodule in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
+		cmodule_data_cleanup(data);
+		return 1;
+}
+
+static void cmodule_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("cmodule instance %s stopping thread %p\n",
-			INSTANCE_D_NAME(thread_data), thread_data);
+		INSTANCE_D_NAME(thread_data), thread_data);
 
-	pthread_cleanup_pop(1);
+	rrr_cmodule_helper_deinit(thread_data);
 
-	return NULL;
+	cmodule_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_cmodule,
-		NULL,
-		NULL,
-		NULL
+	NULL,
+	NULL,
+	NULL,
+	cmodule_init,
+	cmodule_deinit
 };
 
 static const char *module_name = "cmodule";

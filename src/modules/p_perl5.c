@@ -169,16 +169,12 @@ static int preload_perl5 (struct rrr_thread *thread) {
 	return ret;
 }
 
-static int perl5_data_init(struct perl5_data *data, struct rrr_instance_runtime_data *thread_data) {
-	int ret = 0;
-
+static void perl5_data_init(struct perl5_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset (data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
 	cmd_get_argv_copy(&data->cmdline, thread_data->init_data.cmd_data);
-
-	return ret;
 }
 
 static int perl5_start(struct perl5_child_data *data) {
@@ -413,13 +409,8 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	return ret;
 }
 
-struct perl5_fork_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-};
-
 static int perl5_fork (void *arg) {
-	struct perl5_fork_callback_data *callback_data = arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct perl5_data *data = thread_data->private_data;
 
 	int ret = 0;
@@ -451,44 +442,48 @@ static int perl5_fork (void *arg) {
 	return ret;
 }
 
-static void *thread_entry_perl5(struct rrr_thread *thread) {
+static int perl5_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (perl5_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	perl5_data_init(data, thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
-
-	struct perl5_fork_callback_data fork_callback_data = {
-		thread_data
-	};
-
-	if (rrr_thread_start_condition_helper_fork(thread, perl5_fork, &fork_callback_data) != 0) {
+	if (rrr_thread_start_condition_helper_fork(thread, perl5_fork, thread_data) != 0) {
 		goto out_message;
 	}
 
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_helper_loop (
-			thread_data
-	);
+	if (rrr_cmodule_helper_init (thread_data) != 0) {
+		RRR_MSG_0("Failed to initialize cmodule in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
+		data_cleanup(data);
+		return 1;
+}
+
+static void perl5_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n",
 			INSTANCE_D_NAME(thread_data), thread);
 
-	pthread_cleanup_pop(1);
+	rrr_cmodule_helper_deinit(thread_data);
 
-	return NULL;
+	data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_perl5,
-		NULL
+		NULL,
+		NULL,
+		perl5_init,
+		perl5_deinit
 };
 
 static const char *module_name = "perl5";
