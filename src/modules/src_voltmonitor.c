@@ -80,13 +80,11 @@ struct voltmonitor_data {
 };
 
 #ifndef RRR_WITH_USB
-static void usb_cleanup(void *arg) {
-	(void)(arg);
+static void usb_cleanup(struct voltmonitor_data *data) {
+	(void)(data);
 }
 #else
-static void usb_cleanup(void *arg) {
-	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
-
+static void usb_cleanup(struct voltmonitor_data *data) {
 	if (data->usb_handle != NULL) {
 		usb_close(data->usb_handle);
 		data->usb_handle = NULL;
@@ -310,10 +308,9 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 }
 #endif
 
-static int data_init(struct voltmonitor_data *data, struct rrr_instance_runtime_data *thread_data) {
+static void data_init(struct voltmonitor_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
-	return 0;
 }
 
 static void data_cleanup(void *arg) {
@@ -472,16 +469,36 @@ static int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg
 	return ret;
 }
 
-static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
+static int voltmonitor_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
+	int millivolts;
+
+	if (usb_read_voltage(data, &millivolts) != 0) {
+		RRR_MSG_0 ("voltmonitor: Voltage reading failed\n");
+		goto out;
 	}
 
-	pthread_cleanup_push(data_cleanup, data);
+	if (!data->do_inject_only) {
+		if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
+			RRR_MSG_0("Error when spawning message in averager instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			return RRR_EVENT_ERR;
+		}
+	}
+
+	out:
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
+}
+
+
+static int voltmonitor_init (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+
+	data_init(data, thread_data);
 
 	RRR_DBG_1 ("voltmonitor thread data is %p\n", thread_data);
 #ifndef RRR_WITH_USB
@@ -491,57 +508,53 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		goto out_cleanup_data;
+		goto data_cleanup;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-
-	pthread_cleanup_push(usb_cleanup, data);
 
 	if (data->do_spawn_test_measurements) {
 		if (voltmonitor_spawn_test_messages(data) != 0) {
 			RRR_MSG_0("Could not spawn test messages in voltmonitor instance %s\n",
 					INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto usb_cleanup;
 		}
 	}
 
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
-
-		int millivolts;
-		if (usb_read_voltage(data, &millivolts) != 0) {
-			RRR_MSG_0 ("voltmonitor: Voltage reading failed\n");
-			rrr_posix_usleep (1000000); // 1000 ms
-			continue;
-		}
-
-		if (!data->do_inject_only) {
-			if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
-				RRR_MSG_0("Error when spawning message in averager instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-		}
-
-		rrr_posix_usleep (250000); // 250 ms
-
+	if (rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
+			250 * 1000, // 250 ms
+			voltmonitor_periodic
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto usb_cleanup;
 	}
 
-	out_message:
-		RRR_DBG_1 ("voltmonitor received encourage stop\n");
-		pthread_cleanup_pop(1);
-	out_cleanup_data:
-		pthread_cleanup_pop(1);
-		return NULL;
+	return 0;
+
+	usb_cleanup:
+		usb_cleanup(data);
+	data_cleanup:
+		data_cleanup(data);
+		return 1;
+}
+
+static void voltmonitor_deinit(struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+
+	RRR_DBG_1 ("voltmonitor received encourage stop\n");
+
+	usb_cleanup(data);
+	data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_voltmonitor,
-		inject,
-		NULL,
-		NULL
+	NULL,
+	NULL,
+	inject,
+	voltmonitor_init,
+	voltmonitor_deinit
 };
 
 static const char *module_name = "voltmonitor";

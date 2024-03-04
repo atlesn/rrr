@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "type_array.h"
 #include "../test.h"
+#include "../../lib/event/event_collection_struct.h"
+#include "../../lib/event/event_collection.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/messages/msg_msg.h"
@@ -55,16 +57,20 @@ struct test_module_data {
 
 	struct rrr_test_function_data test_function_data;
 
-	struct rrr_test_callback_data callback_data;
+	struct rrr_event_collection events;
+
+	struct rrr_test_data test_data;
 };
 
 
-void data_init(struct test_module_data *data) {
+void data_init(struct test_module_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 }
 
 void data_cleanup(void *_data) {
 	struct test_module_data *data = _data;
+	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->test_method);
 }
 
@@ -123,7 +129,7 @@ int test_init (struct rrr_thread *thread) {
 
 	int ret = 0;
 
-	data_init(data);
+	data_init(data, thread_data);
 
 	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %llu\n",
 		thread_data, (long long unsigned) sizeof(*data));
@@ -144,13 +150,15 @@ int test_init (struct rrr_thread *thread) {
 
 	rrr_thread_watchdog_time_update(thread);
 
-	struct rrr_test_callback_data callback_data = {
+	struct rrr_test_data test_data = {
 		.array_check_values = &data->array_check_values,
 		.config = &data->test_function_data,
-		.result = &test_module_result
+		.result = &test_module_result,
+		.events = &data->events,
+		.thread_data = thread_data
 	};
 
-	memcpy(&data->callback_data, &callback_data, sizeof(callback_data));
+	memcpy(&data->test_data, &test_data, sizeof(test_data));
 
 	data->start_time = rrr_time_get_64();
 
@@ -165,24 +173,21 @@ int test_init (struct rrr_thread *thread) {
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {
 		if ((ret = test_array (
-				thread_data,
-				&data->callback_data
+				&data->test_data
 		)) != 0) {
 			goto out;
 		}
 	}
 	else if (strcmp(data->test_method, "test_averager") == 0) {
 		if ((ret = test_averager (
-				thread_data,
-				&data->callback_data
+				&data->test_data
 		)) != 0) {
 			goto out;
 		}
 	}
 	else if (strcmp(data->test_method, "test_anything") == 0) {
 		if ((ret = test_anything (
-				thread_data,
-				&data->callback_data
+				&data->test_data
 		)) != 0) {
 			goto out;
 		}
@@ -190,8 +195,7 @@ int test_init (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
 		if ((ret = test_type_array_mysql (
-				thread_data,
-				&data->callback_data
+				&data->test_data
 		)) != 0) {
 			goto out;
 		}
@@ -225,8 +229,8 @@ void test_deinit (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data->callback_data.cleanup != NULL) {
-		data->callback_data.cleanup(data->callback_data.cleanup_arg);
+	if (data->test_data.cleanup != NULL) {
+		data->test_data.cleanup(data->test_data.cleanup_arg);
 	}
 
 	if (test_module_result_get() == 2) {

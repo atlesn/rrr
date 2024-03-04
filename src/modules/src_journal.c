@@ -82,6 +82,16 @@ struct journal_data {
 	uint64_t count_total;
 	uint64_t count_processed;
 
+	uint64_t time_stats;
+	uint64_t time_next_test_msg;
+
+	uint64_t prev_suppressed;
+	uint64_t prev_total;
+	uint64_t prev_processed;
+	uint64_t prev_delivery_queue_sleep_event_count;
+
+	int delivery_ratelimit_active;
+
 	char *hostname;
 };
 
@@ -107,13 +117,12 @@ static void journal_queue_entry_destroy (struct journal_queue_entry *node) {
 	rrr_free(node);
 }
 
-static int journal_data_init(struct journal_data *data, struct rrr_instance_runtime_data *thread_data) {
+static void journal_data_init(struct journal_data *data, struct rrr_instance_runtime_data *thread_data) {
 
 	// memset 0 is done in preload function, DO NOT do that here
 
 	data->thread_data = thread_data;
-
-	return 0;
+	data->time_stats = rrr_time_get_64();
 }
 
 static void journal_data_cleanup(void *arg) {
@@ -257,8 +266,6 @@ static void journal_log_hook (RRR_LOG_HOOK_ARGS) {
 
 struct journal_write_message_callback_data {
 	struct journal_data *data;
-	int entry_count;
-	int entry_count_limit;
 };
 
 static int journal_write_message_callback (struct rrr_msg_holder *entry, void *arg) {
@@ -334,9 +341,7 @@ static int journal_write_message_callback (struct rrr_msg_holder *entry, void *a
 
 	reading = NULL;
 
-	callback_data->entry_count++;
-
-	if (RRR_LL_COUNT(&data->delivery_queue) > 0 && callback_data->entry_count < callback_data->entry_count_limit) {
+	if (RRR_LL_COUNT(&data->delivery_queue) > 0) {
 		ret = RRR_MESSAGE_BROKER_AGAIN;
 	}
 
@@ -365,73 +370,36 @@ static void journal_delivery_lock_cleanup(void *arg) {
 	pthread_mutex_destroy(&data->delivery_lock);
 }
 
-static void *thread_entry_journal (struct rrr_thread *thread) {
+static int journal_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
-	// This cleanup must happen after the hook is unregistered
-	pthread_cleanup_push(journal_delivery_lock_cleanup, data);
+	uint64_t time_now = rrr_time_get_64();
+	int max = 0xff;
 
-	if (journal_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
+	if (data->error_in_hook) {
+		RRR_MSG_0("Error encountered inside log hook of journal instance %s, exiting\n",
+			INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_ERR;
 	}
 
-	RRR_DBG_1 ("journal thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(journal_data_cleanup, data);
-	pthread_cleanup_push(journal_unregister_handle, data);
-
-	rrr_thread_start_condition_helper_nofork(thread);
-
-	if (journal_parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_cleanup;
-	}
-
-	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-
-	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data, NULL);
-
-	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
-		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
-				INSTANCE_D_NAME(thread_data));
-	}
-
-	uint64_t time_start = rrr_time_get_64();
-
-	uint64_t prev_suppressed = 0;
-	uint64_t prev_total = 0;
-	uint64_t prev_processed = 0;
-
-	uint64_t next_test_msg_time = 0;
-
-	uint64_t prev_delivery_queue_sleep_event_count = 0;
-
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
-
-		if (data->error_in_hook) {
-			RRR_MSG_0("Error encountered inside log hook of journal instance %s, exiting\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
+	if (data->do_generate_test_messages) {
+		if (time_now > data->time_next_test_msg) {
+			RRR_MSG_1("Log test message from journal instance %s per configuration\n", INSTANCE_D_NAME(thread_data));
+			data->time_next_test_msg = time_now + 1000000; // 1000 ms
 		}
+	}
 
-		uint64_t time_now = rrr_time_get_64();
+	struct journal_write_message_callback_data callback_data = {
+		data
+	};
 
-		if (data->do_generate_test_messages) {
-			if (time_now > next_test_msg_time) {
-				RRR_MSG_1("Log test message from journal instance %s per configuration\n", INSTANCE_D_NAME(thread_data));
-				next_test_msg_time = time_now + 1000000; // 1000 ms
-			}
-		}
-
-		struct journal_write_message_callback_data callback_data = {
-			data,
-			0,
-			400
-		};
-
+	while (RRR_LL_COUNT(&data->delivery_queue) > 0 &&
+	       --max &&
+	       !data->delivery_ratelimit_active &&
+	       !rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread)
+	) {
 		if (rrr_message_broker_write_entry (
 				INSTANCE_D_BROKER_ARGS(thread_data),
 				NULL,
@@ -443,72 +411,149 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		)) {
 			RRR_MSG_0("Could not create new message in journal instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		if (time_now - time_start > 1000000) {
-			unsigned int output_buffer_count = 0;
-			int delivery_ratelimit_active = 0;
-			uint64_t delivery_queue_sleep_event_count = 0;
-			unsigned int delivery_queue_count = 0;
-
-			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-					&output_buffer_count,
-					&delivery_ratelimit_active,
-					thread_data
-			) != 0) {
-				RRR_MSG_0("Error while setting ratelimit in journal instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-
-			pthread_mutex_lock(&data->delivery_lock);
-			delivery_queue_sleep_event_count = data->delivery_queue_sleep_event_count;
-			delivery_queue_count = (unsigned int) RRR_LL_COUNT(&data->delivery_queue);
-			pthread_mutex_unlock(&data->delivery_lock);
-
-			time_start = time_now;
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "processed", data->count_processed - prev_processed);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "suppressed", data->count_suppressed - prev_suppressed);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 2, "total", data->count_total - prev_total);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 3, "delivery_queue_sleeps", delivery_queue_sleep_event_count - prev_delivery_queue_sleep_event_count);
-			rrr_stats_instance_post_unsigned_base10_text (
-					INSTANCE_D_STATS(thread_data),
-					"output_buffer_count",
-					0,
-					output_buffer_count
-			);
-			rrr_stats_instance_post_unsigned_base10_text (
-					INSTANCE_D_STATS(thread_data),
-					"delivery_queue_count",
-					0,
-					delivery_queue_count
-			);
-
-			prev_delivery_queue_sleep_event_count = delivery_queue_sleep_event_count;
-			prev_processed = data->count_processed;
-			prev_suppressed = data->count_suppressed;
-			prev_total = data->count_total;
-		}
-
-		if (callback_data.entry_count == 0) {
-			rrr_posix_usleep (50000); // 50 ms
+				INSTANCE_D_NAME(thread_data));
+			return RRR_EVENT_ERR;
 		}
 	}
 
-	out_cleanup:
+	// Set again after possibly slow loop
+	time_now = rrr_time_get_64();
+
+	if (time_now - data->time_stats >= 1 * 1000 * 1000 /* 1 second */) {
+		unsigned int output_buffer_count = 0;
+		uint64_t delivery_queue_sleep_event_count = 0;
+		unsigned int delivery_queue_count = 0;
+
+		data->time_stats = time_now;
+
+		if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+				&output_buffer_count,
+				&data->delivery_ratelimit_active,
+				thread_data
+		) != 0) {
+			RRR_MSG_0("Error while setting ratelimit in journal instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			return RRR_EVENT_ERR;
+		}
+
+		pthread_mutex_lock(&data->delivery_lock);
+		delivery_queue_sleep_event_count = data->delivery_queue_sleep_event_count;
+		delivery_queue_count = (unsigned int) RRR_LL_COUNT(&data->delivery_queue);
+		pthread_mutex_unlock(&data->delivery_lock);
+
+		rrr_stats_instance_update_rate (
+				INSTANCE_D_STATS(thread_data),
+				0,
+				"processed",
+				data->count_processed - data->prev_processed
+		);
+		rrr_stats_instance_update_rate (
+				INSTANCE_D_STATS(thread_data),
+				1,
+				"suppressed",
+				data->count_suppressed - data->prev_suppressed
+		);
+		rrr_stats_instance_update_rate (
+				INSTANCE_D_STATS(thread_data),
+				2,
+				"total",
+				data->count_total - data->prev_total
+		);
+		rrr_stats_instance_update_rate (
+				INSTANCE_D_STATS(thread_data),
+				3,
+				"delivery_queue_sleeps",
+				delivery_queue_sleep_event_count - data->prev_delivery_queue_sleep_event_count
+		);
+		rrr_stats_instance_post_unsigned_base10_text (
+				INSTANCE_D_STATS(thread_data),
+				"output_buffer_count",
+				0,
+				output_buffer_count
+		);
+		rrr_stats_instance_post_unsigned_base10_text (
+				INSTANCE_D_STATS(thread_data),
+				"delivery_queue_count",
+				0,
+				delivery_queue_count
+		);
+
+		data->prev_delivery_queue_sleep_event_count = delivery_queue_sleep_event_count;
+		data->prev_processed = data->count_processed;
+		data->prev_suppressed = data->count_suppressed;
+		data->prev_total = data->count_total;
+	}
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
+}
+
+static int journal_init(struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
+
+	journal_data_init(data, thread_data);
+
+	RRR_DBG_1 ("journal thread data is %p\n", thread_data);
+
+	rrr_thread_start_condition_helper_nofork(thread);
+
+	if (journal_parse_config(data, thread_data->init_data.instance_config) != 0) {
+		RRR_MSG_0("Configuration parse failed for instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		goto out_data_cleanup;
+	}
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
+	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data, NULL);
+
+	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
+		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
+			INSTANCE_D_NAME(thread_data));
+	}
+
+	if (rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
+			50 * 1000, // 50ms
+			journal_periodic
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in journal instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		goto out_unregister_handle;
+	}
+
+	return 0;
+
+out_unregister_handle:
+	journal_unregister_handle(data);
+out_data_cleanup:
+	journal_data_cleanup(data);
+
+	// This cleanup must happen after the hook is unregistered
+	journal_delivery_lock_cleanup(data);
+
+	return 1;
+}
+
+static void journal_deinit(struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("Thread journal instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	return NULL;
+
+	journal_unregister_handle(data);
+	journal_data_cleanup(data);
+
+	// This cleanup must happen after the hook is unregistered
+	journal_delivery_lock_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 	journal_preload,
-	thread_entry_journal,
-	NULL
+	NULL,
+	NULL,
+	journal_init,
+	journal_deinit
 };
 
 static const char *module_name = "journal";

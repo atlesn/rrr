@@ -476,13 +476,11 @@ static void averager_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
-static int averager_data_init(struct averager_data *data, struct rrr_instance_runtime_data *thread_data) {
+static void averager_data_init(struct averager_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	return 0;
 }
 
 static int averager_parse_config (struct averager_data *data, struct rrr_instance_config_data *config) {
@@ -498,21 +496,13 @@ static int averager_parse_config (struct averager_data *data, struct rrr_instanc
 	return ret;
 }
 
-static void *thread_entry_averager(struct rrr_thread *thread) {
+static int averager_init(struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
-
-	int init_ret = 0;
-	if ((init_ret = averager_data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initialize data in averager instance %s flags %i\n",
-				INSTANCE_D_NAME(thread_data), init_ret);
-		return NULL;
-	}
+	averager_data_init(data, thread_data);
 
 	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(averager_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -552,27 +542,37 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_event_function_periodic_set_and_dispatch (
+	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in averager instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
+	averager_data_cleanup(data);
+	return 1;
+}
+
+static void averager_deinit(struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
-
-	return NULL;
+	averager_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_averager,
-		NULL,
-		NULL,
-		NULL
+	NULL,
+	NULL,
+	NULL,
+	averager_init,
+	averager_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {
