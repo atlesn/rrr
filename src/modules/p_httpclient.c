@@ -2570,36 +2570,22 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
 }
 
-static int httpclient_data_init (
+static void httpclient_data_init (
 		struct httpclient_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
-
 	memset(data, '\0', sizeof(*data));
-
 	data->thread_data = thread_data;
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	goto out;
-//	out_cleanup_data:
-//		httpclient_data_cleanup(httpclient_data);
-	out:
-		return ret;
 }
 
-static void *thread_entry_httpclient (struct rrr_thread *thread) {
+static int httpclient_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (httpclient_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize thread_data in httpclient instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	httpclient_data_init(data, thread_data);
 
 	RRR_DBG_1 ("httpclient thread thread_data is %p\n", thread_data);
-
-	pthread_cleanup_push(httpclient_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -2668,24 +2654,26 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	struct rrr_http_client_callbacks callbacks = {
-		httpclient_final_callback,
-		httpclient_failure_callback,
-		httpclient_redirect_callback,
-		NULL,
-		NULL,
-		httpclient_unique_id_generator,
-		data
-	};
+	{
+		struct rrr_http_client_callbacks callbacks = {
+			httpclient_final_callback,
+			httpclient_failure_callback,
+			httpclient_redirect_callback,
+			NULL,
+			NULL,
+			httpclient_unique_id_generator,
+			data
+		};
 
-	if (rrr_http_client_new (
-			&data->http_client,
-			INSTANCE_D_EVENTS(thread_data),
-			RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
-			RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT,
-			&callbacks
-	) != 0) {
-		goto out_message;
+		if (rrr_http_client_new (
+				&data->http_client,
+				INSTANCE_D_EVENTS(thread_data),
+				RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
+				RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT,
+				&callbacks
+		) != 0) {
+			goto out_message;
+		}
 	}
 
 	rrr_http_client_set_response_max_size(data->http_client, data->response_max_size);
@@ -2739,26 +2727,37 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			thread_data
 	);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
 			httpclient_event_periodic
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in httpclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
+		httpclient_data_cleanup(data);
+		return 1;
+}
+
+static void httpclient_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("Thread httpclient %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
-
-	return NULL;
+	httpclient_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_httpclient,
 		NULL,
 		NULL,
-		NULL
+		httpclient_init,
+		httpclient_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {

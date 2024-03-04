@@ -654,15 +654,13 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	return ret;
 }
 
-static void *thread_entry_incrementer (struct rrr_thread *thread) {
+static int incrementer_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct incrementer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("incrementer thread thread_data is %p\n", thread_data);
 
 	incrementer_data_init(data, thread_data);
-
-	pthread_cleanup_push(incrementer_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -675,26 +673,37 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("incrementer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_function_periodic_set_and_dispatch (
+	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 s
 			incrementer_event_periodic
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in incrementer instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	return 0;
 
 	out_message:
-	pthread_cleanup_pop(1);
+		incrementer_data_cleanup(data);
+		return 1;
+}
+
+static void incrementer_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct incrementer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread incrementer %p exiting\n", thread);
 
-	return NULL;
+	incrementer_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_incrementer,
 		NULL,
 		NULL,
-		NULL
+		incrementer_init,
+		incrementer_deinit
 };
 
 static const char *module_name = "incrementer";
