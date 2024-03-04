@@ -334,14 +334,12 @@ static int file_collection_push (
 	return ret;
 }
 
-static int file_data_init(struct file_data *data, struct rrr_instance_runtime_data *thread_data) {
+static void file_data_init(struct file_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	return 0;
 }
 
 static void file_data_cleanup(void *arg) {
@@ -1604,15 +1602,8 @@ static void file_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLB
 	}
 }
 
-struct file_fd_close_notify_callback_data {
-	struct file_data *data;
-	struct rrr_socket_client_collection *collection;
-};
-
 static void file_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
-	struct file_fd_close_notify_callback_data *callback_data = arg;
-	struct file_data *file_data = callback_data->data;
-	struct rrr_socket_client_collection *collection = callback_data->collection;
+	struct file_data *file_data = arg;
 
 	(void)(addr);
 	(void)(addr_len);
@@ -2056,18 +2047,13 @@ static int file_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return RRR_EVENT_OK;
 }
 
-static void *thread_entry_file (struct rrr_thread *thread) {
+static int file_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct file_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (file_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in file instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	file_data_init(data, thread_data);
 
 	RRR_DBG_1 ("File thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(file_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -2185,14 +2171,10 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			data
 	);
 
-	struct file_fd_close_notify_callback_data read_write_close_notify_callback_data = {
-		data,
-		data->read_write_sockets
-	};
 	rrr_socket_client_collection_fd_close_notify_setup (
 			data->read_write_sockets,
 			file_fd_close_notify_callback,
-			&read_write_close_notify_callback_data
+			data
 	);
 
 	// WRITE ONLY SOCKETS
@@ -2210,14 +2192,10 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			data
 	);
 
-	struct file_fd_close_notify_callback_data write_only_close_notify_callback_data = {
-		data,
-		data->write_only_sockets
-	};
 	rrr_socket_client_collection_fd_close_notify_setup (
 			data->write_only_sockets,
 			file_fd_close_notify_callback,
-			&write_only_close_notify_callback_data
+			data
 	);
 
 	if (!data->do_no_probing) {
@@ -2251,24 +2229,34 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		EVENT_ADD(data->event_stats);
 	}
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			file_periodic
 	);
 
+	return 0;
+
 	out_cleanup:
+		file_data_cleanup(data);
+		return 1;
+}
+
+static void file_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct file_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("Thread file instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-	pthread_cleanup_pop(1);
-	return NULL;
+
+	file_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
 	NULL,
-	thread_entry_file,
 	NULL,
 	NULL,
-	NULL
+	file_init,
+	file_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {
@@ -2290,5 +2278,3 @@ void init(struct rrr_instance_module_data *data) {
 
 void unload(void) {
 }
-
-

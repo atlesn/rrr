@@ -1583,6 +1583,7 @@ static void ip_chunk_send_notify_callback (RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBAC
 static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
 	struct ip_data *ip_data = arg;
 
+	(void)(collection);
 	(void)(fd);
 	(void)(addr_string);
 

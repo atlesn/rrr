@@ -272,15 +272,13 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	return ret;
 }
 
-static void *thread_entry_mangler (struct rrr_thread *thread) {
+static int mangler_init (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mangler_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("mangler thread thread_data is %p\n", thread_data);
 
 	mangler_data_init(data, thread_data);
-
-	pthread_cleanup_push(mangler_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -293,26 +291,34 @@ static void *thread_entry_mangler (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mangler instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
+	return 0;
+
 	out_message:
-	pthread_cleanup_pop(1);
+		mangler_data_cleanup(data);
+		return 1;
+}
+
+static void mangler_deinit (struct rrr_thread *thread) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mangler_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread mangler %p exiting\n", thread);
 
-	return NULL;
+	mangler_data_cleanup(data);
 }
 
 static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_mangler,
-		NULL,
-		NULL,
-		NULL
+	NULL,
+	NULL,
+	NULL,
+	mangler_init,
+	mangler_deinit
 };
 
 struct rrr_instance_event_functions event_functions = {

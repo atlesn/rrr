@@ -712,19 +712,12 @@ static int __rrr_udpstream_send_connect (
 	return ret;
 }
 
-static void __rrr_udpstream_fd_close_callback (
-		int fd,
-		const struct sockaddr *addr,
-		socklen_t socklen,
-		const char *addr_string,
-		enum rrr_socket_client_collection_create_type create_type,
-		short was_finalized,
-		void *arg
-) {
+static void __rrr_udpstream_fd_close_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
 	struct rrr_udpstream *data = arg;
 
+	(void)(collection);
 	(void)(addr);
-	(void)(socklen);
+	(void)(addr_len);
 	(void)(addr_string);
 	(void)(create_type);
 	(void)(was_finalized);

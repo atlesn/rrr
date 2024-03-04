@@ -88,6 +88,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS
 
 #define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS            \
+    struct rrr_socket_client_collection *collection,        \
     int fd,                                                 \
     const struct sockaddr *addr,                            \
     socklen_t addr_len,                                     \

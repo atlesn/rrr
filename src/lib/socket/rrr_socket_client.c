@@ -179,6 +179,7 @@ static int __rrr_socket_client_fd_destroy (
 
 	if (collection->client_fd_close_callback) {
 		collection->client_fd_close_callback (
+				collection,
 				client_fd->fd,
 				(const struct sockaddr *) &client_fd->addr,
 				client_fd->addr_len,
