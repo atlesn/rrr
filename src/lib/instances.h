@@ -126,6 +126,12 @@ struct rrr_instance_runtime_init_data {
 };
 
 struct rrr_instance_runtime_data {
+	// These are at the top as Clang otherwise might produce
+	// unaligned 128-bit SIMD operations in the modules in
+	// particulare when memsetting.
+	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
+	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
+
 	struct rrr_instance_runtime_init_data init_data;
 
 	struct rrr_message_broker_costumer *message_broker_handle;
@@ -133,8 +139,6 @@ struct rrr_instance_runtime_data {
 
 	void *private_data;
 	void *preload_data;
-	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
-	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
 
 	// Poll statistics for modules which read from others
 	struct rrr_poll_helper_counters counters;
