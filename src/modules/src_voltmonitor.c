@@ -432,7 +432,11 @@ static int voltmonitor_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
-	int millivolts;
+	int millivolts = 0;
+
+	if (data->do_spawn_test_measurements) {
+		goto out;
+	}
 
 	if (usb_read_voltage(data, &millivolts) != 0) {
 		RRR_MSG_0 ("voltmonitor: Voltage reading failed\n");
