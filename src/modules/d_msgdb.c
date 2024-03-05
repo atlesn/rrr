@@ -240,7 +240,7 @@ static void msgdb_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	msgdb_data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "msgdb";

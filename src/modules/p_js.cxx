@@ -585,7 +585,7 @@ static void js_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	js_data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "cmodule";

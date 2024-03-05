@@ -121,7 +121,9 @@ struct httpserver_data {
 
 	pthread_mutex_t oustanding_responses_lock;
 
+	// Shutdown control
 	uint64_t shutdown_time;
+	volatile int *deinit_complete;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -142,7 +144,7 @@ static void httpserver_data_cleanup(void *arg) {
 	}
 }
 
-static int httpserver_data_init (
+static void httpserver_data_init (
 		struct httpserver_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
@@ -151,8 +153,6 @@ static int httpserver_data_init (
 	data->thread_data = thread_data;
 
 	rrr_fifo_init_custom_refcount(&data->buffer, rrr_msg_holder_incref_while_locked_void, rrr_msg_holder_decref_void);
-
-	return 0;
 }
 
 static int httpserver_parse_config (
@@ -368,13 +368,12 @@ static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
 		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
 			INSTANCE_D_NAME(data->thread_data));
-		return RRR_EVENT_EXIT;
+		*data->deinit_complete = 1;
 	}
-
-	if (httpserver_shutdown_complete(data)) {
+	else if (httpserver_shutdown_complete(data)) {
 		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
 			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
-		return RRR_EVENT_EXIT;
+		*data->deinit_complete = 1;
 	}
 
 	return RRR_EVENT_OK;
@@ -631,10 +630,6 @@ static int httpserver_write_message_callback (
 	rrr_msg_holder_unlock(new_entry);
 	return ret;
 }
-
-struct httpserver_callback_data {
-	struct httpserver_data *httpserver_data;
-};
 
 static int httpserver_generate_unique_topic (
 		char **result,
@@ -1234,8 +1229,7 @@ static int httpserver_async_response_get_and_process (
 static int httpserver_async_response_get_callback (
 		RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS
 ) {
-	struct httpserver_callback_data *receive_callback_data = arg;
-	struct httpserver_data *data = receive_callback_data->httpserver_data;
+	struct httpserver_data *data = arg;
 	struct httpserver_response_data *response_data = transaction->application_data;
 
 	if (response_data->time_begin == 0) {
@@ -1248,17 +1242,17 @@ static int httpserver_async_response_get_callback (
 static int httpserver_response_postprocess_callback (
 		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
 ) {
-	struct httpserver_callback_data *callback_data = arg;
+	struct httpserver_data *data = arg;
 
 	int ret = 0;
 
-	if (rrr_string_builder_length(&callback_data->httpserver_data->alt_svc_header) == 0) {
+	if (rrr_string_builder_length(&data->alt_svc_header) == 0) {
 		goto out;
 	}
 
 	if ((ret = rrr_http_transaction_response_alt_svc_set (
 			transaction,
-			rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header)
+			rrr_string_builder_buf(&data->alt_svc_header)
 	)) != 0) {
 		goto out;
 	}
@@ -1270,8 +1264,7 @@ static int httpserver_response_postprocess_callback (
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
-	struct httpserver_callback_data *receive_callback_data = arg;
-	struct httpserver_data *data = receive_callback_data->httpserver_data;
+	struct httpserver_data *data = arg;
 
 	(void)(thread);
 	(void)(overshoot_bytes);
@@ -1576,7 +1569,7 @@ static int httpserver_receive_raw_broker_callback (
 static int httpserver_websocket_handshake_callback (
 		RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
-	struct httpserver_callback_data *callback_data = arg;
+	struct httpserver_data *data = arg;
 
 	*do_websocket = 1;
 
@@ -1603,7 +1596,7 @@ static int httpserver_websocket_handshake_callback (
 	const char *topic_begin = request_uri + 1;
 	if (strlen(topic_begin) == 0) {
 		RRR_MSG_0("Received zero-length websocket topic from client in httpserver instance %s\n",
-				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
+				INSTANCE_D_NAME(data->thread_data));
 		goto out_bad_request;
 	}
 
@@ -1615,16 +1608,16 @@ static int httpserver_websocket_handshake_callback (
 
 	if (rrr_mqtt_topic_validate_name(topic_begin) != 0) {
 		RRR_MSG_0("Received invalid websocket topic '%s' from client in httpserver instance %s\n",
-				topic_begin, INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
+				topic_begin, INSTANCE_D_NAME(data->thread_data));
 		goto out_bad_request;
 	}
 
 	int topic_ok = 0;
-	RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->websocket_topic_filters);
+	RRR_MAP_ITERATE_BEGIN(&data->websocket_topic_filters);
 		if ((ret = rrr_mqtt_topic_match_str(node_tag, topic_begin)) != RRR_MQTT_TOKEN_MATCH) {
 			if (ret == RRR_MQTT_TOKEN_MISMATCH) {
 				RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
-						INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+						INSTANCE_D_NAME(data->thread_data),
 						topic_begin,
 						node_tag);
 				ret = 0;
@@ -1637,7 +1630,7 @@ static int httpserver_websocket_handshake_callback (
 		}
 		else {
 			RRR_DBG_3("httpserver %s websocket topic '%s' matched with topic filter '%s'\n",
-					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+					INSTANCE_D_NAME(data->thread_data),
 					topic_begin,
 					node_tag);
 			topic_ok = 1;
@@ -1731,7 +1724,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 }
 
 static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
-	struct httpserver_callback_data *httpserver_callback_data = arg;
+	struct httpserver_data *httpserver_data = arg;
 
 	(void)(application_topic);
 
@@ -1753,7 +1746,7 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 	callback_data.topic_filter = topic_filter;
 
 	if ((ret = rrr_fifo_search (
-			&httpserver_callback_data->httpserver_data->buffer,
+			&httpserver_data->buffer,
 			httpserver_async_response_get_fifo_callback,
 			&callback_data
 	)) != 0) {
@@ -1780,8 +1773,7 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 }
 
 static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
-	struct httpserver_callback_data *callback_data = arg;
-	struct httpserver_data *data = callback_data->httpserver_data;
+	struct httpserver_data *data = arg;
 
 	int ret = 0;
 
@@ -1797,7 +1789,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 	}
 
 	struct receive_raw_broker_callback_data write_callback_data = {
-		callback_data->httpserver_data,
+		data,
 		payload,
 		topic,
 		rrr_u16_from_biglength_bug_const(strlen(topic)),
@@ -1812,7 +1804,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 	rrr_net_transport_ctx_connected_address_get(&addr, &addr_len, handle);
 
 	ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			addr,
 			addr_len,
 			RRR_IP_TCP,
@@ -1830,11 +1822,11 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 static int httpserver_unique_id_generator_callback (
 		RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
-	struct httpserver_callback_data *data = arg;
+	struct httpserver_data *data = arg;
 
 	return rrr_message_broker_get_next_unique_id (
 			unique_id,
-			INSTANCE_D_BROKER_ARGS(data->httpserver_data->thread_data)
+			INSTANCE_D_BROKER_ARGS(data->thread_data)
 	);
 }
 
@@ -1871,7 +1863,7 @@ static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 // If we receive messages from senders which no worker seem to want, we must delete them
 static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct httpserver_callback_data *callback_data = arg;
+	struct httpserver_data *httpserver_data = arg;
 	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
 
 	(void)(size);
@@ -1884,11 +1876,11 @@ static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 		RRR_BUG("BUG: Buffer time was 0 for entry in httpserver_housekeep_callback\n");
 	}
 
-	uint64_t timeout = entry->buffer_time + callback_data->httpserver_data->response_timeout_ms * 1000;
+	uint64_t timeout = entry->buffer_time + httpserver_data->response_timeout_ms * 1000;
 	if (rrr_time_get_64() > timeout) {
 		struct rrr_msg_msg *msg = entry->message;
 		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
-				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data), MSG_TOTAL_SIZE(msg));
+				INSTANCE_D_NAME(httpserver_data->thread_data), MSG_TOTAL_SIZE(msg));
 		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
 	}
 
@@ -1905,14 +1897,10 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	struct httpserver_callback_data callback_data = {
-		data
-	};
-
 	if (rrr_fifo_search (
 			&data->buffer,
 			httpserver_housekeep_callback,
-			&callback_data
+			data
 	)) {
 		return 1;
 	}
@@ -1920,7 +1908,7 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return 0;
 }
 
- void *thread_entry_httpserver (struct rrr_thread *thread) {
+static int httpserver_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -1929,14 +1917,9 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			INSTANCE_D_NAME(thread_data));
 	}
 
-	if (httpserver_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize thread_data in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	httpserver_data_init(data, thread_data);
 
 	RRR_DBG_1 ("httpserver thread thread_data is %p\n", thread_data);
-
-	pthread_cleanup_push(httpserver_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -1958,10 +1941,6 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		}
 	}
 
-	struct httpserver_callback_data callback_data = {
-			data
-	};
-
 	struct rrr_http_server_callbacks callbacks = {
 		httpserver_unique_id_generator_callback,
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
@@ -1970,7 +1949,7 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		httpserver_receive_callback,
 		httpserver_async_response_get_callback,
 		httpserver_response_postprocess_callback,
-		&callback_data
+		data
 	};
 
 	if (rrr_http_server_new(&data->http_server, &callbacks) != 0) {
@@ -1986,31 +1965,47 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		goto out_message;
 	}
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			httpserver_event_periodic
 	);
 
 	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
 
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
+
+	return 0;
+
+	out_message:
+		httpserver_data_cleanup(data);
+		return 1;
+}
+
+void httpserver_shutdown (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
+
 	httpserver_start_shutdown(data);
 
 	if (!httpserver_shutdown_complete(data)) {
-		rrr_event_function_periodic_set_and_dispatch (
+		data->deinit_complete = deinit_complete;
+
+		RRR_DBG_1 ("Thread httpserver %p instance %s registering shutdown events\n",
+			thread, INSTANCE_D_NAME(thread_data));
+
+		rrr_event_function_periodic_set (
 				INSTANCE_D_EVENTS_H(thread_data),
-				100 * 1000,
+				100 * 1000, // 100 ms
 				httpserver_event_shutdown
 		);
 	}
+	else {
+		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
-	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n", thread, INSTANCE_D_NAME(thread_data));
-
-	out_message:
-	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
-	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
-	pthread_cleanup_pop(1);
-	return NULL;
+		*deinit_complete = 1;
+	}
 }
 
 struct rrr_instance_event_functions event_functions = {
@@ -2024,6 +2019,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->event_functions = event_functions;
+	data->init = httpserver_init;
+	data->deinit = httpserver_shutdown;
 }
 
 void unload (void) {

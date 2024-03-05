@@ -205,7 +205,7 @@ static void raw_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
 		thread, INSTANCE_D_NAME(thread_data));
 
-	*shutdown_complete =  1;
+	*deinit_complete =  1;
 }
 
 static struct rrr_instance_event_functions event_functions = {

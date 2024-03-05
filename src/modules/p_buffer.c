@@ -159,7 +159,7 @@ static void buffer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	(void)(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {

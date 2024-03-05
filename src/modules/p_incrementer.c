@@ -697,7 +697,7 @@ static void incrementer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	incrementer_data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "incrementer";

@@ -2751,7 +2751,7 @@ static void httpclient_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	httpclient_data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {

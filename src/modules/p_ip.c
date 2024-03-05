@@ -1850,7 +1850,7 @@ static void ip_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	RRR_DBG_1 ("Thread ip %p instance %s exiting\n",
 		thread, INSTANCE_D_NAME(thread_data));
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {

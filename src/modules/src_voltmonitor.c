@@ -508,7 +508,7 @@ static void voltmonitor_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	usb_cleanup(data);
 	data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "voltmonitor";

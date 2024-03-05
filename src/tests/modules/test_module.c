@@ -248,7 +248,7 @@ void test_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "test_module";

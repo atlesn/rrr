@@ -387,7 +387,10 @@ static int rrr_test_main_loop (
 		goto out_cleanup_config;
 	}
 
-	if ((ret = rrr_event_queue_new (&queue, RRR_LL_COUNT(&instances) + 1)) != 0) {
+	if ((ret = rrr_event_queue_new (
+			&queue, 
+			rrr_instance_event_receiver_count_get(&instances) + 1
+	)) != 0) {
 		goto out_cleanup_instances;
 	}
 

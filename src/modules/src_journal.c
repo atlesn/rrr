@@ -547,7 +547,7 @@ static void journal_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	// This cleanup must happen after the hook is unregistered
 	journal_delivery_lock_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "journal";

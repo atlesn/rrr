@@ -54,7 +54,7 @@ struct rrr_instance_config_collection;
     struct rrr_thread *thread
 
 #define RRR_INSTANCE_DEINIT_ARGS              \
-    volatile int *shutdown_complete,          \
+    volatile int *deinit_complete,            \
     struct rrr_thread *thread
 
 struct rrr_instance {
@@ -77,9 +77,6 @@ struct rrr_instance {
 	// Not managed by this struct
 	struct rrr_instance_config_data *config;
 	struct rrr_thread *thread;
-
-	// Shutdown control
-	volatile int shutdown_complete;
 };
 
 #define INSTANCE_I_ROUTES(instance) (&instance->routes)
@@ -192,6 +189,10 @@ struct rrr_instance_runtime_data {
 	// * Cleanup in ghost handler
 	struct rrr_cmodule *cmodule;
 	struct rrr_stats_instance *stats;
+
+	// Shutdown control
+	volatile int init_complete;
+	volatile int deinit_complete;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
@@ -214,6 +215,9 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_INSTANCES(thread_data) thread_data->init_data.module->all_instances
 #define INSTANCE_D_MAIN_RUNNING(thread_data) (*thread_data->init_data.main_running)
 
+int rrr_instance_event_receiver_count_get (
+		struct rrr_instance_collection *instances
+);
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
 		struct rrr_thread *thread

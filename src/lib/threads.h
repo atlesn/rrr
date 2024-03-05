@@ -131,10 +131,6 @@ struct rrr_thread {
 	// Routines
 	int (*init)(struct rrr_thread *);
 	int (*run)(struct rrr_thread *);
-	void (*deinit)(struct rrr_thread *);
-
-	// Deinit control
-	int init_complete;
 
 	// Cleanup control
 	volatile int started;
@@ -279,7 +275,6 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
-		void (*deinit)(struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -291,11 +286,9 @@ int rrr_thread_collection_start_all (
 void rrr_thread_run (
 		struct rrr_thread *thread
 );
-void rrr_thread_collection_deinit_all (
-		struct rrr_thread_collection *collection
-);
 int rrr_thread_collection_init_all (
-		struct rrr_thread_collection *collection
+		struct rrr_thread_collection *collection,
+		void (*fail_cb)(struct rrr_thread *thread)
 );
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection

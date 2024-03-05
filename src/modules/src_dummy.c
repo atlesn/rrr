@@ -449,7 +449,7 @@ void dummy_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	dummy_data_cleanup(data);
 
-	*shutdown_complete = 1;
+	*deinit_complete = 1;
 }
 
 static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {

@@ -878,9 +878,11 @@ static void __rrr_thread_cleanup (
 		void *arg
 ) {
 	struct rrr_thread *thread = arg;
+
 	if (rrr_thread_state_check(thread, RRR_THREAD_STATE_GHOST)) {
 		RRR_MSG_0 ("Thread %s waking up after being ghost\n", thread->name);
 	}
+
 	__rrr_thread_managed_data_cleanup(thread);
 }
 
@@ -918,18 +920,8 @@ static int __rrr_thread_wait_for_signal_and_init (
 	RRR_DBG_8("Thread %p/%s TID %llu init complete\n",
 		thread, thread->name, (long long unsigned int) rrr_gettid());
 
-	thread->init_complete = 1;
-
 	out:
 	return ret;
-}
-
-static void __rrr_thread_deinit (
-		struct rrr_thread *thread
-) {
-	if (!thread->init_complete)
-		return;
-	thread->deinit(thread);
 }
 
 static void *__rrr_thread_start_routine_intermediate (
@@ -955,10 +947,8 @@ static void *__rrr_thread_start_routine_intermediate (
 			thread, thread->name, (long long unsigned int) rrr_gettid());
 	}
 
-	RRR_DBG_8("Thread %p/%s TID %llu run complete, proceeding ot deinit\n",
+	RRR_DBG_8("Thread %p/%s TID %llu run complete\n",
 		thread, thread->name, (long long unsigned int) rrr_gettid());
-
-	__rrr_thread_deinit(thread);
 
 	out_cleanup:
 	pthread_cleanup_pop(1);
@@ -1037,7 +1027,6 @@ static int __rrr_thread_allocate (
 		struct rrr_thread **target_wd,
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
-		void (*deinit)(struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1064,7 +1053,6 @@ static int __rrr_thread_allocate (
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->init = init;
 	thread->run = run;
-	thread->deinit = deinit;
 	thread->private_data = private_data;
 
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
@@ -1104,7 +1092,6 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
-		void (*deinit)(struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
@@ -1119,7 +1106,6 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 			&thread_wd,
 			init,
 			run,
-			deinit,
 			name,
 			watchdog_timeout_us,
 			private_data
@@ -1177,22 +1163,15 @@ int rrr_thread_collection_start_all (
 	return ret;
 }
 
-void rrr_thread_collection_deinit_all (
-		struct rrr_thread_collection *collection
-) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		// Function only does something if needed
-		__rrr_thread_deinit(node);
-	RRR_LL_ITERATE_END();
-
-}
-
 int rrr_thread_collection_init_all (
-		struct rrr_thread_collection *collection
+		struct rrr_thread_collection *collection,
+		void (*fail_cb)(struct rrr_thread *thread)
 ) {
 	int ret = 0;
 
 	int encourage_stop = 0;
+	int init_pos = 0;
+	int fail_pos = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog) {
@@ -1200,17 +1179,31 @@ int rrr_thread_collection_init_all (
 		}
 
 		if ((ret = __rrr_thread_wait_for_signal_and_init(&encourage_stop, node)) != 0 || encourage_stop) {
-			goto out_deinit;
+			goto out_cleanup;
 		}
+
+		if (encourage_stop) {
+			goto out_cleanup;
+		}
+
+		init_pos++;
 	RRR_LL_ITERATE_END();
 
 	goto out;
-	out_deinit:
-		rrr_thread_collection_deinit_all(collection);
+	out_cleanup:
+		RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+			if (fail_pos >= init_pos) {
+				RRR_LL_ITERATE_BREAK();
+			}
+
+			fail_cb(node);
+
+			fail_pos++;
+		RRR_LL_ITERATE_END();
 	out:
 		return ret;
 }
-		
+
 int rrr_thread_collection_check_any_stopped (
 		struct rrr_thread_collection *collection
 ) {

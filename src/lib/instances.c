@@ -154,6 +154,13 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 	return ret;
 }
 
+int rrr_instance_event_receiver_count_get (
+		struct rrr_instance_collection *instances
+) {
+	// +1 due to extra receiver used in in rrr_instance_collection_run
+	return RRR_LL_COUNT(instances) + 1;
+}
+
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
 		struct rrr_thread *thread
@@ -293,8 +300,12 @@ static int __rrr_instance_load_module_new_and_save (
 
 	module_load_data.load(module_data);
 
-	assert(module_data->init != NULL);
-	assert(module_data->deinit != NULL);
+	if (module_data->init == NULL) {
+		RRR_BUG("BUG: Module %s did not set any init() function during load\n", module_name);
+	}
+	if (module_data->deinit == NULL) {
+		RRR_BUG("BUG: Module %s did not set any deinit() function during load\n", module_name);
+	}
 
 	module_data->module_load_data = module_load_data;
 	module_data->instance_name = instance_config->name;
@@ -832,24 +843,6 @@ static int __rrr_instance_before_start_tasks (
 	return ret;
 }
 
-static void __rrr_instance_thread_intermediate_cleanup (
-		void *arg
-) {
-	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-
-	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n",
-		thread, thread_data->cmodule);
-
-	if (thread_data->stats != NULL) {
-		rrr_stats_instance_destroy(thread_data->stats);
-	}
-
-	if (thread_data->cmodule != NULL) {
-		rrr_cmodule_destroy(thread_data->cmodule);
-	}
-}
-
 struct rrr_instance_count_receivers_of_self_callback_data {
 	struct rrr_instance *self;
 	rrr_length count;
@@ -916,8 +909,8 @@ static int __rrr_instance_thread_init (
 		goto out;
 	}
 
-	RRR_DBG_8("Thread %p init cmodule is %p\n",
-		thread, cmodule);
+	RRR_DBG_1("Instance %s thread %p init cmodule is %p\n",
+		INSTANCE_D_NAME(thread_data), thread, cmodule);
 
 	if ((ret = rrr_stats_instance_new (
 			&stats,
@@ -929,8 +922,8 @@ static int __rrr_instance_thread_init (
 		goto out_destroy_cmodule;
 	}
 
-	RRR_DBG_8("Thread %p init stats is %p\n",
-		thread, stats);
+	RRR_DBG_1("Instance %s thread %p init stats is %p\n",
+		INSTANCE_D_NAME(thread_data), thread, cmodule);
 
 	if ((ret = rrr_stats_instance_post_default_stickies(stats)) != 0) {
 		RRR_MSG_0("Error while posting default sticky statistics instance %s in %s\n",
@@ -945,6 +938,8 @@ static int __rrr_instance_thread_init (
 		goto out_destroy_stats;
 	}
 
+	thread_data->init_complete = 1;
+
 	goto out;
 	out_destroy_stats:
 		rrr_stats_instance_destroy(stats);
@@ -954,33 +949,74 @@ static int __rrr_instance_thread_init (
 		return ret;
 }
 
+static void __rrr_instance_deinit (
+		struct rrr_instance_runtime_data *thread_data
+);
+
+static void __rrr_instance_deinit_void (
+		void *arg
+) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	__rrr_instance_deinit(thread_data);
+}
+
 static int __rrr_instance_thread_run (
 		struct rrr_thread *thread
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	assert(thread->init_complete);
+	int ret = 1; // Default error
+
+	assert(thread_data->init_complete && "Thread framework called run without calling init first");
 
 	RRR_DBG_1("Instance %s starting event loop PID %llu, TID %llu, thread %p, event queue %p instance %p\n",
 		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, INSTANCE_D_EVENTS(thread_data), thread_data);
 
-	return rrr_event_dispatch(INSTANCE_D_EVENTS(thread_data));
+	pthread_cleanup_push(__rrr_instance_deinit_void, thread_data);
+
+	ret = rrr_event_dispatch(INSTANCE_D_EVENTS(thread_data));
+
+	pthread_cleanup_pop(1);
+
+	return ret;
 }
 
-static void __rrr_instance_thread_deinit (
-		struct rrr_thread *thread
+static void __rrr_instance_deinit (
+		struct rrr_instance_runtime_data *thread_data
 ) {
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	// Be liberal with respect to when this function is called, it may
+	// be called under different preconditions.
+	// preconditions and act accordingly. This function is called from both
+	// thread framework and instances framework.
 
-	assert(thread->init_complete);
+	if (thread_data->deinit_complete) {
+		return;
+	}
 
-	volatile int shutdown_complete = 0;
+	RRR_DBG_1("Instance %s thread %p deinit\n",
+		INSTANCE_D_NAME(thread_data), thread_data->thread);
 
-	INSTANCE_D_MODULE(thread_data)->deinit(&shutdown_complete, thread);
+	INSTANCE_D_MODULE(thread_data)->deinit (
+			&thread_data->deinit_complete,
+			thread_data->thread
+	);
 
-	assert(shutdown_complete && "Shutdown complete == 0 not implemented");
+	if (thread_data->deinit_complete) {
+		RRR_DBG_1("Instance %s thread %p deinit complete\n",
+			INSTANCE_D_NAME(thread_data), thread_data->thread);
 
-	__rrr_instance_thread_intermediate_cleanup(thread);
+		if (thread_data->stats != NULL) {
+			rrr_stats_instance_destroy(thread_data->stats);
+		}
+
+		if (thread_data->cmodule != NULL) {
+			rrr_cmodule_destroy(thread_data->cmodule);
+		}
+	}
+	else {
+		RRR_DBG_1("Instance %s thread %p deinit not complete\n",
+			INSTANCE_D_NAME(thread_data), thread_data->thread);
+	}
 }
 
 static int __rrr_instance_thread_preload_enable_duplication_as_needed (
@@ -1156,7 +1192,6 @@ static int __rrr_instances_create_threads (
 				thread_collection,
 				__rrr_instance_thread_init,
 				__rrr_instance_thread_run,
-				__rrr_instance_thread_deinit,
 				__rrr_instance_thread_preload,
 				node->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
@@ -1307,6 +1342,47 @@ int rrr_instances_create_and_start_threads (
 		return ret;
 }
 
+void rrr_instance_collection_run_init_fail_cb (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	__rrr_instance_deinit(thread_data);
+}
+
+struct rrr_instance_collection_run_deinit_periodic_callback_data {
+	struct rrr_instance_runtime_data **runtime_data_ptr;
+	int count;
+};
+
+static int __rrr_instance_collection_run_deinit_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_instance_collection_run_deinit_periodic_callback_data *callback_data = arg;
+
+	int complete_count = 0;
+
+	for (int i = 0; i < callback_data->count; i++) {
+		struct rrr_instance_runtime_data *thread_data = callback_data->runtime_data_ptr[i];
+
+		if (thread_data->deinit_complete) {
+			complete_count++;
+		}
+		else {
+			__rrr_instance_deinit(thread_data);
+		}
+	}
+
+	if (complete_count < callback_data->count) {
+		RRR_MSG_1("Not all instances have completed deinit yet (%i/%i are complete)\n",
+			complete_count, callback_data->count);
+	}
+	else {
+		RRR_MSG_1("Deinit complete for all %i instances\n",
+			callback_data->count);
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
+}
+
 int rrr_instance_collection_run (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
@@ -1323,6 +1399,7 @@ int rrr_instance_collection_run (
 	struct rrr_instance_runtime_data *runtime_data = NULL;
 	struct rrr_instance_runtime_data **runtime_data_ptr = NULL;
 	struct rrr_thread *thread = NULL;
+	rrr_event_receiver_handle events_handle_master;
 	rrr_event_receiver_handle events_handle;
 	int i;
 
@@ -1334,6 +1411,16 @@ int rrr_instance_collection_run (
 	if ((runtime_data_ptr = rrr_allocate_zero(sizeof(*runtime_data_ptr) * RRR_LL_COUNT(instances))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
+		goto out_destroy;
+	}
+
+	if ((ret = rrr_event_receiver_new (
+			&events_handle_master,
+			events,
+			"master",
+			runtime_data_ptr
+	)) != 0) {
+		RRR_MSG_0("Failed to create master receiver handle in %s\n", __func__);
 		goto out_destroy;
 	}
 
@@ -1361,7 +1448,6 @@ int rrr_instance_collection_run (
 				thread_collection,
 				__rrr_instance_thread_init,
 				NULL,
-				__rrr_instance_thread_deinit,
 				__rrr_instance_thread_preload,
 				instance->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
@@ -1417,7 +1503,10 @@ int rrr_instance_collection_run (
 
 	rrr_thread_collection_signal_start_no_procedure_all(thread_collection);
 
-	if ((ret = rrr_thread_collection_init_all(thread_collection)) != 0) {
+	if ((ret = rrr_thread_collection_init_all (
+			thread_collection,
+			rrr_instance_collection_run_init_fail_cb
+	)) != 0) {
 		RRR_MSG_0("Error while initializing all instances in single thread mode\n");
 		ret = 1;
 		goto out_destroy;
@@ -1428,18 +1517,54 @@ int rrr_instance_collection_run (
 
 	if ((ret = rrr_event_dispatch (events)) != 0) {
 		RRR_MSG_0("Error returned from dispatch in single thread mode\n");
-		goto out_deinit;
+		goto out_destroy;
 	}
 
-	RRR_DBG_1("Event loop complete in single thread mode\n");
+	RRR_DBG_1("Event loop complete in single thread mode, running deinit on %i instances\n",
+		RRR_LL_COUNT(instances));
 
-	goto out_deinit;
-	out_deinit:
-		rrr_thread_collection_deinit_all(thread_collection);
+	// Run deinit on all instances once. This will remove events from modules without
+	// shutdown procedure and which otherwise could disrupt deinit dispatch. Dispatch
+	// is started if not all instances completely deinits the first loop.
+
+	int complete_count = 0;
+	for (int i = 0; i < RRR_LL_COUNT(instances); i++) {
+		struct rrr_instance_runtime_data *thread_data = runtime_data_ptr[i];
+
+		__rrr_instance_deinit(thread_data);
+
+		if (thread_data->deinit_complete)
+			complete_count++;
+	}
+
+	if (complete_count < RRR_LL_COUNT(instances)) {
+		RRR_DBG_1("Deinit complete for %i/%i instances, staring deinit dispatch\n", 
+			complete_count, RRR_LL_COUNT(instances));
+
+		if (rrr_event_function_periodic_set (
+				events,
+				events_handle_master,
+				200 * 1000, // 200 ms
+				__rrr_instance_collection_run_deinit_periodic
+		) != 0) {
+			RRR_BUG("BUG: Failed to create periodic function in %s, cannot continue.\n", __func__);
+		}
+
+		if (rrr_event_dispatch (events) != 0) {
+			RRR_BUG("BUG: Error returned from deinit dispatch in %s, cannot continue.\n", __func__);
+		}
+	}
+	else {
+		RRR_DBG_1("Deinit complete for all %i instances\n", 
+			RRR_LL_COUNT(instances));
+	}
+
+	goto out_destroy;
 	out_destroy:
 		for (int i = 0; i < RRR_LL_COUNT(instances); i++) {
-			if (runtime_data_ptr[i] != NULL)
+			if (runtime_data_ptr[i] != NULL) {
 				__rrr_instance_runtime_data_destroy(runtime_data_ptr[i]);
+			}
 		}
 		RRR_FREE_IF_NOT_NULL(runtime_data_ptr);
 		rrr_thread_collection_destroy(NULL, thread_collection);
