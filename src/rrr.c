@@ -638,7 +638,14 @@ static int main_loop (
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
-	if ((ret = rrr_instances_create_from_config(&instances, config, module_library_paths)) != 0) {
+	if ((ret = rrr_instances_create_from_config (
+			&instances,
+			config,
+			module_library_paths,
+			cmd_exists(cmd, "single-thread", 0)
+				? RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER
+				: 0
+	)) != 0) {
 		goto out_destroy_instance_metadata;
 	}
 

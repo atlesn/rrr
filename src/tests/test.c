@@ -383,7 +383,14 @@ static int rrr_test_main_loop (
 		goto out;
 	}
 
-	if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
+	if ((ret = rrr_instances_create_from_config (
+			&instances,
+			config,
+			library_paths,
+			cmd_exists(cmd, "single-thread", 0)
+				? RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER
+				: 0
+	)) != 0) {
 		goto out_cleanup_config;
 	}
 

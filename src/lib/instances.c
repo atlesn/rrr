@@ -455,7 +455,8 @@ static int __rrr_instance_parse_method (
 }
 
 static int __rrr_instance_parse_misc (
-		struct rrr_instance *data_final
+		struct rrr_instance *data_final,
+		int mask_flags
 ) {
 	int ret = 0;
 
@@ -475,7 +476,14 @@ static int __rrr_instance_parse_misc (
 	// Default YES options
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_enable_buffer, 1);
 	if (!data->do_enable_buffer) {
-		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+		if (mask_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+			RRR_MSG_0("Warning: Not disabling buffer in current operation mode as requested by configration of instance %s. "
+				"To disable buffers, threads must be enabled to prevent lock-ups.\n",
+				INSTANCE_M_NAME(data_final));
+		}
+		else {
+			data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+		}
 	}
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("backstop", do_enable_backstop, 1);
 	if (!data->do_enable_backstop) {
@@ -1428,6 +1436,9 @@ int rrr_instance_collection_run (
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
 
+		assert (!(INSTANCE_I_MISC_FLAGS(instance) & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) &&
+			"Caller must not allow this configuration which causes lock-ups in single thread mode");
+
 		if ((runtime_data_ptr[i] = runtime_data = __rrr_instance_runtime_data_new (
 				instance,
 				config,
@@ -1575,7 +1586,8 @@ int rrr_instance_collection_run (
 int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
-		const char **library_paths
+		const char **library_paths,
+		int mask_flags
 ) {
 	int ret = 0;
 
@@ -1592,6 +1604,7 @@ int rrr_instances_create_from_config (
 
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
+
 		ret = __rrr_instance_add_senders(instances, instance);
 		if (ret != 0) {
 			RRR_MSG_0("Adding senders failed for instance %s\n",
@@ -1622,7 +1635,7 @@ int rrr_instances_create_from_config (
 				INSTANCE_M_NAME(instance));
 			goto out;
 		}
-		ret = __rrr_instance_parse_misc(instance);
+		ret = __rrr_instance_parse_misc(instance, mask_flags);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing of misc parameters failed for instance %s\n",
 				INSTANCE_M_NAME(instance));

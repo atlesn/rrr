@@ -272,7 +272,8 @@ int rrr_instance_collection_run (
 int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_collection *config,
-		const char **library_paths
+		const char **library_paths,
+		int mask_flags
 );
 int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 		unsigned int *delivery_entry_count,
