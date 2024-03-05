@@ -208,7 +208,10 @@ static void __test_event_poll_cb (
 		return;
 	}
 
-	data->loop_i++;
+	if (data->loop_i++ == RRR_TEST_TYPE_ARRAY_LOOP_COUNT) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+		return;
+	}
 }
 
 static int __test_init_poll_loop (
