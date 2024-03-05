@@ -132,6 +132,9 @@ struct rrr_thread {
 	int (*init)(struct rrr_thread *);
 	int (*run)(struct rrr_thread *);
 
+	// Check for global stop signals
+	volatile int *encourage_stop;
+
 	// Cleanup control
 	volatile int started;
 
@@ -147,6 +150,11 @@ int rrr_thread_managed_data_push (
 		struct rrr_thread *thread,
 		void *data,
 		void (*destroy)(void *data)
+);
+
+void rrr_thread_signal_set (
+		struct rrr_thread *thread,
+		uint32_t signal
 );
 
 static inline int rrr_thread_signal_check (
@@ -197,15 +205,17 @@ static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 }
 
 /* Threads should check this once in awhile to see if it should exit,
- * set by watchdog after it detects kill signal. */
+ * set by watchdog after it detects kill signal or by global value. */
 static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thread) {
-	if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP))
+	if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP) || *thread->encourage_stop) {
+		rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP);
 		return RRR_THREAD_STOP;
+	}
 	return 0;
 }
 
 static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(struct rrr_thread *thread) {
-	if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP))
+	if (rrr_thread_signal_encourage_stop_check(thread))
 		return RRR_THREAD_STOP;
 	rrr_thread_watchdog_time_update(thread);
 	return 0;
@@ -215,10 +225,6 @@ static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_tim
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer((struct rrr_thread *) arg);
 }
 
-void rrr_thread_signal_set (
-		struct rrr_thread *thread,
-		uint32_t signal
-);
 void rrr_thread_signal_wait_busy (
 		struct rrr_thread *thread,
 		uint32_t signal
@@ -275,7 +281,8 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
-		int (*preload_routine) (struct rrr_thread *),
+		int (*preload_routine)(struct rrr_thread *),
+		volatile int *encourage_stop,
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data

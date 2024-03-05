@@ -683,8 +683,7 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		struct rrr_event_queue *events,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
-		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		struct rrr_fork_handler *fork_handler
 ) {
 	struct rrr_instance_runtime_data *data;
 
@@ -706,7 +705,6 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		.topic_first_token = instance->topic_first_token,
 		.topic_str = instance->topic_filter,
 		.instance = instance,
-		.main_running = main_running
 	};
 
 	// Verify that instances mentioned in any routes are readers of this instance
@@ -961,11 +959,54 @@ static void __rrr_instance_deinit (
 		struct rrr_instance_runtime_data *thread_data
 );
 
-static void __rrr_instance_deinit_void (
+void __rrr_instance_deinit_initial (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	int function_count;
+
+	assert(thread_data->deinit_strikes == 0);
+
+	__rrr_instance_deinit(thread_data);
+
+	if ((function_count = rrr_event_function_count(INSTANCE_D_EVENTS_H(thread_data))) > 0) {
+		RRR_BUG("BUG: %i event function%s remaining after initial deinit for instance %s\n",
+			function_count, function_count == 1 ? "" : "s", INSTANCE_D_NAME(thread_data));
+	}
+}
+
+static void __rrr_instance_deinit_force_void (
 		void *arg
 ) {
 	struct rrr_instance_runtime_data *thread_data = arg;
+
+	thread_data->deinit_strikes = RRR_INSTANCE_DEINIT_STRIKE_MAX;
+
 	__rrr_instance_deinit(thread_data);
+
+	if (!thread_data->deinit_complete) {
+		RRR_BUG("BUG: Deinit was not complete for instance %s after forced deinit in %s\n",
+			INSTANCE_D_NAME(thread_data), __func__);
+	}
+}
+
+static int __rrr_instance_thread_run_deinit_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	if (!thread_data->deinit_complete) {
+		RRR_DBG_1("Instance %s deinit not complete PID %llu, TID %llu\n",
+			thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
+		__rrr_instance_deinit(thread_data);
+	}
+	else {
+		RRR_DBG_1("Instance %s deinit complete PID %llu, TID %llu\n",
+			thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
 }
 
 static int __rrr_instance_thread_run (
@@ -980,9 +1021,32 @@ static int __rrr_instance_thread_run (
 	RRR_DBG_1("Instance %s starting event loop PID %llu, TID %llu, thread %p, event queue %p instance %p\n",
 		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, INSTANCE_D_EVENTS(thread_data), thread_data);
 
-	pthread_cleanup_push(__rrr_instance_deinit_void, thread_data);
+	pthread_cleanup_push(__rrr_instance_deinit_force_void, thread_data);
 
 	ret = rrr_event_dispatch(INSTANCE_D_EVENTS(thread_data));
+
+	RRR_DBG_1("Instance %s initial deinit loop PID %llu, TID %llu\n",
+		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
+	__rrr_instance_deinit_initial(thread_data);
+
+	if (!thread_data->deinit_complete) {
+		RRR_DBG_1("Instance %s starting deinit event loop PID %llu, TID %llu\n",
+			thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
+
+		if (rrr_event_function_periodic_set (
+				INSTANCE_D_EVENTS_H(thread_data),
+				50 * 1000, // 50 ms
+				__rrr_instance_thread_run_deinit_periodic
+		) != 0) {
+			RRR_BUG("BUG: Failed to create periodic function in %s, cannot continue.\n", __func__);
+		}
+
+		if (rrr_event_dispatch (INSTANCE_D_EVENTS(thread_data)) != 0) {
+			RRR_BUG("BUG: Error returned from deinit dispatch in %s, cannot continue.\n", __func__);
+		}
+
+	}
 
 	pthread_cleanup_pop(1);
 
@@ -1007,8 +1071,13 @@ static void __rrr_instance_deinit (
 	INSTANCE_D_MODULE(thread_data)->deinit (
 			&thread_data->deinit_complete,
 			thread_data->thread,
-			thread_data->deinit_strikes++
+			++thread_data->deinit_strikes
 	);
+
+	if (thread_data->deinit_strikes >= RRR_INSTANCE_DEINIT_STRIKE_MAX && !thread_data->deinit_complete) {
+		RRR_BUG("BUG: Instance %s thread %p did not deinit within %i strikes\n",
+			INSTANCE_D_NAME(thread_data), thread_data->thread, RRR_INSTANCE_DEINIT_STRIKE_MAX);
+	}
 
 	if (thread_data->deinit_complete) {
 		RRR_DBG_1("Instance %s thread %p deinit complete\n",
@@ -1131,7 +1200,7 @@ static int __rrr_instances_create_threads (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		volatile int *encourage_stop
 ) {
 	int ret = 0;
 
@@ -1186,8 +1255,7 @@ static int __rrr_instances_create_threads (
 				events,
 				stats,
 				message_broker,
-				fork_handler,
-				main_running
+				fork_handler
 		)) == NULL) {
 			RRR_MSG_0("Error while creating runtime data for instance %s\n",
 				INSTANCE_M_NAME(node));
@@ -1202,6 +1270,7 @@ static int __rrr_instances_create_threads (
 				__rrr_instance_thread_init,
 				__rrr_instance_thread_run,
 				__rrr_instance_thread_preload,
+				encourage_stop,
 				node->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data
@@ -1305,7 +1374,7 @@ int rrr_instances_create_and_start_threads (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		volatile int *encourage_stop
 ) {
 	int ret = 0;
 
@@ -1321,7 +1390,7 @@ int rrr_instances_create_and_start_threads (
 			stats,
 			message_broker,
 			fork_handler,
-			main_running
+			encourage_stop
 	) != 0) {
 		RRR_MSG_0("Error while creating threads\n");
 		ret = 1;
@@ -1400,7 +1469,7 @@ int rrr_instance_collection_run (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		volatile int *encourage_stop
 ) {
 	int ret = 0;
 
@@ -1410,7 +1479,7 @@ int rrr_instance_collection_run (
 	struct rrr_thread *thread = NULL;
 	rrr_event_receiver_handle events_handle_master;
 	rrr_event_receiver_handle events_handle;
-	int i, function_count, complete_count = 0;
+	int i, complete_count = 0;
 
 	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
@@ -1447,8 +1516,7 @@ int rrr_instance_collection_run (
 				events,
 				stats,
 				message_broker,
-				fork_handler,
-				main_running
+				fork_handler
 		)) == NULL) {
 			RRR_MSG_0("Error while creating runtime data for instance %s\n",
 				INSTANCE_M_NAME(instance));
@@ -1461,6 +1529,7 @@ int rrr_instance_collection_run (
 				__rrr_instance_thread_init,
 				NULL,
 				__rrr_instance_thread_preload,
+				encourage_stop,
 				instance->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data
@@ -1542,12 +1611,7 @@ int rrr_instance_collection_run (
 	for (int i = 0; i < RRR_LL_COUNT(instances); i++) {
 		struct rrr_instance_runtime_data *thread_data = runtime_data_ptr[i];
 
-		__rrr_instance_deinit(thread_data);
-
-		if ((function_count = rrr_event_function_count(INSTANCE_D_EVENTS_H(thread_data))) > 0) {
-			RRR_BUG("BUG: %i event function%s remaining after initial deinit for instance %s\n",
-				function_count, function_count == 1 ? "" : "s", INSTANCE_D_NAME(thread_data));
-		}
+		__rrr_instance_deinit_initial(thread_data);
 
 		if (thread_data->deinit_complete)
 			complete_count++;
@@ -1557,10 +1621,21 @@ int rrr_instance_collection_run (
 		RRR_DBG_1("Deinit complete for %i/%i instances, staring deinit dispatch\n", 
 			complete_count, RRR_LL_COUNT(instances));
 
+		struct rrr_instance_collection_run_deinit_periodic_callback_data callback_data = {
+			runtime_data_ptr,
+			RRR_LL_COUNT(instances)
+		};
+
+		rrr_event_receiver_callback_arg_set (
+				events,
+				events_handle_master,
+				&callback_data
+		);
+
 		if (rrr_event_function_periodic_set (
 				events,
 				events_handle_master,
-				200 * 1000, // 200 ms
+				50 * 1000, // 50 ms
 				__rrr_instance_collection_run_deinit_periodic
 		) != 0) {
 			RRR_BUG("BUG: Failed to create periodic function in %s, cannot continue.\n", __func__);

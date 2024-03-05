@@ -71,7 +71,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
 #define RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT     100000
-#define RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS        2000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -123,7 +122,6 @@ struct httpserver_data {
 
 	// Shutdown control
 	uint64_t shutdown_time;
-	int deinit_complete;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -358,25 +356,6 @@ static int httpserver_parse_config (
 
 static int httpserver_shutdown_complete (struct httpserver_data *data) {
 	return rrr_http_server_shutdown_complete(data->http_server);
-}
-
-static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
-	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct httpserver_data *data = thread_data->private_data;
-
-	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
-		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
-			INSTANCE_D_NAME(data->thread_data));
-		data->deinit_complete = 1;
-	}
-	else if (httpserver_shutdown_complete(data)) {
-		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
-			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
-		data->deinit_complete = 1;
-	}
-
-	return RRR_EVENT_OK;
 }
 
 static void httpserver_start_shutdown (struct httpserver_data *data) {
@@ -1971,8 +1950,6 @@ static int httpserver_init (RRR_INSTANCE_INIT_ARGS) {
 			httpserver_event_periodic
 	);
 
-	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
-
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 
 	return 0;
@@ -1982,35 +1959,32 @@ static int httpserver_init (RRR_INSTANCE_INIT_ARGS) {
 		return 1;
 }
 
-void httpserver_shutdown (RRR_INSTANCE_DEINIT_ARGS) {
+void httpserver_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (strike == 0) {
+	if (strike == 1) {
+		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
+
 		httpserver_start_shutdown(data);
 		rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 	}
 
-	if (httpserver_shutdown_complete(data) || data->deinit_complete) {
-		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n",
-			thread, INSTANCE_D_NAME(thread_data));
+	if (httpserver_shutdown_complete(data) ||
+	    strike >= RRR_INSTANCE_DEINIT_STRIKE_MAX
+	) {
+		RRR_DBG_1("Thread httpserver %p instance %s shutdown complete after %" PRIu64 " ms%s\n",
+			thread,
+			INSTANCE_D_NAME(data->thread_data),
+			(rrr_time_get_64() - data->shutdown_time) / 1000,
+			strike >= RRR_INSTANCE_DEINIT_STRIKE_MAX ? " (max strikes reached)" : ""
+		);
 
 		httpserver_data_cleanup(data);
 
 		*deinit_complete = 1;
 
 		return;
-	}
-
-	if (strike == 1) {
-		RRR_DBG_1 ("Thread httpserver %p instance %s registering shutdown events\n",
-			thread, INSTANCE_D_NAME(thread_data));
-
-		rrr_event_function_periodic_set (
-				INSTANCE_D_EVENTS_H(thread_data),
-				100 * 1000, // 100 ms
-				httpserver_event_shutdown
-		);
 	}
 }
 
@@ -2026,7 +2000,7 @@ void load (struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->event_functions = event_functions;
 	data->init = httpserver_init;
-	data->deinit = httpserver_shutdown;
+	data->deinit = httpserver_deinit;
 }
 
 void unload (void) {

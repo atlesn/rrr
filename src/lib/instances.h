@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH  (1<<4)
 #define RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY  (1<<5)
 
+#define RRR_INSTANCE_DEINIT_STRIKE_MAX 50
+
 struct rrr_thread;
 struct rrr_thread_collection;
 struct rrr_stats_instance;
@@ -161,7 +163,6 @@ struct rrr_instance_runtime_init_data {
 	const struct rrr_mqtt_topic_token *topic_first_token;
 	const char *topic_str;
 	struct rrr_instance *instance;
-	volatile const int *main_running;
 };
 
 struct rrr_instance_runtime_data {
@@ -215,7 +216,6 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 #define INSTANCE_D_INSTANCES(thread_data) thread_data->init_data.module->all_instances
-#define INSTANCE_D_MAIN_RUNNING(thread_data) (*thread_data->init_data.main_running)
 
 int rrr_instance_event_receiver_count_get (
 		struct rrr_instance_collection *instances
@@ -259,7 +259,7 @@ int rrr_instances_create_and_start_threads (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		volatile int *encourage_stop
 );
 int rrr_instance_collection_run (
 		struct rrr_instance_collection *instances,
@@ -269,7 +269,7 @@ int rrr_instance_collection_run (
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler,
-		volatile const int *main_running
+		volatile int *encourage_stop
 );
 int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,

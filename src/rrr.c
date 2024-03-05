@@ -107,10 +107,15 @@ const char *module_library_paths[] = {
 
 static volatile int some_fork_has_stopped = 0;
 static volatile int main_running = 1;
+static volatile int encourage_stop = 0;
 static volatile int sigusr2 = 0;
 
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
+	int ret = rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
+
+	encourage_stop = some_fork_has_stopped || !main_running;
+
+	return ret;
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -507,16 +512,27 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 	(void)(flags);
 
 	if (!main_running) {
-		RRR_DBG_1 ("Main no longer running for configuration %s\n", callback_data->config_file);
-		rrr_config_set_debuglevel_on_exit();
-		rrr_event_dispatch_exit(callback_data->queue);
+		RRR_DBG_1("Main no longer running for configuration %s\n", callback_data->config_file);
+		// Let thread framework detect this, don't stop 
+		// dispatching until deinit is complete for
+		// all instances.
 		return;
 	}
 
 	if (main_loop_periodic_maintenance (callback_data) != 0) {
-		rrr_event_dispatch_break(callback_data->queue);
-		return;
+		RRR_MSG_0("Periodic mmap maintenance failed\n");
+		goto error;
 	}
+
+	if (some_fork_has_stopped) {
+		RRR_MSG_0("One or more forks has exited\n");
+		goto error;
+	}
+
+	return;
+	error:
+		rrr_config_set_debuglevel_on_exit();
+		rrr_event_dispatch_break(callback_data->queue);
 }
 
 static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
@@ -554,7 +570,7 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 				&callback_data->stats_data->engine,
 				callback_data->message_broker,
 				callback_data->fork_handler,
-				&main_running
+				&encourage_stop
 		) != 0) {
 			goto out_event_exit;
 		}
@@ -757,7 +773,7 @@ static int main_loop (
 				&stats_data.engine,
 				message_broker,
 				fork_handler,
-				&main_running
+				&encourage_stop
 		);
 
 		RRR_DBG_1 ("Main loop finished with code %i\n", ret);

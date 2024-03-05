@@ -119,10 +119,15 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 
 static volatile int some_fork_has_stopped = 0;
 static volatile int main_running = 1;
+static volatile int encourage_stop = 0;
 static volatile int sigusr2 = 0;
 
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
+	int ret = rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
+
+	encourage_stop = some_fork_has_stopped || !main_running;
+
+	return ret;
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -428,7 +433,7 @@ static int rrr_test_main_loop (
 				stats_engine,
 				message_broker,
 				fork_handler,
-				&main_running
+				&encourage_stop
 		)) != 0) {
 			goto out_destroy_events;
 		}
@@ -442,7 +447,7 @@ static int rrr_test_main_loop (
 				stats_engine,
 				message_broker,
 				fork_handler,
-				&main_running
+				&encourage_stop
 		)) != 0) {
 			goto out_destroy_events;
 		}

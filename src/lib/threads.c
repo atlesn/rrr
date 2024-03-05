@@ -728,7 +728,7 @@ static void *__rrr_thread_watchdog_entry (
 
 	RRR_DBG_8 ("Watchdog %p for %s/%p start signals received\n", self_thread, thread->name, thread);
 
-	if (rrr_thread_signal_check(self_thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
+	if (rrr_thread_signal_encourage_stop_check(self_thread)) {
 		RRR_DBG_8 ("Watchdog %p for %s/%p, no startup grace as encourage stop signal is set\n",
 			self_thread, thread->name, thread);
 	}
@@ -750,7 +750,7 @@ static void *__rrr_thread_watchdog_entry (
 		uint64_t nowtime = rrr_time_get_64();
 
 		// Main might try to stop the thread
-		if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
+		if (rrr_thread_signal_encourage_stop_check(thread)) {
 			RRR_DBG_8 ("Watchdog %p for %s/%p, thread received encourage stop\n", self_thread, thread->name, thread);
 			break;
 		}
@@ -902,7 +902,8 @@ static int __rrr_thread_wait_for_signal_and_init (
 	*encourage_stop = 0;
 
 	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
-	if (rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
+
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
 		RRR_DBG_8("Thread %p/%s received encourage stop before initializing, exiting\n", thread, thread->name);
 		*encourage_stop = 1;
 		goto out;
@@ -1027,6 +1028,7 @@ static int __rrr_thread_allocate (
 		struct rrr_thread **target_wd,
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
+		volatile int *encourage_stop,
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1053,6 +1055,7 @@ static int __rrr_thread_allocate (
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->init = init;
 	thread->run = run;
+	thread->encourage_stop = encourage_stop;
 	thread->private_data = private_data;
 
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
@@ -1075,6 +1078,8 @@ static int __rrr_thread_allocate (
 	sprintf(thread->watchdog->name, "WD: ");
 	sprintf(thread->watchdog->name + strlen(thread->watchdog->name), "%s", name);
 
+	thread->watchdog->encourage_stop = encourage_stop;
+
 	*target = thread;
 	*target_wd = thread->watchdog;
 
@@ -1093,6 +1098,7 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		int (*init)(struct rrr_thread *),
 		int (*run)(struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
+		volatile int *encourage_stop,
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1106,6 +1112,7 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 			&thread_wd,
 			init,
 			run,
+			encourage_stop,
 			name,
 			watchdog_timeout_us,
 			private_data
