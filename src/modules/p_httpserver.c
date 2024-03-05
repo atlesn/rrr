@@ -2004,6 +2004,8 @@ void httpserver_shutdown (RRR_INSTANCE_DEINIT_ARGS) {
 		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n",
 			thread, INSTANCE_D_NAME(thread_data));
 
+		httpserver_data_cleanup(data);
+
 		*deinit_complete = 1;
 	}
 }
