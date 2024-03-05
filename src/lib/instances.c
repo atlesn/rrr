@@ -1006,7 +1006,8 @@ static void __rrr_instance_deinit (
 
 	INSTANCE_D_MODULE(thread_data)->deinit (
 			&thread_data->deinit_complete,
-			thread_data->thread
+			thread_data->thread,
+			thread_data->deinit_strikes++
 	);
 
 	if (thread_data->deinit_complete) {
@@ -1409,7 +1410,7 @@ int rrr_instance_collection_run (
 	struct rrr_thread *thread = NULL;
 	rrr_event_receiver_handle events_handle_master;
 	rrr_event_receiver_handle events_handle;
-	int i;
+	int i, function_count, complete_count = 0;
 
 	if ((ret = rrr_thread_collection_new (&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
@@ -1538,11 +1539,15 @@ int rrr_instance_collection_run (
 	// shutdown procedure and which otherwise could disrupt deinit dispatch. Dispatch
 	// is started if not all instances completely deinits the first loop.
 
-	int complete_count = 0;
 	for (int i = 0; i < RRR_LL_COUNT(instances); i++) {
 		struct rrr_instance_runtime_data *thread_data = runtime_data_ptr[i];
 
 		__rrr_instance_deinit(thread_data);
+
+		if ((function_count = rrr_event_function_count(INSTANCE_D_EVENTS_H(thread_data))) > 0) {
+			RRR_BUG("BUG: %i event function%s remaining after initial deinit for instance %s\n",
+				function_count, function_count == 1 ? "" : "s", INSTANCE_D_NAME(thread_data));
+		}
 
 		if (thread_data->deinit_complete)
 			complete_count++;

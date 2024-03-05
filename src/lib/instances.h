@@ -55,7 +55,8 @@ struct rrr_instance_config_collection;
 
 #define RRR_INSTANCE_DEINIT_ARGS              \
     volatile int *deinit_complete,            \
-    struct rrr_thread *thread
+    struct rrr_thread *thread,                \
+    int strike
 
 struct rrr_instance {
 	RRR_LL_NODE(struct rrr_instance);
@@ -193,6 +194,7 @@ struct rrr_instance_runtime_data {
 	// Shutdown control
 	volatile int init_complete;
 	volatile int deinit_complete;
+	volatile int deinit_strikes;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler

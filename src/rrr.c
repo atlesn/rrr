@@ -358,15 +358,17 @@ struct main_loop_event_callback_data {
 	struct rrr_fork_handler *fork_handler;
 	const char *config_file;
 	struct rrr_event_queue *queue;
+	rrr_event_receiver_handle queue_handle;
 };
 
 static void main_loop_close_sockets_except (
 		int stats_socket,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle queue_h
 ) {
 	int fds[RRR_EVENT_QUEUE_FD_MAX + 1];
 	size_t fds_count;
-	rrr_event_queue_fds_get (fds, &fds_count, queue);
+	rrr_event_queue_fds_get (fds, &fds_count, queue, queue_h);
 
 	fds[fds_count++] = stats_socket;
 
@@ -538,7 +540,11 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 	//        bugtrap.
 
 	if (*(callback_data->collection) == NULL) {
-		main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
+		main_loop_close_sockets_except (
+				callback_data->stats_data->engine.socket,
+				callback_data->queue,
+				callback_data->queue_handle
+		);
 
 		if (rrr_instances_create_and_start_threads (
 				callback_data->collection,
@@ -716,7 +722,8 @@ static int main_loop (
 		message_broker,
 		fork_handler,
 		config_file,
-		queue
+		queue,
+		queue_handle
 	};
 
 	if (single_thread) {

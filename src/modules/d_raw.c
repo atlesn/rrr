@@ -205,6 +205,8 @@ static void raw_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
 		thread, INSTANCE_D_NAME(thread_data));
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
 	*deinit_complete =  1;
 }
 

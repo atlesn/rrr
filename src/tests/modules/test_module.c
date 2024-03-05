@@ -230,6 +230,8 @@ void test_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	if (data->test_data.cleanup != NULL) {
 		data->test_data.cleanup(data->test_data.cleanup_arg);
 	}
@@ -247,6 +249,8 @@ void test_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	}
 
 	data_cleanup(data);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
 }

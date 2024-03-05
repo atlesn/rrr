@@ -961,8 +961,18 @@ int rrr_cmodule_worker_main (
 	memset(event_fds, '\0', sizeof(event_fds));
 
 	// We need to preserve the open event signal sockets, any other FDs are closed
-	rrr_event_queue_fds_get(event_fds, &event_fds_count, worker->event_queue_parent);
-	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
+	rrr_event_queue_fds_get (
+			event_fds,
+			&event_fds_count,
+			worker->event_queue_parent,
+			worker->event_queue_parent_handle
+	);
+	rrr_event_queue_fds_get (
+			event_fds + event_fds_count,
+			&event_fds_count,
+			worker->event_queue_worker,
+			worker->event_queue_worker_handle
+	);
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	rrr_event_hook_set(__rrr_cmodule_worker_event_hook, worker);

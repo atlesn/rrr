@@ -508,6 +508,8 @@ static void voltmonitor_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	usb_cleanup(data);
 	data_cleanup(data);
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
 	*deinit_complete = 1;
 }
 

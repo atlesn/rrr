@@ -159,6 +159,8 @@ static void buffer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	(void)(data);
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
 	*deinit_complete = 1;
 }
 

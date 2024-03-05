@@ -105,6 +105,10 @@ int rrr_event_receiver_new (
 		const char *name,
 		void *callback_arg
 );
+void rrr_event_receiver_reset (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+);
 void rrr_event_receiver_callback_arg_set (
 		struct rrr_event_queue *queue,
 		rrr_event_receiver_handle receiver,
@@ -126,7 +130,12 @@ int rrr_event_queue_reinit (
 void rrr_event_queue_fds_get (
 		int fds[RRR_EVENT_QUEUE_FD_MAX],
 		size_t *fds_count,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+);
+int rrr_event_function_count (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
 );
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,

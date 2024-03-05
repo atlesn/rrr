@@ -107,19 +107,38 @@ int rrr_event_queue_reinit (
 void rrr_event_queue_fds_get (
 		int fds[RRR_EVENT_QUEUE_FD_MAX],
 		size_t *fds_count,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
 ) {
-	size_t sum = 0;
-	for (rrr_event_receiver_handle receiver_h = 0; receiver_h < queue->receiver_count; receiver_h++) {
-		SET_RECEIVER();
-		size_t wpos = 0;
-		for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-			fds[wpos++] = RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd);
-			fds[wpos++] = RRR_SOCKET_EVENTFD_WRITE_FD(&receiver->functions[i].eventfd);
-		}
-		sum += wpos;
+	size_t wpos = 0;
+
+	SET_RECEIVER();
+	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		fds[wpos++] = RRR_SOCKET_EVENTFD_READ_FD(&receiver->functions[i].eventfd);
+		fds[wpos++] = RRR_SOCKET_EVENTFD_WRITE_FD(&receiver->functions[i].eventfd);
 	}
-	*fds_count = sum;
+	*fds_count = wpos;
+}
+
+int rrr_event_function_count (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+) {
+	SET_RECEIVER();
+
+	int count = 0;
+
+	for (int i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		if (receiver->functions[i].function != NULL) {
+			count++;
+		}
+	}
+
+	if (receiver->callback_periodic) {
+		count++;
+	}
+
+	return count;
 }
 
 void rrr_event_function_set (
@@ -693,21 +712,54 @@ void rrr_event_receiver_callback_arg_set (
 	receiver->callback_arg = callback_arg;
 }
 
-static void __rrr_event_receiver_destroy (
-		struct rrr_event_receiver *receiver
+void rrr_event_receiver_reset (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
 ) {
+	SET_RECEIVER();
+
+	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		struct rrr_event_function *function = &receiver->functions[i];
+
+		if (function->signal_event != NULL) {
+			event_del(function->signal_event);
+		}
+
+		function->function = NULL;
+		function->function_arg = NULL;
+		function->callback_pause = NULL;
+		function->callback_pause_arg = NULL;
+		function->is_paused = 0;
+	}
+
+	event_del(receiver->periodic_event);
+	receiver->callback_periodic = NULL;
+
+	event_del(receiver->unpause_event);
+}
+
+static void __rrr_event_receiver_cleanup (
+		struct rrr_event_queue *queue,
+		rrr_event_receiver_handle receiver_h
+) {
+	SET_RECEIVER();
+
 	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		rrr_socket_eventfd_cleanup(&receiver->functions[i].eventfd);
 		if (receiver->functions[i].signal_event != NULL) {
 			event_free(receiver->functions[i].signal_event);
 		}
 	}
+
 	if (receiver->periodic_event != NULL) {
 		event_free(receiver->periodic_event);
 	}
+
 	if (receiver->unpause_event != NULL) {
 		event_free(receiver->unpause_event);
 	}
+
+	memset(receiver, '\0', sizeof(*receiver));
 }
 
 void rrr_event_queue_destroy (
@@ -716,8 +768,8 @@ void rrr_event_queue_destroy (
 	RRR_DBG_9_PRINTF("EQ DSTY %p\n", queue);
 
 	if (queue->receiver_max > 0) {
-		for (size_t i = 0; i < queue->receiver_count; i++) {
-			__rrr_event_receiver_destroy(queue->receivers + i);
+		for (rrr_event_receiver_handle i = 0; i < queue->receiver_count; i++) {
+			__rrr_event_receiver_cleanup(queue, i);
 		}
 		rrr_free(queue->receivers);
 		rrr_free(queue->receiver_envelopes);

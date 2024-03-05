@@ -547,6 +547,8 @@ static void journal_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	// This cleanup must happen after the hook is unregistered
 	journal_delivery_lock_cleanup(data);
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
 	*deinit_complete = 1;
 }
 

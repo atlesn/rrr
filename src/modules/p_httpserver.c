@@ -123,7 +123,7 @@ struct httpserver_data {
 
 	// Shutdown control
 	uint64_t shutdown_time;
-	volatile int *deinit_complete;
+	int deinit_complete;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -368,12 +368,12 @@ static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
 		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
 			INSTANCE_D_NAME(data->thread_data));
-		*data->deinit_complete = 1;
+		data->deinit_complete = 1;
 	}
 	else if (httpserver_shutdown_complete(data)) {
 		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
 			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
-		*data->deinit_complete = 1;
+		data->deinit_complete = 1;
 	}
 
 	return RRR_EVENT_OK;
@@ -1986,11 +1986,23 @@ void httpserver_shutdown (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
-	httpserver_start_shutdown(data);
+	if (strike == 0) {
+		httpserver_start_shutdown(data);
+		rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+	}
 
-	if (!httpserver_shutdown_complete(data)) {
-		data->deinit_complete = deinit_complete;
+	if (httpserver_shutdown_complete(data) || data->deinit_complete) {
+		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
+		httpserver_data_cleanup(data);
+
+		*deinit_complete = 1;
+
+		return;
+	}
+
+	if (strike == 1) {
 		RRR_DBG_1 ("Thread httpserver %p instance %s registering shutdown events\n",
 			thread, INSTANCE_D_NAME(thread_data));
 
@@ -1999,14 +2011,6 @@ void httpserver_shutdown (RRR_INSTANCE_DEINIT_ARGS) {
 				100 * 1000, // 100 ms
 				httpserver_event_shutdown
 		);
-	}
-	else {
-		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n",
-			thread, INSTANCE_D_NAME(thread_data));
-
-		httpserver_data_cleanup(data);
-
-		*deinit_complete = 1;
 	}
 }
 

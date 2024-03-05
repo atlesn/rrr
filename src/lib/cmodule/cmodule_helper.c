@@ -945,6 +945,7 @@ void rrr_cmodule_helper_deinit (
 ) {
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 	rrr_event_collection_clear(&cmodule->helper_events);
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 }
 
 int rrr_cmodule_helper_parse_config (
