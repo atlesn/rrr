@@ -70,7 +70,6 @@ struct voltmonitor_data {
 	rrr_setting_double usb_calibration;
 	rrr_setting_uint usb_channel;
 
-	int do_inject_only;
 	int do_spawn_test_measurements;
 
 	char *msg_topic;
@@ -332,7 +331,6 @@ static int parse_config(struct voltmonitor_data *data, struct rrr_instance_confi
 	}
 
 	// Undocumented parameters, used in test suite
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
 
 	out:
@@ -429,46 +427,6 @@ static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
 	return ret;
 }
 
-static int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_holder *entry) {
-	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
-
-	struct rrr_msg_msg *message = entry->message;
-
-	int ret = 0;
-
-	struct rrr_array array_tmp = {0};
-
-	if (!MSG_IS_ARRAY(message)) {
-		RRR_BUG("Message to voltmonitor inject was not an array\n");
-	}
-
-	uint16_t array_version_dummy;
-	if (rrr_array_message_append_to_array(&array_version_dummy, &array_tmp, message) != 0) {
-		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
-	}
-
-	int64_t value = 0;
-	if (rrr_array_get_value_signed_64_by_tag(&value, &array_tmp, "measurement", 0)) {
-		RRR_BUG("Could not get value from array in voltmonitor inject\n");
-	}
-
-	if (value < INT_MIN || value > INT_MAX) {
-		RRR_BUG("Bug: voltmonitor instance %s inject value %" PRIi64 " overflow or underflow\n",
-				INSTANCE_D_NAME(thread_data), value);
-	}
-
-	RRR_DBG_1("voltmonitor instance %s inject value %" PRIi64 "\n",
-			INSTANCE_D_NAME(thread_data), value);
-
-	if (voltmonitor_spawn_message(data, (int) value) != 0) {
-		RRR_BUG("Error while spawning message in voltmonitor inject\n");
-	}
-
-	rrr_array_clear(&array_tmp);
-	rrr_msg_holder_unlock(entry);
-	return ret;
-}
-
 static int voltmonitor_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -481,12 +439,10 @@ static int voltmonitor_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		goto out;
 	}
 
-	if (!data->do_inject_only) {
-		if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
-			RRR_MSG_0("Error when spawning message in averager instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			return RRR_EVENT_ERR;
-		}
+	if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
+		RRR_MSG_0("Error when spawning message in averager instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_ERR;
 	}
 
 	out:
@@ -494,7 +450,7 @@ static int voltmonitor_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 }
 
 
-static int voltmonitor_init (struct rrr_thread *thread) {
+static int voltmonitor_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -539,7 +495,7 @@ static int voltmonitor_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void voltmonitor_deinit(struct rrr_thread *thread) {
+static void voltmonitor_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -547,31 +503,26 @@ static void voltmonitor_deinit(struct rrr_thread *thread) {
 
 	usb_cleanup(data);
 	data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	inject,
-	voltmonitor_init,
-	voltmonitor_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "voltmonitor";
 
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void construct(void) {
 #ifdef RRR_WITH_USB
 	usb_init();
 #endif
 }
 
-void init(struct rrr_instance_module_data *data) {
-		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_SOURCE;
-		data->operations = module_operations;
-		data->private_data = NULL;
+void load (struct rrr_instance_module_data *data) {
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_SOURCE;
+	data->private_data = NULL;
+	data->init = voltmonitor_init;
+	data->deinit = voltmonitor_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 }
 

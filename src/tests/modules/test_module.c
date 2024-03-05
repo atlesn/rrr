@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/event/event_collection_struct.h"
 #include "../../lib/event/event_collection.h"
 #include "../../lib/instances.h"
+#include "../../lib/threads.h"
 #include "../../lib/modules.h"
 #include "../../lib/messages/msg_msg.h"
 #include "../../lib/instance_config.h"
@@ -123,7 +124,7 @@ int test_dummy_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return RRR_EVENT_OK;
 }
 
-int test_init (struct rrr_thread *thread) {
+int test_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -225,7 +226,7 @@ int test_init (struct rrr_thread *thread) {
 		return ret;
 }
 
-void test_deinit (struct rrr_thread *thread) {
+void test_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -246,29 +247,20 @@ void test_deinit (struct rrr_thread *thread) {
 	}
 
 	data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		test_init,
-		test_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "test_module";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_DEADEND;
-	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->init = test_init;
+	data->deinit = test_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy configuration test module\n");
 }

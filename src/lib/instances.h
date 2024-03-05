@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "instance_friends.h"
 #include "discern_stack.h"
-#include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
 #include "util/linked_list.h"
@@ -37,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_MISC_OPTIONS_METHODS_DIRECT_DISPATCH  (1<<4)
 #define RRR_INSTANCE_MISC_OPTIONS_METHODS_DOUBLE_DELIVERY  (1<<5)
 
+struct rrr_thread;
+struct rrr_thread_collection;
 struct rrr_stats_instance;
 struct rrr_cmodule;
 struct rrr_fork_handler;
@@ -46,8 +47,19 @@ struct rrr_message_broker;
 struct rrr_mqtt_topic_token;
 struct rrr_instance_config_collection;
 
+#define RRR_INSTANCE_PRELOAD_ARGS             \
+    struct rrr_thread *thread
+
+#define RRR_INSTANCE_INIT_ARGS                \
+    struct rrr_thread *thread
+
+#define RRR_INSTANCE_DEINIT_ARGS              \
+    volatile int *shutdown_complete,          \
+    struct rrr_thread *thread
+
 struct rrr_instance {
 	RRR_LL_NODE(struct rrr_instance);
+
 	// Managed by this struct
 	struct rrr_instance_module_data *module_data;
 	struct rrr_instance_friend_collection senders;
@@ -62,9 +74,12 @@ struct rrr_instance {
 	unsigned long int senders_count;
 	int misc_flags;
 
-	// Shortcuts
+	// Not managed by this struct
 	struct rrr_instance_config_data *config;
 	struct rrr_thread *thread;
+
+	// Shutdown control
+	volatile int shutdown_complete;
 };
 
 #define INSTANCE_I_ROUTES(instance) (&instance->routes)
@@ -85,16 +100,42 @@ struct rrr_instance_event_functions {
 };
 
 struct rrr_instance_module_data {
+	// Managed data (modules are shared between instances,
+	// last instance to be destroyed unloads module)
+	struct rrr_module_load_data module_load_data;
+
+	// Unmanaged data and shortcuts
 	const char *instance_name;
-	const char *module_name;
-	unsigned int type;
-	int want_event_dispatch;
-	struct rrr_module_operations operations;
-	struct rrr_instance_event_functions event_functions;
-	void *dl_ptr;
-	void *private_data;
-	void (*unload)(void);
 	struct rrr_instance_collection *all_instances;
+
+	// ===================================================
+	// Parameters below are set by module load() function
+	// ===================================================
+
+	struct rrr_instance_event_functions event_functions;
+	unsigned int type;
+	const char *module_name;
+	void *private_data;
+
+	// Run before thread is started in main thread context
+	int (*preload)(RRR_INSTANCE_PRELOAD_ARGS);
+
+	// Instance lifetime:
+	//
+	// 1. Instance adds required events to the event
+	//    queue during init().
+	// 2. Instance framework runs event dispatch until something
+	//    stops dispatching.
+	// 3. deinit() is run. The instance may remove events and add
+	//    shutdown procedure events, and if so, it does not set
+	//    shutdown_complete. If no shutdown procedure is requried,
+	//    shutdown_complete is set to 1 immediately.
+	// 4. Dispatch is run again during which instance framework
+	//    checks for all shutdown_complete of all instances to be
+	//    set to 1, then dispatching stops.
+
+	int (*init)(RRR_INSTANCE_INIT_ARGS);
+	void (*deinit)(RRR_INSTANCE_DEINIT_ARGS);
 };
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
@@ -196,11 +237,6 @@ void rrr_instance_collection_clear (
 );
 int rrr_instance_collection_new (
 		struct rrr_instance_collection **target
-);
-int rrr_instance_load_and_save (
-		struct rrr_instance_collection *instances,
-		struct rrr_instance_config_data *instance_config,
-		const char **library_paths
 );
 struct rrr_instance *rrr_instance_find (
 		struct rrr_instance_collection *target,

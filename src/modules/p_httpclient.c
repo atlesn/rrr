@@ -1826,7 +1826,7 @@ static int httpclient_entry_choose_method (
 	return ret;
 }
 
-static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int httpclient_poll_callback(RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
 	const struct rrr_msg_msg *message = entry->message;
@@ -2579,7 +2579,7 @@ static void httpclient_data_init (
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 }
 
-static int httpclient_init (struct rrr_thread *thread) {
+static int httpclient_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -2743,22 +2743,16 @@ static int httpclient_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void httpclient_deinit (struct rrr_thread *thread) {
+static void httpclient_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread httpclient %p exiting\n", thread);
 
 	httpclient_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		httpclient_init,
-		httpclient_deinit
-};
+	*shutdown_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	httpclient_event_broker_data_available
@@ -2766,17 +2760,15 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "httpclient";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = httpclient_init;
+	data->deinit = httpclient_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy httpclient module\n");
 }

@@ -442,7 +442,7 @@ static int perl5_fork (void *arg) {
 	return ret;
 }
 
-static int perl5_init (struct rrr_thread *thread) {
+static int perl5_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -466,7 +466,7 @@ static int perl5_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void perl5_deinit (struct rrr_thread *thread) {
+static void perl5_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -476,30 +476,22 @@ static void perl5_deinit (struct rrr_thread *thread) {
 	rrr_cmodule_helper_deinit(thread_data);
 
 	data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		perl5_init,
-		perl5_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "perl5";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
-	data->operations = module_operations;
 	data->event_functions = rrr_cmodule_helper_event_functions;
+	data->init = perl5_init;
+	data->deinit = perl5_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy perl5 module\n");
 }
 

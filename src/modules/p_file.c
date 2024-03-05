@@ -1969,7 +1969,7 @@ static int file_send_return_callback (
 	return 0;
 }
 
-static int file_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int file_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct file_data *data = thread_data->private_data;
 
@@ -2047,7 +2047,7 @@ static int file_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return RRR_EVENT_OK;
 }
 
-static int file_init (struct rrr_thread *thread) {
+static int file_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct file_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -2242,22 +2242,16 @@ static int file_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void file_deinit (struct rrr_thread *thread) {
+static void file_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct file_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread file instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 
 	file_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	file_init,
-	file_deinit
-};
+	*shutdown_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	file_event_broker_data_available
@@ -2265,16 +2259,14 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "file";
 
-__attribute__((constructor)) void load(void) {
+void load (struct rrr_instance_module_data *data) {
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
+	data->private_data = NULL;
+	data->event_functions = event_functions;
+	data->init = file_init;
+	data->deinit = file_deinit;
 }
 
-void init(struct rrr_instance_module_data *data) {
-		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_FLEXIBLE;
-		data->operations = module_operations;
-		data->private_data = NULL;
-		data->event_functions = event_functions;
-}
-
-void unload(void) {
+void unload (void) {
 }

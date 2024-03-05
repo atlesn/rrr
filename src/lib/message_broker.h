@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "fifo_protected.h"
-#include "poll_helper.h"
+#include "poll_defines.h"
 #include "util/linked_list.h"
 #include "message_holder/message_holder.h"
 #include "event/event.h"
@@ -143,7 +143,7 @@ int rrr_message_broker_poll_delete (
 		uint16_t *amount,
 		struct rrr_message_broker_costumer *self,
 		int broker_poll_flags,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg
 );
 int rrr_message_broker_set_ratelimit (

@@ -1370,7 +1370,7 @@ struct rrr_message_broker_read_entry_intermediate_callback_data {
 	struct rrr_message_broker_costumer *source;
 	struct rrr_message_broker_costumer *self;
 	int broker_poll_flags;
-	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	int (*callback)(RRR_POLL_CALLBACK_SIGNATURE);
 	void *callback_arg;
 };
 
@@ -1609,7 +1609,7 @@ int rrr_message_broker_poll_delete (
 		uint16_t *amount,
 		struct rrr_message_broker_costumer *self,
 		int broker_poll_flags,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;

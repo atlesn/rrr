@@ -73,7 +73,7 @@ struct averager_data {
 #define RRR_DEFAULT_AVERAGER_INTERVAL_S 10
 
 // Messages when polling from sender comes in here
-static int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int averager_poll_callback(RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_msg_msg *message = entry->message;
 
 	struct rrr_instance_runtime_data *thread_data = arg;
@@ -496,7 +496,7 @@ static int averager_parse_config (struct averager_data *data, struct rrr_instanc
 	return ret;
 }
 
-static int averager_init(struct rrr_thread *thread) {
+static int averager_init(RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -558,22 +558,16 @@ static int averager_init(struct rrr_thread *thread) {
 	return 1;
 }
 
-static void averager_deinit(struct rrr_thread *thread) {
+static void averager_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread);
 
 	averager_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	averager_init,
-	averager_deinit
-};
+	*shutdown_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	averager_event_broker_data_available
@@ -581,18 +575,16 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "averager";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = averager_init;
+	data->deinit = averager_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy averager module\n");
 }
 

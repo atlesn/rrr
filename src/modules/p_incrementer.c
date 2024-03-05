@@ -536,7 +536,7 @@ static int incrementer_process_id (
 	return ret;
 }
 
-static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int incrementer_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct incrementer_data *data = thread_data->private_data;
 
@@ -654,7 +654,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	return ret;
 }
 
-static int incrementer_init (struct rrr_thread *thread) {
+static int incrementer_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct incrementer_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -689,41 +689,33 @@ static int incrementer_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void incrementer_deinit (struct rrr_thread *thread) {
+static void incrementer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct incrementer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread incrementer %p exiting\n", thread);
 
 	incrementer_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		incrementer_init,
-		incrementer_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "incrementer";
-
-__attribute__((constructor)) void load(void) {
-}
 
 static struct rrr_instance_event_functions event_functions = {
 	incrementer_event_broker_data_available
 };
 
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = incrementer_init;
+	data->deinit = incrementer_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy incrementer module\n");
 }
 

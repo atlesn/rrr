@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "instance_friends.h"
-#include "modules.h"
+#include "poll_defines.h"
 #include "util/linked_list.h"
 
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_NOT_FOUND 2
 
 struct rrr_message_broker;
+struct rrr_instance_runtime_data;
 
 struct rrr_poll_helper_counters {
 	uint64_t total_message_count;
@@ -57,13 +58,13 @@ struct rrr_poll_helper_counters {
 int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg
 );
 int rrr_poll_do_poll_delete (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE)
 );
 int rrr_poll_add_senders_to_broker (
 		struct rrr_instance **faulty_sender,

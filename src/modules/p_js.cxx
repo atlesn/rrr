@@ -542,7 +542,7 @@ static int js_main_periodic_callback(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_AR
 	return 0;
 }
 
-static int js_init (struct rrr_thread *thread) {
+static int js_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
 	struct js_data *data = (struct js_data *) thread_data->private_memory;
 
@@ -574,7 +574,7 @@ static int js_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void js_deinit (struct rrr_thread *thread) {
+static void js_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
 	struct js_data *data = (struct js_data *) thread_data->private_memory;
 
@@ -584,15 +584,9 @@ static void js_deinit (struct rrr_thread *thread) {
 	rrr_cmodule_helper_deinit(thread_data);
 
 	js_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		js_init,
-		js_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "cmodule";
 
@@ -603,8 +597,9 @@ void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
-	data->operations = module_operations;
 	data->event_functions = rrr_cmodule_helper_event_functions;
+	data->init = js_init;
+	data->deinit = js_deinit;
 }
 
 void unload(void) {

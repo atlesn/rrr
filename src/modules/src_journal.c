@@ -166,7 +166,7 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 }
 
 // Lock must be initialized before other locks start to provide correct memory fence
-static int journal_preload (struct rrr_thread *thread) {
+static int journal_preload (RRR_INSTANCE_PRELOAD_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -487,7 +487,7 @@ static int journal_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
 }
 
-static int journal_init(struct rrr_thread *thread) {
+static int journal_init(RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -535,7 +535,7 @@ out_data_cleanup:
 	return 1;
 }
 
-static void journal_deinit(struct rrr_thread *thread) {
+static void journal_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -546,27 +546,20 @@ static void journal_deinit(struct rrr_thread *thread) {
 
 	// This cleanup must happen after the hook is unregistered
 	journal_delivery_lock_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	journal_preload,
-	NULL,
-	NULL,
-	journal_init,
-	journal_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "journal";
 
-__attribute__((constructor)) void load(void) {
+void load (struct rrr_instance_module_data *data) {
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_SOURCE;
+	data->private_data = NULL;
+	data->preload = journal_preload;
+	data->init = journal_init;
+	data->deinit = journal_deinit;
 }
 
-void init(struct rrr_instance_module_data *data) {
-		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_SOURCE;
-		data->operations = module_operations;
-		data->private_data = NULL;
-}
-
-void unload(void) {
+void unload (void) {
 }

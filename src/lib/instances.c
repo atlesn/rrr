@@ -189,7 +189,7 @@ int rrr_instance_count_library_users (
 
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance_module_data *data = node->module_data;
-		if (data->dl_ptr == dl_ptr) {
+		if (data->module_load_data.dl_ptr == dl_ptr) {
 			users++;
 		}
 	RRR_LL_ITERATE_END();
@@ -201,12 +201,9 @@ void rrr_instance_unload_all (
 		struct rrr_instance_collection *instances
 ) {
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
-		struct rrr_instance_module_data *data = node->module_data;
-		int dl_users = rrr_instance_count_library_users(instances, data->dl_ptr);
-		int no_dl_unload = (dl_users > 1 ? 1 : 0);
-
-		if (!no_dl_unload) {
-			rrr_module_unload(data->dl_ptr, data->unload);
+		if (rrr_instance_count_library_users(instances, node->module_data->module_load_data.dl_ptr) == 1) {
+			node->module_data->module_load_data.unload();
+			rrr_module_unload(&node->module_data->module_load_data);
 		}
 	RRR_LL_ITERATE_END();
 }
@@ -226,97 +223,93 @@ static void __rrr_instance_destroy (
 	rrr_free(target);
 }
 
-static int __rrr_instance_new (
-		struct rrr_instance **target
+static int __rrr_instance_new_and_save (
+		struct rrr_instance_collection *instances,
+		struct rrr_instance_module_data **module_data,
+		struct rrr_instance_config_data *config
 ) {
 	int ret = 0;
 
-	struct rrr_instance *instance = rrr_allocate(sizeof(*instance));
+	struct rrr_instance *instance;
 
-	if (instance == NULL) {
-		RRR_MSG_0("Could not allocate memory for %s\n", __func__);
+	RRR_DBG_1 ("Creating instance %s\n", (*module_data)->instance_name);
+
+       	if ((instance = rrr_allocate_zero(sizeof(*instance))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	memset (instance, '\0', sizeof(*instance));
+	instance->config = config;
+	instance->module_data = *module_data;
 
-	*target = instance;
+	RRR_LL_APPEND(instances, instance);
+
+	*module_data = NULL;
 
 	out:
 	return ret;
 }
 
-static struct rrr_instance *__rrr_instance_new_and_save (
-		struct rrr_instance_collection *instances,
-		struct rrr_instance_module_data *module,
-		struct rrr_instance_config_data *config
-) {
-	RRR_DBG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
-
-	struct rrr_instance *target;
-	if (__rrr_instance_new (&target) != 0) {
-		RRR_MSG_0("Could not save instance %s\n", module->instance_name);
-		return NULL;
-	}
-
-	target->config = config;
-	target->module_data = module;
-
-	RRR_LL_APPEND(instances, target);
-
-	return target;
-}
-
-static struct rrr_instance *__rrr_instance_load_module_new_and_save (
+static int __rrr_instance_load_module_new_and_save (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_data *instance_config,
 		const char **library_paths
 ) {
-	struct rrr_instance *ret = NULL;
+	int ret = 0;
+
 	char *module_name = NULL;
+	struct rrr_instance_module_data *module_data;
+	struct rrr_module_load_data module_load_data;
 
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance_module_data *module = node->module_data;
 		if (module != NULL && strcmp(module->instance_name, instance_config->name) == 0) {
 			RRR_MSG_0("Instance '%s' can't be defined more than once\n", module->instance_name);
-			ret = NULL;
+			ret = 1;
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
 
-	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
+	if ((ret = rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module")) != 0) {
 		RRR_MSG_0("Could not find module= setting for instance %s\n", instance_config->name);
-		ret = NULL;
 		goto out;
 	}
 
-	RRR_DBG_1("Creating dynamic_data for module '%s' instance '%s'\n",
+	RRR_DBG_1("Loading module '%s' for instance '%s'\n",
 		module_name, instance_config->name);
 
-	struct rrr_module_load_data module_init_data;
-	if (rrr_module_load(&module_init_data, module_name, library_paths) != 0) {
+	if ((ret = rrr_module_load(&module_load_data, module_name, library_paths)) != 0) {
 		RRR_MSG_0 ("Module '%s' could not be loaded in %s for instance '%s'\n",
 				module_name, __func__, instance_config->name);
-		ret = NULL;
 		goto out;
 	}
 
-	struct rrr_instance_module_data *module_data = rrr_allocate(sizeof(*module_data));
-	memset(module_data, '\0', sizeof(*module_data));
+	if ((module_data = rrr_allocate_zero(sizeof(*module_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for module data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
 
-	module_init_data.init(module_data);
-	module_data->dl_ptr = module_init_data.dl_ptr;
+	module_load_data.load(module_data);
+
+	assert(module_data->init != NULL);
+	assert(module_data->deinit != NULL);
+
+	module_data->module_load_data = module_load_data;
 	module_data->instance_name = instance_config->name;
-	module_data->unload = module_init_data.unload;
 	module_data->all_instances = instances;
 
-	ret = __rrr_instance_new_and_save(instances, module_data, instance_config);
+	if ((ret = __rrr_instance_new_and_save(instances, &module_data, instance_config)) != 0) {
+		goto out_destroy_module_data;
+	}
 
+	goto out;
+	out_destroy_module_data:
+		rrr_free(module_data);
 	out:
-	RRR_FREE_IF_NOT_NULL(module_name);
-
-	return ret;
+		RRR_FREE_IF_NOT_NULL(module_name);
+		return ret;
 }
 
 struct rrr_instance *rrr_instance_find (
@@ -332,18 +325,20 @@ struct rrr_instance *rrr_instance_find (
 	return NULL;
 }
 
-int rrr_instance_load_and_save (
+static int __rrr_instance_load_and_save (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance_config_data *instance_config,
 		const char **library_paths
 ) {
-	struct rrr_instance *instance = __rrr_instance_load_module_new_and_save(instances, instance_config, library_paths);
-	if (instance == NULL || instance->module_data == NULL) {
+	int ret = 0;
+
+	if ((ret = __rrr_instance_load_module_new_and_save(instances, instance_config, library_paths)) != 0) {
 		RRR_MSG_0("Instance '%s' could not be loaded\n", instance_config->name);
-		return 1;
+		goto out; 
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int __rrr_instance_parse_topic_filter (
@@ -946,7 +941,7 @@ static int __rrr_instance_thread_init (
 	thread_data->cmodule = cmodule;
 	thread_data->stats = stats;
 
-	if ((ret = INSTANCE_D_MODULE(thread_data)->operations.init(thread)) != 0) {
+	if ((ret = INSTANCE_D_MODULE(thread_data)->init(thread)) != 0) {
 		goto out_destroy_stats;
 	}
 
@@ -979,7 +974,11 @@ static void __rrr_instance_thread_deinit (
 
 	assert(thread->init_complete);
 
-	INSTANCE_D_MODULE(thread_data)->operations.deinit(thread);
+	volatile int shutdown_complete = 0;
+
+	INSTANCE_D_MODULE(thread_data)->deinit(&shutdown_complete, thread);
+
+	assert(shutdown_complete && "Shutdown complete == 0 not implemented");
 
 	__rrr_instance_thread_intermediate_cleanup(thread);
 }
@@ -1020,8 +1019,8 @@ static int __rrr_instance_thread_preload (
 		goto out;
 	}
 
-	if (INSTANCE_D_MODULE(thread_data)->operations.preload != NULL) {
-		if ((ret = INSTANCE_D_MODULE(thread_data)->operations.preload(thread)) != 0) {
+	if (INSTANCE_D_MODULE(thread_data)->preload != NULL) {
+		if ((ret = INSTANCE_D_MODULE(thread_data)->preload(thread)) != 0) {
 			RRR_MSG_0("Preload function for module %s instance %s failed with return value %i\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), ret);
 			goto out;
@@ -1456,8 +1455,7 @@ int rrr_instances_create_from_config (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
-		ret = rrr_instance_load_and_save(instances, node, library_paths);
-		if (ret != 0) {
+		if ((ret = __rrr_instance_load_and_save(instances, node, library_paths)) != 0) {
 			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",
 				node->name);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {

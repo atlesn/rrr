@@ -926,7 +926,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 #define GET_VALUE_STR(name)          \
     GET_VALUE(name,str)
 
-static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int modbus_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct modbus_data *data = thread_data->private_data;
 
@@ -1165,7 +1165,7 @@ static int modbus_parse_config (struct modbus_data *data, struct rrr_instance_co
 	return ret;
 }
 
-static void *thread_entry_modbus (struct rrr_thread *thread) {
+void *thread_entry_modbus (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct modbus_data *data = thread_data->private_data = thread_data->private_memory;
 	RRR_DBG_1 ("modbus thread thread_data is %p\n", thread_data);
@@ -1241,51 +1241,20 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	return NULL;
 }
 
-static int modbus_inject (RRR_MODULE_INJECT_SIGNATURE) {
-	RRR_DBG_2("modbus instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
-
-	int ret = 0;
-
-	if ((ret = rrr_message_broker_clone_and_write_entry (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			message,
-			NULL
-	)) != 0) {
-		RRR_MSG_0("Error while injecting packet in modbus instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out;
-	}
-
-	out:
-	rrr_msg_holder_unlock(message);
-	return ret;
-}
-
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_modbus,
-		modbus_inject,
-		NULL,
-		NULL
-};
-
 struct rrr_instance_event_functions event_functions = {
 	modbus_event_broker_data_available
 };
 
 static const char *module_name = "modbus";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy modbus module\n");
 }
 

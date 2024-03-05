@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
+#include "../lib/threads.h"
 #include "../lib/read.h"
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
@@ -714,7 +715,7 @@ static int ip_accept_callback (
 	return ret;
 }
 
-static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int ip_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ip_data *ip_data = thread_data->private_data;
 
@@ -1745,7 +1746,7 @@ static void ip_event_setup (
 	);
 }
 
-static int ip_init (struct rrr_thread *thread) {
+static int ip_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -1840,23 +1841,17 @@ static int ip_init (struct rrr_thread *thread) {
 	return 1;
 }
 
-static void ip_deinit (struct rrr_thread *thread) {
+static void ip_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
 	ip_data_cleanup(data);
 
 	RRR_DBG_1 ("Thread ip %p instance %s exiting\n",
-			thread, INSTANCE_D_NAME(thread_data));
-}
+		thread, INSTANCE_D_NAME(thread_data));
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	ip_init,
-	ip_deinit
-};
+	*shutdown_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	ip_event_broker_data_available
@@ -1864,15 +1859,13 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "ip";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
-		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_FLEXIBLE;
-		data->operations = module_operations;
-		data->private_data = NULL;
-		data->event_functions = event_functions;
+void load (struct rrr_instance_module_data *data) {
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
+	data->private_data = NULL;
+	data->event_functions = event_functions;
+	data->init = ip_init;
+	data->deinit = ip_deinit;
 }
 
 void unload(void) {

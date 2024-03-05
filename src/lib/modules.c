@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,11 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODULE_PATH "./modules/"
 #endif
 
-void rrr_module_unload (void *dl_ptr, void (*unload)(void)) {
-	unload();
-
+void rrr_module_unload (
+		const struct rrr_module_load_data *load_data
+) {
 #ifndef RRR_MODULE_NO_DL_CLOSE
-	if (dlclose(dl_ptr) != 0) {
+	if (dlclose(load_data->dl_ptr) != 0) {
 		RRR_MSG_0 ("Warning: Error while unloading module: %s\n", dlerror());
 	}
 #else
@@ -54,6 +54,9 @@ int rrr_module_load (
 		const char **library_paths
 ) {
 	int ret = 1; // NOT OK
+
+	void (*load)(void *);
+	void (*unload)(void);
 
 	memset (target, '\0', sizeof(*target));
 
@@ -78,20 +81,24 @@ int rrr_module_load (
 			continue;
 		}
 
-		void (*init)(struct rrr_instance_module_data *data) = dlsym(handle, "init");
-		void (*unload)(void) = dlsym(handle, "unload");
-
-		if (init == NULL || unload == NULL) {
+		if ((load = dlsym(handle, "load")) == NULL) {
 			dlclose(handle);
-			RRR_MSG_0 ("Module %s missing init/unload functions\n", path);
+			RRR_MSG_0 ("Module %s missing load function\n", path);
+			continue;
+		}
+
+		if ((unload = dlsym(handle, "unload")) == NULL) {
+			dlclose(handle);
+			RRR_MSG_0 ("Module %s missing unload function\n", path);
 			continue;
 		}
 
 		target->dl_ptr = handle;
-		target->init = init;
+		target->load = load;
 		target->unload = unload;
 
 		ret = 0; // OK
+
 		break;
 	}
 

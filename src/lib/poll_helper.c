@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "allocator.h"
 #include "poll_helper.h"
+#include "poll_defines.h"
 #include "instances.h"
 #include "instance_config.h"
 #include "fifo_protected.h"
@@ -80,12 +81,12 @@ static void __rrr_poll_intermediate_callback_nexthop_check (
 
 struct rrr_poll_intermediate_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
-	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	int (*callback)(RRR_POLL_CALLBACK_SIGNATURE);
 	void *arg;
 };
 
 static int __rrr_poll_intermediate_callback (
-		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+		RRR_POLL_CALLBACK_SIGNATURE
 ) {
 	struct rrr_poll_intermediate_callback_data *callback_data = arg;
 
@@ -118,7 +119,7 @@ static int __rrr_poll_intermediate_callback (
 int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg
 ) {
 	struct rrr_poll_intermediate_callback_data callback_data = {
@@ -145,7 +146,7 @@ int rrr_poll_do_poll_delete_custom_arg (
 int rrr_poll_do_poll_delete (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
+		int (*callback)(RRR_POLL_CALLBACK_SIGNATURE)
 ) {
 	return rrr_poll_do_poll_delete_custom_arg(amount, thread_data, callback, thread_data);
 }

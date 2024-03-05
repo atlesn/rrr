@@ -409,7 +409,7 @@ static int lua_fork (void *arg) {
 	return ret;
 }
 
-static int lua_init (struct rrr_thread *thread) {
+static int lua_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct lua_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -435,7 +435,7 @@ static int lua_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void lua_deinit (struct rrr_thread *thread) {
+static void lua_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct lua_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -444,30 +444,22 @@ static void lua_deinit (struct rrr_thread *thread) {
 	rrr_cmodule_helper_deinit(thread_data);
 
 	data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	lua_init,
-	lua_deinit
-};
+	*shutdown_complete = 1;
+}
 
 static const char *module_name = "lua";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
-	data->operations = module_operations;
 	data->event_functions = rrr_cmodule_helper_event_functions;
+	data->init = lua_init;
+	data->deinit = lua_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy Lua module\n");
 }
 

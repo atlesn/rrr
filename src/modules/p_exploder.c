@@ -158,7 +158,7 @@ static int exploder_process_value (
 	return ret;
 }
 
-static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int exploder_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct exploder_data *data = thread_data->private_data;
 
@@ -263,7 +263,7 @@ static int exploder_parse_config (struct exploder_data *data, struct rrr_instanc
 	return ret;
 }
 
-static void *thread_entry_exploder (struct rrr_thread *thread) {
+void *thread_entry_exploder (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct exploder_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -298,32 +298,20 @@ static void *thread_entry_exploder (struct rrr_thread *thread) {
 	return NULL;
 }
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_exploder,
-		NULL,
-		NULL,
-		NULL
-};
-
 struct rrr_instance_event_functions event_functions = {
 	exploder_event_broker_data_available
 };
 
 static const char *module_name = "exploder";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy exploder module\n");
 }
 

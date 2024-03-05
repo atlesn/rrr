@@ -499,7 +499,7 @@ static int cacher_process (
 	return ret;
 }
 
-static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int cacher_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct cacher_data *data = thread_data->private_data;
 
@@ -833,7 +833,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	return ret;
 }
 
-static void *thread_entry_cacher (struct rrr_thread *thread) {
+void *thread_entry_cacher (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -905,32 +905,20 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	return NULL;
 }
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_cacher,
-		NULL,
-		NULL,
-		NULL
-};
-
 static const char *module_name = "cacher";
-
-__attribute__((constructor)) void load(void) {
-}
 
 static struct rrr_instance_event_functions event_functions = {
 	cacher_event_broker_data_available
 };
 
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy cacher module\n");
 }
 

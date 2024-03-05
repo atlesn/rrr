@@ -47,7 +47,7 @@ struct raw_data {
 	uint64_t start_time;
 };
 
-int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int raw_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_array array_tmp = {0};
@@ -161,7 +161,7 @@ static int raw_parse_config (struct raw_data *data, struct rrr_instance_config_d
 	return ret;
 }
 
-static int raw_init (struct rrr_thread *thread) {
+static int raw_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 
@@ -196,23 +196,17 @@ static int raw_init (struct rrr_thread *thread) {
 	return 1;
 }
 
-static void raw_deinit (struct rrr_thread *thread) {
+static void raw_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
 	(void)(data);
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting\n",
-			thread, INSTANCE_D_NAME(thread_data));
-}
+		thread, INSTANCE_D_NAME(thread_data));
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		NULL,
-		raw_init,
-		raw_deinit
-};
+	*shutdown_complete =  1;
+}
 
 static struct rrr_instance_event_functions event_functions = {
 	raw_event_broker_data_available
@@ -220,18 +214,16 @@ static struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "raw";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = raw_init;
+	data->deinit = raw_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy raw module\n");
 }
 

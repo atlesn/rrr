@@ -74,28 +74,6 @@ struct dummy_data {
 	int count_extra;
 };
 
-static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
-	RRR_DBG_2("dummy instance %s: writing data from inject function\n",
-			INSTANCE_D_NAME(thread_data));
-
-	int ret = 0;
-
-	if (rrr_message_broker_clone_and_write_entry (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			message,
-			NULL
-	) != 0) {
-		RRR_MSG_0("Could not inject message in dummy instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	rrr_msg_holder_unlock(message);
-	return ret;
-}
-
 static int dummy_data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
@@ -465,11 +443,13 @@ static int dummy_init (struct rrr_thread *thread) {
 		return ret;
 }
 
-void dummy_deinit(struct rrr_thread *thread) {
+void dummy_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	dummy_data_cleanup(data);
+
+	*shutdown_complete = 1;
 }
 
 static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -483,32 +463,20 @@ static int dummy_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return 0;
 }
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	dummy_inject,
-	dummy_init,
-	dummy_deinit
-};
-
 struct rrr_instance_event_functions event_functions = {
 	dummy_event_broker_data_available
 };
 
 static const char *module_name = "dummy";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_SOURCE;
-	data->operations = module_operations;
 	data->private_data = NULL;
 	data->event_functions = event_functions;
+	data->init = dummy_init;
+	data->deinit = dummy_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 }
-
-

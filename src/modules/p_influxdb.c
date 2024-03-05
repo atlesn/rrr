@@ -487,7 +487,7 @@ static void influxdb_event_process_entries (
 	}
 }
 
-static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int influxdb_poll_callback(RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct influxdb_data *influxdb_data = thread_data->private_data;
 
@@ -601,7 +601,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 	return ret;
 }
 
-static void *thread_entry_influxdb (struct rrr_thread *thread) {
+void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
 	struct rrr_msg_holder_collection error_buf_tmp = {0};
@@ -686,31 +686,19 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	return NULL;
 }
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_influxdb,
-		NULL,
-		NULL,
-		NULL
-};
-
 static const char *module_name = "influxdb";
 
 struct rrr_instance_event_functions event_functions = {
 	influxdb_event_broker_data_available
 };
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy influxdb module\n");
 }

@@ -375,7 +375,7 @@ static void socket_stop (void *arg) {
 	}
 }
 
-static void *thread_entry_socket (struct rrr_thread *thread) {
+void *thread_entry_socket (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct socket_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -443,32 +443,18 @@ static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return 0;
 }
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	thread_entry_socket,
-	NULL,
-	NULL,
-	NULL
-};
-
 struct rrr_instance_event_functions event_functions = {
 	socket_event_broker_data_available
 };
 
 static const char *module_name = "socket";
 
-__attribute__((constructor)) void load(void) {
+void load (struct rrr_instance_module_data *data) {
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_SOURCE;
+	data->private_data = NULL;
+	data->event_functions = event_functions;
 }
 
-void init(struct rrr_instance_module_data *data) {
-		data->module_name = module_name;
-		data->type = RRR_MODULE_TYPE_SOURCE;
-		data->operations = module_operations;
-		data->private_data = NULL;
-		data->event_functions = event_functions;
+void unload (void) {
 }
-
-void unload(void) {
-}
-
-

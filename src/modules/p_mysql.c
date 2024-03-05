@@ -708,7 +708,7 @@ static void mysql_event_process_entries (
 	}
 }
 
-static int mysql_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int mysql_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mysql_data *mysql_data = thread_data->private_data;
 
@@ -949,7 +949,7 @@ static int parse_config (
 	return ret;
 }
 
-static void *thread_entry_mysql (struct rrr_thread *thread) {
+void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -1010,33 +1010,24 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	return NULL;
 }
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_mysql,
-		NULL,
-		NULL,
-		NULL
-};
-
 static const char *module_name = "mysql";
 
 struct rrr_instance_event_functions event_functions = {
 	mysql_event_broker_data_available
 };
 
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void construct(void) {
 	rrr_mysql_library_init();
 }
 
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy mysql module\n");
 	rrr_mysql_library_end();
 }

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
 #include "../lib/instance_config.h"
+#include "../lib/threads.h"
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
@@ -102,7 +103,7 @@ int main_get_test_result(struct rrr_instance_collection *instances) {
 		return 1;
 	}
 
-	void *handle = instance->module_data->dl_ptr;
+	void *handle = instance->module_data->module_load_data.dl_ptr;
 
 	dlerror();
 

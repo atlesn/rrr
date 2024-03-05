@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
 #include "../messages/msg_msg.h"
+#include "../message_holder/message_holder_struct.h"
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
@@ -350,7 +351,7 @@ static void __rrr_cmodule_helper_event_app_periodic_callback (
 	}
 }
 
-static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int __rrr_cmodule_helper_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 

@@ -499,7 +499,7 @@ static int python3_fork (void *arg) {
 	return ret;
 }
 
-static int python3_init (struct rrr_thread *thread) {
+static int python3_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -525,7 +525,7 @@ static int python3_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void python3_deinit (struct rrr_thread *thread) {
+static void python3_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -534,30 +534,22 @@ static void python3_deinit (struct rrr_thread *thread) {
 	rrr_cmodule_helper_deinit(thread_data);
 
 	data_cleanup(data);
+	
+	*shutdown_complete = 1;
 }
-
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	python3_init,
-	python3_deinit
-};
 
 static const char *module_name = "python3";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
-	data->operations = module_operations;
 	data->event_functions = rrr_cmodule_helper_event_functions;
+	data->init = python3_init;
+	data->deinit = python3_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy python3 module\n");
 }
 

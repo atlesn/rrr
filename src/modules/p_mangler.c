@@ -111,7 +111,7 @@ static int mangler_process_value (
 	return ret;
 }
 
-static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int mangler_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mangler_data *data = thread_data->private_data;
 
@@ -272,7 +272,7 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	return ret;
 }
 
-static int mangler_init (struct rrr_thread *thread) {
+static int mangler_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mangler_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -304,22 +304,16 @@ static int mangler_init (struct rrr_thread *thread) {
 		return 1;
 }
 
-static void mangler_deinit (struct rrr_thread *thread) {
+static void mangler_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mangler_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("Thread mangler %p exiting\n", thread);
 
 	mangler_data_cleanup(data);
-}
 
-static struct rrr_module_operations module_operations = {
-	NULL,
-	NULL,
-	NULL,
-	mangler_init,
-	mangler_deinit
-};
+	*shutdown_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	mangler_event_broker_data_available
@@ -327,18 +321,16 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "mangler";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = mangler_init;
+	data->deinit = mangler_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy mangler module\n");
 }
 

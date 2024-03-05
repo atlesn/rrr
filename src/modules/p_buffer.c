@@ -53,7 +53,7 @@ static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runti
 	data->thread_data = thread_data;
 }
 
-static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int buffer_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct buffer_data *data = thread_data->private_data;
 
@@ -124,7 +124,7 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 	return ret;
 }
 
-static int buffer_init (struct rrr_thread *thread) {
+static int buffer_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -153,39 +153,14 @@ static int buffer_init (struct rrr_thread *thread) {
 	return 0;
 }
 
-static void buffer_deinit (struct rrr_thread *thread) {
+static void buffer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	(void)(data);
+
+	*shutdown_complete = 1;
 }
-
-static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
-	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
-
-	int ret = 0;
-
-	if ((ret = rrr_message_broker_clone_and_write_entry (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			message,
-			NULL
-	)) != 0) {
-		RRR_MSG_0("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out;
-	}
-
-	out:
-	rrr_msg_holder_unlock(message);
-	return ret;
-}
-
-static struct rrr_module_operations module_operations = {
-		NULL,
-		NULL,
-		buffer_inject,
-		buffer_init,
-		buffer_deinit
-};
 
 struct rrr_instance_event_functions event_functions = {
 	buffer_event_broker_data_available
@@ -193,18 +168,16 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "buffer";
 
-__attribute__((constructor)) void load(void) {
-}
-
-void init(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = buffer_init;
+	data->deinit = buffer_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy buffer module\n");
 }
 
