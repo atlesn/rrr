@@ -66,6 +66,7 @@ struct ipclient_data {
 
 	struct rrr_event_collection events;
 	rrr_event_handle event_send_queue;
+	rrr_event_handle event_reconnect;
 
 	struct rrr_instance_runtime_data *thread_data;
 
@@ -88,8 +89,6 @@ struct ipclient_data {
 
 	uint16_t src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
-
-	int need_network_restart;
 };
 
 static void ipclient_data_cleanup(void *arg) {
@@ -106,14 +105,12 @@ static void ipclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->send_queue_intermediate);
 }
 
-static int ipclient_data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
+static void ipclient_data_init (struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	return 0;
 }
 
 static int ipclient_delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
@@ -423,9 +420,12 @@ static void ipclient_event_send_queue (int fd, short flags, void *arg) {
 
 	int queue_count = 0;
 	int sending_complete = 0;
+
 	if (ipclient_queue_or_delete_messages(&queue_count, &sending_complete, data) != 0) {
-		data->need_network_restart = 1;
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		if (!EVENT_PENDING(data->event_reconnect)) {
+			EVENT_ADD(data->event_reconnect);
+			EVENT_REMOVE(data->event_send_queue);
+		}
 		// Don't return, must increment counter
 	}
 
@@ -434,6 +434,22 @@ static void ipclient_event_send_queue (int fd, short flags, void *arg) {
 	if (sending_complete) {
 		EVENT_REMOVE(data->event_send_queue);
 	}
+}
+
+static void ipclient_event_reconnect (int fd, short flags, void *arg) {
+	struct ipclient_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(data->thread_data));
+
+	if (ipclient_asd_reconnect(data) != 0) {
+		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
+
+	EVENT_REMOVE(data->event_reconnect);
 }
 
 static void ipclient_pause_check (RRR_EVENT_FUNCTION_PAUSE_ARGS) {
@@ -503,18 +519,13 @@ static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
-void *thread_entry_ipclient (struct rrr_thread *thread) {
+static int ipclient_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (ipclient_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	ipclient_data_init(data, thread_data);
 
 	RRR_DBG_1 ("ipclient thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(ipclient_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -538,14 +549,18 @@ void *thread_entry_ipclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	network_restart:
-	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
-	data->need_network_restart = 0;
-
-	if (ipclient_asd_reconnect(data) != 0) {
-		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+	if (rrr_event_collection_push_periodic (
+			&data->event_reconnect,
+			&data->events,
+			ipclient_event_reconnect,
+			data,
+			10 * 1000 // 10 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create reconnect event in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	EVENT_ACTIVATE(data->event_reconnect);
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS_H(thread_data),
@@ -554,23 +569,32 @@ void *thread_entry_ipclient (struct rrr_thread *thread) {
 			data
 	);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			ipclient_event_periodic
 	);
 
-	if (data->need_network_restart) {
-		rrr_posix_usleep (10000); // 10 ms
-		goto network_restart;
-	}
+	return 0;
 
 	out_message:
-	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread);
+		ipclient_data_cleanup(data);
+		return 1;
+}
 
-	pthread_cleanup_pop(1);
+static void ipclient_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	return NULL;
+	(void)(strike);
+
+	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread);	
+
+	ipclient_data_cleanup(data);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {
@@ -584,6 +608,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->event_functions = event_functions;
+	data->init = ipclient_init;
+	data->deinit = ipclient_deinit;
 }
 
 void unload (void) {
