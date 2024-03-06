@@ -74,12 +74,10 @@ void data_cleanup(void *arg) {
 	rrr_array_clear(&data->array_tmp);
 }
 
-int data_init(struct socket_data *data, struct rrr_instance_runtime_data *thread_data) {
+void data_init(struct socket_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
-
-	return 0;
 }
 
 int parse_config (struct socket_data *data, struct rrr_instance_config_data *config) {
@@ -375,21 +373,13 @@ static void socket_stop (void *arg) {
 	}
 }
 
-void *thread_entry_socket (struct rrr_thread *thread) {
+static int socket_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct socket_data *data = thread_data->private_data = thread_data->private_memory;
 
-	pthread_cleanup_push(data_cleanup, data);
-
-	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in socket instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	data_init(data, thread_data);
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(socket_stop, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -417,21 +407,36 @@ void *thread_entry_socket (struct rrr_thread *thread) {
 	RRR_DBG_2("socket instance %s listening on socket %s\n",
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
+	return 0;
+
 	out_message:
+		socket_stop(data);
+		data_cleanup(data);
+		return 1;
+}
+
+static void socket_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct socket_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
+
 	RRR_DBG_1 ("socket instance %s received encourage stop\n",
 		INSTANCE_D_NAME(thread_data));
 
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	return NULL;
-}
+	socket_stop(data);
+	data_cleanup(data);
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	*deinit_complete = 1;
+}
 static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 
@@ -454,6 +459,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_SOURCE;
 	data->private_data = NULL;
 	data->event_functions = event_functions;
+	data->init = socket_init;
+	data->deinit = socket_deinit;
 }
 
 void unload (void) {

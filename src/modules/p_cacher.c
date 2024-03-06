@@ -833,15 +833,13 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	return ret;
 }
 
-void *thread_entry_cacher (struct rrr_thread *thread) {
+static int cacher_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cacher_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("cacher thread thread_data is %p\n", thread_data);
 
 	cacher_data_init(data, thread_data);
-
-	pthread_cleanup_push(cacher_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -891,18 +889,32 @@ void *thread_entry_cacher (struct rrr_thread *thread) {
 			thread
 	);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 s
 			cacher_event_periodic
 	);
 
+	return 0;
+
 	out_message:
-	pthread_cleanup_pop(1);
+		cacher_data_cleanup(data);
+		return 1;
+}
+
+static void cacher_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct cacher_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
 
 	RRR_DBG_1 ("Thread cacher %p exiting\n", thread);
 
-	return NULL;
+	cacher_data_cleanup(data);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "cacher";
@@ -916,6 +928,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->event_functions = event_functions;
+	data->init = cacher_init;
+	data->deinit = cacher_deinit;
 }
 
 void unload (void) {

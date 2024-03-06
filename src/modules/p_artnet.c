@@ -508,9 +508,9 @@ static int artnet_init (RRR_INSTANCE_INIT_ARGS) {
 	return 0;
 
 	out_cleanup:
-	artnet_data_cleanup(data);
+		artnet_data_cleanup(data);
 	out_message:
-	return 1;
+		return 1;
 }
 
 void artnet_deinit (RRR_INSTANCE_DEINIT_ARGS) {
