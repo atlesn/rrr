@@ -282,7 +282,7 @@ static int artnet_process_cmd (
 	return ret;
 }
 
-static int artnet_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int artnet_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct artnet_data *data = thread_data->private_data;
 
@@ -460,9 +460,10 @@ static int artnet_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return ret;
 }
 
-static void *thread_entry_artnet (struct rrr_thread *thread) {
+static int artnet_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct artnet_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("artnet thread thread_data is %p\n", thread_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
@@ -470,8 +471,6 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 	if (artnet_data_init(data, thread_data) != 0) {
 		goto out_message;
 	}
-
-	pthread_cleanup_push(artnet_data_cleanup, data);
 
 	if (artnet_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
 		goto out_cleanup;
@@ -500,26 +499,34 @@ static void *thread_entry_artnet (struct rrr_thread *thread) {
 		goto out_cleanup;
 	}
 
-	rrr_event_dispatch (
-			INSTANCE_D_EVENTS(thread_data),
-			1 * 1000 * 1000,
-			artnet_periodic,
-			thread
+	rrr_event_function_periodic_set (
+			INSTANCE_D_EVENTS_H(thread_data),
+			1 * 1000 * 1000, // 1 second
+			artnet_periodic
 	);
 
-	out_cleanup:
-	pthread_cleanup_pop(1);
-	out_message:
-	RRR_DBG_1 ("Thread artnet %p exiting\n", thread);
+	return 0;
 
-	pthread_exit(0);
+	out_cleanup:
+	artnet_data_cleanup(data);
+	out_message:
+	return 1;
 }
 
-static struct rrr_module_operations module_operations = {
-		NULL,
-		thread_entry_artnet,
-		NULL
-};
+void artnet_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct artnet_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
+
+	RRR_DBG_1 ("Thread artnet %p exiting\n", thread);
+
+	artnet_data_cleanup(data);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	*deinit_complete = 1;
+}
 
 struct rrr_instance_event_functions event_functions = {
 	artnet_event_broker_data_available
@@ -527,15 +534,16 @@ struct rrr_instance_event_functions event_functions = {
 
 static const char *module_name = "artnet";
 
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void construct(void) {
 }
 
-void init(struct rrr_instance_module_data *data) {
+void load(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
-	data->operations = module_operations;
 	data->event_functions = event_functions;
+	data->init = artnet_init;
+	data->deinit = artnet_deinit;
 }
 
 void unload(void) {
