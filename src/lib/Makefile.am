@@ -35,6 +35,15 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_ARTNET
+libadd_artnet = librrrartnet.la
+librrrartnet_la_SOURCES = artnet/rrr_artnet.c
+librrrartnet_la_CFLAGS = ${ARTNET_CFLAGS} 
+librrrartnet_la_LDFLAGS = ${ARTNET_LDFLAGS}
+librrrartnet_la_LIBS = ${ARTNET_LIBS}
+artnet_extra_ld = ${ARTNET_LDFLAGS} ${ARTNET_LIBS}
+endif
+
 if RRR_WITH_LUA
 libadd_lua = librrrlua.la
 librrrlua_la_SOURCES = lua/lua.c \
@@ -193,6 +202,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
                     ${perl5_extra_ld} \
+                    ${artnet_extra_ld} \
                     ${lua_extra_ld} \
 		    ${jsonc_extra_ld} \
 		    ${nghttp2_extra_ld} \
@@ -270,6 +280,7 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
+    ${libadd_artnet}                 \
     ${libadd_lua}                    \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \

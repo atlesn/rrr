@@ -55,6 +55,7 @@ AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGH
 AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
+AC_ARG_WITH([artnet],[AS_HELP_STRING([--without-artnet],[build without the libartnet bindings])],[enable_artnet=no],[enable_artnet=yes])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
@@ -161,6 +162,7 @@ AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
@@ -292,6 +294,56 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for 128 bit SIMD])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <immintrin.h>
+		int main(int argc, char *argv[]) {
+			unsigned char data[16];
+			__m128i a;
+			_mm_loadu_si128(data);
+			_mm_cmplt_epi8(a, a);
+			_mm_cmpgt_epi8(a, a);
+			_mm_set1_epi8(1);
+			_mm_and_si128(a, a);
+			_mm_add_epi8(a, a);
+			_mm_sub_epi8(a, a);
+			_mm_storeu_si128(data, a);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_SIMD_128], [1], [128 bit SIMD instructions are available])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for 512 bit SIMD])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <immintrin.h>
+		int main(int argc, char *argv[]) {
+			unsigned char data[64];
+			__m512i a;
+			__mmask64 m;
+			_mm512_loadu_si512(data);
+			_mm512_cmplt_epu8_mask(a, a);
+			_mm512_cmpgt_epu8_mask(a, a);
+			_mm512_add_epi8(a, a);
+			_mm512_sub_epi8(a, a);
+			_mm512_and_si512(a, a);
+			_mm512_storeu_si512(data, a);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_SIMD_512], [1], [512 bit SIMD instructions are available])
 ], [
 	AC_MSG_RESULT([no])
 ])
@@ -1266,6 +1318,40 @@ AS_IF([test "x$enable_usb" = xno], [
 	], [
 		AC_MSG_ERROR([Test of symbols from usb.h failed, make sure libusb-dev or libusb-compat is installed.])
 	])
+])
+
+AC_MSG_CHECKING([for ArtNet enabled])
+AS_IF([test "x$enable_artnet" = xno], [
+	AC_MSG_RESULT([Not compiling with ArtNet])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_ARTNET], [1], [Compile with libartnet bindings])
+	AC_CHECK_HEADERS([artnet/artnet.h])
+	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libartnet not found]))
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <artnet/artnet.h>
+			
+			int main (int argc, char *argv[]) {
+				artnet_node node;
+				node = artnet_new("0.0.0.0", 0);
+				artnet_destroy(node);
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([Test of symbols from artnet.h failed, make sure libartnet-dev is installed.])
+	])
+
+	ARTNET_CFLAGS=""
+	ARTNET_LDFLAGS=""
+	ARTNET_LIBS="-lartnet"
+
+	AC_SUBST([ARTNET_CFLAGS])
+	AC_SUBST([ARTNET_LDFLAGS])
+	AC_SUBST([ARTNET_LIBS])
 ])
 
 # Make sure json-c-test does not include any libraries

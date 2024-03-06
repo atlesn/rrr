@@ -21,6 +21,7 @@ rrr (1.29-2) bookworm; urgency=medium
       configuration parameters
     * New conversion type "hchar2str" in mangler module to convert individual
       bytes to strings
+    * New module artnet for controlling DMX devices over ArtNet protocol
     * New OS object in javascript (operating-system) and ability to obtain
       hostname
     * New ModBus TCP module
