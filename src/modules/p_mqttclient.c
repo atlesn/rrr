@@ -104,6 +104,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS 1000
 #define RRR_MQTT_SUBACK_RESEND_MAX 5
 
+// How long to read and discard messages if enabled and upon connect retry
+#define RRR_MQTT_DISCARD_PERIOD_MS 100
+
 struct rrr_mqtt_session;
 struct rrr_array_tree;
 
@@ -112,7 +115,6 @@ enum mqttclient_state {
 	MQTTCLIENT_STATE_DISCARD,
 	MQTTCLIENT_STATE_CONNECT,
 	MQTTCLIENT_STATE_CONNECT_CHECK,
-	MQTTCLIENT_STATE_SUBSCRIBE,
 	MQTTCLIENT_STATE_STARTUP_SEND_GRACE,
 	MQTTCLIENT_STATE_PROCESS,
 	MQTTCLIENT_STATE_DISCONNECT
@@ -237,12 +239,10 @@ static void mqttclient_state_ensure (struct mqttclient_data *data, enum mqttclie
 	}
 }
 
-static int mqttclient_state_transition_timed (struct mqttclient_data *data, enum mqttclient_state state, uint64_t delta_ms) {
+static void mqttclient_state_transition_timed (struct mqttclient_data *data, enum mqttclient_state state, uint64_t delta_ms) {
 	if (rrr_time_get_64() - data->state_time > delta_ms * 1000) {
 		mqttclient_state_set(data, state);
-		return 1;
 	}
-	return 0;
 }
 
 static int mqttclient_subscription_push (struct rrr_mqtt_subscription_collection *target, struct mqttclient_data *data, uint8_t qos, const char *topic_str) {
@@ -1799,10 +1799,14 @@ static void mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void
 	}
 }
 
+static int mqttclient_do_late_client_identifier_update (struct mqttclient_data *data);
+
 static int mqttclient_connect_check (struct mqttclient_data *data) {
 	int alive = 0;
 	int send_allowed = 0;
 	int close_wait = 0;
+
+	int ret_tmp;
 
 	if (rrr_mqtt_client_connection_check_alive (
 			&alive,
@@ -1833,29 +1837,44 @@ static int mqttclient_connect_check (struct mqttclient_data *data) {
 	}
 
 	if (send_allowed) {
-		RRR_DBG_1("MQTT client instance %s startup send grace period %i ms started\n",
-				INSTANCE_D_NAME(data->thread_data),
-				RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS
-		);
-		mqttclient_state_set(data, MQTTCLIENT_STATE_SUBSCRIBE);
-		return 0;
+		if ((ret_tmp = mqttclient_do_late_client_identifier_update(data)) != RRR_MQTT_OK) {
+			if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+				return 1;
+			}
+
+			RRR_DBG_1("MQTT client instance %s late client identifier update failed, reconnecting\n",
+				INSTANCE_D_NAME(data->thread_data));
+
+			mqttclient_state_set(data, MQTTCLIENT_STATE_CONNECT);
+		}
+		else if ((ret_tmp = mqttclient_do_subscribe(data)) != 0) {
+			if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+				return 1;
+			}
+
+			RRR_DBG_1("MQTT client instance %s subscription failed, reconnecting\n",
+				INSTANCE_D_NAME(data->thread_data));
+
+			mqttclient_state_set(data, MQTTCLIENT_STATE_CONNECT);
+		}
+		else {
+			RRR_DBG_1("MQTT client instance %s startup send grace period %i ms started\n",
+				INSTANCE_D_NAME(data->thread_data), RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS);
+
+			mqttclient_state_set(data, MQTTCLIENT_STATE_STARTUP_SEND_GRACE);
+		}
 	}
 
 	return 0;
 }
 		
-static int mqttclient_wait_disconnect_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
-	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct mqttclient_data *data = thread_data->private_data;
-
-	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
-		return RRR_MQTT_INTERNAL_ERROR;
-	}
-
+static int mqttclient_do_check_disconnect (int *timeout, int *disconnected, struct mqttclient_data *data) {
 	int alive = 0;
 	int send_allowed = 0;
 	int close_wait = 0;
+
+	*timeout = 0;
+	*disconnected = 0;
 
 	if (rrr_mqtt_client_connection_check_alive (
 			&alive,
@@ -1866,35 +1885,44 @@ static int mqttclient_wait_disconnect_event_periodic (RRR_EVENT_FUNCTION_PERIODI
 	) != 0) {
 		RRR_MSG_0("Error in MQTT client instance %s while checking for close wait\n",
 				INSTANCE_D_NAME(data->thread_data));
-		return RRR_MQTT_INTERNAL_ERROR;
+		return 1;
 	}
 
-	assert(0 && "Check disconnect time not implemented");
-
-	uint64_t timeout = /* data->disconnect_time +*/ RRR_MQTT_DISCONNECT_TIMEOUT_S * 1000 * 1000;
-
-	if (rrr_time_get_64() > timeout) {
+	if (rrr_time_get_64() - data->state_time > RRR_MQTT_DISCONNECT_TIMEOUT_S * 1000 * 1000) {
 		RRR_MSG_0("Timeout after %i seconds while waiting for disconnection in MQTT client instance %s\n",
 			RRR_MQTT_DISCONNECT_TIMEOUT_S, INSTANCE_D_NAME(data->thread_data));
-		return RRR_MQTT_SOFT_ERROR;
+		*timeout = 1;
+	}
+	else if (!alive && !close_wait) {
+		*disconnected = 1;
 	}
 
-	if (!alive && !close_wait) {
-		return RRR_EVENT_EXIT;
+	return 0;
+}
+
+static int mqttclient_check_disconnect (struct mqttclient_data *data) {
+	int timeout = 0;
+	int disconnected = 0;
+
+	if (mqttclient_do_check_disconnect (
+			&timeout,
+			&disconnected,
+			data
+	) != 0) {
+		return 1;
+	}
+
+	if (timeout || disconnected) {
+		RRR_DBG_1("mqttclient instance %s disconnect complete, reconnecting\n",
+			INSTANCE_D_NAME(data->thread_data));
+
+		mqttclient_state_set(data, MQTTCLIENT_STATE_CONNECT);
 	}
 
 	return 0;
 }
 		
-static void mqttclient_wait_disconnect (struct mqttclient_data *data) {
-	rrr_event_function_periodic_set_and_dispatch (
-			INSTANCE_D_EVENTS_H(data->thread_data),
-			100 * 1000, // 100 ms
-			mqttclient_wait_disconnect_event_periodic
-	);
-}
-
-static int mqttclient_late_client_identifier_update (struct mqttclient_data *data) {
+static int mqttclient_do_late_client_identifier_update (struct mqttclient_data *data) {
 	int ret = RRR_MQTT_OK;
 
 	struct rrr_mqtt_session_properties properties = {0};
@@ -1914,8 +1942,8 @@ static int mqttclient_late_client_identifier_update (struct mqttclient_data *dat
 			data->mqtt_client_data,
 			data->transport_handle
 	)) != 0) {
-		RRR_MSG_0("Error while getting session properties in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
+		RRR_MSG_0("Error while getting session properties in %s of MQTT client instance %s return was %i\n",
+				__func__, INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1928,8 +1956,8 @@ static int mqttclient_late_client_identifier_update (struct mqttclient_data *dat
 			&identifier_tmp,
 			properties.assigned_client_identifier
 	)) != 0) {
-		RRR_MSG_0("Error while getting assigned name in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
+		RRR_MSG_0("Error while getting assigned name in %s of MQTT client instance %s return was %i\n",
+				__func__, INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1937,8 +1965,8 @@ static int mqttclient_late_client_identifier_update (struct mqttclient_data *dat
 			data->mqtt_client_data,
 			identifier_tmp
 	)) != 0) {
-		RRR_MSG_0("Error while setting client identifier in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
+		RRR_MSG_0("Error while setting client identifier in %s of MQTT client instance %s return was %i\n",
+				__func__, INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1948,12 +1976,6 @@ static int mqttclient_late_client_identifier_update (struct mqttclient_data *dat
 	RRR_FREE_IF_NOT_NULL(identifier_tmp);
 	rrr_mqtt_session_properties_clear(&properties);
 	return ret;
-}
-
-static void mqttclient_discard (struct mqttclient_data *data) {
-	if (mqttclient_state_transition_timed (data, MQTTCLIENT_STATE_CONNECT, 100 /* 100 ms */)) {
-		return;
-	}
 }
 
 static int mqttclient_connect (struct mqttclient_data *data) {
@@ -2063,6 +2085,8 @@ static int mqttclient_input_queue_process (
 ) {
 	int ret = 0;
 
+	printf("Process %i\n", RRR_LL_COUNT(&data->input_queue));
+
 	RRR_LL_ITERATE_BEGIN(&data->input_queue, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 		if ((ret = mqttclient_process(data, node)) != 0) {
@@ -2088,6 +2112,7 @@ static int mqttclient_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	rrr_msg_holder_unlock(entry);
 
 	if (mqttclient_state_check(data, MQTTCLIENT_STATE_DISCARD)) {
+		assert(0 && "Discard");
 		data->poll_discard_count++;
 		data->poll_discard_count += (rrr_length) RRR_LL_COUNT(&data->input_queue);
 		rrr_msg_holder_collection_clear(&data->input_queue);
@@ -2173,25 +2198,17 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			mqttclient_state_transition_timed (data, MQTTCLIENT_STATE_CONNECT, RRR_MQTT_STARTUP_CONNECT_GRACE_TIME_MS);
 			break;
 		case MQTTCLIENT_STATE_DISCARD:
-			mqttclient_discard (data);
+			mqttclient_state_transition_timed (data, MQTTCLIENT_STATE_CONNECT, RRR_MQTT_DISCARD_PERIOD_MS);
 			break;
 		case MQTTCLIENT_STATE_CONNECT:
-			if (mqttclient_connect (data) != 0) {
+			if (mqttclient_connect(data) != 0) {
 				return RRR_EVENT_ERR;
 			}
 			data->connect_attempt_count++;
 			break;
 		case MQTTCLIENT_STATE_CONNECT_CHECK:
-			if (mqttclient_connect_check (data) != 0) {
+			if (mqttclient_connect_check(data) != 0) {
 				return RRR_EVENT_ERR;
-			}
-			break;
-		case MQTTCLIENT_STATE_SUBSCRIBE:
-			if (mqttclient_do_subscribe(data) != 0) {
-				mqttclient_state_set(data, MQTTCLIENT_STATE_CONNECT);
-			}
-			else {
-				mqttclient_state_set(data, MQTTCLIENT_STATE_STARTUP_SEND_GRACE);
 			}
 			break;
 		case MQTTCLIENT_STATE_STARTUP_SEND_GRACE:
@@ -2213,7 +2230,11 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 			break;
 		case MQTTCLIENT_STATE_DISCONNECT:
-			assert(0 && "State disconnect not implemented");
+			assert(0 && "State disconnect not tested");
+			if (mqttclient_check_disconnect(data) != 0) {
+				return RRR_EVENT_ERR;
+			}
+			break;
 		default:
 			assert(0 && "State not implemented");
 	};
@@ -2238,14 +2259,6 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 
 	assert(0 && "Client identifier update not implemented");
-
-//	if ((ret_tmp = mqttclient_late_client_identifier_update(data)) != RRR_MQTT_OK) {
-//		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
-//			goto out_destroy_client;
-//		}
-//		goto reconnect;
-//	}
-
 
 //	data->send_disabled = 0;
 //	if (ret_tmp != 0 || rrr_thread_signal_encourage_stop_check(thread)) {
@@ -2368,16 +2381,32 @@ void mqttclient_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	(void)(strike);
 
-	RRR_DBG_1 ("MQTT client %p instance %s exiting\n",
-		thread, INSTANCE_D_NAME(thread_data));
+	int timeout = 0;
+	int disconnected = 0;
 
-	assert(0 && "Nice shutdown not implemented");
-//	mqttclient_wait_disconnect (data);
+	if (strike == 1) {
+		RRR_DBG_1 ("MQTT client %p instance %s exiting\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
-	rrr_mqtt_client_destroy(data->mqtt_client_data);
-	mqttclient_data_cleanup(data);
+		rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
-	*deinit_complete = 1;
+		rrr_mqtt_client_disconnect(data->mqtt_client_data, data->transport_handle, 0 /* No reason */);
+	}
+
+	if (mqttclient_do_check_disconnect (
+			&timeout,
+			&disconnected,
+			data
+	) != 0 || timeout || disconnected) {
+		RRR_DBG_1 ("MQTT client %p instance %s disconnection complete, timeout is %i and disconnected is %i\n",
+			thread, INSTANCE_D_NAME(thread_data), timeout, disconnected);
+
+		rrr_mqtt_client_destroy(data->mqtt_client_data);
+
+		mqttclient_data_cleanup(data);
+
+		*deinit_complete = 1;
+	}
 }
 
 struct rrr_instance_event_functions event_functions = {

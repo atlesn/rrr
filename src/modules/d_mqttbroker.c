@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
 #define RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE 30
-#define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
+#define RRR_MQTT_BROKER_DISCONNECT_TIMEOUT_MS 500
 
 struct mqtt_broker_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -74,6 +74,8 @@ struct mqtt_broker_data {
 
 	int do_transport_plain;
 	int do_transport_tls;
+
+	uint64_t disconnect_time;
 
 	struct rrr_net_transport_config net_transport_config;
 };
@@ -397,7 +399,7 @@ int mqttbroker_init (RRR_INSTANCE_INIT_ARGS) {
 
 	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, /* One second */
 			mqttbroker_event_periodic
 	) != 0) {
 		RRR_MSG_0("Failed to set periodic function in mqttbroker instance %s\n",
@@ -419,19 +421,25 @@ void mqttbroker_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
 
-	(void)(strike);
-
-	RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
-
 	// If clients run on the same machine, we hope they close the connection first
 	// to await TCP timeout
-	assert(0 && "Delayed exit not implemented");
-	rrr_posix_usleep(500000); // 500 ms
 
-	rrr_mqtt_broker_destroy_void(data->mqtt_broker_data);
-	mqttbroker_data_cleanup(data);
+	if (strike == 1) {
+		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
 
-	*deinit_complete = 1;
+		rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+		data->disconnect_time = rrr_time_get_64();
+	}
+	else if (rrr_time_get_64() - data->disconnect_time > RRR_MQTT_BROKER_DISCONNECT_TIMEOUT_MS * 1000) {
+		RRR_DBG_1 ("Thread mqtt broker %p exit timeout complete\n", thread);
+
+		rrr_mqtt_broker_destroy_void(data->mqtt_broker_data);
+
+		mqttbroker_data_cleanup(data);
+
+		*deinit_complete = 1;
+	}
 }
 
 struct rrr_instance_event_functions event_functions = {
