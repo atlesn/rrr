@@ -455,9 +455,6 @@ int rrr_mqtt_client_connect (
 	struct rrr_mqtt_p_connect *connect = NULL;
 	struct rrr_mqtt_session_properties session_properties_tmp = rrr_mqtt_common_default_session_properties;
 
-	// Sleep a bit in case server runs in the same RRR program
-	rrr_posix_usleep(500000); // 500ms
-
 	if ((ret = rrr_mqtt_transport_connect (
 			transport_handle,
 			data->mqtt_data.transport,

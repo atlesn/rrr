@@ -87,15 +87,13 @@ static void mqttbroker_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }
 
-static int mqttbroker_data_init (
+static void mqttbroker_data_init (
 		struct mqtt_broker_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
-
-	return 0;
 }
 
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
@@ -306,20 +304,13 @@ static int mqttbroker_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return 0;
 }
 
-void *thread_entry_mqttbroker (struct rrr_thread *thread) {
+int mqttbroker_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
 
-	int init_ret = 0;
-	if ((init_ret = mqttbroker_data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initialize data in mqtt broker instance %s flags %i\n",
-			INSTANCE_D_NAME(thread_data), init_ret);
-		return NULL;
-	}
+	mqttbroker_data_init(data, thread_data);
 
 	RRR_DBG_1 ("mqtt broker thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(mqttbroker_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -358,8 +349,6 @@ void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		RRR_MSG_0("Could not create new mqtt broker\n");
 		goto out_message;
 	}
-
-	pthread_cleanup_push(rrr_mqtt_broker_destroy_void, data->mqtt_broker_data);
 
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
@@ -406,23 +395,43 @@ void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 #endif
 
-	rrr_event_function_periodic_set_and_dispatch (
+	if (rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000,
 			mqttbroker_event_periodic
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to set periodic function in mqttbroker instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		goto out_destroy_broker;
+	}
+
+	return 0;
+
+	out_destroy_broker:
+		rrr_mqtt_broker_destroy_void(data->mqtt_broker_data);
+
+	out_message:
+		mqttbroker_data_cleanup(data);
+		return 1;
+}
+
+void mqttbroker_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
+
+	RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
 
 	// If clients run on the same machine, we hope they close the connection first
 	// to await TCP timeout
+	assert(0 && "Delayed exit not implemented");
 	rrr_posix_usleep(500000); // 500 ms
 
-	out_destroy_broker:
-		pthread_cleanup_pop(1);
+	rrr_mqtt_broker_destroy_void(data->mqtt_broker_data);
+	mqttbroker_data_cleanup(data);
 
-	out_message:
-		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
-		pthread_cleanup_pop(1);
-		return NULL;
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {
@@ -436,6 +445,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_NETWORK;
 	data->event_functions = event_functions;
+	data->init = mqttbroker_init;
+	data->deinit = mqttbroker_deinit;
 }
 
 void unload (void) {
