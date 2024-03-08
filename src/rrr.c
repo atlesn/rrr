@@ -511,14 +511,6 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 	(void)(fd);
 	(void)(flags);
 
-	if (!main_running) {
-		RRR_DBG_1("Main no longer running for configuration %s\n", callback_data->config_file);
-		// Let thread framework detect this, don't stop 
-		// dispatching until deinit is complete for
-		// all instances.
-		return;
-	}
-
 	if (main_loop_periodic_maintenance (callback_data) != 0) {
 		RRR_MSG_0("Periodic mmap maintenance failed\n");
 		goto error;
@@ -527,6 +519,14 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 	if (some_fork_has_stopped) {
 		RRR_MSG_0("One or more forks has exited\n");
 		goto error;
+	}
+
+	if (!main_running) {
+		RRR_DBG_1("Main no longer running for configuration %s\n", callback_data->config_file);
+		// Let thread framework detect this, don't stop 
+		// dispatching until deinit is complete for
+		// all instances.
+		return;
 	}
 
 	return;
