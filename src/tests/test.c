@@ -352,7 +352,7 @@ struct main_loop_event_callback_data {
 static int rrr_test_main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct main_loop_event_callback_data *callback_data = arg;
 
-	if (!main_running) {
+	if (rrr_instance_check_threads_stopped(callback_data->instances)) {
 		return RRR_EVENT_EXIT;
 	}
 
@@ -360,8 +360,12 @@ static int rrr_test_main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_ERR;
 	}
 
-	if (rrr_instance_check_threads_stopped(callback_data->instances)) {
-		return RRR_EVENT_EXIT;
+	if (!main_running) {
+		RRR_DBG_1("Main no longer running\n");
+		// Let thread framework detect this, don't stop 
+		// dispatching until deinit is complete for
+		// all instances.
+		return RRR_EVENT_OK;
 	}
 
 	rrr_fork_handle_sigchld_and_notify_if_needed (callback_data->fork_handler, 0);
