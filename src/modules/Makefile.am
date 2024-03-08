@@ -47,12 +47,18 @@ js_la_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS}
 js_la_LDFLAGS = ${module_ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS}
 endif
 
+if RRR_WITH_ARTNET
+artnet = artnet.la
+artnet_la_SOURCES = p_artnet.c
+artnet_la_LDFLAGS = ${module_ldflags}
+endif
+
 lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	msgdb.la incrementer.la cacher.la modbus.la \
-	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js}
+	${mysql} ${python3} ${voltmonitor} ${perl5} ${lua} ${js} ${artnet}
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c

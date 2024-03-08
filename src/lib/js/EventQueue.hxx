@@ -32,6 +32,7 @@ extern "C" {
 #include <string.h>
 };
 
+#include <functional>
 #include <set>
 #include <functional>
 

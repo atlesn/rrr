@@ -83,6 +83,7 @@ struct rrr_socket_private_data_collection {
 
 struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
+	int is_externally_opened;
 	char *creator;
 	char *filename_unlink;
 	char *filename_no_unlink;
@@ -182,7 +183,8 @@ int __rrr_socket_holder_new (
 		int fd,
 		int domain,
 		int type,
-		int protocol
+		int protocol,
+		int is_externally_opened
 ) {
 	int ret = 0;
 
@@ -202,6 +204,7 @@ int __rrr_socket_holder_new (
 	}
 
 	result->creator = rrr_strdup(creator);
+	result->is_externally_opened = is_externally_opened;
 
 	if (filename != NULL) {
 		char *filename_tmp = rrr_strdup(filename);
@@ -403,12 +406,13 @@ static int __rrr_socket_add_unlocked (
 		int protocol,
 		const char *creator,
 		const char *filename,
-		int filename_unlink
+		int filename_unlink,
+		int is_externally_opened
 ) {
 	int ret = 0;
 	struct rrr_socket_holder *holder = NULL;
 
-	if (__rrr_socket_holder_new(&holder, creator, filename, filename_unlink, fd, domain, type, protocol) != 0) {
+	if (__rrr_socket_holder_new(&holder, creator, filename, filename_unlink, fd, domain, type, protocol, is_externally_opened) != 0) {
 		RRR_MSG_0("Could not create socket holder in __rrr_socket_add_unlocked\n");
 		ret = 1;
 		goto out;
@@ -448,7 +452,7 @@ int rrr_socket_accept (
 	socklen_t addr_len_orig = *addr_len;
 	fd_out = accept(fd_in, (struct sockaddr *) addr, addr_len);
 	if (fd_out != -1) {
-		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL, 0);
+		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL, 0, 0);
 	}
 	if (*addr_len > addr_len_orig) {
 		RRR_BUG("BUG: Given addr_len was to short in rrr_socket_accept\n");
@@ -484,7 +488,7 @@ int rrr_socket_mkstemp (
 	pthread_mutex_lock(&socket_lock);
 	fd = mkstemp(filename);
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, 1);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, 1, 0);
 	}
 	pthread_mutex_unlock(&socket_lock);
 
@@ -527,7 +531,7 @@ static int __rrr_socket_open_nolock (
 	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, register_for_unlink);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, register_for_unlink, 0);
 	}
 
 	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s flags %i\n", fd, getpid(), filename, creator, flags);
@@ -692,8 +696,8 @@ int rrr_socket_pipe (
 	}
 
 	pthread_mutex_lock(&socket_lock);
-	ret |= __rrr_socket_add_unlocked(fds[0], 0, 0, 0, creator, NULL, 0);
-	ret |= __rrr_socket_add_unlocked(fds[1], 0, 0, 0, creator, NULL, 0);
+	ret |= __rrr_socket_add_unlocked(fds[0], 0, 0, 0, creator, NULL, 0, 0);
+	ret |= __rrr_socket_add_unlocked(fds[1], 0, 0, 0, creator, NULL, 0, 0);
 	pthread_mutex_unlock(&socket_lock);
 
 	RRR_DBG_7("rrr_socket_pipe fd %i<-%i pid %i\n", fds[0], fds[1], getpid());
@@ -731,7 +735,7 @@ int rrr_socket (
 	fd = socket(domain, type, protocol);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename, register_for_unlink);
+		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename, register_for_unlink, 0);
 	}
 
 	RRR_DBG_7("rrr_socket fd %i pid %i filename %s\n", fd, getpid(), filename);
@@ -740,26 +744,32 @@ int rrr_socket (
 	return fd;
 }
 
+static void __rrr_socket_unregister (int *was_registered, int fd, int no_unlink) {
+	*was_registered = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+			*was_registered = 1;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
+
+	pthread_mutex_unlock(&socket_lock);
+}
+
 static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
+	int did_destroy = 0;
+
 	if (fd <= 0) {
 		RRR_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
 	}
 
 	RRR_DBG_7("rrr_socket_close fd %i pid %i no unlink %i\n", fd, getpid(), no_unlink);
 
-	pthread_mutex_lock(&socket_lock);
-
-	int did_destroy = 0;
-
-	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		if (node->options.fd == fd) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-			did_destroy = 1;
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
-
-	pthread_mutex_unlock(&socket_lock);
+	__rrr_socket_unregister(&did_destroy, fd, no_unlink);
 
 	if (did_destroy != 1 && ignore_unregistered == 0) {
 		// NOTE ! If this warning appears, program must be fixed. In a possible race
@@ -853,6 +863,53 @@ int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
 
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
 	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
+}
+
+int rrr_socket_add (
+		int fd,
+		int domain,
+		int type,
+		int protocol,
+		const char *creator
+) {
+	int ret = 0;
+
+	assert(fd > 0);
+
+	RRR_DBG_7("rrr_socket external add fd %i pid %i\n", fd, getpid());
+
+	pthread_mutex_lock(&socket_lock);
+
+	if ((ret = __rrr_socket_add_unlocked(fd, domain, type, protocol, creator, NULL, 0, 1 /* Is externally opened */)) != 0) {
+		goto out_unlock;
+	}
+
+	out_unlock:
+		pthread_mutex_unlock(&socket_lock);
+	//out:
+		return ret;
+}
+
+int rrr_socket_remove (
+		int fd
+) {
+	int ret = 0;
+
+	RRR_DBG_7("rrr_socket external remove fd %i pid %i\n", fd, getpid());
+
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			assert(node->is_externally_opened);
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+
+	int was_registered = 0;
+	__rrr_socket_unregister (&was_registered, fd, 1);
+
+	assert(was_registered);
+
+	return ret;
 }
 
 int rrr_socket_fifo_create (

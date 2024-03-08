@@ -455,7 +455,7 @@ int rrr_array_push_value_str_with_tag (
 
 static int __rrr_array_get_value_64_by_tag (
 		void *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index,
 		int do_signed
@@ -469,6 +469,12 @@ static int __rrr_array_get_value_64_by_tag (
 
 	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (!RRR_TYPE_IS_64(value->definition->type)) {
+		RRR_MSG_0("Array value '%s' not a 64 type while getting 64 value", tag);
 		ret = 1;
 		goto out;
 	}
@@ -506,7 +512,7 @@ static int __rrr_array_get_value_64_by_tag (
 
 int rrr_array_get_value_unsigned_64_by_tag (
 		uint64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
@@ -515,7 +521,7 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 int rrr_array_get_value_signed_64_by_tag (
 		int64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
@@ -551,7 +557,7 @@ int rrr_array_get_value_ull_by_tag (
 
 int rrr_array_get_value_str_by_tag (
 		char **result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag
 ) {
 	int ret = 0;

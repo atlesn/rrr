@@ -528,6 +528,10 @@ Reads from a USB voltmeter.
 
 .It averager (PA)
 Collects point measurements and calculates average values.
+
+.It artnet (PA)
+Controls DMX devices using the Art-Net protocol.
+
 .El
 .SS dummy (S)
 This module constantly generates empty messages, optionally containing some dummy data.
@@ -2849,6 +2853,7 @@ If specified, all topics for which to allocate IDs must be pre-initialized. This
 by passing a message to
 .B incrementer
 containing a start ID number in a value with the given tag.
+Once an ID has been initialized, any further initialization messages will be ignored.
 
 Initialization does not persist across restarts, and to retain an initialized ID, a generation must be triggered.
 Once an ID has been generated, the initializion value will no longer be used.
@@ -3856,6 +3861,89 @@ Delete messages which are not point measurements and information messages. Defau
 .It avg_message_topic=TOPIC
 MQTT topic to apply to generated messages and any forwarded point messages.
 .El
+
+.SS artnet (PA)
+The artnet module allows for DMX devices to be controlled using ArtNet.
+The module reads messages from another module creating specific control messages, possibly an instance of perl5 or python3 running a custom controller script.
+.PP
+In messages from sender instances, the following array values used for changing DMX values may be present:
+.PP
+.Bl -tag -width -indent
+.It artnet_cmd
+Must contain one of the string values
+.B set,
+.B fade,
+.B start
+or
+.B stop.
+The
+.B set
+and
+.B fade
+commands will either set DMX values or fade them gradually from the current value.
+The
+.B start
+and
+.B stop
+command commands will control whether or not the sending of control packets to the universe is active or not.
+By default, control packets are sent.
+.PP
+Sending
+.B set
+or
+.B fade
+commands implies the
+.B start
+command.
+.PP
+If no control message is received for a universe within 10 seconds, sending of control packets is switched off.
+To reset the timeout without sending any data,
+.B start
+commands may be sent.
+
+.It artnet_universe
+The index of the universe to manipulate.
+If not given, universe 0 is used.
+
+.It artnet_dmx_channel
+The first channel to manipulate.
+If not given, manipulation starts at channel 0.
+
+.It artnet_dmx_data
+The DMX data to use.
+May contain one or more channels with one byte each.
+The total length must not exceed 512 bytes or 512 minus the number of channels before the start channel.
+If not given, zeros are written to all channels.
+
+.It artnet_fade_speed
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, the value set in the
+.B artnet_fade_speed
+configuration parameter is used.
+
+.El
+.PP
+The following configuration parameters are available in the
+.B artnet
+module:
+.PP
+.Bl -tag -width -indent
+.It artnet_universes=UNSIGNED INTEGER
+Number of universes to control, the valid range is 0 through 16.
+If left unset, only one universe is controlled.
+If set to zero, no universes are controlled.
+
+.It artnet_demo={yes|no}
+If set to 'yes', a demo program will run cycling channel values in the configured universes.
+The demo will continue to run as long as no control messages are received from a sender instance.
+Defaults to 'yes'.
+
+.It artnet_fade_speed=UNSIGNED INTEGER
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, a value of 5 is used.
+
+.El
+
 .SH COMMON CONFIGURATION PARAMETERS
 Replace the
 .B X
