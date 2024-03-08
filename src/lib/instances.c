@@ -1596,9 +1596,8 @@ int rrr_instance_collection_run (
 	RRR_DBG_1("Event loop starting with %i instances in single thread mode\n",
 		RRR_LL_COUNT(instances));
 
-	if ((ret = rrr_event_dispatch (events)) != 0) {
+	if (rrr_event_dispatch (events) != 0) {
 		RRR_MSG_0("Error returned from dispatch in single thread mode\n");
-		goto out_destroy;
 	}
 
 	RRR_DBG_1("Event loop complete in single thread mode, running deinit on %i instances\n",
