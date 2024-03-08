@@ -217,6 +217,9 @@ static void __rrr_event_periodic (
 	if ( receiver->callback_periodic != NULL &&
 	    (queue->callback_ret = receiver->callback_periodic(receiver->callback_arg)) != 0
 	) {
+		RRR_DBG_9_PRINTF("EQ DISP %p[%u] %s periodic fd %i pid %llu tid %llu return value was non-zero %i\n",
+			queue, receiver_h, receiver->name, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), queue->callback_ret);
+
 		event_base_loopbreak(queue->event_base);
 	}
 }
@@ -490,13 +493,18 @@ int rrr_event_function_periodic_set_and_dispatch (
 void rrr_event_dispatch_break (
 		struct rrr_event_queue *queue
 ) {
+	RRR_DBG_9_PRINTF("EQ %p explicit loop break\n", queue);
+
 	event_base_loopbreak(queue->event_base);
 }
 
 void rrr_event_dispatch_exit (
 		struct rrr_event_queue *queue
 ) {
+	RRR_DBG_9_PRINTF("EQ %p explicit loop exit\n", queue);
+
 	queue->callback_ret = RRR_EVENT_EXIT;
+
 	event_base_loopbreak(queue->event_base);
 }
 
