@@ -682,7 +682,6 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session (
 	out_free_client_id:
 		RRR_FREE_IF_NOT_NULL(result->client_id_);
 	out_free_result:
-		RRR_FREE_IF_NOT_NULL(result->client_id_);
 		RRR_FREE_IF_NOT_NULL(result);
 	out:
 		return ret;
@@ -2312,9 +2311,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 		) {
 			goto out_ack_complete;
 		}
-		else {
-			goto out_ack_missing;
-		}
+		goto out_ack_missing;
 	}
 	else if (
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||

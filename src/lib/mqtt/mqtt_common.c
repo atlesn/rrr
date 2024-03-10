@@ -1239,6 +1239,7 @@ static int __rrr_mqtt_common_send (
 	struct rrr_mqtt_send_from_sessions_callback_data callback_data = {
 			handle
 	};
+
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			data->sessions->methods->iterate_send_queue (
 					counters,
@@ -1256,7 +1257,6 @@ static int __rrr_mqtt_common_send (
 }
 
 int rrr_mqtt_common_read_parse_single_handle (
-		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
 		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
@@ -1277,7 +1277,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 			data
 	)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
-			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while reading and parsing\n");
+			RRR_MSG_0("Internal error in %s while reading and parsing\n", __func__);
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -1288,18 +1288,26 @@ int rrr_mqtt_common_read_parse_single_handle (
 	// Preserve any INCOMPLETE
 	ret_preserve |= ret;
 
+	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
+
 	if ((ret = __rrr_mqtt_common_send (
-			counters,
+			&session_counters,
 			handle,
 			data
 	)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
-			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while sending\n");
+			RRR_MSG_0("Internal error in %s while sending\n", __func__);
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto housekeeping;
+	}
+
+	if (session_counters.maintain_ack_missing_counter > 0 ||
+	    session_counters.incomplete_qos_publish_counter > 0
+	) {
+		rrr_net_transport_ctx_notify_read_slow(handle);
 	}
 
 	housekeeping:
@@ -1308,7 +1316,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 
 	if ((ret = rrr_mqtt_conn_iterator_ctx_housekeeping(handle, exceeded_keep_alive_callback, callback_arg)) != 0) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
-			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while housekeeping\n");
+			RRR_MSG_0("Internal error in %s while housekeeping\n", __func__);
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}

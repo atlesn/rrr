@@ -1929,11 +1929,15 @@ static int mqttclient_do_late_client_identifier_update (struct mqttclient_data *
 	char *identifier_tmp = NULL;
 
 	if (data->do_recycle_assigned_client_identifier == 0) {
+		RRR_DBG_1("mqttclient instance %s late client identifier update: Identifier not to be updated per configuration.\n",
+			INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	// Identifier already set?
 	if ((data->client_identifier != NULL && *(data->client_identifier) == '\0')) {
+		RRR_DBG_1("mqttclient instance %s late client identifier update: Identifier already set, not updating.\n",
+			INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
@@ -1948,7 +1952,8 @@ static int mqttclient_do_late_client_identifier_update (struct mqttclient_data *
 	}
 
 	if (properties.assigned_client_identifier == NULL) {
-		// No assignment from server
+		RRR_DBG_1("mqttclient instance %s late client identifier update: No assignment from server.\n",
+			INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
@@ -1960,6 +1965,9 @@ static int mqttclient_do_late_client_identifier_update (struct mqttclient_data *
 				__func__, INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
+
+	RRR_DBG_1("mqttclient instance %s late client identifier update '%s': Setting identifier for use with new connection attempts.\n",
+		INSTANCE_D_NAME(data->thread_data), identifier_tmp);
 
 	if ((ret = rrr_mqtt_client_late_set_client_identifier (
 			data->mqtt_client_data,
@@ -2085,8 +2093,6 @@ static int mqttclient_input_queue_process (
 ) {
 	int ret = 0;
 
-	printf("Process %i\n", RRR_LL_COUNT(&data->input_queue));
-
 	RRR_LL_ITERATE_BEGIN(&data->input_queue, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 		if ((ret = mqttclient_process(data, node)) != 0) {
@@ -2190,8 +2196,6 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqttclient_data *data = thread_data->private_data;
-
-	printf("Periodic state %i\n", data->state);
 
 	switch (data->state) {
 		case MQTTCLIENT_STATE_STARTUP_CONNECT_GRACE:

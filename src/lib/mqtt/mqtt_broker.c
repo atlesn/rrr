@@ -1024,7 +1024,7 @@ static void __rrr_mqtt_broker_publish_notify_callback (
 		void *arg
 ) {
 	struct rrr_mqtt_broker_data *data = arg;
-	rrr_mqtt_transport_notify_tick(data->mqtt_data.transport);
+	rrr_mqtt_transport_notify_tick_all_fast(data->mqtt_data.transport);
 }
 
 static int __rrr_mqtt_broker_event_handler (
@@ -1132,30 +1132,12 @@ static int __rrr_mqtt_broker_read_callback (
 ) {
 	struct rrr_mqtt_broker_data *data = arg;
 
-	int ret = 0;
-	int ret_from_read = 0;
-
-	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
-
-	if ((ret = ret_from_read = rrr_mqtt_common_read_parse_single_handle (
-			&session_iterate_counters,
+	return rrr_mqtt_common_read_parse_single_handle (
 			&data->mqtt_data,
 			handle,
 			NULL,
 			NULL
-	)) != 0) {
-		if (ret == RRR_MQTT_SOFT_ERROR) {
-			// Mayble client sent a PUBLISH followed by DISCONNECT, process
-			// PUBLISH forwarding below.
-		}
-		else {
-			// Ensure INCOMPLETE propagates
-			goto out;
-		}
-	}
-
-	out:
-	return ret | ret_from_read;
+	);
 }
 
 int rrr_mqtt_broker_new (

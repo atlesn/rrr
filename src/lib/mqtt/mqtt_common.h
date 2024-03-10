@@ -343,7 +343,6 @@ int rrr_mqtt_common_send_from_sessions_callback (
 		void *arg
 );
 int rrr_mqtt_common_read_parse_single_handle (
-		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
 		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),

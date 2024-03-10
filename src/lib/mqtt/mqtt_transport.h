@@ -92,7 +92,7 @@ int rrr_mqtt_transport_connect (
 				void *rrr_mqtt_transport_accept_and_connect_callback_data
 		)
 );
-void rrr_mqtt_transport_notify_tick (
+void rrr_mqtt_transport_notify_tick_all_fast (
 		struct rrr_mqtt_transport *transport
 );
 int rrr_mqtt_transport_iterate (

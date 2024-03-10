@@ -261,7 +261,7 @@ int rrr_mqtt_transport_connect (
 		return ret;
 }
 
-void rrr_mqtt_transport_notify_tick (
+void rrr_mqtt_transport_notify_tick_all_fast (
 		struct rrr_mqtt_transport *transport
 ) {
 	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();

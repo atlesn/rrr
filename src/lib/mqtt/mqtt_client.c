@@ -177,7 +177,7 @@ int rrr_mqtt_client_connection_check_alive (
 void __rrr_mqtt_client_notify_tick (
 		struct rrr_mqtt_client_data *data
 ) {
-	rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
+	rrr_mqtt_transport_notify_tick_all_fast(data->mqtt_data.transport);
 }
 
 int rrr_mqtt_client_publish (
@@ -898,22 +898,12 @@ static int __rrr_mqtt_client_read_callback (
 ) {
 	struct rrr_mqtt_client_data *data = arg;
 
-	int ret = 0;
-
-	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
-
-	if ((ret = rrr_mqtt_common_read_parse_single_handle (
-			&session_counters,
+	return rrr_mqtt_common_read_parse_single_handle (
 			&data->mqtt_data,
 			handle,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
 			data
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	);
 }
 	
 static void __rrr_mqtt_client_publish_notify_callback (void *arg) {
