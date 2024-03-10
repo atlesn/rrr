@@ -263,15 +263,13 @@ static int exploder_parse_config (struct exploder_data *data, struct rrr_instanc
 	return ret;
 }
 
-void *thread_entry_exploder (struct rrr_thread *thread) {
+static int exploder_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct exploder_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("exploder thread thread_data is %p\n", thread_data);
 
 	exploder_data_init(data, thread_data);
-
-	pthread_cleanup_push(exploder_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -284,18 +282,32 @@ void *thread_entry_exploder (struct rrr_thread *thread) {
 	RRR_DBG_1 ("exploder instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
+	return 0;
+
 	out_message:
-	pthread_cleanup_pop(1);
+		exploder_data_cleanup(data);
+		return 1;
+}
+
+static void exploder_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct exploder_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
 
 	RRR_DBG_1 ("Thread exploder %p exiting\n", thread);
 
-	return NULL;
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	exploder_data_cleanup(data);
+
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {
@@ -309,6 +321,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->event_functions = event_functions;
+	data->init = exploder_init;
+	data->deinit = exploder_deinit;
 }
 
 void unload (void) {
