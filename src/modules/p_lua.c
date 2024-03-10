@@ -439,6 +439,8 @@ static void lua_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct lua_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("lua instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	rrr_cmodule_helper_deinit(thread_data);

@@ -597,7 +597,7 @@ static const char *module_name = "cmodule";
 __attribute__((constructor)) void construct(void) {
 }
 
-void load(struct rrr_instance_module_data *data) {
+void load (struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
@@ -606,7 +606,7 @@ void load(struct rrr_instance_module_data *data) {
 	data->deinit = js_deinit;
 }
 
-void unload(void) {
+void unload (void) {
 	RRR_DBG_1 ("Destroy cmodule module\n");
 }
 

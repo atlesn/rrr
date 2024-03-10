@@ -470,6 +470,8 @@ static void perl5_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n",
 			INSTANCE_D_NAME(thread_data), thread);
 

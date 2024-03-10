@@ -2361,9 +2361,9 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	httpclient_update_stats(data);
 
-	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
-		return RRR_EVENT_EXIT;
-	}
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
+//		return RRR_EVENT_EXIT;
+//	}
 
 	return 0;
 }
