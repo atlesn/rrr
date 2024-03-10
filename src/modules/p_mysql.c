@@ -110,7 +110,7 @@ static void mysql_bind_cleanup (struct mysql_data *data) {
 	data->bind_max_current = 0;
 }
 
-static void data_cleanup(void *arg) {
+static void mysql_data_cleanup(void *arg) {
 	struct mysql_data *data = arg;
 
 	rrr_event_collection_clear(&data->events);
@@ -131,20 +131,13 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_table);
 }
 
-static int data_init (
+static void mysql_data_init (
 		struct mysql_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
-
 	memset (data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	if (ret != 0) {
-		data_cleanup(data);
-	}
-	return ret;
 }
 
 static int mysql_allocate_and_clear_bind_as_needed (
@@ -949,19 +942,13 @@ static int parse_config (
 	return ret;
 }
 
-void *thread_entry_mysql (struct rrr_thread *thread) {
+static int mysql_module_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
-		return NULL;
-	}
+	mysql_data_init(data, thread_data);
 
 	RRR_DBG_1 ("mysql thread data is %p, size of private data: %llu\n", thread_data, (long long unsigned) sizeof(*data));
-
-	pthread_cleanup_push(mysql_stop, data);
-	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -970,7 +957,7 @@ void *thread_entry_mysql (struct rrr_thread *thread) {
 	}
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-			goto out_message;
+		goto out_message;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -989,7 +976,7 @@ void *thread_entry_mysql (struct rrr_thread *thread) {
 			&data->events,
 			mysql_event_process_entries,
 			data,
-			1000 // 1000 ms
+			1 * 1000 // 1 ms
 	) != 0) {
 		RRR_MSG_0("Failed to create queue process event in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -997,17 +984,32 @@ void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_event_function_periodic_set_and_dispatch (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
+	return 0;
+
 	out_message:
+		mysql_stop(data);
+		mysql_data_cleanup(data);
+		return 1;
+}
+
+static void mysql_module_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread mysql %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
-	return NULL;
+	mysql_stop(data);
+	mysql_data_cleanup(data);
+
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "mysql";
@@ -1025,6 +1027,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->event_functions = event_functions;
+	data->init = mysql_module_init;
+	data->deinit = mysql_module_deinit;
 }
 
 void unload (void) {
