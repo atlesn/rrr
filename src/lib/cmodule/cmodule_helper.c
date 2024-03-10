@@ -846,33 +846,21 @@ int rrr_cmodule_helper_methods_iterate (
 }
 
 static int __rrr_cmodule_helper_init (
-		struct rrr_cmodule_helper_run_data **result,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
+		struct rrr_cmodule_helper_run_data *run_data
 ) {
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	int ret = 0;
 
-	struct rrr_cmodule_helper_run_data *run_data;
-
 	rrr_event_collection_init(&cmodule->helper_events, INSTANCE_D_EVENTS(thread_data));
-
-	if ((run_data = rrr_allocate_zero(sizeof(*run_data))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory for init data in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	run_data->thread_data = thread_data;
-	run_data->app_periodic_callback = app_periodic_callback;
 
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.process_mode != RRR_CMODULE_PROCESS_MODE_NONE) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
-			goto out_free_run_data;
+			goto out_clear_collection;
 		}
 	}
 
@@ -887,7 +875,7 @@ static int __rrr_cmodule_helper_init (
 		goto out_clear_collection;
 	}
 
-	if (app_periodic_callback) {
+	if (run_data) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&cmodule->app_periodic_event,
 				&cmodule->helper_events,
@@ -927,13 +915,9 @@ static int __rrr_cmodule_helper_init (
 		goto out_clear_collection;
 	}
 
-	*result = run_data;
-
 	goto out;
 	out_clear_collection:
 		rrr_event_collection_clear(&cmodule->helper_events);
-	out_free_run_data:
-		rrr_free(run_data);
 	out:
 		return ret;
 }
@@ -941,7 +925,7 @@ static int __rrr_cmodule_helper_init (
 int rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	return __rrr_cmodule_helper_init(NULL, thread_data, NULL);
+	return __rrr_cmodule_helper_init(thread_data, NULL);
 }
 
 int rrr_cmodule_helper_init_with_periodic (
@@ -949,7 +933,30 @@ int rrr_cmodule_helper_init_with_periodic (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
-	return __rrr_cmodule_helper_init(result, thread_data, app_periodic_callback);
+	int ret = 0;
+
+	struct rrr_cmodule_helper_run_data *run_data;
+
+	if ((run_data = rrr_allocate_zero(sizeof(*run_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for init data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	run_data->thread_data = thread_data;
+	run_data->app_periodic_callback = app_periodic_callback;
+
+	if ((ret = __rrr_cmodule_helper_init(thread_data, run_data)) != 0) {
+		goto out_free_run_data;
+	}
+
+	*result = run_data;
+
+	goto out;
+	out_free_run_data:
+		rrr_free(run_data);
+	out:
+		return ret;
 }
 
 void rrr_cmodule_helper_deinit (
