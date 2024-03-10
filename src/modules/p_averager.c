@@ -562,11 +562,13 @@ static void averager_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread);
 
-	averager_data_cleanup(data);
-
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	averager_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

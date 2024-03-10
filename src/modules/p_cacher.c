@@ -910,9 +910,9 @@ static void cacher_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	RRR_DBG_1 ("Thread cacher %p exiting\n", thread);
 
-	cacher_data_cleanup(data);
-
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	cacher_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

@@ -1845,6 +1845,8 @@ static void ip_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	ip_data_cleanup(data);
 
 	RRR_DBG_1 ("Thread ip %p instance %s exiting\n",

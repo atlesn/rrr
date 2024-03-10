@@ -1967,6 +1967,7 @@ void httpserver_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 		RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
 
 		httpserver_start_shutdown(data);
+
 		rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 	}
 

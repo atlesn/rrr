@@ -513,7 +513,7 @@ static int artnet_init (RRR_INSTANCE_INIT_ARGS) {
 		return 1;
 }
 
-void artnet_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+static void artnet_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct artnet_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -521,9 +521,9 @@ void artnet_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 	RRR_DBG_1 ("Thread artnet %p exiting\n", thread);
 
-	artnet_data_cleanup(data);
-
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	artnet_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

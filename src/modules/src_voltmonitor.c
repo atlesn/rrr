@@ -503,12 +503,14 @@ static void voltmonitor_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("voltmonitor received encourage stop\n");
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	usb_cleanup(data);
 	data_cleanup(data);
-
-	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
 }

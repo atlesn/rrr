@@ -2246,11 +2246,13 @@ static void file_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct file_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread file instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 
-	file_data_cleanup(data);
-
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	file_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

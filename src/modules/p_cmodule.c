@@ -400,6 +400,8 @@ static void cmodule_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("cmodule instance %s stopping thread %p\n",
 		INSTANCE_D_NAME(thread_data), thread_data);
 

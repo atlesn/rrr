@@ -539,15 +539,17 @@ static void journal_deinit(RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread journal instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	journal_unregister_handle(data);
 	journal_data_cleanup(data);
 
 	// This cleanup must happen after the hook is unregistered
 	journal_delivery_lock_cleanup(data);
-
-	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
 }

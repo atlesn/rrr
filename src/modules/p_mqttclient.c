@@ -180,6 +180,7 @@ struct mqttclient_data {
 	uint64_t state_time;
 	uint64_t prev_state_time;
 	uint64_t poll_discard_count;
+	uint64_t prev_stats_time;
 
 	struct rrr_net_transport_config net_transport_config;
 	int transport_handle;
@@ -231,12 +232,6 @@ static void mqttclient_state_init (struct mqttclient_data *data, enum mqttclient
 
 	data->state = state;
 	data->state_time = rrr_time_get_64();
-}
-
-static void mqttclient_state_ensure (struct mqttclient_data *data, enum mqttclient_state state) {
-	if (data->state != state) {
-		mqttclient_state_set(data, state);
-	}
 }
 
 static void mqttclient_state_transition_timed (struct mqttclient_data *data, enum mqttclient_state state, uint64_t delta_ms) {
@@ -2242,34 +2237,12 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			assert(0 && "State not implemented");
 	};
 
-	// TODO : Periodic stats every second
-	//mqttclient_update_stats(data);
+	if (rrr_time_get_64() - data->prev_stats_time >= 1 * 1000 * 1000 /* 1 second */) {
+		mqttclient_update_stats(data);
+		data->prev_stats_time = rrr_time_get_64();
+	}
 
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
-
-//	reconnect:
-
-//	data->send_disabled = 1;
-//	data->connect_time = 0;
-//	data->disconnect_time = 0;
-
-//	if (mqttclient_connect_loop(data, clean_start) != RRR_MQTT_OK) {
-//		goto out_destroy_client;
-//	}
-
-
-	assert(0 && "Subscribe not implemented");
-
-
-	assert(0 && "Client identifier update not implemented");
-
-//	data->send_disabled = 0;
-//	if (ret_tmp != 0 || rrr_thread_signal_encourage_stop_check(thread)) {
-//		goto out_destroy_client;
-//	}
-
-
-//	goto reconnect;
 }
 
 int mqttclient_init (RRR_INSTANCE_INIT_ARGS) {

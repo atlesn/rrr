@@ -430,10 +430,10 @@ static void socket_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	RRR_DBG_1 ("socket instance %s received encourage stop\n",
 		INSTANCE_D_NAME(thread_data));
 
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
 	socket_stop(data);
 	data_cleanup(data);
-
-	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
 }

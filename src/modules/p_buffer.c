@@ -157,6 +157,7 @@ static void buffer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
 	(void)(data);
 
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));

@@ -693,11 +693,13 @@ static void incrementer_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct incrementer_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread incrementer %p exiting\n", thread);
 
-	incrementer_data_cleanup(data);
-
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	incrementer_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

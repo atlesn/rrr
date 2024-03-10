@@ -447,9 +447,11 @@ void dummy_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
-	dummy_data_cleanup(data);
+	(void)(strike);
 
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	dummy_data_cleanup(data);
 
 	*deinit_complete = 1;
 }

@@ -234,13 +234,15 @@ static void msgdb_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct msgdb_data *data = thread_data->private_data = thread_data->private_memory;
 
+	(void)(strike);
+
 	RRR_DBG_1 ("Thread msgdb %p exiting\n", thread);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	rrr_cmodule_helper_deinit(thread_data);
 
 	msgdb_data_cleanup(data);
-
-	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
 }
