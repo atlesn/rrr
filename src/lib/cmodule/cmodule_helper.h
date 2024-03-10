@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_cmodule;
 struct rrr_cmodule_worker_callbacks;
+struct rrr_cmodule_helper_run_data;
 
 extern struct rrr_instance_event_functions rrr_cmodule_helper_event_functions;
 
@@ -64,11 +65,15 @@ int rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data
 );
 int rrr_cmodule_helper_init_with_periodic (
+		struct rrr_cmodule_helper_run_data **result,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 );
 void rrr_cmodule_helper_deinit (
 		struct rrr_instance_runtime_data *thread_data
+);
+void rrr_cmodule_helper_run_data_destroy (
+		struct rrr_cmodule_helper_run_data *run_data
 );
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,

@@ -59,18 +59,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define WORKER_LOOP_END()                                                 \
 	}} while(0)
 
-const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
-		struct rrr_instance_runtime_data *thread_data
-) {
-	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
-}
-
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
 };
+
+struct rrr_cmodule_helper_run_data {
+	struct rrr_instance_runtime_data *thread_data;
+	int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS);
+};
+
+const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
+}
 
 static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
@@ -325,18 +330,13 @@ static void __rrr_cmodule_helper_event_input_queue (
 	}
 }
 
-struct rrr_cmodule_helper_event_app_periodic_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-	int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS);
-};
-
 static void __rrr_cmodule_helper_event_app_periodic_callback (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
 ) {
-	struct rrr_cmodule_helper_event_app_periodic_callback_data *callback_data = arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_cmodule_helper_run_data *run_data = arg;
+	struct rrr_instance_runtime_data *thread_data = run_data->thread_data;
 
 	(void)(fd);
 	(void)(flags);
@@ -344,7 +344,7 @@ static void __rrr_cmodule_helper_event_app_periodic_callback (
 	RRR_EVENT_HOOK();
 
 	int ret_tmp;
-	if ((ret_tmp = callback_data->app_periodic_callback(thread_data)) != 0) {
+	if ((ret_tmp = run_data->app_periodic_callback(thread_data)) != 0) {
 		RRR_MSG_0("Error %i from app periodic callback in %s in instance '%s'\n",
 				ret_tmp, __func__, INSTANCE_D_NAME(thread_data));
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
@@ -846,6 +846,7 @@ int rrr_cmodule_helper_methods_iterate (
 }
 
 static int __rrr_cmodule_helper_init (
+		struct rrr_cmodule_helper_run_data **result,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
@@ -853,14 +854,25 @@ static int __rrr_cmodule_helper_init (
 
 	int ret = 0;
 
+	struct rrr_cmodule_helper_run_data *run_data;
+
 	rrr_event_collection_init(&cmodule->helper_events, INSTANCE_D_EVENTS(thread_data));
+
+	if ((run_data = rrr_allocate_zero(sizeof(*run_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for init data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	run_data->thread_data = thread_data;
+	run_data->app_periodic_callback = app_periodic_callback;
 
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.process_mode != RRR_CMODULE_PROCESS_MODE_NONE) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
-			goto out_clear_collection;
+			goto out_free_run_data;
 		}
 	}
 
@@ -876,16 +888,11 @@ static int __rrr_cmodule_helper_init (
 	}
 
 	if (app_periodic_callback) {
-		struct rrr_cmodule_helper_event_app_periodic_callback_data callback_data = {
-			thread_data,
-			app_periodic_callback
-		};
-
 		if ((ret = rrr_event_collection_push_periodic (
 				&cmodule->app_periodic_event,
 				&cmodule->helper_events,
 				__rrr_cmodule_helper_event_app_periodic_callback,
-				&callback_data,
+				run_data,
 				1000 * 1000 // 1000 ms
 		)) != 0) {
 			RRR_MSG_0("Failed to create app periodic callback event in %s\n", __func__);
@@ -920,9 +927,13 @@ static int __rrr_cmodule_helper_init (
 		goto out_clear_collection;
 	}
 
+	*result = run_data;
+
 	goto out;
 	out_clear_collection:
 		rrr_event_collection_clear(&cmodule->helper_events);
+	out_free_run_data:
+		rrr_free(run_data);
 	out:
 		return ret;
 }
@@ -930,14 +941,15 @@ static int __rrr_cmodule_helper_init (
 int rrr_cmodule_helper_init (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	return __rrr_cmodule_helper_init(thread_data, NULL);
+	return __rrr_cmodule_helper_init(NULL, thread_data, NULL);
 }
 
 int rrr_cmodule_helper_init_with_periodic (
+		struct rrr_cmodule_helper_run_data **result,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*app_periodic_callback)(RRR_CMODULE_HELPER_APP_PERIODIC_CALLBACK_ARGS)
 ) {
-	return __rrr_cmodule_helper_init(thread_data, app_periodic_callback);
+	return __rrr_cmodule_helper_init(result, thread_data, app_periodic_callback);
 }
 
 void rrr_cmodule_helper_deinit (
@@ -946,6 +958,12 @@ void rrr_cmodule_helper_deinit (
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 	rrr_event_collection_clear(&cmodule->helper_events);
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+}
+
+void rrr_cmodule_helper_run_data_destroy (
+		struct rrr_cmodule_helper_run_data *run_data
+) {
+	rrr_free(run_data);
 }
 
 int rrr_cmodule_helper_parse_config (

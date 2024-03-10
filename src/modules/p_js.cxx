@@ -71,6 +71,7 @@ struct js_data {
 	const js_run_data *run_data;
 	char *js_file;
 	char *js_module_name;
+	struct rrr_cmodule_helper_run_data *cmodule_run_data;
 };
 
 static void js_data_cleanup(void *arg) {
@@ -78,6 +79,8 @@ static void js_data_cleanup(void *arg) {
 
 	RRR_FREE_IF_NOT_NULL(data->js_file);
 	RRR_FREE_IF_NOT_NULL(data->js_module_name);
+	if (data->cmodule_run_data != NULL)
+		rrr_cmodule_helper_run_data_destroy(data->cmodule_run_data);
 }
 
 static void js_data_init(struct js_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -560,6 +563,7 @@ static int js_init (RRR_INSTANCE_INIT_ARGS) {
 			INSTANCE_D_NAME(thread_data), thread_data);
 
 	if (rrr_cmodule_helper_init_with_periodic (
+			&data->cmodule_run_data,
 			thread_data,
 			js_main_periodic_callback
 	) != 0) {
@@ -590,10 +594,10 @@ static void js_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 
 static const char *module_name = "cmodule";
 
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void construct(void) {
 }
 
-void init(struct rrr_instance_module_data *data) {
+void load(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
