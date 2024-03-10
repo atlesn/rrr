@@ -1449,11 +1449,11 @@ static int __rrr_instance_collection_run_deinit_periodic (RRR_EVENT_FUNCTION_PER
 	}
 
 	if (complete_count < callback_data->count) {
-		RRR_MSG_1("Not all instances have completed deinit yet (%i/%i are complete)\n",
+		RRR_DBG_1("Not all instances have completed deinit yet (%i/%i are complete)\n",
 			complete_count, callback_data->count);
 	}
 	else {
-		RRR_MSG_1("Deinit complete for all %i instances\n",
+		RRR_DBG_1("Deinit complete for all %i instances\n",
 			callback_data->count);
 		return RRR_EVENT_EXIT;
 	}
