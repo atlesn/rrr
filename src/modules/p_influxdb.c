@@ -83,23 +83,16 @@ struct influxdb_data {
 
 	rrr_http_unique_id unique_id_counter;
 
-	// NOT managed by cleanup function, separate cleanup_push/pop
+	// NOT managed by cleanup function
 	struct rrr_net_transport *transport;
 };
 
-static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_runtime_data *thread_data) {
-	int ret = 0;
-
+static void influxdb_data_init(struct influxdb_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset (data, '\0', sizeof(*data));
-
 	data->thread_data = thread_data;
-
-	goto out;
-	out:
-		return ret;
 }
 
-static void influxdb_data_destroy (void *arg) {
+static void influxdb_data_cleanup (void *arg) {
 	struct influxdb_data *data = arg;
 	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->database);
@@ -107,7 +100,8 @@ static void influxdb_data_destroy (void *arg) {
 	rrr_msg_holder_collection_clear(&data->input_buffer);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
-	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
+	if (data->transport != NULL)
+		rrr_net_transport_destroy(data->transport);
 }
 
 #define CHECK_RET()                                                                         \
@@ -578,7 +572,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 		ret = 1;
 	}
 
-	if (rrr_net_transport_config_parse(
+	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"influxdb",
@@ -601,45 +595,33 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 	return ret;
 }
 
-void *thread_entry_influxdb (struct rrr_thread *thread) {
+int influxdb_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_holder_collection error_buf_tmp = {0};
-	struct rrr_net_transport *transport = NULL;
 
-	if (influxdb_data_init(influxdb_data, thread_data) != 0) {
-		RRR_MSG_0("Could not initialize data in influxdb instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_exit;
-	}
+	influxdb_data_init(influxdb_data, thread_data);
 
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
-
-	pthread_cleanup_push(influxdb_data_destroy, influxdb_data);
-	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (influxdb_parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Error while parsing configuration for influxdb instance %s\n",
-				INSTANCE_D_NAME(thread_data));
+			INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	if (rrr_net_transport_new_simple (
-			&transport,
+			&influxdb_data->transport,
 			&influxdb_data->net_transport_config,
 			"influxDB",
 			0,
 			INSTANCE_D_EVENTS(thread_data)
 	) != 0) {
-		RRR_MSG_0("Could not create transport in influxdb data_init\n");
+		RRR_MSG_0("Could not create transport in influxdb instance %s\n",
+			INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
-
-	influxdb_data->transport = transport;
-
-	pthread_cleanup_push(rrr_net_transport_destroy_void, transport);
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
@@ -660,30 +642,35 @@ void *thread_entry_influxdb (struct rrr_thread *thread) {
 			1000 // 1000 ms
 	) != 0) {
 		RRR_MSG_0("Failed to create queue process event in influxdb instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_cleanup_transport;
+		goto out_message;
 	}
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			influxdb_event_periodic
 	);
 
-	out_cleanup_transport:
-	pthread_cleanup_pop(1);
+	return 0;
 
 	out_message:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1\n",
-			thread, INSTANCE_D_NAME(thread_data));
+		influxdb_data_cleanup(influxdb_data);
+		return 1;
+}
 
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+static void influxdb_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct influxdb_data *data = thread_data->private_data = thread_data->private_memory;
 
-	out_exit:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2\n",
-			thread, INSTANCE_D_NAME(thread_data));
+	(void)(strike);
 
-	return NULL;
+	RRR_DBG_1 ("Thread influxdb %p exiting\n", thread);
+
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	influxdb_data_cleanup(data);
+
+	*deinit_complete = 1;
 }
 
 static const char *module_name = "influxdb";
@@ -697,6 +684,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->event_functions = event_functions;
+	data->init = influxdb_init;
+	data->deinit = influxdb_deinit;
 }
 
 void unload (void) {

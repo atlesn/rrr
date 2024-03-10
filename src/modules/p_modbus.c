@@ -1165,9 +1165,10 @@ static int modbus_parse_config (struct modbus_data *data, struct rrr_instance_co
 	return ret;
 }
 
-void *thread_entry_modbus (struct rrr_thread *thread) {
+static int modbus_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct modbus_data *data = thread_data->private_data = thread_data->private_memory;
+
 	RRR_DBG_1 ("modbus thread thread_data is %p\n", thread_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
@@ -1202,7 +1203,7 @@ void *thread_entry_modbus (struct rrr_thread *thread) {
 			&data->events,
 			modbus_event_process,
 			data,
-			50000 // 50 ms
+			50 * 1000 // 50 ms
 	) != 0) {
 		RRR_MSG_0("Failed to create event in %s\n", __func__);
 		goto out_message;
@@ -1227,18 +1228,32 @@ void *thread_entry_modbus (struct rrr_thread *thread) {
 			data
 	);
 
-	rrr_event_function_periodic_set_and_dispatch (
+	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
-			1 * 1000 * 1000,
+			1 * 1000 * 1000, // 1 second
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
 	);
 
+	return 0;
+
 	out_message:
-	modbus_data_cleanup(data);
+		modbus_data_cleanup(data);
+		return 1;
+}
+
+static void modbus_deinit (RRR_INSTANCE_DEINIT_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct modbus_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(strike);
 
 	RRR_DBG_1 ("Thread modbus %p exiting\n", thread);
 
-	return NULL;
+	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
+
+	modbus_data_cleanup(data);
+
+	*deinit_complete = 1;
 }
 
 struct rrr_instance_event_functions event_functions = {
@@ -1252,6 +1267,8 @@ void load (struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->event_functions = event_functions;
+	data->init = modbus_init;
+	data->deinit = modbus_deinit;
 }
 
 void unload (void) {
