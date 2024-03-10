@@ -2234,7 +2234,6 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 			break;
 		case MQTTCLIENT_STATE_DISCONNECT:
-			assert(0 && "State disconnect not tested");
 			if (mqttclient_check_disconnect(data) != 0) {
 				return RRR_EVENT_ERR;
 			}
@@ -2382,8 +2381,6 @@ int mqttclient_init (RRR_INSTANCE_INIT_ARGS) {
 void mqttclient_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqttclient_data *data = thread_data->private_data = thread_data->private_memory;
-
-	(void)(strike);
 
 	int timeout = 0;
 	int disconnected = 0;
