@@ -62,6 +62,8 @@ extern "C" {
 #include "../lib/js/OS.hxx"
 #include "../lib/js/Js.hxx"
 
+//#define RRR_JS_AGGRESSIVE_GC
+
 extern "C" {
 
 class js_run_data;
@@ -172,10 +174,12 @@ class js_run_data {
 	void runGC() {
 		persistent_storage.gc(&memory_entries, &memory_size);
 
+#ifdef RRR_JS_AGGRESSIVE_GC
 		// Calls to make the GCing a little more aggressive
 		isolate->LowMemoryNotification();
 		while (!isolate->IdleNotificationDeadline(1)) {
 		}
+#endif /* RRR_JS_AGGRESSIVE_GC */
 	}
 	bool hasConfig() const {
 		return !config.empty();
