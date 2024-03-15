@@ -789,9 +789,9 @@ static void __rrr_net_transport_event_tick (
 	EVENT_REMOVE(handle->event_tick_notify_fast);
 	EVENT_REMOVE(handle->event_tick_notify_slow);
 
-	ret_tmp = handle->transport->read_callback (
+	ret_tmp = handle->transport->tick_callback (
 			handle,
-			handle->transport->read_callback_arg
+			handle->transport->tick_callback_arg
 	);
 
 	CHECK_READ_WRITE_RETURN();
@@ -1774,17 +1774,6 @@ int rrr_net_transport_bind_and_listen_dualstack (
 	return ret;
 }
 
-void rrr_net_transport_event_activate_all_connected_read (
-		struct rrr_net_transport *transport
-) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (node->event_read.event != NULL)
-			EVENT_ACTIVATE(node->event_read);
-	RRR_LL_ITERATE_END();
-}
-
 static int __rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		uint64_t first_read_timeout_ms,
@@ -1796,7 +1785,9 @@ static int __rrr_net_transport_event_setup (
 		int (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
+		void *read_callback_arg,
+		int (*tick_callback)(RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS),
+		void *tick_callback_arg
 ) {
 	int ret = 0;
 
@@ -1820,6 +1811,9 @@ static int __rrr_net_transport_event_setup (
 	transport->read_callback = read_callback;
 	transport->read_callback_arg = read_callback_arg;
 
+	transport->tick_callback = tick_callback;
+	transport->tick_callback_arg = tick_callback_arg;
+
 	if ((ret = rrr_event_collection_push_periodic (
 			&transport->event_read_add,
 			&transport->events,
@@ -1842,16 +1836,6 @@ int rrr_net_transport_is_tls (
 	return transport->methods->is_tls();
 }
 
-void rrr_net_transport_notify_read_fast_all_connected (
-		struct rrr_net_transport *transport
-) {
-	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
-		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-			rrr_net_transport_ctx_notify_read_fast(node);
-		}
-	RRR_LL_ITERATE_END();
-}
-
 int rrr_net_transport_handle_notify_read_fast (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
@@ -1872,6 +1856,30 @@ int rrr_net_transport_handle_notify_read_slow (
 	rrr_net_transport_ctx_notify_read_slow(handle);
 
 	return 0;
+}
+
+void rrr_net_transport_notify_tick_instant_all_connected (
+		struct rrr_net_transport *transport
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION &&
+		    node->event_tick_notify_fast.event != NULL
+		) {
+			EVENT_ACTIVATE(node->event_tick_notify_fast);
+		}
+	RRR_LL_ITERATE_END();
+}
+
+void rrr_net_transport_notify_tick_fast_all_connected (
+		struct rrr_net_transport *transport
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
+			rrr_net_transport_ctx_notify_tick_fast(node);
+		}
+	RRR_LL_ITERATE_END();
 }
 
 int rrr_net_transport_handle_notify_tick_fast (
@@ -2261,6 +2269,8 @@ static int __rrr_net_transport_new (
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,
+		int (*tick_callback)(RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS),
+		void *tick_callback_arg,
 		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
 		void *stream_open_callback_arg
 ) {
@@ -2366,7 +2376,9 @@ static int __rrr_net_transport_new (
 				handshake_complete_callback,
 				handshake_complete_callback_arg,
 				read_callback,
-				read_callback_arg
+				read_callback_arg,
+				tick_callback,
+				tick_callback_arg
 		)) != 0) {
 			goto out_destroy_graylist;
 		}
@@ -2405,6 +2417,8 @@ int rrr_net_transport_new (
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,
+		int (*tick_callback)(RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS),
+		void *tick_callback_arg,
 		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
 		void *stream_open_callback_arg
 ) {
@@ -2427,6 +2441,8 @@ int rrr_net_transport_new (
 			handshake_complete_callback_arg,
 			read_callback,
 			read_callback_arg,
+			tick_callback,
+			tick_callback_arg,
 			stream_open_callback,
 			stream_open_callback_arg
 	);
@@ -2452,6 +2468,8 @@ int rrr_net_transport_new_simple (
 			0,
 			0,
 			0,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

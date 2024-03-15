@@ -282,7 +282,7 @@ static int __rrr_http_session_transport_ctx_tick (
 	pthread_cleanup_push(rrr_http_application_destroy_if_not_null_void, &upgraded_app);
 
 	if  (session->application == NULL) {
-		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");
+		RRR_BUG("BUG: Application was NULL in %s\n", __func__);
 	}
 
 	if ((ret = rrr_http_application_transport_ctx_tick (

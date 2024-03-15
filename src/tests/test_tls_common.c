@@ -154,6 +154,8 @@ int rrr_test_tls_common_init (
 			&data->server,
 			read_callback,
 			&data->server,
+			NULL,
+			NULL,
 			stream_open_callback,
 			&data->server
 	)) != 0) {
@@ -178,6 +180,8 @@ int rrr_test_tls_common_init (
 			&data->client,
 			read_callback,
 			&data->client,
+			NULL,
+			NULL,
 			stream_open_callback,
 			&data->client
 	)) != 0) {

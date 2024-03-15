@@ -819,6 +819,12 @@ static int __rrr_http_client_read_callback (
 	return ret;
 }
 
+static int __rrr_http_client_tick_callback (
+		RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS
+) {
+	return __rrr_http_client_read_callback(handle, arg);
+}
+
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -1396,6 +1402,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				__rrr_http_client_read_callback,
 				http_client,
+				__rrr_http_client_tick_callback,
+				http_client,
 				__rrr_http_client_net_transport_cb_stream_open,
 				NULL
 		) != 0) {
@@ -1430,6 +1438,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				__rrr_http_client_read_callback,
 				http_client,
+				__rrr_http_client_tick_callback,
+				http_client,
 				NULL,
 				NULL
 		) != 0) {
@@ -1461,6 +1471,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				NULL,
 				NULL,
 				__rrr_http_client_read_callback,
+				http_client,
+				__rrr_http_client_tick_callback,
 				http_client,
 				NULL,
 				NULL

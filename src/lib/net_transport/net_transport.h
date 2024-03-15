@@ -93,6 +93,10 @@ struct rrr_socket_graylist;
     struct rrr_net_transport_handle *handle,                   \
     void *arg
 
+#define RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS                   \
+    struct rrr_net_transport_handle *handle,                   \
+    void *arg
+
 #define RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS            \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
@@ -137,6 +141,8 @@ struct rrr_socket_graylist;
     void *handshake_complete_callback_arg;                                  \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg;                                                \
+    int (*tick_callback)(RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS);             \
+    void *tick_callback_arg;                                                \
     int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS); \
     void *stream_open_callback_arg_global;                                  \
     char application_name[32]
@@ -261,13 +267,7 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
-void rrr_net_transport_event_activate_all_connected_read (
-		struct rrr_net_transport *transport
-);
 int rrr_net_transport_is_tls (
-		struct rrr_net_transport *transport
-);
-void rrr_net_transport_notify_read_fast_all_connected (
 		struct rrr_net_transport *transport
 );
 int rrr_net_transport_iterate_by_mode_and_do (
@@ -283,6 +283,12 @@ int rrr_net_transport_handle_notify_read_fast (
 int rrr_net_transport_handle_notify_read_slow (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
+);
+void rrr_net_transport_notify_tick_instant_all_connected (
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_notify_tick_fast_all_connected (
+		struct rrr_net_transport *transport
 );
 int rrr_net_transport_handle_notify_tick_fast (
 		struct rrr_net_transport *transport,
@@ -419,6 +425,8 @@ int rrr_net_transport_new (
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg,
+		int (*tick_callback)(RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS),
+		void *tick_callback_arg,
 		int (*stream_open_callback)(RRR_NET_TRANSPORT_STREAM_OPEN_CALLBACK_ARGS),
 		void *stream_open_callback_arg
 );

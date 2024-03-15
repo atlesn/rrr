@@ -127,7 +127,13 @@ static void __rrr_mqtt_transport_accept_callback (
             NULL,                                                     \
             NULL,                                                     \
             transport->read_callback,                                 \
+            transport->read_callback_arg,                             \
+            transport->read_callback,                                 \
             transport->read_callback_arg
+
+// TODO : Create separate tick callback to avoid read timeouts
+//        when ticking for particular events to happend without
+//        there being anything to read.
 
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
@@ -265,7 +271,7 @@ void rrr_mqtt_transport_notify_tick_all_fast (
 		struct rrr_mqtt_transport *transport
 ) {
 	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
-		rrr_net_transport_notify_read_fast_all_connected(node);
+		rrr_net_transport_notify_tick_fast_all_connected(node);
 	}
 }
 

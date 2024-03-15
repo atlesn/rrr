@@ -1173,13 +1173,15 @@ static int httpserver_async_response_get_and_process (
 	}
 
 	if (callback_data.entry != NULL) {
-		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s\n",
-				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
+		struct rrr_msg_msg *msg = callback_data.entry->message;
+
+		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s age %" PRIu64 "\n",
+				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, rrr_time_get_64() - msg->timestamp);
 
 		rrr_msg_holder_lock(callback_data.entry);
 		ret = httpserver_async_response_get_extract_data (
 				&target_array,
-				(struct rrr_msg_msg *) callback_data.entry->message
+				msg
 		);
 		rrr_msg_holder_unlock(callback_data.entry);
 

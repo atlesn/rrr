@@ -175,6 +175,9 @@ static int __rrr_http_server_response_postprocess_callback (
 static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 );
+static int __rrr_http_server_tick_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+);
 
 static int __rrr_http_server_transport_ctx_application_ensure (
 		struct rrr_http_server *http_server,
@@ -652,12 +655,20 @@ static int __rrr_http_server_read_callback (
 	return ret;
 }
 
+static int __rrr_http_server_tick_callback (
+		RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS
+) {
+	return __rrr_http_server_read_callback(handle, arg);
+}
+
 #define RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS                \
     __rrr_http_server_accept_callback,                         \
     http_server,                                               \
     __rrr_http_server_handshake_complete_callback,             \
     http_server,                                               \
     __rrr_http_server_read_callback,                           \
+    http_server,                                               \
+    __rrr_http_server_tick_callback,                           \
     http_server
 
 struct rrr_http_server_start_alpn_protos_callback_data {
@@ -914,16 +925,16 @@ void rrr_http_server_response_available_notify (
 		struct rrr_http_server *server
 ) {
 	if (server->transport_http) {
-		rrr_net_transport_event_activate_all_connected_read(server->transport_http);
+		rrr_net_transport_notify_tick_instant_all_connected(server->transport_http);
 	}
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https) {
-		rrr_net_transport_event_activate_all_connected_read(server->transport_https);
+		rrr_net_transport_notify_tick_instant_all_connected(server->transport_https);
 	}
 #endif
 #if defined(RRR_WITH_HTTP3)
 	if (server->transport_quic) {
-		rrr_net_transport_event_activate_all_connected_read(server->transport_quic);
+		rrr_net_transport_notify_tick_instant_all_connected(server->transport_quic);
 	}
 #endif
 }
