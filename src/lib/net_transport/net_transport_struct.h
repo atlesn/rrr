@@ -158,7 +158,8 @@ struct rrr_nullsafe_str;
     const struct rrr_socket_datagram *datagram
 
 #define RRR_NET_TRANSPORT_POLL_ARGS                            \
-    struct rrr_net_transport_handle *handle
+    struct rrr_net_transport_handle *handle,                   \
+    int timeout_ms
 
 #define RRR_NET_TRANSPORT_HANDSHAKE_ARGS                       \
     struct rrr_net_transport_handle *handle

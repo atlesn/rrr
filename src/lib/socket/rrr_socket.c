@@ -1144,7 +1144,7 @@ static int __rrr_socket_send_check (
 		fd, POLLOUT, 0
 	};
 
-	int timeout = 10; // 5 ms
+	int timeout = 10; // 10 ms
 
 	if ((items = poll(&pollfd, 1, timeout)) == -1 || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
@@ -1496,14 +1496,15 @@ int rrr_socket_send_blocking (
 }
 
 int rrr_socket_check_alive (
-		int fd
+		int fd,
+		int timeout_ms
 ) {
 	struct pollfd pollfd = {0};
 
 	pollfd.fd = fd;
 	pollfd.events = POLLIN;
 
-	ssize_t ret_tmp = poll(&pollfd, 1, 10);
+	ssize_t ret_tmp = poll(&pollfd, 1, timeout_ms);
 
 	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
 		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n",

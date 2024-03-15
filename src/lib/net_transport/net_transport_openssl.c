@@ -574,7 +574,8 @@ static int __rrr_net_transport_openssl_read_raw (
 			ret = RRR_READ_EOF;
 			goto out;
 		}
-		ret = rrr_socket_check_alive((int) BIO_get_fd(ssl_data->web, NULL));
+		// TODO : Possibly reduce timeout
+		ret = rrr_socket_check_alive((int) BIO_get_fd(ssl_data->web, NULL), 10 /* 10 ms timeout */);
 		goto out;
 	}
 	else if (ERR_peek_error() != 0) {
@@ -721,7 +722,7 @@ static int __rrr_net_transport_openssl_poll (
 		return RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 	}
 
-	if (rrr_socket_check_alive (fd) != 0) {
+	if (rrr_socket_check_alive (fd, timeout_ms) != 0) {
 		return RRR_READ_EOF;
 	}
 

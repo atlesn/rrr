@@ -115,9 +115,10 @@ struct rrr_net_transport *rrr_net_transport_ctx_get_transport (
 }
 
 int rrr_net_transport_ctx_check_alive (
-		struct rrr_net_transport_handle *handle
+		struct rrr_net_transport_handle *handle,
+		int poll_timeout_ms
 ) {
-	return handle->transport->methods->poll(handle);
+	return handle->transport->methods->poll(handle, poll_timeout_ms);
 }
 
 int rrr_net_transport_ctx_read_message (

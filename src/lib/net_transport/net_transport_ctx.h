@@ -86,7 +86,8 @@ struct rrr_net_transport *rrr_net_transport_ctx_get_transport (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_check_alive (
-		struct rrr_net_transport_handle *handle
+		struct rrr_net_transport_handle *handle,
+		int poll_timeout_ms
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,

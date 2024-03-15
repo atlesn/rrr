@@ -239,7 +239,8 @@ int rrr_socket_send_blocking (
 		void *wait_callback_arg
 );
 int rrr_socket_check_alive (
-		int fd
+		int fd,
+		int timeout_ms
 );
 void rrr_socket_datagram_init (
 		struct rrr_socket_datagram *datagram,

@@ -1618,7 +1618,7 @@ static int __rrr_http_application_http1_tick (
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
-			if ((ret = rrr_net_transport_ctx_check_alive(handle)) == 0) {
+			if ((ret = rrr_net_transport_ctx_check_alive(handle, 0 /* No poll timeout */)) == 0) {
 				if ((ret = http1->callbacks.async_response_get_callback (
 						http1->active_transaction,
 						http1->callbacks.callback_arg

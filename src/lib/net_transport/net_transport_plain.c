@@ -392,7 +392,7 @@ int __rrr_net_transport_plain_accept (
 static int __rrr_net_transport_plain_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
-	return rrr_socket_check_alive (handle->submodule_fd);
+	return rrr_socket_check_alive (handle->submodule_fd, timeout_ms);
 }
 
 static int __rrr_net_transport_plain_handshake (

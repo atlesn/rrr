@@ -3330,11 +3330,16 @@ static int __rrr_net_transport_quic_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
 	struct rrr_net_transport_quic_handle_data *handle_data = handle->submodule_private_ptr;
+
+	(void)(timeout_ms);
+
 	if (rrr_length_from_slength_bug_const(RRR_LL_COUNT(&handle_data->ctx->streams)) > 0) {
 		return RRR_NET_TRANSPORT_READ_OK;
 	}
+
 	RRR_DBG_7("net transport quic fd %i h %i no streams during poll, return EOF\n",
 		handle_data->ctx->fd, handle->handle);
+
 	return RRR_NET_TRANSPORT_READ_READ_EOF;
 }
 
