@@ -77,8 +77,8 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 ) {
 	int ret;
 
-	RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " from worker fork '%s'\n",
-			message->timestamp, worker->name);
+	RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " age %" PRIu64 " us from worker fork '%s'\n",
+			message->timestamp, rrr_time_get_64() - message->timestamp, worker->name);
 
 	retry:
 	ret = rrr_cmodule_channel_send_message_and_address (
@@ -454,8 +454,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 
 		worker->total_msg_mmap_to_fork++;
 
-		RRR_DBG_3("Received a message with timestamp %" PRIu64 " in worker fork '%s'\n",
-				msg->timestamp, worker->name);
+		RRR_DBG_3("Received a message with timestamp %" PRIu64 " age %" PRIu64 " us in worker fork '%s'\n",
+				msg->timestamp, rrr_time_get_64() - msg->timestamp, worker->name);
 		RRR_DBG_5("cmodule worker %s received message of size %" PRIrrrl ", calling processor function\n",
 				worker->name, MSG_TOTAL_SIZE(msg_msg));
 

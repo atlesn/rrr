@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,6 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder/message_holder.h"
 #include "messages/msg_msg.h"
 #include "message_helper.h"
+
+// Uncomment to enable latency testing by printing
+// message timestamp ages on debuglevel 2
+//#define RRR_POLL_HELPER_LATENCY_DEBUG 1
 
 static int __rrr_poll_intermediate_callback_topic_filter (
 		int *does_match,
@@ -107,6 +111,20 @@ static int __rrr_poll_intermediate_callback (
 	__rrr_poll_intermediate_callback_nexthop_check(&nexthop_ok, callback_data->thread_data, entry);
 
 	if (does_match && nexthop_ok) {
+#ifdef RRR_POLL_HELPER_LATENCY_DEBUG
+		if (RRR_DEBUGLEVEL_2) {
+			const struct rrr_msg_msg *msg = entry->message;
+			char *topic_tmp = NULL;
+			rrr_msg_msg_topic_get(&topic_tmp, msg);
+			RRR_DBG_2("Poll message in instance %s with topic '%s' age %" PRIu64 "\n",
+					INSTANCE_D_NAME(callback_data->thread_data),
+					topic_tmp,
+					rrr_time_get_64() - msg->timestamp
+			);
+			RRR_FREE_IF_NOT_NULL(topic_tmp);
+		}
+#endif
+
 		// Callback unlocks
 		return callback_data->callback(entry, callback_data->arg);
 	}

@@ -115,8 +115,8 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
 
-	RRR_DBG_3("Received a message with timestamp %" PRIu64 " from worker fork in instance %s\n",
-			msg->timestamp, INSTANCE_D_NAME(callback_data->thread_data));
+	RRR_DBG_3("Received a message with timestamp %" PRIu64 " age %" PRIu64 " us from worker fork in instance %s\n",
+			msg->timestamp, rrr_time_get_64() - msg->timestamp, INSTANCE_D_NAME(callback_data->thread_data));
 
 	if (rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->thread_data),
@@ -199,8 +199,8 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
 
-	RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " to worker fork '%s'\n",
-			message->timestamp, worker->name);
+	RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " age %" PRIu64 " us to worker fork '%s'\n",
+			message->timestamp, rrr_time_get_64() - message->timestamp, worker->name);
 
 	// Insert PING in between to make the child fork send PONGs back
 	// while it processes messages

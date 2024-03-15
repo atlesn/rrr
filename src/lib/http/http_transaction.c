@@ -168,7 +168,8 @@ void rrr_http_transaction_decref_if_not_null (
 //		if (total_time > 1000000) {
 //		assert(0);
 //		}
-		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n", total_time / 1000, transaction->endpoint_str);
+		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n",
+			total_time / 1000, transaction->endpoint_str);
 	}
 
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
@@ -613,7 +614,8 @@ static void __rrr_http_transaction_response_code_ensure (
 		response_code = RRR_HTTP_RESPONSE_CODE_OK;
 	}
 
-	RRR_DBG_3("HTTP response code ensured %i => %i\n", transaction->response_part->response_code, response_code);
+	RRR_DBG_3("HTTP response code ensured %i => %i at lifetime %" PRIu64 " ms\n",
+		transaction->response_part->response_code, response_code, (rrr_time_get_64() - transaction->creation_time) / 1000);
 
 	transaction->response_part->response_code = response_code;
 }
