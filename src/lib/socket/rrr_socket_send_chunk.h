@@ -128,6 +128,9 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 		int (*callback)(rrr_biglength *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, rrr_biglength data_size, void *arg),
 		void *callback_arg
 );
+int rrr_socket_send_chunk_collection_merge (
+		struct rrr_socket_send_chunk_collection *chunks
+);
 void rrr_socket_send_chunk_collection_iterate (
 		struct rrr_socket_send_chunk_collection *chunks,
 		void (*callback)(int *do_remove, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),

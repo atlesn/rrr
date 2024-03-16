@@ -170,6 +170,12 @@ size_t rrr_net_transport_ctx_send_waiting_chunk_count (
 	return rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 }
 
+int rrr_net_transport_ctx_send_push_chunks_merge (
+		struct rrr_net_transport_handle *handle
+) {
+	return rrr_socket_send_chunk_collection_merge(&handle->send_chunks);
+}
+
 long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 ) {

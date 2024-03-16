@@ -405,6 +405,115 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 	return ret;
 }
 
+int rrr_socket_send_chunk_collection_merge (
+		struct rrr_socket_send_chunk_collection *chunks
+) {
+	int ret = 0;
+
+	void *data_new = NULL;
+	struct rrr_socket_send_chunk *chunk_new;
+	size_t data_size = 0, data_pos = 0;
+	const size_t size_max = 1 * 1024 * 1024; // 1 MB
+	int chunk_pos = 0;
+	struct rrr_socket_send_chunk_collection_list *list_use = NULL;
+	socklen_t addr_len = 0;
+	struct sockaddr_storage addr;
+
+	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();
+		RRR_LL_ITERATE_BEGIN(list, struct rrr_socket_send_chunk);
+			if (node->data_pos != 0 || node->private_data != NULL) {
+			//	printf("Merge not possible\n");
+				RRR_LL_ITERATE_LAST();
+			}
+
+			if (chunk_pos > 0) {
+				assert(list_use == list);
+
+				if (addr_len != node->addr_len) {
+			//		printf("Merge not possible, addr len mismatch\n");
+					RRR_LL_ITERATE_LAST();
+				}
+
+				if (addr_len > 0 && memcmp(&addr, &node->addr, addr_len) != 0) {
+			//		printf("Merge not possible, addr mismatch\n");
+					RRR_LL_ITERATE_LAST();
+				}
+			}
+			else if (node->addr_len > 0) {
+				assert(node->addr_len <= sizeof(addr));
+
+				addr_len = node->addr_len;
+				memcpy(&addr, &node->addr, node->addr_len);
+			}
+
+			if (data_size + node->data_size > size_max) {
+				//printf("Merge not possible, size exceeded\n");
+				RRR_LL_ITERATE_LAST();
+			}
+
+			//printf("Merge %i\n", chunk_pos);
+
+			list_use = list;
+
+			data_size += node->data_size;
+
+			chunk_pos++;
+		RRR_LL_ITERATE_END();
+
+		if (chunk_pos > 0) {
+			break;
+		}
+	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_END();
+
+	if (chunk_pos < 2) {
+		goto out;
+	}
+
+	RRR_DBG_7("Chunk merging %i chunks of total size %llu\n",
+			chunk_pos, (unsigned long long int) data_size);
+
+	if ((data_new = rrr_allocate(data_size)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(list_use, struct rrr_socket_send_chunk);
+		//printf("Merge and destroy %i\n", chunk_pos);
+
+		memcpy(data_new + data_pos, node->data, node->data_size);
+		data_pos += node->data_size;
+
+		RRR_LL_ITERATE_SET_DESTROY();
+
+		if (--chunk_pos == 0) {
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list_use, 0; __rrr_socket_send_chunk_destroy(node));
+
+	if ((chunk_new = rrr_allocate_zero(sizeof(*chunk_new))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (addr_len > 0) {
+		memcpy(&chunk_new->addr, &addr, addr_len);
+		chunk_new->addr_len = addr_len;
+	}
+
+	chunk_new->data_size = data_size;
+	chunk_new->data = data_new;
+	data_new = NULL;
+
+	RRR_LL_UNSHIFT(list_use, chunk_new);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
+	return ret;
+
+}
+
 void rrr_socket_send_chunk_collection_iterate (
 		struct rrr_socket_send_chunk_collection *chunks,
 		void (*callback)(int *do_remove, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),

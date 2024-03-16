@@ -293,6 +293,11 @@ static int __rrr_http_application_http1_response_send (
 		goto out;
 	}
 
+	if ((ret = rrr_net_transport_ctx_send_push_chunks_merge (handle)) != 0) {
+		RRR_MSG_0("Failed to merge send chunks in %s\n", __func__);
+		goto out;
+	}
+
 	((struct rrr_http_application_http1 *) application)->complete_transaction_count++;
 
 	out:

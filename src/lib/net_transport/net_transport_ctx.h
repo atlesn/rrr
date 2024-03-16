@@ -106,6 +106,9 @@ int rrr_net_transport_ctx_read_message (
 size_t rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_send_push_chunks_merge (
+		struct rrr_net_transport_handle *handle
+);
 long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 );
