@@ -11,6 +11,8 @@ rrr (1.30-3.0) bookworm; urgency=medium
 
   * Improvements:
     * Disable aggressive GCing in JS module to reduce CPU usage
+    * Transaction statistics (count and average age) in HTTP server
+    * Debug messages for tracing message age and latency 
 
   * Fixes:
     * Crash in HTTP server if empty content type was passed from sender module

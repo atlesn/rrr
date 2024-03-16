@@ -120,6 +120,10 @@ struct httpserver_data {
 
 	pthread_mutex_t oustanding_responses_lock;
 
+	// Transaction stats
+	uint64_t transaction_total_lifetime;
+	uint64_t transaction_total_count;
+
 	// Shutdown control
 	uint64_t shutdown_time;
 
@@ -1227,6 +1231,9 @@ static int httpserver_response_postprocess_callback (
 
 	int ret = 0;
 
+	data->transaction_total_lifetime += rrr_time_get_64() - transaction->creation_time;
+	data->transaction_total_count++;
+
 	if (rrr_string_builder_length(&data->alt_svc_header) == 0) {
 		goto out;
 	}
@@ -1874,9 +1881,15 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data;
 
-	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
-		return RRR_EVENT_EXIT;
-	}
+	const double average = data->transaction_total_count > 0
+		? (double) data->transaction_total_lifetime / (double) data->transaction_total_count
+		: 0;
+
+	RRR_DBG_1("httpserver instance %s transaction total %" PRIu64 " average age %.02lf us\n",
+		INSTANCE_D_NAME(thread_data),
+		data->transaction_total_count,
+		average
+	);
 
 	if (rrr_fifo_search (
 			&data->buffer,
@@ -1886,7 +1899,7 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return 1;
 	}
 
-	return 0;
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
 }
 
 static int httpserver_init (RRR_INSTANCE_INIT_ARGS) {
