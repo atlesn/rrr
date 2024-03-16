@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,9 +31,6 @@ extern "C" {
 
 // Print noisy debug messages
 // #define RRR_JS_PERSISTENT_DEBUG_GC
-
-// Crash program if limit is exceeded
-#define RRR_JS_PERSISTENT_MAX 10000
 
 namespace RRR::JS {
 	unsigned long Persistable::push_persistent(v8::Local<v8::Value> value) {
@@ -199,21 +196,19 @@ namespace RRR::JS {
 		bus.push_sniffer(sniffer);
 	}
 
-	void PersistentStorage::gc(rrr_biglength *entries_, rrr_biglength *memory_size_) {
-		int total_count = 0;
+	void PersistentStorage::gc() {
 		std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
 			int64_t memory = p->get_unreported_memory();
 			if (memory != 0) {
 				report_memory(memory);
 			}
 			p->check_complete();
-			total_count++;
 		});
 
-		if (total_count > RRR_JS_PERSISTENT_MAX) {
+		if (entries > entries_max) {
 			std::map<std::string, int> map;
 			RRR_MSG_0("Maximum number of JS persistents (%i>%i) reached in %s, possible memory leak. Dumping count of different persistables by their name:\n",
-				total_count, RRR_JS_PERSISTENT_MAX, __PRETTY_FUNCTION__);
+				entries, entries_max, __PRETTY_FUNCTION__);
 			std::for_each(persistents.begin(), persistents.end(), [&](auto &p){
 				map[p->name]++;
 			});
@@ -235,8 +230,5 @@ namespace RRR::JS {
 			}
 			return false;
 		});
-
-		*entries_ = (rrr_biglength) entries;
-		*memory_size_ = (rrr_biglength) total_memory;
 	}
 } // namespace RRR::JS

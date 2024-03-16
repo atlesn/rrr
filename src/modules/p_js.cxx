@@ -130,8 +130,8 @@ class js_run_data {
 	std::unordered_map<std::string,RRR::JS::Function> methods;
 
 	int64_t start_time = 0;
-	rrr_biglength memory_entries = 0;
-	rrr_biglength memory_size = 0;
+	int64_t memory_entries = 0;
+	int64_t memory_size = 0;
 	uint64_t processed = 0;
 	uint64_t processed_total = 0;
 
@@ -172,7 +172,11 @@ class js_run_data {
 	}
 
 	void runGC() {
-		persistent_storage.gc(&memory_entries, &memory_size);
+		persistent_storage.stats(&memory_entries, &memory_size);
+
+		if (memory_entries > persistent_storage.max() * 0.25) {
+			persistent_storage.gc();
+		}
 
 #ifdef RRR_JS_AGGRESSIVE_GC
 		// Calls to make the GCing a little more aggressive
@@ -370,6 +374,8 @@ static int js_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 		else {
 			run_data->runProcess(message, message_addr, method, worker->process_mode);
 		}
+
+		run_data->runGC();
 	}
 	catch (RRR::util::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));
@@ -392,8 +398,6 @@ static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
 	(void)(worker);
 
 	try {
-		run_data->runGC();
-
 		// Assuming that the periodic function is called every second
 
 		run_data->status([run_data](
@@ -418,6 +422,8 @@ static int js_periodic_callback(RRR_CMODULE_PERIODIC_CALLBACK_ARGS) {
 				rrr_stats_instance_post_unsigned_base10_text(stats, "in_mem_bytes", 0, memory_size);
 			}
 		});
+
+		run_data->runGC();
 	}
 	catch (js_run_data::E e) {
 		RRR_MSG_0("%s in instance %s\n", *e, INSTANCE_D_NAME(run_data->data->thread_data));

@@ -35,6 +35,9 @@ extern "C" {
 
 #include "../util/Time.hxx"
 
+// Program crashes if limit is exceeded
+#define RRR_JS_PERSISTENT_MAX 10000
+
 namespace RRR::JS {
 	class PersistentBus;
 	class Persistable;
@@ -243,16 +246,24 @@ namespace RRR::JS {
 		std::forward_list<std::unique_ptr<PersistableHolder>> persistents;
 		int64_t entries = 0;
 		int64_t total_memory = 0;
+		const int64_t entries_max = RRR_JS_PERSISTENT_MAX; 
 
 		PersistentBus bus;
 
 		public:
+		constexpr int64_t max() {
+			return entries_max;
+		}
+		void stats(int64_t *entries_, int64_t *memory_size_) const {
+			*entries_ = entries;
+			*memory_size_ = total_memory;
+		}
 		PersistentStorage(v8::Isolate *isolate);
 		PersistentStorage(const PersistentStorage &p) = delete;
 		void report_memory(int64_t memory);
 		//void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t);
 		void push(v8::Isolate *isolate, v8::Local<v8::Object> obj, Persistable *t, const std::string &name);
 		void register_sniffer(PersistentSniffer *sniffer);
-		void gc(rrr_biglength *entries_, rrr_biglength *memory_size_);
+		void gc();
 	};
 } // namespace RRR::JS
