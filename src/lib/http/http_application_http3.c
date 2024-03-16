@@ -358,10 +358,7 @@ struct rrr_http_application_http3_request_send_prepare_callback_data {
 	int64_t stream_id;
 };
 
-static int __rrr_http_application_http3_header_fields_submit_callback (
-		struct rrr_http_header_field *field,
-		void *arg
-) {
+static int __rrr_http_application_http3_header_fields_submit_callback (RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS) {
 	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -389,10 +386,7 @@ struct rrr_http_application_http3_response_submit_callback_data {
 	int64_t stream_id;
 };
 
-static int __rrr_http_application_http3_response_submit_final_callback (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http3_response_submit_final_callback (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http3_response_submit_callback_data *callback_data = arg;
 
 	(void)(transaction);
@@ -428,11 +422,7 @@ static int __rrr_http_application_http3_response_submit_final_callback (
 	return ret;
 }
 
-static int __rrr_http_application_http3_response_submit_response_code_callback (
-		unsigned int response_code,
-		enum rrr_http_version protocol_version,
-		void *arg
-) {
+static int __rrr_http_application_http3_response_submit_response_code_callback (RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS) {
 	struct rrr_http_application_http3_response_submit_callback_data *callback_data = arg;
 
 	(void)(protocol_version);
@@ -891,14 +881,7 @@ static int __rrr_http_application_http3_request_send_possible (
 	return 0;
 }
 
-static int __rrr_http_application_http3_request_send_preliminary_callback (
-		enum rrr_http_method method,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		enum rrr_http_version protocol_version,
-		struct rrr_http_part *request_part,
-		const struct rrr_nullsafe_str *request,
-		void *arg
-) {
+static int __rrr_http_application_http3_request_send_preliminary_callback (RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS) {
 	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 
 	(void)(upgrade_mode);
@@ -919,10 +902,7 @@ static int __rrr_http_application_http3_request_send_preliminary_callback (
 	return ret;
 }
 
-static int __rrr_http_application_http3_request_send_final_callback (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http3_request_send_final_callback (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http3_request_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http3 *http3 = callback_data->http3;
 

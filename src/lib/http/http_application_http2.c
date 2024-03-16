@@ -85,10 +85,7 @@ struct rrr_http_application_http2_send_prepare_callback_data {
 	int32_t stream_id;
 };
 
-static int __rrr_http_application_http2_header_fields_submit_callback (
-		struct rrr_http_header_field *field,
-		void *arg
-) {
+static int __rrr_http_application_http2_header_fields_submit_callback (RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -158,14 +155,7 @@ static int __rrr_http_application_http2_request_send_possible (
 	return 0;
 }
 
-static int __rrr_http_application_http2_request_send_preliminary_callback (
-		enum rrr_http_method method,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		enum rrr_http_version protocol_version,
-		struct rrr_http_part *request_part,
-		const struct rrr_nullsafe_str *request,
-		void *arg
-) {
+static int __rrr_http_application_http2_request_send_preliminary_callback (RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
 
@@ -177,10 +167,7 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
 
-static int __rrr_http_application_http2_request_send_final_callback (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http2_request_send_final_callback (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
 
@@ -798,11 +785,7 @@ int rrr_http_application_http2_new_from_upgrade (
 }
 
 
-static int __rrr_http_application_http2_response_submit_response_code_callback (
-	unsigned int response_code,
-	enum rrr_http_version protocol_version,
-	void *arg
-) {
+static int __rrr_http_application_http2_response_submit_response_code_callback (RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
 	(void)(protocol_version);
@@ -810,10 +793,7 @@ static int __rrr_http_application_http2_response_submit_response_code_callback (
 	return rrr_http2_header_status_submit(callback_data->app->http2_session, callback_data->stream_id, response_code);
 }
 
-static int __rrr_http_application_http2_response_submit_final_callback (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http2_response_submit_final_callback (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
 	(void)(transaction);

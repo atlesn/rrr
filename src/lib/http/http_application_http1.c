@@ -154,7 +154,7 @@ struct rrr_http_application_http1_response_send_callback_data {
 	struct rrr_net_transport_handle *handle;
 };
 
-static int __rrr_http_application_http1_response_send_header_field_callback (struct rrr_http_header_field *field, void *arg) {
+static int __rrr_http_application_http1_response_send_header_field_callback (RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -197,11 +197,7 @@ static int __rrr_http_application_http1_send_callback (
 	);
 }
 
-static int __rrr_http_application_http1_response_send_response_code_callback (
-		unsigned int response_code,
-		enum rrr_http_version protocol_version,
-		void *arg
-) {
+static int __rrr_http_application_http1_response_send_response_code_callback (RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -229,10 +225,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 	return ret;
 }
 
-static int __rrr_http_application_http1_response_send_final (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http1_response_send_final (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -286,7 +279,7 @@ static int __rrr_http_application_http1_response_send (
 	}
 
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
-			handle
+		handle
 	};
 
 	if ((ret = rrr_http_transaction_response_prepare_wrapper (
@@ -1378,14 +1371,7 @@ struct rrr_http_application_http1_request_send_callback_data {
 	struct rrr_string_builder *header_builder;
 };
 
-static int __rrr_http_application_http1_request_send_preliminary_callback (
-		enum rrr_http_method method,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		enum rrr_http_version protocol_version,
-		struct rrr_http_part *request_part,
-		const struct rrr_nullsafe_str *request,
-		void *arg
-) {
+static int __rrr_http_application_http1_request_send_preliminary_callback (RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -1498,18 +1484,12 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 	return ret;
 }
 
-static int __rrr_http_application_http1_request_send_make_headers_callback (
-		struct rrr_http_header_field *field,
-		void *arg
-) {
+static int __rrr_http_application_http1_request_send_make_headers_callback (RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
 	return __rrr_http_application_http1_header_field_make(callback_data->header_builder, field);
 }
 
-static int __rrr_http_application_http1_request_send_final_callback (
-		struct rrr_http_transaction *transaction,
-		void *arg
-) {
+static int __rrr_http_application_http1_request_send_final_callback (RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
 
 	int ret = 0;

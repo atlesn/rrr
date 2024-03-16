@@ -301,7 +301,7 @@ int rrr_http_part_header_field_parse_value_raw (
 
 int rrr_http_part_fields_iterate_const (
 		const struct rrr_http_part *part,
-		int (*callback)(const struct rrr_http_field *field, void *callback_arg),
+		int (*callback)(const RRR_HTTP_COMMON_FIELD_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	return rrr_http_field_collection_iterate_const(&part->fields, callback, callback_arg);
@@ -309,7 +309,7 @@ int rrr_http_part_fields_iterate_const (
 
 int rrr_http_part_header_fields_iterate (
 		struct rrr_http_part *part,
-		int (*callback)(struct rrr_http_header_field *field, void *arg),
+		int (*callback)(RRR_HTTP_COMMON_HEADER_FIELD_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;

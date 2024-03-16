@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 #include "../util/linked_list.h"
 
+#include "http_common.h"
+
 struct rrr_nullsafe_str;
 struct rrr_type_value;
 
@@ -65,7 +67,7 @@ int rrr_http_field_value_set (
 );
 int rrr_http_field_collection_iterate_const (
 		const struct rrr_http_field_collection *fields,
-		int (*callback)(const struct rrr_http_field *field, void *callback_arg),
+		int (*callback)(const RRR_HTTP_COMMON_FIELD_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_http_field_collection_dump (

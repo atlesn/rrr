@@ -29,8 +29,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../type.h"
 
 struct rrr_http_part;
+struct rrr_http_field;
 struct rrr_http_header_field;
 struct rrr_http_service_collection;
+
+#define RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS              \
+    struct rrr_http_header_field *field,                       \
+    void *arg
+
+#define RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS       \
+    unsigned int response_code,                                \
+    enum rrr_http_version protocol_version,                    \
+    void *arg
+
+#define RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS               \
+    struct rrr_http_transaction *transaction,                  \
+    void *arg
+
+#define RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS         \
+    enum rrr_http_method method,                               \
+    enum rrr_http_upgrade_mode upgrade_mode,                   \
+    enum rrr_http_version protocol_version,                    \
+    struct rrr_http_part *request_part,                        \
+    const struct rrr_nullsafe_str *request,                    \
+    void *arg
 
 struct rrr_http_transaction {
 	int usercount;
@@ -174,9 +196,9 @@ int rrr_http_transaction_send_body_set_allocated (
 );
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
-		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(unsigned response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
+		int (*header_field_callback)(RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS),
+		int (*response_code_callback)(RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS),
 		void *callback_arg
 );
 int rrr_http_transaction_request_prepare_wrapper (
@@ -184,16 +206,9 @@ int rrr_http_transaction_request_prepare_wrapper (
 		enum rrr_http_upgrade_mode upgrade_mode,
 		enum rrr_http_version protocol_version,
 		const char *user_agent,
-		int (*preliminary_callback)(
-			enum rrr_http_method method,
-			enum rrr_http_upgrade_mode upgrade_mode,
-			enum rrr_http_version protocol_version,
-			struct rrr_http_part *request_part,
-			const struct rrr_nullsafe_str *request,
-			void *arg
-		),
-		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
+		int (*preliminary_callback)(RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS),
+		int (*headers_callback)(RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS),
 		void *callback_arg
 );
 static inline void rrr_http_transaction_stream_flags_add (

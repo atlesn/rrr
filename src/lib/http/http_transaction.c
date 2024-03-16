@@ -600,7 +600,9 @@ static int __rrr_http_transaction_part_content_length_set (
 static void __rrr_http_transaction_response_code_ensure (
 		struct rrr_http_transaction *transaction
 ) {
-	unsigned int response_code = transaction->response_part->response_code;
+	unsigned int response_code;
+
+	response_code = transaction->response_part->response_code;
 
 	if (response_code < 100 || response_code > 599) {
 		response_code = rrr_nullsafe_str_len(transaction->send_body) > 0
@@ -614,10 +616,10 @@ static void __rrr_http_transaction_response_code_ensure (
 		response_code = RRR_HTTP_RESPONSE_CODE_OK;
 	}
 
+	transaction->response_part->response_code = response_code;
+
 	RRR_DBG_3("HTTP response code ensured %i => %i at lifetime %" PRIu64 " ms\n",
 		transaction->response_part->response_code, response_code, (rrr_time_get_64() - transaction->creation_time) / 1000);
-
-	transaction->response_part->response_code = response_code;
 }
 
 static int __rrr_http_transaction_response_content_length_ensure (
@@ -643,9 +645,9 @@ static int __rrr_http_transaction_response_content_length_ensure (
 
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
-		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(unsigned int response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
+		int (*header_field_callback)(RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS),
+		int (*response_code_callback)(RRR_HTTP_TRANSACTION_RESPONSE_CODE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -682,7 +684,9 @@ int rrr_http_transaction_response_prepare_wrapper (
 	}
 
 	if ((ret = response_code_callback (
-			transaction->response_part->response_code, transaction->request_part->parsed_version, callback_arg
+			transaction->response_part->response_code,
+			transaction->request_part->parsed_version,
+			callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -712,16 +716,9 @@ int rrr_http_transaction_request_prepare_wrapper (
 		enum rrr_http_upgrade_mode upgrade_mode,
 		enum rrr_http_version protocol_version,
 		const char *user_agent,
-		int (*preliminary_callback)(
-			enum rrr_http_method method,
-			enum rrr_http_upgrade_mode upgrade_mode,
-			enum rrr_http_version protocol_version,
-			struct rrr_http_part *request_part,
-			const struct rrr_nullsafe_str *request,
-			void *arg
-		),
-		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*final_callback)(struct rrr_http_transaction *transaction, void *arg),
+		int (*preliminary_callback)(RRR_HTTP_TRANSACTION_PRELIMINARY_CALLBACK_ARGS),
+		int (*headers_callback)(RRR_HTTP_TRANSACTION_HEADER_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_TRANSACTION_FINAL_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
