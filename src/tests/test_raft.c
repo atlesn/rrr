@@ -25,16 +25,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "test_raft.h"
+#include "../lib/event/event.h"
 #include "../lib/raft/rrr_raft.h"
 
-static volatile int rrr_test_raft_pong_received;
+struct rrr_test_raft_callback_data {
+	int rrr_test_raft_pong_received;
+	const volatile int *main_running;
+};
 
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
-	(void)(arg);
+	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	TEST_MSG("Pong received\n");
 
-	rrr_test_raft_pong_received = 1;
+	callback_data->rrr_test_raft_pong_received = 1;
+}
+
+static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_test_raft_callback_data *callback_data = arg;
+
+	TEST_MSG("Periodic\n");
+
+	if (callback_data->rrr_test_raft_pong_received) {
+		return RRR_EVENT_EXIT;
+	}
+
+	if (!*(callback_data->main_running)) {
+		return RRR_EVENT_ERR;
+	}
+
+	return RRR_EVENT_OK;
 }
 
 int rrr_test_raft (
@@ -45,6 +65,11 @@ int rrr_test_raft (
 	int ret = 0;
 
 	struct rrr_raft_channel *channel;
+	rrr_event_receiver_handle queue_handle;
+
+	struct rrr_test_raft_callback_data callback_data = {0};
+
+	callback_data.main_running = main_running;
 
 	if ((ret = rrr_raft_fork (
 			&channel,
@@ -52,14 +77,37 @@ int rrr_test_raft (
 			queue,
 			"test",
 			__rrr_test_raft_pong_callback,
-			NULL
+			&callback_data
 	)) != 0) {
 		TEST_MSG("Failed to fork out raft process\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (!rrr_test_raft_pong_received) {
+	if ((ret = rrr_event_receiver_new (
+			&queue_handle,
+			queue,
+			"raft test",
+			&callback_data
+	)) != 0) {
+		goto out_cleanup;
+	}
+
+	if ((ret = rrr_event_function_periodic_set_and_dispatch (
+			queue,
+			queue_handle,
+			250 * 1000, // 250 ms
+			__rrr_test_raft_periodic
+	)) != 0) {
+		goto out_cleanup;
+	}
+
+	if (rrr_event_dispatch(queue) != RRR_EVENT_OK) {
+		ret = 1;
+		goto out_cleanup;
+	}
+
+	if (!callback_data.rrr_test_raft_pong_received) {
 		TEST_MSG("No pong message received from fork\n");
 		ret = 1;
 	}
