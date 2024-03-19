@@ -73,6 +73,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_HTTP3
 #	include "test_quic.h"
 #endif
+#ifdef RRR_WITH_RAFT
+#	include "test_raft.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
@@ -253,6 +256,14 @@ int rrr_test_library_functions (
 #ifdef RRR_WITH_HTTP3
 	TEST_BEGIN("quic handshake") {
 		ret_tmp = rrr_test_quic(main_running, event_queue);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_RAFT
+	TEST_BEGIN("raft tests") {
+		ret_tmp = rrr_test_raft(main_running, event_queue);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

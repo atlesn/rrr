@@ -53,6 +53,7 @@ AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c 
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
+AC_ARG_WITH([raft],[AS_HELP_STRING([--without-raft],[build without the Raft and LibUV bindings])],[enable_raft=no],[enable_raft=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([artnet],[AS_HELP_STRING([--with-artnet],[build without the libartnet bindings])],[enable_artnet=yes],[enable_artnet=auto])
@@ -161,6 +162,7 @@ AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
+AM_CONDITIONAL([RRR_WITH_RAFT], [test "x$enable_raft" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
@@ -1494,6 +1496,26 @@ AS_IF([test "x$enable_http3" = xno], [
 
 	AC_SUBST([GNUTLS_CFLAGS])
 	AC_SUBST([GNUTLS_LIBS])
+])
+
+AC_MSG_CHECKING([Raft and LibUV usage])
+AS_IF([test "x$enable_raft" = xno], [
+	AC_MSG_RESULT([Not compiling with Raft/LibUV])
+], [
+	AC_DEFINE([RRR_WITH_RAFT], [1], [Compile with Raft/LibUV bindings])
+
+	AC_CHECK_HEADERS([raft.h])
+	AC_CHECK_HEADERS([raft/uv.h])
+	AC_CHECK_HEADERS([uv.h])
+	
+	AC_CHECK_LIB(raft, raft_configuration_init, [], AC_MSG_ERROR([raft_configuration_init from libraft not found]))
+	AC_CHECK_LIB(uv, uv_loop_init, [], AC_MSG_ERROR([uv_loop_init from libuv not found]))
+	
+	RAFT_CFLAGS=
+	RAFT_LIBS=-lraft
+	
+	AC_SUBST([RAFT_CFLAGS])
+	AC_SUBST([RAFT_LIBS])
 ])
 
 # Make sure MySQL-test does not include any libraries

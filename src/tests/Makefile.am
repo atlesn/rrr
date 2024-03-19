@@ -31,6 +31,10 @@ test_quic = test_quic.c
 test_tls_common = test_tls_common.c
 endif
 
+if RRR_WITH_RAFT
+test_raft = test_raft.c
+endif
+
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
 
 test_SOURCES = test.c \
@@ -51,6 +55,7 @@ test_SOURCES = test.c \
 	${test_artnet} \
 	${test_lua} \
 	${test_quic} \
+	${test_raft} \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
