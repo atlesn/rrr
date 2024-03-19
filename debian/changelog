@@ -8,6 +8,7 @@ rrr (1.30-3.0) bookworm; urgency=medium
     * Single thread mode using -S argument for low resource operation or
       debugging
     * Support HTTP3 over QUIC in HTTP server and HTTP client
+    * Module for setting up a raft client
 
   * Improvements:
     * Disable aggressive GCing in JS module to reduce CPU usage

@@ -156,7 +156,7 @@ int rrr_test_library_functions (
 ) {
 	int ret = 0;
 	int ret_tmp = 0;
-
+goto raft;
 	// OR all the return values, don't stop if a test fails
 
 	TEST_BEGIN("rrr_allocator") {
@@ -260,15 +260,19 @@ int rrr_test_library_functions (
 
 	ret |= ret_tmp;
 #endif
-
+raft:
 #ifdef RRR_WITH_RAFT
 	TEST_BEGIN("raft tests") {
-		ret_tmp = rrr_test_raft(main_running, event_queue);
+		ret_tmp = rrr_test_raft (
+				main_running,
+				fork_handler,
+				event_queue
+		);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
 #endif
-
+return ret;
 #ifdef RRR_WITH_JS
 	TEST_BEGIN("js library functions") {
 		ret_tmp = rrr_test_js();

@@ -141,6 +141,14 @@ libressl_extra_ld = ${LIBRESSL_LDFLAGS}
 libressl_extra_libadd = ${LIBRESSL_LIBADD}
 endif
 
+if RRR_WITH_RAFT
+libadd_rrrraft = librrrraft.la
+librrrraft_la_SOURCES = raft/rrr_raft.c
+librrrraft_la_CFLAGS = ${RAFT_CFLAGS}
+librrrraft_la_LIBADD = ${RAFT_LIBS}
+librrrraft_extra_libadd = ${RAFT_LIBS}
+endif
+
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
        mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
        mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c \
@@ -304,7 +312,8 @@ libadd_all =                         \
     ${libadd_rrr_sha1}	             \
     ${libadd_rrrcrypto}              \
     ${libadd_rrropenssl}             \
-    ${libadd_rrrlibressl}
+    ${libadd_rrrlibressl}            \
+    ${libadd_rrrraft}
 
 if RRR_WITH_CXX
 libadd_all_cxx =                     \
@@ -319,6 +328,7 @@ librrr_la_LIBADD =                   \
     ${crypto_extra_libadd}           \
     ${openssl_extra_libadd}          \
     ${libressl_extra_libadd}         \
+    ${librrrraft_extra_libadd}       \
     -lpthread                        \
     -ldl                             \
     -lm                              \

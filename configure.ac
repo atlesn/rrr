@@ -1512,7 +1512,7 @@ AS_IF([test "x$enable_raft" = xno], [
 	AC_CHECK_LIB(uv, uv_loop_init, [], AC_MSG_ERROR([uv_loop_init from libuv not found]))
 	
 	RAFT_CFLAGS=
-	RAFT_LIBS=-lraft
+	RAFT_LIBS="-lraft -luv"
 	
 	AC_SUBST([RAFT_CFLAGS])
 	AC_SUBST([RAFT_LIBS])

@@ -91,6 +91,9 @@ void rrr_event_hook_set (
 void rrr_event_hook_enable (
 		void
 );
+void rrr_event_hook_disable (
+		void
+);
 ssize_t rrr_event_hook_string_format (
 		char *buf,
 		size_t buf_size,

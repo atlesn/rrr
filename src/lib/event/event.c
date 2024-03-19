@@ -76,6 +76,15 @@ void rrr_event_hook_enable (
 	rrr_event_hooking.enabled = 1;
 }
 
+void rrr_event_hook_disable (
+		void
+) {
+	rrr_event_hooking.enabled = 0;
+	rrr_event_hooking.pid = 0;
+	rrr_event_hooking.hook = NULL;
+	rrr_event_hooking.arg = NULL;
+}
+
 ssize_t rrr_event_hook_string_format (
 		char *buf,
 		size_t buf_size,

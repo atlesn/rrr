@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -742,6 +742,34 @@ int rrr_socket (
 
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
+}
+
+int rrr_socketpair (
+		int domain,
+		int type,
+		int protocol,
+		const char *creator,
+		int sv[2]
+) {
+	int ret_tmp;
+
+	sv[0] = 0;
+	sv[1] = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	ret_tmp = socketpair(domain, type, protocol, sv);
+
+	if (ret_tmp == 0) {
+		__rrr_socket_add_unlocked(sv[0], domain, type, protocol, creator, NULL, 0, 0);
+		__rrr_socket_add_unlocked(sv[1], domain, type, protocol, creator, NULL, 0, 0);
+	}
+
+	RRR_DBG_7("rrr_socketpair fd {%i, %i} pid %i creator %s\n", sv[0], sv[1], getpid(), creator);
+
+	pthread_mutex_unlock(&socket_lock);
+
+	return ret_tmp != 0;
 }
 
 static void __rrr_socket_unregister (int *was_registered, int fd, int no_unlink) {
