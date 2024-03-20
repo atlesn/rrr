@@ -269,23 +269,39 @@ static int __rrr_raft_server (
 
 }
 
-static int __rrr_raft_client_send_ping (
-		struct rrr_raft_channel *channel
+static int __rrr_raft_client_send_msg (
+		struct rrr_raft_channel *channel,
+		struct rrr_msg *msg
 ) {
 	int ret = 0;
 
-	struct rrr_msg msg = {0};
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
-	rrr_msg_checksum_and_to_network_endian(&msg);
+	rrr_msg_checksum_and_to_network_endian(msg);
 
 	if (write(channel->fd_client, &msg, sizeof(msg)) != sizeof(msg)) {
-		RRR_MSG_0("Failed to send ping message in %s\n", __func__);
+		RRR_MSG_0("Failed to send control message in %s: %s\n",
+			__func__, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	out:
 	return ret;
+}
+
+static int __rrr_raft_client_send_ping (
+		struct rrr_raft_channel *channel
+) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+	return __rrr_raft_client_send_msg(channel, &msg);
+}
+
+static int __rrr_raft_client_send_close (
+		struct rrr_raft_channel *channel
+) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_CLOSE, 0);
+	return __rrr_raft_client_send_msg(channel, &msg);
 }
 
 static void __rrr_raft_client_periodic_cb (evutil_socket_t fd, short flags, void *arg) {
@@ -297,8 +313,6 @@ static void __rrr_raft_client_periodic_cb (evutil_socket_t fd, short flags, void
 	if (__rrr_raft_client_send_ping(channel) != 0) {
 		rrr_event_dispatch_break(channel->queue);
 	}
-
-	if (channel
 }
 
 static int __rrr_raft_client_read_msg_cb (
