@@ -33,14 +33,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_RAFT_SERVER_COUNT 3
 
 static const char request_1[] = "Request number 1 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
-static const char dir_base[] = "/tmp/rrr-test-raft/";
+static const char dir_base[] = "/tmp/rrr-test-raft";
 
 struct rrr_test_raft_callback_data {
 	struct rrr_raft_channel **channels;
 	int rrr_test_raft_pong_received;
 	int rrr_test_raft_ack_received;
 	const volatile int *main_running;
-	int cmd_pos;
+	uint32_t cmd_pos;
 };
 
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {

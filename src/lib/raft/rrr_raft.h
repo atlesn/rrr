@@ -50,7 +50,7 @@ int rrr_raft_client_request (
 		struct rrr_raft_channel *channel,
 		const void *data,
 		size_t data_size,
-		int64_t req_index
+		uint32_t req_index
 );
 
 #endif /* RRR_RAFT_H */

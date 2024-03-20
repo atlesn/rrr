@@ -150,7 +150,7 @@ struct rrr_raft_server_callback_data {
 
 struct rrr_raft_server_apply_data {
 	struct rrr_raft_server_callback_data *callback_data;
-	uint32_t req_id;
+	uint32_t req_index;
 };
 
 static void __rrr_raft_server_apply_cb (
@@ -165,17 +165,32 @@ static void __rrr_raft_server_apply_cb (
 
 	if (status != 0) {
 		if (status != RAFT_LEADERSHIPLOST) {
-			RRR_MSG_0("Warning: Apply error: %s (%d)\n", raft_errmsg(callback_data->raft), status);
+			RRR_MSG_0("Warning: Apply error: %s (%d)\n",
+				raft_errmsg(callback_data->raft), status);
 		}
 		goto out;
 	}
 
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_ACK, apply_data->req_id);
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_ACK, apply_data->req_index);
 
 	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 
 	out:
 	rrr_free(apply_data);
+	raft_free(req);
+}
+
+static void __rrr_raft_server_change_cb (
+		struct raft_change *req,
+		int status
+) {
+	struct rrr_raft_server_callback_data *callback_data = req->data;
+
+	if (status != 0) {
+		RRR_MSG_0("Warning: Change request index %i failed: %s (%d)\n",
+			raft_errmsg(callback_data->raft), status);
+	}
+
 	raft_free(req);
 }
 
@@ -190,18 +205,17 @@ static int __rrr_raft_server_read_msg_cb (
 	int ret = 0;
 
 	int ret_tmp;
+	uint64_t x;
 	struct raft_buffer buf;
 	struct raft_apply *req;
 	struct rrr_raft_server_apply_data *apply_data;
-
-	// TODO : Check leader
 
 	if (raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message. Not leader.\n");
 		goto out;
 	}
 
-	buf.len = MSG_TOTAL_SIZE(*message);
+	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
 	if ((buf.base = raft_malloc(buf.len)) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for buffer in %s\n", __func__);
 		ret = 1;
@@ -216,21 +230,25 @@ static int __rrr_raft_server_read_msg_cb (
 		goto out_free_buffer;
 	}
 
-	if ((apply_data = rrr_allocate_zero(sizeof(*apply_data))) != 0) {
+	if ((apply_data = rrr_allocate_zero(sizeof(*apply_data))) == NULL) {
 		RRR_MSG_0("Failed to allocate apply data in %s\n", __func__);
 		ret = 1;
 		goto out_free_req;
 	}
 
 	assert((*message)->msg_value > 0);
-	RRR_ASSERT(sizeof((*message)->msg_value) == sizeof(apply_data->req_id),size_of_value_in_message_must_match_apply_data);
+	RRR_ASSERT(sizeof((*message)->msg_value) == sizeof(apply_data->req_index),size_of_value_in_message_must_match_apply_data);
 
-	apply_data->req_id = (*message)->msg_value;
+	apply_data->req_index = (*message)->msg_value;
 	apply_data->callback_data = callback_data;
 
 	req->data = apply_data;
 
 	if ((ret_tmp = raft_apply(raft, req, &buf, 1, __rrr_raft_server_apply_cb)) != 0) {
+		// It appears that this data is usually freed also
+		// upon error conditions.
+		buf.base = NULL;
+
 		RRR_MSG_0("Apply failed in %s: %s\n", __func__, raft_errmsg(raft));
 		ret = 1;
 		goto out_free_apply_data;
@@ -244,7 +262,8 @@ static int __rrr_raft_server_read_msg_cb (
 	out_free_apply_data:
 		rrr_free(apply_data);
 	out_free_buffer:
-		raft_free(buf.base);
+		if (buf.base != NULL)
+			raft_free(buf.base);
 	out:
 		return ret;
 }
@@ -283,7 +302,7 @@ static int __rrr_raft_server_send_msg_in_loop (
 			goto out;
 		}
 
-		RRR_MSG_0("Failed to send pong message in %s\n", __func__);
+		RRR_MSG_0("Failed to send message in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -304,6 +323,8 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 	//printf("Send pong\n");
 
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
+
+	printf("servers: %u\n", callback_data->raft->configuration.n);
 
 	return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 }
@@ -339,6 +360,92 @@ static void __rrr_raft_server_poll_cb (
 	}
 }
 
+static int __rrr_raft_server_fsm_apply_cb (
+		struct raft_fsm *fsm,
+		const struct raft_buffer *buf,
+		void **result
+) {
+	struct rrr_raft_server_callback_data *callback_data = fsm->data;
+
+	int ret = 0;
+
+	rrr_length stated_length;
+	struct rrr_msg_msg *msg_tmp;
+	uint32_t unaligned_buf_len;
+
+	assert(buf->len >= sizeof(*msg_tmp) - 1);
+	assert(buf->len <= UINT32_MAX);
+
+	if ((msg_tmp = rrr_allocate(buf->len)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for message in %s\n", __func__);
+		ret = RAFT_NOMEM;
+		goto out;
+	}
+
+	memcpy(msg_tmp, buf->base, buf->len);
+
+	if (rrr_msg_get_target_size_and_check_checksum (
+			&stated_length,
+			(struct rrr_msg *) msg_tmp,
+			buf->len
+	) != 0) {
+		RRR_MSG_0("Failed to get size of message in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (buf->len < stated_length || buf->len != stated_length + 8 - stated_length % 8) {
+		RRR_MSG_0("Size mismatch between buffer and message header %lu<>%lu in %s\n",
+			buf->len, stated_length, __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg_tmp, stated_length) != 0) {
+		RRR_MSG_0("Header validation failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_check_data_checksum_and_length((struct rrr_msg *) msg_tmp, stated_length) != 0) {
+		RRR_MSG_0("Data checksum validation failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_msg_to_host_and_verify(msg_tmp, stated_length) != 0) {
+		RRR_MSG_0("Message endian conversion failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	RRR_DBG_1("Message %i now applied in state machine\n", msg_tmp->msg_value);
+
+	out_free:
+		rrr_free(msg_tmp);
+	out:
+		return ret;
+}
+
+static int  __rrr_raft_server_fsm_snapshot_cb (
+		struct raft_fsm *fsm,
+		struct raft_buffer *bufs[],
+		unsigned *n_bufs
+) {
+	struct rrr_raft_server_callback_data *callback_data = fsm->data;
+
+	struct raft_buffer *buf;
+
+	if ((buf = raft_malloc(sizeof(*buf))) == NULL) {
+		RRR_MSG_0("Failed to allocate buffer in %s\n", __func__);
+		return RAFT_NOMEM;
+	}
+
+	assert(0 && "snapshot CB not implemented");
+
+	return 0;
+}
+
 static int __rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
@@ -356,7 +463,9 @@ static int __rrr_raft_server (
 	struct raft_fsm fsm = {0};
 	struct raft raft = {0};
 	struct raft_configuration configuration;
+	struct raft_change *req = NULL;
 	char address[64];
+	struct rrr_raft_server_callback_data callback_data;
 
 	__rrr_raft_channel_fds_get(channel_fds, channel);
 	rrr_socket_close_all_except_array_no_unlink(channel_fds, sizeof(channel_fds)/sizeof(channel_fds[0]));
@@ -406,8 +515,13 @@ static int __rrr_raft_server (
 
 	// fsm.xxxxx = xxxx
 	fsm.version = 2;
+	fsm.apply = __rrr_raft_server_fsm_apply_cb;
+	fsm.snapshot = __rrr_raft_server_fsm_snapshot_cb;
 
 	sprintf(address, "127.0.0.1:900%d", server_id);
+
+	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
+		server_id, dir, address);
 
 	if ((ret_tmp = raft_init(&raft, &io, &fsm, server_id, address)) != 0) {
 		RRR_MSG_0("Failed to initialize raft in %s: %s: %s\n", __func__,
@@ -416,42 +530,68 @@ static int __rrr_raft_server (
 		goto out_raft_uv_close;
 	}
 
-//	raft_configuration_init(&configuration);
-
-	for (i = 0; i < RRR_RAFT_SERVER_COUNT; i++) {
-		sprintf(address, "127.0.0.1:900%d", i + 1);
-
-		if ((ret_tmp = raft_configuration_add (
-				&raft.configuration,
-				i + 1,
-				address,
-				RAFT_VOTER
-		)) != 0) {
-			RRR_MSG_0("Failed to add to raft configuration in %s: %s\n", __func__, raft_strerror(ret_tmp));
-			ret = 1;
-			goto out_raft_configuration_close;
-		}
-	}
-
-//	if ((ret_tmp = raft_bootstrap(&raft, &configuration)) != 0 && ret_tmp != RAFT_CANTBOOTSTRAP) {
-//		RRR_MSG_0("Failed to bootstrap raft in %s: %s\n", __func__, raft_strerror(ret_tmp));
-//		ret = 1;
-//		goto out_raft_configuration_close;
-//	}
-
-//	raft.configuration = configuration;
-
-	raft_set_snapshot_threshold(&raft, 64);
-	raft_set_snapshot_trailing(&raft, 16);
-	raft_set_pre_vote(&raft, true);
-
-	struct rrr_raft_server_callback_data callback_data = {
+	callback_data = (struct rrr_raft_server_callback_data) {
 		channel,
 		0,
 		&loop,
 		&raft,
 		server_id
 	};
+
+	raft_configuration_init(&configuration);
+
+	for (i = 0; i < RRR_RAFT_SERVER_COUNT; i++) {
+		sprintf(address, "127.0.0.1:900%d", i + 1);
+
+		if ((ret_tmp = raft_configuration_add (
+				&configuration,
+				i + 1,
+				address,
+				RAFT_VOTER
+		)) != 0) {
+			RRR_MSG_0("Failed to add to raft configuration in %s: %s\n", __func__,
+				raft_strerror(ret_tmp));
+			ret = 1;
+			goto out_raft_configuration_close;
+		}
+/* ASYNC SERVER ADD DOES NOT BELONG HERE 
+		if ((req = raft_malloc(sizeof(*req))) == NULL) {
+			RRR_MSG_0("Failed to allocate change request in %s\n", __func__);
+			ret = 1;
+			goto out_raft_configuration_close;
+		}
+
+		memset(req, '\0', sizeof(*req));
+
+		req->data = &callback_data;
+
+		if ((ret_tmp = raft_add (
+				&raft,
+				req,
+				i + 1,
+				address,
+				__rrr_raft_server_change_cb
+		)) != 0) {
+			RRR_MSG_0("Failed to add raft server in %s: %s\n", __func__,
+				raft_strerror(ret_tmp));
+			ret = 1;
+			goto out_raft_configuration_close;
+		}*/
+	}
+
+	if ((ret_tmp = raft_bootstrap(&raft, &configuration)) != 0 && ret_tmp != RAFT_CANTBOOTSTRAP) {
+		RRR_MSG_0("Failed to bootstrap raft in %s: %s\n",
+			__func__, raft_strerror(ret_tmp));
+		ret = 1;
+		goto out_raft_configuration_close;
+	}
+
+//	raft.configuration.n = configuration;
+	printf("servers: %u\n", raft.configuration.n);
+
+	raft_set_snapshot_threshold(&raft, 64);
+	raft_set_snapshot_trailing(&raft, 16);
+	raft_set_pre_vote(&raft, true);
 
 	uv_handle_set_data((uv_handle_t *) &poll_server, &callback_data);
 
@@ -468,7 +608,7 @@ static int __rrr_raft_server (
 
 	goto out_raft_configuration_close;
 	out_raft_configuration_close:
-		//raft_configuration_close(&configuration);
+		raft_configuration_close(&configuration);
 	out_raft_close:
 		raft_close(&raft, NULL);
 	out_raft_uv_close:
@@ -481,6 +621,11 @@ static int __rrr_raft_server (
 		// TODO : Enable once handle is registered
 		// rrr_log_hook_unregister(log_hook_handle);
 		RRR_DBG_1("raft server %s pid %i exit\n", log_prefix, getpid());
+
+		if (req != NULL) {
+			raft_free(req);
+		}
+
 		return ret;
 
 }
@@ -710,13 +855,11 @@ int rrr_raft_client_request (
 		struct rrr_raft_channel *channel,
 		const void *data,
 		size_t data_size,
-		int64_t req_index
+		uint32_t req_index
 ) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
-
-	printf("Send request size %lu fd %i\n", data_size, channel->fd_client);
 
 	if ((ret = rrr_msg_msg_new_with_data (
 			&msg,
@@ -731,6 +874,11 @@ int rrr_raft_client_request (
 		RRR_MSG_0("Failed to create message in %s\n", __func__);
 		goto out;
 	}
+
+	msg->msg_value = req_index;
+
+	printf("Send request size %lu fd %i message size %lu\n",
+		data_size, channel->fd_client, MSG_TOTAL_SIZE(msg));
 
 	if ((ret = __rrr_raft_client_send_msg (
 			channel,
