@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -111,6 +111,17 @@ static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_new
 	return __rrr_reallocate(ptr_old, (size_t) bytes_new, group);
 }
 
+/* Allocate array from OS allocator */
+static inline void *rrr_aligned_allocate (size_t alignment, size_t size) {
+	return mallocx(size, MALLOCX_ALIGN(alignment));
+}
+
+/* Frees both allocations done by OS allocator and group allocator */
+static inline void rrr_aligned_free (size_t alignment, void *ptr) {
+	(void)(alignment);
+	free(ptr);
+}
+
 /* Duplicate string using OS allocator */
 static inline char *rrr_strdup (const char *str) {
 	size_t size = strlen(str) + 1;
@@ -165,6 +176,7 @@ static inline void *rrr_allocate (rrr_biglength bytes) {
 static inline void *rrr_allocate_zero (rrr_biglength bytes) {
 	VERIFY_SIZE(bytes);
 	void *ptr;
+	// TODO : Use calloc
 	if ((ptr = malloc((size_t) bytes)) == NULL) {
 		return ptr;
 	}
@@ -195,6 +207,15 @@ static inline void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_new
 	(void)(group);
 	VERIFY_SIZE(bytes_new);
 	return rrr_reallocate(ptr_old, bytes_new);
+}
+
+static inline void *rrr_aligned_allocate (size_t alignment, size_t size) {
+	return aligned_alloc(alignment, size);
+}
+
+static inline void rrr_aligned_free (size_t alignment, void *ptr) {
+	(void)(alignment);
+	free(ptr);
 }
 
 static inline char *rrr_strdup (const char *str) {

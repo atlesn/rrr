@@ -61,6 +61,46 @@ struct rrr_raft_channel {
 	struct rrr_raft_channel_callbacks callbacks;
 };
 
+static inline void *__rrr_raft_malloc (void *data, size_t size) {
+	(void)(data);
+	return rrr_allocate(size);
+}
+
+static inline void __rrr_raft_free (void *data, void *ptr) {
+	(void)(data);
+	return rrr_free(ptr);
+}
+
+static inline void *__rrr_raft_calloc (void *data, size_t nmemb, size_t size) {
+	(void)(data);
+	return rrr_callocate(nmemb, size);
+}
+
+static inline void *__rrr_raft_realloc (void *data, void *ptr, size_t size) {
+	(void)(data);
+	return rrr_reallocate(ptr, size);
+}
+
+static inline void *__rrr_raft_aligned_alloc (void *data, size_t alignment, size_t size) {
+	(void)(data);
+	return rrr_aligned_allocate(alignment, size);
+}
+
+static inline void __rrr_raft_aligned_free (void *data, size_t alignment, void *ptr) {
+	(void)(data);
+	return rrr_aligned_free(alignment, ptr);
+}
+
+static struct raft_heap rrr_raft_heap = {
+	NULL,                     /* data */
+	__rrr_raft_malloc,        /* malloc */
+	__rrr_raft_free,          /* free */
+	__rrr_raft_calloc,        /* calloc */
+	__rrr_raft_realloc,       /* realloc */
+	__rrr_raft_aligned_alloc, /* aligned_alloc */
+	__rrr_raft_aligned_free   /* aligned_free */
+};
+
 static void __rrr_raft_channel_after_fork_client (
 		struct rrr_raft_channel *channel
 ) {
@@ -311,6 +351,77 @@ static int __rrr_raft_server_send_msg_in_loop (
 	return ret;
 }
 
+static int __rrr_raft_server_msg_to_host (
+		struct rrr_msg_msg *msg,
+		rrr_length actual_length
+) {
+	int ret = 0;
+
+	rrr_length stated_length;
+
+	if (rrr_msg_get_target_size_and_check_checksum (
+			&stated_length,
+			(struct rrr_msg *) msg,
+			actual_length
+	) != 0) {
+		RRR_MSG_0("Failed to get size of message in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (actual_length < stated_length || actual_length != stated_length + 8 - stated_length % 8) {
+		RRR_MSG_0("Size mismatch between buffer and message header %" PRIrrrl "<>%" PRIrrrl " in %s\n",
+			actual_length, stated_length, __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, stated_length) != 0) {
+		RRR_MSG_0("Header validation failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_check_data_checksum_and_length((struct rrr_msg *) msg, stated_length) != 0) {
+		RRR_MSG_0("Data checksum validation failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	if (rrr_msg_msg_to_host_and_verify(msg, stated_length) != 0) {
+		RRR_MSG_0("Message endian conversion failed in %s\n", __func__);
+		ret = RAFT_MALFORMED;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_server_buf_msg_to_host (
+		struct rrr_msg_msg **msg,
+		const struct raft_buffer *buf
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp;
+
+	assert(buf->len >= sizeof(*msg_tmp) - 1);
+
+	if ((msg_tmp = rrr_allocate(buf->len)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for message in %s\n", __func__);
+		ret = RAFT_NOMEM;
+		goto out;
+	}
+
+	memcpy(msg_tmp, buf->base, buf->len);
+
+	*msg = msg_tmp;
+
+	out:
+	return ret;
+}
+
 static int __rrr_raft_server_read_msg_ctrl_cb (
 		const struct rrr_msg *message,
 		void *arg1,
@@ -324,7 +435,7 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	printf("servers: %u\n", callback_data->raft->configuration.n);
+	//printf("servers: %u\n", callback_data->raft->configuration.n);
 
 	return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 }
@@ -369,53 +480,13 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	int ret = 0;
 
-	rrr_length stated_length;
 	struct rrr_msg_msg *msg_tmp;
 	uint32_t unaligned_buf_len;
 
-	assert(buf->len >= sizeof(*msg_tmp) - 1);
 	assert(buf->len <= UINT32_MAX);
 
-	if ((msg_tmp = rrr_allocate(buf->len)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory for message in %s\n", __func__);
-		ret = RAFT_NOMEM;
-		goto out;
-	}
-
-	memcpy(msg_tmp, buf->base, buf->len);
-
-	if (rrr_msg_get_target_size_and_check_checksum (
-			&stated_length,
-			(struct rrr_msg *) msg_tmp,
-			buf->len
-	) != 0) {
-		RRR_MSG_0("Failed to get size of message in %s\n", __func__);
-		ret = RAFT_MALFORMED;
-		goto out;
-	}
-
-	if (buf->len < stated_length || buf->len != stated_length + 8 - stated_length % 8) {
-		RRR_MSG_0("Size mismatch between buffer and message header %lu<>%lu in %s\n",
-			buf->len, stated_length, __func__);
-		ret = RAFT_MALFORMED;
-		goto out;
-	}
-
-	if (rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg_tmp, stated_length) != 0) {
-		RRR_MSG_0("Header validation failed in %s\n", __func__);
-		ret = RAFT_MALFORMED;
-		goto out;
-	}
-
-	if (rrr_msg_check_data_checksum_and_length((struct rrr_msg *) msg_tmp, stated_length) != 0) {
-		RRR_MSG_0("Data checksum validation failed in %s\n", __func__);
-		ret = RAFT_MALFORMED;
-		goto out;
-	}
-
-	if (rrr_msg_msg_to_host_and_verify(msg_tmp, stated_length) != 0) {
-		RRR_MSG_0("Message endian conversion failed in %s\n", __func__);
-		ret = RAFT_MALFORMED;
+	if ((ret = __rrr_raft_server_buf_msg_to_host(&msg_tmp, buf)) != 0) {
+		RRR_MSG_0("Message decoding failed in %s\n", __func__);
 		goto out;
 	}
 
@@ -435,15 +506,63 @@ static int  __rrr_raft_server_fsm_snapshot_cb (
 	struct rrr_raft_server_callback_data *callback_data = fsm->data;
 
 	struct raft_buffer *buf;
+	struct rrr_msg_msg *msg;
 
-	if ((buf = raft_malloc(sizeof(*buf))) == NULL) {
+	if ((buf = bufs[0] = raft_calloc(1, sizeof(*buf))) == NULL) {
 		RRR_MSG_0("Failed to allocate buffer in %s\n", __func__);
 		return RAFT_NOMEM;
 	}
 
-	assert(0 && "snapshot CB not implemented");
+	if (rrr_msg_msg_new_empty (
+			&msg,
+			MSG_TYPE_TAG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			0,
+			0
+	) != 0) {
+		RRR_MSG_0("Failed to create message in %s\n", __func__);
+		return RAFT_NOMEM;
+	}
+
+	msg->msg_value = UINT32_MAX;
+
+	printf("Insert snapshot server %i\n", callback_data->server_id);
+
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg);
+
+	buf->len = MSG_TOTAL_SIZE(msg);
+	buf->base = msg;
+
+	*n_bufs = 1;
 
 	return 0;
+}
+
+static int __rrr_raft_server_fsm_restore_cb (
+		struct raft_fsm *fsm,
+		struct raft_buffer *buf
+) {
+	struct rrr_msg_msg *msg = buf->base;
+
+	int ret = 0;
+
+	assert(buf->len <= UINT32_MAX);
+
+	if ((ret = __rrr_raft_server_msg_to_host(msg, buf->len)) != 0) {
+		RRR_MSG_0("Message decoding failed in %s\n", __func__);
+		goto out;
+	}
+
+	assert(msg->msg_value == UINT32_MAX);
+
+	printf("Restore snapshot with value 0x%08x\n", msg->msg_value);
+
+	// Only free upon successful return value
+	raft_free(buf->base);
+
+	out:
+	return ret;
 }
 
 static int __rrr_raft_server (
@@ -513,15 +632,18 @@ static int __rrr_raft_server (
 		goto out_raft_uv_tcp_close;
 	}
 
-	// fsm.xxxxx = xxxx
 	fsm.version = 2;
 	fsm.apply = __rrr_raft_server_fsm_apply_cb;
 	fsm.snapshot = __rrr_raft_server_fsm_snapshot_cb;
+	fsm.restore = __rrr_raft_server_fsm_restore_cb;
+	fsm.data = &callback_data;
 
 	sprintf(address, "127.0.0.1:900%d", server_id);
 
 	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
 		server_id, dir, address);
+
+	raft_heap_set(&rrr_raft_heap);
 
 	if ((ret_tmp = raft_init(&raft, &io, &fsm, server_id, address)) != 0) {
 		RRR_MSG_0("Failed to initialize raft in %s: %s: %s\n", __func__,
@@ -587,7 +709,6 @@ static int __rrr_raft_server (
 	}
 
 //	raft.configuration.n = configuration;
-	printf("servers: %u\n", raft.configuration.n);
 
 	raft_set_snapshot_threshold(&raft, 64);
 	raft_set_snapshot_trailing(&raft, 16);
@@ -602,11 +723,15 @@ static int __rrr_raft_server (
 	}
 
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
+
 	RRR_DBG_1("Event loop completed in raft server, result was %i\n", ret_tmp);
 
 	ret = callback_data.ret;
 
-	goto out_raft_configuration_close;
+	// During normal operation, don't clean up the
+	// raft stuff explicitly as this causes uv threads
+	// to use freed data.
+	goto out_loop_close;
 	out_raft_configuration_close:
 		raft_configuration_close(&configuration);
 	out_raft_close:
@@ -617,6 +742,7 @@ static int __rrr_raft_server (
 		raft_uv_tcp_close(&transport);
 	out_loop_close:
 		uv_loop_close(&loop);
+		uv_library_shutdown();
 	out:
 		// TODO : Enable once handle is registered
 		// rrr_log_hook_unregister(log_hook_handle);
