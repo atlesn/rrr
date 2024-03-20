@@ -412,23 +412,15 @@ int rrr_raft_fork (
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_event_queue *queue,
 		const char *name,
+		int socketpair[2],
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	int sv[2];
 	struct rrr_raft_channel *channel;
 	rrr_event_handle event_periodic = {0};
 	rrr_event_handle event_read = {0};
-
-	// TODO : Cannot create sockets here due to forking context
-
-	if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", sv)) != 0) {
-		RRR_MSG_0("Failed to create sockets in %s: %s\n",
-			rrr_strerror(errno));
-		goto out;
-	}
 
 	struct rrr_raft_channel_callbacks callbacks = {
 		pong_callback,
@@ -437,13 +429,16 @@ int rrr_raft_fork (
 
 	if ((ret = __rrr_raft_channel_new (
 			&channel,
-			sv[0],
-			sv[1],
+			socketpair[0],
+			socketpair[1],
 			queue,
 			&callbacks
 	)) != 0) {
-		goto out_close;
+		goto out;
 	}
+
+	socketpair[0] = -1;
+	socketpair[1] = -1;
 
 	pid_t pid = rrr_fork (
 			fork_handler,
@@ -511,9 +506,6 @@ int rrr_raft_fork (
 	goto out;
 	out_destroy_channel:
 		__rrr_raft_channel_destroy(channel);
-	out_close:
-		rrr_socket_close(sv[0]);
-		rrr_socket_close(sv[1]);
 	out:
 		return ret;
 }

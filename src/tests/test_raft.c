@@ -25,8 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "test_raft.h"
+#include "../lib/rrr_strerror.h"
 #include "../lib/event/event.h"
 #include "../lib/raft/rrr_raft.h"
+#include "../lib/socket/rrr_socket.h"
 
 struct rrr_test_raft_callback_data {
 	int rrr_test_raft_pong_received;
@@ -66,22 +68,30 @@ int rrr_test_raft (
 
 	struct rrr_raft_channel *channel;
 	rrr_event_receiver_handle queue_handle;
+	int socketpair[2];
 
 	struct rrr_test_raft_callback_data callback_data = {0};
 
 	callback_data.main_running = main_running;
+
+	if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", socketpair)) != 0) {
+		RRR_MSG_0("Failed to create sockets in %s: %s\n",
+			rrr_strerror(errno));
+		goto out;
+	}
 
 	if ((ret = rrr_raft_fork (
 			&channel,
 			fork_handler,
 			queue,
 			"test",
+			socketpair,
 			__rrr_test_raft_pong_callback,
 			&callback_data
 	)) != 0) {
 		TEST_MSG("Failed to fork out raft process\n");
 		ret = 1;
-		goto out;
+		goto out_close;
 	}
 
 	if ((ret = rrr_event_receiver_new (
@@ -115,6 +125,11 @@ int rrr_test_raft (
 	goto out_cleanup;
 	out_cleanup:
 		rrr_raft_cleanup(channel);
+	out_close:
+		if (socketpair[0] > 0)
+			rrr_socket_close(socketpair[0]);
+		if (socketpair[1] > 0)
+			rrr_socket_close(socketpair[1]);
 	out:
 		return ret;
 }

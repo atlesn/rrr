@@ -34,6 +34,7 @@ int rrr_raft_fork (
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_event_queue *queue,
 		const char *name,
+		int socketpair[2],
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void *callback_arg
 );
