@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -96,6 +96,10 @@ int rrr_msg_msg_topic_get (
 int rrr_msg_msg_topic_equals (
 		const struct rrr_msg_msg *message,
 		const char *topic
+);
+int rrr_msg_msg_topic_equals_msg (
+		const struct rrr_msg_msg *message_a,
+		const struct rrr_msg_msg *message_b
 );
 int rrr_msg_msg_topic_match (
 		int *does_match,

@@ -49,12 +49,15 @@ static int __rrr_raft_server_send_msg_in_loop (
 
 struct rrr_raft_channel_callbacks {
 	void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS);
+	void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS);
 	void *arg;
 };
 
 struct rrr_raft_channel {
 	int fd_client;
 	int fd_server;
+	int server_id;
+	uint32_t req_index;
 	struct rrr_event_queue *queue;
 	struct rrr_event_collection events;
 	struct rrr_read_session_collection read_sessions;
@@ -90,7 +93,9 @@ static int __rrr_raft_message_store_expand (
 	struct rrr_msg_msg **msgs_new;
 	size_t capacity_new;
 
-	if (store->count < store->capacity) {
+	assert(store->count <= store->capacity);
+
+	if (store->count != store->capacity) {
 		goto out;
 	}
 
@@ -98,7 +103,7 @@ static int __rrr_raft_message_store_expand (
 
 	rrr_size_t_add_bug(&capacity_new, 128);
 
-	if ((msgs_new = rrr_reallocate(store->msgs, store->capacity * sizeof(*msgs_new))) == NULL) {
+	if ((msgs_new = rrr_reallocate(store->msgs, capacity_new * sizeof(*msgs_new))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for pointers in %s\n", __func__);
 		ret = 1;
 		goto out;
@@ -129,15 +134,54 @@ static int __rrr_raft_message_store_push (
 ) {
 	int ret = 0;
 
+	switch (MSG_TYPE(*msg)) {
+		case MSG_TYPE_PUT: {
+			for (size_t i = 0; i < store->count; i++) {
+				if (store->msgs[i] == NULL)
+					continue;
+
+				if (rrr_msg_msg_topic_equals_msg(*msg, store->msgs[i])) {
+					rrr_u32 value_orig = store->msgs[i]->msg_value;
+
+					rrr_free(store->msgs[i]);
+					store->msgs[i] = *msg;
+
+					printf("Replaced message in message store %u->%u\n",
+						value_orig, (*msg)->msg_value);
+
+					goto out_consumed;
+				}
+			}
+		} break;
+		default:
+			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(*msg), __func__);
+	};
+
+	for (size_t i = 0; i < store->count; i++) {
+		if (store->msgs[i] != NULL)
+			continue;
+
+		store->msgs[i] = *msg;
+
+		printf("Inserted message into message store %u count is now %llu\n",
+			(*msg)->msg_value, (unsigned long long) store->count);
+
+		goto out_consumed;
+	}
+
 	if ((ret = __rrr_raft_message_store_expand(store)) != 0) {
 		goto out;
 	}
 
 	store->msgs[store->count++] = *msg;
-	*msg = NULL;
 
+	printf("Pushed message to message store %u\n",
+		(*msg)->msg_value);
+
+	out_consumed:
+		*msg = NULL;
 	out:
-	return ret;
+		return ret;
 }
 
 static inline void *__rrr_raft_malloc (void *data, size_t size) {
@@ -234,6 +278,7 @@ static int __rrr_raft_channel_new (
 		struct rrr_raft_channel **result,
 		int fd_client,
 		int fd_server,
+		int server_id,
 		struct rrr_event_queue *queue,
 		struct rrr_raft_channel_callbacks *callbacks
 ) {
@@ -249,8 +294,10 @@ static int __rrr_raft_channel_new (
 
 	channel->fd_client = fd_client;
 	channel->fd_server = fd_server;
+	channel->server_id = server_id;
 	channel->queue = queue;
 	channel->callbacks = *callbacks;
+	channel->req_index = 1;
 	rrr_event_collection_init(&channel->events, queue);
 	rrr_read_session_collection_init(&channel->read_sessions);
 
@@ -286,7 +333,7 @@ static void __rrr_raft_server_apply_cb (
 	if (status != 0 && status != RAFT_LEADERSHIPLOST) {
 		RRR_MSG_0("Warning: Apply error: %s (%d)\n",
 			raft_errmsg(callback_data->raft), status);
-		goto out;
+		goto nack;
 	}
 
 	if (__rrr_raft_message_store_push(callback_data->message_store, &apply_data->msg) != 0) {
@@ -338,12 +385,15 @@ static int __rrr_raft_server_read_msg_cb (
 	struct raft_buffer buf;
 	struct raft_apply *req;
 	struct rrr_raft_server_apply_data *apply_data;
+	struct rrr_msg msg = {0};
 
 	assert((*message)->msg_value > 0);
 	RRR_ASSERT(sizeof((*message)->msg_value) == sizeof(apply_data->req_index),size_of_value_in_message_must_match_apply_data);
 
 	if (raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message. Not leader.\n");
+		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
+		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 		goto out;
 	}
 
@@ -933,7 +983,20 @@ static int __rrr_raft_client_read_msg_ctrl_cb (
 
 	int ret = 0;
 
-	channel->callbacks.pong_callback(channel->callbacks.arg);
+	switch (RRR_MSG_CTRL_FLAGS(message) & ~(RRR_MSG_CTRL_F_RESERVED)) {
+		case RRR_MSG_CTRL_F_PONG:
+			channel->callbacks.pong_callback(channel->server_id, channel->callbacks.arg);
+			break;
+		case RRR_MSG_CTRL_F_ACK:
+			channel->callbacks.ack_callback(channel->server_id, message->msg_value, 1 /* ack */, channel->callbacks.arg);
+			break;
+		case RRR_MSG_CTRL_F_NACK:
+			channel->callbacks.ack_callback(channel->server_id, message->msg_value, 0 /* nack */, channel->callbacks.arg);
+			break;
+		default:
+			RRR_BUG("BUG: Unknown flags %u in %s\n",
+				RRR_MSG_CTRL_FLAGS(message), __func__);
+	}
 
 	out:
 	return ret;
@@ -994,6 +1057,7 @@ int rrr_raft_fork (
 		int server_id,
 		const char *dir,
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
+		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -1004,6 +1068,7 @@ int rrr_raft_fork (
 
 	struct rrr_raft_channel_callbacks callbacks = {
 		pong_callback,
+		ack_callback,
 		callback_arg
 	};
 
@@ -1011,6 +1076,7 @@ int rrr_raft_fork (
 			&channel,
 			socketpair[0],
 			socketpair[1],
+			server_id,
 			queue,
 			&callbacks
 	)) != 0) {
@@ -1096,19 +1162,23 @@ void rrr_raft_cleanup (
 	__rrr_raft_channel_destroy(channel);
 }
 
-int rrr_raft_client_request (
+static int __rrr_raft_client_request (
+		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const void *data,
 		size_t data_size,
-		uint32_t req_index
+		uint8_t msg_type
 ) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
 
+	// Counter must begin at 1
+	assert(channel->req_index > 0);
+
 	if ((ret = rrr_msg_msg_new_with_data (
 			&msg,
-			MSG_TYPE_MSG,
+			msg_type,
 			MSG_CLASS_DATA,
 			rrr_time_get_64(),
 			NULL,
@@ -1120,10 +1190,10 @@ int rrr_raft_client_request (
 		goto out;
 	}
 
-	msg->msg_value = req_index;
+	msg->msg_value = channel->req_index;
 
-	printf("Send request size %lu fd %i message size %lu value %u\n",
-		data_size, channel->fd_client, MSG_TOTAL_SIZE(msg), req_index);
+	printf("Send request type %s size %lu fd %i message size %lu req %u\n",
+		MSG_TYPE_NAME(msg), data_size, channel->fd_client, MSG_TOTAL_SIZE(msg), channel->req_index);
 
 	if ((ret = __rrr_raft_client_send_msg (
 			channel,
@@ -1132,7 +1202,18 @@ int rrr_raft_client_request (
 		goto out;
 	}
 
+	*req_index = channel->req_index++;
+
 	out:
 	RRR_FREE_IF_NOT_NULL(msg);
 	return ret;
+}
+
+int rrr_raft_client_request_put (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const void *data,
+		size_t data_size
+) {
+	return __rrr_raft_client_request(req_index, channel, data, data_size, MSG_TYPE_PUT);
 }

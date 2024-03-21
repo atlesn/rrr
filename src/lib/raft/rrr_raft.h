@@ -26,6 +26,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #define RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS             \
+    int server_id,                                     \
+    void *arg
+
+#define RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS              \
+    int server_id,                                     \
+    uint32_t req_index,                                \
+    int ok,                                            \
     void *arg
 
 struct rrr_fork_handler;
@@ -41,16 +48,17 @@ int rrr_raft_fork (
 		int server_id,
 		const char *dir,
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
+		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_raft_cleanup (
 		struct rrr_raft_channel *channel
 );
-int rrr_raft_client_request (
+int rrr_raft_client_request_put (
+		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const void *data,
-		size_t data_size,
-		uint32_t req_index
+		size_t data_size
 );
 
 #endif /* RRR_RAFT_H */

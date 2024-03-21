@@ -38,34 +38,52 @@ static const char dir_base[] = "/tmp/rrr-test-raft";
 struct rrr_test_raft_callback_data {
 	struct rrr_raft_channel **channels;
 	int rrr_test_raft_pong_received;
-	int rrr_test_raft_ack_received;
 	const volatile int *main_running;
-	uint32_t cmd_pos;
+	unsigned int cmd_pos;
+	uint32_t req_index[RRR_TEST_RAFT_SERVER_COUNT];
+	uint32_t ack_index[RRR_TEST_RAFT_SERVER_COUNT];
 };
 
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	if (!callback_data->rrr_test_raft_pong_received) {
-		TEST_MSG("Pong received\n");
+		TEST_MSG("Pong received server %i\n", server_id);
 		callback_data->rrr_test_raft_pong_received = 1;
 	}
+}
+
+static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
+	struct rrr_test_raft_callback_data *callback_data = arg;
+
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+
+	uint32_t cb_req_index = callback_data->req_index[server_id - 1];
+	uint32_t cb_ack_index = callback_data->ack_index[server_id - 1];
+
+	assert(req_index <= cb_req_index);
+	assert(req_index > cb_ack_index);
+
+	TEST_MSG("%s %u received server %i (prev was %u)\n",
+		(ok ? "ACK" : "NACK"), req_index, server_id, cb_ack_index);
+
+	callback_data->ack_index[server_id - 1] = req_index;
 }
 
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	int ret_tmp = 0;
+	TEST_MSG("Periodic step %i\n", callback_data->cmd_pos);
 
-	TEST_MSG("Periodic step %i\n", callback_data->cmd_pos++);
-
-	if (callback_data->cmd_pos % 10 == 0) {
+	if (callback_data->cmd_pos++ % 10 == 0) {
 		for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
-			ret_tmp = rrr_raft_client_request (
+			// TODO : Send only leader
+			// TODO : Check return value
+			rrr_raft_client_request_put (
+					&callback_data->req_index[i],
 					callback_data->channels[i],
 					request_1,
-					sizeof(request_1),
-					callback_data->cmd_pos
+					sizeof(request_1)
 			);
 		}
 	}
@@ -75,9 +93,8 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_ERR;
 	}
 */
-	if (callback_data->rrr_test_raft_pong_received &&
-	    callback_data->rrr_test_raft_ack_received
-	) {
+	// TODO : Figure out correct end condition
+	if (callback_data->rrr_test_raft_pong_received && 0) {
 		return RRR_EVENT_EXIT;
 	}
 
@@ -122,6 +139,7 @@ int rrr_test_raft (
 				i + 1, /* server id */
 				dir,
 				__rrr_test_raft_pong_callback,
+				__rrr_test_raft_ack_callback,
 				&callback_data
 		)) != 0) {
 			TEST_MSG("Failed to fork out raft process\n");
@@ -161,8 +179,8 @@ int rrr_test_raft (
 		ret = 1;
 	}
 
-	if (!callback_data.rrr_test_raft_ack_received) {
-		TEST_MSG("No ack message received from fork\n");
+	if (callback_data.req_index != callback_data.ack_index) {
+		TEST_MSG("Mismatch between req and ack indexes\n");
 		ret = 1;
 	}
 
