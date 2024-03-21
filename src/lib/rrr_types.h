@@ -409,6 +409,13 @@ static inline void rrr_size_t_inc_bug (size_t *a) {
 	}
 }
 
+static inline void rrr_size_t_add_bug (size_t *a, size_t b) {
+	*a += b;
+	if (*a < b) {
+		RRR_BUG("Bug: Overflow in %s\n", __func__);
+	}
+}
+
 static inline rrr_length rrr_length_inc_bug_const (const rrr_length a) {
 	rrr_length r = a;
 	rrr_length_inc_bug(&r);
