@@ -141,8 +141,8 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 					rrr_free(store->msgs[i]);
 					store->msgs[i] = *msg;
 
-					printf("Replaced message in message store %u->%u\n",
-						value_orig, (*msg)->msg_value);
+					printf("Replaced message in message store %u->%u topic '%.*s'\n",
+						value_orig, (*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
 
 					goto out_consumed;
 				}
@@ -158,8 +158,8 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 
 		store->msgs[i] = *msg;
 
-		printf("Inserted message into message store %u count is now %llu\n",
-			(*msg)->msg_value, (unsigned long long) store->count);
+		printf("Inserted message into message store %u topic '%.*s' count is now %llu\n",
+			(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg), (unsigned long long) store->count);
 
 		goto out_consumed;
 	}
@@ -170,14 +170,38 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 
 	store->msgs[store->count++] = *msg;
 
-	printf("Pushed message to message store %u\n",
-		(*msg)->msg_value);
+	printf("Pushed message to message store %u topic '%.*s'\n",
+		(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
 
 	out_consumed:
 		msg_save = *msg;
 		*msg = NULL;
 	out:
 		return msg_save;
+}
+
+static int __rrr_raft_message_store_push_const (
+		struct rrr_raft_message_store *store,
+		const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_new = NULL;
+
+	if ((msg_new = rrr_msg_msg_duplicate(msg)) == NULL) {
+		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (__rrr_raft_message_store_push(store, &msg_new) == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_new);
+	return ret;
 }
 
 static inline void *__rrr_raft_malloc (void *data, size_t size) {
@@ -365,6 +389,7 @@ static int __rrr_raft_server_read_msg_cb (
 
 	// Message in message store on disk stored with network endianess
 	memcpy(buf.base, *message, MSG_TOTAL_SIZE(*message));
+	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf.base);
 	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf.base);
 
 	if ((req = raft_malloc(sizeof(*req))) == NULL) {
@@ -403,6 +428,9 @@ static int __rrr_raft_server_send_msg (
 ) {
 	rrr_u32 total_size = MSG_TOTAL_SIZE(msg);
 
+	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
+		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg);
+	}
 	rrr_msg_checksum_and_to_network_endian(msg);
 
 	if (write(channel->fd_server, msg, total_size) != total_size) {
@@ -447,19 +475,20 @@ static int __rrr_raft_server_msg_to_host (
 	int ret = 0;
 
 	rrr_length stated_length;
+	int ret_tmp;
 
-	if (rrr_msg_get_target_size_and_check_checksum (
+	if ((ret_tmp = rrr_msg_get_target_size_and_check_checksum (
 			&stated_length,
 			(struct rrr_msg *) msg,
 			actual_length
-	) != 0) {
-		RRR_MSG_0("Failed to get size of message in %s\n", __func__);
+	)) != 0) {
+		RRR_MSG_0("Failed to get size of message in %s: %i\n", __func__, ret_tmp);
 		ret = RAFT_MALFORMED;
 		goto out;
 	}
 
-	if (actual_length < stated_length || actual_length != stated_length + 8 - stated_length % 8) {
-		RRR_MSG_0("Size mismatch between buffer and message header %" PRIrrrl "<>%" PRIrrrl " in %s\n",
+	if (actual_length < stated_length) {
+		RRR_MSG_0("Actual length does not hold message stated size %" PRIrrrl "<%" PRIrrrl " in %s\n",
 			actual_length, stated_length, __func__);
 		ret = RAFT_MALFORMED;
 		goto out;
@@ -602,8 +631,6 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	// TODO : Check if we are leader and trigger NACK instead of bailing
 
-	printf("State machine push message\n");
-
 	if ((msg_save = __rrr_raft_message_store_push(callback_data->message_store_state, &msg_tmp)) == NULL) {
 		RRR_MSG_0("Failed to push message to message store during application to state machine in server %i\n",
 			callback_data->server_id);
@@ -626,6 +653,61 @@ static int __rrr_raft_server_fsm_apply_cb (
 		return ret;
 }
 
+static int __rrr_raft_server_fsm_message_store_snapshot (
+		struct raft_buffer *res_bufs[],
+		unsigned *res_n_bufs,
+		struct rrr_raft_server_callback_data *callback_data
+) {
+	struct rrr_raft_message_store *store = callback_data->message_store_state;
+
+	int ret = 0;
+
+	struct rrr_msg_msg *msg;
+	struct raft_buffer *bufs, *buf;
+
+	if ((bufs = raft_calloc(1, sizeof(*bufs) * store->count)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = RAFT_NOMEM;
+		goto out;
+	}
+
+	for (size_t i = 0; i < store->count; i++) {
+		buf = bufs + i;
+		msg = store->msgs[i];
+
+		if ((buf->base = raft_malloc(MSG_TOTAL_SIZE(msg))) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			ret = RAFT_NOMEM;
+			goto out_free;
+		}
+
+		memcpy(buf->base, msg, MSG_TOTAL_SIZE(msg));
+
+		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf->base);
+		rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf->base);
+
+		RRR_ASSERT(sizeof(buf->len) >= sizeof(MSG_TOTAL_SIZE(msg)),buf_len_must_hold_max_message_size);
+
+		buf->len = MSG_TOTAL_SIZE(msg);
+	}
+
+	*res_bufs = bufs;
+	*res_n_bufs = store->count;
+
+	assert(*res_n_bufs == store->count);
+
+	goto out;
+	out_free:
+		for (size_t i = 0; i < store->count; i++) {
+			if ((buf = bufs + i) == NULL)
+				break;
+			raft_free(buf->base);
+		}
+		raft_free(bufs);
+	out:
+		return ret;
+}
+
 static int  __rrr_raft_server_fsm_snapshot_cb (
 		struct raft_fsm *fsm,
 		struct raft_buffer *bufs[],
@@ -633,60 +715,51 @@ static int  __rrr_raft_server_fsm_snapshot_cb (
 ) {
 	struct rrr_raft_server_callback_data *callback_data = fsm->data;
 
-	struct raft_buffer *buf;
-	struct rrr_msg_msg *msg;
-
-	if ((buf = bufs[0] = raft_calloc(1, sizeof(*buf))) == NULL) {
-		RRR_MSG_0("Failed to allocate buffer in %s\n", __func__);
-		return RAFT_NOMEM;
-	}
-
-	if (rrr_msg_msg_new_empty (
-			&msg,
-			MSG_TYPE_TAG,
-			MSG_CLASS_DATA,
-			rrr_time_get_64(),
-			0,
-			0
-	) != 0) {
-		RRR_MSG_0("Failed to create message in %s\n", __func__);
-		return RAFT_NOMEM;
-	}
-
-	msg->msg_value = UINT32_MAX;
-
 	printf("Insert snapshot server %i\n", callback_data->server_id);
 
-	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg);
-
-	buf->len = MSG_TOTAL_SIZE(msg);
-	buf->base = msg;
-
-	*n_bufs = 1;
-
-	return 0;
+	return __rrr_raft_server_fsm_message_store_snapshot (bufs, n_bufs, callback_data);
 }
 
 static int __rrr_raft_server_fsm_restore_cb (
 		struct raft_fsm *fsm,
 		struct raft_buffer *buf
 ) {
-	struct rrr_msg_msg *msg = buf->base;
-
-	(void)(fsm);
+	struct rrr_raft_server_callback_data *callback_data = fsm->data;
 
 	int ret = 0;
 
+	struct rrr_msg_msg *msg;
+	size_t pos;
+
 	assert(buf->len <= UINT32_MAX);
 
-	if ((ret = __rrr_raft_server_msg_to_host(msg, buf->len)) != 0) {
-		RRR_MSG_0("Message decoding failed in %s\n", __func__);
-		goto out;
+	printf("Restore snapshot server %i\n", callback_data->server_id);
+
+	for (pos = 0; pos < buf->len; rrr_size_t_add_bug(&pos, MSG_TOTAL_SIZE(msg))) {
+		assert(buf->len - pos >= sizeof(struct rrr_msg_msg) - 1);
+
+		msg = (void *) buf->base + pos;
+
+		if ((ret = __rrr_raft_server_msg_to_host(msg, buf->len)) != 0) {
+			RRR_MSG_0("Message decoding failed in %s\n", __func__);
+			goto out;
+		}
+
+		printf("Found message topic length %u\n", MSG_TOPIC_LENGTH(msg));
+
+		if ((ret = __rrr_raft_message_store_push_const (
+				callback_data->message_store_state,
+				msg
+		)) != 0) {
+			RRR_MSG_0("Message push failed in %s\n", __func__);
+			goto out;
+		}
+
+		RRR_DBG_1("Message %u now restored in state machine in server %i\n",
+			msg->msg_value, callback_data->server_id);
 	}
 
-	assert(msg->msg_value == UINT32_MAX);
-
-	printf("Restore snapshot with value 0x%08x\n", msg->msg_value);
+	assert(pos == buf->len);
 
 	// Only free upon successful return value
 	raft_free(buf->base);
@@ -905,6 +978,9 @@ static int __rrr_raft_client_send_msg (
 ) {
 	rrr_u32 total_size = MSG_TOTAL_SIZE(msg);
 
+	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
+		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg);
+	}
 	rrr_msg_checksum_and_to_network_endian(msg);
 
 	if (write(channel->fd_client, msg, total_size) != total_size) {
@@ -1165,6 +1241,7 @@ void rrr_raft_cleanup (
 static int __rrr_raft_client_request (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
+		const char *topic,
 		const void *data,
 		size_t data_size,
 		uint8_t msg_type
@@ -1181,8 +1258,8 @@ static int __rrr_raft_client_request (
 			msg_type,
 			MSG_CLASS_DATA,
 			rrr_time_get_64(),
-			NULL,
-			0,
+			topic,
+			strlen(topic),
 			data,
 			rrr_u32_from_biglength_bug_const(data_size)
 	)) != 0) {
@@ -1192,8 +1269,15 @@ static int __rrr_raft_client_request (
 
 	msg->msg_value = channel->req_index;
 
-	printf("Send request type %s size %lu fd %i message size %u req %u\n",
-		MSG_TYPE_NAME(msg), data_size, channel->fd_client, MSG_TOTAL_SIZE(msg), channel->req_index);
+	printf("Send request type %s size %lu fd %i message size %u req %u topic '%.*s'\n",
+		MSG_TYPE_NAME(msg),
+		data_size,
+		channel->fd_client,
+		MSG_TOTAL_SIZE(msg),
+		channel->req_index,
+		MSG_TOPIC_LENGTH(msg),
+		MSG_TOPIC_PTR(msg)
+	);
 
 	if ((ret = __rrr_raft_client_send_msg (
 			channel,
@@ -1212,8 +1296,16 @@ static int __rrr_raft_client_request (
 int rrr_raft_client_request_put (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
+		const char *topic,
 		const void *data,
 		size_t data_size
 ) {
-	return __rrr_raft_client_request(req_index, channel, data, data_size, MSG_TYPE_PUT);
+	return __rrr_raft_client_request (
+			req_index,
+			channel,
+			topic,
+			data,
+			data_size,
+			MSG_TYPE_PUT
+	);
 }

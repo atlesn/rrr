@@ -57,6 +57,7 @@ void rrr_raft_cleanup (
 int rrr_raft_client_request_put (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
+		const char *topic,
 		const void *data,
 		size_t data_size
 );

@@ -40,6 +40,7 @@ struct rrr_test_raft_callback_data {
 	int rrr_test_raft_pong_received;
 	const volatile int *main_running;
 	unsigned int cmd_pos;
+	unsigned int msg_pos;
 	uint32_t req_index[RRR_TEST_RAFT_SERVER_COUNT];
 	uint32_t ack_index[RRR_TEST_RAFT_SERVER_COUNT];
 };
@@ -73,15 +74,20 @@ static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
+	char topic[16];
+
 	TEST_MSG("Periodic step %i\n", callback_data->cmd_pos);
 
 	if (callback_data->cmd_pos++ % 10 == 0) {
 		for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+			sprintf(topic, "topic/%c", '0' + (callback_data->msg_pos++) % 10);
+
 			// TODO : Send only leader
 			// TODO : Check return value
 			rrr_raft_client_request_put (
 					&callback_data->req_index[i],
 					callback_data->channels[i],
+					topic,
 					request_1,
 					sizeof(request_1)
 			);
