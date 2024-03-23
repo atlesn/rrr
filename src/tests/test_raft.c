@@ -32,7 +32,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_TEST_RAFT_SERVER_COUNT 3
 
-static const char request_1[] = "Request number 1 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+static const char *requests[] = {
+	"Request 0",
+	"Request 1",
+	"Request 2",
+	"Request 3",
+	"Request 4",
+	"Request 5",
+	"Request 6",
+	"Request 7",
+	"Request 8",
+	"Request 9"
+};
+
 static const char dir_base[] = "/tmp/rrr-test-raft";
 
 struct rrr_test_raft_callback_data {
@@ -43,7 +55,25 @@ struct rrr_test_raft_callback_data {
 	unsigned int msg_pos;
 	uint32_t req_index[RRR_TEST_RAFT_SERVER_COUNT];
 	uint32_t ack_index[RRR_TEST_RAFT_SERVER_COUNT];
+	int leader_index;
+	int all_ok;
 };
+
+static void __rrr_test_raft_register_response (
+		struct rrr_test_raft_callback_data *callback_data,
+		int server_id,
+		uint32_t req_index
+) {
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+
+	uint32_t cb_req_index = callback_data->req_index[server_id - 1];
+	uint32_t cb_ack_index = callback_data->ack_index[server_id - 1];
+
+	assert(req_index <= cb_req_index);
+	assert(req_index > cb_ack_index);
+
+	callback_data->ack_index[server_id - 1] = req_index;
+}
 
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
@@ -57,52 +87,103 @@ static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+	TEST_MSG("%s %u received server %i (prev was %" PRIu32 ")\n",
+		(ok ? "ACK" : "NACK"), req_index, server_id, callback_data->ack_index[server_id - 1]);
 
-	uint32_t cb_req_index = callback_data->req_index[server_id - 1];
-	uint32_t cb_ack_index = callback_data->ack_index[server_id - 1];
+	__rrr_test_raft_register_response(callback_data, server_id, req_index);
+}
 
-	assert(req_index <= cb_req_index);
-	assert(req_index > cb_ack_index);
+static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
+	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	TEST_MSG("%s %u received server %i (prev was %u)\n",
-		(ok ? "ACK" : "NACK"), req_index, server_id, cb_ack_index);
+	int leader_index;
 
-	callback_data->ack_index[server_id - 1] = req_index;
+	TEST_MSG("OPT %u received server %i is leader: %" PRIu64 "\n",
+		req_index, server_id, is_leader);
+
+	if (is_leader) {
+		leader_index = callback_data->leader_index = server_id - 1;
+		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_COUNT);
+	}
+
+	__rrr_test_raft_register_response(callback_data, server_id, req_index);
 }
 
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	char topic[16];
+	unsigned int msg_pos;
 
 	TEST_MSG("Periodic step %i\n", callback_data->cmd_pos);
 
-	if (callback_data->cmd_pos++ % 10 == 0) {
-		for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
-			sprintf(topic, "topic/%c", '0' + (callback_data->msg_pos++) % 10);
+	switch (callback_data->cmd_pos++) {
+		case 0: {
+			if (callback_data->leader_index >= 0) {
+				// OK, async OPT response detected a leader
+				TEST_MSG("- Leader found\n");
+			}
+			else {
+				TEST_MSG("- Probing for leader...\n");
+				for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+					// TODO : Check return value
+					rrr_raft_client_request_opt (
+							&callback_data->req_index[i],
+							callback_data->channels[i]
+					);
+				}
+				callback_data->cmd_pos--;
+			}
+		} break;
+		case 1: {
+			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {
+				msg_pos = callback_data->msg_pos++;
+				sprintf(topic, "topic/%c", '0' + msg_pos);
 
-			// TODO : Send only leader
-			// TODO : Check return value
-			rrr_raft_client_request_put (
-					&callback_data->req_index[i],
-					callback_data->channels[i],
-					topic,
-					request_1,
-					sizeof(request_1)
-			);
-		}
-	}
+				// TODO : Check return value
+				rrr_raft_client_request_put (
+						&callback_data->req_index[callback_data->leader_index],
+						callback_data->channels[callback_data->leader_index],
+						topic,
+						requests[msg_pos],
+						sizeof(requests[msg_pos])
+				);
+			}
+		} break;
+		default: {
+			if (!callback_data->rrr_test_raft_pong_received) {
+				// Pong not received yet
+				TEST_MSG("- Waiting for pong...");
+			}
+			else {
+				int ack_ok = 1;
+
+				for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+					if (callback_data->ack_index[i] < callback_data->req_index[i]) {
+						TEST_MSG("- Waiting for ACKs (%" PRIu32"<%" PRIu32 ") server %i...\n",
+							callback_data->ack_index[i], callback_data->req_index[i], i + 1);
+						ack_ok = 0;
+					}
+				}
+
+				if (!ack_ok) {
+					break;
+				}
+
+				TEST_MSG("All tasks complete\n");
+
+				callback_data->all_ok = 1;
+
+				return RRR_EVENT_EXIT;
+			}
+		} break;
+	};
 /*
 	if (ret_tmp != 0) {
 		TEST_MSG("A periodic command failed with error %i\n", ret_tmp);
 		return RRR_EVENT_ERR;
 	}
 */
-	// TODO : Figure out correct end condition
-	if (callback_data->rrr_test_raft_pong_received && 0) {
-		return RRR_EVENT_EXIT;
-	}
 
 	if (!*(callback_data->main_running)) {
 		return RRR_EVENT_ERR;
@@ -126,6 +207,7 @@ int rrr_test_raft (
 
 	callback_data.main_running = main_running;
 	callback_data.channels = channels;
+	callback_data.leader_index = -1;
 
 	for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
 		if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", socketpair)) != 0) {
@@ -146,6 +228,7 @@ int rrr_test_raft (
 				dir,
 				__rrr_test_raft_pong_callback,
 				__rrr_test_raft_ack_callback,
+				__rrr_test_raft_opt_callback,
 				&callback_data
 		)) != 0) {
 			TEST_MSG("Failed to fork out raft process\n");
@@ -180,13 +263,8 @@ int rrr_test_raft (
 		goto out_cleanup;
 	}
 
-	if (!callback_data.rrr_test_raft_pong_received) {
-		TEST_MSG("No pong message received from fork\n");
-		ret = 1;
-	}
-
-	if (callback_data.req_index != callback_data.ack_index) {
-		TEST_MSG("Mismatch between req and ack indexes\n");
+	if (!callback_data.all_ok) {
+		TEST_MSG("All OK not set, one or more tests failed or has not run\n");
 		ret = 1;
 	}
 

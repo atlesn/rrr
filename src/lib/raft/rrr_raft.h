@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_H
 
 #include <stdint.h>
-#include <stdio.h>
+#include <stddef.h>
 
 #define RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS             \
     int server_id,                                     \
@@ -33,6 +33,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     int server_id,                                     \
     uint32_t req_index,                                \
     int ok,                                            \
+    void *arg
+
+#define RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS              \
+    int server_id,                                     \
+    uint32_t req_index,                                \
+    uint64_t is_leader,                                \
     void *arg
 
 struct rrr_fork_handler;
@@ -49,6 +55,7 @@ int rrr_raft_fork (
 		const char *dir,
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
+		void (*opt_callback)(RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_raft_cleanup (
@@ -60,6 +67,10 @@ int rrr_raft_client_request_put (
 		const char *topic,
 		const void *data,
 		size_t data_size
+);
+int rrr_raft_client_request_opt (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel
 );
 
 #endif /* RRR_RAFT_H */

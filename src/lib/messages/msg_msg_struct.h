@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,7 +29,8 @@ enum rrr_msg_msg_type {
 	MSG_TYPE_TAG = 2,
 	MSG_TYPE_GET = 3,
 	MSG_TYPE_PUT = 4,
-	MSG_TYPE_DEL = 5
+	MSG_TYPE_DEL = 5,
+	MSG_TYPE_OPT = 6
 };
 
 enum rrr_msg_msg_class {
@@ -42,6 +43,7 @@ enum rrr_msg_msg_class {
 #define MSG_TYPE_GET_STRING "GET"
 #define MSG_TYPE_PUT_STRING "PUT"
 #define MSG_TYPE_DEL_STRING "DEL"
+#define MSG_TYPE_OPT_STRING "OPT"
 
 #define MSG_CLASS_DATA_STRING "DATA"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
@@ -57,6 +59,7 @@ enum rrr_msg_msg_class {
 #define MSG_IS_GET(message)           (MSG_TYPE(message) == MSG_TYPE_GET)
 #define MSG_IS_PUT(message)           (MSG_TYPE(message) == MSG_TYPE_PUT)
 #define MSG_IS_DEL(message)           (MSG_TYPE(message) == MSG_TYPE_DEL)
+#define MSG_IS_OPT(message)           (MSG_TYPE(message) == MSG_TYPE_OPT)
 
 #define MSG_TYPE_NAME(message) \
 	(MSG_IS_MSG(message) ? MSG_TYPE_MSG_STRING : \
@@ -64,13 +67,14 @@ enum rrr_msg_msg_class {
 	(MSG_IS_GET(message) ? MSG_TYPE_GET_STRING : \
 	(MSG_IS_PUT(message) ? MSG_TYPE_PUT_STRING : \
 	(MSG_IS_DEL(message) ? MSG_TYPE_DEL_STRING : \
-	"(unknown)" )))))
+	(MSG_IS_OPT(message) ? MSG_TYPE_OPT_STRING : \
+	"(unknown)" ))))))
 
 #define MSG_CLASS_OK(message) \
     ((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
 
 #define MSG_TYPE_OK(message) \
-    (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_DEL)
+    (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_OPT)
 
 #define MSG_IS_DATA(message)          (MSG_CLASS(message) == MSG_CLASS_DATA)
 #define MSG_IS_ARRAY(message)         (MSG_CLASS(message) == MSG_CLASS_ARRAY)
