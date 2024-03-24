@@ -34,6 +34,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_RAFT_SERVER_COUNT 3
 #define RRR_TEST_RAFT_IN_FLIGHT_MAX 64
 
+static const struct rrr_raft_server servers[RRR_TEST_RAFT_SERVER_COUNT + 1] = {
+	{.id = 1, .address = "127.0.0.1:9001"},
+	{.id = 2, .address = "127.0.0.1:9002"},
+	{.id = 3, .address = "127.0.0.1:9003"},
+	{.id = 0, .address = ""}
+};
+
 static const char *requests[] = {
 	"Request 0",
 	"Request 1",
@@ -392,7 +399,8 @@ int rrr_test_raft (
 				queue,
 				"test",
 				socketpair,
-				i + 1, /* server id */
+				servers, // All servers
+				i,       // Index of self server
 				dir,
 				__rrr_test_raft_pong_callback,
 				__rrr_test_raft_ack_callback,

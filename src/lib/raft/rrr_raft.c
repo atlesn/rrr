@@ -915,12 +915,13 @@ static int __rrr_raft_server_fsm_restore_cb (
 static int __rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
-		int server_id,
+		const struct rrr_raft_server *servers,
+		size_t servers_self,
 		const char *dir
 ) {
 	int ret = 0;
 
-	int was_found, ret_tmp, i;
+	int was_found, ret_tmp;
 	int channel_fds[2];
 	uv_loop_t loop;
 	uv_poll_t poll_server;
@@ -930,7 +931,6 @@ static int __rrr_raft_server (
 	struct raft raft = {0};
 	struct raft_configuration configuration;
 	struct raft_change *req = NULL;
-	char address[64];
 	struct rrr_raft_server_callback_data callback_data;
 	struct rrr_raft_message_store message_store_state = {0};
 	static struct raft_heap rrr_raft_heap = {
@@ -995,14 +995,18 @@ static int __rrr_raft_server (
 	fsm.restore = __rrr_raft_server_fsm_restore_cb;
 	fsm.data = &callback_data;
 
-	sprintf(address, "127.0.0.1:900%d", server_id);
-
 	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
-		server_id, dir, address);
+		servers[servers_self].id, dir, servers[servers_self].address);
 
 	raft_heap_set(&rrr_raft_heap);
 
-	if ((ret_tmp = raft_init(&raft, &io, &fsm, server_id, address)) != 0) {
+	if ((ret_tmp = raft_init (
+			&raft,
+			&io,
+			&fsm,
+			servers[servers_self].id,
+			servers[servers_self].address
+	)) != 0) {
 		RRR_MSG_0("Failed to initialize raft in %s: %s: %s\n", __func__,
 			raft_strerror(ret_tmp), raft_errmsg(&raft));
 		ret = 1;
@@ -1014,19 +1018,17 @@ static int __rrr_raft_server (
 		0,
 		&loop,
 		&raft,
-		server_id,
+		servers[servers_self].id,
 		&message_store_state
 	};
 
 	raft_configuration_init(&configuration);
 
-	for (i = 0; i < RRR_RAFT_SERVER_COUNT; i++) {
-		sprintf(address, "127.0.0.1:900%d", i + 1);
-
+	for (; servers->id > 0; servers++) {
 		if ((ret_tmp = raft_configuration_add (
 				&configuration,
-				i + 1,
-				address,
+				servers->id,
+				servers->address,
 				RAFT_VOTER
 		)) != 0) {
 			RRR_MSG_0("Failed to add to raft configuration in %s: %s\n", __func__,
@@ -1309,7 +1311,8 @@ int rrr_raft_fork (
 		struct rrr_event_queue *queue,
 		const char *name,
 		int socketpair[2],
-		int server_id,
+		const struct rrr_raft_server *servers,
+		size_t servers_self,
 		const char *dir,
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
@@ -1335,7 +1338,7 @@ int rrr_raft_fork (
 			&channel,
 			socketpair[0],
 			socketpair[1],
-			server_id,
+			servers[servers_self].id,
 			queue,
 			&callbacks
 	)) != 0) {
@@ -1369,7 +1372,13 @@ int rrr_raft_fork (
 
 		__rrr_raft_channel_after_fork_server(channel);
 
-		ret = __rrr_raft_server(channel, name, server_id, dir);
+		ret = __rrr_raft_server (
+				channel,
+				name,
+				servers,
+				servers_self,
+				dir
+		);
 
 		exit(ret != 0);
 	}

@@ -52,13 +52,19 @@ struct rrr_raft_channel;
 struct rrr_event_queue;
 struct rrr_msg_msg;
 
+struct rrr_raft_server {
+	char address[64];
+	int id;
+};
+
 int rrr_raft_fork (
 		struct rrr_raft_channel **result,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_event_queue *queue,
 		const char *name,
 		int socketpair[2],
-		int server_id,
+		const struct rrr_raft_server *servers,
+		size_t servers_self,
 		const char *dir,
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
