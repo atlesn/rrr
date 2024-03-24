@@ -52,6 +52,7 @@ struct rrr_raft_channel_callbacks {
 	void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS);
 	void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS);
 	void (*opt_callback)(RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS);
+	void (*msg_callback)(RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS);
 	void *arg;
 };
 
@@ -79,7 +80,6 @@ struct rrr_raft_server_callback_data {
 	struct raft *raft;
 	int server_id;
 	struct rrr_raft_message_store *message_store_state;
-	struct rrr_raft_message_store *message_store_incoming;
 };
 
 static int __rrr_raft_message_store_expand (
@@ -123,6 +123,38 @@ static void __rrr_raft_message_store_clear (
 	RRR_FREE_IF_NOT_NULL(store->msgs);
 
 	memset(store, '\0', sizeof(*store));
+}
+
+static int __rrr_raft_message_store_get (
+		struct rrr_msg_msg **msg,
+		const struct rrr_raft_message_store *store,
+		const char *topic,
+		size_t topic_length
+) {
+	int ret = 0;
+
+	*msg = NULL;
+
+	for (size_t i = 0; i < store->count; i++) {
+		const struct rrr_msg_msg *msg_test = store->msgs[i];
+
+		if (msg_test == NULL)
+			continue;
+
+		// TODO : How to support PATCH
+
+		if (rrr_msg_msg_topic_equals_len(msg_test, topic, topic_length)) {
+			assert(*msg == NULL);
+			if ((*msg = rrr_msg_msg_duplicate(msg_test)) == NULL) {
+				RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+	}
+
+	out:
+	return ret;
 }
 
 static struct rrr_msg_msg *__rrr_raft_message_store_push (
@@ -348,6 +380,41 @@ static int __rrr_raft_server_make_opt_response (
 	return ret;
 }
 
+static int __rrr_raft_server_make_get_response (
+		struct rrr_raft_channel *channel,
+		uv_loop_t *loop,
+		struct rrr_raft_message_store *message_store_state,
+		rrr_u32 req_index,
+		const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	if ((ret = __rrr_raft_message_store_get (
+			&msg_tmp,
+			message_store_state,
+			MSG_TOPIC_PTR(msg),
+			MSG_TOPIC_LENGTH(msg)
+	)) != 0) {
+		goto out;
+	}
+	else if (msg_tmp == NULL) {
+		ret = RRR_READ_INCOMPLETE;
+		goto out;
+	}
+
+	assert(MSG_IS_PUT(msg_tmp));
+
+	msg_tmp->msg_value = req_index;
+
+	__rrr_raft_server_send_msg_in_loop(channel, loop, (struct rrr_msg *) msg_tmp);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
 static void __rrr_raft_server_apply_cb (
 		struct raft_apply *req,
 		int status,
@@ -411,7 +478,7 @@ static int __rrr_raft_server_read_msg_cb (
 	int ret = 0;
 
 	int ret_tmp;
-	struct raft_buffer buf;
+	struct raft_buffer buf = {0};
 	struct raft_apply *req;
 	struct rrr_msg msg = {0};
 
@@ -424,7 +491,24 @@ static int __rrr_raft_server_read_msg_cb (
 				raft,
 				(*message)->msg_value
 		)) != 0) {
-			rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
+			goto out;
+		}
+		goto out;
+	}
+
+	if (MSG_IS_GET(*message)) {
+		if ((ret = __rrr_raft_server_make_get_response (
+				callback_data->channel,
+				callback_data->loop,
+				callback_data->message_store_state,
+				(*message)->msg_value,
+				(*message)
+		)) != 0) {
+			if (ret == RRR_READ_INCOMPLETE) {
+				rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
+				ret = 0;
+				goto out_send_msg;
+			}
 			goto out;
 		}
 		goto out;
@@ -433,8 +517,7 @@ static int __rrr_raft_server_read_msg_cb (
 	if (raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
-		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
-		goto out;
+		goto out_send_msg;
 	}
 
 	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
@@ -452,7 +535,7 @@ static int __rrr_raft_server_read_msg_cb (
 	if ((req = raft_malloc(sizeof(*req))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for request in %s\n", __func__);
 		ret = 1;
-		goto out_free_buffer;
+		goto out;
 	}
 
 	req->data = callback_data;
@@ -464,7 +547,10 @@ static int __rrr_raft_server_read_msg_cb (
 
 		RRR_MSG_0("Apply failed in %s: %s\n", __func__, raft_errmsg(raft));
 		ret = 1;
-		goto out_free_buffer;
+		goto out;
+	}
+	else {
+		buf.base = NULL;
 	}
 
 	//assert(0 && "Read msg not implemented");
@@ -472,10 +558,11 @@ static int __rrr_raft_server_read_msg_cb (
 	goto out;
 //	out_free_req:
 //		raft_free(req);
-	out_free_buffer:
+	out_send_msg:
+		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+	out:
 		if (buf.base != NULL)
 			raft_free(buf.base);
-	out:
 		return ret;
 }
 
@@ -928,8 +1015,7 @@ static int __rrr_raft_server (
 		&loop,
 		&raft,
 		server_id,
-		&message_store_state,
-		NULL
+		&message_store_state
 	};
 
 	raft_configuration_init(&configuration);
@@ -1094,24 +1180,40 @@ static int __rrr_raft_client_read_msg_cb (
 	struct rrr_array array_tmp = {0};
 	uint64_t is_leader;
 
-	assert(MSG_IS_OPT(*message));
-	assert(MSG_IS_ARRAY(*message));
+	switch (MSG_TYPE(*message)) {
+		case MSG_TYPE_OPT: {
+			assert(MSG_IS_ARRAY(*message));
 
-	if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_tmp, *message)) != 0) {
-		RRR_MSG_0("Failed to get array values in %s\n", __func__);
-		goto out;
-	}
+			if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_tmp, *message)) != 0) {
+				RRR_MSG_0("Failed to get array values in %s\n", __func__);
+				goto out;
+			}
 
-	if (rrr_array_get_value_unsigned_64_by_tag (&is_leader, &array_tmp, "is_leader", 0) != 0) {
-		RRR_BUG("BUG: Failed to get is_leader value from OPT message in %s\n", __func__);
-	}
+			if (rrr_array_get_value_unsigned_64_by_tag (&is_leader, &array_tmp, "is_leader", 0) != 0) {
+				RRR_BUG("BUG: Failed to get is_leader value from OPT message in %s\n", __func__);
+			}
 
-	channel->callbacks.opt_callback (
-			channel->server_id,
-			(*message)->msg_value,
-			is_leader,
-			channel->callbacks.arg
-	);
+			channel->callbacks.opt_callback (
+					channel->server_id,
+					(*message)->msg_value,
+					is_leader,
+					channel->callbacks.arg
+			);
+		} break;
+		case MSG_TYPE_PUT: {
+			MSG_SET_TYPE(*message, MSG_TYPE_MSG);
+
+			channel->callbacks.msg_callback (
+					channel->server_id,
+					(*message)->msg_value,
+					message,
+					channel->callbacks.arg
+			);
+		} break;
+		default: {
+			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(*message), __func__);
+		} break;
+	};
 
 	out:
 	return ret;
@@ -1212,6 +1314,7 @@ int rrr_raft_fork (
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
 		void (*opt_callback)(RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS),
+		void (*msg_callback)(RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -1224,6 +1327,7 @@ int rrr_raft_fork (
 		pong_callback,
 		ack_callback,
 		opt_callback,
+		msg_callback,
 		callback_arg
 	};
 

@@ -41,9 +41,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     uint64_t is_leader,                                \
     void *arg
 
+#define RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS              \
+    int server_id,                                     \
+    uint32_t req_index,                                \
+    struct rrr_msg_msg **msg,                          \
+    void *arg
+
 struct rrr_fork_handler;
 struct rrr_raft_channel;
 struct rrr_event_queue;
+struct rrr_msg_msg;
 
 int rrr_raft_fork (
 		struct rrr_raft_channel **result,
@@ -56,6 +63,7 @@ int rrr_raft_fork (
 		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
 		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
 		void (*opt_callback)(RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS),
+		void (*msg_callback)(RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_raft_cleanup (

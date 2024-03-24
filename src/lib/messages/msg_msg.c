@@ -432,14 +432,14 @@ int rrr_msg_msg_topic_get (
 	return rrr_msg_msg_topic_and_length_get(result, &result_length_dummy, message);
 }
 
-int rrr_msg_msg_topic_equals (
+static int __rrr_msg_msg_topic_equals_len (
 		const struct rrr_msg_msg *message,
-		const char *topic
+		const char *topic,
+		size_t topic_length
 ) {
 	const size_t len_a = MSG_TOPIC_LENGTH(message);
-	const size_t len_b = strlen(topic);
 
-	if (len_a != len_b) {
+	if (len_a != topic_length) {
 		return 0;
 	}
 
@@ -449,6 +449,21 @@ int rrr_msg_msg_topic_equals (
 
 	// Return 1 for equals
 	return (memcmp(MSG_TOPIC_PTR(message), topic, len_a) == 0);
+}
+
+int rrr_msg_msg_topic_equals (
+		const struct rrr_msg_msg *message,
+		const char *topic
+) {
+	return __rrr_msg_msg_topic_equals_len(message, topic, strlen(topic));
+}
+
+int rrr_msg_msg_topic_equals_len (
+		const struct rrr_msg_msg *message,
+		const char *topic,
+		size_t topic_length
+) {
+	return __rrr_msg_msg_topic_equals_len(message, topic, topic_length);
 }
 
 int rrr_msg_msg_topic_equals_msg (

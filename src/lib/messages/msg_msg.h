@@ -97,6 +97,11 @@ int rrr_msg_msg_topic_equals (
 		const struct rrr_msg_msg *message,
 		const char *topic
 );
+int rrr_msg_msg_topic_equals_len (
+		const struct rrr_msg_msg *message,
+		const char *topic,
+		size_t topic_length
+);
 int rrr_msg_msg_topic_equals_msg (
 		const struct rrr_msg_msg *message_a,
 		const struct rrr_msg_msg *message_b
