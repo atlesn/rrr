@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../util/bsd.h"
 #include "../util/posix.h"
+#include "../util/rrr_endian.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -40,7 +41,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <raft.h>
 #include <raft/uv.h>
 
-#define RRR_RAFT_SERVER_COUNT 3
+// I64 fields
+#define RRR_RAFT_SERVER_CMD_FIELD_CMD        "raft_cmd"
+
+// String fields
+#define RRR_RAFT_SERVER_CMD_FIELD_SERVER     "raft_server"
+
+enum RRR_RAFT_SERVER_CMD {
+	RRR_RAFT_SERVER_CMD_SERVER_ADD = 1
+};
 
 static int __rrr_raft_server_send_msg_in_loop (
 		struct rrr_raft_channel *channel,
@@ -380,6 +389,103 @@ static int __rrr_raft_server_make_opt_response (
 	return ret;
 }
 
+static void __rrr_raft_server_server_add_cb (
+		struct raft_change *req,
+		int status
+) {
+	(void)(req);
+	(void)(status);
+	assert(0 && "server add cb not implemented");
+}
+
+static int __rrr_raft_server_handle_cmd (
+		struct rrr_raft_channel *channel,
+		uv_loop_t *loop,
+		struct raft *raft,
+		rrr_u32 req_index,
+		const struct rrr_msg_msg *msg
+) {
+	(void)(channel);
+	(void)(loop);
+	(void)(req_index);
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_type_value *value;
+	int i, j, ret_tmp;
+	int64_t cmd;
+	struct rrr_raft_server servers[8];
+	uint16_t version_dummy;
+	struct raft_change req = {0};
+
+	if ((ret = rrr_array_message_append_to_array (
+			&version_dummy,
+			&array_tmp,
+			msg
+	)) != 0) {
+		goto out;
+	}
+
+	if (rrr_array_get_value_signed_64_by_tag (
+			&cmd,
+			&array_tmp,
+			RRR_RAFT_SERVER_CMD_FIELD_CMD,
+			0
+	) != 0) {
+		RRR_BUG("BUG: Command field missing in %s\n", __func__);
+	}
+
+	switch (cmd) {
+		case RRR_RAFT_SERVER_CMD_SERVER_ADD: {
+			for (
+				i = 0;
+				(value = rrr_array_value_get_by_tag_and_index (
+						&array_tmp,
+						RRR_RAFT_SERVER_CMD_FIELD_SERVER,
+						i
+				)) != NULL;
+				i++
+			) {
+				assert((size_t) i < sizeof(servers)/sizeof(servers[0]));
+				assert(value->total_stored_length == sizeof(servers[0]));
+
+				// Flip ID field
+				RRR_ASSERT((void *) &servers[0] == (void *) servers[0].id,id_must_be_first_in_struct);
+				* (uint64_t *) value->data = rrr_be64toh(* (uint64_t *) value->data);
+
+				memcpy(&servers[i], value->data, sizeof(servers[0]));
+
+				assert(servers[i].address[0] != '\0');
+			}
+
+			assert(i > 0);
+
+			for (j = 0; j < i; j++) {
+				printf("Add server %" PRIi64 " address %s\n", servers[j].id, servers[j].address);
+				if ((ret_tmp = raft_add (
+						raft,
+						&req,
+						rrr_int_from_biglength_bug_const(servers[j].id),
+						servers[j].address,
+						__rrr_raft_server_server_add_cb // takes req and status
+				)) != 0) {
+					RRR_MSG_0("Server add failed in %s: %s %s\n",
+						__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+					ret = 1;
+					goto out;
+				}
+			}
+		} break;
+		default:
+			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
+	};
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
 static int __rrr_raft_server_make_get_response (
 		struct rrr_raft_channel *channel,
 		uv_loop_t *loop,
@@ -485,13 +591,22 @@ static int __rrr_raft_server_read_msg_cb (
 	assert((*message)->msg_value > 0);
 
 	if (MSG_IS_OPT(*message)) {
-		if ((ret = __rrr_raft_server_make_opt_response (
-				callback_data->channel,
-				callback_data->loop,
-				raft,
-				(*message)->msg_value
-		)) != 0) {
-			goto out;
+		if (MSG_IS_ARRAY(*message)) {
+			ret = __rrr_raft_server_handle_cmd (
+					callback_data->channel,
+					callback_data->loop,
+					raft,
+					(*message)->msg_value,
+					(*message)
+			);
+		}
+		else {
+			ret = __rrr_raft_server_make_opt_response (
+					callback_data->channel,
+					callback_data->loop,
+					raft,
+					(*message)->msg_value
+			);
 		}
 		goto out;
 	}
@@ -1437,7 +1552,8 @@ static int __rrr_raft_client_request (
 		const char *topic,
 		const void *data,
 		size_t data_size,
-		uint8_t msg_type
+		uint8_t msg_type,
+		const struct rrr_array *array
 ) {
 	int ret = 0;
 
@@ -1446,18 +1562,34 @@ static int __rrr_raft_client_request (
 	// Counter must begin at 1
 	assert(channel->req_index > 0);
 
-	if ((ret = rrr_msg_msg_new_with_data (
-			&msg,
-			msg_type,
-			MSG_CLASS_DATA,
-			rrr_time_get_64(),
-			topic,
-			topic != NULL ? strlen(topic) : 0,
-			data,
-			rrr_u32_from_biglength_bug_const(data_size)
-	)) != 0) {
-		RRR_MSG_0("Failed to create message in %s\n", __func__);
-		goto out;
+	if (array != NULL) {
+		if ((ret = rrr_array_new_message_from_array (
+				&msg,
+				array,
+				rrr_time_get_64(),
+				topic,
+				topic != NULL ? strlen(topic) : 0
+		)) != 0) {
+			RRR_MSG_0("Failed to create array message in %s\n", __func__);
+			goto out;
+		}
+
+		MSG_SET_TYPE(msg, msg_type);
+	}
+	else {
+		if ((ret = rrr_msg_msg_new_with_data (
+				&msg,
+				msg_type,
+				MSG_CLASS_DATA,
+				rrr_time_get_64(),
+				topic,
+				topic != NULL ? strlen(topic) : 0,
+				data,
+				rrr_u32_from_biglength_bug_const(data_size)
+		)) != 0) {
+			RRR_MSG_0("Failed to create data message in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	msg->msg_value = channel->req_index;
@@ -1499,7 +1631,8 @@ int rrr_raft_client_request_put (
 			topic,
 			data,
 			data_size,
-			MSG_TYPE_PUT
+			MSG_TYPE_PUT,
+			NULL
 	);
 }
 
@@ -1513,7 +1646,8 @@ int rrr_raft_client_request_opt (
 			NULL,
 			NULL,
 			0,
-			MSG_TYPE_OPT
+			MSG_TYPE_OPT,
+			NULL
 	);
 }
 
@@ -1528,6 +1662,78 @@ int rrr_raft_client_request_get (
 			topic,
 			NULL,
 			0,
-			MSG_TYPE_GET
+			MSG_TYPE_GET,
+			NULL
 	);
+}
+
+int rrr_raft_client_servers_add (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_raft_server *servers
+) {
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_raft_server server_tmp;
+	char *data;
+	rrr_length data_size;
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			RRR_RAFT_SERVER_CMD_FIELD_CMD,
+			RRR_RAFT_SERVER_CMD_SERVER_ADD
+	)) != 0) {
+		goto out;
+	}
+
+	for (; servers->id > 0; servers++) {
+		server_tmp = *servers;
+		data = (char *) &server_tmp;
+		data_size = sizeof(server_tmp);
+
+		// Flip ID field
+		RRR_ASSERT((void *) &server_tmp == (void *) server_tmp.id,id_must_be_first_in_struct);
+		* (uint64_t *) data = rrr_htobe64(* (uint64_t *) data);
+
+		if ((ret = rrr_array_push_value_blob_with_tag_with_size (
+				&array_tmp,
+				RRR_RAFT_SERVER_CMD_FIELD_SERVER,
+				data,
+				data_size
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	if ((ret = __rrr_raft_client_request (
+			req_index,
+			channel,
+			NULL,
+			NULL,
+			0,
+			MSG_TYPE_OPT,
+			&array_tmp
+	)) != 0) {
+		goto out;
+	}
+
+/* SERVER CODE
+	int ret_tmp;
+
+	req.data = server_callback_data;
+
+	if ((ret_tmp = raft_apply(raft, req, &buf, 1, __rrr_raft_server_apply_cb)) != 0) {
+		// It appears that this data is usually freed also
+		// upon error conditions.
+		buf.base = NULL;
+
+	}
+	else {
+		buf.base = NULL;
+	}
+*/
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
 }

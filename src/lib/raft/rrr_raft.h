@@ -53,9 +53,9 @@ struct rrr_event_queue;
 struct rrr_msg_msg;
 
 struct rrr_raft_server {
+	int64_t id;
 	char address[64];
-	int id;
-};
+} __attribute__((packed));
 
 int rrr_raft_fork (
 		struct rrr_raft_channel **result,
@@ -90,6 +90,11 @@ int rrr_raft_client_request_get (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic
+);
+int rrr_raft_client_servers_add (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_raft_server *servers
 );
 
 #endif /* RRR_RAFT_H */

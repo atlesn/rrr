@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -715,6 +715,22 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
 		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+struct rrr_type_value *rrr_array_value_get_by_tag_and_index (
+		struct rrr_array *definition,
+		const char *tag,
+		int idx
+) {
+	int i = 0;
+
+	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
+		if (rrr_type_value_is_tag(node, tag) && i++ == idx) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();

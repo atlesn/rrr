@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   (RRR_TEST_RAFT_SERVER_INITIAL_COUNT+RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT)
 #define RRR_TEST_RAFT_IN_FLIGHT_MAX 64
 
+// NOTE : It is assumed that the ID of the server equals the
+//        the array position with respect to total count + 1
+//        disregarding end sentinels
+
 static const struct rrr_raft_server servers_initial[RRR_TEST_RAFT_SERVER_INITIAL_COUNT + 1] = {
 	{.id = 1, .address = "127.0.0.1:9001"},
 	{.id = 2, .address = "127.0.0.1:9002"},
@@ -239,6 +243,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			else {
 				TEST_MSG("- Probing for leader...\n");
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
+					req_index = 0;
 					rrr_raft_client_request_opt (
 							&req_index,
 							callback_data->channels[i]
@@ -255,6 +260,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
+				req_index = 0;
 				rrr_raft_client_request_put (
 						&req_index,
 						callback_data->channels[callback_data->leader_index],
@@ -290,6 +296,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
+					req_index = 0;
 					rrr_raft_client_request_get (
 							&req_index,
 							callback_data->channels[i],
@@ -324,6 +331,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", 'a' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
+					req_index = 0;
 					rrr_raft_client_request_get (
 							&req_index,
 							callback_data->channels[i],
@@ -342,6 +350,70 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 6: {
+			TEST_MSG("- Checking for ACKs...\n");
+
+			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
+				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
+				callback_data->cmd_pos--;
+			}
+			else {
+				TEST_MSG("- All ACKs received\n");
+			}
+		} break;
+		case 7: {
+			TEST_MSG("- Adding intermediate servers...\n");
+			req_index = 0;
+			rrr_raft_client_servers_add (
+					&req_index,
+					callback_data->channels[callback_data->leader_index],
+					servers_intermediate
+			);
+			assert(req_index > 0);
+			__rrr_test_raft_register_expected_ack (
+					callback_data,
+					callback_data->leader_index + 1,
+					req_index,
+					1 /* expect ok */
+			);
+		} break;
+		case 8: {
+			TEST_MSG("- Checking for ACKs...\n");
+
+			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
+				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
+				callback_data->cmd_pos--;
+			}
+			else {
+				TEST_MSG("- All ACKs received\n");
+			}
+
+			// TODO : Verify status of new server
+		} break;
+		case 9: {
+			TEST_MSG("- Sending GET messages to added servers...\n");
+
+			for (msg_pos = callback_data->msg_pos; msg_pos < 40; msg_pos++) {
+				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
+
+				for (i = RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+					req_index = 0;
+					rrr_raft_client_request_get (
+							&req_index,
+							callback_data->channels[i],
+							topic
+					);
+					assert(req_index > 0);
+					__rrr_test_raft_register_expected_msg (
+							callback_data,
+							i + 1,
+							req_index
+					);
+				}
+			}
+
+			callback_data->msg_pos = msg_pos;
+		} break;
+		case 10: {
 			TEST_MSG("- Checking for ACKs...\n");
 
 			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
@@ -397,11 +469,11 @@ static int __rrr_test_raft_fork (
 			goto out;
 		}
 
-		sprintf(dir, "%s/%d", dir_base, server->id);
+		sprintf(dir, "%s/%" PRIi64, dir_base, server->id);
 
 		assert(channels[*i] == NULL);
 
-		TEST_MSG("Start server %i address %s\n", server->id, server->address);
+		TEST_MSG("Start server %" PRIi64 " address %s\n", server->id, server->address);
 
 		if ((ret = rrr_raft_fork (
 				&channels[*i],
