@@ -31,13 +31,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/messages/msg_msg_struct.h"
 
-#define RRR_TEST_RAFT_SERVER_COUNT 3
+#define RRR_TEST_RAFT_SERVER_INITIAL_COUNT 3
+#define RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT 1
+#define RRR_TEST_RAFT_SERVER_TOTAL_COUNT \
+  (RRR_TEST_RAFT_SERVER_INITIAL_COUNT+RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT)
 #define RRR_TEST_RAFT_IN_FLIGHT_MAX 64
 
-static const struct rrr_raft_server servers[RRR_TEST_RAFT_SERVER_COUNT + 1] = {
+static const struct rrr_raft_server servers_initial[RRR_TEST_RAFT_SERVER_INITIAL_COUNT + 1] = {
 	{.id = 1, .address = "127.0.0.1:9001"},
 	{.id = 2, .address = "127.0.0.1:9002"},
 	{.id = 3, .address = "127.0.0.1:9003"},
+	{.id = 0, .address = ""}
+};
+
+static const struct rrr_raft_server servers_intermediate[RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT + 1] = {
+	{.id = 4, .address = "127.0.0.1:9004"},
 	{.id = 0, .address = ""}
 };
 
@@ -62,9 +70,9 @@ struct rrr_test_raft_callback_data {
 	const volatile int *main_running;
 	unsigned int cmd_pos;
 	unsigned int msg_pos;
-	uint32_t ack_expected[RRR_TEST_RAFT_SERVER_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
-	uint32_t nack_expected[RRR_TEST_RAFT_SERVER_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
-	uint32_t msg_expected[RRR_TEST_RAFT_SERVER_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
+	uint32_t ack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
+	uint32_t nack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
+	uint32_t msg_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	int leader_index;
 	int all_ok;
 };
@@ -89,7 +97,7 @@ static void __rrr_test_raft_register_expected_ack (
 		uint32_t req_index,
 		int ok
 ) {
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_expected((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
 
@@ -98,7 +106,7 @@ static void __rrr_test_raft_register_expected_msg (
 		int server_id,
 		uint32_t req_index
 ) {
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_expected(callback_data->msg_expected[server_id - 1], req_index);
 }
 
@@ -122,7 +130,7 @@ static void __rrr_test_raft_register_response_ack (
 		uint32_t req_index,
 		int ok
 ) {
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
 
@@ -131,7 +139,7 @@ static void __rrr_test_raft_register_response_msg (
 		int server_id,
 		uint32_t req_index
 ) {
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_COUNT);
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response(callback_data->msg_expected[server_id - 1], req_index);
 }
 
@@ -180,7 +188,7 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 
 	if (is_leader) {
 		leader_index = callback_data->leader_index = server_id - 1;
-		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_COUNT);
+		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	}
 
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
@@ -230,7 +238,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 			else {
 				TEST_MSG("- Probing for leader...\n");
-				for (i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
 					rrr_raft_client_request_opt (
 							&req_index,
 							callback_data->channels[i]
@@ -281,7 +289,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			for (msg_pos = callback_data->msg_pos; msg_pos < 20; msg_pos++) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
-				for (i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
 					rrr_raft_client_request_get (
 							&req_index,
 							callback_data->channels[i],
@@ -315,7 +323,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			for (msg_pos = callback_data->msg_pos; msg_pos < 30; msg_pos++) {
 				sprintf(topic, "topic/%c", 'a' + msg_pos % 10);
 
-				for (i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
 					rrr_raft_client_request_get (
 							&req_index,
 							callback_data->channels[i],
@@ -367,6 +375,66 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return RRR_EVENT_OK;
 }
 
+static int __rrr_test_raft_fork (
+		int *i,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_event_queue *queue,
+		struct rrr_raft_channel **channels,
+		const struct rrr_raft_server * const servers,
+		struct rrr_test_raft_callback_data *callback_data
+) {
+	int ret = 0;
+
+	int j;
+	const struct rrr_raft_server *server;
+	int socketpair[2];
+	char dir[sizeof(dir_base) + 32];
+
+	for (server = servers, j = 0; server->id > 0; server++, (*i)++, j++) {
+		if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", socketpair)) != 0) {
+			RRR_MSG_0("Failed to create sockets in %s: %s\n",
+				rrr_strerror(errno));
+			goto out;
+		}
+
+		sprintf(dir, "%s/%d", dir_base, server->id);
+
+		assert(channels[*i] == NULL);
+
+		TEST_MSG("Start server %i address %s\n", server->id, server->address);
+
+		if ((ret = rrr_raft_fork (
+				&channels[*i],
+				fork_handler,
+				queue,
+				"test",
+				socketpair,
+				servers, // All servers
+				j,       // Index of self server
+				dir,
+				__rrr_test_raft_pong_callback,
+				__rrr_test_raft_ack_callback,
+				__rrr_test_raft_opt_callback,
+				__rrr_test_raft_msg_callback,
+				callback_data
+		)) != 0) {
+			TEST_MSG("Failed to fork out raft process\n");
+			ret = 1;
+			goto out;
+		}
+
+		socketpair[0] = -1;
+		socketpair[1] = -1;
+	}
+
+	out:
+	if (socketpair[0] > 0)
+		rrr_socket_close(socketpair[0]);
+	if (socketpair[1] > 0)
+		rrr_socket_close(socketpair[1]);
+	return ret;
+}
+
 int rrr_test_raft (
 		const volatile int *main_running,
 		struct rrr_fork_handler *fork_handler,
@@ -374,47 +442,35 @@ int rrr_test_raft (
 ) {
 	int ret = 0;
 
-	struct rrr_raft_channel *channels[3] = {0};
+	int i = 0;
+	struct rrr_raft_channel *channels[RRR_TEST_RAFT_SERVER_TOTAL_COUNT] = {0};
 	struct rrr_test_raft_callback_data callback_data = {0};
 	rrr_event_receiver_handle queue_handle;
-	int socketpair[2];
-	char dir[sizeof(dir_base) + 32];
 
 	callback_data.main_running = main_running;
 	callback_data.channels = channels;
 	callback_data.leader_index = -1;
 
-	for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
-		if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", socketpair)) != 0) {
-			RRR_MSG_0("Failed to create sockets in %s: %s\n",
-				rrr_strerror(errno));
-			goto out_cleanup;
-		}
+	if ((ret = __rrr_test_raft_fork (
+			&i,
+			fork_handler,
+			queue,
+			channels,
+			servers_initial,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
 
-		sprintf(dir, "%s/%d", dir_base, i + 1);
-
-		if ((ret = rrr_raft_fork (
-				&channels[i],
-				fork_handler,
-				queue,
-				"test",
-				socketpair,
-				servers, // All servers
-				i,       // Index of self server
-				dir,
-				__rrr_test_raft_pong_callback,
-				__rrr_test_raft_ack_callback,
-				__rrr_test_raft_opt_callback,
-				__rrr_test_raft_msg_callback,
-				&callback_data
-		)) != 0) {
-			TEST_MSG("Failed to fork out raft process\n");
-			ret = 1;
-			goto out_cleanup;
-		}
-
-		socketpair[0] = -1;
-		socketpair[1] = -1;
+	if ((ret = __rrr_test_raft_fork (
+			&i,
+			fork_handler,
+			queue,
+			channels,
+			servers_intermediate,
+			&callback_data
+	)) != 0) {
+		goto out;
 	}
 
 	if ((ret = rrr_event_receiver_new (
@@ -423,7 +479,7 @@ int rrr_test_raft (
 			"raft test",
 			&callback_data
 	)) != 0) {
-		goto out_cleanup;
+		goto out;
 	}
 
 	if ((ret = rrr_event_function_periodic_set_and_dispatch (
@@ -432,7 +488,7 @@ int rrr_test_raft (
 			250 * 1000, // 250 ms
 			__rrr_test_raft_periodic
 	)) != 0) {
-		goto out_cleanup;
+		goto out;
 	}
 
 	if (!callback_data.all_ok) {
@@ -440,16 +496,12 @@ int rrr_test_raft (
 		ret = 1;
 	}
 
-	out_cleanup:
-	for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+	out:
+	for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
 		if (channels[i] != NULL) {
 			rrr_raft_cleanup(channels[i]);
 		}
 	}
-	if (socketpair[0] > 0)
-		rrr_socket_close(socketpair[0]);
-	if (socketpair[1] > 0)
-		rrr_socket_close(socketpair[1]);
 	return ret;
 }
 
