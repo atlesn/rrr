@@ -140,6 +140,8 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				msg_pos = callback_data->msg_pos++;
 				sprintf(topic, "topic/%c", '0' + msg_pos);
 
+				TEST_MSG("- Sending PUT messages...\n");
+
 				// TODO : Check return value
 				rrr_raft_client_request_put (
 						&callback_data->req_index[callback_data->leader_index],
@@ -150,32 +152,41 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				);
 			}
 		} break;
-		default: {
-			if (!callback_data->rrr_test_raft_pong_received) {
-				// Pong not received yet
-				TEST_MSG("- Waiting for pong...");
+		case 2: {
+			int ack_ok = 1;
+
+			for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
+				if (callback_data->ack_index[i] < callback_data->req_index[i]) {
+					TEST_MSG("- Waiting for ACKs (%" PRIu32"<%" PRIu32 ") server %i...\n",
+						callback_data->ack_index[i], callback_data->req_index[i], i + 1);
+					ack_ok = 0;
+				}
+			}
+
+			if (!ack_ok) {
+				callback_data->cmd_pos--;
 			}
 			else {
-				int ack_ok = 1;
-
-				for (int i = 0; i < RRR_TEST_RAFT_SERVER_COUNT; i++) {
-					if (callback_data->ack_index[i] < callback_data->req_index[i]) {
-						TEST_MSG("- Waiting for ACKs (%" PRIu32"<%" PRIu32 ") server %i...\n",
-							callback_data->ack_index[i], callback_data->req_index[i], i + 1);
-						ack_ok = 0;
-					}
-				}
-
-				if (!ack_ok) {
-					break;
-				}
-
-				TEST_MSG("All tasks complete\n");
-
-				callback_data->all_ok = 1;
-
-				return RRR_EVENT_EXIT;
+				TEST_MSG("- All ACKs received\n");
 			}
+		} break;
+		case 3: {
+			if (!callback_data->rrr_test_raft_pong_received) {
+				// Pong not received yet
+				TEST_MSG("- Waiting for pong...\n");
+				callback_data->cmd_pos--;
+			}
+			else {
+				TEST_MSG("- A pong as been received\n");
+			}
+		} break;
+		default: {
+
+			TEST_MSG("- All tasks complete\n");
+
+			callback_data->all_ok = 1;
+
+			return RRR_EVENT_EXIT;
 		} break;
 	};
 /*
@@ -255,11 +266,6 @@ int rrr_test_raft (
 			250 * 1000, // 250 ms
 			__rrr_test_raft_periodic
 	)) != 0) {
-		goto out_cleanup;
-	}
-
-	if (rrr_event_dispatch(queue) != RRR_EVENT_OK) {
-		ret = 1;
 		goto out_cleanup;
 	}
 

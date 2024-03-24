@@ -1403,3 +1403,18 @@ int rrr_raft_client_request_opt (
 			MSG_TYPE_OPT
 	);
 }
+
+int rrr_raft_client_request_get (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic
+) {
+	return __rrr_raft_client_request (
+			req_index,
+			channel,
+			topic,
+			NULL,
+			0,
+			MSG_TYPE_GET
+	);
+}

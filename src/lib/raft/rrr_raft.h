@@ -72,5 +72,10 @@ int rrr_raft_client_request_opt (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel
 );
+int rrr_raft_client_request_get (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic
+);
 
 #endif /* RRR_RAFT_H */
