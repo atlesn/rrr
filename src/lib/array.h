@@ -209,12 +209,21 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 		struct rrr_array *definition,
 		const char *tag
 );
+const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+		const struct rrr_array *definition,
+		const char *tag
+);
 struct rrr_type_value *rrr_array_value_get_by_tag_and_index (
 		struct rrr_array *definition,
 		const char *tag,
 		int idx
 );
-const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+const struct rrr_type_value *rrr_array_value_get_by_tag_and_index_const (
+		const struct rrr_array *definition,
+		const char *tag,
+		int idx
+);
+int rrr_array_value_count_tag (
 		const struct rrr_array *definition,
 		const char *tag
 );

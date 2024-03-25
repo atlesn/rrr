@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     int server_id,                                     \
     uint32_t req_index,                                \
     uint64_t is_leader,                                \
+    struct rrr_raft_server *servers,                   \
     void *arg
 
 #define RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS              \
@@ -47,6 +48,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_msg_msg **msg,                          \
     void *arg
 
+#define RRR_RAFT_STATUS_TO_STR(s)                      \
+   ((s) == RRR_RAFT_STANDBY ? "STANDBY" :              \
+   ((s) == RRR_RAFT_VOTER ? "VOTER" :                  \
+   ((s) == RRR_RAFT_SPARE ? "SPARE" : "UNKNOWN")))
+
+enum RRR_RAFT_STATUS {
+	RRR_RAFT_STANDBY = 1,
+	RRR_RAFT_VOTER,
+	RRR_RAFT_SPARE
+};
+
 struct rrr_fork_handler;
 struct rrr_raft_channel;
 struct rrr_event_queue;
@@ -54,6 +66,7 @@ struct rrr_msg_msg;
 
 struct rrr_raft_server {
 	int64_t id;
+	int64_t status;
 	char address[64];
 } __attribute__((packed));
 
@@ -92,6 +105,11 @@ int rrr_raft_client_request_get (
 		const char *topic
 );
 int rrr_raft_client_servers_add (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_raft_server *servers
+);
+int rrr_raft_client_servers_del (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers

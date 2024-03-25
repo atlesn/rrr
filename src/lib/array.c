@@ -722,6 +722,19 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 	return NULL;
 }
 
+const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+		const struct rrr_array *definition,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (rrr_type_value_is_tag(node, tag)) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
 struct rrr_type_value *rrr_array_value_get_by_tag_and_index (
 		struct rrr_array *definition,
 		const char *tag,
@@ -738,17 +751,35 @@ struct rrr_type_value *rrr_array_value_get_by_tag_and_index (
 	return NULL;
 }
 
-const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+const struct rrr_type_value *rrr_array_value_get_by_tag_and_index_const (
 		const struct rrr_array *definition,
-		const char *tag
+		const char *tag,
+		int idx
 ) {
-	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (rrr_type_value_is_tag(node, tag)) {
+	int i = 0;
+
+	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
+		if (rrr_type_value_is_tag(node, tag) && i++ == idx) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
 
 	return NULL;
+}
+
+int rrr_array_value_count_tag (
+		const struct rrr_array *definition,
+		const char *tag
+) {
+	int res = 0;
+
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (rrr_type_value_is_tag(node, tag)) {
+			res++;
+		}
+	RRR_LL_ITERATE_END();
+
+	return res;
 }
 
 int rrr_array_has_tag (

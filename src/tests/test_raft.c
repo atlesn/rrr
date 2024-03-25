@@ -77,9 +77,22 @@ struct rrr_test_raft_callback_data {
 	uint32_t ack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	uint32_t nack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	uint32_t msg_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
+	struct rrr_raft_server servers_delete[RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT + 1];
 	int leader_index;
 	int all_ok;
 };
+
+static int __rrr_test_raft_server_array_has (
+		const struct rrr_raft_server *servers,
+		const struct rrr_raft_server *server
+) {
+	for (; servers->id > 0; servers++) {
+		if (servers->id == server->id) {
+			return 1;
+		}
+	}
+	return 0;
+}
 
 static void __rrr_test_raft_register_expected (
 		uint32_t *array,
@@ -186,11 +199,24 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	int leader_index;
+	struct rrr_raft_server *server;
+	size_t servers_delete_pos = 0;
 
-	TEST_MSG("OPT %u received server %i is leader: %" PRIu64 "\n",
+	TEST_MSG("OPT %u received server %i is leader: %" PRIi64 "\n",
 		req_index, server_id, is_leader);
 
 	if (is_leader) {
+		for (server = servers; server->id > 0; server++) {
+			TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
+				server->id, server->address, RRR_RAFT_STATUS_TO_STR(server->status));
+			if (__rrr_test_raft_server_array_has(servers_intermediate, server)) {
+				TEST_MSG("- Scheduling intermediate cluster member %" PRIi64 " address %s for deletion\n",
+					server->id, server->address);
+				assert(servers_delete_pos < sizeof(callback_data->servers_delete)/sizeof(callback_data->servers_delete[0]) - 1);
+				callback_data->servers_delete[servers_delete_pos++] = *server;
+			}
+		}
+
 		leader_index = callback_data->leader_index = server_id - 1;
 		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	}
@@ -239,6 +265,30 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			if (callback_data->leader_index >= 0) {
 				// OK, async OPT response detected a leader
 				TEST_MSG("- Leader found\n");
+
+				if (callback_data->servers_delete[0].id > 0) {
+					TEST_MSG("- Non-initial servers to delete found\n");
+
+					// Only allowed to pass one server
+					assert(callback_data->servers_delete[1].id == 0);
+
+					// Not allowed to pass server with status field
+					callback_data->servers_delete[0].status = 0;
+
+					req_index = 0;
+					rrr_raft_client_servers_del (
+							&req_index,
+							callback_data->channels[callback_data->leader_index],
+							callback_data->servers_delete
+					);
+					assert(req_index > 0);
+					__rrr_test_raft_register_expected_ack (
+							callback_data,
+							callback_data->leader_index + 1,
+							req_index,
+							1 /* expect ok */
+					);
+				}
 			}
 			else {
 				TEST_MSG("- Probing for leader...\n");
@@ -361,6 +411,15 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 		} break;
 		case 7: {
+			TEST_MSG("- Probe...\n");
+			req_index = 0;
+			rrr_raft_client_request_opt (
+					&req_index,
+					callback_data->channels[callback_data->leader_index]
+					);
+			assert(req_index > 0);
+			__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
+
 			TEST_MSG("- Adding intermediate servers...\n");
 			req_index = 0;
 			rrr_raft_client_servers_add (
