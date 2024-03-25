@@ -134,8 +134,6 @@ static void raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 
 	(void)(server_id);
 	(void)(data);
-
-	printf("Pong\n");
 }
 
 static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
@@ -152,13 +150,28 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
-	(void)(server_id);
 	(void)(req_index);
-	(void)(is_leader);
-	(void)(servers);
 	(void)(data);
 
-	assert(0 && "OPT callback not implemented");
+	struct rrr_raft_server *server;
+
+	if (is_leader) {
+		RRR_DBG_1("Raft instance %s id %i is leader, cluster status for all nodes:\n",
+			INSTANCE_D_NAME(data->thread_data), server_id);
+
+		for (server = *servers; server->id > 0; server++) {
+			RRR_DBG_1("- %s id %" PRIi64 " status %s catch up %s\n",
+				server->address,
+				server->id,
+				RRR_RAFT_STATUS_TO_STR(server->status),
+				RRR_RAFT_CATCH_UP_TO_STR(server->catch_up)
+			);
+		}
+	}
+	else {
+		RRR_DBG_1("Raft instance %s id %i is not leader.\n",
+			INSTANCE_D_NAME(data->thread_data), server_id);
+	}
 }
 
 static void raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
@@ -256,6 +269,22 @@ static int raft_fork (void *arg) {
 		return ret;
 }
 
+static int raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct raft_data *data = thread_data->private_data;
+
+	uint32_t req_index;
+
+	if (rrr_raft_client_request_opt(&req_index, data->channel) != 0) {
+		RRR_MSG_0("Failed to send OPT request to raft node in raft instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_ERR;
+	}
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
+}
+
 static int raft_init (RRR_INSTANCE_INIT_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raft_data *data = thread_data->private_data = thread_data->private_memory;
@@ -277,7 +306,7 @@ static int raft_init (RRR_INSTANCE_INIT_ARGS) {
 	rrr_event_function_periodic_set (
 			INSTANCE_D_EVENTS_H(thread_data),
 			1 * 1000 * 1000, // 1 second
-			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void
+			raft_periodic
 	);
 
 	RRR_DBG_1 ("Thread raft %p exiting\n", thread);
