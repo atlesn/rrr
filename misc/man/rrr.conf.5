@@ -3036,7 +3036,16 @@ Multiple instances of the
 module (raft nodes) across different hosts may be put together in a cluster.
 When storing messages in one of the nodes, all of them will be updated.
 
-TODO : Message from other modules
+If any sender instances are specified and messages are received from these, the raft node will make sure that the message is stored and replicated across all nodes.
+
+The message topic is a unique identifier and no two messages with the same topic may exist in the message store.
+If a message is stored while another message with the same topic already exists, the stored message will be replaced with the new one.
+An empty topic is also a valid topic.
+
+The message type and any plain value set in messages from senders will not be preserved for messages being stored in the raft storage
+as these fields are used internally.
+
+TODO : Message from other modules get request
 
 TODO : Emitted messages
 

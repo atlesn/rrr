@@ -106,8 +106,14 @@ int rrr_raft_client_request_put (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,
+		size_t topic_length,
 		const void *data,
 		size_t data_size
+);
+int rrr_raft_client_request_put_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		struct rrr_msg_msg **msg_consumed
 );
 int rrr_raft_client_request_opt (
 		uint32_t *req_index,
@@ -116,7 +122,8 @@ int rrr_raft_client_request_opt (
 int rrr_raft_client_request_get (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
-		const char *topic
+		const char *topic,
+		size_t topic_length
 );
 int rrr_raft_client_servers_add (
 		uint32_t *req_index,

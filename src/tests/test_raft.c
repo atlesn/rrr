@@ -302,17 +302,17 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 #define WAIT_ACK()                                                  \
     if (!__rrr_test_raft_check_all_ack_received(callback_data)) {   \
         TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");            \
-	callback_data->cmd_pos--;                                   \
-	break;                                                      \
+        callback_data->cmd_pos--;                                   \
+        break;                                                      \
     }                                                               \
     else {                                                          \
-	TEST_MSG("- All ACKs received\n");                          \
+        TEST_MSG("- All ACKs received\n");                          \
     } do {} while(0)
 
 #define PROBE(server_index)                                                                 \
     do {                                                                                    \
-	TEST_MSG("- Probing...\n");                                                         \
-	RRR_FREE_IF_NOT_NULL(*callback_data->servers);                                      \
+        TEST_MSG("- Probing...\n");                                                         \
+        RRR_FREE_IF_NOT_NULL(*callback_data->servers);                                      \
         req_index = 0;                                                                      \
         rrr_raft_client_request_opt (&req_index, callback_data->channels[server_index]);    \
         assert(req_index > 0);                                                              \
@@ -322,12 +322,17 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 #define GET(server_index,expect_ok)                                                               \
     do {                                                                                          \
         req_index = 0;                                                                            \
-        rrr_raft_client_request_get(&req_index, callback_data->channels[server_index], topic);    \
+        rrr_raft_client_request_get (                                                             \
+                &req_index,                                                                       \
+                callback_data->channels[server_index],                                            \
+                topic,                                                                            \
+                strlen(topic)                                                                     \
+        );                                                                                        \
         assert(req_index > 0);                                                                    \
         if (expect_ok)                                                                            \
-	    __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);    \
-	else                                                                                      \
-	    __rrr_test_raft_register_expected_ack(callback_data, server_index + 1, req_index, 0); \
+            __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);    \
+        else                                                                                      \
+            __rrr_test_raft_register_expected_ack(callback_data, server_index + 1, req_index, 0); \
     } while(0)
 
 #define PUT(server_index,msg_index)                       \
@@ -337,6 +342,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
                 &req_index,                               \
                 callback_data->channels[server_index],    \
                 topic,                                    \
+                strlen(topic),                            \
                 requests[msg_index],                      \
                 strlen(requests[msg_index])               \
         );                                                \
@@ -516,7 +522,8 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					rrr_raft_client_request_get (
 							&req_index,
 							callback_data->channels[i],
-							topic
+							topic,
+							strlen(topic)
 					);
 					assert(req_index > 0);
 					__rrr_test_raft_register_expected_msg (

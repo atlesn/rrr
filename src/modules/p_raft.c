@@ -50,6 +50,7 @@ struct raft_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_map servers;
 	struct rrr_raft_channel *channel;
+	int is_leader;
 };
 
 static void raft_data_init(struct raft_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -73,26 +74,30 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	uint32_t req_index;
+
+	if (!data->is_leader) {
+		RRR_MSG_0("Warning: Dropping received message in raft instance %s. Node is not leader.\n",
+			INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
 	RRR_DBG_3("raft instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(long long unsigned int) message->timestamp
 	);
 
-	assert(0 && "Poll CB not implemented\n");
-	
-/*
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry,
-			NULL,
-			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-	)) == RRR_THREAD_STOP) {
-		// The stop signal might not propagate all the way
-		// throug the poll stack. Save it here and check
-		// in the data available event.
-		data->encourage_stop_received = 1;
-	}*/
+	if ((ret = rrr_raft_client_request_put_native (
+			&req_index,
+			data->channel,
+			(struct rrr_msg_msg **) &entry->message /* Consumed */
+	)) != 0) {
+		RRR_MSG_0("Warning: Failed to put message in raft instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
 
+	out:
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -101,10 +106,6 @@ static int raft_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raft_data *data = thread_data->private_data = thread_data->private_memory;
-
-	*amount = 0;
-
-	return 0;
 
 	(void)(data);
 
@@ -141,10 +142,11 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 
 	(void)(server_id);
 	(void)(req_index);
-	(void)(ok);
-	(void)(data);
 
-	assert(0 && "ACK callback not implemented");
+	if (!ok) {
+		RRR_MSG_0("Warning: A request failed in raft instance %s, negative ACK was received from the node.\n",
+			INSTANCE_D_NAME(data->thread_data));
+	}
 }
 
 static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
@@ -167,10 +169,14 @@ static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 				RRR_RAFT_CATCH_UP_TO_STR(server->catch_up)
 			);
 		}
+
+		data->is_leader = 1;
 	}
 	else {
 		RRR_DBG_1("Raft instance %s id %i is not leader.\n",
 			INSTANCE_D_NAME(data->thread_data), server_id);
+
+		data->is_leader = 0;
 	}
 }
 

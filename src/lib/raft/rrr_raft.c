@@ -1730,10 +1730,46 @@ void rrr_raft_cleanup (
 	__rrr_raft_channel_destroy(channel);
 }
 
+static int __rrr_raft_client_request_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	// Counter must begin at 1
+	assert(channel->req_index > 0);
+
+	msg->msg_value = channel->req_index;
+
+	RRR_DBG_3("Raft request type %s size %lu fd %i message size %u req %u topic '%.*s'\n",
+		MSG_TYPE_NAME(msg),
+		MSG_DATA_LENGTH(msg),
+		channel->fd_client,
+		MSG_TOTAL_SIZE(msg),
+		channel->req_index,
+		MSG_TOPIC_LENGTH(msg),
+		MSG_TOPIC_PTR(msg)
+	);
+
+	if ((ret = __rrr_raft_client_send_msg (
+			channel,
+			(struct rrr_msg *) msg
+	)) != 0) {
+		goto out;
+	}
+
+	*req_index = channel->req_index++;
+
+	out:
+	return ret;
+}
+
 static int __rrr_raft_client_request (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,
+		size_t topic_length,
 		const void *data,
 		size_t data_size,
 		uint8_t msg_type,
@@ -1743,8 +1779,8 @@ static int __rrr_raft_client_request (
 
 	struct rrr_msg_msg *msg = NULL;
 
-	// Counter must begin at 1
-	assert(channel->req_index > 0);
+	assert((topic_length && topic) || (!topic_length && !topic));
+	assert(topic_length <= UINT32_MAX && sizeof(rrr_length) == sizeof(uint32_t));
 
 	if (array != NULL) {
 		if ((ret = rrr_array_new_message_from_array (
@@ -1752,7 +1788,7 @@ static int __rrr_raft_client_request (
 				array,
 				rrr_time_get_64(),
 				topic,
-				topic != NULL ? strlen(topic) : 0
+				topic_length
 		)) != 0) {
 			RRR_MSG_0("Failed to create array message in %s\n", __func__);
 			goto out;
@@ -1776,26 +1812,13 @@ static int __rrr_raft_client_request (
 		}
 	}
 
-	msg->msg_value = channel->req_index;
-
-	RRR_DBG_3("Raft request type %s size %lu fd %i message size %u req %u topic '%.*s'\n",
-		MSG_TYPE_NAME(msg),
-		data_size,
-		channel->fd_client,
-		MSG_TOTAL_SIZE(msg),
-		channel->req_index,
-		MSG_TOPIC_LENGTH(msg),
-		MSG_TOPIC_PTR(msg)
-	);
-
-	if ((ret = __rrr_raft_client_send_msg (
+	if ((ret = __rrr_raft_client_request_native (
+			req_index,
 			channel,
-			(struct rrr_msg *) msg
+			msg
 	)) != 0) {
 		goto out;
 	}
-
-	*req_index = channel->req_index++;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg);
@@ -1806,6 +1829,7 @@ int rrr_raft_client_request_put (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,
+		size_t topic_length,
 		const void *data,
 		size_t data_size
 ) {
@@ -1813,11 +1837,39 @@ int rrr_raft_client_request_put (
 			req_index,
 			channel,
 			topic,
+			topic_length,
 			data,
 			data_size,
 			MSG_TYPE_PUT,
 			NULL
 	);
+}
+
+int rrr_raft_client_request_put_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		struct rrr_msg_msg **msg_consumed
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg;
+
+	msg = *msg_consumed;
+	*msg_consumed = NULL;
+
+	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+	if ((ret = __rrr_raft_client_request_native (
+			req_index,
+			channel,
+			msg
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_free(msg);
+	return ret;
 }
 
 int rrr_raft_client_request_opt (
@@ -1828,6 +1880,7 @@ int rrr_raft_client_request_opt (
 			req_index,
 			channel,
 			NULL,
+			0,
 			NULL,
 			0,
 			MSG_TYPE_OPT,
@@ -1838,12 +1891,14 @@ int rrr_raft_client_request_opt (
 int rrr_raft_client_request_get (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
-		const char *topic
+		const char *topic,
+		size_t topic_length
 ) {
 	return __rrr_raft_client_request (
 			req_index,
 			channel,
 			topic,
+			topic_length,
 			NULL,
 			0,
 			MSG_TYPE_GET,
@@ -1894,6 +1949,7 @@ static int __rrr_raft_client_servers_change (
 			req_index,
 			channel,
 			NULL,
+			0,
 			NULL,
 			0,
 			MSG_TYPE_OPT,
