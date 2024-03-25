@@ -48,8 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct raft_data {
 	struct rrr_instance_runtime_data *thread_data;
-	rrr_setting_uint id;
-	uint16_t port;
 	struct rrr_map servers;
 	struct rrr_raft_channel *channel;
 };
@@ -115,36 +113,6 @@ static int raft_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static int raft_parse_config (struct raft_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
-
-	if ((ret = rrr_instance_config_read_optional_port_number (
-			&data->port,
-			config,
-			"raft_port"
-	)) != 0) {
-		RRR_MSG_0("Failed to parse parameter raft_port in raft instance %s\n",
-			config->name);
-		goto out;
-	}
-
-	if (data->port == 0) {
-		data->port = RAFT_DEFAULT_PORT;
-	}
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("raft_id", id, 0);
-
-	if (data->id == 0) {
-		RRR_MSG_0("Parameter raft_id must be given and must be greater than zero in raft instance %s\n",
-			config->name);
-		ret = 1;
-		goto out;
-	}
-
-	if (data->id > INT32_MAX) {
-		RRR_MSG_0("Parameter raft_id exceeds maximum value of %i in raft instance %s\n",
-			INT32_MAX, config->name);
-		ret = 1;
-		goto out;
-	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map (
 			&data->servers,
@@ -214,11 +182,15 @@ static int raft_fork (void *arg) {
 	int socketpair[2] = {0}, i;
 	unsigned long long id;
 	char *end, path[64];
-	struct rrr_raft_server servers[RRR_LL_COUNT(&data->servers) + 1];
-
-	memset(servers, '\0', sizeof(*servers) * (RRR_LL_COUNT(&data->servers) + 1));
+	struct rrr_raft_server *servers = NULL;
 
 	if ((ret = raft_parse_config(data, INSTANCE_D_CONFIG(thread_data))) != 0) {
+		goto out_err;
+	}
+
+	if ((servers = rrr_allocate_zero(sizeof(*servers) * (RRR_LL_COUNT(&data->servers) + 1))) == NULL) {
+		RRR_MSG_0("Failed to allocate servers structure in %s\n", __func__);
+		ret = 1;
 		goto out_err;
 	}
 
@@ -250,7 +222,7 @@ static int raft_fork (void *arg) {
 		i++;	
 	RRR_MAP_ITERATE_END();
 
-	sprintf(path, "%s/%lu", RAFT_PATH_BASE, (unsigned long) data->id);
+	sprintf(path, "%s/%" PRIi64 "", RAFT_PATH_BASE, servers[0].id);
 
 	if ((ret = rrr_raft_fork (
 			&data->channel,
@@ -276,6 +248,7 @@ static int raft_fork (void *arg) {
 	out_err:
 		raft_data_cleanup(data);
 	out:
+		RRR_FREE_IF_NOT_NULL(servers);
 		if (socketpair[0] > 0)
 			rrr_socket_close(socketpair[0]);
 		if (socketpair[1] > 0)

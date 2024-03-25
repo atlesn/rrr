@@ -367,6 +367,8 @@ static void __rrr_raft_channel_destroy (
 
 	rrr_read_session_collection_clear(&channel->read_sessions);
 
+	rrr_event_collection_clear(&channel->events);
+
 	rrr_free(channel);
 }
 

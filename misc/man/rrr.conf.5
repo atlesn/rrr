@@ -3043,30 +3043,10 @@ TODO : Emitted messages
 The following configuration parameters are available:
 
 .Bl -tag -width -indent
-.It raft_port=PORT
-TCP port to listen on (listens on all interfaces). Defaults to 9001.
-
-.It raft_id=UNSIGNED INTEGER
-A server ID which must unique within a cluster and may must be greater than zero.
-This parameter must be given.
-
 .It raft_nodes=ADDRESS:PORT->ID[,ADDRESS_PORT->ID[,...]]
 A comma separated list of raft nodes used for initial set-up of this raft instance.
-The address of this node must be first in this list.
-TODO : Check if this is true:
-This list must include any existing nodes in a cluster so that this instance, when new,
-can catch up with them and fill the local message store.
-Defaults to
-.B localhost:PORT->ID
-where
-.B PORT
-and
-.B ID
-is the value and IDconfigured in
-.B raft_port
-and
-.B raft_id
-.
+The address of this node must be first in this list, and the address and port will be used for listening
+for connections from other nodes.
 
 .El
 
