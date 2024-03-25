@@ -139,9 +139,9 @@ static inline int rrr_int_from_biglength_err (int *target, rrr_biglength operand
 	return 0;
 }
 
-static inline int rrr_int_from_biglength_bug_const (rrr_biglength operand) {
+static inline int rrr_int_from_slength_bug_const (rrr_slength operand) {
 	if (operand > INT_MAX) {
-		RRR_BUG("Error: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
+		RRR_BUG("Error: Overflow in %s, input was %" PRIrrrsl "\n", __func__, operand);
 		return 1;
 	}
 	return (int) operand;

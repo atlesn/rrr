@@ -81,6 +81,7 @@ struct rrr_test_raft_callback_data {
 	struct rrr_raft_server servers_delete[RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT + 1];
 	struct rrr_raft_server **servers;
 	int leader_index;
+	int leader_index_new;
 	int all_ok;
 };
 
@@ -538,6 +539,42 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		} break;
 		case 11: {
 			WAIT_ACK();
+		} break;
+		case 12: {
+			for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+				if (i == callback_data->leader_index) {
+					continue;
+				}
+
+				TEST_MSG("- Transferring leadership from %i to %i\n",
+					callback_data->leader_index + 1, i + 1);
+
+				req_index = 0;
+				rrr_raft_client_leadership_transfer (
+						&req_index,
+						callback_data->channels[callback_data->leader_index],
+						i + 1
+				);
+				assert(req_index > 0);
+				__rrr_test_raft_register_expected_ack (
+						callback_data,
+						callback_data->leader_index + 1,
+						req_index,
+					        1 /* expect ok */
+				);
+
+				callback_data->leader_index_new = i;
+
+				break;
+			}
+		} break;
+		case 13: {
+			WAIT_ACK();
+			PROBE(callback_data->leader_index_new);
+		} break;
+		case 14: {
+			assert(callback_data->leader_index == callback_data->leader_index_new);
+			TEST_MSG("- Leadership was transferred\n");
 		} break;
 		default: {
 

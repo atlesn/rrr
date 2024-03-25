@@ -235,7 +235,7 @@ static int raft_fork (void *arg) {
 			goto out_err;
 		}
 
-		servers[i].id = rrr_int_from_biglength_bug_const(id);
+		servers[i].id = rrr_int_from_slength_bug_const(id);
 		strcpy(servers[i].address, node_tag);
 
 		i++;	

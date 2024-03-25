@@ -140,5 +140,10 @@ int rrr_raft_client_servers_assign (
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers
 );
+int rrr_raft_client_leadership_transfer (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		int server_id
+);
 
 #endif /* RRR_RAFT_H */

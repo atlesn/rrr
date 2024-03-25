@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_OPT_FIELD_CMD        "raft_cmd"
 #define RRR_RAFT_OPT_FIELD_IS_LEADER  "raft_is_leader"
 #define RRR_RAFT_OPT_FIELD_STATUS     "raft_status"
+#define RRR_RAFT_OPT_FIELD_ID         "raft_id"
 
 // String fields
 #define RRR_RAFT_OPT_FIELD_SERVER     "raft_server"
@@ -52,7 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 enum rrr_raft_cmd {
 	RRR_RAFT_CMD_SERVER_ADD = 1,
 	RRR_RAFT_CMD_SERVER_DEL,
-	RRR_RAFT_CMD_SERVER_ASSIGN
+	RRR_RAFT_CMD_SERVER_ASSIGN,
+	RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER
 };
 
 static int __rrr_raft_server_send_msg_in_loop (
@@ -93,8 +95,10 @@ struct rrr_raft_server_callback_data {
 	struct raft *raft;
 	int server_id;
 	struct rrr_raft_message_store *message_store_state;
-	struct raft_change change_req;
 	uint32_t change_req_index;
+	uint32_t transfer_req_index;
+	struct raft_change change_req;
+	struct raft_transfer transfer_req;
 };
 
 static int __rrr_raft_message_store_expand (
@@ -573,6 +577,38 @@ static void __rrr_raft_server_server_change_cb (
 	callback_data->change_req_index = 0;
 }
 
+static void __rrr_raft_server_leadership_transfer_cb (
+		struct raft_transfer *req
+) {
+	struct rrr_raft_server_callback_data *callback_data = req->data;
+	struct raft *raft = callback_data->raft;
+
+	const char *address;
+	raft_id id;
+	struct rrr_msg msg_ack = {0};
+
+	assert(callback_data->transfer_req_index > 0);
+
+	raft_leader(raft, &id, &address);
+
+	if (id == req->id) {
+		printf("Leader transfer OK to %llu %s\n", id, address);
+	}
+	else {
+		printf("Leader transfer NOT OK to %llu %s\n", id, address);
+	}
+
+	rrr_msg_populate_control_msg (
+			&msg_ack,
+			id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK,
+			callback_data->transfer_req_index
+	);
+	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
+
+	req->data = NULL;
+	callback_data->transfer_req_index = 0;
+}
+
 static int __rrr_raft_server_handle_cmd (
 		struct rrr_raft_server_callback_data *callback_data,
 		rrr_u32 req_index,
@@ -584,7 +620,7 @@ static int __rrr_raft_server_handle_cmd (
 
 	struct rrr_array array_tmp = {0};
 	int ret_tmp, role;
-	int64_t cmd;
+	int64_t cmd, id;
 	struct rrr_raft_server *servers;
 	uint16_t version_dummy;
 
@@ -605,6 +641,7 @@ static int __rrr_raft_server_handle_cmd (
 		RRR_BUG("BUG: Command field missing in %s\n", __func__);
 	}
 
+	// Switch 1 of 2 (preparation)
 	switch (cmd) {
 		case RRR_RAFT_CMD_SERVER_ASSIGN:
 		case RRR_RAFT_CMD_SERVER_ADD:
@@ -623,10 +660,26 @@ static int __rrr_raft_server_handle_cmd (
 			callback_data->change_req.data = callback_data;
 			callback_data->change_req_index = req_index;
 		} break;
+		case RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER: {
+			if (rrr_array_get_value_signed_64_by_tag (
+					&id,
+					&array_tmp,
+					RRR_RAFT_OPT_FIELD_ID,
+					0
+			) != 0) {
+				RRR_BUG("BUG: ID field not set in transfer command in %s\n", __func__);
+			}
+
+			assert(callback_data->transfer_req.data == NULL && callback_data->transfer_req_index == 0);
+
+			callback_data->transfer_req.data = callback_data;
+			callback_data->transfer_req_index = req_index;
+		} break;
 		default:
 			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
 	};
 
+	// Switch 2 of 2 (execution)
 	switch (cmd) {
 		case RRR_RAFT_CMD_SERVER_ASSIGN: {
 			switch (servers[0].status) {
@@ -647,7 +700,7 @@ static int __rrr_raft_server_handle_cmd (
 			if ((ret_tmp = raft_assign (
 					raft,
 					&callback_data->change_req,
-					rrr_int_from_biglength_bug_const(servers[0].id),
+					rrr_int_from_slength_bug_const(servers[0].id),
 					role,
 					__rrr_raft_server_server_change_cb
 			)) != 0) {
@@ -663,7 +716,7 @@ static int __rrr_raft_server_handle_cmd (
 			if ((ret_tmp = raft_add (
 					raft,
 					&callback_data->change_req,
-					rrr_int_from_biglength_bug_const(servers[0].id),
+					rrr_int_from_slength_bug_const(servers[0].id),
 					servers[0].address,
 					__rrr_raft_server_server_change_cb
 			)) != 0) {
@@ -679,10 +732,25 @@ static int __rrr_raft_server_handle_cmd (
 			if ((ret_tmp = raft_remove (
 					raft,
 					&callback_data->change_req,
-					rrr_int_from_biglength_bug_const(servers[0].id),
+					rrr_int_from_slength_bug_const(servers[0].id),
 					__rrr_raft_server_server_change_cb
 			)) != 0) {
 				RRR_MSG_0("Server delete failed in %s: %s %s\n",
+					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
+			}
+		} break;
+		case RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER: {
+			RRR_DBG_1("Raft CMD transfer leadership to %" PRIi64 "\n", id);
+
+			if ((ret_tmp = raft_transfer (
+					raft,
+					&callback_data->transfer_req,
+					rrr_int_from_slength_bug_const(id),
+					__rrr_raft_server_leadership_transfer_cb
+			)) != 0) {
+				RRR_MSG_0("Server leadership transfer failed in %s: %s %s\n",
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
@@ -1331,8 +1399,10 @@ static int __rrr_raft_server (
 		&raft,
 		servers[servers_self].id,
 		&message_store_state,
+		0,
+		0,
 		{0},
-		0
+		{0}
 	};
 
 	raft_configuration_init(&configuration);
@@ -1963,6 +2033,51 @@ static int __rrr_raft_client_servers_change (
 	return ret;
 }
 
+static int __rrr_raft_client_leadership_transfer (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		int server_id
+) {
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	assert(server_id > 0);
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			RRR_RAFT_OPT_FIELD_CMD,
+			RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			RRR_RAFT_OPT_FIELD_ID,
+			server_id
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_raft_client_request (
+			req_index,
+			channel,
+			NULL,
+			0,
+			NULL,
+			0,
+			MSG_TYPE_OPT,
+			&array_tmp
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
 int rrr_raft_client_servers_add (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
@@ -1999,5 +2114,17 @@ int rrr_raft_client_servers_assign (
 			channel,
 			servers,
 			RRR_RAFT_CMD_SERVER_ASSIGN
+	);
+}
+
+int rrr_raft_client_leadership_transfer (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		int server_id
+) {
+	return __rrr_raft_client_leadership_transfer (
+			req_index,
+			channel,
+			server_id
 	);
 }
