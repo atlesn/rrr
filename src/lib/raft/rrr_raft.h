@@ -53,10 +53,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
    ((s) == RRR_RAFT_VOTER ? "VOTER" :                  \
    ((s) == RRR_RAFT_SPARE ? "SPARE" : "UNKNOWN")))
 
+#define RRR_RAFT_CATCH_UP_TO_STR(s)                                  \
+    ((s) == RRR_RAFT_CATCH_UP_NONE ? "NONE" :                        \
+    ((s) == RRR_RAFT_CATCH_UP_RUNNING ? "RUNNING" :                  \
+    ((s) == RRR_RAFT_CATCH_UP_ABORTED ? "ABORTED" :                  \
+    ((s) == RRR_RAFT_CATCH_UP_FINISHED ? "FINISHED" : "UNKNOWN"))))
+
 enum rrr_raft_status {
 	RRR_RAFT_STANDBY = 1,
 	RRR_RAFT_VOTER,
 	RRR_RAFT_SPARE
+};
+
+enum rrr_raft_catch_up {
+	RRR_RAFT_CATCH_UP_NONE = 0,
+	RRR_RAFT_CATCH_UP_RUNNING,
+	RRR_RAFT_CATCH_UP_ABORTED,
+	RRR_RAFT_CATCH_UP_FINISHED
 };
 
 struct rrr_fork_handler;
@@ -67,6 +80,7 @@ struct rrr_msg_msg;
 struct rrr_raft_server {
 	int64_t id;
 	int64_t status;
+	int64_t catch_up;
 	char address[64];
 } __attribute__((packed));
 

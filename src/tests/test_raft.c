@@ -196,6 +196,23 @@ static int __rrr_test_raft_check_all_servers_voting (
 	return 1;
 }
 
+static int __rrr_test_raft_check_some_server_catched_up (
+		struct rrr_test_raft_callback_data *callback_data
+) {
+	struct rrr_raft_server *server;
+
+	if (*callback_data->servers == NULL)
+		return 0;
+
+	for (server = *callback_data->servers; server->id > 0; server++) {
+		if (server->catch_up == RRR_RAFT_CATCH_UP_FINISHED) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
@@ -226,8 +243,13 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 
 	if (is_leader) {
 		for (server = *servers; server->id > 0; server++) {
-			TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
-				server->id, server->address, RRR_RAFT_STATUS_TO_STR(server->status));
+			TEST_MSG("- Found member %" PRIi64 " address %s status %s catch up %s\n",
+				server->id,
+				server->address,
+				RRR_RAFT_STATUS_TO_STR(server->status),
+				RRR_RAFT_CATCH_UP_TO_STR(server->catch_up)
+			);
+
 			if (__rrr_test_raft_server_array_has(servers_intermediate, server)) {
 				TEST_MSG("- Scheduling intermediate cluster member %" PRIi64 " address %s for potential deletion\n",
 					server->id, server->address);
@@ -485,8 +507,10 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		case 10: {
 			WAIT_ACK();
 
-			if (!__rrr_test_raft_check_all_servers_voting(callback_data)) {
-				TEST_MSG("- Waiting for all servers to become voters...\n");
+			if (!__rrr_test_raft_check_all_servers_voting(callback_data) ||
+			    !__rrr_test_raft_check_some_server_catched_up(callback_data)
+			) {
+				TEST_MSG("- Waiting for all servers to become voters and catched up...\n");
 				callback_data->cmd_pos--;
 
 				RRR_FREE_IF_NOT_NULL(*callback_data->servers);
@@ -498,6 +522,9 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				);
 				assert(req_index > 0);
 				__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
+			}
+			else {
+				TEST_MSG("- All servers are voters and the added server is catched up\n");
 			}
 		} break;
 		case 11: {

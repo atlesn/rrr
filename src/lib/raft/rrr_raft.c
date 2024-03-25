@@ -377,36 +377,37 @@ static int __rrr_raft_opt_array_field_server_get (
 	int servers_count, i;
 	const struct rrr_type_value *value;
 
-	servers_count = rrr_array_value_count_tag(array, RRR_RAFT_OPT_FIELD_SERVER);
+	*result = 0;
 
-	assert(servers_count > 0);
+	if ((servers_count = rrr_array_value_count_tag(array, RRR_RAFT_OPT_FIELD_SERVER)) > 0) {
+		if ((servers = rrr_allocate_zero(sizeof(*servers) * (servers_count + 1))) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
 
-	if ((servers = rrr_allocate_zero(sizeof(*servers) * (servers_count + 1))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
+		for (i = 0; i < servers_count; i++) {
+			server = &servers[i];
+
+			value = rrr_array_value_get_by_tag_and_index_const (
+					array,
+					RRR_RAFT_OPT_FIELD_SERVER,
+					i
+			);
+
+			assert(value != NULL);
+			assert(value->total_stored_length == sizeof(*server));
+
+			memcpy(server, value->data, sizeof(*server));
+
+			* (uint64_t *) &servers[i].id       = rrr_be64toh(* (uint64_t *) &servers[i].id);
+			* (uint64_t *) &servers[i].catch_up = rrr_be64toh(* (uint64_t *) &servers[i].catch_up);
+
+			assert(server->address[0] != '\0');
+		}
+
+		*result = servers;
 	}
-
-	for (i = 0; i < servers_count; i++) {
-		server = &servers[i];
-
-		value = rrr_array_value_get_by_tag_and_index_const (
-				array,
-				RRR_RAFT_OPT_FIELD_SERVER,
-				i
-		);
-
-		assert(value != NULL);
-		assert(value->total_stored_length == sizeof(*server));
-
-		memcpy(server, value->data, sizeof(*server));
-
-		* (uint64_t *) &servers[i].id = rrr_be64toh(* (uint64_t *) &servers[i].id);
-
-		assert(server->address[0] != '\0');
-	}
-
-	*result = servers;
 
 	out:
 	return ret;
@@ -422,8 +423,8 @@ static int __rrr_raft_opt_array_field_server_push (
 	void *data = &server_tmp;
 	size_t data_size = sizeof(server_tmp);
 
-	RRR_ASSERT((void *) &server_tmp == (void *) server_tmp.id,id_must_be_first_in_struct);
-	* (uint64_t *) data = rrr_htobe64(* (uint64_t *) data);
+	* (uint64_t *) &server_tmp.id       = rrr_htobe64(* (uint64_t *) &server_tmp.id);
+	* (uint64_t *) &server_tmp.catch_up = rrr_htobe64(* (uint64_t *) &server_tmp.catch_up);
 
 	if ((ret = rrr_array_push_value_blob_with_tag_with_size (
 			array,
@@ -438,29 +439,17 @@ static int __rrr_raft_opt_array_field_server_push (
 	return ret;
 }
 
-static int __rrr_raft_server_make_opt_response (
-		struct rrr_raft_channel *channel,
-		uv_loop_t *loop,
-		struct raft *raft,
-		rrr_u32 req_index
+static int __rrr_raft_server_make_opt_response_leader_fields (
+		struct rrr_array *array,
+		struct raft *raft
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg = NULL;
-	struct rrr_array array_tmp = {0};
 	struct rrr_raft_server server_tmp;
+	struct raft_server *raft_server;
+	int ret_tmp, catch_up;
 	unsigned i;
 	size_t address_len;
-	struct raft_server *raft_server;
-
-	if ((ret = rrr_array_push_value_u64_with_tag (
-			&array_tmp,
-			RRR_RAFT_OPT_FIELD_IS_LEADER,
-			raft->state == RAFT_LEADER
-	)) != 0) {
-		RRR_MSG_0("Failed to push array value in %s\n", __func__);
-		goto out;
-	}
 
 	for (i = 0; i < raft->configuration.n; i++) {
 		server_tmp = (struct rrr_raft_server) {0};
@@ -487,13 +476,52 @@ static int __rrr_raft_server_make_opt_response (
 				RRR_BUG("Unknown role %i in %s\n", raft_server->role, __func__);
 		};
 
+		if ((ret_tmp = raft_catch_up (raft, raft_server->id, &catch_up)) != 0) {
+			RRR_MSG_0("Failed to get catch up status for server %i in %s: %s %s\n",
+				raft_server->id, __func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+			ret = 1;
+			goto out;
+		}
+
+		server_tmp.catch_up = catch_up;
+
 		if ((ret = __rrr_raft_opt_array_field_server_push (
-				&array_tmp,
+				array,
 				&server_tmp
 		)) != 0) {
 			RRR_MSG_0("Failed to push server in %s\n", __func__);
 			goto out;
 		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_server_make_opt_response (
+		struct rrr_raft_channel *channel,
+		uv_loop_t *loop,
+		struct raft *raft,
+		rrr_u32 req_index
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+	struct rrr_array array_tmp = {0};
+
+	if ((ret = rrr_array_push_value_u64_with_tag (
+			&array_tmp,
+			RRR_RAFT_OPT_FIELD_IS_LEADER,
+			raft->state == RAFT_LEADER
+	)) != 0) {
+		RRR_MSG_0("Failed to push array value in %s\n", __func__);
+		goto out;
+	}
+
+	if ((raft->state == RAFT_LEADER) &&
+	    (ret = __rrr_raft_server_make_opt_response_leader_fields(&array_tmp, raft)) != 0
+	) {
+		goto out;
 	}
 
 	if ((ret = rrr_array_new_message_from_array (
@@ -583,7 +611,7 @@ static int __rrr_raft_server_handle_cmd (
 			}
 
 			// Only exactly one server may be added/deleted
-			assert(servers[0].id > 0 && servers[1].id == 0);
+			assert(servers && servers[0].id > 0 && servers[1].id == 0);
 
 			assert(callback_data->change_req.data == NULL && callback_data->change_req_index == 0);
 			callback_data->change_req.data = callback_data;
@@ -805,7 +833,7 @@ static int __rrr_raft_server_read_msg_cb (
 	}
 
 	if (raft->state != RAFT_LEADER) {
-		RRR_MSG_0("Warning: Refusing message. Not leader.\n");
+		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
 		goto out_send_msg;
 	}
