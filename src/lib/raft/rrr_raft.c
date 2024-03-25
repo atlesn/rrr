@@ -49,9 +49,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // String fields
 #define RRR_RAFT_OPT_FIELD_SERVER     "raft_server"
 
-enum RRR_RAFT_CMD {
+enum rrr_raft_cmd {
 	RRR_RAFT_CMD_SERVER_ADD = 1,
-	RRR_RAFT_CMD_SERVER_DEL
+	RRR_RAFT_CMD_SERVER_DEL,
+	RRR_RAFT_CMD_SERVER_ASSIGN
 };
 
 static int __rrr_raft_server_send_msg_in_loop (
@@ -548,7 +549,7 @@ static int __rrr_raft_server_handle_cmd (
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
-	int ret_tmp, do_add = 0;
+	int ret_tmp, role;
 	int64_t cmd;
 	struct rrr_raft_server *servers;
 	uint16_t version_dummy;
@@ -571,9 +572,8 @@ static int __rrr_raft_server_handle_cmd (
 	}
 
 	switch (cmd) {
+		case RRR_RAFT_CMD_SERVER_ASSIGN:
 		case RRR_RAFT_CMD_SERVER_ADD:
-			do_add = 1;
-			/* Fallthrough */
 		case RRR_RAFT_CMD_SERVER_DEL: {
 			if ((ret = __rrr_raft_opt_array_field_server_get (
 					&servers,
@@ -588,37 +588,70 @@ static int __rrr_raft_server_handle_cmd (
 			assert(callback_data->change_req.data == NULL && callback_data->change_req_index == 0);
 			callback_data->change_req.data = callback_data;
 			callback_data->change_req_index = req_index;
+		} break;
+		default:
+			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
+	};
 
-			if (do_add) {
-				printf("Add server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
+	switch (cmd) {
+		case RRR_RAFT_CMD_SERVER_ASSIGN: {
+			switch (servers[0].status) {
+				case RRR_RAFT_STANDBY:
+					role = RAFT_STANDBY;
+					break;
+				case RRR_RAFT_VOTER:
+					role = RAFT_VOTER;
+					break;
+				case RRR_RAFT_SPARE:
+					role = RAFT_SPARE;
+					break;
+				default:
+					RRR_BUG("BUG: Unknown state %i in %s\n",
+						servers[0].status, __func__);
+			};
 
-				if ((ret_tmp = raft_add (
-						raft,
-						&callback_data->change_req,
-						rrr_int_from_biglength_bug_const(servers[0].id),
-						servers[0].address,
-						__rrr_raft_server_server_change_cb
-				)) != 0) {
-					RRR_MSG_0("Server add failed in %s: %s %s\n",
-						__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
-					ret = 1;
-					goto out;
-				}
+			if ((ret_tmp = raft_assign (
+					raft,
+					&callback_data->change_req,
+					rrr_int_from_biglength_bug_const(servers[0].id),
+					role,
+					__rrr_raft_server_server_change_cb
+			)) != 0) {
+				RRR_MSG_0("Server assign failed in %s: %s %s\n",
+					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
 			}
-			else {
-				printf("Delete server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
+		} break;
+		case RRR_RAFT_CMD_SERVER_ADD: {
+			printf("Add server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
 
-				if ((ret_tmp = raft_remove (
-						raft,
-						&callback_data->change_req,
-						rrr_int_from_biglength_bug_const(servers[0].id),
-						__rrr_raft_server_server_change_cb
-				)) != 0) {
-					RRR_MSG_0("Server delete failed in %s: %s %s\n",
-						__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
-					ret = 1;
-					goto out;
-				}
+			if ((ret_tmp = raft_add (
+					raft,
+					&callback_data->change_req,
+					rrr_int_from_biglength_bug_const(servers[0].id),
+					servers[0].address,
+					__rrr_raft_server_server_change_cb
+			)) != 0) {
+				RRR_MSG_0("Server add failed in %s: %s %s\n",
+					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
+			}
+		} break;
+		case RRR_RAFT_CMD_SERVER_DEL: {
+			printf("Delete server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
+
+			if ((ret_tmp = raft_remove (
+					raft,
+					&callback_data->change_req,
+					rrr_int_from_biglength_bug_const(servers[0].id),
+					__rrr_raft_server_server_change_cb
+			)) != 0) {
+				RRR_MSG_0("Server delete failed in %s: %s %s\n",
+					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
 			}
 		} break;
 		default:
@@ -1460,7 +1493,7 @@ static int __rrr_raft_client_read_msg_cb (
 					channel->server_id,
 					(*message)->msg_value,
 					is_leader,
-					servers,
+					&servers,
 					channel->callbacks.arg
 			);
 		} break;
@@ -1819,7 +1852,7 @@ static int __rrr_raft_client_servers_change (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers,
-		int do_add
+		enum rrr_raft_cmd cmd
 ) {
 	int ret = 0;
 
@@ -1832,13 +1865,18 @@ static int __rrr_raft_client_servers_change (
 	// by raft library.
 	assert(servers[1].id == 0);
 
-	// Status may not be controlled using the add/del functions
-	assert(servers[0].status == 0);
+	if (cmd != RRR_RAFT_CMD_SERVER_ASSIGN) {
+		// Status may not be controlled using the add/del functions
+		assert(servers[0].status == 0);
+	}
+	else {
+		assert(servers[0].status > 0);
+	}
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp,
 			RRR_RAFT_OPT_FIELD_CMD,
-			do_add ? RRR_RAFT_CMD_SERVER_ADD : RRR_RAFT_CMD_SERVER_DEL
+			cmd
 	)) != 0) {
 		goto out;
 	}
@@ -1875,7 +1913,7 @@ int rrr_raft_client_servers_add (
 			req_index,
 			channel,
 			servers,
-			1 /* Do add */
+			RRR_RAFT_CMD_SERVER_ADD
 	);
 }
 
@@ -1888,6 +1926,19 @@ int rrr_raft_client_servers_del (
 			req_index,
 			channel,
 			servers,
-			0 /* Do delete */
+			RRR_RAFT_CMD_SERVER_DEL
+	);
+}
+
+int rrr_raft_client_servers_assign (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_raft_server *servers
+) {
+	return __rrr_raft_client_servers_change (
+			req_index,
+			channel,
+			servers,
+			RRR_RAFT_CMD_SERVER_ASSIGN
 	);
 }

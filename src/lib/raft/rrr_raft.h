@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     int server_id,                                     \
     uint32_t req_index,                                \
     uint64_t is_leader,                                \
-    struct rrr_raft_server *servers,                   \
+    struct rrr_raft_server **servers,                  \
     void *arg
 
 #define RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS              \
@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
    ((s) == RRR_RAFT_VOTER ? "VOTER" :                  \
    ((s) == RRR_RAFT_SPARE ? "SPARE" : "UNKNOWN")))
 
-enum RRR_RAFT_STATUS {
+enum rrr_raft_status {
 	RRR_RAFT_STANDBY = 1,
 	RRR_RAFT_VOTER,
 	RRR_RAFT_SPARE
@@ -110,6 +110,11 @@ int rrr_raft_client_servers_add (
 		const struct rrr_raft_server *servers
 );
 int rrr_raft_client_servers_del (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_raft_server *servers
+);
+int rrr_raft_client_servers_assign (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "test_raft.h"
+#include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/event/event.h"
 #include "../lib/raft/rrr_raft.h"
@@ -78,6 +79,7 @@ struct rrr_test_raft_callback_data {
 	uint32_t nack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	uint32_t msg_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	struct rrr_raft_server servers_delete[RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT + 1];
+	struct rrr_raft_server **servers;
 	int leader_index;
 	int all_ok;
 };
@@ -177,6 +179,23 @@ static int __rrr_test_raft_check_all_ack_received (
 	       __rrr_test_raft_check_zero((uint8_t *) callback_data->msg_expected, sizeof(callback_data->ack_expected));
 }
 
+static int __rrr_test_raft_check_all_servers_voting (
+		struct rrr_test_raft_callback_data *callback_data
+) {
+	struct rrr_raft_server *server;
+
+	if (*callback_data->servers == NULL)
+		return 0;
+
+	for (server = *callback_data->servers; server->id > 0; server++) {
+		if (server->status != RRR_RAFT_VOTER) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
@@ -206,11 +225,11 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 		req_index, server_id, is_leader);
 
 	if (is_leader) {
-		for (server = servers; server->id > 0; server++) {
+		for (server = *servers; server->id > 0; server++) {
 			TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
 				server->id, server->address, RRR_RAFT_STATUS_TO_STR(server->status));
 			if (__rrr_test_raft_server_array_has(servers_intermediate, server)) {
-				TEST_MSG("- Scheduling intermediate cluster member %" PRIi64 " address %s for deletion\n",
+				TEST_MSG("- Scheduling intermediate cluster member %" PRIi64 " address %s for potential deletion\n",
 					server->id, server->address);
 				assert(servers_delete_pos < sizeof(callback_data->servers_delete)/sizeof(callback_data->servers_delete[0]) - 1);
 				callback_data->servers_delete[servers_delete_pos++] = *server;
@@ -219,9 +238,15 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 
 		leader_index = callback_data->leader_index = server_id - 1;
 		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
+
+		RRR_FREE_IF_NOT_NULL(*callback_data->servers);
+		*callback_data->servers = *servers;
+		*servers = NULL;
 	}
 
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
+
+	RRR_FREE_IF_NOT_NULL(*servers);
 }
 
 static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
@@ -250,6 +275,13 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
 }
 
+#define WAIT_ACK()                                                  \
+    if (!__rrr_test_raft_check_all_ack_received(callback_data)) {   \
+        TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");            \
+	callback_data->cmd_pos--;                                   \
+	break;                                                      \
+    } do {} while(0)
+
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
@@ -257,6 +289,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	int i;
 	unsigned int msg_pos;
 	uint32_t req_index;
+	struct rrr_raft_server servers_tmp[RRR_TEST_RAFT_SERVER_TOTAL_COUNT + 1];
 
 	TEST_MSG("Periodic step %i\n", callback_data->cmd_pos);
 
@@ -364,17 +397,11 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 4: {
-			TEST_MSG("- Checking for responses...\n");
-
-			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
-				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
-				callback_data->cmd_pos--;
-			}
-			else {
-				TEST_MSG("- All responses received\n");
-			}
+			// Free slot
 		} break;
 		case 5: {
+			WAIT_ACK();
+
 			TEST_MSG("- Sending GET messages (non-existent topics)...\n");
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 30; msg_pos++) {
@@ -400,26 +427,9 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 6: {
-			TEST_MSG("- Checking for ACKs...\n");
-
-			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
-				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
-				callback_data->cmd_pos--;
-			}
-			else {
-				TEST_MSG("- All ACKs received\n");
-			}
+			WAIT_ACK();
 		} break;
 		case 7: {
-			TEST_MSG("- Probe...\n");
-			req_index = 0;
-			rrr_raft_client_request_opt (
-					&req_index,
-					callback_data->channels[callback_data->leader_index]
-					);
-			assert(req_index > 0);
-			__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
-
 			TEST_MSG("- Adding intermediate servers...\n");
 			req_index = 0;
 			rrr_raft_client_servers_add (
@@ -436,19 +446,61 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			);
 		} break;
 		case 8: {
-			TEST_MSG("- Checking for ACKs...\n");
+			WAIT_ACK();
 
-			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
-				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
-				callback_data->cmd_pos--;
-			}
-			else {
-				TEST_MSG("- All ACKs received\n");
-			}
-
-			// TODO : Verify status of new server
+			RRR_FREE_IF_NOT_NULL(*callback_data->servers);
+			TEST_MSG("- Probing...\n");
+			req_index = 0;
+			rrr_raft_client_request_opt (
+					&req_index,
+					callback_data->channels[callback_data->leader_index]
+			);
+			assert(req_index > 0);
+			__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
 		} break;
 		case 9: {
+			WAIT_ACK();
+
+			TEST_MSG("- Assigning voter status to intermediate servers...\n");
+
+			assert(sizeof(servers_intermediate) <= sizeof(servers_tmp));
+			memcpy(servers_tmp, servers_intermediate, sizeof(servers_intermediate));
+
+			servers_tmp[0].status = RRR_RAFT_VOTER;
+
+			req_index = 0;
+			rrr_raft_client_servers_assign (
+					&req_index,
+					callback_data->channels[callback_data->leader_index],
+					servers_tmp
+			);
+			assert(req_index > 0);
+			__rrr_test_raft_register_expected_ack (
+					callback_data,
+					callback_data->leader_index + 1,
+					req_index,
+					1 /* expect ok */
+			);
+		} break;
+		case 10: {
+			WAIT_ACK();
+
+			if (!__rrr_test_raft_check_all_servers_voting(callback_data)) {
+				TEST_MSG("- Waiting for all servers to become voters...\n");
+				callback_data->cmd_pos--;
+
+				RRR_FREE_IF_NOT_NULL(*callback_data->servers);
+				TEST_MSG("- Probing...\n");
+				req_index = 0;
+				rrr_raft_client_request_opt (
+						&req_index,
+						callback_data->channels[callback_data->leader_index]
+				);
+				assert(req_index > 0);
+				__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
+			}
+		} break;
+		case 11: {
 			TEST_MSG("- Sending GET messages to added servers...\n");
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 40; msg_pos++) {
@@ -472,16 +524,8 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 			callback_data->msg_pos = msg_pos;
 		} break;
-		case 10: {
-			TEST_MSG("- Checking for ACKs...\n");
-
-			if (!__rrr_test_raft_check_all_ack_received(callback_data)) {
-				TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");
-				callback_data->cmd_pos--;
-			}
-			else {
-				TEST_MSG("- All ACKs received\n");
-			}
+		case 12: {
+			WAIT_ACK();
 		} break;
 		default: {
 
@@ -577,10 +621,12 @@ int rrr_test_raft (
 	struct rrr_raft_channel *channels[RRR_TEST_RAFT_SERVER_TOTAL_COUNT] = {0};
 	struct rrr_test_raft_callback_data callback_data = {0};
 	rrr_event_receiver_handle queue_handle;
+	struct rrr_raft_server *servers = NULL;
 
 	callback_data.main_running = main_running;
 	callback_data.channels = channels;
 	callback_data.leader_index = -1;
+	callback_data.servers = &servers;
 
 	if ((ret = __rrr_test_raft_fork (
 			&i,
@@ -628,6 +674,7 @@ int rrr_test_raft (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(servers);
 	for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
 		if (channels[i] != NULL) {
 			rrr_raft_cleanup(channels[i]);
