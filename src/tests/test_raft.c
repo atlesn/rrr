@@ -82,6 +82,7 @@ struct rrr_test_raft_callback_data {
 	struct rrr_raft_server **servers;
 	int leader_index;
 	int leader_index_new;
+	int leader_index_old;
 	int all_ok;
 };
 
@@ -356,6 +357,25 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
         );                                                \
     } while(0)
 
+#define TRANSFER(server_index)                                        \
+    do {                                                              \
+         req_index = 0;                                               \
+         rrr_raft_client_leadership_transfer (                        \
+             &req_index,                                              \
+             callback_data->channels[callback_data->leader_index],    \
+             server_index + 1                                         \
+         );                                                           \
+         assert(req_index > 0);                                       \
+         __rrr_test_raft_register_expected_ack (                      \
+             callback_data,                                           \
+             callback_data->leader_index + 1,                         \
+             req_index,                                               \
+             1 /* expect ok */                                        \
+        );                                                            \
+	callback_data->leader_index_old = callback_data->leader_index;\
+        callback_data->leader_index_new = server_index;               \
+    } while(0)
+
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
@@ -467,7 +487,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
-					1 /* expect ok */
+					1 /* Expect ok */
 			);
 		} break;
 		case 7: {
@@ -495,7 +515,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
-					1 /* expect ok */
+					1 /* Expect ok */
 			);
 		} break;
 		case 9: {
@@ -519,19 +539,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
 				for (i = RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
-					req_index = 0;
-					rrr_raft_client_request_get (
-							&req_index,
-							callback_data->channels[i],
-							topic,
-							strlen(topic)
-					);
-					assert(req_index > 0);
-					__rrr_test_raft_register_expected_msg (
-							callback_data,
-							i + 1,
-							req_index
-					);
+					GET(i, 1 /* Expect ok */);
 				}
 			}
 
@@ -549,21 +557,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				TEST_MSG("- Transferring leadership from %i to %i\n",
 					callback_data->leader_index + 1, i + 1);
 
-				req_index = 0;
-				rrr_raft_client_leadership_transfer (
-						&req_index,
-						callback_data->channels[callback_data->leader_index],
-						i + 1
-				);
-				assert(req_index > 0);
-				__rrr_test_raft_register_expected_ack (
-						callback_data,
-						callback_data->leader_index + 1,
-						req_index,
-					        1 /* expect ok */
-				);
-
-				callback_data->leader_index_new = i;
+				TRANSFER(i);
 
 				break;
 			}
@@ -575,6 +569,31 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		case 14: {
 			assert(callback_data->leader_index == callback_data->leader_index_new);
 			TEST_MSG("- Leadership was transferred\n");
+		} break;
+		case 15: {
+			for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+				if (i == callback_data->leader_index) {
+					continue;
+				}
+
+				TEST_MSG("- Transferring leadership from %i to random voter\n",
+					callback_data->leader_index + 1);
+
+				TRANSFER(-1);
+
+				break;
+			}
+		} break;
+		case 16: {
+			WAIT_ACK();
+			for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
+				PROBE(i);
+			}
+		} break;
+		case 17: {
+			assert(callback_data->leader_index_old != callback_data->leader_index);
+			TEST_MSG("- Leadership was transferred from %i to %i\n",
+				callback_data->leader_index_old + 1, callback_data->leader_index + 1);
 		} break;
 		default: {
 

@@ -591,7 +591,7 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	raft_leader(raft, &id, &address);
 
-	if (id == req->id) {
+	if (id != (long long unsigned) callback_data->server_id) {
 		printf("Leader transfer OK to %llu %s\n", id, address);
 	}
 	else {
@@ -600,7 +600,7 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	rrr_msg_populate_control_msg (
 			&msg_ack,
-			id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK,
+			req->id == 0 || id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK,
 			callback_data->transfer_req_index
 	);
 	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
@@ -2042,7 +2042,9 @@ static int __rrr_raft_client_leadership_transfer (
 
 	struct rrr_array array_tmp = {0};
 
-	assert(server_id > 0);
+	// Passing 0 is allowed, this means to
+	// pass leadership to a random voter
+	assert(server_id >= 0);
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp,
