@@ -304,6 +304,46 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 	break;                                                      \
     } do {} while(0)
 
+#define PROBE(server_index)                                                                 \
+    do {                                                                                    \
+	TEST_MSG("- Probing...\n");                                                         \
+	RRR_FREE_IF_NOT_NULL(*callback_data->servers);                                      \
+        req_index = 0;                                                                      \
+        rrr_raft_client_request_opt (&req_index, callback_data->channels[server_index]);    \
+        assert(req_index > 0);                                                              \
+        __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);  \
+    } while(0)                                                                              \
+
+#define GET(server_index,expect_ok)                                                               \
+    do {                                                                                          \
+        req_index = 0;                                                                            \
+        rrr_raft_client_request_get(&req_index, callback_data->channels[server_index], topic);    \
+        assert(req_index > 0);                                                                    \
+        if (expect_ok)                                                                            \
+	    __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);    \
+	else                                                                                      \
+	    __rrr_test_raft_register_expected_ack(callback_data, server_index + 1, req_index, 0); \
+    } while(0)
+
+#define PUT(server_index,msg_index)                       \
+    do {                                                  \
+        req_index = 0;                                    \
+        rrr_raft_client_request_put (                     \
+                &req_index,                               \
+                callback_data->channels[server_index],    \
+                topic,                                    \
+                requests[msg_index],                      \
+                strlen(requests[msg_index])               \
+        );                                                \
+        assert(req_index > 0);                            \
+        __rrr_test_raft_register_expected_ack (           \
+                callback_data,                            \
+                server_index + 1,                         \
+                req_index,                                \
+                1 /* ok expected */                       \
+        );                                                \
+    } while(0)
+
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
@@ -346,15 +386,8 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				}
 			}
 			else {
-				TEST_MSG("- Probing for leader...\n");
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
-					req_index = 0;
-					rrr_raft_client_request_opt (
-							&req_index,
-							callback_data->channels[i]
-					);
-					assert(req_index > 0);
-					__rrr_test_raft_register_expected_msg(callback_data, i + 1, req_index);
+					PROBE(i);
 				}
 				callback_data->cmd_pos--;
 			}
@@ -364,29 +397,13 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
-
-				req_index = 0;
-				rrr_raft_client_request_put (
-						&req_index,
-						callback_data->channels[callback_data->leader_index],
-						topic,
-						requests[msg_pos % 10],
-						strlen(requests[msg_pos % 10])
-				);
-				assert(req_index > 0);
-				__rrr_test_raft_register_expected_ack (
-						callback_data,
-						callback_data->leader_index + 1,
-						req_index,
-						1 /* ok expected */
-				);
+				PUT(callback_data->leader_index, msg_pos % 10);
 			}
 
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 2: {
 			if (!callback_data->rrr_test_raft_pong_received) {
-				// Pong not received yet
 				TEST_MSG("- Waiting for pong...\n");
 				callback_data->cmd_pos--;
 			}
@@ -401,27 +418,13 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
-					req_index = 0;
-					rrr_raft_client_request_get (
-							&req_index,
-							callback_data->channels[i],
-							topic
-					);
-					assert(req_index > 0);
-					__rrr_test_raft_register_expected_msg (
-							callback_data,
-							i + 1,
-							req_index
-					);
+					GET(i, 1 /* Expect ok */);
 				}
 			}
 
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 4: {
-			// Free slot
-		} break;
-		case 5: {
 			WAIT_ACK();
 
 			TEST_MSG("- Sending GET messages (non-existent topics)...\n");
@@ -430,28 +433,16 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", 'a' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
-					req_index = 0;
-					rrr_raft_client_request_get (
-							&req_index,
-							callback_data->channels[i],
-							topic
-					);
-					assert(req_index > 0);
-					__rrr_test_raft_register_expected_ack (
-							callback_data,
-							i + 1,
-							req_index,
-							0 /* expect not ok */
-					);
+					GET(i, 0 /* Expect not ok */);
 				}
 			}
 
 			callback_data->msg_pos = msg_pos;
 		} break;
-		case 6: {
+		case 5: {
 			WAIT_ACK();
 		} break;
-		case 7: {
+		case 6: {
 			TEST_MSG("- Adding intermediate servers...\n");
 			req_index = 0;
 			rrr_raft_client_servers_add (
@@ -467,20 +458,11 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					1 /* expect ok */
 			);
 		} break;
-		case 8: {
+		case 7: {
 			WAIT_ACK();
-
-			RRR_FREE_IF_NOT_NULL(*callback_data->servers);
-			TEST_MSG("- Probing...\n");
-			req_index = 0;
-			rrr_raft_client_request_opt (
-					&req_index,
-					callback_data->channels[callback_data->leader_index]
-			);
-			assert(req_index > 0);
-			__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
+			PROBE(callback_data->leader_index);
 		} break;
-		case 9: {
+		case 8: {
 			WAIT_ACK();
 
 			TEST_MSG("- Assigning voter status to intermediate servers...\n");
@@ -504,7 +486,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					1 /* expect ok */
 			);
 		} break;
-		case 10: {
+		case 9: {
 			WAIT_ACK();
 
 			if (!__rrr_test_raft_check_all_servers_voting(callback_data) ||
@@ -512,22 +494,13 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			) {
 				TEST_MSG("- Waiting for all servers to become voters and catched up...\n");
 				callback_data->cmd_pos--;
-
-				RRR_FREE_IF_NOT_NULL(*callback_data->servers);
-				TEST_MSG("- Probing...\n");
-				req_index = 0;
-				rrr_raft_client_request_opt (
-						&req_index,
-						callback_data->channels[callback_data->leader_index]
-				);
-				assert(req_index > 0);
-				__rrr_test_raft_register_expected_msg(callback_data, callback_data->leader_index + 1, req_index);
+				PROBE(callback_data->leader_index);
 			}
 			else {
 				TEST_MSG("- All servers are voters and the added server is catched up\n");
 			}
 		} break;
-		case 11: {
+		case 10: {
 			TEST_MSG("- Sending GET messages to added servers...\n");
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 40; msg_pos++) {
@@ -551,7 +524,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 			callback_data->msg_pos = msg_pos;
 		} break;
-		case 12: {
+		case 11: {
 			WAIT_ACK();
 		} break;
 		default: {
