@@ -502,6 +502,9 @@ Keeps track of unique IDs and appends them to topics of messages.
 .It cacher (PA)
 Intermediate message on disk storage for continuity across restarts.
 
+.It raft (PA)
+Distributed message storage for redundancy.
+
 .It msgdb (N)
 Filesystem storage engine for RRR messages (message DB).
 
@@ -3023,6 +3026,47 @@ Defaults to 60 seconds (1 minute), the minimum value is 1 second.
 Specify how often cacher will iterate through the cache for simple integrity checks and to look for expired messages.
 The interval is calculated from the last time the tidy process completed.
 Defaults to 300 seconds (5 minutes), the minimum value is 1 second.
+
+.El
+
+.SS raft (PA)
+An implementation of the Raft consensus protocol based on C-raft with message store.
+Multiple instances of the
+.B raft
+module (raft nodes) across different hosts may be put together in a cluster.
+When storing messages in one of the nodes, all of them will be updated.
+
+TODO : Message from other modules
+
+TODO : Emitted messages
+
+The following configuration parameters are available:
+
+.Bl -tag -width -indent
+.It raft_port=PORT
+TCP port to listen on (listens on all interfaces). Defaults to 9001.
+
+.It raft_id=UNSIGNED INTEGER
+A server ID which must unique within a cluster and may must be greater than zero.
+This parameter must be given.
+
+.It raft_nodes=ADDRESS:PORT->ID[,ADDRESS_PORT->ID[,...]]
+A comma separated list of raft nodes used for initial set-up of this raft instance.
+The address of this node must be first in this list.
+TODO : Check if this is true:
+This list must include any existing nodes in a cluster so that this instance, when new,
+can catch up with them and fill the local message store.
+Defaults to
+.B localhost:PORT->ID
+where
+.B PORT
+and
+.B ID
+is the value and IDconfigured in
+.B raft_port
+and
+.B raft_id
+.
 
 .El
 

@@ -599,7 +599,6 @@ static int __rrr_test_raft_fork (
 				callback_data
 		)) != 0) {
 			TEST_MSG("Failed to fork out raft process\n");
-			ret = 1;
 			goto out;
 		}
 
