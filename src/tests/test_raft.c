@@ -216,8 +216,10 @@ static int __rrr_test_raft_check_some_server_catched_up (
 static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
+	(void)(server_id);
+
 	if (!callback_data->rrr_test_raft_pong_received) {
-		TEST_MSG("Pong received server %i\n", server_id);
+		// TEST_MSG("Pong received server %i\n", server_id);
 		callback_data->rrr_test_raft_pong_received = 1;
 	}
 }
@@ -225,8 +227,8 @@ static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	TEST_MSG("%s %u received server %i\n",
-		(ok ? "ACK" : "NACK"), req_index, server_id);
+	// TEST_MSG("%s %u received server %i\n",
+	//	(ok ? "ACK" : "NACK"), req_index, server_id);
 
 	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, ok);
 }
@@ -277,8 +279,8 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 	const char *topic_ptr;
 	int msg_pos;
 
-	TEST_MSG("MSG %u received server %i\n",
-		req_index, server_id);
+	// TEST_MSG("MSG %u received server %i\n",
+	//	req_index, server_id);
 
 	assert(MSG_TOPIC_LENGTH(*msg) == strlen("topic/x"));
 	topic_ptr = MSG_TOPIC_PTR(*msg);
@@ -302,6 +304,9 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
         TEST_MSG("- Waiting for ACKs, NACKs or MSGs\n");            \
 	callback_data->cmd_pos--;                                   \
 	break;                                                      \
+    }                                                               \
+    else {                                                          \
+	TEST_MSG("- All ACKs received\n");                          \
     } do {} while(0)
 
 #define PROBE(server_index)                                                                 \

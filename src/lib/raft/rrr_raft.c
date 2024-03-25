@@ -190,7 +190,7 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 					rrr_free(store->msgs[i]);
 					store->msgs[i] = *msg;
 
-					printf("Replaced message in message store %u->%u topic '%.*s'\n",
+					RRR_DBG_3("Raft replaced message in message store %u->%u topic '%.*s'\n",
 						value_orig, (*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
 
 					goto out_consumed;
@@ -207,7 +207,7 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 
 		store->msgs[i] = *msg;
 
-		printf("Inserted message into message store %u topic '%.*s' count is now %llu\n",
+		RRR_DBG_3("Raft inserted message into message store %u topic '%.*s' count is now %llu\n",
 			(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg), (unsigned long long) store->count);
 
 		goto out_consumed;
@@ -219,7 +219,7 @@ static struct rrr_msg_msg *__rrr_raft_message_store_push (
 
 	store->msgs[store->count++] = *msg;
 
-	printf("Pushed message to message store %u topic '%.*s'\n",
+	RRR_DBG_3("Raft pushed message to message store %u topic '%.*s'\n",
 		(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
 
 	out_consumed:
@@ -292,8 +292,12 @@ static void __rrr_raft_tracer_emit_cb (
 
 	(void)(t);
 	(void)(info);
+	(void)(type);
+	(void)(callback_data);
 
-	RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
+	// TODO : Not useful until message is extended. Also find
+	//        appropriate debuglevel.
+	// RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
 }
 
 static void __rrr_raft_channel_after_fork_client (
@@ -652,7 +656,7 @@ static int __rrr_raft_server_handle_cmd (
 			}
 		} break;
 		case RRR_RAFT_CMD_SERVER_ADD: {
-			printf("Add server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
+			RRR_DBG_1("Raft CMD add server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
 
 			if ((ret_tmp = raft_add (
 					raft,
@@ -668,7 +672,7 @@ static int __rrr_raft_server_handle_cmd (
 			}
 		} break;
 		case RRR_RAFT_CMD_SERVER_DEL: {
-			printf("Delete server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
+			RRR_DBG_1("Raft CMD delete server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
 
 			if ((ret_tmp = raft_remove (
 					raft,
@@ -759,22 +763,6 @@ static void __rrr_raft_server_apply_cb (
 	out:
 		raft_free(req);
 }
-
-/*
-static void __rrr_raft_server_change_cb (
-		struct raft_change *req,
-		int status
-) {
-	struct rrr_raft_server_callback_data *callback_data = req->data;
-
-	if (status != 0) {
-		RRR_MSG_0("Warning: Change request index %i failed: %s (%d)\n",
-			raft_errmsg(callback_data->raft), status);
-	}
-
-	raft_free(req);
-}
-*/
 
 static int __rrr_raft_server_read_msg_cb (
 		struct rrr_msg_msg **message,
@@ -1022,11 +1010,7 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 
 	assert(RRR_MSG_CTRL_F_HAS(message, RRR_MSG_CTRL_F_PING));
 
-	//printf("Send pong\n");
-
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
-
-	//printf("servers: %u\n", callback_data->raft->configuration.n);
 
 	return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 }
@@ -1093,6 +1077,9 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	// TODO : Check if we are leader and trigger NACK instead of bailing
 
+	RRR_DBG_3("Raft message %i being applied in state machine in server %i\n",
+		msg_tmp->msg_value, callback_data->server_id);
+
 	if ((msg_save = __rrr_raft_message_store_push(callback_data->message_store_state, &msg_tmp)) == NULL) {
 		RRR_MSG_0("Failed to push message to message store during application to state machine in server %i\n",
 			callback_data->server_id);
@@ -1100,9 +1087,6 @@ static int __rrr_raft_server_fsm_apply_cb (
 		uv_stop(callback_data->loop);
 		goto out_free;
 	}
-
-	RRR_DBG_1("Message %i now applied in state machine in server %i\n",
-		msg_save->msg_value, callback_data->server_id);
 
 	// If we are leader, the apply_cb giving feedback to
 	// the client must see the message which has been applied
@@ -1177,7 +1161,7 @@ static int  __rrr_raft_server_fsm_snapshot_cb (
 ) {
 	struct rrr_raft_server_callback_data *callback_data = fsm->data;
 
-	printf("Insert snapshot server %i\n", callback_data->server_id);
+	RRR_DBG_3("Raft insert snapshot server %i\n", callback_data->server_id);
 
 	return __rrr_raft_server_fsm_message_store_snapshot (bufs, n_bufs, callback_data);
 }
@@ -1195,7 +1179,7 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 	assert(buf->len <= UINT32_MAX);
 
-	printf("Restore snapshot server %i\n", callback_data->server_id);
+	RRR_DBG_3("Raft restore snapshot server %i\n", callback_data->server_id);
 
 	for (pos = 0; pos < buf->len; rrr_size_t_add_bug(&pos, MSG_TOTAL_SIZE(msg))) {
 		assert(buf->len - pos >= sizeof(struct rrr_msg_msg) - 1);
@@ -1207,7 +1191,8 @@ static int __rrr_raft_server_fsm_restore_cb (
 			goto out;
 		}
 
-		printf("Found message topic length %u\n", MSG_TOPIC_LENGTH(msg));
+		RRR_DBG_3("Raft message %i being applied in state machine in server %i during restore\n",
+			msg->msg_value, callback_data->server_id);
 
 		if ((ret = __rrr_raft_message_store_push_const (
 				callback_data->message_store_state,
@@ -1216,9 +1201,6 @@ static int __rrr_raft_server_fsm_restore_cb (
 			RRR_MSG_0("Message push failed in %s\n", __func__);
 			goto out;
 		}
-
-		RRR_DBG_1("Message %u now restored in state machine in server %i\n",
-			msg->msg_value, callback_data->server_id);
 	}
 
 	assert(pos == buf->len);
@@ -1451,15 +1433,6 @@ static int __rrr_raft_client_send_ping (
 	return __rrr_raft_client_send_msg(channel, &msg);
 }
 
-/*
-static int __rrr_raft_client_send_close (
-		struct rrr_raft_channel *channel
-) {
-	struct rrr_msg msg = {0};
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_CLOSE, 0);
-	return __rrr_raft_client_send_msg(channel, &msg);
-}
-*/
 static void __rrr_raft_client_periodic_cb (evutil_socket_t fd, short flags, void *arg) {
 	struct rrr_raft_channel *channel = arg;
 
@@ -1803,7 +1776,7 @@ static int __rrr_raft_client_request (
 
 	msg->msg_value = channel->req_index;
 
-	printf("Send request type %s size %lu fd %i message size %u req %u topic '%.*s'\n",
+	RRR_DBG_3("Raft request type %s size %lu fd %i message size %u req %u topic '%.*s'\n",
 		MSG_TYPE_NAME(msg),
 		data_size,
 		channel->fd_client,
