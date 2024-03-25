@@ -3045,9 +3045,10 @@ An empty topic is also a valid topic.
 The message type and any plain value set in messages from senders will not be preserved for messages being stored in the raft storage
 as these fields are used internally.
 
-TODO : Message from other modules get request
-
-TODO : Emitted messages
+Messages to be stored may only be delivered to the raft node which is currently leader of its cluster.
+If status messages are enabled using
+.B raft_status_messages
+, status messages will report on which node is currently the leader, allowing redirection or forwarding of requests to be implemented.
 
 The following configuration parameters are available:
 
@@ -3056,6 +3057,28 @@ The following configuration parameters are available:
 A comma separated list of raft nodes used for initial set-up of this raft instance.
 The address of this node must be first in this list, and the address and port will be used for listening
 for connections from other nodes.
+
+.It raft_status_messages={yes|no}
+If set to yes, status messages will be emitted to inform on whether or not messages were stored.
+The status messages will have no topic set.
+If set to no or left unset, no status messages will be emitted.
+
+The following array fields will be present in all status messages:
+
+.Bl -tag -width -indent
+.It raft_topic
+The original topic of the message this status message applies to or empty string if there was no topic
+.It raft_status
+Either number 1 or 0 where 1 indicates success and 0 indicates failure
+.It raft_reason
+A string with a more detailed error description
+.It raft_server_id
+The ID of the node which generated this message
+.It raft_leader_id
+The ID of the current leader of the cluster or 0 if there is no known leader
+.It raft_leader_address
+The hostname or address of the current leader of the cluster or empty string if there is no known leader
+.El
 
 .El
 

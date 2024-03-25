@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 
 //#include "../lib/ip/ip.h"
+#include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
@@ -46,11 +47,121 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RAFT_DEFAULT_PORT 9001
 #define RAFT_PATH_BASE "/tmp/rrr-raft"
 
+struct raft_request {
+	uint32_t req_index;
+	struct rrr_msg_msg *msg_orig;
+};
+
+struct raft_request_collection {
+	struct raft_request *requests;
+	size_t capacity;
+};
+
+static int raft_request_init (
+		struct raft_request *request,
+		uint32_t req_index,
+		const struct rrr_msg_msg *msg_orig
+) {
+	int ret = 0;
+
+	request->req_index = req_index;
+
+	if ((request->msg_orig = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
+		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static void raft_request_clear (
+		struct raft_request *request
+) {
+	RRR_FREE_IF_NOT_NULL(request->msg_orig);
+	*request = (struct raft_request) {0};
+}
+
+static struct raft_request raft_request_collection_consume (
+		struct raft_request_collection *collection,
+		uint32_t req_index
+) {
+	struct raft_request result;
+
+	printf("== consume req %u\n", req_index);
+
+	for (size_t i = 0; i < collection->capacity; i++) {
+		if (collection->requests[i].req_index == req_index) {
+			 result = collection->requests[i];
+			 collection->requests[i] = (struct raft_request) {0};
+			 return result;
+		}
+	}
+
+	RRR_BUG("BUG: Request %u not found in %s\n", req_index, __func__);
+}
+
+static int raft_request_collection_push (
+		struct raft_request_collection *collection,
+		uint32_t req_index,
+		const struct rrr_msg_msg *msg_orig
+) {
+	int ret = 0;
+
+	printf("== push   req %u cap %lu\n", req_index, collection->capacity);
+
+	struct raft_request *target = NULL, *requests_new;
+	size_t capacity_new;
+
+	for (size_t i = 0; i < collection->capacity; i++) {
+		if (collection->requests[i].req_index == 0) {
+			target = &collection->requests[i];
+			break;
+		}
+	}
+
+	if (target)
+		goto target_found;
+
+	capacity_new = collection->capacity + 64;
+	if ((requests_new = rrr_reallocate(collection->requests, capacity_new * sizeof(*requests_new))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+	memset(requests_new + collection->capacity, '\0', sizeof(*requests_new) * (capacity_new - collection->capacity));
+
+	target = requests_new + collection->capacity;
+	collection->requests = requests_new;
+	collection->capacity = capacity_new;
+
+	target_found:
+		if ((ret = raft_request_init(target, req_index, msg_orig)) != 0) {
+			goto out;
+		}
+	out:
+		return ret;
+}
+
+static void raft_request_collection_clear (
+		struct raft_request_collection *collection
+) {
+	for (size_t i = 0; i < collection->capacity; i++) {
+		raft_request_clear(&collection->requests[i]);
+	}
+	RRR_FREE_IF_NOT_NULL(collection->requests);
+	*collection = (struct raft_request_collection) {0};
+}
+
 struct raft_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_map servers;
 	struct rrr_raft_channel *channel;
+	struct raft_request_collection requests;
 	int is_leader;
+	int leader_id;
+	char leader_address[128];
 };
 
 static void raft_data_init(struct raft_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -62,6 +173,7 @@ static void raft_data_cleanup(struct raft_data *data) {
 	rrr_map_clear(&data->servers);
 	if (data->channel != NULL)
 		rrr_raft_cleanup(data->channel);
+	raft_request_collection_clear(&data->requests);
 }
 
 static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
@@ -77,9 +189,8 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	uint32_t req_index;
 
 	if (!data->is_leader) {
-		RRR_MSG_0("Warning: Dropping received message in raft instance %s. Node is not leader.\n",
+		RRR_MSG_0("Warning: Received message in raft instance %s which is not leader of the cluster.\n",
 			INSTANCE_D_NAME(thread_data));
-		goto out;
 	}
 
 	RRR_DBG_3("raft instance %s received a message with timestamp %llu\n",
@@ -90,10 +201,19 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	if ((ret = rrr_raft_client_request_put_native (
 			&req_index,
 			data->channel,
-			(struct rrr_msg_msg **) &entry->message /* Consumed */
+			message
 	)) != 0) {
 		RRR_MSG_0("Warning: Failed to put message in raft instance %s\n",
 			INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	// Message must be copied as the data is protected by entry lock
+	if ((ret = raft_request_collection_push (
+			&data->requests,
+			req_index,
+			message
+	)) != 0) {
 		goto out;
 	}
 
@@ -140,13 +260,59 @@ static void raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
-	(void)(server_id);
-	(void)(req_index);
+	int ret_tmp = 0;
+	struct rrr_array array_tmp = {0};
+	struct raft_request request;
+	struct rrr_msg_msg *msg;
 
-	if (!ok) {
-		RRR_MSG_0("Warning: A request failed in raft instance %s, negative ACK was received from the node.\n",
-			INSTANCE_D_NAME(data->thread_data));
+	request = raft_request_collection_consume (&data->requests, req_index);
+	msg = request.msg_orig;
+
+	ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
+		&array_tmp,
+		"raft_topic",
+		MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
+		MSG_TOPIC_LENGTH(msg)
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+		&array_tmp,
+		"raft_status",
+		code == RRR_RAFT_OK
+	);
+	ret_tmp |= rrr_array_push_value_str_with_tag (
+		&array_tmp,
+		"raft_reason",
+		rrr_raft_reason_to_str(code)
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+		&array_tmp,
+		"raft_server_id",
+		server_id
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+		&array_tmp,
+		"raft_leader_id",
+		data->leader_id
+	);
+	ret_tmp |= rrr_array_push_value_str_with_tag (
+		&array_tmp,
+		"raft_leader_address",
+		data->leader_address
+	);
+
+	if (ret_tmp != 0) {
+		RRR_MSG_0("Warning: Failed to add array values in %s\n", __func__);
+		goto out;
 	}
+
+	if (code != RRR_RAFT_OK) {
+		RRR_MSG_0("Warning: A request failed in raft instance %s, negative ACK with reason '%s' was received from the node.\n",
+			INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+	}
+
+	out:
+	raft_request_clear(&request);
+	rrr_array_clear(&array_tmp);
 }
 
 static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
@@ -160,23 +326,26 @@ static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	if (is_leader) {
 		RRR_DBG_1("Raft instance %s id %i is leader, cluster status for all nodes:\n",
 			INSTANCE_D_NAME(data->thread_data), server_id);
-
-		for (server = *servers; server->id > 0; server++) {
-			RRR_DBG_1("- %s id %" PRIi64 " status %s catch up %s\n",
-				server->address,
-				server->id,
-				RRR_RAFT_STATUS_TO_STR(server->status),
-				RRR_RAFT_CATCH_UP_TO_STR(server->catch_up)
-			);
-		}
-
 		data->is_leader = 1;
 	}
 	else {
-		RRR_DBG_1("Raft instance %s id %i is not leader.\n",
+		RRR_DBG_1("Raft instance %s id %i is not leader, cluster status for all nodes:\n",
 			INSTANCE_D_NAME(data->thread_data), server_id);
-
 		data->is_leader = 0;
+	}
+
+	strncpy(data->leader_address, leader_address, sizeof(data->leader_address));
+	data->leader_address[sizeof(data->leader_address) - 1] = '\0';
+
+	data->leader_id = leader_id;
+
+	for (server = *servers; server->id > 0; server++) {
+		RRR_DBG_1("- %s id %" PRIi64 " status %s catch up %s\n",
+			server->address,
+			server->id,
+			RRR_RAFT_STATUS_TO_STR(server->status),
+			RRR_RAFT_CATCH_UP_TO_STR(server->catch_up)
+		);
 	}
 }
 

@@ -48,6 +48,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_CTRL_F_USR_C      (1<<13)
 #define RRR_MSG_CTRL_F_USR_D      (1<<12)
 
+// Use the user-defined bits to set a 4 bit reason code on NACK packets
+#define RRR_MSG_CTRL_F_NACK_REASON(reason)   (RRR_MSG_CTRL_F_NACK | (reason << 12))
+#define RRR_MSG_CTRL_F_NACK_REASON_MASK      (0xF000)
+#define RRR_MSG_CTRL_F_NACK_REASON_GET(type) (type >> 12)
+
 #define RRR_MSG_CTRL_F_ALL              ( RRR_MSG_CTRL_F_RESERVED |  \
                                           RRR_MSG_CTRL_F_PING |      \
 					  RRR_MSG_CTRL_F_PONG |      \
@@ -57,6 +62,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_CTRL_F_HAS(msg,flag)    (((msg)->msg_type & (flag)) == (flag))
 #define RRR_MSG_CTRL_F_CLEAR(msg,flag)  ((msg)->msg_type &= (rrr_u16) ~(flag))
 #define RRR_MSG_CTRL_FLAGS(msg)         ((msg)->msg_type & RRR_MSG_CTRL_F_ALL)
+#define RRR_MSG_CTRL_REASON(msg)        (RRR_MSG_CTRL_F_NACK_REASON_GET((msg)->msg_type))
 
 // The control messages contain flags in the type field
 #define RRR_MSG_IS_CTRL(msg) \

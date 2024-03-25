@@ -42,13 +42,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <raft/uv.h>
 
 // I64 fields
-#define RRR_RAFT_OPT_FIELD_CMD        "raft_cmd"
-#define RRR_RAFT_OPT_FIELD_IS_LEADER  "raft_is_leader"
-#define RRR_RAFT_OPT_FIELD_STATUS     "raft_status"
-#define RRR_RAFT_OPT_FIELD_ID         "raft_id"
+#define RRR_RAFT_FIELD_CMD             "raft_cmd"
+#define RRR_RAFT_FIELD_IS_LEADER       "raft_is_leader"
+#define RRR_RAFT_FIELD_STATUS          "raft_status"
+#define RRR_RAFT_FIELD_ID              "raft_id"
+#define RRR_RAFT_FIELD_LEADER_ID       "raft_leader_id"
 
 // String fields
-#define RRR_RAFT_OPT_FIELD_SERVER     "raft_server"
+#define RRR_RAFT_FIELD_LEADER_ADDRESS  "raft_leader_address"
+
+// Blob fields
+#define RRR_RAFT_FIELD_SERVER          "raft_server"
+
+const char *rrr_raft_reasons[] = {
+	"OK",
+	"ERROR",
+	"NOT LEADER",
+	"NOT FOUND"
+};
 
 enum rrr_raft_cmd {
 	RRR_RAFT_CMD_SERVER_ADD = 1,
@@ -176,85 +187,69 @@ static int __rrr_raft_message_store_get (
 	return ret;
 }
 
-static struct rrr_msg_msg *__rrr_raft_message_store_push (
+static int __rrr_raft_message_store_push (
 		struct rrr_raft_message_store *store,
-		struct rrr_msg_msg **msg
+		const struct rrr_msg_msg *msg_orig
 ) {
-	struct rrr_msg_msg *msg_save = NULL;
+	int ret = 0;
 
-	switch (MSG_TYPE(*msg)) {
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((msg = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
+		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	switch (MSG_TYPE(msg)) {
 		case MSG_TYPE_PUT: {
 			for (size_t i = 0; i < store->count; i++) {
 				if (store->msgs[i] == NULL)
 					continue;
 
-				if (rrr_msg_msg_topic_equals_msg(*msg, store->msgs[i])) {
+				if (rrr_msg_msg_topic_equals_msg(msg, store->msgs[i])) {
 					rrr_u32 value_orig = store->msgs[i]->msg_value;
 
 					rrr_free(store->msgs[i]);
-					store->msgs[i] = *msg;
+					store->msgs[i] = msg;
 
 					RRR_DBG_3("Raft replaced message in message store %u->%u topic '%.*s'\n",
-						value_orig, (*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
+						value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
 
 					goto out_consumed;
 				}
 			}
 		} break;
 		default:
-			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(*msg), __func__);
+			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(msg), __func__);
 	};
 
 	for (size_t i = 0; i < store->count; i++) {
 		if (store->msgs[i] != NULL)
 			continue;
 
-		store->msgs[i] = *msg;
+		store->msgs[i] = msg;
 
 		RRR_DBG_3("Raft inserted message into message store %u topic '%.*s' count is now %llu\n",
-			(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg), (unsigned long long) store->count);
+			msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg), (unsigned long long) store->count);
 
 		goto out_consumed;
 	}
 
-	if (__rrr_raft_message_store_expand(store) != 0) {
+	if ((ret = __rrr_raft_message_store_expand(store)) != 0) {
 		goto out;
 	}
 
-	store->msgs[store->count++] = *msg;
+	store->msgs[store->count++] = msg;
 
 	RRR_DBG_3("Raft pushed message to message store %u topic '%.*s'\n",
-		(*msg)->msg_value, MSG_TOPIC_LENGTH(*msg), MSG_TOPIC_PTR(*msg));
+		msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
 
 	out_consumed:
-		msg_save = *msg;
-		*msg = NULL;
+		msg = NULL;
 	out:
-		return msg_save;
-}
-
-static int __rrr_raft_message_store_push_const (
-		struct rrr_raft_message_store *store,
-		const struct rrr_msg_msg *msg
-) {
-	int ret = 0;
-
-	struct rrr_msg_msg *msg_new = NULL;
-
-	if ((msg_new = rrr_msg_msg_duplicate(msg)) == NULL) {
-		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	if (__rrr_raft_message_store_push(store, &msg_new) == NULL) {
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_new);
-	return ret;
+		RRR_FREE_IF_NOT_NULL(msg);
+		return ret;
 }
 
 static inline void *__rrr_raft_malloc (void *data, size_t size) {
@@ -376,6 +371,19 @@ static void __rrr_raft_channel_destroy (
 	rrr_free(channel);
 }
 
+static enum rrr_raft_code __rrr_raft_status_translate (
+		int status
+) {
+	switch (status) {
+		case 0:
+			return 0;
+		case RAFT_LEADERSHIPLOST:
+		case RAFT_NOTLEADER:
+			return RRR_RAFT_NOT_LEADER;
+	};
+
+	return RRR_RAFT_ERROR;
+}
 
 static int __rrr_raft_opt_array_field_server_get (
 		struct rrr_raft_server **result,
@@ -389,7 +397,7 @@ static int __rrr_raft_opt_array_field_server_get (
 
 	*result = 0;
 
-	if ((servers_count = rrr_array_value_count_tag(array, RRR_RAFT_OPT_FIELD_SERVER)) > 0) {
+	if ((servers_count = rrr_array_value_count_tag(array, RRR_RAFT_FIELD_SERVER)) > 0) {
 		if ((servers = rrr_allocate_zero(sizeof(*servers) * (servers_count + 1))) == NULL) {
 			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 			ret = 1;
@@ -401,7 +409,7 @@ static int __rrr_raft_opt_array_field_server_get (
 
 			value = rrr_array_value_get_by_tag_and_index_const (
 					array,
-					RRR_RAFT_OPT_FIELD_SERVER,
+					RRR_RAFT_FIELD_SERVER,
 					i
 			);
 
@@ -438,7 +446,7 @@ static int __rrr_raft_opt_array_field_server_push (
 
 	if ((ret = rrr_array_push_value_blob_with_tag_with_size (
 			array,
-			RRR_RAFT_OPT_FIELD_SERVER,
+			RRR_RAFT_FIELD_SERVER,
 			data,
 			data_size
 	)) != 0) {
@@ -449,7 +457,7 @@ static int __rrr_raft_opt_array_field_server_push (
 	return ret;
 }
 
-static int __rrr_raft_server_make_opt_response_leader_fields (
+static int __rrr_raft_server_make_opt_response_server_fields (
 		struct rrr_array *array,
 		struct raft *raft
 ) {
@@ -486,14 +494,35 @@ static int __rrr_raft_server_make_opt_response_leader_fields (
 				RRR_BUG("Unknown role %i in %s\n", raft_server->role, __func__);
 		};
 
-		if ((ret_tmp = raft_catch_up (raft, raft_server->id, &catch_up)) != 0) {
-			RRR_MSG_0("Failed to get catch up status for server %i in %s: %s %s\n",
-				raft_server->id, __func__, raft_errmsg(raft), raft_strerror(ret_tmp));
-			ret = 1;
-			goto out;
-		}
+		if (raft->state == RAFT_LEADER) {
+			if ((ret_tmp = raft_catch_up (raft, raft_server->id, &catch_up)) != 0) {
+				RRR_MSG_0("Failed to get catch up status for server %i in %s: %s %s\n",
+					raft_server->id, __func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
+			}
 
-		server_tmp.catch_up = catch_up;
+			switch (catch_up) {
+				case RAFT_CATCH_UP_NONE:
+					server_tmp.catch_up = RRR_RAFT_CATCH_UP_NONE;
+					break;
+				case RAFT_CATCH_UP_RUNNING:
+					server_tmp.catch_up = RRR_RAFT_CATCH_UP_RUNNING;
+					break;
+				case RAFT_CATCH_UP_ABORTED:
+					server_tmp.catch_up = RRR_RAFT_CATCH_UP_ABORTED;
+					break;
+				case RAFT_CATCH_UP_FINISHED:
+					server_tmp.catch_up = RRR_RAFT_CATCH_UP_FINISHED;
+					break;
+				default:
+					RRR_BUG("BUG: Unknown catch up code %i from raft library in %s\n",
+						catch_up, __func__);
+			};
+		}
+		else {
+			server_tmp.catch_up = RRR_RAFT_CATCH_UP_UNKNOWN;
+		}
 
 		if ((ret = __rrr_raft_opt_array_field_server_push (
 				array,
@@ -518,19 +547,36 @@ static int __rrr_raft_server_make_opt_response (
 
 	struct rrr_msg_msg *msg = NULL;
 	struct rrr_array array_tmp = {0};
+	raft_id leader_id;
+	const char *leader_address;
 
-	if ((ret = rrr_array_push_value_u64_with_tag (
+	raft_leader(raft, &leader_id, &leader_address);
+
+	ret |= rrr_array_push_value_i64_with_tag (
 			&array_tmp,
-			RRR_RAFT_OPT_FIELD_IS_LEADER,
+			RRR_RAFT_FIELD_IS_LEADER,
 			raft->state == RAFT_LEADER
-	)) != 0) {
-		RRR_MSG_0("Failed to push array value in %s\n", __func__);
+	);
+	ret |= rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			RRR_RAFT_FIELD_LEADER_ID,
+			leader_id
+	);
+	ret |= rrr_array_push_value_str_with_tag (
+			&array_tmp,
+			RRR_RAFT_FIELD_LEADER_ADDRESS,
+			leader_address != NULL ? leader_address : ""
+	);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to push array values in %s\n", __func__);
 		goto out;
 	}
 
-	if ((raft->state == RAFT_LEADER) &&
-	    (ret = __rrr_raft_server_make_opt_response_leader_fields(&array_tmp, raft)) != 0
-	) {
+	if ((ret = __rrr_raft_server_make_opt_response_server_fields (
+			&array_tmp,
+			raft
+	)) != 0) {
 		goto out;
 	}
 
@@ -563,12 +609,13 @@ static void __rrr_raft_server_server_change_cb (
 	struct rrr_raft_server_callback_data *callback_data = req->data;
 
 	struct rrr_msg msg_ack = {0};
+	enum rrr_raft_code code = __rrr_raft_status_translate(status);
 
 	assert(callback_data->change_req_index > 0);
 
 	rrr_msg_populate_control_msg (
 			&msg_ack,
-			status == 0 ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK,
+			status == 0 ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
 			callback_data->change_req_index
 	);
 	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
@@ -586,6 +633,7 @@ static void __rrr_raft_server_leadership_transfer_cb (
 	const char *address;
 	raft_id id;
 	struct rrr_msg msg_ack = {0};
+	enum rrr_raft_code code = RRR_RAFT_ERROR;
 
 	assert(callback_data->transfer_req_index > 0);
 
@@ -600,7 +648,7 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	rrr_msg_populate_control_msg (
 			&msg_ack,
-			req->id == 0 || id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK,
+			req->id == 0 || id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
 			callback_data->transfer_req_index
 	);
 	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
@@ -635,7 +683,7 @@ static int __rrr_raft_server_handle_cmd (
 	if (rrr_array_get_value_signed_64_by_tag (
 			&cmd,
 			&array_tmp,
-			RRR_RAFT_OPT_FIELD_CMD,
+			RRR_RAFT_FIELD_CMD,
 			0
 	) != 0) {
 		RRR_BUG("BUG: Command field missing in %s\n", __func__);
@@ -664,7 +712,7 @@ static int __rrr_raft_server_handle_cmd (
 			if (rrr_array_get_value_signed_64_by_tag (
 					&id,
 					&array_tmp,
-					RRR_RAFT_OPT_FIELD_ID,
+					RRR_RAFT_FIELD_ID,
 					0
 			) != 0) {
 				RRR_BUG("BUG: ID field not set in transfer command in %s\n", __func__);
@@ -809,9 +857,10 @@ static void __rrr_raft_server_apply_cb (
 	struct rrr_msg_msg *msg_orig = result;
 
 	struct rrr_msg msg_ack = {0};
+	enum rrr_raft_code code = __rrr_raft_status_translate(status);
 
-	if (status != 0) {
-		if (status != RAFT_LEADERSHIPLOST) {
+	if (code != 0) {
+		if (code != RRR_RAFT_NOT_LEADER) {
 			RRR_MSG_0("Warning: Apply error: %s (%d)\n",
 				raft_errmsg(callback_data->raft), status);
 		}
@@ -823,7 +872,7 @@ static void __rrr_raft_server_apply_cb (
 		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_ACK, msg_orig->msg_value);
 		goto send_msg;
 	nack:
-		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_NACK, msg_orig->msg_value);
+		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_NACK_REASON(code), msg_orig->msg_value);
 		goto send_msg;
 
 	send_msg:
@@ -831,6 +880,7 @@ static void __rrr_raft_server_apply_cb (
 
 	goto out;
 	out:
+		rrr_free(result);
 		raft_free(req);
 }
 
@@ -881,7 +931,7 @@ static int __rrr_raft_server_read_msg_cb (
 				(*message)
 		)) != 0) {
 			if (ret == RRR_READ_INCOMPLETE) {
-				rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
+				rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_ENOENT), (*message)->msg_value);
 				ret = 0;
 				goto out_send_msg;
 			}
@@ -892,7 +942,7 @@ static int __rrr_raft_server_read_msg_cb (
 
 	if (raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
-		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK, (*message)->msg_value);
+		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_NOT_LEADER), (*message)->msg_value);
 		goto out_send_msg;
 	}
 
@@ -1134,7 +1184,7 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	int ret = 0;
 
-	struct rrr_msg_msg *msg_tmp, *msg_save;
+	struct rrr_msg_msg *msg_tmp;
 
 	*result = NULL;
 
@@ -1150,7 +1200,7 @@ static int __rrr_raft_server_fsm_apply_cb (
 	RRR_DBG_3("Raft message %i being applied in state machine in server %i\n",
 		msg_tmp->msg_value, callback_data->server_id);
 
-	if ((msg_save = __rrr_raft_message_store_push(callback_data->message_store_state, &msg_tmp)) == NULL) {
+	if ((ret = __rrr_raft_message_store_push(callback_data->message_store_state, msg_tmp)) != 0) {
 		RRR_MSG_0("Failed to push message to message store during application to state machine in server %i\n",
 			callback_data->server_id);
 		callback_data->ret = 1;
@@ -1161,10 +1211,11 @@ static int __rrr_raft_server_fsm_apply_cb (
 	// If we are leader, the apply_cb giving feedback to
 	// the client must see the message which has been applied
 	// successfully to the state machine.
-	*result = msg_save;
+	*result = msg_tmp;
+	msg_tmp = NULL;
 
 	out_free:
-		rrr_free(msg_tmp);
+		RRR_FREE_IF_NOT_NULL(msg_tmp);
 	out:
 		return ret;
 }
@@ -1264,7 +1315,7 @@ static int __rrr_raft_server_fsm_restore_cb (
 		RRR_DBG_3("Raft message %i being applied in state machine in server %i during restore\n",
 			msg->msg_value, callback_data->server_id);
 
-		if ((ret = __rrr_raft_message_store_push_const (
+		if ((ret = __rrr_raft_message_store_push (
 				callback_data->message_store_state,
 				msg
 		)) != 0) {
@@ -1529,7 +1580,8 @@ static int __rrr_raft_client_read_msg_cb (
 
 	uint16_t version_dummy;
 	struct rrr_array array_tmp = {0};
-	uint64_t is_leader;
+	int64_t is_leader, leader_id;
+	char *leader_address = NULL;
 	struct rrr_raft_server *servers = NULL;
 
 	switch (MSG_TYPE(*message)) {
@@ -1545,13 +1597,31 @@ static int __rrr_raft_client_read_msg_cb (
 				goto out;
 			}
 
-			if (rrr_array_get_value_unsigned_64_by_tag (
+			if (rrr_array_get_value_signed_64_by_tag (
 					&is_leader,
 					&array_tmp,
-					RRR_RAFT_OPT_FIELD_IS_LEADER,
+					RRR_RAFT_FIELD_IS_LEADER,
 					0
 			) != 0) {
 				RRR_BUG("BUG: Failed to get is leader value from OPT message in %s\n", __func__);
+			}
+
+			if (rrr_array_get_value_signed_64_by_tag (
+					&leader_id,
+					&array_tmp,
+					RRR_RAFT_FIELD_LEADER_ID,
+					0
+			) != 0) {
+				RRR_BUG("BUG: Failed to get leader ID value from OPT message in %s\n", __func__);
+			}
+
+			if ((ret = rrr_array_get_value_str_by_tag (
+					&leader_address,
+					&array_tmp,
+					RRR_RAFT_FIELD_LEADER_ADDRESS
+			)) != 0) {
+				RRR_MSG_0("Failed to get leader address value from OPT message in %s\n", __func__);
+				goto out;
 			}
 
 			if ((ret = __rrr_raft_opt_array_field_server_get (
@@ -1566,6 +1636,8 @@ static int __rrr_raft_client_read_msg_cb (
 					channel->server_id,
 					(*message)->msg_value,
 					is_leader,
+					leader_id,
+					leader_address,
 					&servers,
 					channel->callbacks.arg
 			);
@@ -1586,6 +1658,8 @@ static int __rrr_raft_client_read_msg_cb (
 	};
 
 	out:
+	rrr_array_clear(&array_tmp);
+	RRR_FREE_IF_NOT_NULL(leader_address);
 	RRR_FREE_IF_NOT_NULL(servers);
 	return ret;
 }
@@ -1600,15 +1674,18 @@ static int __rrr_raft_client_read_msg_ctrl_cb (
 	(void)(arg1);
 	(void)(arg2);
 
-	switch (RRR_MSG_CTRL_FLAGS(message) & ~(RRR_MSG_CTRL_F_RESERVED)) {
+	enum rrr_raft_code code = RRR_MSG_CTRL_REASON(message);
+
+	switch (RRR_MSG_CTRL_FLAGS(message) & ~(RRR_MSG_CTRL_F_RESERVED|RRR_MSG_CTRL_F_NACK_REASON_MASK)) {
 		case RRR_MSG_CTRL_F_PONG:
 			channel->callbacks.pong_callback(channel->server_id, channel->callbacks.arg);
 			break;
 		case RRR_MSG_CTRL_F_ACK:
-			channel->callbacks.ack_callback(channel->server_id, message->msg_value, 1 /* ack */, channel->callbacks.arg);
+			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
 			break;
 		case RRR_MSG_CTRL_F_NACK:
-			channel->callbacks.ack_callback(channel->server_id, message->msg_value, 0 /* nack */, channel->callbacks.arg);
+			printf("%s nack %u\n", __func__, message->msg_value);
+			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
 			break;
 		default:
 			RRR_BUG("BUG: Unknown flags %u in %s\n",
@@ -1673,6 +1750,13 @@ static void __rrr_cmodule_raft_server_log_hook (RRR_LOG_HOOK_ARGS) {
 	assert(0 && "log hook not implemented");
 }
 */
+
+const char *rrr_raft_reason_to_str (
+		enum rrr_raft_code code
+) {
+	assert(code < sizeof(rrr_raft_reasons)/sizeof(*rrr_raft_reasons));
+	return rrr_raft_reasons[code];
+}
 
 int rrr_raft_fork (
 		struct rrr_raft_channel **result,
@@ -1918,27 +2002,30 @@ int rrr_raft_client_request_put (
 int rrr_raft_client_request_put_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
-		struct rrr_msg_msg **msg_consumed
+		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg;
+	struct rrr_msg_msg *msg_new;
 
-	msg = *msg_consumed;
-	*msg_consumed = NULL;
+	if ((msg_new = rrr_msg_msg_duplicate(msg)) == NULL) {
+		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
 
-	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+	MSG_SET_TYPE(msg_new, MSG_TYPE_PUT);
 
 	if ((ret = __rrr_raft_client_request_native (
 			req_index,
 			channel,
-			msg
+			msg_new
 	)) != 0) {
 		goto out;
 	}
 
 	out:
-	rrr_free(msg);
+	RRR_FREE_IF_NOT_NULL(msg_new);
 	return ret;
 }
 
@@ -2003,7 +2090,7 @@ static int __rrr_raft_client_servers_change (
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp,
-			RRR_RAFT_OPT_FIELD_CMD,
+			RRR_RAFT_FIELD_CMD,
 			cmd
 	)) != 0) {
 		goto out;
@@ -2048,7 +2135,7 @@ static int __rrr_raft_client_leadership_transfer (
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp,
-			RRR_RAFT_OPT_FIELD_CMD,
+			RRR_RAFT_FIELD_CMD,
 			RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER
 	)) != 0) {
 		goto out;
@@ -2056,7 +2143,7 @@ static int __rrr_raft_client_leadership_transfer (
 
 	if ((ret = rrr_array_push_value_i64_with_tag (
 			&array_tmp,
-			RRR_RAFT_OPT_FIELD_ID,
+			RRR_RAFT_FIELD_ID,
 			server_id
 	)) != 0) {
 		goto out;

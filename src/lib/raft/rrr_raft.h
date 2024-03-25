@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <stddef.h>
+#include <assert.h>
 
 #define RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS             \
     int server_id,                                     \
@@ -32,13 +33,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS              \
     int server_id,                                     \
     uint32_t req_index,                                \
-    int ok,                                            \
+    enum rrr_raft_code code,                           \
     void *arg
 
 #define RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS              \
     int server_id,                                     \
     uint32_t req_index,                                \
-    uint64_t is_leader,                                \
+    int64_t is_leader,                                 \
+    int64_t leader_id,                                 \
+    const char *leader_address,                        \
     struct rrr_raft_server **servers,                  \
     void *arg
 
@@ -59,6 +62,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     ((s) == RRR_RAFT_CATCH_UP_ABORTED ? "ABORTED" :                  \
     ((s) == RRR_RAFT_CATCH_UP_FINISHED ? "FINISHED" : "UNKNOWN"))))
 
+// Maximum four bits
+enum rrr_raft_code {
+	RRR_RAFT_OK = 0,
+	RRR_RAFT_ERROR,
+	RRR_RAFT_NOT_LEADER,
+	RRR_RAFT_ENOENT
+};
+
 enum rrr_raft_status {
 	RRR_RAFT_STANDBY = 1,
 	RRR_RAFT_VOTER,
@@ -69,7 +80,8 @@ enum rrr_raft_catch_up {
 	RRR_RAFT_CATCH_UP_NONE = 0,
 	RRR_RAFT_CATCH_UP_RUNNING,
 	RRR_RAFT_CATCH_UP_ABORTED,
-	RRR_RAFT_CATCH_UP_FINISHED
+	RRR_RAFT_CATCH_UP_FINISHED,
+	RRR_RAFT_CATCH_UP_UNKNOWN
 };
 
 struct rrr_fork_handler;
@@ -84,6 +96,9 @@ struct rrr_raft_server {
 	char address[64];
 } __attribute__((packed));
 
+const char *rrr_raft_reason_to_str (
+		enum rrr_raft_code code
+);
 int rrr_raft_fork (
 		struct rrr_raft_channel **result,
 		struct rrr_fork_handler *fork_handler,
@@ -113,7 +128,7 @@ int rrr_raft_client_request_put (
 int rrr_raft_client_request_put_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
-		struct rrr_msg_msg **msg_consumed
+		const struct rrr_msg_msg *msg
 );
 int rrr_raft_client_request_opt (
 		uint32_t *req_index,

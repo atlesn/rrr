@@ -232,19 +232,26 @@ static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	// TEST_MSG("%s %u received server %i\n",
 	//	(ok ? "ACK" : "NACK"), req_index, server_id);
 
-	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, ok);
+	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, code == 0);
 }
 
 static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	int leader_index;
+	(void)(leader_address);
+
 	struct rrr_raft_server *server;
 	size_t servers_delete_pos = 0;
 
 	TEST_MSG("OPT %u received server %i is leader: %" PRIi64 "\n",
 		req_index, server_id, is_leader);
 
+	if (leader_id > 0) {
+		callback_data->leader_index = leader_id - 1;
+		assert(callback_data->leader_index >= 0 && callback_data->leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
+	}
+
+	// Read servers only from leader to get correct catch-up status
 	if (is_leader) {
 		for (server = *servers; server->id > 0; server++) {
 			TEST_MSG("- Found member %" PRIi64 " address %s status %s catch up %s\n",
@@ -261,9 +268,6 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 				callback_data->servers_delete[servers_delete_pos++] = *server;
 			}
 		}
-
-		leader_index = callback_data->leader_index = server_id - 1;
-		assert(leader_index >= 0 && leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 
 		RRR_FREE_IF_NOT_NULL(*callback_data->servers);
 		*callback_data->servers = *servers;
