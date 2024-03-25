@@ -117,10 +117,10 @@ static int raft_parse_config (struct raft_data *data, struct rrr_instance_config
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map (
 			&data->servers,
 			config,
-			"raft_servers",
+			"raft_nodes",
 			"->"
 	)) != 0) {
-		RRR_MSG_0("Failed to parse parameter raft_servers of raft instance %s\n",
+		RRR_MSG_0("Failed to parse parameter raft_nodes of raft instance %s\n",
 			config->name);
 		goto out;
 	}
