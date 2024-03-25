@@ -282,6 +282,19 @@ static inline void __rrr_raft_aligned_free (void *data, size_t alignment, void *
 	return rrr_aligned_free(alignment, ptr);
 }
 
+static void __rrr_raft_tracer_emit_cb (
+		struct raft_tracer *t,
+		int type,
+		const void *info
+) {
+	struct rrr_raft_server_callback_data *callback_data = t->impl;
+
+	(void)(t);
+	(void)(info);
+
+	RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
+}
+
 static void __rrr_raft_channel_after_fork_client (
 		struct rrr_raft_channel *channel
 ) {
@@ -1186,6 +1199,11 @@ static int __rrr_raft_server (
 		__rrr_raft_aligned_alloc, /* aligned_alloc */
 		__rrr_raft_aligned_free   /* aligned_free */
 	};
+	struct raft_tracer rrr_raft_tracer = {
+		NULL,
+		2,
+		__rrr_raft_tracer_emit_cb
+	};
 
 	__rrr_raft_channel_fds_get(channel_fds, channel);
 	rrr_socket_close_all_except_array_no_unlink(channel_fds, sizeof(channel_fds)/sizeof(channel_fds[0]));
@@ -1232,6 +1250,10 @@ static int __rrr_raft_server (
 		ret = 1;
 		goto out_raft_uv_tcp_close;
 	}
+
+	rrr_raft_tracer.impl = &callback_data;
+
+	raft_uv_set_tracer(&io, &rrr_raft_tracer);
 
 	fsm.version = 2;
 	fsm.apply = __rrr_raft_server_fsm_apply_cb;
