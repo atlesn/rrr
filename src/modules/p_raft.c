@@ -47,9 +47,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RAFT_DEFAULT_PORT 9001
 #define RAFT_PATH_BASE "/tmp/rrr-raft"
 
+enum raft_req_type {
+	RAFT_REQ_PUT,
+	RAFT_REQ_LEADERSHIP_TRANSFER
+};
+
+#define RAFT_REQ_TYPE_TO_STR(type)                                                   \
+    ((type) == RAFT_REQ_PUT ? "PUT" :                                                \
+    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN"))
+
 struct raft_request {
 	uint32_t req_index;
 	struct rrr_msg_msg *msg_orig;
+	enum raft_req_type req_type;
 };
 
 struct raft_request_collection {
@@ -60,13 +70,15 @@ struct raft_request_collection {
 static int raft_request_init (
 		struct raft_request *request,
 		uint32_t req_index,
+		enum raft_req_type req_type,
 		const struct rrr_msg_msg *msg_orig
 ) {
 	int ret = 0;
 
 	request->req_index = req_index;
+	request->req_type = req_type;
 
-	if ((request->msg_orig = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
+	if (msg_orig != NULL && (request->msg_orig = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
 		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
 		ret = 1;
 		goto out;
@@ -89,13 +101,12 @@ static struct raft_request raft_request_collection_consume (
 ) {
 	struct raft_request result;
 
-	printf("== consume req %u\n", req_index);
-
 	for (size_t i = 0; i < collection->capacity; i++) {
 		if (collection->requests[i].req_index == req_index) {
-			 result = collection->requests[i];
-			 collection->requests[i] = (struct raft_request) {0};
-			 return result;
+			result = collection->requests[i];
+			collection->requests[i] = (struct raft_request) {0};
+			printf("== consume req %u type %s\n", req_index, RAFT_REQ_TYPE_TO_STR(result.req_type));
+			return result;
 		}
 	}
 
@@ -105,11 +116,13 @@ static struct raft_request raft_request_collection_consume (
 static int raft_request_collection_push (
 		struct raft_request_collection *collection,
 		uint32_t req_index,
+		enum raft_req_type req_type,
 		const struct rrr_msg_msg *msg_orig
 ) {
 	int ret = 0;
 
-	printf("== push   req %u cap %lu\n", req_index, collection->capacity);
+	printf("== push   req %u type %s cap %lu\n",
+		req_index, RAFT_REQ_TYPE_TO_STR(req_type), collection->capacity);
 
 	struct raft_request *target = NULL, *requests_new;
 	size_t capacity_new;
@@ -137,7 +150,7 @@ static int raft_request_collection_push (
 	collection->capacity = capacity_new;
 
 	target_found:
-		if ((ret = raft_request_init(target, req_index, msg_orig)) != 0) {
+		if ((ret = raft_request_init(target, req_index, req_type, msg_orig)) != 0) {
 			goto out;
 		}
 	out:
@@ -156,7 +169,10 @@ static void raft_request_collection_clear (
 
 struct raft_data {
 	struct rrr_instance_runtime_data *thread_data;
+
 	struct rrr_map servers;
+	rrr_setting_uint preferred_leader;
+
 	struct rrr_raft_channel *channel;
 	struct raft_request_collection requests;
 	int is_leader;
@@ -208,10 +224,11 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	// Message must be copied as the data is protected by entry lock
+	// Message must be copied while the data is protected by entry lock
 	if ((ret = raft_request_collection_push (
 			&data->requests,
 			req_index,
+			RAFT_REQ_PUT,
 			message
 	)) != 0) {
 		goto out;
@@ -246,6 +263,16 @@ static int raft_parse_config (struct raft_data *data, struct rrr_instance_config
 		goto out;
 	}
 
+	// TODO : Parse status message parameter
+	
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("raft_preferred_leader", preferred_leader, 0);
+	if (data->preferred_leader > INT32_MAX) {
+		RRR_MSG_0("Field preferred_leader out of rang in raft instance %s, (%llu>%i)\n",
+			config->name, (unsigned long long) data->preferred_leader, INT32_MAX);
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -268,42 +295,52 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	request = raft_request_collection_consume (&data->requests, req_index);
 	msg = request.msg_orig;
 
-	ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
-		&array_tmp,
-		"raft_topic",
-		MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
-		MSG_TOPIC_LENGTH(msg)
-	);
-	ret_tmp |= rrr_array_push_value_i64_with_tag (
-		&array_tmp,
-		"raft_status",
-		code == RRR_RAFT_OK
-	);
-	ret_tmp |= rrr_array_push_value_str_with_tag (
-		&array_tmp,
-		"raft_reason",
-		rrr_raft_reason_to_str(code)
-	);
-	ret_tmp |= rrr_array_push_value_i64_with_tag (
-		&array_tmp,
-		"raft_server_id",
-		server_id
-	);
-	ret_tmp |= rrr_array_push_value_i64_with_tag (
-		&array_tmp,
-		"raft_leader_id",
-		data->leader_id
-	);
-	ret_tmp |= rrr_array_push_value_str_with_tag (
-		&array_tmp,
-		"raft_leader_address",
-		data->leader_address
-	);
-
-	if (ret_tmp != 0) {
-		RRR_MSG_0("Warning: Failed to add array values in %s\n", __func__);
-		goto out;
-	}
+	switch (request.req_type) {
+		case RAFT_REQ_PUT: {
+			ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
+				&array_tmp,
+				"raft_topic",
+				MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
+				MSG_TOPIC_LENGTH(msg)
+			);
+			ret_tmp |= rrr_array_push_value_i64_with_tag (
+				&array_tmp,
+				"raft_status",
+				code == RRR_RAFT_OK
+			);
+			ret_tmp |= rrr_array_push_value_str_with_tag (
+				&array_tmp,
+				"raft_reason",
+				rrr_raft_reason_to_str(code)
+			);
+			ret_tmp |= rrr_array_push_value_i64_with_tag (
+				&array_tmp,
+				"raft_server_id",
+				server_id
+			);
+			ret_tmp |= rrr_array_push_value_i64_with_tag (
+				&array_tmp,
+				"raft_leader_id",
+				data->leader_id
+			);
+			ret_tmp |= rrr_array_push_value_str_with_tag (
+				&array_tmp,
+				"raft_leader_address",
+				data->leader_address
+			);
+			if (ret_tmp != 0) {
+				RRR_MSG_0("Warning: Failed to add array values in %s\n", __func__);
+				goto out;
+			}
+		} break;
+		case RAFT_REQ_LEADERSHIP_TRANSFER: {
+			RRR_DBG_1("Result of leadership transfer in raft instance %s: %s\n",
+				INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+		} break;
+		default: {
+			RRR_BUG("BUG: Unknown type %i in %s\n", request.req_type, __func__);
+		} break;
+	};
 
 	if (code != RRR_RAFT_OK) {
 		RRR_MSG_0("Warning: A request failed in raft instance %s, negative ACK with reason '%s' was received from the node.\n",
@@ -315,6 +352,35 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	rrr_array_clear(&array_tmp);
 }
 
+static int raft_leadership_transfer (
+		struct raft_data *data,
+		int server_id
+) {
+	int ret = 0;
+
+	uint32_t req_index;
+
+	if ((ret = rrr_raft_client_leadership_transfer (
+			&req_index,
+			data->channel,
+			server_id
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = raft_request_collection_push (
+			&data->requests,
+			req_index,
+			RAFT_REQ_LEADERSHIP_TRANSFER,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
@@ -322,6 +388,24 @@ static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	(void)(data);
 
 	struct rrr_raft_server *server;
+
+	strncpy(data->leader_address, leader_address, sizeof(data->leader_address));
+	data->leader_address[sizeof(data->leader_address) - 1] = '\0';
+
+	data->leader_id = leader_id;
+
+	if (is_leader && data->preferred_leader > 0 && (int) data->preferred_leader != leader_id) {
+		RRR_DBG_1("Raft instance %s id %i transferring leadership to %llu per configuration\n",
+			INSTANCE_D_NAME(data->thread_data), server_id, (unsigned long long) data->preferred_leader);
+
+		assert(data->preferred_leader <= INT32_MAX);
+		if (raft_leadership_transfer(data, (int) data->preferred_leader) != 0) {
+			RRR_MSG_0("Warning: Failed to transfer leadership to %llu in raft instance %s\n",
+				(unsigned long long) data->preferred_leader,
+				INSTANCE_D_NAME(data->thread_data)
+			);
+		}
+	}
 
 	if (is_leader) {
 		RRR_DBG_1("Raft instance %s id %i is leader, cluster status for all nodes:\n",
@@ -333,12 +417,7 @@ static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 			INSTANCE_D_NAME(data->thread_data), server_id);
 		data->is_leader = 0;
 	}
-
-	strncpy(data->leader_address, leader_address, sizeof(data->leader_address));
-	data->leader_address[sizeof(data->leader_address) - 1] = '\0';
-
-	data->leader_id = leader_id;
-
+	
 	for (server = *servers; server->id > 0; server++) {
 		RRR_DBG_1("- %s id %" PRIi64 " status %s catch up %s\n",
 			server->address,

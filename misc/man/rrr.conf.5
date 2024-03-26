@@ -3065,6 +3065,11 @@ If set to no or left unset, no status messages will be emitted.
 
 The following array fields will be present in all status messages:
 
+.It raft_preferred_leader=UNSIGNED INTEGER
+If the current node becomes cluster leader, and this parameter is set to a non-zero value, it will
+try to transfer the leadership to the node with the ID specified.
+If set to zero or left unset, the current node will continue to be a leader.
+
 .Bl -tag -width -indent
 .It raft_topic
 The original topic of the message this status message applies to or empty string if there was no topic

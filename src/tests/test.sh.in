@@ -150,6 +150,16 @@ do_test_simple test_cacher_4.conf
 rm -rf /tmp/rrr-test-msgdb* || exit 1
 # End message DB tests
 
+# Begin raft tests
+rm -rf /tmp/rrr-raft
+mkdir -p /tmp/rrr-raft/1
+mkdir -p /tmp/rrr-raft/2
+
+do_test_simple test_raft.conf 
+
+rm -rf /tmp/rrr-raft
+# End raft tests
+
 do_test_websocket test_websocket.conf
 
 do_test_ip test_ip.conf
