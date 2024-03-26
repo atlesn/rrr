@@ -172,6 +172,7 @@ struct raft_data {
 
 	struct rrr_map servers;
 	rrr_setting_uint preferred_leader;
+	int do_status_messages;
 
 	struct rrr_raft_channel *channel;
 	struct raft_request_collection requests;
@@ -263,8 +264,8 @@ static int raft_parse_config (struct raft_data *data, struct rrr_instance_config
 		goto out;
 	}
 
-	// TODO : Parse status message parameter
-	
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("raft_status_messages", do_status_messages, 0);
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("raft_preferred_leader", preferred_leader, 0);
 	if (data->preferred_leader > INT32_MAX) {
 		RRR_MSG_0("Field preferred_leader out of rang in raft instance %s, (%llu>%i)\n",
@@ -274,6 +275,48 @@ static int raft_parse_config (struct raft_data *data, struct rrr_instance_config
 	}
 
 	out:
+	return ret;
+}
+
+struct raft_message_broker_callback_data {
+	struct raft_data *data;
+	const struct rrr_array *array;
+};
+
+static int raft_message_broker_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	struct raft_message_broker_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = rrr_array_new_message_from_array (
+			&msg,
+			callback_data->array,
+			rrr_time_get_64(),
+			NULL,
+			0
+	)) != 0) {
+		RRR_MSG_0("Warning: Failed to create status message in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_msg_holder_set_unlocked (
+			new_entry,
+			msg,
+			MSG_TOTAL_SIZE(msg),
+			NULL,
+			0,
+			0
+	);
+	msg = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	rrr_msg_holder_unlock(new_entry);
 	return ret;
 }
 
@@ -290,64 +333,105 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	int ret_tmp = 0;
 	struct rrr_array array_tmp = {0};
 	struct raft_request request;
-	struct rrr_msg_msg *msg;
+	const struct rrr_msg_msg *msg;
+	struct rrr_msg_msg *msg_new = NULL;
 
 	request = raft_request_collection_consume (&data->requests, req_index);
 	msg = request.msg_orig;
 
+	if (code != RRR_RAFT_OK) {
+		RRR_MSG_0("Warning: A request failed in raft instance '%s', negative ACK with reason '%s' was received from the node.\n",
+			INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+	}
+
+	ret_tmp |= rrr_array_push_value_str_with_tag (
+			&array_tmp,
+			"raft_command",
+			RAFT_REQ_TYPE_TO_STR(request.req_type)
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			"raft_status",
+			code == RRR_RAFT_OK
+	);
+	ret_tmp |= rrr_array_push_value_str_with_tag (
+			&array_tmp,
+			"raft_reason",
+			rrr_raft_reason_to_str(code)
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			"raft_server_id",
+			server_id
+	);
+	ret_tmp |= rrr_array_push_value_i64_with_tag (
+			&array_tmp,
+			"raft_leader_id",
+			data->leader_id
+	);
+	ret_tmp |= rrr_array_push_value_str_with_tag (
+			&array_tmp,
+			"raft_leader_address",
+			data->leader_address
+	);
+
 	switch (request.req_type) {
 		case RAFT_REQ_PUT: {
+			RRR_DBG_2("Result of message store of message with topic %.*s in raft instance %s: %s\n",
+				MSG_TOPIC_LENGTH(msg),
+				MSG_TOPIC_PTR(msg),
+				INSTANCE_D_NAME(data->thread_data),
+				rrr_raft_reason_to_str(code)
+			);
+
 			ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
 				&array_tmp,
 				"raft_topic",
 				MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
 				MSG_TOPIC_LENGTH(msg)
 			);
-			ret_tmp |= rrr_array_push_value_i64_with_tag (
-				&array_tmp,
-				"raft_status",
-				code == RRR_RAFT_OK
-			);
-			ret_tmp |= rrr_array_push_value_str_with_tag (
-				&array_tmp,
-				"raft_reason",
-				rrr_raft_reason_to_str(code)
-			);
-			ret_tmp |= rrr_array_push_value_i64_with_tag (
-				&array_tmp,
-				"raft_server_id",
-				server_id
-			);
-			ret_tmp |= rrr_array_push_value_i64_with_tag (
-				&array_tmp,
-				"raft_leader_id",
-				data->leader_id
-			);
-			ret_tmp |= rrr_array_push_value_str_with_tag (
-				&array_tmp,
-				"raft_leader_address",
-				data->leader_address
-			);
-			if (ret_tmp != 0) {
-				RRR_MSG_0("Warning: Failed to add array values in %s\n", __func__);
-				goto out;
-			}
 		} break;
 		case RAFT_REQ_LEADERSHIP_TRANSFER: {
 			RRR_DBG_1("Result of leadership transfer in raft instance %s: %s\n",
 				INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+
+			ret_tmp |= rrr_array_push_value_str_with_tag (
+				&array_tmp,
+				"raft_topic",
+				""
+			);
 		} break;
 		default: {
-			RRR_BUG("BUG: Unknown type %i in %s\n", request.req_type, __func__);
+			RRR_BUG("BUG: Unknown request type %i in %s\n", request.req_type, __func__);
 		} break;
 	};
 
-	if (code != RRR_RAFT_OK) {
-		RRR_MSG_0("Warning: A request failed in raft instance %s, negative ACK with reason '%s' was received from the node.\n",
-			INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+	if (ret_tmp != 0) {
+		RRR_MSG_0("Warning: Failed to add array values in %s\n", __func__);
+		goto out;
+	}
+
+	struct raft_message_broker_callback_data callback_data = {
+		data,
+		&array_tmp
+	};
+
+	if (rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			NULL,
+			raft_message_broker_callback,
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	)) {
+		RRR_MSG_0("Warning: Failed to write message to broker in %s\n", __func__);
+		goto out;
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_new);
 	raft_request_clear(&request);
 	rrr_array_clear(&array_tmp);
 }

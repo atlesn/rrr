@@ -222,7 +222,8 @@ int test_init (RRR_INSTANCE_INIT_ARGS) {
 	out_error:
 		data_cleanup(data);
 	out:
-		RRR_DBG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+		RRR_DBG_1 ("Thread configuration test instance %s initialization complete\n",
+			INSTANCE_D_MODULE_NAME(thread_data));
 		return ret;
 }
 
@@ -253,6 +254,9 @@ void test_deinit (RRR_INSTANCE_DEINIT_ARGS) {
 	rrr_event_receiver_reset(INSTANCE_D_EVENTS_H(thread_data));
 
 	*deinit_complete = 1;
+
+	RRR_DBG_1 ("Thread configuration test instance %s exiting\n",
+		INSTANCE_D_MODULE_NAME(thread_data));
 }
 
 static const char *module_name = "test_module";

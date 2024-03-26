@@ -3059,31 +3059,47 @@ The address of this node must be first in this list, and the address and port wi
 for connections from other nodes.
 
 .It raft_status_messages={yes|no}
-If set to yes, status messages will be emitted to inform on whether or not messages were stored.
+If set to yes, status messages will be emitted to inform on whether or not messages were stored as well as for internally generated commands.
 The status messages will have no topic set.
 If set to no or left unset, no status messages will be emitted.
 
 The following array fields will be present in all status messages:
 
+.Bl -tag -width -indent
+.It raft_command
+A string describing the command for which the status message applies. May be one of the following values:
+
+.Bl -tag -width -indent
+.It PUT
+A message store attempt
+.It LEADERSHIP TRANSFER
+An attempt of leadership transfer to another node
+.El
+
+.It raft_status
+Either number 1 or 0 where 1 indicates success and 0 indicates failure
+
+.It raft_reason
+A string with a more detailed error description
+
+.It raft_server_id
+The ID of the node which generated this message
+
+.It raft_leader_id
+The ID of the current leader of the cluster or 0 if there is no known leader
+
+.It raft_leader_address
+The hostname or address of the current leader of the cluster or empty string if there is no known leader
+
+.It raft_topic
+The original topic of the message this status message applies to or empty string if there was no topic
+
+.El
+
 .It raft_preferred_leader=UNSIGNED INTEGER
 If the current node becomes cluster leader, and this parameter is set to a non-zero value, it will
 try to transfer the leadership to the node with the ID specified.
 If set to zero or left unset, the current node will continue to be a leader.
-
-.Bl -tag -width -indent
-.It raft_topic
-The original topic of the message this status message applies to or empty string if there was no topic
-.It raft_status
-Either number 1 or 0 where 1 indicates success and 0 indicates failure
-.It raft_reason
-A string with a more detailed error description
-.It raft_server_id
-The ID of the node which generated this message
-.It raft_leader_id
-The ID of the current leader of the cluster or 0 if there is no known leader
-.It raft_leader_address
-The hostname or address of the current leader of the cluster or empty string if there is no known leader
-.El
 
 .El
 
