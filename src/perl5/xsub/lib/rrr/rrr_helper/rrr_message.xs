@@ -88,19 +88,19 @@ rrr_perl5_message_ip_set (message,ip,port)
 	const char *ip
 	UV port
 
-#define PPCODE_PUSH_AV_TO_STACK()						\
-		if (RETVAL == NULL) {							\
-			EXTEND(SP, 1);								\
-			XSRETURN_UNDEF; /* Push undef and return */	\
-		}												\
-		int len = av_len(RETVAL) + 1;					\
-		if (len > 0) {									\
-			EXTEND(SP, len);							\
-			for (int i = 0; i < len; i++) {				\
-				PUSHs(sv_2mortal(av_shift(RETVAL)));	\
-			}											\
-		}												\
-		SvREFCNT_dec((SV*)RETVAL)
+#define PPCODE_PUSH_AV_TO_STACK()                          \
+    if (RETVAL == NULL) {                                  \
+        EXTEND(SP, 1);                                     \
+        XSRETURN_UNDEF; /* Push undef and return */        \
+    }                                                      \
+    int len = av_len(RETVAL) + 1;                          \
+    if (len > 0) {                                         \
+        EXTEND(SP, len);                                   \
+        for (int i = 0; i < len; i++) {                    \
+            PUSHs(sv_2mortal(av_shift(RETVAL)));           \
+        }                                                  \
+    }                                                      \
+    SvREFCNT_dec((SV*)RETVAL)                              \
 
 AV *
 rrr_perl5_message_ip_get (message)
