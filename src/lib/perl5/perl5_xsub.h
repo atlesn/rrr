@@ -46,6 +46,8 @@ AV *rrr_perl5_message_ip_get (HV *hv);
 unsigned int rrr_perl5_message_ip_clear (HV *hv);
 SV *rrr_perl5_message_ip_get_protocol (HV *hv);
 unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol);
+unsigned int rrr_perl5_message_type_set (HV *hv, UV type);
+UV rrr_perl5_message_type_get (HV *hv);
 AV *rrr_perl5_message_get_tag_all (HV *hv, const char *tag);
 AV *rrr_perl5_message_get_position (HV *hv, UV pos);
 SV *rrr_perl5_message_count_positions (HV *hv);

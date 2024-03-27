@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "../../../../../lib/perl5/perl5_xsub.h"
+#include "../../../../../lib/messages/msg_msg_struct.h"
 
 MODULE = rrr::rrr_helper::rrr_message PACKAGE = rrr::rrr_helper::rrr_message PREFIX = rrr_perl5_message_
 PROTOTYPES: ENABLE
@@ -12,6 +13,18 @@ PROTOTYPES: ENABLE
 TYPEMAP: <<HERE
 	AV* T_AVREF_REFCOUNT_FIXED
 HERE
+
+BOOT:
+	{
+		HV *stash = gv_stashpv("rrr::rrr_helper::rrr_message", 0 /* Don't create */);
+
+		newCONSTSUB(stash, "MSG_TYPE_MSG", newSVuv(MSG_TYPE_MSG));
+		newCONSTSUB(stash, "MSG_TYPE_TAG", newSVuv(MSG_TYPE_TAG));
+		newCONSTSUB(stash, "MSG_TYPE_GET", newSVuv(MSG_TYPE_GET));
+		newCONSTSUB(stash, "MSG_TYPE_PUT", newSVuv(MSG_TYPE_PUT));
+		newCONSTSUB(stash, "MSG_TYPE_DEL", newSVuv(MSG_TYPE_DEL));
+		newCONSTSUB(stash, "MSG_TYPE_OPT", newSVuv(MSG_TYPE_OPT));
+	}
 
 unsigned int
 rrr_perl5_message_send(message)
@@ -121,6 +134,15 @@ unsigned int
 rrr_perl5_message_ip_set_protocol (message, protocol)
 	HV *message
 	const char *protocol
+
+UV
+rrr_perl5_message_type_get (message)
+	HV *message
+
+unsigned int
+rrr_perl5_message_type_set (message, type)
+	HV *message
+	UV type
 
 AV *
 rrr_perl5_message_get_tag_all(message,tag)

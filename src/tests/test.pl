@@ -175,6 +175,39 @@ sub my_method {
 		return 0;
 	}
 
+	my $old_type_and_class = $message->{'type_and_class'};
+
+	if ($message->type_get() != rrr::rrr_helper::rrr_message::MSG_TYPE_MSG) {
+		print "Message type failure A " . $message->type_get() . "<>" . rrr::rrr_helper::rrr_message::MSG_TYPE_MSG . "\n";
+		return 0;
+	}
+
+	if (!$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PUT) or
+	     $message->{'type_and_class'} == $old_type_and_class
+	) {
+		print "Message type store failure A\n";
+		return 0;
+	}
+
+	if ($message->type_get() != rrr::rrr_helper::rrr_message::MSG_TYPE_PUT) {
+		print "Message type failure B " . $message->type_get() . "<>" . rrr::rrr_helper::rrr_message::MSG_TYPE_PUT . "\n";
+		return 0;
+	}
+
+	if (!$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_MSG) or
+	     $message->{'type_and_class'} != $old_type_and_class
+	) {
+		print "Message type store failure B\n";
+		return 0;
+	}
+
+	rrr::rrr_helper::rrr_message::MSG_TYPE_MSG == 1 or die("Constant failure MSG");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_TAG == 2 or die("Constant failure TAG");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_GET == 3 or die("Constant failure GET");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_PUT == 4 or die("Constant failure PUT");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_DEL == 5 or die("Constant failure DEL");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_OPT == 6 or die("Constant failure OPT");
+
 	$message->send();
 
 	$message->clear_array();

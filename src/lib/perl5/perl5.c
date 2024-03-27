@@ -752,6 +752,12 @@ int rrr_perl5_hv_to_message (
 	target->type_and_class = SvUV(type_and_class);
 	target->timestamp = SvUV(timestamp);
 
+	if (!MSG_TYPE_OK(target) || !MSG_CLASS_OK(target)) {
+		RRR_MSG_0("Invalid value for type_and_class field. Ensure that provided setter functions are used.\n");
+		ret = 1;
+		goto out;
+	}
+
 	memcpy (MSG_TOPIC_PTR(target), topic_str, new_topic_len);
 	memcpy (MSG_DATA_PTR(target), data_str, new_data_len);
 

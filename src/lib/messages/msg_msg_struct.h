@@ -48,11 +48,19 @@ enum rrr_msg_msg_class {
 #define MSG_CLASS_DATA_STRING "DATA"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_TYPE(message)             ((message)->type_and_class & 0x0f)
-#define MSG_CLASS(message)            (((message)->type_and_class & 0xf0) >> 4)
+#define MSG_TYPE_RAW(type_and_class)  (((type_and_class) & 0x0f))
+#define MSG_CLASS_RAW(type_and_class) (((type_and_class) & 0xf0) >> 4)
 
-#define MSG_SET_TYPE(message,n)       (message)->type_and_class = (rrr_u8) (((message)->type_and_class & 0xf0) | (n & 0x0f))
-#define MSG_SET_CLASS(message,n)      (message)->type_and_class = (rrr_u8) (((message)->type_and_class & 0x0f) | (n << 4))
+#define MSG_TYPE(message)             MSG_TYPE_RAW((message)->type_and_class)
+#define MSG_CLASS(message)            MSG_CLASS_RAW((message)->type_and_class)
+
+#define MSG_SET_TYPE_RAW(type_and_class,n)   \
+    (type_and_class) = (rrr_u8) (((type_and_class) & 0xf0) | (n & 0x0f))
+#define MSG_SET_CLASS_RAW(type_and_class,n)  \
+    (type_and_class) = (rrr_u8) (((type_and_class) & 0x0f) | (n << 4))
+
+#define MSG_SET_TYPE(message,n)       MSG_SET_TYPE_RAW((message)->type_and_class,n)
+#define MSG_SET_CLASS(message,n)      MSG_SET_CLASS_RAW((message)->type_and_class,n)
 
 #define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
 #define MSG_IS_TAG(message)           (MSG_TYPE(message) == MSG_TYPE_TAG)
@@ -70,8 +78,14 @@ enum rrr_msg_msg_class {
 	(MSG_IS_OPT(message) ? MSG_TYPE_OPT_STRING : \
 	"(unknown)" ))))))
 
+#define MSG_TYPE_OK_RAW(type_and_class) \
+    (MSG_TYPE_RAW(type_and_class) >= MSG_TYPE_MSG && MSG_TYPE_RAW(type_and_class) <= MSG_TYPE_OPT)
+
+#define MSG_CLASS_OK_RAW(type_and_class) \
+    (MSG_CLASS_RAW(type_and_class) == MSG_CLASS_DATA || MSG_CLASS_RAW(type_and_class) == MSG_CLASS_ARRAY)
+
 #define MSG_CLASS_OK(message) \
-    ((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
+    (MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY)
 
 #define MSG_TYPE_OK(message) \
     (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_OPT)

@@ -1279,6 +1279,28 @@ Always returns the same number of element as count_positions(). An empty string 
 .It $message->get_tag_counts()
 Get the value count at each position of the message. Returns a list with zero or more values.
 Always returns the same number of element as count_positions().
+
+.It $message->type_set(type)
+Set the type of the message. One of the following values may be passed as argument:
+
+.Bl -tag -width "aa"
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_MSG
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_TAG
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_GET
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_PUT
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_DEL
+.It \(bu
+rrr::rrr_helper::rrr_message::MSG_TYPE_OPT
+.El
+
+.It $message->type_get()
+Return the type of the message. Returns one of the above values. If no type is set explicitly, the type of the message is
+.B MSG_TYPE_MSG.
 .El
 .PP
 The

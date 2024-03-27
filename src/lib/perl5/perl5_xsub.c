@@ -467,6 +467,42 @@ SV *rrr_perl5_message_ip_get_protocol (HV *hv) {
 	return result;
 }
 
+unsigned int rrr_perl5_message_type_set (HV *hv, UV type) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0;
+
+	if (!MSG_TYPE_OK_RAW(type) || MSG_TYPE_RAW(type) != type) {
+		RRR_MSG_0("Warning: Invalid type %u to Perl5 type_set()\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class,hv);
+	UV type_and_class_uv = SvUV(type_and_class);
+
+	MSG_SET_TYPE_RAW(type_and_class_uv, type);
+
+	SvUV_set(type_and_class, type_and_class_uv);
+
+	out:
+	return TRUE;
+}
+
+UV rrr_perl5_message_type_get (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0;
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class,hv);
+
+	out:
+	if (type_and_class == NULL || ret != 0) {
+		RRR_BUG("BUG: type_and_class not retrieved in %s\n", __func__);
+	}
+	return MSG_TYPE_RAW(SvUV(type_and_class));
+}
+
 unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 

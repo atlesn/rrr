@@ -1684,7 +1684,6 @@ static int __rrr_raft_client_read_msg_ctrl_cb (
 			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
 			break;
 		case RRR_MSG_CTRL_F_NACK:
-			printf("%s nack %u\n", __func__, message->msg_value);
 			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
 			break;
 		default:
