@@ -49,12 +49,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 enum raft_req_type {
 	RAFT_REQ_PUT,
+	RAFT_REQ_GET,
 	RAFT_REQ_LEADERSHIP_TRANSFER
 };
 
 #define RAFT_REQ_TYPE_TO_STR(type)                                                   \
     ((type) == RAFT_REQ_PUT ? "PUT" :                                                \
-    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN"))
+    ((type) == RAFT_REQ_GET ? "GET" :                                                \
+    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN")))
 
 struct raft_request {
 	uint32_t req_index;
@@ -196,40 +198,68 @@ static void raft_data_cleanup(struct raft_data *data) {
 static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct raft_data *data = thread_data->private_data;
+	const struct rrr_msg_msg *message = entry->message;
 
 	(void)(data);
-
-	const struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
 
 	uint32_t req_index;
+	enum raft_req_type req_type;
 
 	if (!data->is_leader) {
 		RRR_MSG_0("Warning: Received message in raft instance %s which is not leader of the cluster.\n",
 			INSTANCE_D_NAME(thread_data));
 	}
 
-	RRR_DBG_3("raft instance %s received a message with timestamp %llu\n",
+	RRR_DBG_2("raft instance %s received a message with type %s, topic '%.*s' and timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(data->thread_data),
-			(long long unsigned int) message->timestamp
+			MSG_TYPE_NAME(message),
+			MSG_TOPIC_LENGTH(message),
+			MSG_TOPIC_PTR(message),
+			message->timestamp
 	);
 
-	if ((ret = rrr_raft_client_request_put_native (
-			&req_index,
-			data->channel,
-			message
-	)) != 0) {
-		RRR_MSG_0("Warning: Failed to put message in raft instance %s\n",
-			INSTANCE_D_NAME(thread_data));
-		goto out;
-	}
+	switch (MSG_TYPE(message)) {
+		case MSG_TYPE_MSG:
+		case MSG_TYPE_PUT: {
+			if ((ret = rrr_raft_client_request_put_native (
+					&req_index,
+					data->channel,
+					message
+			)) != 0) {
+				RRR_MSG_0("Warning: Failed to put message in raft instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out;
+			}
+			req_type = RAFT_REQ_PUT;
+		} break;
+		case MSG_TYPE_GET: {
+			printf("topic length %u\n", MSG_TOPIC_LENGTH(message));
+			if ((ret = rrr_raft_client_request_get (
+					&req_index,
+					data->channel,
+					MSG_TOPIC_LENGTH(message) > 0 ? MSG_TOPIC_PTR(message) : NULL,
+					MSG_TOPIC_LENGTH(message)
+			)) != 0) {
+				RRR_MSG_0("Warning: Failed to get message in raft instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out;
+			}
+			req_type = RAFT_REQ_GET;
+		} break;
+		default: {
+			RRR_MSG_0("Warning: Unknown type %s in message to raft instance %s, dropping it.\n",
+				MSG_TYPE_NAME(message));
+			goto out;
+		} break;
+	};
 
 	// Message must be copied while the data is protected by entry lock
 	if ((ret = raft_request_collection_push (
 			&data->requests,
 			req_index,
-			RAFT_REQ_PUT,
+			req_type,
 			message
 	)) != 0) {
 		goto out;
@@ -281,6 +311,7 @@ static int raft_parse_config (struct raft_data *data, struct rrr_instance_config
 struct raft_message_broker_callback_data {
 	struct raft_data *data;
 	const struct rrr_array *array;
+	const struct rrr_msg_msg *msg;
 };
 
 static int raft_message_broker_callback (
@@ -293,15 +324,27 @@ static int raft_message_broker_callback (
 
 	struct rrr_msg_msg *msg = NULL;
 
-	if ((ret = rrr_array_new_message_from_array (
-			&msg,
-			callback_data->array,
-			rrr_time_get_64(),
-			NULL,
-			0
-	)) != 0) {
-		RRR_MSG_0("Warning: Failed to create status message in %s\n", __func__);
-		goto out;
+	// Caller must pass either message or array
+	assert((void *) callback_data->msg != (void *) callback_data->array);
+
+	if (callback_data->msg != NULL) {
+		if ((msg = rrr_msg_msg_duplicate(callback_data->msg)) == NULL) {
+			RRR_MSG_0("Warning: Failed to create result message in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if ((ret = rrr_array_new_message_from_array (
+				&msg,
+				callback_data->array,
+				rrr_time_get_64(),
+				NULL,
+				0
+		)) != 0) {
+			RRR_MSG_0("Warning: Failed to create array message in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	rrr_msg_holder_set_unlocked (
@@ -391,6 +434,21 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 				MSG_TOPIC_LENGTH(msg)
 			);
 		} break;
+		case RAFT_REQ_GET: {
+			RRR_DBG_2("Result of message retrieval of message with topic %.*s in raft instance %s: %s\n",
+				MSG_TOPIC_LENGTH(msg),
+				MSG_TOPIC_PTR(msg),
+				INSTANCE_D_NAME(data->thread_data),
+				rrr_raft_reason_to_str(code)
+			);
+
+			ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
+				&array_tmp,
+				"raft_topic",
+				MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
+				MSG_TOPIC_LENGTH(msg)
+			);
+		} break;
 		case RAFT_REQ_LEADERSHIP_TRANSFER: {
 			RRR_DBG_1("Result of leadership transfer in raft instance %s: %s\n",
 				INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
@@ -413,7 +471,8 @@ static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 
 	struct raft_message_broker_callback_data callback_data = {
 		data,
-		&array_tmp
+		&array_tmp,
+		NULL
 	};
 
 	if (rrr_message_broker_write_entry (
@@ -517,10 +576,33 @@ static void raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 
 	(void)(server_id);
 	(void)(req_index);
-	(void)(msg);
-	(void)(data);
 
-	assert(0 && "MSG callback not implemented");
+	RRR_DBG_2("Raft instance %s got a result with topic '%.*s' timestamp %" PRIu64 ", emitting message\n",
+		INSTANCE_D_NAME(data->thread_data),
+		MSG_TOPIC_LENGTH(*msg),
+		MSG_TOPIC_PTR(*msg),
+		(*msg)->timestamp
+	);
+
+	struct raft_message_broker_callback_data callback_data = {
+		data,
+		NULL,
+		*msg
+	};
+
+	if (rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			NULL,
+			raft_message_broker_callback,
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	)) {
+		RRR_MSG_0("Warning: Failed to write message to broker in %s\n", __func__);
+		return;
+	}
 }
 
 static int raft_fork (void *arg) {

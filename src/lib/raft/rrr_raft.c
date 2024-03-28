@@ -538,8 +538,7 @@ static int __rrr_raft_server_make_opt_response_server_fields (
 }
 
 static int __rrr_raft_server_make_opt_response (
-		struct rrr_raft_channel *channel,
-		uv_loop_t *loop,
+		struct rrr_msg_msg **result,
 		struct raft *raft,
 		rrr_u32 req_index
 ) {
@@ -549,6 +548,8 @@ static int __rrr_raft_server_make_opt_response (
 	struct rrr_array array_tmp = {0};
 	raft_id leader_id;
 	const char *leader_address;
+
+	*result = NULL;
 
 	raft_leader(raft, &leader_id, &leader_address);
 
@@ -594,7 +595,8 @@ static int __rrr_raft_server_make_opt_response (
 	MSG_SET_TYPE(msg, MSG_TYPE_OPT);
 	msg->msg_value = req_index;
 
-	__rrr_raft_server_send_msg_in_loop(channel, loop, (struct rrr_msg *) msg);
+	*result = msg;
+	msg = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg);
@@ -814,37 +816,27 @@ static int __rrr_raft_server_handle_cmd (
 }
 
 static int __rrr_raft_server_make_get_response (
-		struct rrr_raft_channel *channel,
-		uv_loop_t *loop,
+		struct rrr_msg_msg **result,
 		struct rrr_raft_message_store *message_store_state,
 		rrr_u32 req_index,
 		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg_tmp = NULL;
-
 	if ((ret = __rrr_raft_message_store_get (
-			&msg_tmp,
+			result,
 			message_store_state,
 			MSG_TOPIC_PTR(msg),
 			MSG_TOPIC_LENGTH(msg)
 	)) != 0) {
 		goto out;
 	}
-	else if (msg_tmp == NULL) {
-		ret = RRR_READ_INCOMPLETE;
-		goto out;
-	}
 
-	assert(MSG_IS_PUT(msg_tmp));
+	assert(*result == NULL || MSG_IS_PUT(*result));
 
-	msg_tmp->msg_value = req_index;
-
-	__rrr_raft_server_send_msg_in_loop(channel, loop, (struct rrr_msg *) msg_tmp);
+	(*result)->msg_value = req_index;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
 
@@ -900,6 +892,7 @@ static int __rrr_raft_server_read_msg_cb (
 	struct raft_buffer buf = {0};
 	struct raft_apply *req;
 	struct rrr_msg msg = {0};
+	struct rrr_msg_msg *msg_msg = NULL;
 
 	assert((*message)->msg_value > 0);
 
@@ -910,40 +903,45 @@ static int __rrr_raft_server_read_msg_cb (
 					(*message)->msg_value,
 					(*message)
 			);
+			goto out;
 		}
-		else {
-			ret = __rrr_raft_server_make_opt_response (
-					callback_data->channel,
-					callback_data->loop,
-					raft,
-					(*message)->msg_value
-			);
+
+		if ((ret = __rrr_raft_server_make_opt_response (
+				&msg_msg,
+				raft,
+				(*message)->msg_value
+		)) != 0) {
+			goto out;
 		}
-		goto out;
+
+		goto out_send_msg_msg;
 	}
 
 	if (MSG_IS_GET(*message)) {
 		if ((ret = __rrr_raft_server_make_get_response (
-				callback_data->channel,
-				callback_data->loop,
+				&msg_msg,
 				callback_data->message_store_state,
 				(*message)->msg_value,
 				(*message)
 		)) != 0) {
-			if (ret == RRR_READ_INCOMPLETE) {
-				rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_ENOENT), (*message)->msg_value);
-				ret = 0;
-				goto out_send_msg;
-			}
 			goto out;
 		}
-		goto out;
+
+		rrr_msg_populate_control_msg (
+				&msg,
+				msg_msg != NULL
+					? RRR_MSG_CTRL_F_ACK
+					: RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_ENOENT),
+				(*message)->msg_value
+		);
+
+		goto out_send_ctrl_msg;
 	}
 
 	if (raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_NOT_LEADER), (*message)->msg_value);
-		goto out_send_msg;
+		goto out_send_ctrl_msg;
 	}
 
 	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
@@ -979,14 +977,18 @@ static int __rrr_raft_server_read_msg_cb (
 		buf.base = NULL;
 	}
 
-	//assert(0 && "Read msg not implemented");
-
 	goto out;
 //	out_free_req:
 //		raft_free(req);
-	out_send_msg:
+	out_send_ctrl_msg:
+		// Status messages are to be emitted before result messages
 		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+	out_send_msg_msg:
+		if (msg_msg != NULL) {
+			__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, (struct rrr_msg *) msg_msg);
+		}
 	out:
+		RRR_FREE_IF_NOT_NULL(msg_msg);
 		if (buf.base != NULL)
 			raft_free(buf.base);
 		return ret;
@@ -1672,7 +1674,6 @@ static int __rrr_raft_client_read_msg_ctrl_cb (
 	struct rrr_raft_channel *channel = arg2;
 
 	(void)(arg1);
-	(void)(arg2);
 
 	enum rrr_raft_code code = RRR_MSG_CTRL_REASON(message);
 
@@ -1681,8 +1682,6 @@ static int __rrr_raft_client_read_msg_ctrl_cb (
 			channel->callbacks.pong_callback(channel->server_id, channel->callbacks.arg);
 			break;
 		case RRR_MSG_CTRL_F_ACK:
-			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
-			break;
 		case RRR_MSG_CTRL_F_NACK:
 			channel->callbacks.ack_callback(channel->server_id, message->msg_value, code, channel->callbacks.arg);
 			break;
@@ -1956,7 +1955,7 @@ static int __rrr_raft_client_request (
 				MSG_CLASS_DATA,
 				rrr_time_get_64(),
 				topic,
-				topic != NULL ? strlen(topic) : 0,
+				topic_length,
 				data,
 				rrr_u32_from_biglength_bug_const(data_size)
 		)) != 0) {

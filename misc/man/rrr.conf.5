@@ -3068,6 +3068,23 @@ The message type and any plain value set in messages from senders will not be pr
 as these fields are used internally.
 
 Messages to be stored may only be delivered to the raft node which is currently leader of its cluster.
+
+The following message types may be set in messages to the
+.B raft
+module to produce different behaviour:
+
+.Bl -tag -width -indent
+.It PUT or MSG
+The message is to be stored in the cluster.
+.It GET
+A retrieval from the store will be performed using the topic set in the message.
+Any data or array fields set in the message is ignored.
+The type of any retrieved message will always be MSG.
+If status messages are enabled using
+.B raft_status_messages
+, the status message for successful retrieval will be emitted before the retrieved message.
+.El
+
 If status messages are enabled using
 .B raft_status_messages
 , status messages will report on which node is currently the leader, allowing redirection or forwarding of requests to be implemented.
@@ -3094,6 +3111,8 @@ A string describing the command for which the status message applies. May be one
 .Bl -tag -width -indent
 .It PUT
 A message store attempt
+.It GET
+A message retrieval attempt (successful attempts also emits the retrieved message)
 .It LEADERSHIP TRANSFER
 An attempt of leadership transfer to another node
 .El

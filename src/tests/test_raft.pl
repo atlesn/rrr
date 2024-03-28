@@ -37,7 +37,6 @@ sub push_response {
 sub check_response {
 	my $response_values = shift;
 	my $topic = shift;
-	my $data = shift;
 	my $field_hash = shift;
 
 	my $ret = 0;
@@ -60,7 +59,9 @@ sub check_response {
 	}
 
 	if ($response->{'topic'} ne $topic) {
-		die("Topic mismatch '$topic'<>'$response->{'topic'}' in response\n");
+		$dbg->msg(0, "Topic mismatch '$topic'<>'$response->{'topic'}' in response\n");
+		$ret = 3;
+		goto out;
 	}
 
 	for my $key (keys %{$field_hash}) {
@@ -69,7 +70,9 @@ sub check_response {
 		$response_values->{$key} = $value;
 
 		if (!defined $value) {
-			die("Value for field '$key' missing in message with topic '$topic'\n");
+			$dbg->msg(0, "Value for field '$key' missing in message with topic '$topic'\n");
+			$ret = 3;
+			goto out;
 		}
 
 		if ($value ne $field_hash->{$key}) {
@@ -81,10 +84,6 @@ sub check_response {
 
 	if ($ret == 2) {
 		goto out;
-	}
-
-	if (length $data > 0 and $response->{'data'} ne $data) {
-		die("Data mismatch '$data'<>'$response->{'data'}' in response\n");
 	}
 
 	$dbg->msg(1, "Received response with topic '$topic' containing expected values for fields '" . join("', '", sort(keys(%{$field_hash}))) . "'\n");
@@ -99,90 +98,34 @@ my @randoms;
 sub source {
 	my $message = shift;
 
+	my $res;
 	my %result_values;
 
 	# - Source function should be called every 500 ms
 
-	$dbg->msg(1, "Stage $stage\n");
-
 	if ($stage == 0) {
-		# The ACK message has no topic itself. The topic
-		# of the message it refers to is in an array field.
-		if (defined $randoms[$stage]) {
-			$dbg->msg(1, "- Checking result of PUT command\n");
-
-			my $res = check_response(\%result_values, "", "", {
-				"raft_command" => "PUT",
-				"raft_status" => 1,
-				"raft_reason" => "OK",
-				"raft_topic" => "raft/2"
-			});
-
-			if ($res) {
-				if ($res == 1) {
-					# No response yet, wait
-					$stage--;
-				}
-				elsif ($result_values{"raft_reason"} eq "NOT LEADER") {
-					# Node is not yet leader
-					$dbg->msg(1, "- Node is not yet leader, try again\n");
-					$randoms[$stage] = undef;
-					$stage--;
-				}
-				else {
-					die("Unexpected response values");
-				}
-			}
-		}
-		else {
+		unless (defined $randoms[$stage]) {
 			$randoms[$stage] = int(rand(10));
-
-			$dbg->msg(1, "- Send store to node 2\n");
-			$message->{'topic'} = "raft/2";
+			$dbg->msg(1, "- Send store to node 1\n");
+			$message->{'topic'} = "raft/1";
 			$message->set_tag_str("data", "data $randoms[$stage]");
 			$message->send();
-
-			$stage--;
 		}
 	}
 	elsif ($stage == 1) {
-		if (defined $randoms[$stage]) {
-			# Check that data is number stored by previous stage
-			my $res = check_response(\%result_values, "", "data $randoms[$stage - 2]", {
-				"raft_command" => "GET",
-				"raft_status" => 1,
-				"raft_reason" => "OK",
-				"raft_topic" => "data/0"
-			});
-
-			if ($res) {
-				if ($res == 1) {
-					# No response yet, wait
-					$stage--
-				}
-				else {
-					die("Unexpected response values");
-				}
-			}
-		}
-		else {
+		unless (defined $randoms[$stage]) {
 			$randoms[$stage] = int(rand(10));
-
 			$dbg->msg(1, "- Send get to node 1\n");
 			$message->{'topic'} = "raft/1";
 			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
 			$message->send();
-
-			$stage--
 		}
 
 	}
-	elsif ($stage == 2) {
+	elsif ($stage == 3) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
-
-	$stage++;
 
 	return 1;
 }
@@ -191,6 +134,82 @@ sub process {
 	my $message = shift;
 
 	push_response($message);
+
+	# Test is faster if checking the result immediately
+	# in the source function
+	$message->{'topic'} = "";
+	$message->clear_array();
+
+	if ($stage == 0) {
+		# The ACK message has no topic itself. The topic
+		# of the message it refers to is in an array field.
+		$dbg->msg(1, "- Checking result of PUT command\n");
+
+		$res = check_response(\%result_values, "", {
+			"raft_command" => "PUT",
+			"raft_status" => 1,
+			"raft_reason" => "OK",
+			"raft_topic" => "raft/1"
+		});
+
+		if ($res) {
+			if ($res == 1) {
+				# No response yet, wait
+			}
+			elsif (defined $result_values{"raft_reason"} and
+			       $result_values{"raft_reason"} eq "NOT LEADER"
+			) {
+				# Node is not yet leader
+				$dbg->msg(1, "- Node is not yet leader, try again\n");
+				$randoms[$stage] = undef;
+			}
+			else {
+				return 0;
+			}
+		}
+		else {
+			$stage++;
+		}
+	}
+	elsif ($stage == 1) {
+		# Check for ACK message for the GET which arrives first
+		$res = check_response(\%result_values, "", {
+			"raft_command" => "GET",
+			"raft_status" => 1,
+			"raft_reason" => "OK",
+			"raft_topic" => "raft/1"
+		});
+
+		if ($res) {
+			if ($res == 1) {
+				# No response yet, wait
+			}
+			else {
+				return 0;
+			}
+		}
+		else {
+			$stage++;
+		}
+	}
+	elsif ($stage == 2) {
+		# Check for the actual resulting message arriving secondly
+		$res = check_response(\%result_values, "raft/1", {
+			"data" => "data $randoms[$stage - 2]"
+		});
+
+		if ($res) {
+			if ($res == 1) {
+				# No response yet, wait
+			}
+			else {
+				return 0;
+			}
+		}
+		else {
+			$stage++;
+		}
+	}
 
 	return 1;
 }
