@@ -25,17 +25,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <sys/stat.h>
 
 #include "../lib/log.h"
 #include "../lib/allocator.h"
-
-//#include "../lib/ip/ip.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/util/gnu.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/instance_config.h"
@@ -44,8 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/raft/rrr_raft.h"
 
+#define RAFT_DEFAULT_DIRECTORY "/var/lib/rrr/raft"
 #define RAFT_DEFAULT_PORT 9001
-#define RAFT_PATH_BASE "/tmp/rrr-raft"
 
 enum raft_req_type {
 	RAFT_REQ_PUT,
@@ -181,6 +181,7 @@ struct raft_data {
 	int is_leader;
 	int leader_id;
 	char leader_address[128];
+	char *directory;
 };
 
 static void raft_data_init(struct raft_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -193,6 +194,7 @@ static void raft_data_cleanup(struct raft_data *data) {
 	if (data->channel != NULL)
 		rrr_raft_cleanup(data->channel);
 	raft_request_collection_clear(&data->requests);
+	RRR_FREE_IF_NOT_NULL(data->directory);
 }
 
 static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
@@ -282,6 +284,8 @@ static int raft_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static int raft_parse_config (struct raft_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("raft_directory", directory, RAFT_DEFAULT_DIRECTORY);
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map (
 			&data->servers,
@@ -605,6 +609,18 @@ static void raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 	}
 }
 
+static int raft_mkdir (const char *path) {
+	if (mkdir(path, 0777) == 0) {
+		// OK, created
+	}
+	else if (errno != EEXIST) {
+		RRR_MSG_0("Failed to create directory %s: %s\n",
+			path, rrr_strerror(errno));
+		return 1;
+	}
+	return 0;
+}
+
 static int raft_fork (void *arg) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -614,7 +630,7 @@ static int raft_fork (void *arg) {
 
 	int socketpair[2] = {0}, i;
 	unsigned long long id;
-	char *end, path[64];
+	char *end, *path;
 	struct rrr_raft_server *servers = NULL;
 
 	if ((ret = raft_parse_config(data, INSTANCE_D_CONFIG(thread_data))) != 0) {
@@ -655,7 +671,19 @@ static int raft_fork (void *arg) {
 		i++;	
 	RRR_MAP_ITERATE_END();
 
-	sprintf(path, "%s/%" PRIi64 "", RAFT_PATH_BASE, servers[0].id);
+	if (rrr_asprintf(&path, "%s/%" PRIi64, data->directory, servers[0].id) <= 0) {
+		RRR_MSG_0("Failed to create path in %s]\n", __func__);
+		ret = 1;
+		goto out_err;
+	}
+
+	if ((ret = raft_mkdir(data->directory)) != 0) {
+		goto out;
+	}
+
+	if ((ret = raft_mkdir(path)) != 0) {
+		goto out;
+	}
 
 	if ((ret = rrr_raft_fork (
 			&data->channel,
@@ -682,6 +710,7 @@ static int raft_fork (void *arg) {
 		raft_data_cleanup(data);
 	out:
 		RRR_FREE_IF_NOT_NULL(servers);
+		RRR_FREE_IF_NOT_NULL(path);
 		if (socketpair[0] > 0)
 			rrr_socket_close(socketpair[0]);
 		if (socketpair[1] > 0)

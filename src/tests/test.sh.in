@@ -151,13 +151,11 @@ rm -rf /tmp/rrr-test-msgdb* || exit 1
 # End message DB tests
 
 # Begin raft tests
-rm -rf /tmp/rrr-raft
-mkdir -p /tmp/rrr-raft/1
-mkdir -p /tmp/rrr-raft/2
+rm -rf /tmp/rrr-test-raft
 
 do_test_simple test_raft.conf 
 
-rm -rf /tmp/rrr-raft
+rm -rf /tmp/rrr-test-raft
 # End raft tests
 
 do_test_websocket test_websocket.conf

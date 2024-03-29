@@ -3097,6 +3097,13 @@ A comma separated list of raft nodes used for initial set-up of this raft instan
 The address of this node must be first in this list, and the address and port will be used for listening
 for connections from other nodes.
 
+.It raft_directory=DIRECTORY
+Base directory for the raft message store.
+The directory, and a sub-directory named after the server-ID given in
+.B raft_nodes
+, will be created if not already existing.
+If not given, '/var/lib/rrr/raft' will be used.
+
 .It raft_status_messages={yes|no}
 If set to yes, status messages will be emitted to inform on whether or not messages were stored as well as for internally generated commands.
 The status messages will have no topic set.
