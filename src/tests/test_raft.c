@@ -131,6 +131,28 @@ static void __rrr_test_raft_register_expected_msg (
 	__rrr_test_raft_register_expected(callback_data->msg_expected[server_id - 1], req_index);
 }
 
+static void __rrr_test_raft_register_expected_pair (
+		struct rrr_test_raft_callback_data *callback_data,
+		int server_id,
+		uint32_t req_index,
+		int ok
+) {
+	__rrr_test_raft_register_expected_ack (
+			callback_data,
+			server_id,
+			req_index,
+			ok
+	);
+
+	if (ok) {
+		__rrr_test_raft_register_expected_msg (
+				callback_data,
+				server_id,
+				req_index
+		);
+	}
+}
+
 static void __rrr_test_raft_register_response (
 		uint32_t *array,
 		uint32_t req_index
@@ -176,26 +198,61 @@ static int __rrr_test_raft_check_zero (
 static int __rrr_test_raft_check_all_ack_received (
 		struct rrr_test_raft_callback_data *callback_data
 ) {
-	return __rrr_test_raft_check_zero((uint8_t *) callback_data->ack_expected, sizeof(callback_data->ack_expected)) &&
+	int res = 1;
+
+	for (int i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+		uint32_t *ack_expected = callback_data->ack_expected[i];
+		uint32_t *nack_expected = callback_data->nack_expected[i];
+		uint32_t *msg_expected = callback_data->msg_expected[i];
+
+		for (int j = 0; j < RRR_TEST_RAFT_IN_FLIGHT_MAX; j++) {
+			if (ack_expected[j] != 0) {
+				TEST_MSG("  - ACK not received for req %u server %i\n", ack_expected[j], j + 1);
+				res = 0;
+			}
+			if (nack_expected[j] != 0) {
+				TEST_MSG("  - NACK not received for req %u server %i\n", nack_expected[j], j + 1);
+				res = 0;
+			}
+			if (msg_expected[j] != 0) {
+				TEST_MSG("  - MSG not received for req %u server %i\n", msg_expected[j], j + 1);
+				res = 0;
+			}
+		}
+	}
+
+	return res;
+/*	return __rrr_test_raft_check_zero((uint8_t *) callback_data->ack_expected, sizeof(callback_data->ack_expected)) &&
 	       __rrr_test_raft_check_zero((uint8_t *) callback_data->nack_expected, sizeof(callback_data->ack_expected)) &&
-	       __rrr_test_raft_check_zero((uint8_t *) callback_data->msg_expected, sizeof(callback_data->ack_expected));
+	       __rrr_test_raft_check_zero((uint8_t *) callback_data->msg_expected, sizeof(callback_data->ack_expected));*/
 }
 
 static int __rrr_test_raft_check_all_servers_voting (
+		int *count,
 		struct rrr_test_raft_callback_data *callback_data
 ) {
 	struct rrr_raft_server *server;
 
-	if (*callback_data->servers == NULL)
-		return 0;
+	int res = 1;
+
+	*count = 0;
+
+	if (*callback_data->servers == NULL) {
+		res = 0;
+		goto out;
+	}
 
 	for (server = *callback_data->servers; server->id > 0; server++) {
 		if (server->status != RRR_RAFT_VOTER) {
-			return 0;
+			res = 0;
+		}
+		else {
+			(*count)++;
 		}
 	}
 
-	return 1;
+	out:
+	return res;
 }
 
 static int __rrr_test_raft_check_some_server_catched_up (
@@ -230,7 +287,7 @@ static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	// TEST_MSG("%s %u received server %i\n",
-	//	(ok ? "ACK" : "NACK"), req_index, server_id);
+	//	(code == 0 ? "ACK" : "NACK"), req_index, server_id);
 
 	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, code == 0);
 }
@@ -243,16 +300,21 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	struct rrr_raft_server *server;
 	size_t servers_delete_pos = 0;
 
-	TEST_MSG("OPT %u received server %i is leader: %" PRIi64 "\n",
-		req_index, server_id, is_leader);
+	TEST_MSG("OPT %u received server %i leader id %" PRIi64 " is leader %" PRIi64 "\n",
+		req_index, server_id, leader_id, is_leader);
 
 	if (leader_id > 0) {
 		callback_data->leader_index = leader_id - 1;
 		assert(callback_data->leader_index >= 0 && callback_data->leader_index < RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	}
+	else {
+		callback_data->leader_index = -1;
+	}
 
 	// Read servers only from leader to get correct catch-up status
 	if (is_leader) {
+		assert(leader_id == server_id);
+
 		for (server = *servers; server->id > 0; server++) {
 			TEST_MSG("- Found member %" PRIi64 " address %s status %s catch up %s\n",
 				server->id,
@@ -274,9 +336,8 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 		*servers = NULL;
 	}
 
+	out:
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
-
-	RRR_FREE_IF_NOT_NULL(*servers);
 }
 
 static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
@@ -317,11 +378,11 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 
 #define PROBE(server_index)                                                                 \
     do {                                                                                    \
-        TEST_MSG("- Probing...\n");                                                         \
         RRR_FREE_IF_NOT_NULL(*callback_data->servers);                                      \
         req_index = 0;                                                                      \
         rrr_raft_client_request_opt (&req_index, callback_data->channels[server_index]);    \
         assert(req_index > 0);                                                              \
+        TEST_MSG("- Probed server %i req %u...\n", server_index, req_index);                \
         __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);  \
     } while(0)                                                                              \
 
@@ -335,10 +396,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
                 strlen(topic)                                                                     \
         );                                                                                        \
         assert(req_index > 0);                                                                    \
-        if (expect_ok)                                                                            \
-            __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);    \
-        else                                                                                      \
-            __rrr_test_raft_register_expected_ack(callback_data, server_index + 1, req_index, 0); \
+        __rrr_test_raft_register_expected_pair(callback_data, server_index + 1, req_index, expect_ok); \
     } while(0)
 
 #define PUT(server_index,msg_index)                       \
@@ -370,7 +428,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
              server_index + 1                                         \
          );                                                           \
          assert(req_index > 0);                                       \
-         __rrr_test_raft_register_expected_ack (                      \
+         __rrr_test_raft_register_expected_pair (                     \
              callback_data,                                           \
              callback_data->leader_index + 1,                         \
              req_index,                                               \
@@ -384,7 +442,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	char topic[16];
-	int i;
+	int i, voting_count;
 	unsigned int msg_pos;
 	uint32_t req_index;
 	struct rrr_raft_server servers_tmp[RRR_TEST_RAFT_SERVER_TOTAL_COUNT + 1];
@@ -397,8 +455,15 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				// OK, async OPT response detected a leader
 				TEST_MSG("- Leader found\n");
 
-				if (callback_data->servers_delete[0].id > 0) {
-					TEST_MSG("- Non-initial servers to delete found\n");
+				__rrr_test_raft_check_all_servers_voting (&voting_count, callback_data);
+
+				if (voting_count < 3) {
+					TEST_MSG("- Initial servers not voting yet\n");
+					PROBE(callback_data->leader_index);
+					callback_data->cmd_pos--;
+				}
+				else if (callback_data->servers_delete[0].id > 0) {
+					TEST_MSG("- Initial servers are voting and non-initial servers to delete found\n");
 
 					// Only allowed to pass one server
 					assert(callback_data->servers_delete[1].id == 0);
@@ -413,12 +478,21 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 							callback_data->servers_delete
 					);
 					assert(req_index > 0);
-					__rrr_test_raft_register_expected_ack (
+					__rrr_test_raft_register_expected_pair (
 							callback_data,
 							callback_data->leader_index + 1,
 							req_index,
 							1 /* expect ok */
 					);
+
+					memset(callback_data->servers_delete, '\0', sizeof(callback_data->servers_delete));
+
+					// It is possible that the leader is the one
+					// getting deleted, run all steps again.
+					callback_data->cmd_pos--;
+				}
+				else {
+					TEST_MSG("- Initial servers are voting\n");
 				}
 			}
 			else {
@@ -429,7 +503,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 		} break;
 		case 1: {
-			TEST_MSG("- Sending PUT messages...\n");
+			TEST_MSG("- Sending PUT messages to %i...\n", callback_data->leader_index + 1);
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
@@ -487,7 +561,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					servers_intermediate
 			);
 			assert(req_index > 0);
-			__rrr_test_raft_register_expected_ack (
+			__rrr_test_raft_register_expected_pair (
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
@@ -515,7 +589,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					servers_tmp
 			);
 			assert(req_index > 0);
-			__rrr_test_raft_register_expected_ack (
+			__rrr_test_raft_register_expected_pair (
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
@@ -525,8 +599,9 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		case 9: {
 			WAIT_ACK();
 
-			if (!__rrr_test_raft_check_all_servers_voting(callback_data) ||
-			    !__rrr_test_raft_check_some_server_catched_up(callback_data)
+			if (!__rrr_test_raft_check_all_servers_voting(&voting_count, callback_data) ||
+			    !__rrr_test_raft_check_some_server_catched_up(callback_data) ||
+			     voting_count != 4
 			) {
 				TEST_MSG("- Waiting for all servers to become voters and catched up...\n");
 				callback_data->cmd_pos--;

@@ -209,11 +209,6 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	uint32_t req_index;
 	enum raft_req_type req_type;
 
-	if (!data->is_leader) {
-		RRR_MSG_0("Warning: Received message in raft instance %s which is not leader of the cluster.\n",
-			INSTANCE_D_NAME(thread_data));
-	}
-
 	RRR_DBG_2("raft instance %s received a message with type %s, topic '%.*s' and timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(data->thread_data),
 			MSG_TYPE_NAME(message),
@@ -225,6 +220,11 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	switch (MSG_TYPE(message)) {
 		case MSG_TYPE_MSG:
 		case MSG_TYPE_PUT: {
+			if (!data->is_leader) {
+				RRR_MSG_0("Warning: Received PUT or MSG message (store command) in raft instance %s which might not be leader of the cluster.\n",
+					INSTANCE_D_NAME(thread_data));
+			}
+
 			if ((ret = rrr_raft_client_request_put_native (
 					&req_index,
 					data->channel,

@@ -604,23 +604,51 @@ static int __rrr_raft_server_make_opt_response (
 	return ret;
 }
 
+static void __rrr_raft_server_change_cb_final (
+		struct rrr_raft_server_callback_data *callback_data,
+		uint64_t req_index,
+		int ok,
+		enum rrr_raft_code code
+) {
+	struct rrr_msg msg_ack = {0};
+	struct rrr_msg_msg *msg = NULL;
+
+	rrr_msg_populate_control_msg (
+			&msg_ack,
+			ok ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
+			req_index
+	);
+
+	if (__rrr_raft_server_make_opt_response (
+			&msg,
+			callback_data->raft,
+			req_index
+	) != 0) {
+		return;
+	}
+
+	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
+	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, (struct rrr_msg *) msg);
+
+	rrr_free(msg);
+}
+
 static void __rrr_raft_server_server_change_cb (
 		struct raft_change *req,
 		int status
 ) {
 	struct rrr_raft_server_callback_data *callback_data = req->data;
 
-	struct rrr_msg msg_ack = {0};
 	enum rrr_raft_code code = __rrr_raft_status_translate(status);
 
 	assert(callback_data->change_req_index > 0);
 
-	rrr_msg_populate_control_msg (
-			&msg_ack,
-			status == 0 ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
-			callback_data->change_req_index
+	__rrr_raft_server_change_cb_final (
+			callback_data,
+			callback_data->change_req_index,
+			status == 0,
+			code
 	);
-	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
 
 	req->data = NULL;
 	callback_data->change_req_index = 0;
@@ -634,7 +662,6 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	const char *address;
 	raft_id id;
-	struct rrr_msg msg_ack = {0};
 	enum rrr_raft_code code = RRR_RAFT_ERROR;
 
 	assert(callback_data->transfer_req_index > 0);
@@ -642,18 +669,18 @@ static void __rrr_raft_server_leadership_transfer_cb (
 	raft_leader(raft, &id, &address);
 
 	if (id != (long long unsigned) callback_data->server_id) {
-		printf("Leader transfer OK to %llu %s\n", id, address);
+		RRR_DBG_1("Leader transfer OK to %llu %s\n", id, address);
 	}
 	else {
-		printf("Leader transfer NOT OK to %llu %s\n", id, address);
+		RRR_DBG_1("Leader transfer NOT OK to %llu %s\n", id, address);
 	}
 
-	rrr_msg_populate_control_msg (
-			&msg_ack,
-			req->id == 0 || id == req->id ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
-			callback_data->transfer_req_index
+	__rrr_raft_server_change_cb_final (
+			callback_data,
+			callback_data->transfer_req_index,
+			req->id == 0 || id == req->id,
+			code
 	);
-	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
 
 	req->data = NULL;
 	callback_data->transfer_req_index = 0;
@@ -834,7 +861,8 @@ static int __rrr_raft_server_make_get_response (
 
 	assert(*result == NULL || MSG_IS_PUT(*result));
 
-	(*result)->msg_value = req_index;
+	if (*result)
+		(*result)->msg_value = req_index;
 
 	out:
 	return ret;
