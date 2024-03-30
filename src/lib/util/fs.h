@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,5 +27,7 @@ int rrr_util_fs_basename (
 		int (*callback)(const char *path, const char *dir, const char *name, void *arg),
 		void *callback_arg
 );
+int rrr_util_fs_dir_ensure (const char *dir);
+int rrr_util_fs_dir_clean (const char *dir);
 
 #endif /* RRR_UTIL_FS_H */

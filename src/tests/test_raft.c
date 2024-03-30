@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TEST_RAFT_H
 
 #include <stdio.h>
+#include <sys/stat.h>
 
 #include "test.h"
 #include "test_raft.h"
@@ -31,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/raft/rrr_raft.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/messages/msg_msg_struct.h"
+#include "../lib/util/fs.h"
 
 #define RRR_TEST_RAFT_SERVER_INITIAL_COUNT 3
 #define RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT 1
@@ -67,7 +69,7 @@ static const char *requests[] = {
 	"Request 9"
 };
 
-static const char dir_base[] = "/tmp/rrr-test-raft";
+static const char base_dir[] = "/tmp/rrr-test-raft";
 
 struct rrr_test_raft_callback_data {
 	struct rrr_raft_channel **channels;
@@ -184,15 +186,6 @@ static void __rrr_test_raft_register_response_msg (
 ) {
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response(callback_data->msg_expected[server_id - 1], req_index);
-}
-
-static int __rrr_test_raft_check_zero (
-		uint8_t *data,
-		size_t data_len
-) {
-	if (*data != 0)
-		return 0;
-	return 0 == memcmp(data, data + 1, data_len - 1);
 }
 
 static int __rrr_test_raft_check_all_ack_received (
@@ -335,8 +328,16 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 		*callback_data->servers = *servers;
 		*servers = NULL;
 	}
+	else {
+		for (server = *servers; server->id > 0; server++) {
+			TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
+				server->id,
+				server->address,
+				RRR_RAFT_STATUS_TO_STR(server->status)
+			);
+		}
+	}
 
-	out:
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
 }
 
@@ -710,7 +711,7 @@ static int __rrr_test_raft_fork (
 	int j;
 	const struct rrr_raft_server *server;
 	int socketpair[2];
-	char dir[sizeof(dir_base) + 32];
+	char dir[sizeof(base_dir) + 32];
 
 	for (server = servers, j = 0; server->id > 0; server++, (*i)++, j++) {
 		if ((ret = rrr_socketpair (AF_UNIX, SOCK_STREAM, 0, "raft", socketpair)) != 0) {
@@ -719,7 +720,7 @@ static int __rrr_test_raft_fork (
 			goto out;
 		}
 
-		sprintf(dir, "%s/%" PRIi64, dir_base, server->id);
+		sprintf(dir, "%s/%" PRIi64, base_dir, server->id);
 
 		assert(channels[*i] == NULL);
 
@@ -756,6 +757,38 @@ static int __rrr_test_raft_fork (
 	return ret;
 }
 
+static int __rrr_test_raft_server_dir_ensure(const char *dir) {
+	int ret = 0;
+
+	if ((ret = rrr_util_fs_dir_ensure(dir)) != 0) {
+		RRR_MSG_0("Failed to ensure server directory %s: %s\n",
+			dir, rrr_strerror(errno));
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+
+static int __rrr_test_raft_server_dir_ensure_and_clean(const char *dir) {
+	int ret = 0;
+
+	if ((ret = rrr_util_fs_dir_ensure(dir)) != 0) {
+		RRR_MSG_0("Failed to ensure server directory %s: %s\n",
+			dir, rrr_strerror(errno));
+		goto out;
+	}
+
+	if ((ret = rrr_util_fs_dir_clean(dir)) != 0) {
+		RRR_MSG_0("Failed to clean server directory %s: %s\n",
+			dir, rrr_strerror(errno));
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_test_raft (
 		const volatile int *main_running,
 		struct rrr_fork_handler *fork_handler,
@@ -763,17 +796,30 @@ int rrr_test_raft (
 ) {
 	int ret = 0;
 
-	int i = 0;
+	int i;
 	struct rrr_raft_channel *channels[RRR_TEST_RAFT_SERVER_TOTAL_COUNT] = {0};
 	struct rrr_test_raft_callback_data callback_data = {0};
 	rrr_event_receiver_handle queue_handle;
 	struct rrr_raft_server *servers = NULL;
+	char dir[sizeof(base_dir) + 32];
+
+	if ((ret = __rrr_test_raft_server_dir_ensure(base_dir)) != 0) {
+		goto out;
+	}
+
+	for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+		sprintf(dir, "%s/%i", base_dir, i + 1);
+		if ((ret = __rrr_test_raft_server_dir_ensure_and_clean(dir)) != 0) {
+			goto out;
+		}
+	}
 
 	callback_data.main_running = main_running;
 	callback_data.channels = channels;
 	callback_data.leader_index = -1;
 	callback_data.servers = &servers;
 
+	i = 0;
 	if ((ret = __rrr_test_raft_fork (
 			&i,
 			fork_handler,
@@ -805,14 +851,14 @@ int rrr_test_raft (
 		goto out;
 	}
 
-	if ((ret = rrr_event_function_periodic_set_and_dispatch (
+	ret = rrr_event_function_periodic_set_and_dispatch (
 			queue,
 			queue_handle,
 			250 * 1000, // 250 ms
 			__rrr_test_raft_periodic
-	)) != 0) {
-		goto out;
-	}
+	);
+
+	rrr_event_receiver_reset(queue, queue_handle);
 
 	if (!callback_data.all_ok) {
 		TEST_MSG("All OK not set, one or more tests failed or has not run\n");
@@ -825,7 +871,11 @@ int rrr_test_raft (
 		if (channels[i] != NULL) {
 			rrr_raft_cleanup(channels[i]);
 		}
+		sprintf(dir, "%s/%i", base_dir, i + 1);
+		__rrr_test_raft_server_dir_ensure_and_clean(dir);
+		rmdir(dir);
 	}
+	rmdir(base_dir);
 	return ret;
 }
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,24 +19,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_UMASK_H
-#define RRR_UMASK_H
+#ifndef RRR_DIRENT_H
+#define RRR_DIRENT_H
 
-#include <sys/types.h>
+#include <dirent.h>
 
-mode_t rrr_umask_get_global (void);
-void rrr_umask_onetime_set_global (
-		mode_t mask_new
-);
-int rrr_umask_with_umask_lock_do (
-		mode_t mask_new,
-		int (*callback)(void *callback_arg),
-		void *callback_arg
-);
-int rrr_umask_with_umask_lock_and_mode_do (
-		mode_t mode,
-		int (*callback)(mode_t mode, void *callback_arg),
-		void *callback_arg
-);
+#ifndef DT_UNKNOWN
+/* File types for `d_type'.  */
+enum
+  {
+    DT_UNKNOWN = 0,
+# define DT_UNKNOWN	DT_UNKNOWN
+    DT_FIFO = 1,
+# define DT_FIFO	DT_FIFO
+    DT_CHR = 2,
+# define DT_CHR		DT_CHR
+    DT_DIR = 4,
+# define DT_DIR		DT_DIR
+    DT_BLK = 6,
+# define DT_BLK		DT_BLK
+    DT_REG = 8,
+# define DT_REG		DT_REG
+    DT_LNK = 10,
+# define DT_LNK		DT_LNK
+    DT_SOCK = 12,
+# define DT_SOCK	DT_SOCK
+    DT_WHT = 14
+# define DT_WHT		DT_WHT
+  };
+#endif
 
-#endif /* RRR_UMASK_H */
+#endif /* RRR_DIRENT_H */

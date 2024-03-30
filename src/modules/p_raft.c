@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/util/gnu.h"
+#include "../lib/util/fs.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/instance_config.h"
@@ -609,18 +610,6 @@ static void raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 	}
 }
 
-static int raft_mkdir (const char *path) {
-	if (mkdir(path, 0777) == 0) {
-		// OK, created
-	}
-	else if (errno != EEXIST) {
-		RRR_MSG_0("Failed to create directory %s: %s\n",
-			path, rrr_strerror(errno));
-		return 1;
-	}
-	return 0;
-}
-
 static int raft_fork (void *arg) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -671,17 +660,21 @@ static int raft_fork (void *arg) {
 		i++;	
 	RRR_MAP_ITERATE_END();
 
+	if ((ret = rrr_util_fs_dir_ensure(data->directory)) != 0) {
+		RRR_MSG_0("Failed to ensure server base directory %s in raft instance %s: %s\n",
+			data->directory, INSTANCE_D_NAME(thread_data), rrr_strerror(errno));
+		goto out;
+	}
+
 	if (rrr_asprintf(&path, "%s/%" PRIi64, data->directory, servers[0].id) <= 0) {
 		RRR_MSG_0("Failed to create path in %s]\n", __func__);
 		ret = 1;
 		goto out_err;
 	}
 
-	if ((ret = raft_mkdir(data->directory)) != 0) {
-		goto out;
-	}
-
-	if ((ret = raft_mkdir(path)) != 0) {
+	if ((ret = rrr_util_fs_dir_ensure(path)) != 0) {
+		RRR_MSG_0("Failed to ensure server directory %s in raft instance %s: %s\n",
+			path, INSTANCE_D_NAME(thread_data), rrr_strerror(errno));
 		goto out;
 	}
 

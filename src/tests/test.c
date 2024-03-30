@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
+#include "../lib/rrr_umask.h"
 #include "../lib/rrr_config.h"
 
 #include "test_condition.h"
@@ -100,6 +101,9 @@ const char *library_paths[] = {
 // After one or more threads have exited, wait with killing other
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
+
+#define RRR_TEST_GLOBAL_UMASK \
+    S_IROTH | S_IWOTH | S_IXOTH
 
 int main_get_test_result(struct rrr_instance_collection *instances) {
 	struct rrr_instance *instance = rrr_instance_find(instances, "instance_test_module");
@@ -561,7 +565,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	// Set receiver count higher if needed by tests
-	if (rrr_event_queue_new (&event_queue, 2) != 0) {
+	if (rrr_event_queue_new (&event_queue, 3) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_fork_handler;
 	}
@@ -595,6 +599,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	RRR_DBG_1("RRR test debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+	rrr_umask_onetime_set_global(RRR_TEST_GLOBAL_UMASK);
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");

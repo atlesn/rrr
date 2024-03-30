@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -74,7 +74,7 @@ int rrr_umask_with_umask_lock_do (
 ) {
 	int ret = 0;
 
-	mode_t umask_orig = 0;
+	mode_t umask_orig;
 
 	pthread_mutex_lock(&rrr_umask_lock);
 
@@ -88,5 +88,30 @@ int rrr_umask_with_umask_lock_do (
 	umask(umask_orig);
 
 	pthread_mutex_unlock(&rrr_umask_lock);
+
+	return ret;
+}
+
+int rrr_umask_with_umask_lock_and_mode_do (
+		mode_t mode,
+		int (*callback)(mode_t mode, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	mode_t umask_orig;
+
+	pthread_mutex_lock(&rrr_umask_lock);
+
+	umask_orig = umask(0);
+	umask(umask_orig);
+
+	RRR_DBG_7("umask wrapper mode is %i.\n",
+			mode);
+
+	ret = callback(mode & ~umask_orig, callback_arg);
+
+	pthread_mutex_unlock(&rrr_umask_lock);
+
 	return ret;
 }

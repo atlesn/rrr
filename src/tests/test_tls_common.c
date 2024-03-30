@@ -310,9 +310,9 @@ int rrr_test_tls_common_dispatch (
 		goto out;
 	}
 
-	if ((ret = rrr_event_dispatch (event_queue)) != 0) {
-		goto out;
-	}
+	ret = rrr_event_dispatch (event_queue);
+
+	rrr_event_receiver_reset(event_queue, event_queue_handle);
 
 	out:
 	return ret;
