@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/event/event.h"
-#include "../lib/raft/rrr_raft.h"
+#include "../lib/raft/channel.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/messages/msg_msg_struct.h"
 #include "../lib/util/fs.h"
@@ -265,7 +265,7 @@ static int __rrr_test_raft_check_some_server_catched_up (
 	return 0;
 }
 
-static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
+static void __rrr_test_raft_pong_callback (RRR_RAFT_PONG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	(void)(server_id);
@@ -276,7 +276,7 @@ static void __rrr_test_raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
 	}
 }
 
-static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
+static void __rrr_test_raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	// TEST_MSG("%s %u received server %i\n",
@@ -285,7 +285,7 @@ static void __rrr_test_raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
 	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, code == 0);
 }
 
-static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
+static void __rrr_test_raft_opt_callback (RRR_RAFT_OPT_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	(void)(leader_address);
@@ -341,7 +341,7 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
 }
 
-static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
+static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	const char *topic_ptr;
@@ -381,7 +381,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
     do {                                                                                    \
         RRR_FREE_IF_NOT_NULL(*callback_data->servers);                                      \
         req_index = 0;                                                                      \
-        rrr_raft_client_request_opt (&req_index, callback_data->channels[server_index]);    \
+        rrr_raft_channel_request_opt (&req_index, callback_data->channels[server_index]);   \
         assert(req_index > 0);                                                              \
         TEST_MSG("- Probed server %i req %u...\n", server_index, req_index);                \
         __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);  \
@@ -390,7 +390,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 #define GET(server_index,expect_ok)                                                               \
     do {                                                                                          \
         req_index = 0;                                                                            \
-        rrr_raft_client_request_get (                                                             \
+        rrr_raft_channel_request_get (                                                            \
                 &req_index,                                                                       \
                 callback_data->channels[server_index],                                            \
                 topic,                                                                            \
@@ -403,7 +403,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 #define PUT(server_index,msg_index)                       \
     do {                                                  \
         req_index = 0;                                    \
-        rrr_raft_client_request_put (                     \
+        rrr_raft_channel_request_put (                    \
                 &req_index,                               \
                 callback_data->channels[server_index],    \
                 topic,                                    \
@@ -423,7 +423,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
 #define TRANSFER(server_index)                                        \
     do {                                                              \
          req_index = 0;                                               \
-         rrr_raft_client_leadership_transfer (                        \
+         rrr_raft_channel_leadership_transfer (                       \
              &req_index,                                              \
              callback_data->channels[callback_data->leader_index],    \
              server_index + 1                                         \
@@ -473,7 +473,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					callback_data->servers_delete[0].status = 0;
 
 					req_index = 0;
-					rrr_raft_client_servers_del (
+					rrr_raft_channel_servers_del (
 							&req_index,
 							callback_data->channels[callback_data->leader_index],
 							callback_data->servers_delete
@@ -556,7 +556,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		case 6: {
 			TEST_MSG("- Adding intermediate servers...\n");
 			req_index = 0;
-			rrr_raft_client_servers_add (
+			rrr_raft_channel_servers_add (
 					&req_index,
 					callback_data->channels[callback_data->leader_index],
 					servers_intermediate
@@ -584,7 +584,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			servers_tmp[0].status = RRR_RAFT_VOTER;
 
 			req_index = 0;
-			rrr_raft_client_servers_assign (
+			rrr_raft_channel_servers_assign (
 					&req_index,
 					callback_data->channels[callback_data->leader_index],
 					servers_tmp
@@ -726,7 +726,7 @@ static int __rrr_test_raft_fork (
 
 		TEST_MSG("Start server %" PRIi64 " address %s\n", server->id, server->address);
 
-		if ((ret = rrr_raft_fork (
+		if ((ret = rrr_raft_channel_fork (
 				&channels[*i],
 				fork_handler,
 				queue,
@@ -869,7 +869,7 @@ int rrr_test_raft (
 	RRR_FREE_IF_NOT_NULL(servers);
 	for (i = 0; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
 		if (channels[i] != NULL) {
-			rrr_raft_cleanup(channels[i]);
+			rrr_raft_channel_cleanup(channels[i]);
 		}
 		sprintf(dir, "%s/%i", base_dir, i + 1);
 		__rrr_test_raft_server_dir_ensure_and_clean(dir);

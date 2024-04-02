@@ -19,24 +19,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_RAFT_H
-#define RRR_RAFT_H
+#ifndef RRR_RAFT_CHANNEL_H
+#define RRR_RAFT_CHANNEL_H
 
 #include <stdint.h>
 #include <stddef.h>
-#include <assert.h>
 
-#define RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS             \
+#include "common.h"
+
+#define RRR_RAFT_PONG_CALLBACK_ARGS                    \
     int server_id,                                     \
     void *arg
 
-#define RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS              \
+#define RRR_RAFT_ACK_CALLBACK_ARGS                     \
     int server_id,                                     \
     uint32_t req_index,                                \
     enum rrr_raft_code code,                           \
     void *arg
 
-#define RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS              \
+#define RRR_RAFT_OPT_CALLBACK_ARGS                     \
     int server_id,                                     \
     uint32_t req_index,                                \
     int64_t is_leader,                                 \
@@ -45,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_raft_server **servers,                  \
     void *arg
 
-#define RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS              \
+#define RRR_RAFT_MSG_CALLBACK_ARGS                     \
     int server_id,                                     \
     uint32_t req_index,                                \
     struct rrr_msg_msg **msg,                          \
@@ -62,44 +63,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     ((s) == RRR_RAFT_CATCH_UP_ABORTED ? "ABORTED" :                  \
     ((s) == RRR_RAFT_CATCH_UP_FINISHED ? "FINISHED" : "UNKNOWN"))))
 
-// Maximum four bits
-enum rrr_raft_code {
-	RRR_RAFT_OK = 0,
-	RRR_RAFT_ERROR,
-	RRR_RAFT_NOT_LEADER,
-	RRR_RAFT_ENOENT
-};
-
-enum rrr_raft_status {
-	RRR_RAFT_STANDBY = 1,
-	RRR_RAFT_VOTER,
-	RRR_RAFT_SPARE
-};
-
-enum rrr_raft_catch_up {
-	RRR_RAFT_CATCH_UP_NONE = 0,
-	RRR_RAFT_CATCH_UP_RUNNING,
-	RRR_RAFT_CATCH_UP_ABORTED,
-	RRR_RAFT_CATCH_UP_FINISHED,
-	RRR_RAFT_CATCH_UP_UNKNOWN
-};
-
+struct rrr_msg_msg;
+struct rrr_event_queue;
 struct rrr_fork_handler;
 struct rrr_raft_channel;
-struct rrr_event_queue;
-struct rrr_msg_msg;
 
-struct rrr_raft_server {
-	int64_t id;
-	int64_t status;
-	int64_t catch_up;
-	char address[64];
-} __attribute__((packed));
+struct rrr_raft_channel_callbacks {
+	void (*pong_callback)(RRR_RAFT_PONG_CALLBACK_ARGS);
+	void (*ack_callback)(RRR_RAFT_ACK_CALLBACK_ARGS);
+	void (*opt_callback)(RRR_RAFT_OPT_CALLBACK_ARGS);
+	void (*msg_callback)(RRR_RAFT_MSG_CALLBACK_ARGS);
+	void *arg;
+};
 
-const char *rrr_raft_reason_to_str (
-		enum rrr_raft_code code
+void rrr_raft_channel_fds_get (
+		int fds[2],
+		const struct rrr_raft_channel *channel
 );
-int rrr_raft_fork (
+int rrr_raft_channel_fork (
 		struct rrr_raft_channel **result,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_event_queue *queue,
@@ -108,16 +89,16 @@ int rrr_raft_fork (
 		const struct rrr_raft_server *servers,
 		size_t servers_self,
 		const char *dir,
-		void (*pong_callback)(RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS),
-		void (*ack_callback)(RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS),
-		void (*opt_callback)(RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS),
-		void (*msg_callback)(RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS),
+		void (*pong_callback)(RRR_RAFT_PONG_CALLBACK_ARGS),
+		void (*ack_callback)(RRR_RAFT_ACK_CALLBACK_ARGS),
+		void (*opt_callback)(RRR_RAFT_OPT_CALLBACK_ARGS),
+		void (*msg_callback)(RRR_RAFT_MSG_CALLBACK_ARGS),
 		void *callback_arg
 );
-void rrr_raft_cleanup (
+void rrr_raft_channel_cleanup (
 		struct rrr_raft_channel *channel
 );
-int rrr_raft_client_request_put (
+int rrr_raft_channel_request_put (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,
@@ -125,40 +106,40 @@ int rrr_raft_client_request_put (
 		const void *data,
 		size_t data_size
 );
-int rrr_raft_client_request_put_native (
+int rrr_raft_channel_request_put_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_msg_msg *msg
 );
-int rrr_raft_client_request_opt (
+int rrr_raft_channel_request_opt (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel
 );
-int rrr_raft_client_request_get (
+int rrr_raft_channel_request_get (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,
 		size_t topic_length
 );
-int rrr_raft_client_servers_add (
+int rrr_raft_channel_servers_add (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers
 );
-int rrr_raft_client_servers_del (
+int rrr_raft_channel_servers_del (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers
 );
-int rrr_raft_client_servers_assign (
+int rrr_raft_channel_servers_assign (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const struct rrr_raft_server *servers
 );
-int rrr_raft_client_leadership_transfer (
+int rrr_raft_channel_leadership_transfer (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		int server_id
 );
 
-#endif /* RRR_RAFT_H */
+#endif /* RRR_RAFT_CHANNEL_H */

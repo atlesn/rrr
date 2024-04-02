@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
-#include "../lib/raft/rrr_raft.h"
+#include "../lib/raft/channel.h"
 
 #define RAFT_DEFAULT_DIRECTORY "/var/lib/rrr/raft"
 #define RAFT_DEFAULT_PORT 9001
@@ -193,7 +193,7 @@ static void raft_data_init(struct raft_data *data, struct rrr_instance_runtime_d
 static void raft_data_cleanup(struct raft_data *data) {
 	rrr_map_clear(&data->servers);
 	if (data->channel != NULL)
-		rrr_raft_cleanup(data->channel);
+		rrr_raft_channel_cleanup(data->channel);
 	raft_request_collection_clear(&data->requests);
 	RRR_FREE_IF_NOT_NULL(data->directory);
 }
@@ -226,7 +226,7 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 					INSTANCE_D_NAME(thread_data));
 			}
 
-			if ((ret = rrr_raft_client_request_put_native (
+			if ((ret = rrr_raft_channel_request_put_native (
 					&req_index,
 					data->channel,
 					message
@@ -239,7 +239,7 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 		} break;
 		case MSG_TYPE_GET: {
 			printf("topic length %u\n", MSG_TOPIC_LENGTH(message));
-			if ((ret = rrr_raft_client_request_get (
+			if ((ret = rrr_raft_channel_request_get (
 					&req_index,
 					data->channel,
 					MSG_TOPIC_LENGTH(message) > 0 ? MSG_TOPIC_PTR(message) : NULL,
@@ -368,14 +368,14 @@ static int raft_message_broker_callback (
 	return ret;
 }
 
-static void raft_pong_callback (RRR_RAFT_CLIENT_PONG_CALLBACK_ARGS) {
+static void raft_pong_callback (RRR_RAFT_PONG_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
 	(void)(server_id);
 	(void)(data);
 }
 
-static void raft_ack_callback (RRR_RAFT_CLIENT_ACK_CALLBACK_ARGS) {
+static void raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
 	int ret_tmp = 0;
@@ -508,7 +508,7 @@ static int raft_leadership_transfer (
 
 	uint32_t req_index;
 
-	if ((ret = rrr_raft_client_leadership_transfer (
+	if ((ret = rrr_raft_channel_leadership_transfer (
 			&req_index,
 			data->channel,
 			server_id
@@ -529,7 +529,7 @@ static int raft_leadership_transfer (
 	return ret;
 }
 
-static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
+static void raft_opt_callback (RRR_RAFT_OPT_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
 	(void)(req_index);
@@ -576,7 +576,7 @@ static void raft_opt_callback (RRR_RAFT_CLIENT_OPT_CALLBACK_ARGS) {
 	}
 }
 
-static void raft_msg_callback (RRR_RAFT_CLIENT_MSG_CALLBACK_ARGS) {
+static void raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	struct raft_data *data = arg;
 
 	(void)(server_id);
@@ -678,7 +678,7 @@ static int raft_fork (void *arg) {
 		goto out;
 	}
 
-	if ((ret = rrr_raft_fork (
+	if ((ret = rrr_raft_channel_fork (
 			&data->channel,
 			INSTANCE_D_FORK(thread_data),
 			INSTANCE_D_EVENTS(thread_data),
@@ -718,7 +718,7 @@ static int raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	uint32_t req_index;
 
-	if (rrr_raft_client_request_opt(&req_index, data->channel) != 0) {
+	if (rrr_raft_channel_request_opt(&req_index, data->channel) != 0) {
 		RRR_MSG_0("Failed to send OPT request to raft node in raft instance %s\n",
 			INSTANCE_D_NAME(thread_data));
 		return RRR_EVENT_ERR;
