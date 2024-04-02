@@ -140,7 +140,8 @@ int rrr_raft_channel_fork (
 		void (*ack_callback)(RRR_RAFT_ACK_CALLBACK_ARGS),
 		void (*opt_callback)(RRR_RAFT_OPT_CALLBACK_ARGS),
 		void (*msg_callback)(RRR_RAFT_MSG_CALLBACK_ARGS),
-		void *callback_arg
+		void *callback_arg,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 ) {
 	int ret = 0;
 
@@ -197,7 +198,8 @@ int rrr_raft_channel_fork (
 				name,
 				servers,
 				servers_self,
-				dir
+				dir,
+				patch_cb
 		);
 
 		exit(ret != 0);
@@ -237,6 +239,17 @@ int rrr_raft_channel_request_put (
 		size_t data_size
 ) {
 	return rrr_raft_client_request_put(req_index, channel, topic, topic_length, data, data_size);
+}
+
+int rrr_raft_channel_request_patch (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length,
+		const void *data,
+		size_t data_size
+) {
+	return rrr_raft_client_request_patch(req_index, channel, topic, topic_length, data, data_size);
 }
 
 int rrr_raft_channel_request_put_native (

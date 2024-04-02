@@ -49,6 +49,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Blob fields
 #define RRR_RAFT_FIELD_SERVER          "raft_server"
 
+#define RRR_RAFT_PATCH_CB_ARGS \
+    struct rrr_msg_msg **msg_new, const struct rrr_msg_msg *msg_orig, const struct rrr_msg_msg *msg_patch
+
 struct rrr_array;
 
 // Maximum four bits

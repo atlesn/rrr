@@ -36,6 +36,14 @@ int rrr_raft_client_request_put (
 		const void *data,
 		size_t data_size
 );
+int rrr_raft_client_request_patch (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length,
+		const void *data,
+		size_t data_size
+);
 int rrr_raft_client_request_put_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,

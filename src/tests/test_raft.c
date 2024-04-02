@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/raft/channel.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/messages/msg_msg_struct.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/util/fs.h"
 
 #define RRR_TEST_RAFT_SERVER_INITIAL_COUNT 3
@@ -57,19 +58,39 @@ static const struct rrr_raft_server servers_intermediate[RRR_TEST_RAFT_SERVER_IN
 };
 
 static const char *requests[] = {
-	"Request 0",
-	"Request 1",
-	"Request 2",
-	"Request 3",
-	"Request 4",
-	"Request 5",
-	"Request 6",
-	"Request 7",
-	"Request 8",
-	"Request 9"
+	"{'data': 0}",
+	"{'data': 1}",
+	"{'data': 2}",
+	"{'data': 3}",
+	"{'data': 4}",
+	"{'data': 5}",
+	"{'data': 6}",
+	"{'data': 7}",
+	"{'data': 8}",
+	"{'data': 9}",
+	"{'patch': 69}"
+};
+
+static const char *results[] = {
+	"{'data': 0}",
+	"{'data': 1}",
+	"{'data': 2}",
+	"{'data': 3}",
+	"{'data': 4}",
+	"{'data': 5}",
+	"{'data': 6}",
+	"{'data': 7}",
+	"{'data': 8}",
+	"{'data': 9}",
+	"{'data':0,'patch':69}"
 };
 
 static const char base_dir[] = "/tmp/rrr-test-raft";
+
+struct rrr_test_raft_data_expected {
+	uint32_t req_index;
+	uint32_t data_index;
+};
 
 struct rrr_test_raft_callback_data {
 	struct rrr_raft_channel **channels;
@@ -80,6 +101,7 @@ struct rrr_test_raft_callback_data {
 	uint32_t ack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	uint32_t nack_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	uint32_t msg_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
+	struct rrr_test_raft_data_expected data_expected[RRR_TEST_RAFT_SERVER_TOTAL_COUNT][RRR_TEST_RAFT_IN_FLIGHT_MAX];
 	struct rrr_raft_server servers_delete[RRR_TEST_RAFT_SERVER_INTERMEDIATE_COUNT + 1];
 	struct rrr_raft_server **servers;
 	int leader_index;
@@ -114,6 +136,22 @@ static void __rrr_test_raft_register_expected (
 	RRR_BUG("BUG: In flight max reached in %s\n", __func__);
 }
 
+static void __rrr_test_raft_register_expected_data (
+		struct rrr_test_raft_data_expected *array,
+		uint32_t req_index,
+		uint32_t data_index
+) {
+	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
+		if (array[i].req_index == 0) {
+			array[i].req_index = req_index;
+			array[i].data_index = data_index;
+			return;
+		}
+	}
+
+	RRR_BUG("BUG: In flight max reached in %s\n", __func__);
+}
+
 static void __rrr_test_raft_register_expected_ack (
 		struct rrr_test_raft_callback_data *callback_data,
 		int server_id,
@@ -124,19 +162,30 @@ static void __rrr_test_raft_register_expected_ack (
 	__rrr_test_raft_register_expected((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
 
-static void __rrr_test_raft_register_expected_msg (
+static void __rrr_test_raft_register_expected_msg_data (
+		struct rrr_test_raft_callback_data *callback_data,
+		int server_id,
+		uint32_t req_index,
+		uint32_t data_index
+) {
+	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
+	__rrr_test_raft_register_expected(callback_data->msg_expected[server_id - 1], req_index);
+	__rrr_test_raft_register_expected_data(callback_data->data_expected[server_id - 1], req_index, data_index);
+}
+
+static void __rrr_test_raft_register_expected_msg_no_data (
 		struct rrr_test_raft_callback_data *callback_data,
 		int server_id,
 		uint32_t req_index
 ) {
-	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
-	__rrr_test_raft_register_expected(callback_data->msg_expected[server_id - 1], req_index);
+	return __rrr_test_raft_register_expected_msg_data(callback_data, server_id, req_index, UINT32_MAX);
 }
 
-static void __rrr_test_raft_register_expected_pair (
+static void __rrr_test_raft_register_expected_pair_data (
 		struct rrr_test_raft_callback_data *callback_data,
 		int server_id,
 		uint32_t req_index,
+		uint32_t data_index,
 		int ok
 ) {
 	__rrr_test_raft_register_expected_ack (
@@ -147,12 +196,22 @@ static void __rrr_test_raft_register_expected_pair (
 	);
 
 	if (ok) {
-		__rrr_test_raft_register_expected_msg (
+		__rrr_test_raft_register_expected_msg_data (
 				callback_data,
 				server_id,
-				req_index
+				req_index,
+				data_index
 		);
 	}
+}
+
+static void __rrr_test_raft_register_expected_pair_no_data (
+		struct rrr_test_raft_callback_data *callback_data,
+		int server_id,
+		uint32_t req_index,
+		int ok
+) {
+	__rrr_test_raft_register_expected_pair_data(callback_data, server_id, req_index, UINT32_MAX, ok);
 }
 
 static void __rrr_test_raft_register_response (
@@ -162,6 +221,43 @@ static void __rrr_test_raft_register_response (
 	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
 		if (array[i] == req_index) {
 			array[i] = 0;
+			return;
+		}
+	}
+
+	RRR_BUG("BUG: Expected response not found in %s\n", __func__);
+}
+
+static void __rrr_test_raft_register_response_data (
+		struct rrr_test_raft_data_expected *array,
+		uint32_t req_index,
+		const char *data,
+		size_t data_len
+) {
+	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
+		if (array[i].req_index == req_index) {
+			if (data == NULL) {
+				if (array[i].data_index != UINT32_MAX) {
+					RRR_BUG("BUG: Expected response with data not to be checked but an index was given (%u)\n",
+						array[i].data_index);
+				}
+				array[i].req_index = 0;
+				return;
+			}
+
+			const char *data_cmp = results[array[i].data_index];
+
+			if (strlen(data_cmp) != data_len) {
+				RRR_BUG("BUG: Data length mismatch in %s: %u<>%u\n",
+					__func__, strlen(data_cmp), data_len);
+			}
+
+			if (memcmp(data_cmp, data, data_len) != 0) {
+				RRR_BUG("BUG: Data mismatch in %s: <<%s>> <> <<%.*s>>\n",
+					__func__, data_cmp, data_len, data);
+			}
+
+			array[i].req_index = 0;
 			return;
 		}
 	}
@@ -182,10 +278,13 @@ static void __rrr_test_raft_register_response_ack (
 static void __rrr_test_raft_register_response_msg (
 		struct rrr_test_raft_callback_data *callback_data,
 		int server_id,
-		uint32_t req_index
+		uint32_t req_index,
+		const char *data,
+		size_t data_len
 ) {
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response(callback_data->msg_expected[server_id - 1], req_index);
+	__rrr_test_raft_register_response_data(callback_data->data_expected[server_id - 1], req_index, data, data_len);
 }
 
 static int __rrr_test_raft_check_all_ack_received (
@@ -197,6 +296,7 @@ static int __rrr_test_raft_check_all_ack_received (
 		uint32_t *ack_expected = callback_data->ack_expected[i];
 		uint32_t *nack_expected = callback_data->nack_expected[i];
 		uint32_t *msg_expected = callback_data->msg_expected[i];
+		struct rrr_test_raft_data_expected *data_expected = callback_data->data_expected[i];
 
 		for (int j = 0; j < RRR_TEST_RAFT_IN_FLIGHT_MAX; j++) {
 			if (ack_expected[j] != 0) {
@@ -211,13 +311,14 @@ static int __rrr_test_raft_check_all_ack_received (
 				TEST_MSG("  - MSG not received for req %u server %i\n", msg_expected[j], j + 1);
 				res = 0;
 			}
+			if (data_expected[j].req_index != 0) {
+				TEST_MSG("  - Data not received for req %u server %i\n", data_expected[j].req_index, j + 1);
+				res = 0;
+			}
 		}
 	}
 
 	return res;
-/*	return __rrr_test_raft_check_zero((uint8_t *) callback_data->ack_expected, sizeof(callback_data->ack_expected)) &&
-	       __rrr_test_raft_check_zero((uint8_t *) callback_data->nack_expected, sizeof(callback_data->ack_expected)) &&
-	       __rrr_test_raft_check_zero((uint8_t *) callback_data->msg_expected, sizeof(callback_data->ack_expected));*/
 }
 
 static int __rrr_test_raft_check_all_servers_voting (
@@ -338,14 +439,13 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_OPT_CALLBACK_ARGS) {
 		}
 	}
 
-	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
+	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index, NULL, 0);
 }
 
 static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
 	const char *topic_ptr;
-	int msg_pos;
 
 	// TEST_MSG("MSG %u received server %i\n",
 	//	req_index, server_id);
@@ -355,16 +455,43 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	assert(strncmp(MSG_TOPIC_PTR(*msg), "topic/", strlen("topic/")) == 0);
 	topic_ptr += strlen("topic/");
 	assert(*topic_ptr >= '0' && *topic_ptr <= '9');
-	msg_pos = *topic_ptr - '0';
 
-	assert(MSG_DATA_LENGTH(*msg) == strlen(requests[msg_pos]));
+	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index, MSG_DATA_PTR(*msg), MSG_DATA_LENGTH(*msg));
+}
 
-	if (memcmp(requests[msg_pos], MSG_DATA_PTR(*msg), MSG_DATA_LENGTH(*msg)) != 0) {
-		RRR_BUG("BUG: Unexpected responses '%.*s' (expected '%s')\n",
-			MSG_DATA_LENGTH(*msg), MSG_DATA_PTR(*msg), requests[msg_pos]);
+static int __rrr_test_raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg;
+
+	if (strncmp(MSG_DATA_PTR(msg_orig), requests[0], strlen(requests[0])) != 0) {
+		RRR_BUG("BUG: Data mismatch in %s: <<%s>> <> <<%.*s>>\n",
+			__func__, requests[0], MSG_DATA_LENGTH(msg_orig), MSG_DATA_PTR(msg_orig));
 	}
 
-	__rrr_test_raft_register_response_msg(callback_data, server_id, req_index);
+	if (strncmp(MSG_DATA_PTR(msg_patch), requests[10], strlen(requests[10])) != 0) {
+		RRR_BUG("BUG: Patch data mismatch in %s\n", __func__);
+	}
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			&msg,
+			MSG_TYPE_PUT,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			MSG_TOPIC_PTR(msg_orig),
+			MSG_TOPIC_LENGTH(msg_orig),
+			results[10],
+			strlen(results[10])
+	)) != 0 ) {
+		RRR_MSG_0("Failed to allocate data in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	*msg_new = msg;
+
+	out:
+	return ret;
 }
 
 #define WAIT_ACK()                                                  \
@@ -384,10 +511,10 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
         rrr_raft_channel_request_opt (&req_index, callback_data->channels[server_index]);   \
         assert(req_index > 0);                                                              \
         TEST_MSG("- Probed server %i req %u...\n", server_index, req_index);                \
-        __rrr_test_raft_register_expected_msg(callback_data, server_index + 1, req_index);  \
+        __rrr_test_raft_register_expected_msg_no_data(callback_data, server_index + 1, req_index); \
     } while(0)                                                                              \
 
-#define GET(server_index,expect_ok)                                                               \
+#define GET(server_index,data_index,expect_ok)                                                    \
     do {                                                                                          \
         req_index = 0;                                                                            \
         rrr_raft_channel_request_get (                                                            \
@@ -397,13 +524,33 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
                 strlen(topic)                                                                     \
         );                                                                                        \
         assert(req_index > 0);                                                                    \
-        __rrr_test_raft_register_expected_pair(callback_data, server_index + 1, req_index, expect_ok); \
+        __rrr_test_raft_register_expected_pair_data(callback_data, server_index + 1, req_index, data_index, expect_ok); \
     } while(0)
 
 #define PUT(server_index,msg_index)                       \
     do {                                                  \
         req_index = 0;                                    \
         rrr_raft_channel_request_put (                    \
+                &req_index,                               \
+                callback_data->channels[server_index],    \
+                topic,                                    \
+                strlen(topic),                            \
+                requests[msg_index],                      \
+                strlen(requests[msg_index])               \
+        );                                                \
+        assert(req_index > 0);                            \
+        __rrr_test_raft_register_expected_ack (           \
+                callback_data,                            \
+                server_index + 1,                         \
+                req_index,                                \
+                1 /* ok expected */                       \
+        );                                                \
+    } while(0)
+
+#define PAT(server_index,msg_index)                       \
+    do {                                                  \
+        req_index = 0;                                    \
+        rrr_raft_channel_request_patch (                  \
                 &req_index,                               \
                 callback_data->channels[server_index],    \
                 topic,                                    \
@@ -429,7 +576,7 @@ static void __rrr_test_raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
              server_index + 1                                         \
          );                                                           \
          assert(req_index > 0);                                       \
-         __rrr_test_raft_register_expected_pair (                     \
+         __rrr_test_raft_register_expected_pair_no_data (             \
              callback_data,                                           \
              callback_data->leader_index + 1,                         \
              req_index,                                               \
@@ -479,7 +626,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 							callback_data->servers_delete
 					);
 					assert(req_index > 0);
-					__rrr_test_raft_register_expected_pair (
+					__rrr_test_raft_register_expected_pair_no_data (
 							callback_data,
 							callback_data->leader_index + 1,
 							req_index,
@@ -529,7 +676,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
-					GET(i, 1 /* Expect ok */);
+					GET(i, msg_pos % 10, 1 /* Expect ok */);
 				}
 			}
 
@@ -544,7 +691,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", 'a' + msg_pos % 10);
 
 				for (i = 0; i < RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i++) {
-					GET(i, 0 /* Expect not ok */);
+					GET(i, 0, 0 /* Expect not ok */);
 				}
 			}
 
@@ -562,7 +709,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					servers_intermediate
 			);
 			assert(req_index > 0);
-			__rrr_test_raft_register_expected_pair (
+			__rrr_test_raft_register_expected_pair_no_data (
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
@@ -590,7 +737,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 					servers_tmp
 			);
 			assert(req_index > 0);
-			__rrr_test_raft_register_expected_pair (
+			__rrr_test_raft_register_expected_pair_no_data (
 					callback_data,
 					callback_data->leader_index + 1,
 					req_index,
@@ -619,7 +766,7 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				sprintf(topic, "topic/%c", '0' + msg_pos % 10);
 
 				for (i = RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
-					GET(i, 1 /* Expect ok */);
+					GET(i, msg_pos % 10, 1 /* Expect ok */);
 				}
 			}
 
@@ -674,6 +821,26 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			assert(callback_data->leader_index_old != callback_data->leader_index);
 			TEST_MSG("- Leadership was transferred from %i to %i\n",
 				callback_data->leader_index_old + 1, callback_data->leader_index + 1);
+		} break;
+		case 18: {
+			TEST_MSG("- Sending PAT messages to %i...\n", callback_data->leader_index + 1);
+
+			sprintf(topic, "topic/0");
+			PAT(callback_data->leader_index, 10 /* Pass the patch data */);
+		} break;
+		case 19: {
+			WAIT_ACK();
+
+			TEST_MSG("- Sending GET messages to added servers...\n");
+
+			sprintf(topic, "topic/0");
+
+			for (i = RRR_TEST_RAFT_SERVER_INITIAL_COUNT; i < RRR_TEST_RAFT_SERVER_TOTAL_COUNT; i++) {
+				GET(i, 10 /* Compare against expected patch outcome */, 1 /* Expect ok */);
+			}
+		} break;
+		case 20: {
+			WAIT_ACK();
 		} break;
 		default: {
 
@@ -739,7 +906,8 @@ static int __rrr_test_raft_fork (
 				__rrr_test_raft_ack_callback,
 				__rrr_test_raft_opt_callback,
 				__rrr_test_raft_msg_callback,
-				callback_data
+				callback_data,
+				__rrr_test_raft_patch_callback
 		)) != 0) {
 			TEST_MSG("Failed to fork out raft process\n");
 			goto out;

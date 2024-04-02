@@ -93,12 +93,21 @@ int rrr_raft_channel_fork (
 		void (*ack_callback)(RRR_RAFT_ACK_CALLBACK_ARGS),
 		void (*opt_callback)(RRR_RAFT_OPT_CALLBACK_ARGS),
 		void (*msg_callback)(RRR_RAFT_MSG_CALLBACK_ARGS),
-		void *callback_arg
+		void *callback_arg,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 );
 void rrr_raft_channel_cleanup (
 		struct rrr_raft_channel *channel
 );
 int rrr_raft_channel_request_put (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length,
+		const void *data,
+		size_t data_size
+);
+int rrr_raft_channel_request_patch (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		const char *topic,

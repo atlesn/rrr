@@ -384,6 +384,26 @@ int rrr_raft_client_request_put (
 	);
 }
 
+int rrr_raft_client_request_patch (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length,
+		const void *data,
+		size_t data_size
+) {
+	return __rrr_raft_client_request (
+			req_index,
+			channel,
+			topic,
+			topic_length,
+			data,
+			data_size,
+			MSG_TYPE_PAT,
+			NULL
+	);
+}
+
 int rrr_raft_client_request_put_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,

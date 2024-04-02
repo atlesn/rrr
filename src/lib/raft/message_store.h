@@ -28,7 +28,8 @@ struct rrr_raft_message_store;
 struct rrr_msg_msg;
 
 int rrr_raft_message_store_new (
-		struct rrr_raft_message_store **result
+		struct rrr_raft_message_store **result,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 );
 void rrr_raft_message_store_destroy (
 		struct rrr_raft_message_store *store

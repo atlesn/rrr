@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <assert.h>
 
+#include "common.h"
+
 #include "../allocator.h"
 #include "../rrr_types.h"
 #include "../messages/msg_msg.h"
@@ -30,6 +32,7 @@ struct rrr_raft_message_store {
 	struct rrr_msg_msg **msgs;
 	size_t count;
 	size_t capacity;
+	int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS);
 };
 
 static int __rrr_raft_message_store_expand (
@@ -64,7 +67,8 @@ static int __rrr_raft_message_store_expand (
 }
 
 int rrr_raft_message_store_new (
-		struct rrr_raft_message_store **result
+		struct rrr_raft_message_store **result,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 ) {
 	int ret = 0;
 
@@ -75,6 +79,8 @@ int rrr_raft_message_store_new (
 		ret = 1;
 		goto out;
 	}
+
+	store->patch_cb = patch_cb;
 
 	*result = store;
 
@@ -134,30 +140,60 @@ int rrr_raft_message_store_push (
 
 	struct rrr_msg_msg *msg = NULL;
 
-	if ((msg = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
-		RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	switch (MSG_TYPE(msg)) {
+	switch (MSG_TYPE(msg_orig)) {
 		case MSG_TYPE_PUT: {
+			if ((msg = rrr_msg_msg_duplicate(msg_orig)) == NULL) {
+				RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		} /* Fallthrough */
+		case MSG_TYPE_PAT: {
 			for (size_t i = 0; i < store->count; i++) {
 				if (store->msgs[i] == NULL)
 					continue;
 
-				if (rrr_msg_msg_topic_equals_msg(msg, store->msgs[i])) {
+				if (rrr_msg_msg_topic_equals_msg(msg_orig, store->msgs[i])) {
 					rrr_u32 value_orig = store->msgs[i]->msg_value;
+
+					if (MSG_IS_PUT(msg_orig)) {
+						assert(msg != NULL);
+						RRR_DBG_3("Raft replacing a message in message store %u->%u topic '%.*s'\n",
+							value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
+					}
+					else {
+						assert(msg == NULL);
+						if ((ret = store->patch_cb(&msg, store->msgs[i], msg_orig)) != 0) {
+							RRR_MSG_0("Raft failed to patch a message in message store %u->%u topic '%.*s'\n",
+								value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
+							goto out;
+						}
+
+						assert(MSG_IS_PUT(msg));
+
+						RRR_DBG_3("Raft patching a message in message store %u->%u topic '%.*s'\n",
+							value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
+					}
 
 					rrr_free(store->msgs[i]);
 					store->msgs[i] = msg;
 
-					RRR_DBG_3("Raft replaced message in message store %u->%u topic '%.*s'\n",
-						value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
-
 					goto out_consumed;
 				}
 			}
+		} break;
+		default:
+			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(msg), __func__);
+	};
+
+	switch (MSG_TYPE(msg_orig)) {
+		case MSG_TYPE_PUT: {
+			assert(msg != NULL);
+		} break;
+		case MSG_TYPE_PAT: {
+			assert(msg == NULL);
+			RRR_MSG_0("Raft could not patch topic '%.*s', message not found\n");
+			goto out;
 		} break;
 		default:
 			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(msg), __func__);

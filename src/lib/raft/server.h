@@ -25,15 +25,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stddef.h>
 
+#include "common.h"
+
 struct rrr_raft_channel;
 struct rrr_raft_server;
+struct rrr_msg_msg;
 
 int rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
 		const struct rrr_raft_server *servers,
 		size_t servers_self,
-		const char *dir
+		const char *dir,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 );
 
 #endif /* RRR_RAFT_SERVER_H */

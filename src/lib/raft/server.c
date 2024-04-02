@@ -1064,7 +1064,8 @@ int rrr_raft_server (
 		const char *log_prefix,
 		const struct rrr_raft_server *servers,
 		size_t servers_self,
-		const char *dir
+		const char *dir,
+		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 ) {
 	int ret = 0;
 
@@ -1108,7 +1109,7 @@ int rrr_raft_server (
 
 	rrr_config_set_log_prefix(log_prefix);
 
-	if ((ret = rrr_raft_message_store_new (&message_store_state)) != 0) {
+	if ((ret = rrr_raft_message_store_new (&message_store_state, patch_cb)) != 0) {
 		goto out;
 	}
 

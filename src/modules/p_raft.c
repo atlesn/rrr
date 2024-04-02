@@ -610,6 +610,12 @@ static void raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	}
 }
 
+static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
+	// NOTE ! This callback is called from forked raft server context
+	assert(0  && "Patch not implemented");
+	return 1;
+}
+
 static int raft_fork (void *arg) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -691,7 +697,8 @@ static int raft_fork (void *arg) {
 			raft_ack_callback,
 			raft_opt_callback,
 			raft_msg_callback,
-			data
+			data,
+			raft_patch_callback
 	)) != 0) {
 		RRR_MSG_0("Failed to create raft for in raft instance %s\n",
 			INSTANCE_D_NAME(thread_data));
