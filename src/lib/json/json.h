@@ -46,5 +46,17 @@ int rrr_json_from_array (
 		const struct rrr_array *source,
 		const struct rrr_map *tags
 );
+int rrr_json_patch (
+		const char *data,
+		rrr_length data_size,
+		const char *patch,
+		rrr_length patch_size,
+		int (*callback)(const char *result, void *arg),
+		void *callback_arg
+);
+int rrr_json_check_object (
+		const char *data,
+		rrr_length data_size
+);
 
 #endif /* RRR_JSON_H */

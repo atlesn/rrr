@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <json-c/linkhash.h>
 #include <json-c/json_tokener.h>
 #include <json-c/json_object.h>
 #include <json-c/json_object_iterator.h>
@@ -201,31 +202,18 @@ static int __rrr_json_to_array_recurse (
 	return ret;
 }
 
-/* For all found objects, an RRR array containing all plain values is
- * created and handed to the callback. If an object contains another object,
- * an array is created for both of them. The array resulting from the parent object
- * will not have any information about it's child or vice versa. */
-int rrr_json_to_arrays (
+static int __rrr_json_parse (
+		json_object **result,
 		const char *data,
-		rrr_length data_size,
-		const int max_levels,
-		int (*callback)(const struct rrr_array *array, void *arg),
-		void *callback_arg
+		rrr_length data_size
 ) {
 	int ret = 0;
 
 	json_tokener *tokener = NULL;
 	json_object *object = NULL;
 
-	if (sizeof(rrr_length) >= sizeof(int) && data_size > INT_MAX) {
-		RRR_MSG_0("Input data too long while parsing JSON (%" PRIrrrl ">%i)\n",
-			data_size, INT_MAX);
-		ret = RRR_JSON_PARSE_ERROR;
-		goto out;
-	}
-
 	if ((tokener = json_tokener_new()) == NULL) {
-		RRR_MSG_0("Could not allocate tokener in rrr_json_to_array\n");
+		RRR_MSG_0("Could not allocate tokener in %s\n", __func__);
 		ret = RRR_JSON_HARD_ERROR;
 		goto out;
 	}
@@ -239,7 +227,43 @@ int rrr_json_to_arrays (
 
 		RRR_DBG_2("Failed to parse JSON data: %s\n",
 				json_tokener_error_desc(err));
+
 		ret = RRR_JSON_PARSE_ERROR;
+
+		goto out_free_tokener;
+	}
+
+	*result = object;
+
+	out_free_tokener:
+		json_tokener_free(tokener);
+	out:
+		return ret;
+}
+
+/* For all found objects, an RRR array containing all plain values is
+ * created and handed to the callback. If an object contains another object,
+ * an array is created for both of them. The array resulting from the parent object
+ * will not have any information about it's child or vice versa. */
+int rrr_json_to_arrays (
+		const char *data,
+		rrr_length data_size,
+		const int max_levels,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	json_object *object = NULL;
+
+	if (sizeof(rrr_length) >= sizeof(int) && data_size > INT_MAX) {
+		RRR_MSG_0("Input data too long while parsing JSON (%" PRIrrrl ">%i)\n",
+			data_size, INT_MAX);
+		ret = RRR_JSON_PARSE_ERROR;
+		goto out;
+	}
+
+	if ((ret = __rrr_json_parse(&object, data, data_size)) != 0) {
 		goto out;
 	}
 
@@ -252,9 +276,6 @@ int rrr_json_to_arrays (
 	);
 
 	out:
-	if (tokener != NULL) {
-		json_tokener_free(tokener);
-	}
 	if (object != NULL) {
 		json_object_put(object);
 	}
@@ -484,5 +505,93 @@ int rrr_json_from_array (
 	if (base != NULL) {
 		json_object_put(base);
 	}
+	return ret;
+}
+
+int rrr_json_patch (
+		const char *data,
+		rrr_length data_size,
+		const char *patch,
+		rrr_length patch_size,
+		int (*callback)(const char *result, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	json_object *object_data = NULL;
+	json_object *object_patch = NULL;
+	const char *result = NULL;
+
+	if ((ret = __rrr_json_parse(&object_data, data, data_size)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_json_parse(&object_patch, patch, patch_size)) != 0) {
+		goto out;
+	}
+
+	if (!json_object_is_type(object_data, json_type_object)) {
+		RRR_MSG_0("JSON data was not an object while patching\n");
+		ret = RRR_JSON_PARSE_ERROR;
+		goto out;
+	}
+
+	if (!json_object_is_type(object_patch, json_type_object)) {
+		RRR_MSG_0("JSON patch was not an object while patching\n");
+		ret = RRR_JSON_PARSE_ERROR;
+		goto out;
+	}
+
+	json_object_object_foreach(object_patch, key, val) {
+		RRR_DBG_3("JSON patch value '%s'\n", key);
+
+		if (json_object_object_add(object_data, key, val) != 0) {
+			RRR_MSG_0("Failed to add value in %s\n", __func__);
+			ret = RRR_JSON_HARD_ERROR;
+			goto out;
+		}
+
+		json_object_get(val);
+	}
+
+	if ((result = json_object_to_json_string_ext(object_data, JSON_C_TO_STRING_PLAIN)) == NULL) {
+		RRR_MSG_0("Failed to stringify JSON object in %s\n", __func__);
+		ret = RRR_JSON_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret = callback(result, callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	if (object_data != NULL) {
+		json_object_put(object_data);
+	}
+	if (object_patch != NULL) {
+		json_object_put(object_patch);
+	}
+	return ret;
+}
+
+int rrr_json_check_object (
+		const char *data,
+		rrr_length data_size
+) {
+	int ret = 0;
+
+	json_object *object_data = NULL;
+
+	if ((ret = __rrr_json_parse(&object_data, data, data_size)) != 0) {
+		goto out;
+	}
+
+	if (!json_object_is_type(object_data, json_type_object)) {
+		ret = RRR_JSON_PARSE_ERROR;
+	}
+
+	json_object_put(object_data);
+
+	out:
 	return ret;
 }

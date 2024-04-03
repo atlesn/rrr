@@ -31,6 +31,10 @@ sub push_response {
 		'fields' => \%fields,
 	);
 
+	if (scalar keys %fields == 0) {
+		$response{'fields'}->{'data'} = $response{'data'};
+	}
+
 	push @responses, \%response;
 }
 
@@ -112,7 +116,7 @@ sub source {
 			$message->send();
 		}
 	}
-	elsif ($stage == 1) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7) {
 		unless (defined $randoms[$stage]) {
 			$randoms[$stage] = int(rand(10));
 			$dbg->msg(1, "- Send get to node 1\n");
@@ -120,29 +124,28 @@ sub source {
 			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
 			$message->send();
 		}
-
 	}
 	elsif ($stage == 3) {
 		unless (defined $randoms[$stage]) {
 			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send patch to node 1\n");
+			$dbg->msg(1, "- Send JSON patch to node 1\n");
 			$message->{'topic'} = "raft/1";
-			$message->set_tag_str("patch", "{'patch':$randoms[$stage]}");
+			$message->set_tag_str("data", "{'patch':$randoms[$stage]}");
 			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 			$message->send();
 		}
 	}
-	elsif ($stage == 4) {
+	elsif ($stage == 6) {
 		unless (defined $randoms[$stage]) {
 			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send get to node 1\n");
+			$dbg->msg(1, "- Send non-JSON patch to node 1\n");
 			$message->{'topic'} = "raft/1";
-			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
+			$message->set_tag_str("data", "data $randoms[$stage]");
+			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 			$message->send();
 		}
-
 	}
-	elsif ($stage == 6) {
+	elsif ($stage == 9) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
@@ -161,7 +164,7 @@ sub process {
 	$message->{'topic'} = "";
 	$message->clear_array();
 
-	if ($stage == 0 or $stage == 3) {
+	if ($stage == 0 or $stage == 3 or $stage == 6) {
 		my $method = $stage == 0
 			? "PUT"
 			: "PAT"
@@ -197,7 +200,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1 or $stage == 4) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7) {
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
@@ -219,14 +222,34 @@ sub process {
 		}
 	}
 	elsif ($stage == 2 or $stage == 5) {
+		# Note that when patching, the JSON library will
+		# produce double quotes for all keys
 		my $data = $stage == 2
 			? "{'data':$randoms[$stage - 2]}"
-			: "{'data':$randoms[$stage - 5],'patch':$randoms[$stage - 2]}"
+			: "{\"data\":$randoms[$stage - 5],\"patch\":$randoms[$stage - 2]}"
 		;
  
 		# Check for the actual resulting message arriving secondly
 		$res = check_response(\%result_values, "raft/1", {
 			"data" => $data
+		});
+
+		if ($res) {
+			if ($res == 1) {
+				# No response yet, wait
+			}
+			else {
+				return 0;
+			}
+		}
+		else {
+			$stage++;
+		}
+	}
+	elsif ($stage == 8) {
+		# Check for the actual resulting message arriving secondly
+		$res = check_response(\%result_values, "raft/1", {
+			"data" => "data $randoms[$stage - 2]"
 		});
 
 		if ($res) {

@@ -44,23 +44,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
 #include "../lib/raft/channel.h"
+#ifdef RRR_WITH_JSONC
+#  include "../lib/json/json.h"
+#endif
 
 #define RAFT_DEFAULT_DIRECTORY "/var/lib/rrr/raft"
 #define RAFT_DEFAULT_PORT 9001
 
 enum raft_req_type {
 	RAFT_REQ_PUT,
-#ifdef RRR_WITH_JSONC
 	RAFT_REQ_PAT,
-#endif
 	RAFT_REQ_GET,
 	RAFT_REQ_LEADERSHIP_TRANSFER
 };
 
 #define RAFT_REQ_TYPE_TO_STR(type)                                                   \
     ((type) == RAFT_REQ_PUT ? "PUT" :                                                \
+    ((type) == RAFT_REQ_PAT ? "PAT" :                                                \
     ((type) == RAFT_REQ_GET ? "GET" :                                                \
-    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN")))
+    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN"))))
 
 struct raft_request {
 	uint32_t req_index;
@@ -220,14 +222,9 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			MSG_TOPIC_PTR(message),
 			message->timestamp
 	);
+
 	switch (MSG_TYPE(message)) {
 		case MSG_TYPE_PAT:
-#ifndef RRR_WITH_JSONC
-			RRR_MSG_0("Received PAT message (store command) in raft instance %s but RRR is not compiled with JSON support. Dropping the message.\n",
-				INSTANCE_D_NAME(thread_data));
-			goto out;
-#endif
-			/* Fallthrough */
 		case MSG_TYPE_MSG:
 		case MSG_TYPE_PUT:
 			if (!data->is_leader) {
@@ -253,7 +250,6 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			}
 			req_type = RAFT_REQ_PUT;
 		} break;
-#ifdef RRR_WITH_JSONC
 		case MSG_TYPE_PAT: {
 			if ((ret = rrr_raft_channel_request_patch_native (
 					&req_index,
@@ -266,7 +262,6 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			}
 			req_type = RAFT_REQ_PAT;
 		} break;
-#endif
 		case MSG_TYPE_GET: {
 			if ((ret = rrr_raft_channel_request_get (
 					&req_index,
@@ -454,23 +449,11 @@ static void raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 	);
 
 	switch (request.req_type) {
-		case RAFT_REQ_PUT: {
-			RRR_DBG_2("Result of message store of message with topic %.*s in raft instance %s: %s\n",
-				MSG_TOPIC_LENGTH(msg),
-				MSG_TOPIC_PTR(msg),
-				INSTANCE_D_NAME(data->thread_data),
-				rrr_raft_reason_to_str(code)
-			);
-
-			ret_tmp |= rrr_array_push_value_str_with_tag_with_size (
-				&array_tmp,
-				"raft_topic",
-				MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
-				MSG_TOPIC_LENGTH(msg)
-			);
-		} break;
-		case RAFT_REQ_GET: {
-			RRR_DBG_2("Result of message retrieval of message with topic %.*s in raft instance %s: %s\n",
+		case RAFT_REQ_GET:
+		case RAFT_REQ_PUT:
+		case RAFT_REQ_PAT: {
+			RRR_DBG_2("Result of command %s of message with topic %.*s in raft instance %s: %s\n",
+				MSG_TYPE_NAME(msg),
 				MSG_TOPIC_LENGTH(msg),
 				MSG_TOPIC_PTR(msg),
 				INSTANCE_D_NAME(data->thread_data),
@@ -640,13 +623,124 @@ static void raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	}
 }
 
-#ifdef RRR_WITH_JSONC
-static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
-	// NOTE ! This callback is called from forked raft server context
-	assert(0  && "Patch not implemented");
-	return 1;
+struct raft_patch_array_json_callback_data {
+	struct rrr_array *array_data;
+	const char *tag;
+};
+
+static int raft_patch_array_json_callback (const char *result, void *arg) {
+	struct raft_patch_array_json_callback_data *callback_data = arg;
+	struct rrr_array *array_data = callback_data->array_data;
+
+	rrr_array_clear_by_tag(array_data, callback_data->tag);
+
+	return rrr_array_push_value_str_with_tag(array_data, callback_data->tag, result);
 }
+
+static int raft_patch_array_callback (const struct rrr_type_value *value, void *arg) {
+	struct rrr_array *array_data = arg;
+
+	int ret = 0;
+
+	struct rrr_type_value *value_new;
+	char *str = NULL;
+
+#ifdef RRR_WITH_JSONC
+	if ((RRR_TYPE_IS_BLOB_EXCACT(value->definition->type) || RRR_TYPE_IS_STR(value->definition->type)) &&
+	     value->element_count == 1 &&
+	     rrr_array_has_tag(array_data, value->tag) &&
+	     rrr_array_get_value_str_by_tag(&str, array_data, value->tag) == 0 &&
+	     rrr_json_check_object(value->data, value->total_stored_length) == 0 &&
+	     rrr_json_check_object(str, rrr_length_from_size_t_bug_const(strlen(str))) == 0
+	) {
+		RRR_DBG_3("Value '%s' contains JSON in raft patch, patching JSON object.\n",
+			value->tag);
+
+		struct raft_patch_array_json_callback_data callback_data = {
+			array_data,
+			value->tag
+		};
+
+		if ((ret = rrr_json_patch (
+				str,
+				rrr_length_from_size_t_bug_const(strlen(str)),
+				value->data,
+				value->total_stored_length,
+				raft_patch_array_json_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+#else
+	if (1) {
 #endif
+		rrr_array_clear_by_tag(array_data, value->tag);
+
+#ifdef RRR_WITH_JSONC
+		RRR_DBG_3("Value '%s' in raft patch is not a blob or string with a single value containing JSON while patching, replacing whole array value.\n",
+			value->tag);
+#else
+		RRR_DBG_3("Replacing whole array value for '%s' while patching in raft.\n",
+			value->tag);
+#endif
+
+		if ((ret = rrr_type_value_clone(&value_new, value, 1 /* With data */)) != 0) {
+			goto out;
+		}
+
+		RRR_LL_APPEND(array_data, value_new);
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(str);
+	return ret;
+}
+
+static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
+	int ret = 0;
+
+	uint16_t version_dummy;
+	struct rrr_array array_data = {0};
+
+	// NOTE ! This callback is called from forked raft server context
+
+	if (MSG_IS_ARRAY(msg_orig)) {
+		if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_data, msg_orig)) != 0) {
+			goto out;
+		}
+
+		if ((ret = rrr_array_message_iterate_values (
+				msg_patch,
+				raft_patch_array_callback,
+				&array_data
+		)) != 0) {
+			goto out;
+		}
+
+		if ((ret = rrr_array_new_message_from_array (
+				msg_new,
+				&array_data,
+				0,
+				MSG_TOPIC_PTR(msg_orig),
+				MSG_TOPIC_LENGTH(msg_orig)
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		assert(0 && "Data patch not implemented\n");
+	}
+
+	(*msg_new)->msg_value = msg_orig->msg_value;
+	(*msg_new)->timestamp = msg_orig->timestamp;
+	(*msg_new)->type_and_class = msg_orig->type_and_class;
+
+	out:
+	rrr_array_clear(&array_data);
+	return ret;
+}
 
 static int raft_fork (void *arg) {
 	struct rrr_thread *thread = arg;
@@ -730,11 +824,7 @@ static int raft_fork (void *arg) {
 			raft_opt_callback,
 			raft_msg_callback,
 			data,
-#ifdef RRR_WITH_JSONC
 			raft_patch_callback
-#else
-			NULL
-#endif
 	)) != 0) {
 		RRR_MSG_0("Failed to create raft for in raft instance %s\n",
 			INSTANCE_D_NAME(thread_data));

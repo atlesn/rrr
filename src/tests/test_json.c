@@ -94,10 +94,30 @@ static int __rrr_test_json_data_a_callback (const struct rrr_array *array, void 
 	return ret;
 }
 
+static int __rrr_test_json_patch_callback (
+		const char *result,
+		void *arg
+) {
+	const char *expected_result = arg;
+
+	if (strcmp(result, expected_result) != 0) {
+		TEST_MSG("Unexpected data in %s: '%s'<>'%s'\n",
+			__func__, result, expected_result);
+		return 1;
+	}
+
+	return 0;
+}
+
 int rrr_test_json(void) {
 	int ret = 0;
 
 	const char *data_a = "[{\"drop\" : {\"keepvalue\" : \"value\"}, \"keep1\" : 1},{\"keep2.2\" : 2.2, \"keepnull\" : null}]";
+	const char *data_b = "{\"data\":2}";
+	const char *data_c = "{\"patch\":4}";
+	const char *data_bc = "{\"data\":2,\"patch\":4}";
+	const char *data_d = "{\"data\":3,\"patch\":5}";
+	const char *data_bd = "{\"data\":3,\"patch\":5}";
 
 	RRR_DBG_3("JSON: %s\n", data_a);
 
@@ -117,6 +137,28 @@ int rrr_test_json(void) {
 	if (counter != 4) {
 		TEST_MSG("JSON test failed: Values missing or too many values %i<>3\n", counter);
 		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_json_patch (
+			data_b,
+			rrr_length_from_size_t_bug_const(strlen(data_b)),
+			data_c,
+			rrr_length_from_size_t_bug_const(strlen(data_c)),
+			__rrr_test_json_patch_callback,
+			(void *) data_bc
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_json_patch (
+			data_b,
+			rrr_length_from_size_t_bug_const(strlen(data_b)),
+			data_d,
+			rrr_length_from_size_t_bug_const(strlen(data_d)),
+			__rrr_test_json_patch_callback,
+			(void *) data_bd
+	)) != 0) {
 		goto out;
 	}
 

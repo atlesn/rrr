@@ -3076,6 +3076,18 @@ module to produce different behaviour:
 .Bl -tag -width -indent
 .It PUT or MSG
 The message is to be stored in the cluster.
+.It PAT
+An existing message is to be patched.
+
+.Bl -tag -width -indent
+.It If the patch message is an array message:
+The existing message must be of array type.
+Each array value from the patch will replace matching tags in the original message.
+
+
+.El
+
+
 .It GET
 A retrieval from the store will be performed using the topic set in the message.
 Any data or array fields set in the message is ignored.

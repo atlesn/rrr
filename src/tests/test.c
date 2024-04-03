@@ -161,7 +161,7 @@ int rrr_test_library_functions (
 ) {
 	int ret = 0;
 	int ret_tmp = 0;
-goto raft;
+goto json;
 	// OR all the return values, don't stop if a test fails
 
 	TEST_BEGIN("rrr_allocator") {
@@ -226,6 +226,7 @@ goto raft;
 	ret |= ret_tmp;
 #endif
 
+json:
 #ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
@@ -233,6 +234,7 @@ goto raft;
 
 	ret |= ret_tmp;
 #endif
+return ret;
 
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {
