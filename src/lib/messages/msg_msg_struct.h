@@ -82,6 +82,11 @@ enum rrr_msg_msg_class {
 	(MSG_IS_PAT(message) ? MSG_TYPE_PAT_STRING : \
 	"(unknown)" )))))))
 
+#define MSG_CLASS_NAME(message) \
+	(MSG_IS_DATA(message)  ? MSG_CLASS_DATA_STRING  : \
+	(MSG_IS_ARRAY(message) ? MSG_CLASS_ARRAY_STRING : \
+	"(unknown)"))
+
 #define MSG_TYPE_OK_RAW(type_and_class) \
     (MSG_TYPE_RAW(type_and_class) >= MSG_TYPE_MSG && MSG_TYPE_RAW(type_and_class) <= MSG_TYPE_PAT)
 

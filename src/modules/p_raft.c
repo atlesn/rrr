@@ -253,7 +253,8 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 		} break;
 		default: {
 			RRR_MSG_0("Warning: Unknown type %s in message to raft instance %s, dropping it.\n",
-				MSG_TYPE_NAME(message));
+				MSG_TYPE_NAME(message),
+				INSTANCE_D_NAME(thread_data));
 			goto out;
 		} break;
 	};

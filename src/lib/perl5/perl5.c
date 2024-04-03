@@ -617,6 +617,8 @@ static int __rrr_perl5_hv_to_message_process_array (
 	}
 
 	message_tmp->timestamp = (*target)->timestamp;
+	message_tmp->msg_value = (*target)->msg_value;
+	MSG_SET_TYPE(message_tmp, MSG_TYPE(*target));
 
 	rrr_free (*target);
 	*target = message_tmp;

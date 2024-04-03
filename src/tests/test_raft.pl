@@ -108,7 +108,7 @@ sub source {
 			$randoms[$stage] = int(rand(10));
 			$dbg->msg(1, "- Send store to node 1\n");
 			$message->{'topic'} = "raft/1";
-			$message->set_tag_str("data", "data $randoms[$stage]");
+			$message->set_tag_str("data", "{'data':$randoms[$stage]}");
 			$message->send();
 		}
 	}
@@ -123,6 +123,26 @@ sub source {
 
 	}
 	elsif ($stage == 3) {
+		unless (defined $randoms[$stage]) {
+			$randoms[$stage] = int(rand(10));
+			$dbg->msg(1, "- Send patch to node 1\n");
+			$message->{'topic'} = "raft/1";
+			$message->set_tag_str("patch", "{'patch':$randoms[$stage]}");
+			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+			$message->send();
+		}
+	}
+	elsif ($stage == 4) {
+		unless (defined $randoms[$stage]) {
+			$randoms[$stage] = int(rand(10));
+			$dbg->msg(1, "- Send get to node 1\n");
+			$message->{'topic'} = "raft/1";
+			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
+			$message->send();
+		}
+
+	}
+	elsif ($stage == 6) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
@@ -136,17 +156,23 @@ sub process {
 	push_response($message);
 
 	# Test is faster if checking the result immediately
-	# in the source function
+	# in the source function thus results are checked
+	# there and stage incremented.
 	$message->{'topic'} = "";
 	$message->clear_array();
 
-	if ($stage == 0) {
+	if ($stage == 0 or $stage == 3) {
+		my $method = $stage == 0
+			? "PUT"
+			: "PAT"
+		;
+
 		# The ACK message has no topic itself. The topic
 		# of the message it refers to is in an array field.
-		$dbg->msg(1, "- Checking result of PUT command\n");
+		$dbg->msg(1, "- Checking result of $method command\n");
 
 		$res = check_response(\%result_values, "", {
-			"raft_command" => "PUT",
+			"raft_command" => $method,
 			"raft_status" => 1,
 			"raft_reason" => "OK",
 			"raft_topic" => "raft/1"
@@ -171,7 +197,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1) {
+	elsif ($stage == 1 or $stage == 4) {
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
@@ -192,10 +218,15 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 2) {
+	elsif ($stage == 2 or $stage == 5) {
+		my $data = $stage == 2
+			? "{'data':$randoms[$stage - 2]}"
+			: "{'data':$randoms[$stage - 5],'patch':$randoms[$stage - 2]}"
+		;
+ 
 		# Check for the actual resulting message arriving secondly
 		$res = check_response(\%result_values, "raft/1", {
-			"data" => "data $randoms[$stage - 2]"
+			"data" => $data
 		});
 
 		if ($res) {
