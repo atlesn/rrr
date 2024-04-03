@@ -893,6 +893,7 @@ namespace RRR::JS {
 			case MSG_TYPE_PUT:
 			case MSG_TYPE_DEL:
 			case MSG_TYPE_OPT:
+			case MSG_TYPE_PAT:
 				break;
 			default:
 				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for type was not a valid type")));
@@ -955,6 +956,7 @@ namespace RRR::JS {
 		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PUT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
 		tmpl->SetAccessor(String(ctx, "MSG_TYPE_DEL"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
 		tmpl->SetAccessor(String(ctx, "MSG_TYPE_OPT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_OPT));
+		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PAT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PAT));
 		tmpl->SetAccessor(String(ctx, "MSG_CLASS_DATA"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
 		tmpl->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
 	}

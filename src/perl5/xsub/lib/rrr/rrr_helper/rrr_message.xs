@@ -24,6 +24,7 @@ BOOT:
 		newCONSTSUB(stash, "MSG_TYPE_PUT", newSVuv(MSG_TYPE_PUT));
 		newCONSTSUB(stash, "MSG_TYPE_DEL", newSVuv(MSG_TYPE_DEL));
 		newCONSTSUB(stash, "MSG_TYPE_OPT", newSVuv(MSG_TYPE_OPT));
+		newCONSTSUB(stash, "MSG_TYPE_PAT", newSVuv(MSG_TYPE_PAT));
 	}
 
 unsigned int

@@ -191,6 +191,7 @@ function message_tests() {
 	message.type = message.MSG_TYPE_PUT;
 	message.type = message.MSG_TYPE_DEL;
 	message.type = message.MSG_TYPE_OPT;
+	message.type = message.MSG_TYPE_PAT;
 	console.log("Type: " + message.type + "\n");
 
 	// Class field

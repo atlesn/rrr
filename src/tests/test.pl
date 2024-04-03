@@ -207,6 +207,7 @@ sub my_method {
 	rrr::rrr_helper::rrr_message::MSG_TYPE_PUT == 4 or die("Constant failure PUT");
 	rrr::rrr_helper::rrr_message::MSG_TYPE_DEL == 5 or die("Constant failure DEL");
 	rrr::rrr_helper::rrr_message::MSG_TYPE_OPT == 6 or die("Constant failure OPT");
+	rrr::rrr_helper::rrr_message::MSG_TYPE_PAT == 7 or die("Constant failure PAT");
 
 	$message->send();
 
