@@ -50,6 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 enum raft_req_type {
 	RAFT_REQ_PUT,
+#ifdef RRR_WITH_JSONC
+	RAFT_REQ_PAT,
+#endif
 	RAFT_REQ_GET,
 	RAFT_REQ_LEADERSHIP_TRANSFER
 };
@@ -217,15 +220,28 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			MSG_TOPIC_PTR(message),
 			message->timestamp
 	);
+	switch (MSG_TYPE(message)) {
+		case MSG_TYPE_PAT:
+#ifndef RRR_WITH_JSONC
+			RRR_MSG_0("Received PAT message (store command) in raft instance %s but RRR is not compiled with JSON support. Dropping the message.\n",
+				INSTANCE_D_NAME(thread_data));
+			goto out;
+#endif
+			/* Fallthrough */
+		case MSG_TYPE_MSG:
+		case MSG_TYPE_PUT:
+			if (!data->is_leader) {
+				RRR_MSG_0("Warning: Received %s message (store command) in raft instance %s which might not be leader of the cluster.\n",
+					MSG_TYPE_NAME(message), INSTANCE_D_NAME(thread_data));
+			}
+			break;
+		default:
+			break;
+	};
 
 	switch (MSG_TYPE(message)) {
 		case MSG_TYPE_MSG:
 		case MSG_TYPE_PUT: {
-			if (!data->is_leader) {
-				RRR_MSG_0("Warning: Received PUT or MSG message (store command) in raft instance %s which might not be leader of the cluster.\n",
-					INSTANCE_D_NAME(thread_data));
-			}
-
 			if ((ret = rrr_raft_channel_request_put_native (
 					&req_index,
 					data->channel,
@@ -237,8 +253,21 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			}
 			req_type = RAFT_REQ_PUT;
 		} break;
+#ifdef RRR_WITH_JSONC
+		case MSG_TYPE_PAT: {
+			if ((ret = rrr_raft_channel_request_patch_native (
+					&req_index,
+					data->channel,
+					message
+			)) != 0) {
+				RRR_MSG_0("Warning: Failed to patch message in raft instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out;
+			}
+			req_type = RAFT_REQ_PAT;
+		} break;
+#endif
 		case MSG_TYPE_GET: {
-			printf("topic length %u\n", MSG_TOPIC_LENGTH(message));
 			if ((ret = rrr_raft_channel_request_get (
 					&req_index,
 					data->channel,
@@ -611,11 +640,13 @@ static void raft_msg_callback (RRR_RAFT_MSG_CALLBACK_ARGS) {
 	}
 }
 
+#ifdef RRR_WITH_JSONC
 static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 	// NOTE ! This callback is called from forked raft server context
 	assert(0  && "Patch not implemented");
 	return 1;
 }
+#endif
 
 static int raft_fork (void *arg) {
 	struct rrr_thread *thread = arg;
@@ -699,7 +730,11 @@ static int raft_fork (void *arg) {
 			raft_opt_callback,
 			raft_msg_callback,
 			data,
+#ifdef RRR_WITH_JSONC
 			raft_patch_callback
+#else
+			NULL
+#endif
 	)) != 0) {
 		RRR_MSG_0("Failed to create raft for in raft instance %s\n",
 			INSTANCE_D_NAME(thread_data));

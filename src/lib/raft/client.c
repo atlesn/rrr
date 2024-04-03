@@ -404,10 +404,11 @@ int rrr_raft_client_request_patch (
 	);
 }
 
-int rrr_raft_client_request_put_native (
+static int __rrr_raft_client_request_store_native (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
-		const struct rrr_msg_msg *msg
+		const struct rrr_msg_msg *msg,
+		uint8_t msg_type
 ) {
 	int ret = 0;
 
@@ -419,19 +420,36 @@ int rrr_raft_client_request_put_native (
 		goto out;
 	}
 
-	MSG_SET_TYPE(msg_new, MSG_TYPE_PUT);
+	MSG_SET_TYPE(msg_new, msg_type);
 
 	if ((ret = __rrr_raft_client_request_native (
 			req_index,
 			channel,
 			msg_new
 	)) != 0) {
-		goto out;
+		goto out_free;
 	}
 
+	out_free:
+		rrr_free(msg_new);
 	out:
-	RRR_FREE_IF_NOT_NULL(msg_new);
-	return ret;
+		return ret;
+}
+
+int rrr_raft_client_request_put_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_msg_msg *msg
+) {
+	return __rrr_raft_client_request_store_native(req_index, channel, msg, MSG_TYPE_PUT);
+}
+
+int rrr_raft_client_request_patch_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_msg_msg *msg
+) {
+	return __rrr_raft_client_request_store_native(req_index, channel, msg, MSG_TYPE_PAT);
 }
 
 int rrr_raft_client_request_opt (

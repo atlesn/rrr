@@ -561,6 +561,7 @@ struct rrr_http_part_fields_from_post_data_extract_json_callback_data {
 	struct rrr_http_part *target;
 };
 
+#ifdef RRR_WITH_JSONC
 static int __rrr_http_part_fields_from_post_extract_json_callback (
 		const struct rrr_array *array,
 		void *arg
@@ -581,6 +582,7 @@ static int __rrr_http_part_fields_from_post_extract_json_callback (
 	out:
 	return ret;
 }
+#endif
 
 static int __rrr_http_part_fields_from_post_extract (
 		struct rrr_http_part *target,
