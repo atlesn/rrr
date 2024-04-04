@@ -698,6 +698,34 @@ static int raft_patch_array_callback (const struct rrr_type_value *value, void *
 	return ret;
 }
 
+struct raft_patch_msg_json_callback_data {
+	struct rrr_msg_msg **msg;
+	const struct rrr_msg_msg *msg_orig;
+};
+
+static int raft_patch_msg_json_callback (const char *result, void *arg) {
+	struct raft_patch_msg_json_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			callback_data->msg,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			0,
+			MSG_TOPIC_PTR(callback_data->msg_orig),
+			MSG_TOPIC_LENGTH(callback_data->msg_orig),
+			result,
+			rrr_length_from_size_t_bug_const(strlen(result))
+	)) != 0) {
+		RRR_MSG_0("Failed to create data message in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 	int ret = 0;
 
@@ -726,11 +754,40 @@ static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 				MSG_TOPIC_PTR(msg_orig),
 				MSG_TOPIC_LENGTH(msg_orig)
 		)) != 0) {
+			RRR_MSG_0("Failed to create array message in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		assert(0 && "Data patch not implemented\n");
+#ifdef RRR_WITH_JSONC
+		if ( rrr_json_check_object(MSG_DATA_PTR(msg_patch), MSG_DATA_LENGTH(msg_patch)) == 0 &&
+		     rrr_json_check_object(MSG_DATA_PTR(msg_orig), MSG_DATA_LENGTH(msg_orig)) == 0
+		) {
+			struct raft_patch_msg_json_callback_data callback_data = {
+				msg_new,
+				msg_orig
+			};
+
+			if ((ret = rrr_json_patch (
+					MSG_DATA_PTR(msg_orig),
+					MSG_DATA_LENGTH(msg_orig),
+					MSG_DATA_PTR(msg_patch),
+					MSG_DATA_LENGTH(msg_patch),
+					raft_patch_msg_json_callback,
+					&callback_data
+			)) != 0) {
+				goto out;
+			}
+		}
+		else {
+#else
+		if (1) {
+#endif
+			if ((*msg_new = rrr_msg_msg_duplicate (msg_orig)) == NULL) {
+				RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
+				goto out;
+			}
+		}
 	}
 
 	(*msg_new)->msg_value = msg_orig->msg_value;

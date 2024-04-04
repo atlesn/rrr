@@ -152,10 +152,18 @@ my @randoms;
 # 11p. Check ACK message for PUT
 # 12s. GET message for 'raft/1'
 # 12p. Check ACK message for GET
-# 13p. Check data message for 'raft.1'
+# 13p. Check data message for 'raft/1'
 #
-# Stage 14 - Completion
-# 14s. Test completion signal message is emitted
+# Stage 14 - PAT operation with JSON in data message
+# 14s. PAT message for 'raft/1'
+# 14p. Check ACK message for PAT
+# 15s. GET message for 'raft/1'
+# 15p. Check ACK message for GET
+# 16p. Check data message for 'raft/1'
+#
+#
+# Stage 17 - Completion
+# 17s. Test completion signal message is emitted
 
 sub source {
 	my $message = shift;
@@ -180,7 +188,7 @@ sub source {
 
 		$message->send();
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 || $stage == 12) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 or $stage == 12 or $stage == 15) {
 		$randoms[$stage] = int(rand(10));
 		$message->{'topic'} = $stage == 9
 			? "raft/2"
@@ -199,7 +207,18 @@ sub source {
 		$message->set_tag_str("data", "{'patch':$randoms[$stage]}");
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 
-		$dbg->msg(1, "- Send JSON patch to leader topic $message->{'topic'}\n");
+		$dbg->msg(1, "- Send JSON patch with array to leader topic $message->{'topic'}\n");
+
+		$message->send();
+	}
+	elsif ($stage == 14) {
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->clear_array();
+		$message->{'data'} = "{'patch':$randoms[$stage]}";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+
+		$dbg->msg(1, "- Send JSON patch with raw data to leader topic $message->{'topic'}\n");
 
 		$message->send();
 	}
@@ -223,7 +242,7 @@ sub source {
 
 		$message->send();
 	}
-	elsif ($stage == 14) {
+	elsif ($stage == 17) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
@@ -244,7 +263,7 @@ sub process {
 
 	$dbg->msg(1, "== STAGE $stage" . "p\n");
 
-	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10 or $stage == 11) {
+	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10 or $stage == 11 or $stage == 14) {
 		my $method = ($stage == 0 or $stage == 11)
 			? "PUT"
 			: "PAT"
@@ -286,7 +305,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 || $stage == 12) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 or $stage == 12 or $stage == 15) {
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
@@ -313,7 +332,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 2 or $stage == 5 or $stage == 13) {
+	elsif ($stage == 2 or $stage == 5 or $stage == 13 or $stage == 16) {
 		# Note that when patching, the JSON library will
 		# produce double quotes for all keys
 		my $data = ($stage == 2 or $stage == 13)
