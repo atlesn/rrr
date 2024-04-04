@@ -147,8 +147,15 @@ my @randoms;
 # 10s. PAT message for 'raft/3'
 # 10p. Check ACK message for PAT, negative response
 #
-# Stage 11 - Completion
-# 11s. Test completion signal message is emitted
+# Stage 11 - PUT operation with JSON in data message
+# 11s. PUT message for 'raft/1'
+# 11p. Check ACK message for PUT
+# 12s. GET message for 'raft/1'
+# 12p. Check ACK message for GET
+# 13p. Check data message for 'raft.1'
+#
+# Stage 14 - Completion
+# 14s. Test completion signal message is emitted
 
 sub source {
 	my $message = shift;
@@ -173,7 +180,7 @@ sub source {
 
 		$message->send();
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 || $stage == 12) {
 		$randoms[$stage] = int(rand(10));
 		$message->{'topic'} = $stage == 9
 			? "raft/2"
@@ -207,6 +214,16 @@ sub source {
 		$message->send();
 	}
 	elsif ($stage == 11) {
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->clear_array();
+		$message->{"data"} = "{'data':$randoms[$stage]}";
+
+		$dbg->msg(1, "- Send store non-array to leader topic $message->{'topic'}\n");
+
+		$message->send();
+	}
+	elsif ($stage == 14) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
@@ -227,8 +244,8 @@ sub process {
 
 	$dbg->msg(1, "== STAGE $stage" . "p\n");
 
-	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10) {
-		my $method = $stage == 0
+	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10 or $stage == 11) {
+		my $method = ($stage == 0 or $stage == 11)
 			? "PUT"
 			: "PAT"
 		;
@@ -269,7 +286,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 || $stage == 12) {
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
@@ -296,10 +313,10 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 2 or $stage == 5) {
+	elsif ($stage == 2 or $stage == 5 or $stage == 13) {
 		# Note that when patching, the JSON library will
 		# produce double quotes for all keys
-		my $data = $stage == 2
+		my $data = ($stage == 2 or $stage == 13)
 			? "{'data':$randoms[$stage - 2]}"
 			: "{\"data\":$randoms[$stage - 5],\"patch\":$randoms[$stage - 2]}"
 		;
@@ -321,7 +338,7 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 8) {
+	elsif ($stage == 8 || $stage == 12) {
 		# Check for the actual resulting message arriving secondly
 		$res = check_response(\%result_values, "raft/1", {
 			"data" => "data $randoms[$stage - 2]"
