@@ -41,6 +41,7 @@ int rrr_raft_message_store_get (
 		size_t topic_length
 );
 int rrr_raft_message_store_push (
+		int *was_found,
 		struct rrr_raft_message_store *store,
 		const struct rrr_msg_msg *msg_orig
 );

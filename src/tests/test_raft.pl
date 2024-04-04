@@ -99,6 +99,57 @@ sub check_response {
 
 my @randoms;
 
+# Stages in this test. Each stage is started in the source
+# function and is then completed in the process function as
+# responses arrives. The 's' bullets are for the source
+# function and the 'p' bullets are for the process functions.
+#
+# When the process function has verified the action made by
+# the source function, the stage is incremented.
+#
+# Note that many test stages are the same or nearly the same.
+#
+# The test expects that messages with topic 'raft/1' and 'raft/3'
+# will go to the leader and 'raft/2' will go to a non-leader.
+#
+# Stage 0-2 - Simple PUT and GET
+# 0s.  PUT message 'raft/1' containing array message with field 'data'
+#      containing a JSON object with a field 'data'.
+# 0p.  Check ACK message for PUT
+# 1s.  GET message for 'raft/1'
+# 1p.  Check ACK message for GET
+# 2p.  Check data message for 'raft/1' and verify data
+#
+# Stage 3-5 - PAT operation, add an array value
+# 3s.  PAT message 'raft/1' containing array message with field 'data'
+#      containing JSON with a new field 'patch'
+# 3p.  Check ACK message for PAT
+# 4s.  GET message for 'raft/1'
+# 4p.  Check ACK message for GET
+# 5p.  Check data message for 'raft/1' and verify that the new array
+#      field exists within the 'data' field JSON object
+#
+# Stage 6-8 - PAT operation, replace an array value
+# 6s.  PAT message 'raft/1' containing array message with field 'data'
+#      containing non-JSON data
+# 6p.  Check ACK message for PAT
+# 7s.  GET message for 'raft/1'
+# 7p.  Check ACK message for GET
+# 8s.  Check data message for 'raft/1' in which the full contents of
+#      the 'data' field should now have been replaced with the non-
+#      JSON data.
+#
+# Stage 9 - GET operation to non-leader with negative response
+# 9s.  GET message for 'raft/2'
+# 9p.  Check ACK message for GET, negative response
+#
+# Stage 10 - PAT operation with negative response
+# 10s. PAT message for 'raft/3'
+# 10p. Check ACK message for PAT, negative response
+#
+# Stage 11 - Completion
+# 11s. Test completion signal message is emitted
+
 sub source {
 	my $message = shift;
 
@@ -107,45 +158,55 @@ sub source {
 
 	# - Source function should be called every 500 ms
 
+	$dbg->msg(1, "== STAGE $stage" . "s\n");
+
+	if (defined $randoms[$stage]) {
+		return 1;
+	}
+
 	if ($stage == 0) {
-		unless (defined $randoms[$stage]) {
-			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send store to node 1\n");
-			$message->{'topic'} = "raft/1";
-			$message->set_tag_str("data", "{'data':$randoms[$stage]}");
-			$message->send();
-		}
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->set_tag_str("data", "{'data':$randoms[$stage]}");
+
+		$dbg->msg(1, "- Send store to leader topic $message->{'topic'}\n");
+
+		$message->send();
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7) {
-		unless (defined $randoms[$stage]) {
-			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send get to node 1\n");
-			$message->{'topic'} = "raft/1";
-			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
-			$message->send();
-		}
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9) {
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = $stage == 9
+			? "raft/2"
+			: "raft/1";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
+
+		$dbg->msg(1, "- Send get for topic $message->{'topic'}\n");
+
+		$message->send();
 	}
-	elsif ($stage == 3) {
-		unless (defined $randoms[$stage]) {
-			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send JSON patch to node 1\n");
-			$message->{'topic'} = "raft/1";
-			$message->set_tag_str("data", "{'patch':$randoms[$stage]}");
-			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
-			$message->send();
-		}
+	elsif ($stage == 3 || $stage == 10) {
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = $stage == 10
+			? "raft/3"
+			: "raft/1";
+		$message->set_tag_str("data", "{'patch':$randoms[$stage]}");
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+
+		$dbg->msg(1, "- Send JSON patch to leader topic $message->{'topic'}\n");
+
+		$message->send();
 	}
 	elsif ($stage == 6) {
-		unless (defined $randoms[$stage]) {
-			$randoms[$stage] = int(rand(10));
-			$dbg->msg(1, "- Send non-JSON patch to node 1\n");
-			$message->{'topic'} = "raft/1";
-			$message->set_tag_str("data", "data $randoms[$stage]");
-			$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
-			$message->send();
-		}
+		$randoms[$stage] = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->set_tag_str("data", "data $randoms[$stage]");
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+
+		$dbg->msg(1, "- Send non-JSON patch to leader topic $message->{'topic'}\n");
+
+		$message->send();
 	}
-	elsif ($stage == 9) {
+	elsif ($stage == 11) {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
@@ -164,7 +225,9 @@ sub process {
 	$message->{'topic'} = "";
 	$message->clear_array();
 
-	if ($stage == 0 or $stage == 3 or $stage == 6) {
+	$dbg->msg(1, "== STAGE $stage" . "p\n");
+
+	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10) {
 		my $method = $stage == 0
 			? "PUT"
 			: "PAT"
@@ -176,9 +239,15 @@ sub process {
 
 		$res = check_response(\%result_values, "", {
 			"raft_command" => $method,
-			"raft_status" => 1,
-			"raft_reason" => "OK",
-			"raft_topic" => "raft/1"
+			"raft_status" => $stage == 10
+				? 0
+				: 1,
+			"raft_reason" => $stage == 10
+				? "NOT FOUND"
+				: "OK",
+			"raft_topic" => $stage == 10
+				? "raft/3"
+				: "raft/1"
 		});
 
 		if ($res) {
@@ -200,13 +269,19 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7) {
+	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9) {
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
-			"raft_status" => 1,
-			"raft_reason" => "OK",
-			"raft_topic" => "raft/1"
+			"raft_status" => $stage == 9
+				? 0
+				: 1,
+			"raft_reason" => $stage == 9
+				? "NOT FOUND"
+				: "OK",
+			"raft_topic" => $stage == 9
+				? "raft/2"
+				: "raft/1"
 		});
 
 		if ($res) {

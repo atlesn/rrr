@@ -133,12 +133,15 @@ int rrr_raft_message_store_get (
 }
 
 int rrr_raft_message_store_push (
+		int *was_found,
 		struct rrr_raft_message_store *store,
 		const struct rrr_msg_msg *msg_orig
 ) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
+
+	*was_found = 0;
 
 	switch (MSG_TYPE(msg_orig)) {
 		case MSG_TYPE_PUT: {
@@ -158,11 +161,13 @@ int rrr_raft_message_store_push (
 
 					if (MSG_IS_PUT(msg_orig)) {
 						assert(msg != NULL);
+
 						RRR_DBG_3("Raft replacing a message in message store %u->%u topic '%.*s'\n",
 							value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
 					}
 					else {
 						assert(msg == NULL);
+
 						if ((ret = store->patch_cb(&msg, store->msgs[i], msg_orig)) != 0) {
 							RRR_MSG_0("Raft failed to patch a message in message store %u->%u topic '%.*s'\n",
 								value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
@@ -178,6 +183,8 @@ int rrr_raft_message_store_push (
 					rrr_free(store->msgs[i]);
 					store->msgs[i] = msg;
 
+					*was_found = 1;
+
 					goto out_consumed;
 				}
 			}
@@ -192,7 +199,10 @@ int rrr_raft_message_store_push (
 		} break;
 		case MSG_TYPE_PAT: {
 			assert(msg == NULL);
-			RRR_MSG_0("Raft could not patch topic '%.*s', message not found\n");
+
+			RRR_MSG_0("Raft could not patch topic '%.*s', message not found\n",
+				MSG_TOPIC_LENGTH(msg_orig), MSG_TOPIC_PTR(msg_orig));
+
 			goto out;
 		} break;
 		default:

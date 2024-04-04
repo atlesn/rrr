@@ -53,6 +53,11 @@ struct rrr_raft_server_callback_data {
 	struct raft_transfer transfer_req;
 };
 
+struct rrr_raft_server_fsm_result {
+	enum rrr_raft_code code;
+	struct rrr_msg_msg *msg;
+};
+
 static int __rrr_raft_server_send_msg_in_loop (
 		struct rrr_raft_channel *channel,
 		uv_loop_t *loop,
@@ -104,6 +109,38 @@ static void __rrr_raft_server_tracer_emit_cb (
 	// TODO : Not useful until message is extended. Also find
 	//        appropriate debuglevel.
 	// RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
+}
+
+static int __rrr_raft_server_fsm_result_new (
+		struct rrr_raft_server_fsm_result **result,
+		struct rrr_msg_msg **msg,
+		enum rrr_raft_code code
+) {
+	int ret = 0;
+
+	struct rrr_raft_server_fsm_result *fsm_result;
+
+	if ((fsm_result = rrr_allocate_zero(sizeof(*fsm_result))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	fsm_result->code = code;
+	fsm_result->msg = *msg;
+	*msg = NULL;
+
+	*result = fsm_result;
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_server_fsm_result_destroy (
+		struct rrr_raft_server_fsm_result *result
+) {
+	RRR_FREE_IF_NOT_NULL(result->msg);
+	rrr_free(result);
 }
 
 static enum rrr_raft_code __rrr_raft_server_status_translate (
@@ -537,16 +574,25 @@ static void __rrr_raft_server_apply_cb (
 		void *result
 ) {
 	struct rrr_raft_server_callback_data *callback_data = req->data;
-	struct rrr_msg_msg *msg_orig = result;
+	struct rrr_raft_server_fsm_result *fsm_result = result;
+	struct rrr_msg_msg *msg_orig = fsm_result->msg;
 
 	struct rrr_msg msg_ack = {0};
-	enum rrr_raft_code code = __rrr_raft_server_status_translate(status);
+	enum rrr_raft_code code;
 
-	if (code != 0) {
-		if (code != RRR_RAFT_NOT_LEADER) {
+	// Check errors from raft library
+	if (status != 0) {
+	       	if (status != RAFT_NOTLEADER) {
 			RRR_MSG_0("Warning: Apply error: %s (%d)\n",
 				raft_errmsg(callback_data->raft), status);
 		}
+		code = __rrr_raft_server_status_translate(status);
+		goto nack;
+	}
+
+	// Check errors from FSM apply callback
+	if (fsm_result->code != 0) {
+		code = fsm_result->code;
 		goto nack;
 	}
 
@@ -563,7 +609,7 @@ static void __rrr_raft_server_apply_cb (
 
 	goto out;
 	out:
-		rrr_free(result);
+		__rrr_raft_server_fsm_result_destroy(fsm_result);
 		raft_free(req);
 }
 
@@ -877,7 +923,9 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	int ret = 0;
 
-	struct rrr_msg_msg *msg_tmp;
+	struct rrr_msg_msg *msg_tmp = NULL;
+	int was_found;
+	enum rrr_raft_code code = 0;
 
 	*result = NULL;
 
@@ -885,31 +933,44 @@ static int __rrr_raft_server_fsm_apply_cb (
 
 	if ((ret = __rrr_raft_server_buf_msg_to_host(&msg_tmp, buf)) != 0) {
 		RRR_MSG_0("Message decoding failed in %s\n", __func__);
-		goto out;
+		goto out_critical;
 	}
-
-	// TODO : Check if we are leader and trigger NACK instead of bailing
 
 	RRR_DBG_3("Raft message %i being applied in state machine in server %i\n",
 		msg_tmp->msg_value, callback_data->server_id);
 
-	if ((ret = rrr_raft_message_store_push(callback_data->message_store_state, msg_tmp)) != 0) {
+	if ((ret = rrr_raft_message_store_push (
+			&was_found,
+			callback_data->message_store_state,
+			msg_tmp
+	)) != 0) {
 		RRR_MSG_0("Failed to push message to message store during application to state machine in server %i\n",
 			callback_data->server_id);
-		callback_data->ret = 1;
-		uv_stop(callback_data->loop);
-		goto out_free;
+		goto out_critical;
+	}
+
+	if (MSG_IS_PAT(msg_tmp) && !was_found) {
+		code = RRR_RAFT_ENOENT;
 	}
 
 	// If we are leader, the apply_cb giving feedback to
 	// the client must see the message which has been applied
-	// successfully to the state machine.
-	*result = msg_tmp;
-	msg_tmp = NULL;
+	// to the state machine.
+	if ((ret = __rrr_raft_server_fsm_result_new (
+			(struct rrr_raft_server_fsm_result **) result,
+			&msg_tmp, /* Consumed */
+			code
+	)) != 0) {
+		goto out_critical;
+	}
 
+	goto out_free;
+	out_critical:
+		assert(ret != 0);
+		callback_data->ret = 1;
+		uv_stop(callback_data->loop);
 	out_free:
 		RRR_FREE_IF_NOT_NULL(msg_tmp);
-	out:
 		return ret;
 }
 
@@ -1023,6 +1084,7 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 	struct rrr_msg_msg *msg;
 	size_t pos;
+	int was_found;
 
 	assert(buf->len <= UINT32_MAX);
 
@@ -1042,6 +1104,7 @@ static int __rrr_raft_server_fsm_restore_cb (
 			msg->msg_value, callback_data->server_id);
 
 		if ((ret = rrr_raft_message_store_push (
+				&was_found,
 				callback_data->message_store_state,
 				msg
 		)) != 0) {
