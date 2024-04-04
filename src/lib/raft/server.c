@@ -40,6 +40,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_time.h"
 
+struct rrr_raft_server_fsm_result {
+	enum rrr_raft_code code;
+	struct rrr_msg_msg *msg;
+};
+
 struct rrr_raft_server_callback_data {
 	struct rrr_raft_channel *channel;
 	int ret;
@@ -51,11 +56,7 @@ struct rrr_raft_server_callback_data {
 	uint32_t transfer_req_index;
 	struct raft_change change_req;
 	struct raft_transfer transfer_req;
-};
-
-struct rrr_raft_server_fsm_result {
-	enum rrr_raft_code code;
-	struct rrr_msg_msg *msg;
+	struct rrr_raft_server_fsm_result fsm_result;
 };
 
 static int __rrr_raft_server_send_msg_in_loop (
@@ -111,36 +112,23 @@ static void __rrr_raft_server_tracer_emit_cb (
 	// RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
 }
 
-static int __rrr_raft_server_fsm_result_new (
-		struct rrr_raft_server_fsm_result **result,
-		struct rrr_msg_msg **msg,
-		enum rrr_raft_code code
-) {
-	int ret = 0;
-
-	struct rrr_raft_server_fsm_result *fsm_result;
-
-	if ((fsm_result = rrr_allocate_zero(sizeof(*fsm_result))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	fsm_result->code = code;
-	fsm_result->msg = *msg;
-	*msg = NULL;
-
-	*result = fsm_result;
-
-	out:
-	return ret;
-}
-
-static void __rrr_raft_server_fsm_result_destroy (
+static void __rrr_raft_server_fsm_result_clear (
 		struct rrr_raft_server_fsm_result *result
 ) {
 	RRR_FREE_IF_NOT_NULL(result->msg);
-	rrr_free(result);
+}
+
+static void __rrr_raft_server_fsm_result_set (
+		struct rrr_raft_server_fsm_result *result,
+		struct rrr_msg_msg **msg,
+		enum rrr_raft_code code
+) {
+	__rrr_raft_server_fsm_result_clear(result);
+
+	result->code = code;
+	result->msg = *msg;
+
+	*msg = NULL;
 }
 
 static enum rrr_raft_code __rrr_raft_server_status_translate (
@@ -580,6 +568,8 @@ static void __rrr_raft_server_apply_cb (
 	struct rrr_msg msg_ack = {0};
 	enum rrr_raft_code code;
 
+	assert(result == &callback_data->fsm_result);
+
 	// Check errors from raft library
 	if (status != 0) {
 	       	if (status != RAFT_NOTLEADER) {
@@ -609,7 +599,6 @@ static void __rrr_raft_server_apply_cb (
 
 	goto out;
 	out:
-		__rrr_raft_server_fsm_result_destroy(fsm_result);
 		raft_free(req);
 }
 
@@ -956,13 +945,13 @@ static int __rrr_raft_server_fsm_apply_cb (
 	// If we are leader, the apply_cb giving feedback to
 	// the client must see the message which has been applied
 	// to the state machine.
-	if ((ret = __rrr_raft_server_fsm_result_new (
-			(struct rrr_raft_server_fsm_result **) result,
+	__rrr_raft_server_fsm_result_set (
+			&callback_data->fsm_result,
 			&msg_tmp, /* Consumed */
 			code
-	)) != 0) {
-		goto out_critical;
-	}
+	);
+
+	*result = &callback_data->fsm_result;
 
 	goto out_free;
 	out_critical:
@@ -1247,6 +1236,7 @@ int rrr_raft_server (
 		0,
 		0,
 		{0},
+		{0},
 		{0}
 	};
 
@@ -1262,15 +1252,14 @@ int rrr_raft_server (
 			RRR_MSG_0("Failed to add to raft configuration in %s: %s\n", __func__,
 				raft_strerror(ret_tmp));
 			ret = 1;
-			goto out_raft_configuration_close;
+			goto out_raft_callback_data_cleanup;
 		}
 	}
 
 	if ((ret_tmp = raft_bootstrap(&raft, &configuration)) != 0 && ret_tmp != RAFT_CANTBOOTSTRAP) {
 		RRR_MSG_0("Failed to bootstrap raft in %s: %s\n",
 			__func__, raft_strerror(ret_tmp));
-		ret = 1;
-		goto out_raft_configuration_close;
+		goto out_raft_callback_data_cleanup;
 	}
 
 	raft_set_snapshot_threshold(&raft, 32);
@@ -1295,7 +1284,9 @@ int rrr_raft_server (
 	// raft stuff explicitly as this causes uv threads
 	// to use freed data.
 	goto out_loop_close;
-	out_raft_configuration_close:
+	out_raft_callback_data_cleanup:
+		__rrr_raft_server_fsm_result_clear(&callback_data.fsm_result);
+//	out_raft_configuration_close:
 		raft_configuration_close(&configuration);
 //	out_raft_close:
 		raft_close(&raft, NULL);
