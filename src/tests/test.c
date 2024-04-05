@@ -161,7 +161,7 @@ int rrr_test_library_functions (
 ) {
 	int ret = 0;
 	int ret_tmp = 0;
-goto json;
+goto raft;
 	// OR all the return values, don't stop if a test fails
 
 	TEST_BEGIN("rrr_allocator") {

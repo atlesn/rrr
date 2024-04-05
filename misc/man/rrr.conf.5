@@ -3088,6 +3088,11 @@ The patching behaviour depends on wether or not the existing message or patch me
 Whenever JSON patching occurs, either for a single array field or for a full data message,
 each JSON value in the patch will replace JSON values with the same names in the original.
 The replacement only occurs at the first level.
+.It TAG
+Force the nodes to perform a snapshot which will save the current message state to disk.
+After a snapshot, and when the node restarts, only messages arriving after the snapshot need to be reapplied.
+Snapshoting will regardless be performed automatically as needed.
+Any topic set in the message will be ignored, and an acknowledgement will be emitted.
 
 .Bl -tag -width -indent
 .It If both the patch message and existing message are array messages:
@@ -3181,6 +3186,11 @@ if a message with the given topic was not found.
 .It LEADERSHIP TRANSFER
 An attempt of leadership transfer to another node was made.
 Implementations must expect to receive this status message at any time.
+
+.It SNAPSHOT
+A snapshot was performed.
+Implementations must expect to receive this status message at any time.
+
 .El
 
 .It raft_status

@@ -292,6 +292,15 @@ int rrr_raft_channel_request_get (
 	return rrr_raft_client_request_get(req_index, channel, topic, topic_length);
 }
 
+int rrr_raft_channel_request_delete (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length
+) {
+	return rrr_raft_client_request_delete(req_index, channel, topic, topic_length);
+}
+
 int rrr_raft_channel_servers_add (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
@@ -322,4 +331,11 @@ int rrr_raft_channel_leadership_transfer (
 		int server_id
 ) {
 	return rrr_raft_client_leadership_transfer(req_index, channel, server_id);
+}
+
+int rrr_raft_channel_snapshot (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel
+) {
+	return rrr_raft_client_snapshot(req_index, channel);
 }

@@ -387,6 +387,18 @@ static inline rrr_biglength rrr_biglength_from_ptr_sub_bug_const (const void *a,
 	return (rrr_length) r;
 }
 
+static inline uint32_t rrr_u32_from_ptr_bug_const (const void *a) {
+	uintptr_t r = (uintptr_t) a - (uintptr_t) 0;
+	if (r > UINT32_MAX) {
+		RRR_BUG("Overflow in %s\n", __func__);
+	}
+	return (uint32_t) r;
+}
+
+static inline void *rrr_ptr_from_biglength_bug_const (rrr_biglength a) {
+	return (void *) (uintptr_t) a;
+}
+
 static inline void rrr_length_dec_bug (rrr_length *a) {
 	if ((*a) == 0) {
 		RRR_BUG("Bug: Underflow in rrr_length_dec_bug\n");

@@ -41,8 +41,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 
 struct rrr_raft_server_fsm_result {
+	uint32_t req_index;
 	enum rrr_raft_code code;
 	struct rrr_msg_msg *msg;
+};
+
+struct rrr_raft_server_fsm_result_collection {
+	struct rrr_raft_server_fsm_result *results;
+	size_t wpos;
+	size_t capacity;
 };
 
 struct rrr_raft_server_callback_data {
@@ -54,9 +61,11 @@ struct rrr_raft_server_callback_data {
 	struct rrr_raft_message_store *message_store_state;
 	uint32_t change_req_index;
 	uint32_t transfer_req_index;
+	uint32_t snapshot_req_index;
 	struct raft_change change_req;
 	struct raft_transfer transfer_req;
-	struct rrr_raft_server_fsm_result fsm_result;
+	struct raft_suggest_snapshot snapshot_req;
+	struct rrr_raft_server_fsm_result_collection fsm_results;
 };
 
 static int __rrr_raft_server_send_msg_in_loop (
@@ -115,20 +124,98 @@ static void __rrr_raft_server_tracer_emit_cb (
 static void __rrr_raft_server_fsm_result_clear (
 		struct rrr_raft_server_fsm_result *result
 ) {
+	result->req_index = 0;
+	result->code = 0;
 	RRR_FREE_IF_NOT_NULL(result->msg);
 }
 
 static void __rrr_raft_server_fsm_result_set (
 		struct rrr_raft_server_fsm_result *result,
+		uint32_t req_index,
 		struct rrr_msg_msg **msg,
 		enum rrr_raft_code code
 ) {
-	__rrr_raft_server_fsm_result_clear(result);
+	assert(result->msg == NULL);
 
+	result->req_index = req_index;
 	result->code = code;
 	result->msg = *msg;
 
 	*msg = NULL;
+}
+
+static int __rrr_raft_server_fsm_result_collection_push (
+		struct rrr_raft_server_fsm_result_collection *results,
+		uint32_t req_index,
+		struct rrr_msg_msg **msg,
+		enum rrr_raft_code code
+) {
+	int ret = 0;
+
+	size_t i, capacity_new;
+	struct rrr_raft_server_fsm_result *slot;
+
+	for (i = 0; i < results->wpos; i++) {
+		if ((slot = results->results + i)->msg != NULL)
+			continue;
+
+		__rrr_raft_server_fsm_result_set(slot, req_index, msg, code);
+
+		goto out;
+	}
+
+	if (results->wpos == results->capacity) {
+		capacity_new = results->capacity + 32;
+		if ((slot = rrr_reallocate(results->results, sizeof(*slot) * capacity_new)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+		memset(slot + results->capacity, '\0', sizeof(*slot) * (capacity_new - results->capacity));
+		results->results = slot;
+		results->capacity = capacity_new;
+	}
+
+	slot = results->results + results->wpos++;
+
+	__rrr_raft_server_fsm_result_set(slot, req_index, msg, code);
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_server_fsm_result_collection_pull (
+		struct rrr_raft_server_fsm_result *result,
+		struct rrr_raft_server_fsm_result_collection *results,
+		uint32_t req_index
+) {
+	size_t i;
+	struct rrr_raft_server_fsm_result *slot;
+
+	for (i = 0; i < results->wpos; i++) {
+		if ((slot = results->results + i)->req_index != req_index) 
+			continue;
+
+		*result = *slot;
+		*slot = (struct rrr_raft_server_fsm_result) {0};
+
+		return;
+	}
+
+	RRR_BUG("BUG: Request %u not found in %s\n", req_index, __func__);
+}
+
+static void __rrr_raft_server_fsm_result_collection_clear (
+		size_t *cleared_count,
+		struct rrr_raft_server_fsm_result_collection *results
+) {
+	*cleared_count = 0;
+
+	for (size_t i = 0; i < results->wpos; i++) {
+		if (results->results[i].msg)
+			(*cleared_count)++;
+		__rrr_raft_server_fsm_result_clear(results->results + i);
+	}
 }
 
 static enum rrr_raft_code __rrr_raft_server_status_translate (
@@ -350,7 +437,7 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	const char *address;
 	raft_id id;
-	enum rrr_raft_code code = RRR_RAFT_ERROR;
+	enum rrr_raft_code code;
 
 	assert(callback_data->transfer_req_index > 0);
 
@@ -358,9 +445,11 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	if (id != (long long unsigned) callback_data->server_id) {
 		RRR_DBG_1("Leader transfer OK to %llu %s\n", id, address);
+		code = RRR_RAFT_OK;
 	}
 	else {
 		RRR_DBG_1("Leader transfer NOT OK to %llu %s\n", id, address);
+		code = RRR_RAFT_ERROR;
 	}
 
 	__rrr_raft_server_change_cb_final (
@@ -372,6 +461,28 @@ static void __rrr_raft_server_leadership_transfer_cb (
 
 	req->data = NULL;
 	callback_data->transfer_req_index = 0;
+}
+
+static void __rrr_raft_server_suggest_snapshot_cb (
+		struct raft_suggest_snapshot *req,
+		int status
+) {
+	struct rrr_raft_server_callback_data *callback_data = req->data;
+
+	struct rrr_msg msg_ack = {0};
+
+	enum rrr_raft_code code = __rrr_raft_server_status_translate(status);
+
+	rrr_msg_populate_control_msg (
+			&msg_ack,
+			code == RRR_RAFT_OK ? RRR_MSG_CTRL_F_ACK : RRR_MSG_CTRL_F_NACK_REASON(code),
+			callback_data->snapshot_req_index
+	);
+
+	__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
+
+	req->data = NULL;
+	callback_data->snapshot_req_index = 0;
 }
 
 static int __rrr_raft_server_handle_cmd (
@@ -436,9 +547,13 @@ static int __rrr_raft_server_handle_cmd (
 			}
 
 			assert(callback_data->transfer_req.data == NULL && callback_data->transfer_req_index == 0);
-
 			callback_data->transfer_req.data = callback_data;
 			callback_data->transfer_req_index = req_index;
+		} break;
+		case RRR_RAFT_CMD_SNAPSHOT: {
+			assert(callback_data->snapshot_req.data == NULL && callback_data->snapshot_req_index == 0);
+			callback_data->snapshot_req.data = callback_data;
+			callback_data->snapshot_req_index = req_index;
 		} break;
 		default:
 			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
@@ -521,6 +636,21 @@ static int __rrr_raft_server_handle_cmd (
 				goto out;
 			}
 		} break;
+		case RRR_RAFT_CMD_SNAPSHOT: {
+			RRR_DBG_1("Raft CMD snapshot suggestion\n");
+
+			if ((ret_tmp = raft_suggest_snapshot (
+					raft,
+					&callback_data->snapshot_req,
+					__rrr_raft_server_suggest_snapshot_cb
+			)) != 0) {
+				RRR_MSG_0("Snapshot suggestion failed in %s: %s %s\n",
+					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
+				ret = 1;
+				goto out;
+			}
+
+		} break;
 		default:
 			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
 	};
@@ -562,13 +692,15 @@ static void __rrr_raft_server_apply_cb (
 		void *result
 ) {
 	struct rrr_raft_server_callback_data *callback_data = req->data;
-	struct rrr_raft_server_fsm_result *fsm_result = result;
-	struct rrr_msg_msg *msg_orig = fsm_result->msg;
+	uint32_t req_index = rrr_u32_from_ptr_bug_const(result);
 
+	struct rrr_raft_server_fsm_result fsm_result;
 	struct rrr_msg msg_ack = {0};
 	enum rrr_raft_code code;
 
-	assert(result == &callback_data->fsm_result);
+	__rrr_raft_server_fsm_result_collection_pull(&fsm_result, &callback_data->fsm_results, req_index);
+
+	assert(fsm_result.msg != NULL && fsm_result.req_index == req_index);
 
 	// Check errors from raft library
 	if (status != 0) {
@@ -581,21 +713,22 @@ static void __rrr_raft_server_apply_cb (
 	}
 
 	// Check errors from FSM apply callback
-	if (fsm_result->code != 0) {
-		code = fsm_result->code;
+	if (fsm_result.code != 0) {
+		code = fsm_result.code;
 		goto nack;
 	}
 
 	goto ack;
 	ack:
-		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_ACK, msg_orig->msg_value);
+		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_ACK, fsm_result.msg->msg_value);
 		goto send_msg;
 	nack:
-		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_NACK_REASON(code), msg_orig->msg_value);
+		rrr_msg_populate_control_msg(&msg_ack, RRR_MSG_CTRL_F_NACK_REASON(code), fsm_result.msg->msg_value);
 		goto send_msg;
 
 	send_msg:
 		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg_ack);
+		__rrr_raft_server_fsm_result_clear(&fsm_result);
 
 	goto out;
 	out:
@@ -915,6 +1048,7 @@ static int __rrr_raft_server_fsm_apply_cb (
 	struct rrr_msg_msg *msg_tmp = NULL;
 	int was_found;
 	enum rrr_raft_code code = 0;
+	uint32_t req_index;
 
 	*result = NULL;
 
@@ -925,8 +1059,10 @@ static int __rrr_raft_server_fsm_apply_cb (
 		goto out_critical;
 	}
 
-	RRR_DBG_3("Raft message %i being applied in state machine in server %i\n",
-		msg_tmp->msg_value, callback_data->server_id);
+	req_index = msg_tmp->msg_value;
+
+	RRR_DBG_3("Raft message %" PRIu32 " being applied in state machine in server %i\n",
+		req_index, callback_data->server_id);
 
 	if ((ret = rrr_raft_message_store_push (
 			&was_found,
@@ -945,13 +1081,17 @@ static int __rrr_raft_server_fsm_apply_cb (
 	// If we are leader, the apply_cb giving feedback to
 	// the client must see the message which has been applied
 	// to the state machine.
-	__rrr_raft_server_fsm_result_set (
-			&callback_data->fsm_result,
-			&msg_tmp, /* Consumed */
+	if (__rrr_raft_server_fsm_result_collection_push (
+			&callback_data->fsm_results,
+			req_index,
+			&msg_tmp,
 			code
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to push result in %s\n", __func__);
+		goto out_critical;
+	}
 
-	*result = &callback_data->fsm_result;
+	*result = rrr_ptr_from_biglength_bug_const(req_index);
 
 	goto out_free;
 	out_critical:
@@ -1123,6 +1263,7 @@ int rrr_raft_server (
 
 	int was_found, ret_tmp;
 	int channel_fds[2];
+	size_t cleared_count;
 	uv_loop_t loop;
 	uv_poll_t poll_server;
 	struct raft_uv_transport transport = {0};
@@ -1235,6 +1376,8 @@ int rrr_raft_server (
 		message_store_state,
 		0,
 		0,
+		0,
+		{0},
 		{0},
 		{0},
 		{0}
@@ -1278,6 +1421,14 @@ int rrr_raft_server (
 
 	RRR_DBG_1("Event loop completed in raft server, result was %i\n", ret_tmp);
 
+	// TODO : Some expected results are registered when messages are restored and applied, and
+	//        in those cases the final apply callback is never called and the results persists.
+	//        This might not matter as restoration only happens during startup, but we have to
+	//        search past those results each time. Maybe deal with this situation.
+	__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &callback_data.fsm_results);
+	RRR_DBG_1("Cleared %llu expected results in raft server %i\n",
+		cleared_count, callback_data.server_id);
+
 	ret = callback_data.ret;
 
 	// During normal operation, don't clean up the
@@ -1285,7 +1436,7 @@ int rrr_raft_server (
 	// to use freed data.
 	goto out_loop_close;
 	out_raft_callback_data_cleanup:
-		__rrr_raft_server_fsm_result_clear(&callback_data.fsm_result);
+		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &callback_data.fsm_results);
 //	out_raft_configuration_close:
 		raft_configuration_close(&configuration);
 //	out_raft_close:

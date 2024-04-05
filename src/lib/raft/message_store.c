@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_raft_message_store {
 	struct rrr_msg_msg **msgs;
+	size_t wpos;
 	size_t count;
 	size_t capacity;
 	int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS);
@@ -43,9 +44,9 @@ static int __rrr_raft_message_store_expand (
 	struct rrr_msg_msg **msgs_new;
 	size_t capacity_new;
 
-	assert(store->count <= store->capacity);
+	assert(store->wpos <= store->capacity);
 
-	if (store->count != store->capacity) {
+	if (store->wpos != store->capacity) {
 		goto out;
 	}
 
@@ -91,7 +92,7 @@ int rrr_raft_message_store_new (
 void rrr_raft_message_store_destroy (
 		struct rrr_raft_message_store *store
 ) {
-	for (size_t i = 0; i < store->count; i++) {
+	for (size_t i = 0; i < store->wpos; i++) {
 		RRR_FREE_IF_NOT_NULL(store->msgs[i]);
 	}
 
@@ -110,7 +111,7 @@ int rrr_raft_message_store_get (
 
 	*msg = NULL;
 
-	for (size_t i = 0; i < store->count; i++) {
+	for (size_t i = 0; i < store->wpos; i++) {
 		const struct rrr_msg_msg *msg_test = store->msgs[i];
 
 		if (msg_test == NULL)
@@ -154,7 +155,7 @@ int rrr_raft_message_store_push (
 		case MSG_TYPE_DEL: {
 		} /* Fallthrough */
 		case MSG_TYPE_PAT: {
-			for (size_t i = 0; i < store->count; i++) {
+			for (size_t i = 0; i < store->wpos; i++) {
 				if (store->msgs[i] == NULL)
 					continue;
 
@@ -189,7 +190,9 @@ int rrr_raft_message_store_push (
 					}
 
 					rrr_free(store->msgs[i]);
-					store->msgs[i] = msg;
+					if ((store->msgs[i] = msg) == NULL) {
+						store->count--;
+					}
 
 					*was_found = 1;
 
@@ -219,11 +222,12 @@ int rrr_raft_message_store_push (
 			RRR_BUG("BUG: Message type %s not implemented in %s\n", MSG_TYPE_NAME(msg), __func__);
 	};
 
-	for (size_t i = 0; i < store->count; i++) {
+	for (size_t i = 0; i < store->wpos; i++) {
 		if (store->msgs[i] != NULL)
 			continue;
 
 		store->msgs[i] = msg;
+		store->count++;
 
 		RRR_DBG_3("Raft inserted message into message store %u topic '%.*s' count is now %llu\n",
 			msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg), (unsigned long long) store->count);
@@ -235,7 +239,8 @@ int rrr_raft_message_store_push (
 		goto out;
 	}
 
-	store->msgs[store->count++] = msg;
+	store->msgs[store->wpos++] = msg;
+	store->count++;
 
 	RRR_DBG_3("Raft pushed message to message store %u topic '%.*s'\n",
 		msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
@@ -262,7 +267,10 @@ int rrr_raft_message_store_iterate (
 
 	size_t i;
 
-	for (i = 0; i < store->count; i++) {
+	for (i = 0; i < store->wpos; i++) {
+		if (store->msgs[i] == NULL)
+			continue;
+
 		if ((ret = callback(store->msgs[i], callback_arg)) != 0) {
 			goto out;
 		}

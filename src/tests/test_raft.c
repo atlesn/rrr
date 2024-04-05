@@ -127,6 +127,12 @@ static void __rrr_test_raft_register_expected (
 		uint32_t req_index
 ) {
 	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
+		if (array[i] == req_index) {
+			RRR_BUG("BUG: Request already registered in %s\n", __func__);
+		}
+	}
+
+	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
 		if (array[i] == 0) {
 			array[i] = req_index;
 			return;
@@ -141,6 +147,12 @@ static void __rrr_test_raft_register_expected_data (
 		uint32_t req_index,
 		uint32_t data_index
 ) {
+	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
+		if (array[i].req_index == req_index) {
+			RRR_BUG("BUG: Request already registered in %s\n", __func__);
+		}
+	}
+
 	for (size_t i = 0; i < RRR_TEST_RAFT_IN_FLIGHT_MAX; i++) {
 		if (array[i].req_index == 0) {
 			array[i].req_index = req_index;
@@ -158,6 +170,7 @@ static void __rrr_test_raft_register_expected_ack (
 		uint32_t req_index,
 		int ok
 ) {
+	// TEST_MSG("- Register expected ACK %u server: %i ok: %i\n", req_index, server_id, ok);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_expected((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
@@ -168,6 +181,7 @@ static void __rrr_test_raft_register_expected_msg_data (
 		uint32_t req_index,
 		uint32_t data_index
 ) {
+	// TEST_MSG("- Register expected MSG %u server: %i data index: %u\n", req_index, server_id, data_index);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_expected(callback_data->msg_expected[server_id - 1], req_index);
 	__rrr_test_raft_register_expected_data(callback_data->data_expected[server_id - 1], req_index, data_index);
@@ -271,6 +285,7 @@ static void __rrr_test_raft_register_response_ack (
 		uint32_t req_index,
 		int ok
 ) {
+	// TEST_MSG("- Register response ACK %u server: %i ok: %i\n", req_index, server_id, ok);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
@@ -282,6 +297,7 @@ static void __rrr_test_raft_register_response_msg (
 		const char *data,
 		size_t data_len
 ) {
+	// TEST_MSG("- Register response MSG %u server: %i\n", req_index, server_id);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response(callback_data->msg_expected[server_id - 1], req_index);
 	__rrr_test_raft_register_response_data(callback_data->data_expected[server_id - 1], req_index, data, data_len);
@@ -394,8 +410,8 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_OPT_CALLBACK_ARGS) {
 	struct rrr_raft_server *server;
 	size_t servers_delete_pos = 0;
 
-	TEST_MSG("OPT %u received server %i leader id %" PRIi64 " is leader %" PRIi64 "\n",
-		req_index, server_id, leader_id, is_leader);
+	// TEST_MSG("OPT %u received server %i leader id %" PRIi64 " is leader %" PRIi64 "\n",
+	//	req_index, server_id, leader_id, is_leader);
 
 	if (leader_id > 0) {
 		callback_data->leader_index = leader_id - 1;
@@ -567,6 +583,24 @@ static int __rrr_test_raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
         );                                                \
     } while(0)
 
+#define DEL(server_index)                                 \
+    do {                                                  \
+        req_index = 0;                                    \
+        rrr_raft_channel_request_delete (                 \
+                &req_index,                               \
+                callback_data->channels[server_index],    \
+                topic,                                    \
+                strlen(topic)                             \
+        );                                                \
+        assert(req_index > 0);                            \
+        __rrr_test_raft_register_expected_ack (           \
+                callback_data,                            \
+                server_index + 1,                         \
+                req_index,                                \
+                1 /* ok expected */                       \
+        );                                                \
+    } while(0)
+
 #define TRANSFER(server_index)                                        \
     do {                                                              \
          req_index = 0;                                               \
@@ -584,6 +618,22 @@ static int __rrr_test_raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
         );                                                            \
 	callback_data->leader_index_old = callback_data->leader_index;\
         callback_data->leader_index_new = server_index;               \
+    } while(0)
+
+#define SNAPSHOT(server_index)                                        \
+    do {                                                              \
+         req_index = 0;                                               \
+         rrr_raft_channel_snapshot (                                  \
+             &req_index,                                              \
+             callback_data->channels[callback_data->leader_index]     \
+         );                                                           \
+         assert(req_index > 0);                                       \
+        __rrr_test_raft_register_expected_ack (                       \
+                callback_data,                                        \
+                server_index + 1,                                     \
+                req_index,                                            \
+                1 /* ok expected */                                   \
+        );                                                            \
     } while(0)
 
 static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -842,7 +892,44 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		case 20: {
 			WAIT_ACK();
 		} break;
+		case 21: {
+			TEST_MSG("- Making snapshot suggestion...\n");
+
+			SNAPSHOT(callback_data->leader_index);
+		} break;
+		case 22: {
+			WAIT_ACK();
+
+			TEST_MSG("- Sending DEL message to %i...\n", callback_data->leader_index + 1);
+
+			sprintf(topic, "topic/0");
+			DEL(callback_data->leader_index);
+		} break;
+		case 23: {
+			WAIT_ACK();
+
+			TEST_MSG("- Sending GET messages, expecting failure\n");
+
+			sprintf(topic, "topic/0");
+			GET(callback_data->leader_index, 0, 0 /* Expect not ok */);
+		} break;
+		case 24: {
+			WAIT_ACK();
+
+			TEST_MSG("- Making snapshot suggestion...\n");
+
+			SNAPSHOT(callback_data->leader_index);
+		} break;
+		case 25: {
+			WAIT_ACK();
+
+			TEST_MSG("- Sending GET messages, expecting failure\n");
+
+			sprintf(topic, "topic/0");
+			GET(callback_data->leader_index, 0, 0 /* Expect not ok */);
+		} break;
 		default: {
+			WAIT_ACK();
 
 			TEST_MSG("- All tasks complete\n");
 

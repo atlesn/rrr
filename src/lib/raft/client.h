@@ -69,6 +69,12 @@ int rrr_raft_client_request_get (
 		const char *topic,
 		size_t topic_length
 );
+int rrr_raft_client_request_delete (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const char *topic,
+		size_t topic_length
+);
 int rrr_raft_client_servers_add (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
@@ -88,6 +94,10 @@ int rrr_raft_client_leadership_transfer (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel,
 		int server_id
+);
+int rrr_raft_client_snapshot (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel
 );
 
 #endif /* RRR_RAFT_CLIENT_H */

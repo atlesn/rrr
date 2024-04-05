@@ -171,15 +171,19 @@ sub check_response {
 # 20p. Check ACK message for DEL
 # 21s. GET message for 'raft/1'
 # 21p. Check ACK message for GET
-
+#
 # Stage 22-23 - DEL operation with negative response
 # 22s. DEL message for 'raft/3'
 # 22p. Check ACK message for DEL, negative response
 # 23s. GET message for 'raft/3'
 # 23p. Check ACK message for GET, negative response
-
-# Stage 22 - Completion
-# 24s. Test completion signal message is emitted
+#
+# Stage 24 - SNP operation (snapshot)
+# 24s. SNP message
+# 24p. Check ACK message for SNP
+#
+# Stage 25- Completion
+# 25s. Test completion signal message is emitted
 
 # Data with random numbers are generation while sourcing. The
 # process handlers will then check data, patched or full data,
@@ -220,7 +224,9 @@ my %source_handlers = (
 	22 => "MSG_DEL_NF",
 	23 => "MSG_GET_NF",
 
-	24 => "OK"
+	24 => "MSG_SNP",
+
+	25 => "OK"
 );
 
 # Incrementing stage only happen in process handlers when
@@ -264,7 +270,9 @@ my %process_handlers = (
 	21 => "ACK_GET_NF",
 
 	22 => "ACK_DEL_NF",
-	23 => "ACK_GET_NF"
+	23 => "ACK_GET_NF",
+
+	24 => "ACK_SNP"
 
 );
 my %process_topic;
@@ -358,6 +366,16 @@ sub source {
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 
 		$dbg->msg(1, "- Send store non-array non-JSON to leader topic $message->{'topic'}\n");
+
+		$message->send();
+	}
+	elsif ($source_handlers{$stage} eq "MSG_SNP") {
+		# Topic is only set to route message correctly to
+		# the leader. It is ignored by the raft module.
+		$message->{'topic'} = "raft/1";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_TAG);
+
+		$dbg->msg(1, "- Send snapshot command to leader\n");
 
 		$message->send();
 	}

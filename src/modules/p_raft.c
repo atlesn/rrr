@@ -56,15 +56,18 @@ enum raft_req_type {
 	RAFT_REQ_PAT,
 	RAFT_REQ_DEL,
 	RAFT_REQ_GET,
+	RAFT_REQ_SNAPSHOT,
 	RAFT_REQ_LEADERSHIP_TRANSFER
 };
 
+// To avoid confusion, ensure that result strings correspond to RRR message type names
 #define RAFT_REQ_TYPE_TO_STR(type)                                                   \
     ((type) == RAFT_REQ_PUT ? "PUT" :                                                \
     ((type) == RAFT_REQ_PAT ? "PAT" :                                                \
     ((type) == RAFT_REQ_DEL ? "DEL" :                                                \
     ((type) == RAFT_REQ_GET ? "GET" :                                                \
-    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN")))))
+    ((type) == RAFT_REQ_SNAPSHOT ? "TAG" :                                           \
+    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN"))))))
 
 struct raft_request {
 	uint32_t req_index;
@@ -226,9 +229,11 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 	);
 
 	switch (MSG_TYPE(message)) {
-		case MSG_TYPE_PAT:
 		case MSG_TYPE_MSG:
 		case MSG_TYPE_PUT:
+		case MSG_TYPE_PAT:
+		case MSG_TYPE_DEL:
+		case MSG_TYPE_TAG:
 			if (!data->is_leader) {
 				RRR_MSG_0("Warning: Received %s message (store command) in raft instance %s which might not be leader of the cluster.\n",
 					MSG_TYPE_NAME(message), INSTANCE_D_NAME(thread_data));
@@ -288,6 +293,17 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 			req_type = RAFT_REQ_GET;
+		} break;
+		case MSG_TYPE_TAG: {
+			if ((ret = rrr_raft_channel_snapshot (
+					&req_index,
+					data->channel
+			)) != 0) {
+				RRR_MSG_0("Warning: Failed to send snapshot command in raft instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out;
+			}
+			req_type = RAFT_REQ_SNAPSHOT;
 		} break;
 		default: {
 			RRR_MSG_0("Warning: Unknown type %s in message to raft instance %s, dropping it.\n",
@@ -480,6 +496,16 @@ static void raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 				"raft_topic",
 				MSG_TOPIC_LENGTH(msg) > 0 ? MSG_TOPIC_PTR(msg) : "",
 				MSG_TOPIC_LENGTH(msg)
+			);
+		} break;
+		case RAFT_REQ_SNAPSHOT: {
+			RRR_DBG_1("Result of snapshot in raft instance %s: %s\n",
+				INSTANCE_D_NAME(data->thread_data), rrr_raft_reason_to_str(code));
+
+			ret_tmp |= rrr_array_push_value_str_with_tag (
+				&array_tmp,
+				"raft_topic",
+				""
 			);
 		} break;
 		case RAFT_REQ_LEADERSHIP_TRANSFER: {
