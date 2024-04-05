@@ -97,8 +97,6 @@ sub check_response {
 	return $ret;
 }
 
-my @randoms;
-
 # Stages in this test. Each stage is started in the source
 # function and is then completed in the process function as
 # responses arrives. The 's' bullets are for the source
@@ -147,105 +145,201 @@ my @randoms;
 # 10s. PAT message for 'raft/3'
 # 10p. Check ACK message for PAT, negative response
 #
-# Stage 11 - PUT operation with JSON in data message
+# Stage 11-13 - PUT operation with JSON in data message
 # 11s. PUT message for 'raft/1'
 # 11p. Check ACK message for PUT
 # 12s. GET message for 'raft/1'
 # 12p. Check ACK message for GET
 # 13p. Check data message for 'raft/1'
 #
-# Stage 14 - PAT operation with JSON in data message
+# Stage 14-16 - PAT operation with JSON in data message
 # 14s. PAT message for 'raft/1'
 # 14p. Check ACK message for PAT
 # 15s. GET message for 'raft/1'
 # 15p. Check ACK message for GET
 # 16p. Check data message for 'raft/1'
 #
+# Stage 17-19 - PAT operation with non-JSON in data message
+# 17s. PAT message for 'raft/1'
+# 17p. Check ACK message for PAT
+# 18s. GET message for 'raft/1'
+# 18p. Check ACK message for GET
+# 19p. Check data message for 'raft/1'
 #
-# Stage 17 - Completion
-# 17s. Test completion signal message is emitted
+# Stage 20 - Completion
+# 20s. Test completion signal message is emitted
+
+# Data with random numbers are generation while sourcing. The
+# process handlers will then check data, patched or full data,
+# against the random numbers stored.
+my %randoms;
+
+# Checks corresponding to command messages are in the
+# the process handler hash. Note that not all stages have
+# source steps because some steps produce two messages (ACK and
+# result message). In those cases, the result message is check in
+# a separate step.
+my %source_handlers = (
+	 0 => "MSG_PUT_ARRAY_JSON",
+	 1 => "MSG_GET_OK",
+
+	 3 => "MSG_PAT_ARRAY_JSON_OK",
+	 4 => "MSG_GET_OK",
+
+	 6 => "MSG_PAT_ARRAY_DATA",
+	 7 => "MSG_GET_OK",
+
+	 9 => "MSG_GET_NF",
+
+	10 => "MSG_PAT_ARRAY_JSON_NF",
+
+	11 => "MSG_PUT_DATA_JSON",
+	12 => "MSG_GET_OK",
+
+	14 => "MSG_PAT_DATA_JSON",
+	15 => "MSG_GET_OK",
+
+	17 => "MSG_PAT_DATA_DATA",
+	18 => "MSG_GET_OK",
+
+	20 => "OK"
+);
+
+# Incrementing stage only happen in process handlers when
+# expected data arrives.
+#
+# Operations depend on previous source operations, and the number
+# of operations in between matters.
+# - MSG_JSON_ONE check depends on PUT two steps prior
+# - MSG_JSON_TWO check depends on PAT two steps prior and PUT five steps prior
+# - MSG_DATA check depends on PUT or PAT two steps prior
+my %process_handlers = (
+	 0 => "ACK_PUT_OK",
+	 1 => "ACK_GET_OK",
+	 2 => "MSG_JSON_ONE",
+
+	 3 => "ACK_PAT_OK",
+	 4 => "ACK_GET_OK",
+	 5 => "MSG_JSON_TWO",
+
+	 6 => "ACK_PAT_OK",
+	 7 => "ACK_GET_OK",
+	 8 => "MSG_DATA",
+
+	 9 => "ACK_GET_NF",
+
+	10 => "ACK_PAT_NF",
+
+	11 => "ACK_PUT_OK",
+	12 => "ACK_GET_OK",
+	13 => "MSG_JSON_ONE",
+
+	14 => "ACK_PAT_OK",
+	15 => "ACK_GET_OK",
+	16 => "MSG_JSON_TWO",
+
+	17 => "ACK_PAT_OK",
+	18 => "ACK_GET_OK",
+	19 => "MSG_DATA"
+);
+my %process_topic;
 
 sub source {
 	my $message = shift;
 
-	my $res;
+	my $data;
 	my %result_values;
 
 	# - Source function should be called every 500 ms
 
-	$dbg->msg(1, "== STAGE $stage" . "s\n");
+	$dbg->msg(1, "== STAGE $stage" . "s $source_handlers{$stage}\n");
 
-	if (defined $randoms[$stage]) {
+	if (defined $randoms{$stage}) {
 		return 1;
 	}
 
-	if ($stage == 0) {
-		$randoms[$stage] = int(rand(10));
+	$message->clear_array();
+
+	if ($source_handlers{$stage} eq "MSG_PUT_ARRAY_JSON") {
+		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
-		$message->set_tag_str("data", "{'data':$randoms[$stage]}");
+		$message->set_tag_str("data", "{'data':$randoms{$stage}}");
 
 		$dbg->msg(1, "- Send store to leader topic $message->{'topic'}\n");
 
 		$message->send();
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 or $stage == 12 or $stage == 15) {
-		$randoms[$stage] = int(rand(10));
-		$message->{'topic'} = $stage == 9
-			? "raft/2"
-			: "raft/1";
+	elsif ($source_handlers{$stage} =~ /^MSG_GET_(OK|NF)$/) {
+		my $status = $1;
+
+		$randoms{$stage} = int(rand(10));
+		$message->{'topic'} = $status eq "OK" ? "raft/1" : "raft/2";
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
 
 		$dbg->msg(1, "- Send get for topic $message->{'topic'}\n");
 
 		$message->send();
 	}
-	elsif ($stage == 3 || $stage == 10) {
-		$randoms[$stage] = int(rand(10));
-		$message->{'topic'} = $stage == 10
-			? "raft/3"
-			: "raft/1";
-		$message->set_tag_str("data", "{'patch':$randoms[$stage]}");
+	elsif ($source_handlers{$stage} =~ /^MSG_PAT_ARRAY_JSON_(OK|NF)/) {
+		my $status = $1;
+
+		$randoms{$stage} = int(rand(10));
+		$message->{'topic'} = $status eq "OK" ? "raft/1" : "raft/3";
+		$message->set_tag_str("data", "{'patch':$randoms{$stage}}");
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 
 		$dbg->msg(1, "- Send JSON patch with array to leader topic $message->{'topic'}\n");
 
 		$message->send();
 	}
-	elsif ($stage == 14) {
-		$randoms[$stage] = int(rand(10));
+	elsif ($source_handlers{$stage} eq "MSG_PAT_ARRAY_DATA") {
+		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
-		$message->clear_array();
-		$message->{'data'} = "{'patch':$randoms[$stage]}";
-		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
-
-		$dbg->msg(1, "- Send JSON patch with raw data to leader topic $message->{'topic'}\n");
-
-		$message->send();
-	}
-	elsif ($stage == 6) {
-		$randoms[$stage] = int(rand(10));
-		$message->{'topic'} = "raft/1";
-		$message->set_tag_str("data", "data $randoms[$stage]");
+		$message->set_tag_str("data", "data $randoms{$stage}");
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
 
 		$dbg->msg(1, "- Send non-JSON patch to leader topic $message->{'topic'}\n");
 
 		$message->send();
 	}
-	elsif ($stage == 11) {
-		$randoms[$stage] = int(rand(10));
+	elsif ($source_handlers{$stage} eq "MSG_PUT_DATA_JSON") {
+		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
-		$message->clear_array();
-		$message->{"data"} = "{'data':$randoms[$stage]}";
+		$message->{"data"} = "{'data':$randoms{$stage}}";
 
-		$dbg->msg(1, "- Send store non-array to leader topic $message->{'topic'}\n");
+		$dbg->msg(1, "- Send store non-array JSON to leader topic $message->{'topic'}\n");
 
 		$message->send();
 	}
-	elsif ($stage == 17) {
+	elsif ($source_handlers{$stage} eq "MSG_PAT_DATA_JSON") {
+		$randoms{$stage} = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->{'data'} = "{'patch':$randoms{$stage}}";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+
+		$dbg->msg(1, "- Send patch non-array JSON to leader topic $message->{'topic'}\n");
+
+		$message->send();
+	}
+	elsif ($source_handlers{$stage} eq "MSG_PAT_DATA_DATA") {
+		$randoms{$stage} = int(rand(10));
+		$message->{'topic'} = "raft/1";
+		$message->{"data"} = "data $randoms{$stage}";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
+
+		$dbg->msg(1, "- Send store non-array non-JSON to leader topic $message->{'topic'}\n");
+
+		$message->send();
+	}
+	elsif ($source_handlers{$stage} eq "OK") {
 		$message->{'topic'} = "raft-ok";
 		$message->send();
 	}
+	else {
+		die ("Unknown source stage $stage\n");
+	}
+
+	$process_topic{$stage} = $message->{'topic'};
 
 	return 1;
 }
@@ -261,29 +355,21 @@ sub process {
 	$message->{'topic'} = "";
 	$message->clear_array();
 
-	$dbg->msg(1, "== STAGE $stage" . "p\n");
+	$dbg->msg(1, "== STAGE $stage" . "p $process_handlers{$stage}\n");
 
-	if ($stage == 0 or $stage == 3 or $stage == 6 or $stage == 10 or $stage == 11 or $stage == 14) {
-		my $method = ($stage == 0 or $stage == 11)
-			? "PUT"
-			: "PAT"
-		;
+	if ($process_handlers{$stage} =~ /^ACK_(PUT|PAT)_(OK|NF)$/) {
+		my $method = $1;
+		my $status = $2;
 
 		# The ACK message has no topic itself. The topic
 		# of the message it refers to is in an array field.
-		$dbg->msg(1, "- Checking result of $method command\n");
+		$dbg->msg(1, "- Checking result of $method command expecting status $status\n");
 
 		$res = check_response(\%result_values, "", {
 			"raft_command" => $method,
-			"raft_status" => $stage == 10
-				? 0
-				: 1,
-			"raft_reason" => $stage == 10
-				? "NOT FOUND"
-				: "OK",
-			"raft_topic" => $stage == 10
-				? "raft/3"
-				: "raft/1"
+			"raft_status" => $status eq "OK" ? 1 : 0,
+			"raft_reason" => $status eq "OK" ? "OK" : "NOT FOUND",
+			"raft_topic" => $process_topic{$stage}
 		});
 
 		if ($res) {
@@ -295,7 +381,7 @@ sub process {
 			) {
 				# Node is not yet leader
 				$dbg->msg(1, "- Node is not yet leader, try again\n");
-				$randoms[$stage] = undef;
+				$randoms{$stage} = undef;
 			}
 			else {
 				return 0;
@@ -305,19 +391,15 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 1 or $stage == 4 or $stage == 7 or $stage == 9 or $stage == 12 or $stage == 15) {
+	elsif ($process_handlers{$stage} =~ /^ACK_GET_(OK|NF)$/) {
+		my $status = $1;
+
 		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
 			"raft_command" => "GET",
-			"raft_status" => $stage == 9
-				? 0
-				: 1,
-			"raft_reason" => $stage == 9
-				? "NOT FOUND"
-				: "OK",
-			"raft_topic" => $stage == 9
-				? "raft/2"
-				: "raft/1"
+			"raft_status" => $status eq "OK" ? 1 : 0,
+			"raft_reason" => $status eq "OK" ? "OK" : "NOT FOUND",
+			"raft_topic" => $process_topic{$stage}
 		});
 
 		if ($res) {
@@ -332,12 +414,14 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 2 or $stage == 5 or $stage == 13 or $stage == 16) {
+	elsif ($process_handlers{$stage} =~ /^MSG_JSON_(ONE|TWO)$/) {
+		my $data_type = $1;
+
 		# Note that when patching, the JSON library will
 		# produce double quotes for all keys
-		my $data = ($stage == 2 or $stage == 13)
-			? "{'data':$randoms[$stage - 2]}"
-			: "{\"data\":$randoms[$stage - 5],\"patch\":$randoms[$stage - 2]}"
+		my $data = $data_type eq "ONE"
+			? "{'data':$randoms{$stage - 2}}"
+			: "{\"data\":$randoms{$stage - 5},\"patch\":$randoms{$stage - 2}}"
 		;
  
 		# Check for the actual resulting message arriving secondly
@@ -357,10 +441,10 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($stage == 8 || $stage == 12) {
+	elsif ($process_handlers{$stage} eq "MSG_DATA") {
 		# Check for the actual resulting message arriving secondly
 		$res = check_response(\%result_values, "raft/1", {
-			"data" => "data $randoms[$stage - 2]"
+			"data" => "data $randoms{$stage - 2}"
 		});
 
 		if ($res) {
@@ -374,6 +458,9 @@ sub process {
 		else {
 			$stage++;
 		}
+	}
+	else {
+		die("Unknown process stage $stage\n");
 	}
 
 	return 1;

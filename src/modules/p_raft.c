@@ -734,7 +734,9 @@ static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 
 	// NOTE ! This callback is called from forked raft server context
 
-	if (MSG_IS_ARRAY(msg_orig)) {
+	if (MSG_IS_ARRAY(msg_orig) && MSG_IS_ARRAY(msg_patch)) {
+		RRR_DBG_3("Raft patching array message\n");
+
 		if ((ret = rrr_array_message_append_to_array(&version_dummy, &array_data, msg_orig)) != 0) {
 			goto out;
 		}
@@ -763,6 +765,8 @@ static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 		if ( rrr_json_check_object(MSG_DATA_PTR(msg_patch), MSG_DATA_LENGTH(msg_patch)) == 0 &&
 		     rrr_json_check_object(MSG_DATA_PTR(msg_orig), MSG_DATA_LENGTH(msg_orig)) == 0
 		) {
+			RRR_DBG_3("Raft patching JSON data message\n");
+
 			struct raft_patch_msg_json_callback_data callback_data = {
 				msg_new,
 				msg_orig
@@ -780,14 +784,17 @@ static int raft_patch_callback (RRR_RAFT_PATCH_CB_ARGS) {
 			}
 		}
 		else {
+			RRR_DBG_3("Raft patching full message\n");
 #else
 		if (1) {
 #endif
-			if ((*msg_new = rrr_msg_msg_duplicate (msg_orig)) == NULL) {
+			if ((*msg_new = rrr_msg_msg_duplicate (msg_patch)) == NULL) {
 				RRR_MSG_0("Failed to duplicate message in %s\n", __func__);
 				goto out;
 			}
 		}
+
+		assert(*msg_new != NULL);
 	}
 
 	(*msg_new)->msg_value = msg_orig->msg_value;

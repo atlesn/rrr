@@ -162,21 +162,21 @@ int rrr_raft_message_store_push (
 					if (MSG_IS_PUT(msg_orig)) {
 						assert(msg != NULL);
 
-						RRR_DBG_3("Raft replacing a message in message store %u->%u topic '%.*s'\n",
+						RRR_DBG_3("Raft replaced a message in message store %u->%u topic '%.*s'\n",
 							value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
 					}
 					else {
 						assert(msg == NULL);
 
 						if ((ret = store->patch_cb(&msg, store->msgs[i], msg_orig)) != 0) {
-							RRR_MSG_0("Raft failed to patch a message in message store %u->%u topic '%.*s'\n",
-								value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
+							RRR_MSG_0("Raft failed to patch a message in message store %u topic '%.*s'\n",
+								value_orig, MSG_TOPIC_LENGTH(msg_orig), MSG_TOPIC_PTR(msg_orig));
 							goto out;
 						}
 
 						assert(MSG_IS_PUT(msg));
 
-						RRR_DBG_3("Raft patching a message in message store %u->%u topic '%.*s'\n",
+						RRR_DBG_3("Raft patched a message in message store %u->%u topic '%.*s'\n",
 							value_orig, msg->msg_value, MSG_TOPIC_LENGTH(msg), MSG_TOPIC_PTR(msg));
 					}
 
