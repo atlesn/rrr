@@ -3074,32 +3074,44 @@ The following message types may be set in messages to the
 module to produce different behaviour:
 
 .Bl -tag -width -indent
-.It PUT or MSG
-The message is to be stored in the cluster.
+.It PUT
+The message is to be stored in the cluster. An acknowledgement message will be emitted.
+.It MSG
+The message is to be stored in the cluster. An acknowledgement message will be emitted.
 .It PAT
-An existing message is to be patched.
+The message is to patch an existing message in the cluster. An acknowledgement message will be emitted.
+
+The patching behaviour depends on wether or not the existing message or patch message contains JSON and/or array fields.
+
+Whenever JSON patching occurs, either for a single array field or for a full data message,
+each JSON value in the patch will replace JSON values with the same names in the original.
+The replacement only occurs at the first level.
 
 .Bl -tag -width -indent
-.It If the patch message is an array message:
-The existing message must be of array type.
-Each array value from the patch will replace matching tags in the original message.
+.It If both the patch message and existing message are array messages:
+If a field with the same name exist in both messages, and both contain a valid JSON object (surrounded by {}),
+JSON patching will be performed.
+If the original or patch value is not a valid JSON object, the whole array field will be replaced.
+Values which only exist in the patch are inserted.
 
-
+.It If the patch message and/or existing message are data messages:
+If both the patch and existing message contain a valid JSON object (surrounded by {}), JSON patching will be performed.
+Otherwise, the whole message will be replaced with the patch which is effectevily equivilent to a PUT operation.
 .El
-
 
 .It GET
 A retrieval from the store will be performed using the topic set in the message.
 Any data or array fields set in the message is ignored.
 The type of any retrieved message will always be MSG.
-If status messages are enabled using
-.B raft_status_messages
-, the status message for successful retrieval will be emitted before the retrieved message.
 .El
 
 If status messages are enabled using
 .B raft_status_messages
-, status messages will report on which node is currently the leader, allowing redirection or forwarding of requests to be implemented.
+, a message will be generated to inform on the successful or failed application of any command.
+These messages will also report on which node is currently the leader, allowing redirection or forwarding of requests to the current leader to be implemented.
+For
+.B GET
+commands, a status message will be emitted before any result message, hence if the operation succeeded, the actual received message is to be expected shortly.
 
 The following configuration parameters are available:
 
@@ -3129,18 +3141,39 @@ A string describing the command for which the status message applies. May be one
 
 .Bl -tag -width -indent
 .It PUT
-A message store attempt
+A message store attempt.
+The reason field will be set to
+.B NOT LEADER
+if the node is currently not leader hence cannot perform store operations.
+Further requests should in such cases be sent to the node specified in the field
+.B raft_leader_address.
+
+.It PAT
+A message patch attempt.
+The reason field will be set to
+.B NOT FOUND
+if a message with the given topic did not already exist (PAT message must follow an earlier PUT).
+
 .It GET
-A message retrieval attempt (successful attempts also emits the retrieved message)
+A message retrieval attempt (successful attempts also emits the retrieved message).
+The reason field will be set to
+.B NOT FOUND
+if a message with the given topic was not found.
+
 .It LEADERSHIP TRANSFER
-An attempt of leadership transfer to another node
+An attempt of leadership transfer to another node was made.
+Implementations must expect to receive this status message at any time.
 .El
 
 .It raft_status
 Either number 1 or 0 where 1 indicates success and 0 indicates failure
 
 .It raft_reason
-A string with a more detailed error description
+A string with a more detailed error description.
+Set to
+.B OK, ERROR, NOT LEADER
+or
+.B NOT FOUND.
 
 .It raft_server_id
 The ID of the node which generated this message
