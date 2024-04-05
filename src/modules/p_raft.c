@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 enum raft_req_type {
 	RAFT_REQ_PUT,
 	RAFT_REQ_PAT,
+	RAFT_REQ_DEL,
 	RAFT_REQ_GET,
 	RAFT_REQ_LEADERSHIP_TRANSFER
 };
@@ -61,8 +62,9 @@ enum raft_req_type {
 #define RAFT_REQ_TYPE_TO_STR(type)                                                   \
     ((type) == RAFT_REQ_PUT ? "PUT" :                                                \
     ((type) == RAFT_REQ_PAT ? "PAT" :                                                \
+    ((type) == RAFT_REQ_DEL ? "DEL" :                                                \
     ((type) == RAFT_REQ_GET ? "GET" :                                                \
-    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN"))))
+    ((type) == RAFT_REQ_LEADERSHIP_TRANSFER ? "LEADERSHIP TRANSFER" : "UNKNOWN")))))
 
 struct raft_request {
 	uint32_t req_index;
@@ -262,6 +264,18 @@ static int raft_poll_callback (RRR_POLL_CALLBACK_SIGNATURE) {
 			}
 			req_type = RAFT_REQ_PAT;
 		} break;
+		case MSG_TYPE_DEL: {
+			if ((ret = rrr_raft_channel_request_delete_native (
+					&req_index,
+					data->channel,
+					message
+			)) != 0) {
+				RRR_MSG_0("Warning: Failed to delete message in raft instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out;
+			}
+			req_type = RAFT_REQ_DEL;
+		} break;
 		case MSG_TYPE_GET: {
 			if ((ret = rrr_raft_channel_request_get (
 					&req_index,
@@ -451,7 +465,8 @@ static void raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 	switch (request.req_type) {
 		case RAFT_REQ_GET:
 		case RAFT_REQ_PUT:
-		case RAFT_REQ_PAT: {
+		case RAFT_REQ_PAT:
+		case RAFT_REQ_DEL: {
 			RRR_DBG_2("Result of command %s of message with topic %.*s in raft instance %s: %s\n",
 				MSG_TYPE_NAME(msg),
 				MSG_TOPIC_LENGTH(msg),

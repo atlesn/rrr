@@ -3075,9 +3075,11 @@ module to produce different behaviour:
 
 .Bl -tag -width -indent
 .It PUT
-The message is to be stored in the cluster. An acknowledgement message will be emitted.
+The message is to be stored in the cluster, replacing any existing message with the same topic. An acknowledgement message will be emitted.
 .It MSG
-The message is to be stored in the cluster. An acknowledgement message will be emitted.
+Equivilent to PUT.
+.It DEL
+Any existing message with the same topic will be removed from the cluster.
 .It PAT
 The message is to patch an existing message in the cluster. An acknowledgement message will be emitted.
 
@@ -3148,11 +3150,27 @@ if the node is currently not leader hence cannot perform store operations.
 Further requests should in such cases be sent to the node specified in the field
 .B raft_leader_address.
 
+.It DEL
+A message deletion attempt.
+The reason field will be set to
+.B NOT FOUND
+if a message with the given topic did not already exist (DEL message must follow an earlier PUT).
+The reason field may also be set to
+.B NOT LEADER
+as for the
+.B PUT
+operation.
+
 .It PAT
 A message patch attempt.
 The reason field will be set to
 .B NOT FOUND
 if a message with the given topic did not already exist (PAT message must follow an earlier PUT).
+The reason field may also be set to
+.B NOT LEADER
+as for the
+.B PUT
+operation.
 
 .It GET
 A message retrieval attempt (successful attempts also emits the retrieved message).

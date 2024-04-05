@@ -938,7 +938,7 @@ static int __rrr_raft_server_fsm_apply_cb (
 		goto out_critical;
 	}
 
-	if (MSG_IS_PAT(msg_tmp) && !was_found) {
+	if ((MSG_IS_DEL(msg_tmp) || MSG_IS_PAT(msg_tmp)) && !was_found) {
 		code = RRR_RAFT_ENOENT;
 	}
 

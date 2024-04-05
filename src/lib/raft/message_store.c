@@ -151,6 +151,8 @@ int rrr_raft_message_store_push (
 				goto out;
 			}
 		} /* Fallthrough */
+		case MSG_TYPE_DEL: {
+		} /* Fallthrough */
 		case MSG_TYPE_PAT: {
 			for (size_t i = 0; i < store->count; i++) {
 				if (store->msgs[i] == NULL)
@@ -159,7 +161,13 @@ int rrr_raft_message_store_push (
 				if (rrr_msg_msg_topic_equals_msg(msg_orig, store->msgs[i])) {
 					rrr_u32 value_orig = store->msgs[i]->msg_value;
 
-					if (MSG_IS_PUT(msg_orig)) {
+					if (MSG_IS_DEL(msg_orig)) {
+						assert(msg == NULL);
+
+						RRR_DBG_3("Raft deleted a message in message store %u topic '%.*s'\n",
+							value_orig, MSG_TOPIC_LENGTH(msg_orig), MSG_TOPIC_PTR(msg_orig));
+					}
+					else if (MSG_IS_PUT(msg_orig)) {
 						assert(msg != NULL);
 
 						RRR_DBG_3("Raft replaced a message in message store %u->%u topic '%.*s'\n",
@@ -197,10 +205,12 @@ int rrr_raft_message_store_push (
 		case MSG_TYPE_PUT: {
 			assert(msg != NULL);
 		} break;
+		case MSG_TYPE_DEL: {
+		} /* Fallthrough */
 		case MSG_TYPE_PAT: {
 			assert(msg == NULL);
 
-			RRR_MSG_0("Raft could not patch topic '%.*s', message not found\n",
+			RRR_MSG_0("Raft could not patch or delete using topic '%.*s', message not found\n",
 				MSG_TOPIC_LENGTH(msg_orig), MSG_TOPIC_PTR(msg_orig));
 
 			goto out;

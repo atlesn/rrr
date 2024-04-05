@@ -166,8 +166,20 @@ sub check_response {
 # 18p. Check ACK message for GET
 # 19p. Check data message for 'raft/1'
 #
-# Stage 20 - Completion
-# 20s. Test completion signal message is emitted
+# Stage 20-21 - DEL operation
+# 20s. DEL message for 'raft/1'
+# 20p. Check ACK message for DEL
+# 21s. GET message for 'raft/1'
+# 21p. Check ACK message for GET
+
+# Stage 22-23 - DEL operation with negative response
+# 22s. DEL message for 'raft/3'
+# 22p. Check ACK message for DEL, negative response
+# 23s. GET message for 'raft/3'
+# 23p. Check ACK message for GET, negative response
+
+# Stage 22 - Completion
+# 24s. Test completion signal message is emitted
 
 # Data with random numbers are generation while sourcing. The
 # process handlers will then check data, patched or full data,
@@ -202,7 +214,13 @@ my %source_handlers = (
 	17 => "MSG_PAT_DATA_DATA",
 	18 => "MSG_GET_OK",
 
-	20 => "OK"
+	20 => "MSG_DEL_OK",
+	21 => "MSG_GET_NF",
+
+	22 => "MSG_DEL_NF",
+	23 => "MSG_GET_NF",
+
+	24 => "OK"
 );
 
 # Incrementing stage only happen in process handlers when
@@ -240,7 +258,14 @@ my %process_handlers = (
 
 	17 => "ACK_PAT_OK",
 	18 => "ACK_GET_OK",
-	19 => "MSG_DATA"
+	19 => "MSG_DATA",
+
+	20 => "ACK_DEL_OK",
+	21 => "ACK_GET_NF",
+
+	22 => "ACK_DEL_NF",
+	23 => "ACK_GET_NF"
+
 );
 my %process_topic;
 
@@ -258,10 +283,11 @@ sub source {
 		return 1;
 	}
 
+	$randoms{$stage} = int(rand(10));
+
 	$message->clear_array();
 
 	if ($source_handlers{$stage} eq "MSG_PUT_ARRAY_JSON") {
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
 		$message->set_tag_str("data", "{'data':$randoms{$stage}}");
 
@@ -272,7 +298,6 @@ sub source {
 	elsif ($source_handlers{$stage} =~ /^MSG_GET_(OK|NF)$/) {
 		my $status = $1;
 
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = $status eq "OK" ? "raft/1" : "raft/2";
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_GET);
 
@@ -280,10 +305,19 @@ sub source {
 
 		$message->send();
 	}
+	elsif ($source_handlers{$stage} =~ /^MSG_DEL_(OK|NF)$/) {
+		my $status = $1;
+
+		$message->{'topic'} = $status eq "OK" ? "raft/1" : "raft/3";
+		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_DEL);
+
+		$dbg->msg(1, "- Send del for topic $message->{'topic'}\n");
+
+		$message->send();
+	}
 	elsif ($source_handlers{$stage} =~ /^MSG_PAT_ARRAY_JSON_(OK|NF)/) {
 		my $status = $1;
 
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = $status eq "OK" ? "raft/1" : "raft/3";
 		$message->set_tag_str("data", "{'patch':$randoms{$stage}}");
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
@@ -293,7 +327,6 @@ sub source {
 		$message->send();
 	}
 	elsif ($source_handlers{$stage} eq "MSG_PAT_ARRAY_DATA") {
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
 		$message->set_tag_str("data", "data $randoms{$stage}");
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
@@ -303,7 +336,6 @@ sub source {
 		$message->send();
 	}
 	elsif ($source_handlers{$stage} eq "MSG_PUT_DATA_JSON") {
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
 		$message->{"data"} = "{'data':$randoms{$stage}}";
 
@@ -312,7 +344,6 @@ sub source {
 		$message->send();
 	}
 	elsif ($source_handlers{$stage} eq "MSG_PAT_DATA_JSON") {
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
 		$message->{'data'} = "{'patch':$randoms{$stage}}";
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
@@ -322,7 +353,6 @@ sub source {
 		$message->send();
 	}
 	elsif ($source_handlers{$stage} eq "MSG_PAT_DATA_DATA") {
-		$randoms{$stage} = int(rand(10));
 		$message->{'topic'} = "raft/1";
 		$message->{"data"} = "data $randoms{$stage}";
 		$message->type_set(rrr::rrr_helper::rrr_message::MSG_TYPE_PAT);
@@ -391,12 +421,12 @@ sub process {
 			$stage++;
 		}
 	}
-	elsif ($process_handlers{$stage} =~ /^ACK_GET_(OK|NF)$/) {
-		my $status = $1;
+	elsif ($process_handlers{$stage} =~ /^ACK_(GET|DEL)_(OK|NF)$/) {
+		my $method = $1;
+		my $status = $2;
 
-		# Check for ACK message for the GET which arrives first
 		$res = check_response(\%result_values, "", {
-			"raft_command" => "GET",
+			"raft_command" => $method,
 			"raft_status" => $status eq "OK" ? 1 : 0,
 			"raft_reason" => $status eq "OK" ? "OK" : "NOT FOUND",
 			"raft_topic" => $process_topic{$stage}

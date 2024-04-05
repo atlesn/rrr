@@ -268,6 +268,14 @@ int rrr_raft_channel_request_patch_native (
 	return rrr_raft_client_request_patch_native(req_index, channel, msg);
 }
 
+int rrr_raft_channel_request_delete_native (
+		uint32_t *req_index,
+		struct rrr_raft_channel *channel,
+		const struct rrr_msg_msg *msg
+) {
+	return rrr_raft_client_request_delete_native(req_index, channel, msg);
+}
+
 int rrr_raft_channel_request_opt (
 		uint32_t *req_index,
 		struct rrr_raft_channel *channel
