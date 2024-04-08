@@ -446,12 +446,17 @@ static void __rrr_test_raft_opt_callback (RRR_RAFT_OPT_CALLBACK_ARGS) {
 		*servers = NULL;
 	}
 	else {
-		for (server = *servers; server->id > 0; server++) {
-			TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
-				server->id,
-				server->address,
-				RRR_RAFT_STATUS_TO_STR(server->status)
-			);
+		if (*servers != NULL) {
+			for (server = *servers; server->id > 0; server++) {
+				TEST_MSG("- Found member %" PRIi64 " address %s status %s\n",
+					server->id,
+					server->address,
+					RRR_RAFT_STATUS_TO_STR(server->status)
+				);
+			}
+		}
+		else {
+			TEST_MSG("- No servers found\n");
 		}
 	}
 

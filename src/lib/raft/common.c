@@ -50,7 +50,7 @@ int rrr_raft_opt_array_field_server_get (
 	int servers_count, i;
 	const struct rrr_type_value *value;
 
-	*result = 0;
+	*result = NULL;
 
 	if ((servers_count = rrr_array_value_count_tag(array, RRR_RAFT_FIELD_SERVER)) > 0) {
 		if ((servers = rrr_allocate_zero(sizeof(*servers) * (servers_count + 1))) == NULL) {

@@ -73,6 +73,7 @@ struct rrr_raft_server_state {
 	} metadata;
 	struct {
 		rrr_event_handle raft_timeout;
+		rrr_event_handle socket;
 	} events;
 };
 
@@ -363,6 +364,52 @@ static int __rrr_raft_server_make_opt_response (
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
+
+static int __rrr_raft_server_send_msg (
+		struct rrr_raft_channel *channel,
+		struct rrr_msg *msg
+) {
+	rrr_u32 total_size = MSG_TOTAL_SIZE(msg);
+
+	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
+		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg);
+	}
+	rrr_msg_checksum_and_to_network_endian(msg);
+
+	if (write(channel->fd_server, msg, total_size) != total_size) {
+		if (errno == EPIPE) {
+			return RRR_READ_EOF;
+		}
+		RRR_MSG_0("Failed to send message in %s: %s\n",
+			__func__, rrr_strerror(errno));
+		return RRR_READ_HARD_ERROR;
+	}
+
+	return RRR_READ_OK;
+}
+
+static int __rrr_raft_server_send_msg_in_loop (
+		struct rrr_raft_server_state *state,
+		struct rrr_msg *msg
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_raft_server_send_msg(state->channel, msg)) != 0) {
+		if (ret == RRR_READ_EOF) {
+			rrr_event_dispatch_exit(state->channel->queue);
+			ret = 0;
+			goto out;
+		}
+
+		RRR_MSG_0("Failed to send message in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 
 /*
 static void __rrr_raft_server_change_cb_final (
@@ -745,8 +792,8 @@ static int __rrr_raft_server_read_msg_cb (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_raft_server_state *callback_data = arg2;
-	struct raft *raft = callback_data->raft;
+	struct rrr_raft_server_state *state = arg2;
+	struct raft *raft = state->raft;
 
 	(void)(arg1);
 
@@ -763,7 +810,7 @@ static int __rrr_raft_server_read_msg_cb (
 	if (MSG_IS_OPT(*message)) {
 		if (MSG_IS_ARRAY(*message)) {
 			ret = __rrr_raft_server_handle_cmd (
-					callback_data,
+					state,
 					(*message)->msg_value,
 					(*message)
 			);
@@ -784,7 +831,7 @@ static int __rrr_raft_server_read_msg_cb (
 	if (MSG_IS_GET(*message)) {
 		if ((ret = __rrr_raft_server_make_get_response (
 				&msg_msg,
-				callback_data->message_store_state,
+				state->message_store_state,
 				(*message)->msg_value,
 				(*message)
 		)) != 0) {
@@ -829,7 +876,7 @@ static int __rrr_raft_server_read_msg_cb (
 		goto out;
 	}
 */
-//	req->data = callback_data;
+//	req->data = state;
 /*
 	if ((ret_tmp = raft_apply(raft, req, &buf, 1, __rrr_raft_server_apply_cb)) != 0) {
 		// It appears that this data is usually freed also
@@ -850,11 +897,10 @@ static int __rrr_raft_server_read_msg_cb (
 	out_send_ctrl_msg:
 		// Status messages are to be emitted before result messages
 		assert(0 && "Apply status message not implemented");
-//		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+//		__rrr_raft_server_send_msg_in_loop(state->channel, state->loop, &msg);
 	out_send_msg_msg:
 		if (msg_msg != NULL) {
-			assert(0 && "Apply response not implemented");
-//			__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, (struct rrr_msg *) msg_msg);
+			__rrr_raft_server_send_msg_in_loop(state, (struct rrr_msg *) msg_msg);
 		}
 	out:
 		RRR_FREE_IF_NOT_NULL(msg_msg);
@@ -863,52 +909,6 @@ static int __rrr_raft_server_read_msg_cb (
 		return ret;
 }
 
-static int __rrr_raft_server_send_msg (
-		struct rrr_raft_channel *channel,
-		struct rrr_msg *msg
-) {
-	rrr_u32 total_size = MSG_TOTAL_SIZE(msg);
-
-	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
-		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg);
-	}
-	rrr_msg_checksum_and_to_network_endian(msg);
-
-	if (write(channel->fd_server, msg, total_size) != total_size) {
-		if (errno == EPIPE) {
-			return RRR_READ_EOF;
-		}
-		RRR_MSG_0("Failed to send message in %s: %s\n",
-			__func__, rrr_strerror(errno));
-		return RRR_READ_HARD_ERROR;
-	}
-
-	return RRR_READ_OK;
-}
-/*
-static int __rrr_raft_server_send_msg_in_loop (
-		struct rrr_raft_channel *channel,
-		uv_loop_t *loop,
-		struct rrr_msg *msg
-) {
-	int ret = 0;
-
-	if ((ret = __rrr_raft_server_send_msg(channel, msg)) != 0) {
-		if (ret == RRR_READ_EOF) {
-			uv_stop(loop);
-			ret = 0;
-			goto out;
-		}
-
-		RRR_MSG_0("Failed to send message in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-*/
 static int __rrr_raft_server_msg_to_host (
 		struct rrr_msg_msg *msg,
 		rrr_length actual_length
@@ -993,10 +993,9 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_raft_server_state *callback_data = arg2;
+	struct rrr_raft_server_state *state = arg2;
 
 	(void)(arg1);
-	(void)(callback_data);
 
 	struct rrr_msg msg = {0};
 
@@ -1004,34 +1003,26 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	assert(0 && "Read control message not implemented");
-
-	//return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+	return __rrr_raft_server_send_msg_in_loop(state, &msg);
 }
-/*
-static void __rrr_raft_server_poll_cb (
-		uv_poll_t *handle,
-		int status,
-		int events
-) {
-	struct rrr_raft_server_state *callback_data = uv_handle_get_data((uv_handle_t *) handle);
 
-	(void)(events);
+static void __rrr_raft_server_read_cb (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_raft_server_state *state = arg;
+
+	(void)(fd);
+	(void)(flags);
 
 	int ret_tmp;
 	uint64_t bytes_read_dummy;
 
-	if (status != 0) {
-		RRR_MSG_0("Error status %i in %s\n", status, __func__);
-		callback_data->ret = 1;
-		assert(0 && "Stop loop not implemented");
-		return;
-	}
-
 	if ((ret_tmp = rrr_socket_read_message_split_callbacks (
 			&bytes_read_dummy,
-			&callback_data->channel->read_sessions,
-			callback_data->channel->fd_server,
+			&state->channel->read_sessions,
+			state->channel->fd_server,
 			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_READ_MESSAGE_FLUSH_OVERSHOOT,
 			0, // No ratelimit interval
 			0, // No ratelimit max bytes
@@ -1040,15 +1031,14 @@ static void __rrr_raft_server_poll_cb (
 			NULL,
 			__rrr_raft_server_read_msg_ctrl_cb,
 			NULL,
-			NULL, / * first cb data * /
-			callback_data
+			NULL, /* first cb data */
+			state
 	)) != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
 		RRR_MSG_0("Read failed in %s: %i\n", __func__, ret_tmp);
-		callback_data->ret = 1;
-		assert(0 && "Stop loop not implemented");
+		rrr_event_dispatch_break(state->channel->queue);
 	}
 }
-*/
+
 /*
 static int __rrr_raft_server_fsm_apply_cb (
 		struct raft_fsm *fsm,
@@ -1369,15 +1359,9 @@ int rrr_raft_server (
 	int was_found, ret_tmp;
 	int channel_fds[2];
 	size_t cleared_count;
-//	uv_loop_t loop;
-//	uv_poll_t poll_server;
-//	struct raft_uv_transport transport = {0};
-//	struct raft_io io = {0};
-//	struct raft_fsm fsm = {0};
 	struct raft raft = {0};
 	struct raft_configuration configuration;
 	struct rrr_raft_server_fsm_result_collection fsm_results = {0};
-//	struct raft_change *req = NULL;
 	struct rrr_raft_server_state state = {0};
 	struct rrr_raft_message_store *message_store_state;
 	struct rrr_event_collection events = {0};
@@ -1421,6 +1405,20 @@ int rrr_raft_server (
 	}
 
 	EVENT_ADD(state.events.raft_timeout);
+
+	if ((ret = rrr_event_collection_push_read (
+			&state.events.socket,
+			&events,
+			channel->fd_server,
+			__rrr_raft_server_read_cb,
+			&state,
+			1 * 1000 * 1000 // 1 second timeout
+	)) != 0) {
+		RRR_MSG_0("Failed to create read event in %s\n", __func__);
+		goto out_cleanup_events;
+	}
+
+	EVENT_ADD(state.events.socket);
 
 	if ((ret = rrr_raft_message_store_new (&message_store_state, patch_cb)) != 0) {
 		goto out_cleanup_events;
