@@ -19,9 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <uv.h>
+//#include <uv.h>
 #include <raft.h>
-#include <raft/uv.h>
+//#include <raft/uv.h>
 #include <unistd.h>
 
 #include "server.h"
@@ -52,27 +52,21 @@ struct rrr_raft_server_fsm_result_collection {
 	size_t capacity;
 };
 
+struct rrr_raft_server_metadata {
+	raft_term term;
+};
+
 struct rrr_raft_server_callback_data {
 	struct rrr_raft_channel *channel;
 	int ret;
-	uv_loop_t *loop;
 	struct raft *raft;
 	int server_id;
 	struct rrr_raft_message_store *message_store_state;
 	uint32_t change_req_index;
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;
-	struct raft_change change_req;
-	struct raft_transfer transfer_req;
-	struct raft_suggest_snapshot snapshot_req;
 	struct rrr_raft_server_fsm_result_collection fsm_results;
 };
-
-static int __rrr_raft_server_send_msg_in_loop (
-		struct rrr_raft_channel *channel,
-		uv_loop_t *loop,
-		struct rrr_msg *msg
-);
 
 static inline void *__rrr_raft_server_malloc (void *data, size_t size) {
 	(void)(data);
@@ -102,23 +96,6 @@ static inline void *__rrr_raft_server_aligned_alloc (void *data, size_t alignmen
 static inline void __rrr_raft_server_aligned_free (void *data, size_t alignment, void *ptr) {
 	(void)(data);
 	return rrr_aligned_free(alignment, ptr);
-}
-
-static void __rrr_raft_server_tracer_emit_cb (
-		struct raft_tracer *t,
-		int type,
-		const void *info
-) {
-	struct rrr_raft_server_callback_data *callback_data = t->impl;
-
-	(void)(t);
-	(void)(info);
-	(void)(type);
-	(void)(callback_data);
-
-	// TODO : Not useful until message is extended. Also find
-	//        appropriate debuglevel.
-	// RRR_DBG_1("tracer server %i: %i\n", callback_data->server_id, type);
 }
 
 static void __rrr_raft_server_fsm_result_clear (
@@ -379,6 +356,7 @@ static int __rrr_raft_server_make_opt_response (
 	return ret;
 }
 
+/*
 static void __rrr_raft_server_change_cb_final (
 		struct rrr_raft_server_callback_data *callback_data,
 		uint64_t req_index,
@@ -484,18 +462,22 @@ static void __rrr_raft_server_suggest_snapshot_cb (
 	req->data = NULL;
 	callback_data->snapshot_req_index = 0;
 }
-
+*/
 static int __rrr_raft_server_handle_cmd (
 		struct rrr_raft_server_callback_data *callback_data,
 		rrr_u32 req_index,
 		const struct rrr_msg_msg *msg
 ) {
-	struct raft *raft = callback_data->raft;
+//	struct raft *raft = callback_data->raft;
+
+	(void)(callback_data);
+	(void)(req_index);
 
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
-	int ret_tmp, role;
+//	int ret_tmp;
+//	int role;
 	int64_t cmd, id;
 	struct rrr_raft_server *servers;
 	uint16_t version_dummy;
@@ -532,9 +514,11 @@ static int __rrr_raft_server_handle_cmd (
 			// Only exactly one server may be added/deleted
 			assert(servers && servers[0].id > 0 && servers[1].id == 0);
 
-			assert(callback_data->change_req.data == NULL && callback_data->change_req_index == 0);
-			callback_data->change_req.data = callback_data;
-			callback_data->change_req_index = req_index;
+			assert(0 && "Del server not implemented\n");
+
+//			assert(callback_data->change_req.data == NULL && callback_data->change_req_index == 0);
+//			callback_data->change_req.data = callback_data;
+//			callback_data->change_req_index = req_index;
 		} break;
 		case RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER: {
 			if (rrr_array_get_value_signed_64_by_tag (
@@ -546,14 +530,17 @@ static int __rrr_raft_server_handle_cmd (
 				RRR_BUG("BUG: ID field not set in transfer command in %s\n", __func__);
 			}
 
-			assert(callback_data->transfer_req.data == NULL && callback_data->transfer_req_index == 0);
-			callback_data->transfer_req.data = callback_data;
-			callback_data->transfer_req_index = req_index;
+			assert(0 && "Transfer leadership not implemented");
+
+//			assert(callback_data->transfer_req.data == NULL && callback_data->transfer_req_index == 0);
+//			callback_data->transfer_req.data = callback_data;
+//			callback_data->transfer_req_index = req_index;
 		} break;
 		case RRR_RAFT_CMD_SNAPSHOT: {
-			assert(callback_data->snapshot_req.data == NULL && callback_data->snapshot_req_index == 0);
-			callback_data->snapshot_req.data = callback_data;
-			callback_data->snapshot_req_index = req_index;
+			assert(0 && "snapshot cmd not implemented");
+//			assert(callback_data->snapshot_req.data == NULL && callback_data->snapshot_req_index == 0);
+//			callback_data->snapshot_req.data = callback_data;
+//			callback_data->snapshot_req_index = req_index;
 		} break;
 		default:
 			RRR_BUG("BUG: Unknown command %" PRIi64 " in %s\n", cmd, __func__);
@@ -564,20 +551,22 @@ static int __rrr_raft_server_handle_cmd (
 		case RRR_RAFT_CMD_SERVER_ASSIGN: {
 			switch (servers[0].status) {
 				case RRR_RAFT_STANDBY:
-					role = RAFT_STANDBY;
+//					role = RAFT_STANDBY;
 					break;
 				case RRR_RAFT_VOTER:
-					role = RAFT_VOTER;
+//					role = RAFT_VOTER;
 					break;
 				case RRR_RAFT_SPARE:
-					role = RAFT_SPARE;
+//					role = RAFT_SPARE;
 					break;
 				default:
 					RRR_BUG("BUG: Unknown state %i in %s\n",
 						servers[0].status, __func__);
 			};
 
-			if ((ret_tmp = raft_assign (
+			assert(0 && "Assign not implemented");
+
+/*			if ((ret_tmp = raft_assign (
 					raft,
 					&callback_data->change_req,
 					rrr_int_from_slength_bug_const(servers[0].id),
@@ -588,12 +577,14 @@ static int __rrr_raft_server_handle_cmd (
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
-			}
+			}*/
 		} break;
 		case RRR_RAFT_CMD_SERVER_ADD: {
 			RRR_DBG_1("Raft CMD add server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
 
-			if ((ret_tmp = raft_add (
+			assert(0 && "Server add not implemented");
+
+/*			if ((ret_tmp = raft_add (
 					raft,
 					&callback_data->change_req,
 					rrr_int_from_slength_bug_const(servers[0].id),
@@ -604,12 +595,14 @@ static int __rrr_raft_server_handle_cmd (
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
-			}
+			}*/
 		} break;
 		case RRR_RAFT_CMD_SERVER_DEL: {
 			RRR_DBG_1("Raft CMD delete server %" PRIi64 " address %s\n", servers[0].id, servers[0].address);
 
-			if ((ret_tmp = raft_remove (
+			assert(0 && "Server del not implemented");
+
+/*			if ((ret_tmp = raft_remove (
 					raft,
 					&callback_data->change_req,
 					rrr_int_from_slength_bug_const(servers[0].id),
@@ -619,12 +612,14 @@ static int __rrr_raft_server_handle_cmd (
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
-			}
+			}*/
 		} break;
 		case RRR_RAFT_CMD_SERVER_LEADERSHIP_TRANSFER: {
 			RRR_DBG_1("Raft CMD transfer leadership to %" PRIi64 "\n", id);
 
-			if ((ret_tmp = raft_transfer (
+			assert(0 && "Leadership transfer not implemented");
+
+/*			if ((ret_tmp = raft_transfer (
 					raft,
 					&callback_data->transfer_req,
 					rrr_int_from_slength_bug_const(id),
@@ -634,12 +629,14 @@ static int __rrr_raft_server_handle_cmd (
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
-			}
+			}*/
 		} break;
 		case RRR_RAFT_CMD_SNAPSHOT: {
 			RRR_DBG_1("Raft CMD snapshot suggestion\n");
 
-			if ((ret_tmp = raft_suggest_snapshot (
+			assert(0 && "Snapshot suggestion not implemented");
+
+/*			if ((ret_tmp = raft_suggest_snapshot (
 					raft,
 					&callback_data->snapshot_req,
 					__rrr_raft_server_suggest_snapshot_cb
@@ -648,7 +645,7 @@ static int __rrr_raft_server_handle_cmd (
 					__func__, raft_errmsg(raft), raft_strerror(ret_tmp));
 				ret = 1;
 				goto out;
-			}
+			}*/
 
 		} break;
 		default:
@@ -685,7 +682,7 @@ static int __rrr_raft_server_make_get_response (
 	out:
 	return ret;
 }
-
+/*
 static void __rrr_raft_server_apply_cb (
 		struct raft_apply *req,
 		int status,
@@ -734,7 +731,7 @@ static void __rrr_raft_server_apply_cb (
 	out:
 		raft_free(req);
 }
-
+*/
 static int __rrr_raft_server_read_msg_cb (
 		struct rrr_msg_msg **message,
 		void *arg1,
@@ -747,9 +744,9 @@ static int __rrr_raft_server_read_msg_cb (
 
 	int ret = 0;
 
-	int ret_tmp;
+//	int ret_tmp;
 	struct raft_buffer buf = {0};
-	struct raft_apply *req;
+//	struct raft_apply *req;
 	struct rrr_msg msg = {0};
 	struct rrr_msg_msg *msg_msg = NULL;
 
@@ -815,14 +812,17 @@ static int __rrr_raft_server_read_msg_cb (
 	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf.base);
 	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf.base);
 
+	assert(0 && "Raft apply not implemented");
+
+/*
 	if ((req = raft_malloc(sizeof(*req))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for request in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
-
-	req->data = callback_data;
-
+*/
+//	req->data = callback_data;
+/*
 	if ((ret_tmp = raft_apply(raft, req, &buf, 1, __rrr_raft_server_apply_cb)) != 0) {
 		// It appears that this data is usually freed also
 		// upon error conditions.
@@ -835,16 +835,18 @@ static int __rrr_raft_server_read_msg_cb (
 	else {
 		buf.base = NULL;
 	}
-
+*/
 	goto out;
 //	out_free_req:
 //		raft_free(req);
 	out_send_ctrl_msg:
 		// Status messages are to be emitted before result messages
-		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+		assert(0 && "Apply status message not implemented");
+//		__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
 	out_send_msg_msg:
 		if (msg_msg != NULL) {
-			__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, (struct rrr_msg *) msg_msg);
+			assert(0 && "Apply response not implemented");
+//			__rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, (struct rrr_msg *) msg_msg);
 		}
 	out:
 		RRR_FREE_IF_NOT_NULL(msg_msg);
@@ -875,7 +877,7 @@ static int __rrr_raft_server_send_msg (
 
 	return RRR_READ_OK;
 }
-
+/*
 static int __rrr_raft_server_send_msg_in_loop (
 		struct rrr_raft_channel *channel,
 		uv_loop_t *loop,
@@ -898,7 +900,7 @@ static int __rrr_raft_server_send_msg_in_loop (
 	out:
 	return ret;
 }
-
+*/
 static int __rrr_raft_server_msg_to_host (
 		struct rrr_msg_msg *msg,
 		rrr_length actual_length
@@ -986,6 +988,7 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 	struct rrr_raft_server_callback_data *callback_data = arg2;
 
 	(void)(arg1);
+	(void)(callback_data);
 
 	struct rrr_msg msg = {0};
 
@@ -993,9 +996,11 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
-}
+	assert(0 && "Read control message not implemented");
 
+	//return __rrr_raft_server_send_msg_in_loop(callback_data->channel, callback_data->loop, &msg);
+}
+/*
 static void __rrr_raft_server_poll_cb (
 		uv_poll_t *handle,
 		int status,
@@ -1011,7 +1016,7 @@ static void __rrr_raft_server_poll_cb (
 	if (status != 0) {
 		RRR_MSG_0("Error status %i in %s\n", status, __func__);
 		callback_data->ret = 1;
-		uv_stop(callback_data->loop);
+		assert(0 && "Stop loop not implemented");
 		return;
 	}
 
@@ -1027,15 +1032,16 @@ static void __rrr_raft_server_poll_cb (
 			NULL,
 			__rrr_raft_server_read_msg_ctrl_cb,
 			NULL,
-			NULL, /* first cb data */
+			NULL, / * first cb data * /
 			callback_data
 	)) != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
 		RRR_MSG_0("Read failed in %s: %i\n", __func__, ret_tmp);
 		callback_data->ret = 1;
-		uv_stop(callback_data->loop);
+		assert(0 && "Stop loop not implemented");
 	}
 }
-
+*/
+/*
 static int __rrr_raft_server_fsm_apply_cb (
 		struct raft_fsm *fsm,
 		const struct raft_buffer *buf,
@@ -1251,6 +1257,8 @@ static int __rrr_raft_server_fsm_restore_cb (
 	return ret;
 }
 
+*/
+
 int rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
@@ -1264,14 +1272,15 @@ int rrr_raft_server (
 	int was_found, ret_tmp;
 	int channel_fds[2];
 	size_t cleared_count;
-	uv_loop_t loop;
-	uv_poll_t poll_server;
-	struct raft_uv_transport transport = {0};
-	struct raft_io io = {0};
-	struct raft_fsm fsm = {0};
+//	uv_loop_t loop;
+//	uv_poll_t poll_server;
+//	struct raft_uv_transport transport = {0};
+//	struct raft_io io = {0};
+//	struct raft_fsm fsm = {0};
 	struct raft raft = {0};
-	struct raft_configuration configuration;
-	struct raft_change *req = NULL;
+//	struct raft_configuration configuration;
+//	struct raft_change *req = NULL;
+	struct rrr_raft_server_metadata metadata;
 	struct rrr_raft_server_callback_data callback_data;
 	struct rrr_raft_message_store *message_store_state;
 	static struct raft_heap rrr_raft_heap = {
@@ -1282,11 +1291,6 @@ int rrr_raft_server (
 		__rrr_raft_server_realloc,       /* realloc */
 		__rrr_raft_server_aligned_alloc, /* aligned_alloc */
 		__rrr_raft_server_aligned_free   /* aligned_free */
-	};
-	struct raft_tracer rrr_raft_tracer = {
-		NULL,
-		2,
-		__rrr_raft_server_tracer_emit_cb
 	};
 
 	rrr_raft_channel_fds_get(channel_fds, channel);
@@ -1306,49 +1310,6 @@ int rrr_raft_server (
 		goto out;
 	}
 
-	if (uv_loop_init(&loop) != 0) {
-		RRR_MSG_0("Failed to initialize uv loop in %s\n", __func__);
-		ret = 1;
-		goto out_destroy_message_store;
-	}
-
-	if (uv_poll_init(&loop, &poll_server, channel->fd_server) != 0) {
-		RRR_MSG_0("Failed to initialize receive handle in %s\n", __func__);
-		ret = 1;
-		goto out_loop_close;
-	}
-
-	if (uv_poll_start(&poll_server, UV_READABLE|UV_DISCONNECT, __rrr_raft_server_poll_cb) != 0) {
-		RRR_MSG_0("Failed to start reading in %s\n", __func__);
-		ret = 1;
-		goto out_loop_close;
-	}
-
-	transport.version = 1;
-	transport.data = NULL;
-
-	if ((ret_tmp = raft_uv_tcp_init(&transport, &loop)) != 0) {
-		RRR_MSG_0("Failed to initialize raft UV TCP in %s: %s\n", __func__, raft_strerror(ret_tmp));
-		ret = 1;
-		goto out_loop_close;
-	}
-
-	if ((ret_tmp = raft_uv_init(&io, &loop, dir, &transport)) != 0) {
-		RRR_MSG_0("Failed to initialize raft UV in %s: %i\n", __func__, ret_tmp);
-		ret = 1;
-		goto out_raft_uv_tcp_close;
-	}
-
-	rrr_raft_tracer.impl = &callback_data;
-
-	raft_uv_set_tracer(&io, &rrr_raft_tracer);
-
-	fsm.version = 2;
-	fsm.apply = __rrr_raft_server_fsm_apply_cb;
-	fsm.snapshot = __rrr_raft_server_fsm_snapshot_cb;
-	fsm.restore = __rrr_raft_server_fsm_restore_cb;
-	fsm.data = &callback_data;
-
 	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
 		servers[servers_self].id, dir, servers[servers_self].address);
 
@@ -1356,33 +1317,29 @@ int rrr_raft_server (
 
 	if ((ret_tmp = raft_init (
 			&raft,
-			&io,
-			&fsm,
+			NULL,
+			NULL,
 			servers[servers_self].id,
 			servers[servers_self].address
 	)) != 0) {
 		RRR_MSG_0("Failed to initialize raft in %s: %s: %s\n", __func__,
 			raft_strerror(ret_tmp), raft_errmsg(&raft));
 		ret = 1;
-		goto out_raft_uv_close;
+		goto out_destroy_message_store;
 	}
 
 	callback_data = (struct rrr_raft_server_callback_data) {
 		channel,
 		0,
-		&loop,
 		&raft,
 		servers[servers_self].id,
 		message_store_state,
 		0,
 		0,
 		0,
-		{0},
-		{0},
-		{0},
 		{0}
 	};
-
+/*
 	raft_configuration_init(&configuration);
 
 	for (; servers->id > 0; servers++) {
@@ -1418,6 +1375,7 @@ int rrr_raft_server (
 	}
 
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
+*/
 
 	RRR_DBG_1("Event loop completed in raft server, result was %i\n", ret_tmp);
 
@@ -1431,23 +1389,11 @@ int rrr_raft_server (
 
 	ret = callback_data.ret;
 
-	// During normal operation, don't clean up the
-	// raft stuff explicitly as this causes uv threads
-	// to use freed data.
-	goto out_loop_close;
+	goto out_raft_callback_data_cleanup;
 	out_raft_callback_data_cleanup:
 		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &callback_data.fsm_results);
-//	out_raft_configuration_close:
-		raft_configuration_close(&configuration);
 //	out_raft_close:
 		raft_close(&raft, NULL);
-	out_raft_uv_close:
-		raft_uv_close(&io);
-	out_raft_uv_tcp_close:
-		raft_uv_tcp_close(&transport);
-	out_loop_close:
-		uv_loop_close(&loop);
-		uv_library_shutdown();
 	out_destroy_message_store:
 		rrr_raft_message_store_destroy(message_store_state);
 	out:
@@ -1455,9 +1401,9 @@ int rrr_raft_server (
 		// rrr_log_hook_unregister(log_hook_handle);
 		RRR_DBG_1("raft server %s pid %i exit\n", log_prefix, getpid());
 
-		if (req != NULL) {
+/*		if (req != NULL) {
 			raft_free(req);
-		}
+		}*/
 
 		return ret;
 }
