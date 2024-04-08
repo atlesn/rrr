@@ -45,7 +45,6 @@ static void __rrr_raft_channel_after_fork_server (
 ) {
 	rrr_socket_close(channel->fd_client);
 	channel->fd_client = -1;
-	channel->queue = NULL;
 	memset(&channel->callbacks, '\0', sizeof(channel->callbacks));
 }
 
@@ -187,9 +186,6 @@ int rrr_raft_channel_fork (
 		rrr_setproctitle("[raft server %s]", name);
 
 		rrr_log_hook_unregister_all_after_fork();
-
-		rrr_event_hook_disable();
-		rrr_event_queue_destroy(queue);
 
 		__rrr_raft_channel_after_fork_server(channel);
 

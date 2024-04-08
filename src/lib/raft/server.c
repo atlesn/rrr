@@ -35,10 +35,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../common.h"
 #include "../rrr_strerror.h"
+#include "../event/event.h"
+#include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_time.h"
+
+
+#define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
+    RRR_DBG_3("Raft [%i] " msg "\n", state->server_id, __VA_ARGS__)
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -52,20 +59,21 @@ struct rrr_raft_server_fsm_result_collection {
 	size_t capacity;
 };
 
-struct rrr_raft_server_metadata {
-	raft_term term;
-};
-
-struct rrr_raft_server_callback_data {
+struct rrr_raft_server_state {
 	struct rrr_raft_channel *channel;
-	int ret;
 	struct raft *raft;
 	int server_id;
 	struct rrr_raft_message_store *message_store_state;
 	uint32_t change_req_index;
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;
-	struct rrr_raft_server_fsm_result_collection fsm_results;
+	struct rrr_raft_server_fsm_result_collection *fsm_results;
+	struct {
+		raft_term term;
+	} metadata;
+	struct {
+		rrr_event_handle raft_timeout;
+	} events;
 };
 
 static inline void *__rrr_raft_server_malloc (void *data, size_t size) {
@@ -358,7 +366,7 @@ static int __rrr_raft_server_make_opt_response (
 
 /*
 static void __rrr_raft_server_change_cb_final (
-		struct rrr_raft_server_callback_data *callback_data,
+		struct rrr_raft_server_state *callback_data,
 		uint64_t req_index,
 		int ok,
 		enum rrr_raft_code code
@@ -390,7 +398,7 @@ static void __rrr_raft_server_server_change_cb (
 		struct raft_change *req,
 		int status
 ) {
-	struct rrr_raft_server_callback_data *callback_data = req->data;
+	struct rrr_raft_server_state *callback_data = req->data;
 
 	enum rrr_raft_code code = __rrr_raft_server_status_translate(status);
 
@@ -410,7 +418,7 @@ static void __rrr_raft_server_server_change_cb (
 static void __rrr_raft_server_leadership_transfer_cb (
 		struct raft_transfer *req
 ) {
-	struct rrr_raft_server_callback_data *callback_data = req->data;
+	struct rrr_raft_server_state *callback_data = req->data;
 	struct raft *raft = callback_data->raft;
 
 	const char *address;
@@ -445,7 +453,7 @@ static void __rrr_raft_server_suggest_snapshot_cb (
 		struct raft_suggest_snapshot *req,
 		int status
 ) {
-	struct rrr_raft_server_callback_data *callback_data = req->data;
+	struct rrr_raft_server_state *callback_data = req->data;
 
 	struct rrr_msg msg_ack = {0};
 
@@ -464,7 +472,7 @@ static void __rrr_raft_server_suggest_snapshot_cb (
 }
 */
 static int __rrr_raft_server_handle_cmd (
-		struct rrr_raft_server_callback_data *callback_data,
+		struct rrr_raft_server_state *callback_data,
 		rrr_u32 req_index,
 		const struct rrr_msg_msg *msg
 ) {
@@ -688,7 +696,7 @@ static void __rrr_raft_server_apply_cb (
 		int status,
 		void *result
 ) {
-	struct rrr_raft_server_callback_data *callback_data = req->data;
+	struct rrr_raft_server_state *callback_data = req->data;
 	uint32_t req_index = rrr_u32_from_ptr_bug_const(result);
 
 	struct rrr_raft_server_fsm_result fsm_result;
@@ -737,7 +745,7 @@ static int __rrr_raft_server_read_msg_cb (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_raft_server_callback_data *callback_data = arg2;
+	struct rrr_raft_server_state *callback_data = arg2;
 	struct raft *raft = callback_data->raft;
 
 	(void)(arg1);
@@ -985,7 +993,7 @@ static int __rrr_raft_server_read_msg_ctrl_cb (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_raft_server_callback_data *callback_data = arg2;
+	struct rrr_raft_server_state *callback_data = arg2;
 
 	(void)(arg1);
 	(void)(callback_data);
@@ -1006,7 +1014,7 @@ static void __rrr_raft_server_poll_cb (
 		int status,
 		int events
 ) {
-	struct rrr_raft_server_callback_data *callback_data = uv_handle_get_data((uv_handle_t *) handle);
+	struct rrr_raft_server_state *callback_data = uv_handle_get_data((uv_handle_t *) handle);
 
 	(void)(events);
 
@@ -1047,7 +1055,7 @@ static int __rrr_raft_server_fsm_apply_cb (
 		const struct raft_buffer *buf,
 		void **result
 ) {
-	struct rrr_raft_server_callback_data *callback_data = fsm->data;
+	struct rrr_raft_server_state *callback_data = fsm->data;
 
 	int ret = 0;
 
@@ -1150,7 +1158,7 @@ static int __rrr_raft_server_fsm_message_store_snapshot_iterate_callback (
 static int __rrr_raft_server_fsm_message_store_snapshot (
 		struct raft_buffer *res_bufs[],
 		unsigned *res_n_bufs,
-		struct rrr_raft_server_callback_data *callback_data
+		struct rrr_raft_server_state *callback_data
 ) {
 	struct rrr_raft_message_store *store = callback_data->message_store_state;
 
@@ -1202,7 +1210,7 @@ static int  __rrr_raft_server_fsm_snapshot_cb (
 		struct raft_buffer *bufs[],
 		unsigned *n_bufs
 ) {
-	struct rrr_raft_server_callback_data *callback_data = fsm->data;
+	struct rrr_raft_server_state *callback_data = fsm->data;
 
 	RRR_DBG_3("Raft insert snapshot server %i\n", callback_data->server_id);
 
@@ -1213,7 +1221,7 @@ static int __rrr_raft_server_fsm_restore_cb (
 		struct raft_fsm *fsm,
 		struct raft_buffer *buf
 ) {
-	struct rrr_raft_server_callback_data *callback_data = fsm->data;
+	struct rrr_raft_server_state *callback_data = fsm->data;
 
 	int ret = 0;
 
@@ -1259,6 +1267,95 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 */
 
+static int __rrr_raft_server_step (
+		struct rrr_raft_server_state *state
+) {
+	int ret = 0;
+
+	int ret_tmp = 0;
+	struct raft_event event;
+	struct raft_update update;
+	uint64_t now, diff;
+
+	now = rrr_time_get_64() / 1000;
+
+	event.time = now; 
+	event.capacity = 0;
+	event.type = RAFT_START;
+
+	// TODO : Load persisted metadata here
+	//        - Set current_term, voted_for, metadata, entries and n_entries
+
+	event.start.term = 0;
+	event.start.voted_for = 0;
+	event.start.metadata = NULL;
+	event.start.start_index = 0;
+	event.start.entries = NULL;
+	event.start.n_entries = 0;
+
+	if ((ret_tmp = raft_step(state->raft, &event, &update)) != 0) {
+		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
+		assert(0 && "Update current term not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_VOTED_FOR) {
+		assert(0 && "Update voted for not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_ENTRIES) {
+		assert(0 && "Update entries not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_SNAPSHOT) {
+		assert(0 && "Update snapshot not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_MESSAGES) {
+		assert(0 && "Update messages not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_STATE) {
+		assert(0 && "Update state not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
+		assert(0 && "Update commit index not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_TIMEOUT) {
+		diff = raft_timeout(state->raft) - now;
+		assert(diff < now);
+
+		RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
+
+		EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
+		EVENT_ADD(state->events.raft_timeout);
+	}
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_server_step_cb (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_raft_server_state *state = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (__rrr_raft_server_step(state) != 0) {
+		rrr_event_dispatch_break(state->channel->queue);
+	}
+}
+
 int rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
@@ -1278,11 +1375,12 @@ int rrr_raft_server (
 //	struct raft_io io = {0};
 //	struct raft_fsm fsm = {0};
 	struct raft raft = {0};
-//	struct raft_configuration configuration;
+	struct raft_configuration configuration;
+	struct rrr_raft_server_fsm_result_collection fsm_results = {0};
 //	struct raft_change *req = NULL;
-	struct rrr_raft_server_metadata metadata;
-	struct rrr_raft_server_callback_data callback_data;
+	struct rrr_raft_server_state state = {0};
 	struct rrr_raft_message_store *message_store_state;
+	struct rrr_event_collection events = {0};
 	static struct raft_heap rrr_raft_heap = {
 		NULL,                            /* data */
 		__rrr_raft_server_malloc,        /* malloc */
@@ -1293,8 +1391,11 @@ int rrr_raft_server (
 		__rrr_raft_server_aligned_free   /* aligned_free */
 	};
 
+	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
+		servers[servers_self].id, dir, servers[servers_self].address);
+
 	rrr_raft_channel_fds_get(channel_fds, channel);
-	rrr_socket_close_all_except_array_no_unlink(channel_fds, sizeof(channel_fds)/sizeof(channel_fds[0]));
+	// rrr_socket_close_all_except_array_no_unlink(channel_fds, sizeof(channel_fds)/sizeof(channel_fds[0]));
 
 	// TODO : Send logs on socket. XXX also enable unregister on function out
 	// rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_raft_server_log_hook, channel, NULL);
@@ -1306,12 +1407,30 @@ int rrr_raft_server (
 
 	rrr_config_set_log_prefix(log_prefix);
 
-	if ((ret = rrr_raft_message_store_new (&message_store_state, patch_cb)) != 0) {
-		goto out;
+	rrr_event_collection_init(&events, channel->queue);
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&state.events.raft_timeout,
+			&events,
+			__rrr_raft_server_step_cb,
+			&state,
+			1 * 10 * 1000 // Initial timeout 10 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to create timeout event in %s\n", __func__);
+		goto out_cleanup_events;
 	}
 
-	RRR_DBG_1("Starting raft server %i dir %s address %s\n",
-		servers[servers_self].id, dir, servers[servers_self].address);
+	EVENT_ADD(state.events.raft_timeout);
+
+	if ((ret = rrr_raft_message_store_new (&message_store_state, patch_cb)) != 0) {
+		goto out_cleanup_events;
+	}
+
+	state.channel = channel;
+	state.raft = &raft;
+	state.server_id = servers[servers_self].id;
+	state.message_store_state = message_store_state;
+	state.fsm_results = &fsm_results;
 
 	raft_heap_set(&rrr_raft_heap);
 
@@ -1328,18 +1447,6 @@ int rrr_raft_server (
 		goto out_destroy_message_store;
 	}
 
-	callback_data = (struct rrr_raft_server_callback_data) {
-		channel,
-		0,
-		&raft,
-		servers[servers_self].id,
-		message_store_state,
-		0,
-		0,
-		0,
-		{0}
-	};
-/*
 	raft_configuration_init(&configuration);
 
 	for (; servers->id > 0; servers++) {
@@ -1352,10 +1459,10 @@ int rrr_raft_server (
 			RRR_MSG_0("Failed to add to raft configuration in %s: %s\n", __func__,
 				raft_strerror(ret_tmp));
 			ret = 1;
-			goto out_raft_callback_data_cleanup;
+			goto out_cleanup_configuration;
 		}
 	}
-
+/*
 	if ((ret_tmp = raft_bootstrap(&raft, &configuration)) != 0 && ret_tmp != RAFT_CANTBOOTSTRAP) {
 		RRR_MSG_0("Failed to bootstrap raft in %s: %s\n",
 			__func__, raft_strerror(ret_tmp));
@@ -1377,26 +1484,30 @@ int rrr_raft_server (
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
 */
 
+	ret = rrr_event_dispatch(channel->queue);
+
 	RRR_DBG_1("Event loop completed in raft server, result was %i\n", ret_tmp);
 
 	// TODO : Some expected results are registered when messages are restored and applied, and
 	//        in those cases the final apply callback is never called and the results persists.
 	//        This might not matter as restoration only happens during startup, but we have to
 	//        search past those results each time. Maybe deal with this situation.
-	__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &callback_data.fsm_results);
+	__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
 	RRR_DBG_1("Cleared %llu expected results in raft server %i\n",
-		cleared_count, callback_data.server_id);
+		cleared_count, state.server_id);
 
-	ret = callback_data.ret;
-
-	goto out_raft_callback_data_cleanup;
-	out_raft_callback_data_cleanup:
-		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &callback_data.fsm_results);
+	goto out_cleanup_configuration;
+	out_cleanup_configuration:
+		raft_configuration_close(&configuration);
 //	out_raft_close:
 		raft_close(&raft, NULL);
+//	out_cleanup_fsm_results:
+		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
 	out_destroy_message_store:
 		rrr_raft_message_store_destroy(message_store_state);
-	out:
+	out_cleanup_events:
+		rrr_event_collection_clear(&events);
+//	out:
 		// TODO : Enable once handle is registered
 		// rrr_log_hook_unregister(log_hook_handle);
 		RRR_DBG_1("raft server %s pid %i exit\n", log_prefix, getpid());
