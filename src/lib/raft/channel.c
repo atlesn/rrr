@@ -40,12 +40,26 @@ static void __rrr_raft_channel_after_fork_client (
 	channel->fd_server = -1;
 }
 
-static void __rrr_raft_channel_after_fork_server (
+static int __rrr_raft_channel_after_fork_server (
 		struct rrr_raft_channel *channel
 ) {
+	int ret = 0;
+
+	// Ensure that fork receives completely clean event queue
+	// without any events added. No need to destroy old queue,
+	// just overwrite pointer.
+	if ((ret = rrr_event_queue_new(&channel->queue, 1)) != 0) {
+		RRR_MSG_0("Failed to create event queue in %s\n",
+			__func__);
+		goto out;
+	}
+
 	rrr_socket_close(channel->fd_client);
 	channel->fd_client = -1;
 	memset(&channel->callbacks, '\0', sizeof(channel->callbacks));
+
+	out:
+	return ret;
 }
 
 void rrr_raft_channel_fds_get (
@@ -187,7 +201,9 @@ int rrr_raft_channel_fork (
 
 		rrr_log_hook_unregister_all_after_fork();
 
-		__rrr_raft_channel_after_fork_server(channel);
+		if ((ret = __rrr_raft_channel_after_fork_server(channel)) != 0) {
+			goto fork_out;
+		}
 
 		ret = rrr_raft_server (
 				channel,
@@ -198,6 +214,9 @@ int rrr_raft_channel_fork (
 				patch_cb
 		);
 
+		__rrr_raft_channel_destroy(channel);
+
+		fork_out:
 		exit(ret != 0);
 	}
 
