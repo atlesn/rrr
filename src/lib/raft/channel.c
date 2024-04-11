@@ -62,6 +62,12 @@ static int __rrr_raft_channel_after_fork_server (
 	return ret;
 }
 
+static void __rrr_raft_channel_before_shutdown_server (
+		struct rrr_raft_channel *channel
+) {
+	rrr_event_queue_destroy(channel->queue);
+}
+
 void rrr_raft_channel_fds_get (
 		int fds[2],
 		const struct rrr_raft_channel *channel
@@ -213,6 +219,8 @@ int rrr_raft_channel_fork (
 				dir,
 				patch_cb
 		);
+
+		__rrr_raft_channel_before_shutdown_server(channel);
 
 		__rrr_raft_channel_destroy(channel);
 
