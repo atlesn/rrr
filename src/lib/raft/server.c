@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../common.h"
 #include "../rrr_strerror.h"
+#include "../random.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -43,9 +44,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_time.h"
 
-
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
-    RRR_DBG_3("Raft [%i] " msg "\n", state->bridge.server_id, __VA_ARGS__)
+    RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge.server_id, __VA_ARGS__)
+
+#define RRR_RAFT_BRIDGE_DBG_ARGS(msg, ...) \
+    RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
+
+#define RRR_RAFT_BRIDGE_DBG(msg) \
+    RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -63,9 +69,14 @@ struct rrr_raft_task_timeout {
 	uint64_t time;
 };
 
+enum rrr_raft_bridge_state {
+	RRR_RAFT_BRIDGE_STATE_STARTED = 1
+};
+
 struct rrr_raft_bridge {
 	struct raft *raft;
 	int server_id;
+	enum rrr_raft_bridge_state state;
 };
 
 struct rrr_raft_server_state {
@@ -1266,6 +1277,33 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 */
 
+static int __rrr_raft_bridge_start (
+		struct raft_event *event,
+		struct rrr_raft_bridge *bridge
+) {
+	int ret = 0;
+
+	assert(!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
+
+	event->time = rrr_time_get_64() / 1000; 
+	event->capacity = 0;
+	event->type = RAFT_START;
+
+	// TODO : Load persisted metadata here
+	//        - Set current_term, voted_for, metadata, entries and n_entries
+
+	event->start.term = 0;
+	event->start.voted_for = 0;
+	event->start.metadata = NULL;
+	event->start.start_index = 0;
+	event->start.entries = NULL;
+	event->start.n_entries = 0;
+
+	goto out;
+	out:
+	return ret;
+}
+
 static int __rrr_raft_bridge_step (
 		struct rrr_raft_task_timeout *task_timeout,
 		struct rrr_raft_bridge *bridge
@@ -1275,31 +1313,39 @@ static int __rrr_raft_bridge_step (
 	int ret_tmp = 0;
 	struct raft_event event;
 	struct raft_update update;
-	uint64_t now;
+	enum rrr_raft_bridge_state state_add = 0;
 
 	assert(task_timeout->time == 0);
 
-	now = rrr_time_get_64() / 1000;
+	if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED)) {
+		/* Step 1 is to load snapshot and entries and start the first timeout */
+		RRR_RAFT_BRIDGE_DBG("starting");
+		if ((ret = __rrr_raft_bridge_start(&event, bridge) != 0)) {
+			goto out;
+		}
+		state_add |= RRR_RAFT_BRIDGE_STATE_STARTED;
+		goto step;
+	}
+	else if (bridge->state == RRR_RAFT_BRIDGE_STATE_STARTED) {
+		/* No particular state, trigger a timeout */
+		RRR_RAFT_BRIDGE_DBG("timeout");
+		event.type = RAFT_TIMEOUT;
+		event.time = rrr_time_get_64() / 1000;
+		goto step;
+	}
+	else {
+		assert(0 && "Nothing to do");
+	}
 
-	event.time = now; 
-	event.capacity = 0;
-	event.type = RAFT_START;
-
-	// TODO : Load persisted metadata here
-	//        - Set current_term, voted_for, metadata, entries and n_entries
-
-	event.start.term = 0;
-	event.start.voted_for = 0;
-	event.start.metadata = NULL;
-	event.start.start_index = 0;
-	event.start.entries = NULL;
-	event.start.n_entries = 0;
-
+	goto out;
+	step:
 	if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
 		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
 		ret = 1;
 		goto out;
 	}
+
+	bridge->state |= state_add;
 
 	if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
 		assert(0 && "Update current term not implemented");
@@ -1337,7 +1383,7 @@ static int __rrr_raft_bridge_step (
 	return ret;
 }
 
-static void __rrr_raft_server_step_cb (
+static void __rrr_raft_server_timeout_cb (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -1422,7 +1468,7 @@ int rrr_raft_server (
 	if ((ret = rrr_event_collection_push_periodic (
 			&state.events.raft_timeout,
 			&events,
-			__rrr_raft_server_step_cb,
+			__rrr_raft_server_timeout_cb,
 			&state,
 			1 * 10 * 1000 // Initial timeout 10 ms
 	)) != 0) {
@@ -1471,6 +1517,8 @@ int rrr_raft_server (
 		ret = 1;
 		goto out_destroy_message_store;
 	}
+
+	raft_seed(&raft, rrr_rand());
 
 	raft_configuration_init(&configuration);
 
