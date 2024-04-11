@@ -1016,14 +1016,14 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	switch (modbus_function) {
 		case 1:
 		case 2:
-			if (MODBUS_QUANTITY_COIL_MIN < 1 || modbus_quantity > MODBUS_QUANTITY_COIL_MAX) {
+			if (modbus_quantity < MODBUS_QUANTITY_COIL_MIN || modbus_quantity > MODBUS_QUANTITY_COIL_MAX) {
 				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_COIL_MIN, MODBUS_QUANTITY_COIL_MAX, modbus_function, modbus_quantity);
 				goto drop;
 			}
 			break;
 		case 3:
-			if (MODBUS_QUANTITY_REGISTER_MIN < 1 || modbus_quantity > MODBUS_QUANTITY_REGISTER_MAX) {
+			if (modbus_quantity < MODBUS_QUANTITY_REGISTER_MIN || modbus_quantity > MODBUS_QUANTITY_REGISTER_MAX) {
 				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_REGISTER_MIN, MODBUS_QUANTITY_REGISTER_MAX, modbus_function, modbus_quantity);
 				goto drop;
