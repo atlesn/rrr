@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stddef.h>
 
+#include "common.h"
+
 struct rrr_raft_message_store;
 struct rrr_msg_msg;
 

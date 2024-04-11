@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
-    RRR_DBG_3("Raft [%i] " msg "\n", state->server_id, __VA_ARGS__)
+    RRR_DBG_3("Raft [%i] " msg "\n", state->bridge.server_id, __VA_ARGS__)
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -59,14 +59,22 @@ struct rrr_raft_server_fsm_result_collection {
 	size_t capacity;
 };
 
-struct rrr_raft_server_state {
-	struct rrr_raft_channel *channel;
+struct rrr_raft_task_timeout {
+	uint64_t time;
+};
+
+struct rrr_raft_bridge {
 	struct raft *raft;
 	int server_id;
+};
+
+struct rrr_raft_server_state {
+	struct rrr_raft_channel *channel;
 	struct rrr_raft_message_store *message_store_state;
-	uint32_t change_req_index;
+	struct rrr_raft_bridge bridge;
+/*	uint32_t change_req_index;
 	uint32_t transfer_req_index;
-	uint32_t snapshot_req_index;
+	uint32_t snapshot_req_index;*/
 	struct rrr_raft_server_fsm_result_collection *fsm_results;
 	struct {
 		raft_term term;
@@ -793,7 +801,8 @@ static int __rrr_raft_server_read_msg_cb (
 		void *arg2
 ) {
 	struct rrr_raft_server_state *state = arg2;
-	struct raft *raft = state->raft;
+	struct rrr_raft_bridge *bridge = &state->bridge;
+//	struct raft *raft = state->raft;
 
 	(void)(arg1);
 
@@ -819,7 +828,7 @@ static int __rrr_raft_server_read_msg_cb (
 
 		if ((ret = __rrr_raft_server_make_opt_response (
 				&msg_msg,
-				raft,
+				bridge->raft,
 				(*message)->msg_value
 		)) != 0) {
 			goto out;
@@ -849,7 +858,7 @@ static int __rrr_raft_server_read_msg_cb (
 		goto out_send_ctrl_msg;
 	}
 
-	if (raft->state != RAFT_LEADER) {
+	if (bridge->raft->state != RAFT_LEADER) {
 		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_NOT_LEADER), (*message)->msg_value);
 		goto out_send_ctrl_msg;
@@ -1257,15 +1266,18 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 */
 
-static int __rrr_raft_server_step (
-		struct rrr_raft_server_state *state
+static int __rrr_raft_bridge_step (
+		struct rrr_raft_task_timeout *task_timeout,
+		struct rrr_raft_bridge *bridge
 ) {
 	int ret = 0;
 
 	int ret_tmp = 0;
 	struct raft_event event;
 	struct raft_update update;
-	uint64_t now, diff;
+	uint64_t now;
+
+	assert(task_timeout->time == 0);
 
 	now = rrr_time_get_64() / 1000;
 
@@ -1283,7 +1295,7 @@ static int __rrr_raft_server_step (
 	event.start.entries = NULL;
 	event.start.n_entries = 0;
 
-	if ((ret_tmp = raft_step(state->raft, &event, &update)) != 0) {
+	if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
 		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
 		ret = 1;
 		goto out;
@@ -1318,13 +1330,7 @@ static int __rrr_raft_server_step (
 	}
 
 	if (update.flags & RAFT_UPDATE_TIMEOUT) {
-		diff = raft_timeout(state->raft) - now;
-		assert(diff < now);
-
-		RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
-
-		EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
-		EVENT_ADD(state->events.raft_timeout);
+		task_timeout->time = raft_timeout(bridge->raft);
 	}
 
 	out:
@@ -1341,8 +1347,28 @@ static void __rrr_raft_server_step_cb (
 	(void)(fd);
 	(void)(flags);
 
-	if (__rrr_raft_server_step(state) != 0) {
+	uint64_t now, diff;
+	struct rrr_raft_task_timeout task_timeout = {0};
+
+	now = rrr_time_get_64() / 1000;
+
+	if (__rrr_raft_bridge_step (
+			&task_timeout,
+			&state->bridge
+	) != 0) {
 		rrr_event_dispatch_break(state->channel->queue);
+	}
+
+	/* TODO : Iterate returned tasks */
+
+	if (task_timeout.time > 0) {
+		diff = task_timeout.time - now;
+		assert(diff < now);
+
+		RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
+
+		EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
+		EVENT_ADD(state->events.raft_timeout);
 	}
 }
 
@@ -1425,10 +1451,11 @@ int rrr_raft_server (
 	}
 
 	state.channel = channel;
-	state.raft = &raft;
-	state.server_id = servers[servers_self].id;
 	state.message_store_state = message_store_state;
 	state.fsm_results = &fsm_results;
+
+	state.bridge.raft = &raft;
+	state.bridge.server_id = servers[servers_self].id;
 
 	raft_heap_set(&rrr_raft_heap);
 
@@ -1492,7 +1519,7 @@ int rrr_raft_server (
 	//        search past those results each time. Maybe deal with this situation.
 	__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
 	RRR_DBG_1("Cleared %llu expected results in raft server %i\n",
-		cleared_count, state.server_id);
+		cleared_count, state.bridge.server_id);
 
 	goto out_cleanup_configuration;
 	out_cleanup_configuration:
