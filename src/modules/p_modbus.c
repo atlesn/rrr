@@ -746,6 +746,14 @@ static int modbus_callback_data_prepare (
 					&private_data_create_callback_data
 			);
 			break;
+		case 0x04: // Read Input Registers
+			ret = rrr_modbus_client_req_04_read_input_registers (
+					client_data->client,
+					command->starting_address,
+					command->quantity,
+					&private_data_create_callback_data
+			);
+			break;
 		default:
 			assert(0);
 	};
@@ -972,7 +980,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	GET_VALUE_ULL(function);
 
 	// Default value of quantity depend on function
-	modbus_quantity = modbus_function == 0x03 // Read Holding Registers
+	modbus_quantity = ((modbus_function == 0x03) || (modbus_function == 0x04)) // Read (Holding/Input) Registers
 		? MODBUS_DEFAULT_QUANTITY_REGISTER
 		: MODBUS_DEFAULT_QUANTITY_COIL;
 
@@ -1001,7 +1009,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	if (modbus_function < 1 || modbus_function > 3) {
+	if (modbus_function < 1 || modbus_function > 4) {
 		RRR_MSG_0("Invalid value for field 'modbus_function' %" PRIu64 " to modbus instance %s, only a value between 1 and 3 is allowed. Dropping it.\n",
 			modbus_function, INSTANCE_D_NAME(data->thread_data));
 		goto drop;
@@ -1023,6 +1031,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 			break;
 		case 3:
+		case 4:
 			if (modbus_quantity < MODBUS_QUANTITY_REGISTER_MIN || modbus_quantity > MODBUS_QUANTITY_REGISTER_MAX) {
 				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_REGISTER_MIN, MODBUS_QUANTITY_REGISTER_MAX, modbus_function, modbus_quantity);
@@ -1179,6 +1188,7 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	data->modbus_client_callbacks.cb_res_01_read_coils = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_02_read_discrete_inputs = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_03_read_holding_registers = modbus_callback_res_byte_count_and_values;
+	data->modbus_client_callbacks.cb_res_04_read_input_registers = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_error = modbus_callback_res_error;
 
 	if (rrr_socket_client_collection_new (&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODBUS_FUNCTION_CODE_01_READ_COILS               0x01
 #define RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS     0x02
 #define RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS   0x03
+#define RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS     0x04
 
 struct rrr_modbus_mbap {
 	uint16_t transaction_identifier;
@@ -51,6 +52,7 @@ struct rrr_modbus_req_address_and_amount {
 typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_01_read_coils;
 typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_02_read_discrete_inputs;
 typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_03_read_holding_registers;
+typedef struct rrr_modbus_req_address_and_amount rrr_modbus_req_04_read_input_registers;
 
 struct rrr_modbus_req {
 	uint8_t function_code;
@@ -58,6 +60,7 @@ struct rrr_modbus_req {
 		rrr_modbus_req_01_read_coils               read_coils;
 		rrr_modbus_req_02_read_discrete_inputs     read_discrete_inputs;
 		rrr_modbus_req_03_read_holding_registers   read_holding_registers;
+		rrr_modbus_req_04_read_input_registers     read_input_registers;
 	};
 } __attribute((__packed__));
 
@@ -75,6 +78,7 @@ struct rrr_modbus_res_byte_count_and_status {
 typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_01_read_coils;
 typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_02_read_discrete_inputs;
 typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_03_read_holding_registers;
+typedef struct rrr_modbus_res_byte_count_and_status rrr_modbus_res_04_read_input_registers;
 
 struct rrr_modbus_res {
 	uint8_t function_code;
@@ -83,6 +87,7 @@ struct rrr_modbus_res {
 		rrr_modbus_res_01_read_coils               read_coils;
 		rrr_modbus_res_02_read_discrete_inputs     read_discrete_inputs;
 		rrr_modbus_res_03_read_holding_registers   read_holding_registers;
+		rrr_modbus_res_04_read_input_registers     read_input_registers;
 	};
 } __attribute((__packed__));
 
@@ -303,6 +308,23 @@ static int __rrr_modbus_client_receive_03_read_holding_registers (
 	);
 }
 
+static int __rrr_modbus_client_receive_04_read_input_registers (
+		struct rrr_modbus_client *client,
+		const struct rrr_modbus_client_transaction *transaction,
+		const rrr_modbus_res_04_read_input_registers *pdu,
+		uint16_t pdu_size
+) {
+	return __rrr_modbus_client_receive_byte_count_and_status (
+			client,
+			RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS,
+			1, /* Is register */
+			transaction,
+			pdu,
+			pdu_size,
+			client->callbacks.cb_res_04_read_input_registers
+	);
+}
+
 #define VALIDATE_FRAME_SIZE(type)                                                                             \
     do {if (frame_size > sizeof(frame->mbap) + sizeof(frame->res.type) + sizeof(frame->res.function_code)) {  \
         RRR_MSG_0("Max frame size exceeded for received frame %" PRIrrrl ">%llu\n",                           \
@@ -359,17 +381,21 @@ static int __rrr_modbus_client_receive (
 	assert (pdu_size <= 0xfffe); /* Data length in mbap minus 1 byte for unit identifier */
 
 	switch (frame->res.function_code) {
-		case 0x01:
+		case RRR_MODBUS_FUNCTION_CODE_01_READ_COILS:
 			VALIDATE_FRAME_SIZE(read_coils);
 			ret = __rrr_modbus_client_receive_01_read_coils (client, &transaction, &frame->res.read_coils, (uint16_t) pdu_size);
 			break;
-		case 0x02:
+		case RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS:
 			VALIDATE_FRAME_SIZE(read_discrete_inputs);
 			ret = __rrr_modbus_client_receive_02_read_discrete_inputs (client, &transaction, &frame->res.read_discrete_inputs, (uint16_t) pdu_size);
 			break;
-		case 0x03:
+		case RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS:
 			VALIDATE_FRAME_SIZE(read_holding_registers);
 			ret = __rrr_modbus_client_receive_03_read_holding_registers (client, &transaction, &frame->res.read_holding_registers, (uint16_t) pdu_size);
+			break;
+		case RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS:
+			VALIDATE_FRAME_SIZE(read_input_registers);
+			ret = __rrr_modbus_client_receive_04_read_input_registers (client, &transaction, &frame->res.read_input_registers, (uint16_t) pdu_size);
 			break;
 		default:
 			RRR_BUG("Function code %d not implemented in %s\n", frame->res.function_code, __func__);
@@ -647,6 +673,23 @@ int rrr_modbus_client_req_03_read_holding_registers (
 	return __rrr_modbus_client_req_address_and_amount (
 			client,
 			RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS,
+			starting_address,
+			quantity_of_registers,
+			private_data_arg
+	);
+}
+
+int rrr_modbus_client_req_04_read_input_registers (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint16_t quantity_of_registers,
+		void *private_data_arg
+) {
+	assert(quantity_of_registers >= 1 && quantity_of_registers <= 125);
+
+	return __rrr_modbus_client_req_address_and_amount (
+			client,
+			RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS,
 			starting_address,
 			quantity_of_registers,
 			private_data_arg

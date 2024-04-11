@@ -50,6 +50,7 @@ struct rrr_modbus_client_callbacks {
 	int  (*cb_res_01_read_coils)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
 	int  (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
 	int  (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
+	int  (*cb_res_04_read_input_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
 	void  *arg;
 };
 
@@ -88,6 +89,12 @@ int rrr_modbus_client_req_02_read_discrete_inputs (
 		void *private_data_arg
 );
 int rrr_modbus_client_req_03_read_holding_registers (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint16_t quantity_of_registers,
+		void *private_data_arg
+);
+int rrr_modbus_client_req_04_read_input_registers (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
 		uint16_t quantity_of_registers,
