@@ -60,6 +60,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_FILE_NAME_PREFIX_METADATA "metadata"
 #define RRR_RAFT_FILE_NAME_CONFIGURATION "configuration"
 
+#define RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(from, to) \
+    RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT, (unsigned long long) from, (unsigned long long) to
+
+#define RRR_RAFT_ARENA_SENTINEL
+
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
 	enum rrr_raft_code code;
@@ -130,7 +135,7 @@ struct rrr_raft_task {
 
 struct rrr_raft_task_list {
 	struct rrr_raft_arena arena;
-	rrr_raft_arena_handle tasks_handle;
+	rrr_raft_arena_handle tasks;
 	size_t count;
 	size_t capacity;
 };
@@ -288,33 +293,35 @@ static rrr_raft_arena_handle __rrr_raft_arena_memdup (
 		void *ptr,
 		size_t size
 ) {
-	rrr_raft_arena_handle handle;
-	char *data;
-	size_t len;
+	rrr_raft_arena_handle handle_new;
+	char *ptr_new;
 
-	len = strlen(str);
-	handle = __rrr_raft_arena_alloc(arena, len);
-	data = ARENA_RESOLVE(handle);
-	memcpy(data, str, len + 1);
+	handle_new = __rrr_raft_arena_alloc(arena, size);
+	ptr_new = ARENA_RESOLVE(handle_new);
 
-	return handle;
+	memcpy(ptr_new, ptr, size);
+
+	return handle_new;
 }
 
-static rrr_raft_arena_handle __rrr_raft_arena_asprintf (
+static rrr_raft_arena_handle __rrr_raft_arena_vasprintf (
 		struct rrr_raft_arena *arena,
 		const char *format,
 		va_list args
 ) {
 	char *tmp;
 	rrr_raft_arena_handle handle;
+	int bytes;
 
-	if (rrr_vasprintf(&tmp, format, args) < 0) {
+	if ((bytes = rrr_vasprintf(&tmp, format, args)) < 0) {
 		RRR_BUG("CRITICAL: Failed to allocate memory in %s\n", __func__);
 	}
 
-	handle = __rrr_raft_arena_strdup();
+	handle = __rrr_raft_arena_memdup(arena, tmp, bytes + 1);
 
 	rrr_free(tmp);
+
+	return handle;
 }
 
 static rrr_raft_arena_handle __rrr_raft_arena_realloc (
@@ -357,7 +364,7 @@ static void __rrr_raft_task_list_push (
 		capacity_new = list->capacity + 4;
 		tasks_handle_new = __rrr_raft_arena_realloc (
 				&list->arena,
-				list->tasks_handle,
+				list->tasks,
 				sizeof(*tasks) * capacity_new,
 				sizeof(*tasks) * list->capacity
 		);
@@ -366,10 +373,10 @@ static void __rrr_raft_task_list_push (
 		memset(tasks + list->capacity, '\0', sizeof(*tasks) * (capacity_new - list->capacity));
 
 		list->capacity = capacity_new;
-		list->tasks_handle = tasks_handle_new;
+		list->tasks = tasks_handle_new;
 	}
 	else {
-		tasks = ARENA_RESOLVE(list->tasks_handle);
+		tasks = ARENA_RESOLVE(list->tasks);
 	}
 
 	tasks[list->count++] = *task;
@@ -385,7 +392,7 @@ static struct rrr_raft_task *__rrr_raft_task_list_get (
 		struct rrr_raft_task_list *list
 ) {
 	struct rrr_raft_arena *arena = &list->arena;
-	return ARENA_RESOLVE(list->tasks_handle);
+	return ARENA_RESOLVE(list->tasks);
 }
 
 static inline void *__rrr_raft_task_list_resolve (
@@ -405,6 +412,23 @@ static rrr_raft_arena_handle __rrr_raft_task_list_strdup (
 ) {
 	struct rrr_raft_arena *arena = &list->arena;
 	return __rrr_raft_arena_strdup(arena, str);
+}
+
+static rrr_raft_arena_handle __rrr_raft_task_list_asprintf (
+		struct rrr_raft_task_list *list,
+		const char *format,
+		...
+) {
+	static rrr_raft_arena_handle handle;
+	va_list args;
+
+	va_start(args, format);
+
+	handle = __rrr_raft_arena_vasprintf(&list->arena, format, args);
+
+	va_end(args);
+
+	return handle;
 }
 
 static void __rrr_raft_server_fsm_result_clear (
@@ -1695,30 +1719,31 @@ static int __rrr_raft_bridge_acknowledge (
 	//struct raft_event event;
 	struct raft_event event;
 	struct raft_update update;
-	uint64_t now;
+//	uint64_t now;
 
 	assert(list_old->count > 0);
 
 	tasks = __rrr_raft_task_list_get(list_old);
 
-	now = rrr_time_get_64() / 1000;
+//	now = rrr_time_get_64() / 1000;
 
 	for (size_t i = 0; i < list_old->count; i++) {
 		task = tasks + i;
 
 		switch (task->type) {
 			case RRR_RAFT_TASK_TIMEOUT:
-				if (event.time < now) {
+			// TODO : Check for early timeout
+/*				if (time < now) {
 					RRR_RAFT_BRIDGE_DBG("early timeout, set again");
 					__rrr_raft_task_list_push(&list_new, task);
 					break;
 				}
-				else {
+				else {*/
 					RRR_RAFT_BRIDGE_DBG("timeout");
 					event.type = RAFT_TIMEOUT;
 					event.time = rrr_time_get_64() / 1000;
 					goto step;
-				}
+//				}
 			case RRR_RAFT_TASK_READ_FILE:
 				switch (task->readfile.type) {
 					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
@@ -1729,7 +1754,7 @@ static int __rrr_raft_bridge_acknowledge (
 								task->readfile.read_cb,
 								&task->readfile.cb_data
 						)) != 0) {
-							goto out;
+							goto out_cleanup;
 						}
 
 						// TODO : Call __raft_bridge_start if configuration was read from file. As
@@ -1752,7 +1777,7 @@ static int __rrr_raft_bridge_acknowledge (
 				break;
 			case RRR_RAFT_TASK_BOOTSTRAP:
 				__rrr_raft_bridge_set_term(bridge, 1);
-				// TODO : Get/set configuration
+				// Write metadata
 				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
 				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
 				task_new.writefile.name = __rrr_raft_task_list_strdup (
@@ -1763,13 +1788,12 @@ static int __rrr_raft_bridge_acknowledge (
 				);
 				__rrr_raft_task_list_push(&list_new, &task_new);
 
+				// Write configuration as first segment
 				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
-				task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONIGURATION;
-				task_new.writefile.name = __rrr_raft_task_list_strdup (
+				task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
+				task_new.writefile.name = __rrr_raft_task_list_asprintf (
 						&list_new,
-						bridge->metadata.version % 2 == 1
-							? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"
-							: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2"
+						RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(1, 1)
 				);
 				__rrr_raft_task_list_push(&list_new, &task_new);
 				break;
@@ -1785,9 +1809,12 @@ static int __rrr_raft_bridge_acknowledge (
 								task->writefile.write_cb,
 								&task->writefile.cb_data
 						)) != 0) {
-							goto out;
+							goto out_cleanup;
 						}
-						assert(0 && "Write metadata incomplete");
+//						assert(0 && "Write metadata incomplete");
+						break;
+					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
+						RRR_MSG_0("TODO: Write configuration file\n");
 						break;
 					default:
 						RRR_BUG("BUG: Unknown write file type %i in %s\n",
@@ -1806,7 +1833,7 @@ static int __rrr_raft_bridge_acknowledge (
 		if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
 			RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
 			ret = 1;
-			goto out;
+			goto out_cleanup;
 		}
 
 		if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
@@ -1855,11 +1882,12 @@ static int __rrr_raft_bridge_acknowledge (
 
 	__rrr_raft_task_list_cleanup(list_old);
 	*list_old = list_new;
-	list_new = (struct rrr_raft_task_list) {0};
 
-	out:
-	__rrr_raft_task_list_cleanup(&list_new);
-	return ret;
+	goto out_final;
+	out_cleanup:
+		__rrr_raft_task_list_cleanup(&list_new);
+	out_final:
+		return ret;
 }
 
 static int __rrr_raft_bridge_begin (
@@ -1944,16 +1972,18 @@ static int __rrr_raft_server_process_tasks (
 		switch (task->type) {
 			case RRR_RAFT_TASK_TIMEOUT:
 				diff = task->timeout.time - now;
-				assert(diff < now);
+				if (diff >= task->timeout.time) {
+					diff = 10000;
+				}
 
 				RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
-
 				EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
 				EVENT_ADD(state->events.raft_timeout);
 				break;
 			case RRR_RAFT_TASK_READ_FILE:
 				// TODO : Read actual file
-				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for '%s'", (char *) TASK_LIST_RESOLVE(task->readfile.name));
+				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for type %i '%s'",
+					task->readfile.type, (char *) TASK_LIST_RESOLVE(task->readfile.name));
 				task->readfile.read_cb = __rrr_raft_server_file_read_cb;
 				task->readfile.cb_data.ptr = state;
 				break;
@@ -1961,7 +1991,8 @@ static int __rrr_raft_server_process_tasks (
 				task->bootstrap.configuration = state->configuration;
 				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
-				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for '%s'", (char *) TASK_LIST_RESOLVE(task->writefile.name));
+				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for type %i '%s'",
+					task->writefile.type, (char *) TASK_LIST_RESOLVE(task->writefile.name));
 				task->writefile.write_cb = __rrr_raft_server_file_write_cb;
 				task->writefile.cb_data.ptr = state;
 				break;
@@ -1980,6 +2011,8 @@ static int __rrr_raft_server_process_and_acknowledge (
 ) {
 	int ret = 0;
 
+	struct rrr_raft_task *task;
+
 	if ((ret = __rrr_raft_server_process_tasks(state)) != 0) {
 		goto out;
 	}
@@ -1990,8 +2023,13 @@ static int __rrr_raft_server_process_and_acknowledge (
 
 	assert(state->tasks->count > 0);
 
-	// TODO : Consider tight loop instead of activating timeout
-	EVENT_ACTIVATE(state->events.raft_timeout);
+
+	task = __rrr_raft_task_list_get(state->tasks);
+
+	if (task->type != RRR_RAFT_TASK_TIMEOUT) {
+		// TODO : Consider tight loop instead of activating timeout
+		EVENT_ACTIVATE(state->events.raft_timeout);
+	}
 
 	out:
 	return ret;
