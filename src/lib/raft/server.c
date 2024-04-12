@@ -87,6 +87,14 @@ struct rrr_raft_task_cb_data {
 	};
 };
 
+struct rrr_raft_arena {
+	void *data;
+	size_t pos;
+	size_t size;
+};
+
+typedef size_t rrr_raft_arena_handle;
+
 struct rrr_raft_task {
 	enum rrr_raft_task_type type;
 	union {
@@ -95,7 +103,7 @@ struct rrr_raft_task {
 		} timeout;
 		struct {
 			enum rrr_raft_file_type type;
-			char *name;
+			rrr_raft_arena_handle name;
 			// Set by implementation if file exists and called upon acknowledge
 			// until it returns 0 which means completion
 			ssize_t (*read_cb)(char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data);
@@ -106,7 +114,7 @@ struct rrr_raft_task {
 		} bootstrap;
 		struct {
 			enum rrr_raft_file_type type;
-			char *name;
+			rrr_raft_arena_handle name;
 			// Set by implementation and called upon acknowledge
 			// multiple times and the last time with 0 size which means completion
 			ssize_t (*write_cb)(const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data);
@@ -115,15 +123,9 @@ struct rrr_raft_task {
 	};
 };
 
-struct rrr_raft_arena {
-	void *data;
-	size_t pos;
-	size_t size;
-};
-
 struct rrr_raft_task_list {
 	struct rrr_raft_arena arena;
-	struct rrr_raft_task *tasks;
+	rrr_raft_arena_handle tasks_handle;
 	size_t count;
 	size_t capacity;
 };
@@ -204,7 +206,7 @@ static void __rrr_raft_arena_reset (
 	arena->pos = 0;
 }
 
-static void *__rrr_raft_arena_alloc (
+static rrr_raft_arena_handle __rrr_raft_arena_alloc (
 		struct rrr_raft_arena *arena,
 		size_t size
 ) {
@@ -214,6 +216,8 @@ static void *__rrr_raft_arena_alloc (
 	size_t size_new;
 	void *data_new;
 
+	assert(size > 0);
+
 	size += size % align;
 
 	if (arena->pos + size > arena->size) {
@@ -222,48 +226,57 @@ static void *__rrr_raft_arena_alloc (
 		assert(size_new > arena->size);
 
 		if ((data_new = rrr_reallocate(arena->data, size_new)) == NULL) {
-			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-			return NULL;
+			RRR_BUG("CRITICAL: Failed to allocate memory in %s\n", __func__);
 		}
 
 		arena->data = data_new;
 		arena->size = size_new;
 	}
 
-	return arena->data + (arena->pos += size);
+	return arena->pos += size;
 }
 
-static char *__rrr_raft_arena_strdup (
+static inline void *__rrr_raft_arena_resolve (
+		struct rrr_raft_arena *arena,
+		rrr_raft_arena_handle handle
+) {
+	assert(handle < arena->pos);
+	return arena->data + handle;
+}
+
+#define ARENA_RESOLVE(handle) \
+    (arena->data + handle)
+
+static rrr_raft_arena_handle __rrr_raft_arena_strdup (
 		struct rrr_raft_arena *arena,
 		const char *str
 ) {
+	rrr_raft_arena_handle handle;
 	char *data;
 	size_t len;
 
 	len = strlen(str);
-
-	if ((data = __rrr_raft_arena_alloc(arena, len)) == NULL)
-		return NULL;
-
+	handle = __rrr_raft_arena_alloc(arena, len);
+	data = ARENA_RESOLVE(handle);
 	memcpy(data, str, len + 1);
 
-	return data;
+	return handle;
 }
 
-static void *__rrr_raft_arena_realloc (
+static rrr_raft_arena_handle __rrr_raft_arena_realloc (
 		struct rrr_raft_arena *arena,
-		void *ptr,
+		rrr_raft_arena_handle handle,
 		size_t size,
 		size_t oldsize
 ) {
-	void *data;
+	rrr_raft_arena_handle handle_new;
+	void *ptr, *data;
 
-	if ((data = __rrr_raft_arena_alloc(arena, size)) == NULL) {
-		return NULL;
-	}
+	handle_new = __rrr_raft_arena_alloc(arena, size);
+	data = ARENA_RESOLVE(handle_new);
 
-	if (ptr != NULL) {
-		assert(oldsize > 0);
+	if (oldsize > 0) {
+		ptr = ARENA_RESOLVE(handle);
 
 		if (oldsize < size) {
 			memcpy(data, ptr, oldsize);
@@ -273,47 +286,71 @@ static void *__rrr_raft_arena_realloc (
 		}
 	}
 
-	return data;
+	return handle_new;
 }
 
-static int __rrr_raft_task_list_push (
+static void __rrr_raft_task_list_push (
 		struct rrr_raft_task_list *list,
 		struct rrr_raft_task *task
 ) {
-	int ret = 0;
+	struct rrr_raft_arena *arena = &list->arena;
 
 	size_t capacity_new;
-	struct rrr_raft_task *tasks_new;
+	struct rrr_raft_task *tasks;
+	rrr_raft_arena_handle tasks_handle_new;
 
 	if (list->count == list->capacity) {
 		capacity_new = list->capacity + 4;
-		if ((tasks_new = __rrr_raft_arena_realloc (
+		tasks_handle_new = __rrr_raft_arena_realloc (
 				&list->arena,
-				list->tasks,
-				sizeof(*tasks_new) * capacity_new,
-				sizeof(*tasks_new) * list->capacity
-		)) == NULL) {
-			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-			ret = 1;
-			goto out;
-		}
+				list->tasks_handle,
+				sizeof(*tasks) * capacity_new,
+				sizeof(*tasks) * list->capacity
+		);
+		tasks = ARENA_RESOLVE(tasks_handle_new);
 
-		memset(tasks_new + list->capacity, '\0', sizeof(*tasks_new) * (capacity_new - list->capacity));
+		memset(tasks + list->capacity, '\0', sizeof(*tasks) * (capacity_new - list->capacity));
 
 		list->capacity = capacity_new;
-		list->tasks = tasks_new;
+		list->tasks_handle = tasks_handle_new;
+	}
+	else {
+		tasks = ARENA_RESOLVE(list->tasks_handle);
 	}
 
-	list->tasks[list->count++] = *task;
-
-	out:
-	return ret;
+	tasks[list->count++] = *task;
 }
 
 static void __rrr_raft_task_list_cleanup (
-		struct rrr_raft_task_list *tasks
+		struct rrr_raft_task_list *list
 ) {
-	__rrr_raft_arena_cleanup(&tasks->arena);
+	__rrr_raft_arena_cleanup(&list->arena);
+}
+
+static struct rrr_raft_task *__rrr_raft_task_list_get (
+		struct rrr_raft_task_list *list
+) {
+	struct rrr_raft_arena *arena = &list->arena;
+	return ARENA_RESOLVE(list->tasks_handle);
+}
+
+static inline void *__rrr_raft_task_list_resolve (
+		struct rrr_raft_task_list *list,
+		rrr_raft_arena_handle handle
+) {
+	struct rrr_raft_arena *arena = &list->arena;
+	return ARENA_RESOLVE(handle);
+}
+
+#define TASK_LIST_RESOLVE(handle) \
+    (__rrr_raft_task_list_resolve(list, handle))
+
+static rrr_raft_arena_handle __rrr_raft_task_list_strdup (
+		struct rrr_raft_task_list *list,
+		const char *str
+) {
+	struct rrr_raft_arena *arena = &list->arena;
+	return __rrr_raft_arena_strdup(arena, str);
 }
 
 static void __rrr_raft_server_fsm_result_clear (
@@ -1593,33 +1630,34 @@ static int __rrr_raft_bridge_write_metadata (
 }
 
 static int __rrr_raft_bridge_acknowledge (
-		struct rrr_raft_task_list *tasks,
+		struct rrr_raft_task_list *list_old,
 		struct rrr_raft_bridge *bridge
 ) {
 	int ret = 0;
 
 	int ret_tmp = 0;
-	struct rrr_raft_task *task;
+	struct rrr_raft_task *task, *tasks, task_new;
+	struct rrr_raft_task_list list_new = {0};
 	//struct raft_event event;
-	struct rrr_raft_task tasks_new[4], task_new;
-	size_t tasks_new_pos = 0;
 	struct raft_event event;
 	struct raft_update update;
 	uint64_t now;
 
-	assert(tasks->count > 0);
+	assert(list_old->count > 0);
+
+	tasks = __rrr_raft_task_list_get(list_old);
 
 	now = rrr_time_get_64() / 1000;
 
-	for (size_t i = 0; i < tasks->count; i++) {
-		task = tasks->tasks + i;
+	for (size_t i = 0; i < list_old->count; i++) {
+		task = tasks + i;
 
 		switch (task->type) {
 			case RRR_RAFT_TASK_TIMEOUT:
 				if (event.time < now) {
 					RRR_RAFT_BRIDGE_DBG("early timeout, set again");
-					task_new = *task;
-					goto push_task;
+					__rrr_raft_task_list_push(&list_new, task);
+					break;
 				}
 				else {
 					RRR_RAFT_BRIDGE_DBG("timeout");
@@ -1649,7 +1687,7 @@ static int __rrr_raft_bridge_acknowledge (
 
 						if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED)) {
 							task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
-							goto push_task;
+							__rrr_raft_task_list_push(&list_new, &task_new);
 						}
 
 						break;
@@ -1660,16 +1698,15 @@ static int __rrr_raft_bridge_acknowledge (
 				break;
 			case RRR_RAFT_TASK_BOOTSTRAP:
 				__rrr_raft_bridge_set_term(bridge, 1);
+				// TODO : Get/set configuration
 				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
 				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
-				if ((task_new.writefile.name = __rrr_raft_arena_strdup (
-						&tasks->arena,
+				task_new.writefile.name = __rrr_raft_task_list_strdup (
+						&list_new,
 						bridge->metadata.version % 2 == 1 ? "metadata1" : "metadata2"
-				)) == NULL) {
-					ret = 1;
-					goto out;
-				}
-				goto push_task;
+				);
+				__rrr_raft_task_list_push(&list_new, &task_new);
+				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
 				switch (task->writefile.type) {
 					case RRR_RAFT_FILE_TYPE_METADATA:
@@ -1741,42 +1778,33 @@ static int __rrr_raft_bridge_acknowledge (
 		}
 
 		assert(0 && "Not reachable");
-
-		push_task:
-		assert(tasks_new_pos < sizeof(tasks_new) / sizeof(tasks_new[0]));
-		tasks_new[tasks_new_pos++] = task_new;
 	}
 
-	tasks->count = 0;
-	__rrr_raft_arena_reset(&tasks->arena);
 
-	for (size_t i = 0; i < tasks_new_pos; i++ ) {
-		if ((ret = __rrr_raft_task_list_push(tasks, tasks_new + i)) != 0) {
-			goto out;
-		}
-	}
-
-	if (tasks->count == 0) {
+	if (list_new.count == 0) {
 		task_new.type = RRR_RAFT_TASK_TIMEOUT;
 		task_new.timeout.time = raft_timeout(bridge->raft);
-		assert(tasks_new_pos < sizeof(tasks_new) / sizeof(tasks_new[0]));
-		tasks_new[tasks_new_pos++] = task_new;
+		__rrr_raft_task_list_push(&list_new, &task_new);
 	}
 
-	goto out;
+	__rrr_raft_task_list_cleanup(list_old);
+	*list_old = list_new;
+	list_new = (struct rrr_raft_task_list) {0};
+
 	out:
+	__rrr_raft_task_list_cleanup(&list_new);
 	return ret;
 }
 
 static int __rrr_raft_bridge_begin (
-		struct rrr_raft_task_list *tasks,
+		struct rrr_raft_task_list *list,
 		struct rrr_raft_bridge *bridge
 ) {
 	int ret = 0;
 
 	struct rrr_raft_task task;
 
-	assert(tasks->count == 0);
+	assert(list->count == 0);
 
 	assert (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
 
@@ -1784,14 +1812,9 @@ static int __rrr_raft_bridge_begin (
 
 	task.type = RRR_RAFT_TASK_READ_FILE;
 	task.readfile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
-	if ((task.readfile.name = __rrr_raft_arena_strdup(&tasks->arena, "configuration")) == NULL) {
-		ret = 1;
-		goto out;
-	}
+	task.readfile.name = __rrr_raft_task_list_strdup(list, "configuration");
 
-	if ((ret = __rrr_raft_task_list_push(tasks, &task)) != 0) {
-		goto out;
-	}
+	__rrr_raft_task_list_push(list, &task);
 
 	goto out;
 
@@ -1834,21 +1857,23 @@ static ssize_t __rrr_raft_server_file_write_cb (
 static int __rrr_raft_server_process_tasks (
 		struct rrr_raft_server_state *state
 ) {
-	struct rrr_raft_task_list *tasks = state->tasks;
+	struct rrr_raft_task_list *list = state->tasks;
 
 	int ret = 0;
 
 	uint64_t diff, now;
-	struct rrr_raft_task *task;
+	struct rrr_raft_task *task, *tasks;
 
-	if (tasks->count == 0) {
+	if (list->count == 0) {
 		goto out;
 	}
 
+	tasks = __rrr_raft_task_list_get(list);
+
 	now = rrr_time_get_64() / 1000;
 
-	for (size_t i = 0; i < tasks->count; i++) {
-		task = tasks->tasks + i;
+	for (size_t i = 0; i < list->count; i++) {
+		task = tasks + i;
 
 		switch (task->type) {
 			case RRR_RAFT_TASK_TIMEOUT:
@@ -1862,7 +1887,7 @@ static int __rrr_raft_server_process_tasks (
 				break;
 			case RRR_RAFT_TASK_READ_FILE:
 				// TODO : Read actual file
-				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for '%s'", task->readfile.name);
+				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for '%s'", (char *) TASK_LIST_RESOLVE(task->readfile.name));
 				task->readfile.read_cb = __rrr_raft_server_file_read_cb;
 				task->readfile.cb_data.ptr = state;
 				break;
@@ -1870,7 +1895,7 @@ static int __rrr_raft_server_process_tasks (
 				task->bootstrap.configuration = state->configuration;
 				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
-				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for '%s'", task->writefile.name);
+				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for '%s'", (char *) TASK_LIST_RESOLVE(task->writefile.name));
 				task->writefile.write_cb = __rrr_raft_server_file_write_cb;
 				task->writefile.cb_data.ptr = state;
 				break;
