@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_time.h"
+#include "../util/gnu.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
@@ -54,6 +55,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_RAFT_BRIDGE_DBG(msg) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
+
+#define RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT "%016llu-%016llu"
+#define RRR_RAFT_FILE_NAME_PREFIX_METADATA "metadata"
+#define RRR_RAFT_FILE_NAME_CONFIGURATION "configuration"
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -261,6 +266,40 @@ static rrr_raft_arena_handle __rrr_raft_arena_strdup (
 	memcpy(data, str, len + 1);
 
 	return handle;
+}
+
+static rrr_raft_arena_handle __rrr_raft_arena_memdup (
+		struct rrr_raft_arena *arena,
+		void *ptr,
+		size_t size
+) {
+	rrr_raft_arena_handle handle;
+	char *data;
+	size_t len;
+
+	len = strlen(str);
+	handle = __rrr_raft_arena_alloc(arena, len);
+	data = ARENA_RESOLVE(handle);
+	memcpy(data, str, len + 1);
+
+	return handle;
+}
+
+static rrr_raft_arena_handle __rrr_raft_arena_asprintf (
+		struct rrr_raft_arena *arena,
+		const char *format,
+		va_list args
+) {
+	char *tmp;
+	rrr_raft_arena_handle handle;
+
+	if (rrr_vasprintf(&tmp, format, args) < 0) {
+		RRR_BUG("CRITICAL: Failed to allocate memory in %s\n", __func__);
+	}
+
+	handle = __rrr_raft_arena_strdup();
+
+	rrr_free(tmp);
 }
 
 static rrr_raft_arena_handle __rrr_raft_arena_realloc (
@@ -1703,7 +1742,19 @@ static int __rrr_raft_bridge_acknowledge (
 				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
 				task_new.writefile.name = __rrr_raft_task_list_strdup (
 						&list_new,
-						bridge->metadata.version % 2 == 1 ? "metadata1" : "metadata2"
+						bridge->metadata.version % 2 == 1
+							? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"
+							: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2"
+				);
+				__rrr_raft_task_list_push(&list_new, &task_new);
+
+				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
+				task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONIGURATION;
+				task_new.writefile.name = __rrr_raft_task_list_strdup (
+						&list_new,
+						bridge->metadata.version % 2 == 1
+							? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"
+							: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2"
 				);
 				__rrr_raft_task_list_push(&list_new, &task_new);
 				break;
@@ -1812,7 +1863,7 @@ static int __rrr_raft_bridge_begin (
 
 	task.type = RRR_RAFT_TASK_READ_FILE;
 	task.readfile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
-	task.readfile.name = __rrr_raft_task_list_strdup(list, "configuration");
+	task.readfile.name = __rrr_raft_task_list_strdup(list, RRR_RAFT_FILE_NAME_CONFIGURATION);
 
 	__rrr_raft_task_list_push(list, &task);
 
