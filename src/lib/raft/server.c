@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../common.h"
 #include "../rrr_strerror.h"
 #include "../random.h"
+#include "../rrr_path_max.h"
+#include "../read_constants.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -45,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
-    RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge.server_id, __VA_ARGS__)
+    RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
 
 #define RRR_RAFT_BRIDGE_DBG_ARGS(msg, ...) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
@@ -65,31 +67,93 @@ struct rrr_raft_server_fsm_result_collection {
 	size_t capacity;
 };
 
-struct rrr_raft_task_timeout {
-	uint64_t time;
+enum rrr_raft_task_type {
+	RRR_RAFT_TASK_TIMEOUT = 1,
+	RRR_RAFT_TASK_READ_FILE = 2,
+	RRR_RAFT_TASK_BOOTSTRAP = 3,
+	RRR_RAFT_TASK_WRITE_FILE = 4
+};
+
+enum rrr_raft_file_type {
+	RRR_RAFT_FILE_TYPE_CONFIGURATION = 1,
+	RRR_RAFT_FILE_TYPE_METADATA = 2
+};
+
+struct rrr_raft_task_cb_data {
+	void *ptr;
+	union {
+		char data;
+		uint64_t fill[3];
+	};
+};
+
+struct rrr_raft_task {
+	enum rrr_raft_task_type type;
+	union {
+		struct {
+			uint64_t time;
+		} timeout;
+		struct {
+			enum rrr_raft_file_type type;
+			char *name;
+			// Set by implementation if file exists and called upon acknowledge
+			// until it returns 0 which means completion
+			ssize_t (*read_cb)(char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data);
+			struct rrr_raft_task_cb_data cb_data;
+		} readfile;
+		struct {
+			struct raft_configuration *configuration;
+		} bootstrap;
+		struct {
+			enum rrr_raft_file_type type;
+			char *name;
+			// Set by implementation and called upon acknowledge
+			// multiple times and the last time with 0 size which means completion
+			ssize_t (*write_cb)(const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data);
+			struct rrr_raft_task_cb_data cb_data;
+		} writefile;
+	};
+};
+
+struct rrr_raft_arena {
+	void *data;
+	size_t pos;
+	size_t size;
+};
+
+struct rrr_raft_task_list {
+	struct rrr_raft_arena arena;
+	struct rrr_raft_task *tasks;
+	size_t count;
+	size_t capacity;
 };
 
 enum rrr_raft_bridge_state {
-	RRR_RAFT_BRIDGE_STATE_STARTED = 1
+	RRR_RAFT_BRIDGE_STATE_STARTED = 1,
+	RRR_RAFT_BRIDGE_STATE_CONFIGURED
 };
 
 struct rrr_raft_bridge {
 	struct raft *raft;
 	int server_id;
 	enum rrr_raft_bridge_state state;
+	struct {
+		unsigned long long version;
+		raft_term term;
+		raft_id voted_for;
+	} metadata;
 };
 
 struct rrr_raft_server_state {
 	struct rrr_raft_channel *channel;
 	struct rrr_raft_message_store *message_store_state;
-	struct rrr_raft_bridge bridge;
+	struct rrr_raft_bridge *bridge;
+	struct rrr_raft_task_list *tasks;
 /*	uint32_t change_req_index;
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;*/
 	struct rrr_raft_server_fsm_result_collection *fsm_results;
-	struct {
-		raft_term term;
-	} metadata;
+	struct raft_configuration *configuration;
 	struct {
 		rrr_event_handle raft_timeout;
 		rrr_event_handle socket;
@@ -124,6 +188,132 @@ static inline void *__rrr_raft_server_aligned_alloc (void *data, size_t alignmen
 static inline void __rrr_raft_server_aligned_free (void *data, size_t alignment, void *ptr) {
 	(void)(data);
 	return rrr_aligned_free(alignment, ptr);
+}
+
+static void __rrr_raft_arena_cleanup (
+		struct rrr_raft_arena *arena
+) {
+	RRR_FREE_IF_NOT_NULL(arena->data);
+	arena->pos = 0;
+	arena->size = 0;
+}
+
+static void __rrr_raft_arena_reset (
+		struct rrr_raft_arena *arena
+) {
+	arena->pos = 0;
+}
+
+static void *__rrr_raft_arena_alloc (
+		struct rrr_raft_arena *arena,
+		size_t size
+) {
+	static const size_t align = sizeof(uint64_t);
+	static const size_t alloc_min = 65536;
+
+	size_t size_new;
+	void *data_new;
+
+	size += size % align;
+
+	if (arena->pos + size > arena->size) {
+		size_new = arena->size + size;
+		size_new += size_new % alloc_min;
+		assert(size_new > arena->size);
+
+		if ((data_new = rrr_reallocate(arena->data, size_new)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			return NULL;
+		}
+
+		arena->data = data_new;
+		arena->size = size_new;
+	}
+
+	return arena->data + (arena->pos += size);
+}
+
+static char *__rrr_raft_arena_strdup (
+		struct rrr_raft_arena *arena,
+		const char *str
+) {
+	char *data;
+	size_t len;
+
+	len = strlen(str);
+
+	if ((data = __rrr_raft_arena_alloc(arena, len)) == NULL)
+		return NULL;
+
+	memcpy(data, str, len + 1);
+
+	return data;
+}
+
+static void *__rrr_raft_arena_realloc (
+		struct rrr_raft_arena *arena,
+		void *ptr,
+		size_t size,
+		size_t oldsize
+) {
+	void *data;
+
+	if ((data = __rrr_raft_arena_alloc(arena, size)) == NULL) {
+		return NULL;
+	}
+
+	if (ptr != NULL) {
+		assert(oldsize > 0);
+
+		if (oldsize < size) {
+			memcpy(data, ptr, oldsize);
+		}
+		else {
+			memcpy(data, ptr, size);
+		}
+	}
+
+	return data;
+}
+
+static int __rrr_raft_task_list_push (
+		struct rrr_raft_task_list *list,
+		struct rrr_raft_task *task
+) {
+	int ret = 0;
+
+	size_t capacity_new;
+	struct rrr_raft_task *tasks_new;
+
+	if (list->count == list->capacity) {
+		capacity_new = list->capacity + 4;
+		if ((tasks_new = __rrr_raft_arena_realloc (
+				&list->arena,
+				list->tasks,
+				sizeof(*tasks_new) * capacity_new,
+				sizeof(*tasks_new) * list->capacity
+		)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+
+		memset(tasks_new + list->capacity, '\0', sizeof(*tasks_new) * (capacity_new - list->capacity));
+
+		list->capacity = capacity_new;
+		list->tasks = tasks_new;
+	}
+
+	list->tasks[list->count++] = *task;
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_task_list_cleanup (
+		struct rrr_raft_task_list *tasks
+) {
+	__rrr_raft_arena_cleanup(&tasks->arena);
 }
 
 static void __rrr_raft_server_fsm_result_clear (
@@ -812,7 +1002,7 @@ static int __rrr_raft_server_read_msg_cb (
 		void *arg2
 ) {
 	struct rrr_raft_server_state *state = arg2;
-	struct rrr_raft_bridge *bridge = &state->bridge;
+	struct rrr_raft_bridge *bridge = state->bridge;
 //	struct raft *raft = state->raft;
 
 	(void)(arg1);
@@ -1292,6 +1482,7 @@ static int __rrr_raft_bridge_start (
 	// TODO : Load persisted metadata here
 	//        - Set current_term, voted_for, metadata, entries and n_entries
 
+
 	event->start.term = 0;
 	event->start.voted_for = 0;
 	event->start.metadata = NULL;
@@ -1304,80 +1495,412 @@ static int __rrr_raft_bridge_start (
 	return ret;
 }
 
-static int __rrr_raft_bridge_step (
-		struct rrr_raft_task_timeout *task_timeout,
+static void __rrr_raft_bridge_set_term (
+		struct rrr_raft_bridge *bridge,
+		raft_term term
+) {
+	bridge->metadata.version++;
+	bridge->metadata.term = term;
+	bridge->metadata.voted_for = 0;
+}
+
+static int __rrr_raft_bridge_read_file (
+		char **data,
+		size_t *data_size,
+		ssize_t (*read_cb)(char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data),
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	int ret = 0;
+
+	ssize_t bytes;
+	char buf[1024];
+	size_t buf_size = sizeof(buf);
+
+	if ((bytes = read_cb(buf, buf_size, cb_data)) < 0) {
+		assert(0 && "Error return value not implemented");
+	}
+	else if (bytes > 0) {
+		assert(0 && "Bytes return value not implemented");
+	}
+
+	*data = NULL;
+	*data_size = 0;
+
+	goto out;
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_read_configuration (
+		struct rrr_raft_bridge *bridge,
+		ssize_t (*read_cb)(char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data),
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	int ret = 0;
+
+	(void)(bridge);
+
+	char *data;
+	size_t data_size;
+
+	if ((ret = __rrr_raft_bridge_read_file (&data, &data_size, read_cb, cb_data)) != 0) {
+		goto out;
+	}
+
+	assert(data == NULL && "Configuration data not implemented");
+	assert(data_size == 0 && "Configuration data not implemented");
+
+	// TODO : Set configuration read from file
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_write_metadata (
+		struct rrr_raft_bridge *bridge,
+		ssize_t (*write_cb)(const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data),
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	(void)(bridge);
+
+	int ret = 0;
+
+	ssize_t bytes;
+	size_t pos;
+
+	// TODO : Put actual metadata
+
+	uint64_t data[4] = {0};
+
+	for (pos = 0; pos < sizeof(data); pos += bytes) {
+		if ((bytes = write_cb((const char *) data + pos, sizeof(data) - pos, cb_data)) < 0) {
+			ret = 1;
+			goto out;
+		}
+		assert(bytes > 0);
+	}
+
+	assert(pos == sizeof(data));
+
+	if ((bytes = write_cb(NULL, 0, cb_data)) < 0) {
+		ret = 1;
+		goto out;
+	}
+	assert(bytes == 0);
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_acknowledge (
+		struct rrr_raft_task_list *tasks,
 		struct rrr_raft_bridge *bridge
 ) {
 	int ret = 0;
 
 	int ret_tmp = 0;
+	struct rrr_raft_task *task;
+	//struct raft_event event;
+	struct rrr_raft_task tasks_new[4], task_new;
+	size_t tasks_new_pos = 0;
 	struct raft_event event;
 	struct raft_update update;
-	enum rrr_raft_bridge_state state_add = 0;
+	uint64_t now;
 
-	assert(task_timeout->time == 0);
+	assert(tasks->count > 0);
 
-	if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED)) {
-		/* Step 1 is to load snapshot and entries and start the first timeout */
-		RRR_RAFT_BRIDGE_DBG("starting");
-		if ((ret = __rrr_raft_bridge_start(&event, bridge) != 0)) {
+	now = rrr_time_get_64() / 1000;
+
+	for (size_t i = 0; i < tasks->count; i++) {
+		task = tasks->tasks + i;
+
+		switch (task->type) {
+			case RRR_RAFT_TASK_TIMEOUT:
+				if (event.time < now) {
+					RRR_RAFT_BRIDGE_DBG("early timeout, set again");
+					task_new = *task;
+					goto push_task;
+				}
+				else {
+					RRR_RAFT_BRIDGE_DBG("timeout");
+					event.type = RAFT_TIMEOUT;
+					event.time = rrr_time_get_64() / 1000;
+					goto step;
+				}
+			case RRR_RAFT_TASK_READ_FILE:
+				switch (task->readfile.type) {
+					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
+						assert (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED));
+
+						if ((ret = __rrr_raft_bridge_read_configuration (
+								bridge,
+								task->readfile.read_cb,
+								&task->readfile.cb_data
+						)) != 0) {
+							goto out;
+						}
+
+						// TODO : Call __raft_bridge_start if configuration was read from file. As
+						//        of now, files cannot be read
+
+/*						if ((ret = __rrr_raft_bridge_start(&event, bridge) != 0)) {
+							goto out;
+						}*/
+
+						if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED)) {
+							task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
+							goto push_task;
+						}
+
+						break;
+					default:
+						RRR_BUG("BUG: Unknown read file type %i in %s\n",
+							task->readfile.type, __func__);
+				};
+				break;
+			case RRR_RAFT_TASK_BOOTSTRAP:
+				__rrr_raft_bridge_set_term(bridge, 1);
+				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
+				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
+				if ((task_new.writefile.name = __rrr_raft_arena_strdup (
+						&tasks->arena,
+						bridge->metadata.version % 2 == 1 ? "metadata1" : "metadata2"
+				)) == NULL) {
+					ret = 1;
+					goto out;
+				}
+				goto push_task;
+			case RRR_RAFT_TASK_WRITE_FILE:
+				switch (task->writefile.type) {
+					case RRR_RAFT_FILE_TYPE_METADATA:
+						if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED)) {
+							bridge->state |= RRR_RAFT_BRIDGE_STATE_CONFIGURED;
+						}
+						// TODO : Pass actual metadata
+						if ((ret = __rrr_raft_bridge_write_metadata (
+								bridge,
+								task->writefile.write_cb,
+								&task->writefile.cb_data
+						)) != 0) {
+							goto out;
+						}
+						assert(0 && "Write metadata incomplete");
+						break;
+					default:
+						RRR_BUG("BUG: Unknown write file type %i in %s\n",
+							task->writefile.type, __func__);
+				};
+				break;
+			default:
+				RRR_BUG("BUG: Unkown type %i in %s\n",
+					task->type, __func__);
+		};
+
+		continue;
+
+		step:
+
+		if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
+			RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
+			ret = 1;
 			goto out;
 		}
-		state_add |= RRR_RAFT_BRIDGE_STATE_STARTED;
-		goto step;
+
+		if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
+			assert(0 && "Update current term not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_VOTED_FOR) {
+			assert(0 && "Update voted for not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_ENTRIES) {
+			assert(0 && "Update entries not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_SNAPSHOT) {
+			assert(0 && "Update snapshot not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_MESSAGES) {
+			assert(0 && "Update messages not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_STATE) {
+			assert(0 && "Update state not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
+			assert(0 && "Update commit index not implemented");
+		}
+
+		if (update.flags & RAFT_UPDATE_TIMEOUT) {
+			// Ignore, only push timeout task if
+			// there are no other tasks.
+			continue;
+		}
+
+		assert(0 && "Not reachable");
+
+		push_task:
+		assert(tasks_new_pos < sizeof(tasks_new) / sizeof(tasks_new[0]));
+		tasks_new[tasks_new_pos++] = task_new;
 	}
-	else if (bridge->state == RRR_RAFT_BRIDGE_STATE_STARTED) {
-		/* No particular state, trigger a timeout */
-		RRR_RAFT_BRIDGE_DBG("timeout");
-		event.type = RAFT_TIMEOUT;
-		event.time = rrr_time_get_64() / 1000;
-		goto step;
+
+	tasks->count = 0;
+	__rrr_raft_arena_reset(&tasks->arena);
+
+	for (size_t i = 0; i < tasks_new_pos; i++ ) {
+		if ((ret = __rrr_raft_task_list_push(tasks, tasks_new + i)) != 0) {
+			goto out;
+		}
 	}
-	else {
-		assert(0 && "Nothing to do");
+
+	if (tasks->count == 0) {
+		task_new.type = RRR_RAFT_TASK_TIMEOUT;
+		task_new.timeout.time = raft_timeout(bridge->raft);
+		assert(tasks_new_pos < sizeof(tasks_new) / sizeof(tasks_new[0]));
+		tasks_new[tasks_new_pos++] = task_new;
 	}
 
 	goto out;
-	step:
-	if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
-		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_begin (
+		struct rrr_raft_task_list *tasks,
+		struct rrr_raft_bridge *bridge
+) {
+	int ret = 0;
+
+	struct rrr_raft_task task;
+
+	assert(tasks->count == 0);
+
+	assert (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
+
+	RRR_RAFT_BRIDGE_DBG("starting, requesting configuration to be loaded from disk");
+
+	task.type = RRR_RAFT_TASK_READ_FILE;
+	task.readfile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
+	if ((task.readfile.name = __rrr_raft_arena_strdup(&tasks->arena, "configuration")) == NULL) {
 		ret = 1;
 		goto out;
 	}
 
-	bridge->state |= state_add;
-
-	if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
-		assert(0 && "Update current term not implemented");
+	if ((ret = __rrr_raft_task_list_push(tasks, &task)) != 0) {
+		goto out;
 	}
 
-	if (update.flags & RAFT_UPDATE_VOTED_FOR) {
-		assert(0 && "Update voted for not implemented");
+	goto out;
+
+	out:
+	return ret;
+}
+
+static ssize_t __rrr_raft_server_file_read_cb (
+		char *buf,
+		size_t buf_size,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	struct rrr_raft_server_state *state = cb_data->ptr;
+
+	(void)(buf);
+	(void)(buf_size);
+	(void)(state);
+
+	// TODO : Load actual file
+
+	return 0;
+}
+
+static ssize_t __rrr_raft_server_file_write_cb (
+		const char *data,
+		size_t data_size,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	struct rrr_raft_server_state *state = cb_data->ptr;
+
+	(void)(data);
+	(void)(data_size);
+	(void)(state);
+
+	// TODO : Write actual file
+
+	return (ssize_t) data_size;
+}
+
+static int __rrr_raft_server_process_tasks (
+		struct rrr_raft_server_state *state
+) {
+	struct rrr_raft_task_list *tasks = state->tasks;
+
+	int ret = 0;
+
+	uint64_t diff, now;
+	struct rrr_raft_task *task;
+
+	if (tasks->count == 0) {
+		goto out;
 	}
 
-	if (update.flags & RAFT_UPDATE_ENTRIES) {
-		assert(0 && "Update entries not implemented");
+	now = rrr_time_get_64() / 1000;
+
+	for (size_t i = 0; i < tasks->count; i++) {
+		task = tasks->tasks + i;
+
+		switch (task->type) {
+			case RRR_RAFT_TASK_TIMEOUT:
+				diff = task->timeout.time - now;
+				assert(diff < now);
+
+				RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
+
+				EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
+				EVENT_ADD(state->events.raft_timeout);
+				break;
+			case RRR_RAFT_TASK_READ_FILE:
+				// TODO : Read actual file
+				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for '%s'", task->readfile.name);
+				task->readfile.read_cb = __rrr_raft_server_file_read_cb;
+				task->readfile.cb_data.ptr = state;
+				break;
+			case RRR_RAFT_TASK_BOOTSTRAP:
+				task->bootstrap.configuration = state->configuration;
+				break;
+			case RRR_RAFT_TASK_WRITE_FILE:
+				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for '%s'", task->writefile.name);
+				task->writefile.write_cb = __rrr_raft_server_file_write_cb;
+				task->writefile.cb_data.ptr = state;
+				break;
+			default:
+				RRR_BUG("BUG: Unknown task type %i in %s\n",
+					task->type, __func__);
+		};
 	}
 
-	if (update.flags & RAFT_UPDATE_SNAPSHOT) {
-		assert(0 && "Update snapshot not implemented");
+	out:
+	return ret;
+}
+
+static int __rrr_raft_server_process_and_acknowledge (
+		struct rrr_raft_server_state *state
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_raft_server_process_tasks(state)) != 0) {
+		goto out;
 	}
 
-	if (update.flags & RAFT_UPDATE_MESSAGES) {
-		assert(0 && "Update messages not implemented");
+	if ((ret = __rrr_raft_bridge_acknowledge(state->tasks, state->bridge)) != 0) {
+		goto out;
 	}
 
-	if (update.flags & RAFT_UPDATE_STATE) {
-		assert(0 && "Update state not implemented");
-	}
+	assert(state->tasks->count > 0);
 
-	if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
-		assert(0 && "Update commit index not implemented");
-	}
-
-	if (update.flags & RAFT_UPDATE_TIMEOUT) {
-		task_timeout->time = raft_timeout(bridge->raft);
-	}
+	// TODO : Consider tight loop instead of activating timeout
+	EVENT_ACTIVATE(state->events.raft_timeout);
 
 	out:
 	return ret;
@@ -1393,28 +1916,8 @@ static void __rrr_raft_server_timeout_cb (
 	(void)(fd);
 	(void)(flags);
 
-	uint64_t now, diff;
-	struct rrr_raft_task_timeout task_timeout = {0};
-
-	now = rrr_time_get_64() / 1000;
-
-	if (__rrr_raft_bridge_step (
-			&task_timeout,
-			&state->bridge
-	) != 0) {
+	if (__rrr_raft_server_process_and_acknowledge (state) != 0) {
 		rrr_event_dispatch_break(state->channel->queue);
-	}
-
-	/* TODO : Iterate returned tasks */
-
-	if (task_timeout.time > 0) {
-		diff = task_timeout.time - now;
-		assert(diff < now);
-
-		RRR_RAFT_SERVER_DBG_EVENT("set timeout to %" PRIu64 " ms", diff);
-
-		EVENT_INTERVAL_SET(state->events.raft_timeout, diff * 1000);
-		EVENT_ADD(state->events.raft_timeout);
 	}
 }
 
@@ -1437,6 +1940,8 @@ int rrr_raft_server (
 	struct rrr_raft_server_state state = {0};
 	struct rrr_raft_message_store *message_store_state;
 	struct rrr_event_collection events = {0};
+	struct rrr_raft_bridge bridge = {0};
+	struct rrr_raft_task_list tasks = {0};
 	static struct raft_heap rrr_raft_heap = {
 		NULL,                            /* data */
 		__rrr_raft_server_malloc,        /* malloc */
@@ -1499,9 +2004,12 @@ int rrr_raft_server (
 	state.channel = channel;
 	state.message_store_state = message_store_state;
 	state.fsm_results = &fsm_results;
+	state.configuration = &configuration;
 
-	state.bridge.raft = &raft;
-	state.bridge.server_id = servers[servers_self].id;
+	bridge.raft = &raft;
+	bridge.server_id = servers[servers_self].id;
+	state.bridge = &bridge;
+	state.tasks = &tasks;
 
 	raft_heap_set(&rrr_raft_heap);
 
@@ -1557,6 +2065,14 @@ int rrr_raft_server (
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
 */
 
+	if ((ret = __rrr_raft_bridge_begin (&tasks, &bridge)) != 0) {
+		goto out_cleanup_configuration;
+	}
+
+	if ((ret = __rrr_raft_server_process_and_acknowledge(&state)) != 0) {
+		goto out_cleanup_tasks;
+	}
+
 	ret = rrr_event_dispatch(channel->queue);
 
 	RRR_DBG_1("Event loop completed in raft server, result was %i\n", ret_tmp);
@@ -1567,9 +2083,11 @@ int rrr_raft_server (
 	//        search past those results each time. Maybe deal with this situation.
 	__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
 	RRR_DBG_1("Cleared %llu expected results in raft server %i\n",
-		cleared_count, state.bridge.server_id);
+		cleared_count, state.bridge->server_id);
 
-	goto out_cleanup_configuration;
+	goto out_cleanup_tasks;
+	out_cleanup_tasks:
+		__rrr_raft_task_list_cleanup(&tasks);
 	out_cleanup_configuration:
 		raft_configuration_close(&configuration);
 //	out_raft_close:
