@@ -218,16 +218,25 @@ static rrr_raft_arena_handle __rrr_raft_arena_alloc (
 	static const size_t align = sizeof(uint64_t);
 	static const size_t alloc_min = 65536;
 
-	size_t size_new;
+	size_t size_new, pos;
 	void *data_new;
 
 	assert(size > 0);
 
-	size += size % align;
+	size += align - (size % align);
+#ifdef RRR_RAFT_ARENA_SENTINEL
+	size += sizeof(uint64_t);
+	if (arena->data != NULL && * (uint64_t *) (arena->data + arena->pos - sizeof(uint64_t)) != 0xdeadbeefdeadbeef) {
+		RRR_BUG("BUG: Sentinel overwritten in %s, data is %016llx\n",
+			__func__,
+			(unsigned long long) * (uint64_t *) (arena->data + arena->pos - sizeof(uint64_t))
+		);
+	}
+#endif /* RRR_RAFT_ARENA_SENTINEL */
 
 	if (arena->pos + size > arena->size) {
 		size_new = arena->size + size;
-		size_new += size_new % alloc_min;
+		size_new += alloc_min - (size_new % alloc_min);
 		assert(size_new > arena->size);
 
 		if ((data_new = rrr_reallocate(arena->data, size_new)) == NULL) {
@@ -238,7 +247,13 @@ static rrr_raft_arena_handle __rrr_raft_arena_alloc (
 		arena->size = size_new;
 	}
 
-	return arena->pos += size;
+#ifdef RRR_RAFT_ARENA_SENTINEL
+	* (uint64_t *) (arena->data + arena->pos + size - sizeof(uint64_t)) = 0xdeadbeefdeadbeef;
+#endif
+
+	pos = arena->pos;
+	arena->pos += size;
+	return pos;
 }
 
 static inline void *__rrr_raft_arena_resolve (
