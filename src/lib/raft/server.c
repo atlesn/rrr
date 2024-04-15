@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/rrr_endian.h"
 #include "../util/gnu.h"
+#include "../util/crc32.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
@@ -167,6 +168,7 @@ struct rrr_raft_bridge {
 	int server_id;
 	enum rrr_raft_bridge_state state;
 	struct rrr_raft_bridge_metadata metadata;
+	struct raft_configuration *configuration;
 };
 
 struct rrr_raft_server_state {
@@ -178,7 +180,6 @@ struct rrr_raft_server_state {
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;*/
 	struct rrr_raft_server_fsm_result_collection *fsm_results;
-	struct raft_configuration *configuration;
 	struct {
 		rrr_event_handle raft_timeout;
 		rrr_event_handle socket;
@@ -1705,6 +1706,10 @@ static int __rrr_raft_bridge_read_metadata (
 		goto out;
 	}
 
+	if (data_size == 0) {
+		goto out;
+	}
+
 	if (data_size != 4 * sizeof(uint64_t)) {
 		RRR_MSG_0("Warning: Incorrect size %llu for metadata file '%s', ignoring it\n", (unsigned long long) data_size, name);
 		goto out;
@@ -1764,11 +1769,34 @@ static int __rrr_raft_bridge_write (
 }
 
 #define WRITE(buf)                          \
-    char *wpos = (char *) buf; if (1)       \
+    char *wpos = (char *) (buf); if (1)     \
+
+#define WRITE_U8(n)                         \
+    * (uint8_t *) wpos = n;                 \
+    wpos += sizeof(uint8_t)
+
+#define WRITE_U32(n)                        \
+    * (uint32_t *) wpos = rrr_htobe64(n);   \
+    wpos += sizeof(uint32_t)
 
 #define WRITE_U64(n)                        \
     * (uint64_t *) wpos = rrr_htobe64(n);   \
     wpos += sizeof(uint64_t)
+
+#define WRITE_STR(str)                      \
+    do {size_t len = strlen(str);           \
+        memcpy(wpos, str, len + 1);         \
+	wpos += len + 1;                    \
+    } while(0)
+
+#define WRITE_POS()                         \
+    wpos
+
+#define WRITE_INC(n)                        \
+   wpos += n
+
+#define WRITE_VERIFY(buf,len)               \
+    assert((uintptr_t) wpos - (uintptr_t) (buf) == (uintptr_t) len)
 
 static int __rrr_raft_bridge_write_metadata (
 		struct rrr_raft_bridge *bridge,
@@ -1786,8 +1814,237 @@ static int __rrr_raft_bridge_write_metadata (
 		WRITE_U64(bridge->metadata.term);
 		WRITE_U64(bridge->metadata.voted_for);
 	}
+	WRITE_VERIFY(data,sizeof(data));
 
 	return __rrr_raft_bridge_write(write_cb, name, (const char *) data, sizeof(data), cb_data);
+}
+
+static int __rrr_raft_bridge_encode_configuration (
+		char **data,
+		size_t *data_size,
+		const struct raft_configuration *conf
+) {
+	int ret = 0;
+
+	size_t total_size = 0;
+	unsigned i;
+	struct raft_server *server;
+	char *buf = NULL;
+
+	total_size += sizeof(uint8_t);  /* Format */
+	total_size += sizeof(uint64_t); /* Server count */
+
+	for (i = 0; i < conf->n; i++) {
+		server = conf->servers + i;
+		assert(server->address != NULL);
+		total_size += sizeof(uint64_t);            /* Server ID */
+		total_size += strlen(server->address) + 1; /* Server address */
+		total_size += sizeof(uint8_t);             /* Voting flag */
+	}
+
+	if ((buf = rrr_allocate(total_size)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	WRITE(buf) {
+		WRITE_U8(RRR_RAFT_DISK_FORMAT);
+		WRITE_U64(conf->n);
+		for (i = 0; i < conf->n; i++) {
+			server = conf->servers + i;
+			WRITE_U64(server->id);
+			WRITE_STR(server->address);
+			WRITE_U8(server->role);
+		}
+	}
+	WRITE_VERIFY(buf,total_size);
+
+	*data = buf;
+	*data_size = total_size;
+	buf = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf);
+	return ret;
+}
+
+#define BATCH_HEADER_SIZE(n) (                        \
+        sizeof(uint64_t) +       /* Entry count */    \
+        sizeof(uint64_t) * 2 * n /* Entry headers */  \
+    )
+
+#define WRITE_BATCH_HEADER(entries, entry_count, crc)                                         \
+    do {char *wpos_begin = wpos; WRITE_U64(entry_count);                                      \
+        for (const struct raft_entry *entry = NULL; entry < entries + entry_count; entry++) { \
+	    WRITE_U64(entry->term);                                                           \
+	    WRITE_U8(entry->type);                                                            \
+	    WRITE_U8(0);                                                                      \
+	    WRITE_U8(0);                                                                      \
+	    WRITE_U8(0);                                                                      \
+            WRITE_U32(entry->buf.len);                                                        \
+	}                                                                                     \
+        crc = rrr_crc32buf_init(wpos_begin, wpos - wpos_begin, crc);                          \
+    } while (0)
+
+#define WRITE_BATCH_DATA(entries, entry_count, crc)                                           \
+    do {                                                                                      \
+        for (const struct raft_entry *entry = NULL; entry < entries + entry_count; entry++) { \
+	    memcpy(wpos, entry->buf.data, entry->buf.len);                                    \
+	    crc = rrr_crc32buf_init(wpos, entry->buf.len, crc);                               \
+	    wpos += entry->buf.len;                                                           \
+	}                                                                                     \
+    } while (0)
+
+static int __rrr_raft_bridge_encode_entries (
+		char **data,
+		size_t *data_size,
+		size_t preamble_size,
+		const struct raft_entry *entries,
+		unsigned entry_count,
+) {
+	int ret = 0;
+
+	size_t total_size = 0;
+	char *crc1_pos, crc2_pos, pos, buf = NULL;
+	uint32_t crc1 = 0xffffffff, crc2 = 0xffffffff;
+	unsigned i;
+
+	total_size += preamble_size;
+	total_size += sizeof(uint32_t) * 2;  /* Checksums */
+	total_size += BATCH_HEADER_SIZE(entry_count),
+	for (i = 0; i < entry_count; i++) {
+		total_size += entries[i].buf.len;
+	}
+
+	if ((buf = rrr_allocate(total_size)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %sn\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	WRITE(buf) {
+		WRITE_INC(preamble_size);
+		crc1_pos = WRITE_POS();
+		WRITE_U32(0);
+		crc2_pos = WRITE_POS();
+		WRITE_U32(0);
+		WRITE_BATCH_HEADER(entries, entry_count, crc1);
+		WRITE_BATCH_DATA(entries, entry_count, crc2);
+	}
+	WRITE_VERIFY(buf, total_size);
+
+	* (uint32_t *) crc1_pos = crc1;
+	* (uint32_t *) crc2_pos = crc2;
+
+	*data = buf;
+	*data_size = total_size;
+	buf = NULL;
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_encode_closed_segment (
+		char **data,
+		char *data_size,
+		struct rrr_raft_bridge *bridge,
+		raft_index first_index,
+		raft_index last_index,
+		const char *conf,
+		size_t conf_size,
+		raft_term conf_term
+) {
+	int ret = 0;
+
+	struct raft_entry entry = {0};
+
+	entry.term = conf_term;
+	entry.type = RAFT_CHANGE;
+	entry.buf.data = conf;
+	entry.buf.len = conf_size;
+
+	if ((ret = __rrr_raft_bridge_encode_entries (
+			data,
+			data_size,
+			sizeof(uint64_t),
+			&entry,
+			1
+	)) != 0) {
+		goto out;
+	}
+
+	WRITE(*data) {
+		WRITE_U64(RRR_RAFT_DISK_FORMAT);	
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_bridge_write_closed_segment_with_configuration (
+		raft_index index,
+		const struct raft_configuration *conf,
+		raft_term conf_term,
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
+		const char *name,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	int ret = 0;
+
+	char *configuration_data = NULL, *data = NULL;
+	size_t configuration_data_size, data_size;
+
+	if ((ret = __rrr_raft_bridge_encode_configuration (
+			&configuration_data,
+			&configuration_data_size,
+			conf
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_raft_bridge_encode_closed_segment (
+			&data,
+			&data_size,
+			bridge,
+			index,
+			index,
+			configuration_data
+			configuration_data_size,
+			conf_term
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_raft_bridge_write (
+			write_cb,
+			name,
+			data,
+			data_size,
+			cb_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(configuration_data);
+	RRR_FREE_IF_NOT_NULL(data);
+	return ret;
+}
+
+static int __rrr_raft_bridge_write_first_closed_segment (
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
+		const char *name,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	return __rrr_raft_bridge_write_closed_segment_with_configuration (
+			1,
+			conf,
+			1,
+			write_cb,
+			name,
+			cb_data
+	);
 }
 
 static int __rrr_raft_bridge_acknowledge (
@@ -1881,10 +2138,10 @@ static int __rrr_raft_bridge_acknowledge (
 							}
 
 							if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED)) {
+								RRR_RAFT_BRIDGE_DBG("no metadata loaded, calling for bootstrap");
+
 								task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
 								__rrr_raft_task_list_push(&list_new, &task_new);
-
-								RRR_RAFT_BRIDGE_DBG("no metadata loaded, calling for bootstrap");
 							}
 						}
 						break;
@@ -1894,6 +2151,7 @@ static int __rrr_raft_bridge_acknowledge (
 				};
 				break;
 			case RRR_RAFT_TASK_BOOTSTRAP:
+				// TODO : Get configuration from caller
 				__rrr_raft_bridge_set_term(bridge, 1);
 				// Write metadata
 				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
@@ -1928,6 +2186,8 @@ static int __rrr_raft_bridge_acknowledge (
 						}
 						break;
 					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
+						if ((ret = __rrr_raft_bridge_write_first_closed_segment (
+								
 						RRR_MSG_0("TODO: Write configuration file\n");
 						break;
 					default:
@@ -2045,7 +2305,7 @@ static ssize_t __rrr_raft_server_file_read_cb (RRR_RAFT_BRIDGE_READFILE_CB_ARGS)
 	ssize_t bytes;
 
 	if (file_read_cb_data->fd <= 0) {
-		if ((file_read_cb_data->fd = rrr_socket_open(name, O_CREAT|O_TRUNC|O_RDONLY, 0777, __func__, 0)) <= 0) {
+		if ((file_read_cb_data->fd = rrr_socket_open(name, O_RDONLY, 0777, __func__, 0)) <= 0) {
 			if (errno == ENOENT) {
 				RRR_RAFT_SERVER_DBG_FILE(name, "file does not exist while opening for reading%s", "");
 				bytes = 0;
@@ -2090,7 +2350,7 @@ static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITEFILE_CB_ARG
 	if (file_write_cb_data->fd <= 0) {
 		RRR_RAFT_SERVER_DBG_FILE(name, "open file to write %llu bytes", (unsigned long long) data_size);
 
-		if ((file_write_cb_data->fd = rrr_socket_open(name, O_CREAT|O_TRUNC|O_RDWR, 0777, __func__, 0)) <= 0) {
+		if ((file_write_cb_data->fd = rrr_socket_open(name, O_CREAT|O_TRUNC|O_RDWR|O_SYNC, 0777, __func__, 0)) <= 0) {
 			RRR_MSG_0("Failed to open file %s for writing in %s: %s\n", name, __func__, rrr_strerror(errno));
 			bytes = -1;
 			goto out;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
+uint32_t rrr_crc32buf_init (const char *buf, rrr_biglength len, uint32_t crc32);
 uint32_t rrr_crc32buf (const char *buf, rrr_biglength len);
 uint32_t rrr_crc32cmp (const char *buf, rrr_biglength len, uint32_t crc32);
 
