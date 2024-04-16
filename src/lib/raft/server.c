@@ -168,7 +168,7 @@ struct rrr_raft_bridge {
 	int server_id;
 	enum rrr_raft_bridge_state state;
 	struct rrr_raft_bridge_metadata metadata;
-	struct raft_configuration *configuration;
+	struct raft_configuration configuration;
 };
 
 struct rrr_raft_server_state {
@@ -176,6 +176,7 @@ struct rrr_raft_server_state {
 	struct rrr_raft_message_store *message_store_state;
 	struct rrr_raft_bridge *bridge;
 	struct rrr_raft_task_list *tasks;
+	struct raft_configuration *configuration;
 /*	uint32_t change_req_index;
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;*/
@@ -1596,12 +1597,10 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 */
 
-static int __rrr_raft_bridge_start (
+static void __rrr_raft_bridge_start (
 		struct raft_event *event,
 		struct rrr_raft_bridge *bridge
 ) {
-	int ret = 0;
-
 	assert(!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
 
 	event->time = rrr_time_get_64() / 1000; 
@@ -1611,17 +1610,59 @@ static int __rrr_raft_bridge_start (
 	// TODO : Load persisted metadata here
 	//        - Set current_term, voted_for, metadata, entries and n_entries
 
-
 	event->start.term = 0;
 	event->start.voted_for = 0;
 	event->start.metadata = NULL;
 	event->start.start_index = 0;
 	event->start.entries = NULL;
 	event->start.n_entries = 0;
+}
+		
+static void __rrr_raft_bridge_cleanup (
+		struct rrr_raft_bridge *bridge
+) {
+	raft_configuration_close(&bridge->configuration);
+}
+
+static int __rrr_raft_bridge_configuration_clone (
+		struct raft_configuration *dest,
+		const struct raft_configuration *src
+) {
+	int ret = 0;
+
+	unsigned i, j;
+	struct raft_configuration conf;
+
+	assert(dest->servers == NULL && dest->n == 0);
+
+	if ((conf.servers = rrr_allocate(sizeof(*conf.servers) * src->n)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory for servers in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	for (i = 0; i < src->n; i++) {
+		conf.servers[i].id = src->servers[i].id;
+		conf.servers[i].role = src->servers[i].role;
+		if ((conf.servers[i].address = rrr_strdup(src->servers[i].address)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory for server name in %s\n", __func__);
+			ret = 1;
+			goto out_free_servers;
+		}
+	}
+
+	conf.n = src->n;
+
+	*dest = conf;
 
 	goto out;
+	out_free_servers:
+		for (j = 0; j < i; j++) {
+			rrr_free(conf.servers[j].address);
+		}
+		rrr_free(conf.servers);
 	out:
-	return ret;
+		return ret;
 }
 
 static void __rrr_raft_bridge_set_term (
@@ -1876,7 +1917,7 @@ static int __rrr_raft_bridge_encode_configuration (
 
 #define WRITE_BATCH_HEADER(entries, entry_count, crc)                                         \
     do {char *wpos_begin = wpos; WRITE_U64(entry_count);                                      \
-        for (const struct raft_entry *entry = NULL; entry < entries + entry_count; entry++) { \
+        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
 	    WRITE_U64(entry->term);                                                           \
 	    WRITE_U8(entry->type);                                                            \
 	    WRITE_U8(0);                                                                      \
@@ -1889,8 +1930,8 @@ static int __rrr_raft_bridge_encode_configuration (
 
 #define WRITE_BATCH_DATA(entries, entry_count, crc)                                           \
     do {                                                                                      \
-        for (const struct raft_entry *entry = NULL; entry < entries + entry_count; entry++) { \
-	    memcpy(wpos, entry->buf.data, entry->buf.len);                                    \
+        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
+	    memcpy(wpos, entry->buf.base, entry->buf.len);                                    \
 	    crc = rrr_crc32buf_init(wpos, entry->buf.len, crc);                               \
 	    wpos += entry->buf.len;                                                           \
 	}                                                                                     \
@@ -1901,18 +1942,18 @@ static int __rrr_raft_bridge_encode_entries (
 		size_t *data_size,
 		size_t preamble_size,
 		const struct raft_entry *entries,
-		unsigned entry_count,
+		unsigned entry_count
 ) {
 	int ret = 0;
 
 	size_t total_size = 0;
-	char *crc1_pos, crc2_pos, pos, buf = NULL;
+	char *crc1_pos, *crc2_pos, *buf = NULL;
 	uint32_t crc1 = 0xffffffff, crc2 = 0xffffffff;
 	unsigned i;
 
 	total_size += preamble_size;
 	total_size += sizeof(uint32_t) * 2;  /* Checksums */
-	total_size += BATCH_HEADER_SIZE(entry_count),
+	total_size += BATCH_HEADER_SIZE(entry_count);
 	for (i = 0; i < entry_count; i++) {
 		total_size += entries[i].buf.len;
 	}
@@ -1947,10 +1988,7 @@ static int __rrr_raft_bridge_encode_entries (
 
 static int __rrr_raft_bridge_encode_closed_segment (
 		char **data,
-		char *data_size,
-		struct rrr_raft_bridge *bridge,
-		raft_index first_index,
-		raft_index last_index,
+		size_t *data_size,
 		const char *conf,
 		size_t conf_size,
 		raft_term conf_term
@@ -1961,7 +1999,7 @@ static int __rrr_raft_bridge_encode_closed_segment (
 
 	entry.term = conf_term;
 	entry.type = RAFT_CHANGE;
-	entry.buf.data = conf;
+	entry.buf.base = (void *) conf;
 	entry.buf.len = conf_size;
 
 	if ((ret = __rrr_raft_bridge_encode_entries (
@@ -1982,10 +2020,8 @@ static int __rrr_raft_bridge_encode_closed_segment (
 	return ret;
 }
 
-static int __rrr_raft_bridge_write_closed_segment_with_configuration (
-		raft_index index,
+static int __rrr_raft_bridge_write_first_closed_segment_with_configuration (
 		const struct raft_configuration *conf,
-		raft_term conf_term,
 		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
 		const char *name,
 		struct rrr_raft_task_cb_data *cb_data
@@ -2006,12 +2042,9 @@ static int __rrr_raft_bridge_write_closed_segment_with_configuration (
 	if ((ret = __rrr_raft_bridge_encode_closed_segment (
 			&data,
 			&data_size,
-			bridge,
-			index,
-			index,
-			configuration_data
+			configuration_data,
 			configuration_data_size,
-			conf_term
+			1
 	)) != 0) {
 		goto out;
 	}
@@ -2030,21 +2063,6 @@ static int __rrr_raft_bridge_write_closed_segment_with_configuration (
 	RRR_FREE_IF_NOT_NULL(configuration_data);
 	RRR_FREE_IF_NOT_NULL(data);
 	return ret;
-}
-
-static int __rrr_raft_bridge_write_first_closed_segment (
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
-		const char *name,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	return __rrr_raft_bridge_write_closed_segment_with_configuration (
-			1,
-			conf,
-			1,
-			write_cb,
-			name,
-			cb_data
-	);
 }
 
 static int __rrr_raft_bridge_acknowledge (
@@ -2143,6 +2161,10 @@ static int __rrr_raft_bridge_acknowledge (
 								task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
 								__rrr_raft_task_list_push(&list_new, &task_new);
 							}
+							else {
+								__rrr_raft_bridge_start(&event, bridge);
+								goto step;
+							}
 						}
 						break;
 					default:
@@ -2151,8 +2173,11 @@ static int __rrr_raft_bridge_acknowledge (
 				};
 				break;
 			case RRR_RAFT_TASK_BOOTSTRAP:
-				// TODO : Get configuration from caller
 				__rrr_raft_bridge_set_term(bridge, 1);
+				if ((ret = __rrr_raft_bridge_configuration_clone(&bridge->configuration, task->bootstrap.configuration)) != 0) {
+					goto out_cleanup;
+				}
+
 				// Write metadata
 				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
 				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
@@ -2186,10 +2211,17 @@ static int __rrr_raft_bridge_acknowledge (
 						}
 						break;
 					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
-						if ((ret = __rrr_raft_bridge_write_first_closed_segment (
-								
-						RRR_MSG_0("TODO: Write configuration file\n");
-						break;
+						if ((ret = __rrr_raft_bridge_write_first_closed_segment_with_configuration (
+								&bridge->configuration,
+								task->writefile.write_cb,
+								(char *) TASK_LIST_RESOLVE(task->writefile.name),
+								&task->writefile.cb_data
+						)) != 0) {
+							goto out_cleanup;
+						}
+						
+						__rrr_raft_bridge_start(&event, bridge);
+						goto step;
 					default:
 						RRR_BUG("BUG: Unknown write file type %i in %s\n",
 							task->writefile.type, __func__);
@@ -2640,7 +2672,7 @@ int rrr_raft_server (
 	}
 
 	if ((ret = __rrr_raft_server_process_and_acknowledge(&state)) != 0) {
-		goto out_cleanup_tasks;
+		goto out_cleanup_bridge;
 	}
 
 	ret = rrr_event_dispatch(channel->queue);
@@ -2655,8 +2687,10 @@ int rrr_raft_server (
 	RRR_DBG_1("Cleared %llu expected results in raft server %i\n",
 		cleared_count, state.bridge->server_id);
 
-	goto out_cleanup_tasks;
-	out_cleanup_tasks:
+	goto out_cleanup_bridge;
+	out_cleanup_bridge:
+		__rrr_raft_bridge_cleanup(&bridge);
+//	out_cleanup_tasks:
 		__rrr_raft_task_list_cleanup(&tasks);
 	out_cleanup_configuration:
 		raft_configuration_close(&configuration);
