@@ -152,6 +152,7 @@ librrrraft_la_SOURCES = raft/arena.c \
                         raft/channel.c \
                         raft/client.c \
                         raft/common.c \
+			raft/log.c \
                         raft/message_store.c \
                         raft/server.c
 librrrraft_la_CFLAGS = ${RAFT_CFLAGS} ${AM_CFLAGS}

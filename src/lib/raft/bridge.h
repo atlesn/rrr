@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_H
 
 #include "arena.h"
+#include "log.h"
 
 #include <raft.h>
 
@@ -120,6 +121,9 @@ struct rrr_raft_bridge {
 	enum rrr_raft_bridge_state state;
 	struct rrr_raft_bridge_metadata metadata;
 	struct raft_configuration configuration;
+	struct rrr_raft_log log;
+	raft_index last_applied;
+	raft_index snapshot_index;
 };
 
 int rrr_raft_bridge_begin (
@@ -132,6 +136,19 @@ int rrr_raft_bridge_acknowledge (
 );
 void rrr_raft_bridge_cleanup (
 		struct rrr_raft_bridge *bridge
+);
+int rrr_raft_bridge_is_leader (
+		const struct rrr_raft_bridge *bridge
+);
+void rrr_raft_bridge_get_leader (
+		raft_id *id,
+		const char **address,
+		const struct rrr_raft_bridge *bridge
+);
+int rrr_raft_bridge_configuration_iterate (
+		const struct rrr_raft_bridge *bridge,
+		int (*cb)(raft_id server_id, const char *server, int role, int catch_up, void *arg),
+		void *cb_arg
 );
 
 #endif /* RRR_RAFT_BRIDGE_H */

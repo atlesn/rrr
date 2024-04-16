@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "bridge_enc.h"
 #include "bridge_task.h"
 #include "bridge_conf.h"
+#include "log.h"
 
 #include "../allocator.h"
 #include "../util/rrr_time.h"
@@ -168,6 +169,8 @@ static int __rrr_raft_bridge_ack_write_metadata (
 }
 
 static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
+		char **result_conf_data,
+		size_t *result_conf_data_size,
 		const struct raft_configuration *conf,
 		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
 		const char *name,
@@ -175,12 +178,12 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 ) {
 	int ret = 0;
 
-	char *configuration_data = NULL, *data = NULL;
-	size_t configuration_data_size, data_size;
+	char *conf_data = NULL, *data = NULL;
+	size_t conf_data_size, data_size;
 
 	if ((ret = rrr_raft_bridge_encode_configuration (
-			&configuration_data,
-			&configuration_data_size,
+			&conf_data,
+			&conf_data_size,
 			conf
 	)) != 0) {
 		goto out;
@@ -189,8 +192,8 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 	if ((ret = rrr_raft_bridge_encode_closed_segment (
 			&data,
 			&data_size,
-			configuration_data,
-			configuration_data_size,
+			conf_data,
+			conf_data_size,
 			1
 	)) != 0) {
 		goto out;
@@ -206,15 +209,23 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 		goto out;
 	}
 
+	*result_conf_data = conf_data;
+	*result_conf_data_size = conf_data_size;
+	conf_data = NULL;
+
 	out:
-	RRR_FREE_IF_NOT_NULL(configuration_data);
+	RRR_FREE_IF_NOT_NULL(conf_data);
 	RRR_FREE_IF_NOT_NULL(data);
 	return ret;
 }
 
 static void __rrr_raft_bridge_ack_start (
 		struct raft_event *event,
-		struct rrr_raft_bridge *bridge
+		struct rrr_raft_bridge *bridge,
+		raft_term term,
+		raft_index start_index,
+		struct raft_entry *entries,
+		unsigned entry_count
 ) {
 	assert(!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
 
@@ -222,15 +233,43 @@ static void __rrr_raft_bridge_ack_start (
 	event->capacity = 0;
 	event->type = RAFT_START;
 
-	// TODO : Load persisted metadata here
-	//        - Set current_term, voted_for, metadata, entries and n_entries
-
-	event->start.term = 0;
+	event->start.term = term;
 	event->start.voted_for = 0;
 	event->start.metadata = NULL;
-	event->start.start_index = 0;
-	event->start.entries = NULL;
-	event->start.n_entries = 0;
+	event->start.start_index = start_index;
+	event->start.entries = entries;
+	event->start.n_entries = entry_count;
+}
+
+static int __rrr_raft_bridge_ack_update_commit_index (
+		struct rrr_raft_bridge *bridge
+) {
+	int ret = 0;
+
+	raft_index commit_index, i;
+	const struct raft_entry *entry;
+
+	commit_index = raft_commit_index(bridge->raft);
+
+	if (commit_index != 0 && commit_index == bridge->snapshot_index) {
+		assert(0 && "Update commit index with index of snapshot not implemented");
+	}
+
+	if (bridge->last_applied == commit_index) {
+		goto out;
+	}
+
+	for (i = bridge->last_applied + 1; i <= commit_index; i++) {
+		if ((entry = rrr_raft_log_get(&bridge->log, i)) == NULL) {
+			// This can happen while installing a snapshot
+			// TODO : Why??
+			goto out;
+		}
+
+	}
+
+	out:
+	return ret;
 }
 
 #define TASK_LIST_RESOLVE(handle) \
@@ -247,8 +286,12 @@ int rrr_raft_bridge_acknowledge (
 	struct rrr_raft_task_list list_new = {0};
 	//struct raft_event event;
 	struct raft_event event;
+	struct raft_entry entry;
 	struct raft_update update;
 	struct rrr_raft_bridge_metadata metadata1, metadata2;
+	char *conf_data = NULL;
+	size_t conf_data_size;
+
 //	uint64_t now;
 
 	assert(list->count > 0);
@@ -331,7 +374,8 @@ int rrr_raft_bridge_acknowledge (
 								rrr_raft_task_list_push(&list_new, &task_new);
 							}
 							else {
-								__rrr_raft_bridge_ack_start(&event, bridge);
+								assert(0 && "Load configuration not implemented");
+								// __rrr_raft_bridge_ack_start(&event, bridge);
 								goto step;
 							}
 						}
@@ -381,7 +425,10 @@ int rrr_raft_bridge_acknowledge (
 						}
 						break;
 					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
+						assert(conf_data == NULL);
 						if ((ret = __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
+								&conf_data,
+								&conf_data_size,
 								&bridge->configuration,
 								task->writefile.write_cb,
 								(char *) TASK_LIST_RESOLVE(task->writefile.name),
@@ -389,8 +436,21 @@ int rrr_raft_bridge_acknowledge (
 						)) != 0) {
 							goto out_cleanup;
 						}
-						
-						__rrr_raft_bridge_ack_start(&event, bridge);
+
+						entry.term = 1;
+						entry.type = RAFT_CHANGE;
+						entry.buf.base = conf_data;
+						entry.buf.len = conf_data_size;
+						entry.batch = NULL;
+
+						__rrr_raft_bridge_ack_start (
+								&event,
+								bridge,
+								1,
+								1,
+								&entry,
+								1
+						);
 						goto step;
 					default:
 						RRR_BUG("BUG: Unknown write file type %i in %s\n",
@@ -437,7 +497,11 @@ int rrr_raft_bridge_acknowledge (
 		}
 
 		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
-			assert(0 && "Update commit index not implemented");
+			if ((ret = __rrr_raft_bridge_ack_update_commit_index (
+					bridge
+			)) != 0) {
+				goto out_cleanup;
+			}
 		}
 
 		if (update.flags & RAFT_UPDATE_TIMEOUT) {
@@ -462,6 +526,7 @@ int rrr_raft_bridge_acknowledge (
 	goto out_final;
 	out_cleanup:
 		rrr_raft_task_list_cleanup(&list_new);
+		RRR_FREE_IF_NOT_NULL(conf_data);
 	out_final:
 		return ret;
 }

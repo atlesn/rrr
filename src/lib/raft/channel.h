@@ -52,17 +52,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     struct rrr_msg_msg **msg,                          \
     void *arg
 
-#define RRR_RAFT_STATUS_TO_STR(s)                      \
-   ((s) == RRR_RAFT_STANDBY ? "STANDBY" :              \
-   ((s) == RRR_RAFT_VOTER ? "VOTER" :                  \
-   ((s) == RRR_RAFT_SPARE ? "SPARE" : "UNKNOWN")))
-
-#define RRR_RAFT_CATCH_UP_TO_STR(s)                                  \
-    ((s) == RRR_RAFT_CATCH_UP_NONE ? "NONE" :                        \
-    ((s) == RRR_RAFT_CATCH_UP_RUNNING ? "RUNNING" :                  \
-    ((s) == RRR_RAFT_CATCH_UP_ABORTED ? "ABORTED" :                  \
-    ((s) == RRR_RAFT_CATCH_UP_FINISHED ? "FINISHED" : "UNKNOWN"))))
-
 struct rrr_msg_msg;
 struct rrr_event_queue;
 struct rrr_fork_handler;

@@ -39,11 +39,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     wpos += sizeof(uint8_t)
 
 #define WRITE_U32(n)                        \
-    * (uint32_t *) wpos = rrr_htobe64(n);   \
+    * (uint32_t *) wpos = rrr_htole64(n);   \
     wpos += sizeof(uint32_t)
 
 #define WRITE_U64(n)                        \
-    * (uint64_t *) wpos = rrr_htobe64(n);   \
+    * (uint64_t *) wpos = rrr_htole64(n);   \
     wpos += sizeof(uint64_t)
 
 #define WRITE_STR(str)                      \
@@ -103,7 +103,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     char *rpos = (char *) buf; if (1)       \
 
 #define READ_U64(n)                         \
-    (n) = rrr_be64toh(* (uint64_t *) rpos); \
+    (n) = rrr_le64toh(* (uint64_t *) rpos); \
     rpos += sizeof(uint64_t)
 
 #define READ_VERIFY(buf,len)                \

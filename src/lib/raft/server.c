@@ -207,7 +207,6 @@ static void __rrr_raft_server_fsm_result_collection_clear (
 	}
 }
 
-/*
 static enum rrr_raft_code __rrr_raft_server_status_translate (
 		int status
 ) {
@@ -221,112 +220,118 @@ static enum rrr_raft_code __rrr_raft_server_status_translate (
 
 	return RRR_RAFT_ERROR;
 }
-static int __rrr_raft_server_make_opt_response_server_fields (
-		struct rrr_array *array,
-		struct raft *raft
+
+struct rrr_raft_server_make_opt_response_server_fields_iterate_cb_data {
+	struct rrr_array *array;
+};
+
+static int __rrr_raft_server_make_opt_response_server_fields_iterate_cb (
+		raft_id server_id,
+		const char *server,
+		int role,
+		int catch_up,
+		void *arg
 ) {
+	struct rrr_raft_server_make_opt_response_server_fields_iterate_cb_data *cb_data = arg;
+
 	int ret = 0;
 
-	struct rrr_raft_server server_tmp;
-	struct raft_server *raft_server;
-	int ret_tmp, catch_up;
-	unsigned i;
 	size_t address_len;
+	struct rrr_raft_server server_tmp = {0};
 
-	for (i = 0; i < raft->configuration.n; i++) {
-		server_tmp = (struct rrr_raft_server) {0};
+	address_len = strlen(server);
+	assert(address_len < sizeof(server_tmp.address));
+	memcpy(server_tmp.address, server, address_len + 1);
 
-		raft_server = raft->configuration.servers + i;
-		address_len = strlen(raft_server->address);
+	server_tmp.id = server_id;
 
-		assert(address_len < sizeof(server_tmp.address));
-		memcpy(server_tmp.address, raft_server->address, address_len + 1);
+	switch (role) {
+		case RAFT_STANDBY:
+			server_tmp.status = RRR_RAFT_STANDBY;
+			break;
+		case RAFT_VOTER:
+			server_tmp.status = RRR_RAFT_VOTER;
+			break;
+		case RAFT_SPARE:
+			server_tmp.status = RRR_RAFT_SPARE;
+			break;
+		default:
+			RRR_BUG("Unknown role %i in %s\n", role, __func__);
+	};
 
-		server_tmp.id = raft_server->id;
-
-		switch (raft_server->role) {
-			case RAFT_STANDBY:
-				server_tmp.status = RRR_RAFT_STANDBY;
-				break;
-			case RAFT_VOTER:
-				server_tmp.status = RRR_RAFT_VOTER;
-				break;
-			case RAFT_SPARE:
-				server_tmp.status = RRR_RAFT_SPARE;
-				break;
-			default:
-				RRR_BUG("Unknown role %i in %s\n", raft_server->role, __func__);
-		};
-
-		if (raft->state == RAFT_LEADER) {
-			if ((ret_tmp = raft_catch_up (raft, raft_server->id, &catch_up)) != 0) {
-				RRR_MSG_0("Failed to get catch up status for server %i in %s: %s %s\n",
-					raft_server->id, __func__, raft_errmsg(raft), raft_strerror(ret_tmp));
-				ret = 1;
-				goto out;
-			}
-
-			switch (catch_up) {
-				case RAFT_CATCH_UP_NONE:
-					server_tmp.catch_up = RRR_RAFT_CATCH_UP_NONE;
-					break;
-				case RAFT_CATCH_UP_RUNNING:
-					server_tmp.catch_up = RRR_RAFT_CATCH_UP_RUNNING;
-					break;
-				case RAFT_CATCH_UP_ABORTED:
-					server_tmp.catch_up = RRR_RAFT_CATCH_UP_ABORTED;
-					break;
-				case RAFT_CATCH_UP_FINISHED:
-					server_tmp.catch_up = RRR_RAFT_CATCH_UP_FINISHED;
-					break;
-				default:
-					RRR_BUG("BUG: Unknown catch up code %i from raft library in %s\n",
-						catch_up, __func__);
-			};
-		}
-		else {
+	switch (catch_up) {
+		case -1:
 			server_tmp.catch_up = RRR_RAFT_CATCH_UP_UNKNOWN;
-		}
+			break;
+		case RAFT_CATCH_UP_NONE:
+			server_tmp.catch_up = RRR_RAFT_CATCH_UP_NONE;
+			break;
+		case RAFT_CATCH_UP_RUNNING:
+			server_tmp.catch_up = RRR_RAFT_CATCH_UP_RUNNING;
+			break;
+		case RAFT_CATCH_UP_ABORTED:
+			server_tmp.catch_up = RRR_RAFT_CATCH_UP_ABORTED;
+			break;
+		case RAFT_CATCH_UP_FINISHED:
+			server_tmp.catch_up = RRR_RAFT_CATCH_UP_FINISHED;
+			break;
+		default:
+			RRR_BUG("BUG: Unknown catch up code %i from raft library in %s\n",
+				catch_up, __func__);
+	};
 
-		if ((ret = rrr_raft_opt_array_field_server_push (
-				array,
-				&server_tmp
-		)) != 0) {
-			RRR_MSG_0("Failed to push server in %s\n", __func__);
-			goto out;
-		}
+	if ((ret = rrr_raft_opt_array_field_server_push (
+			cb_data->array,
+			&server_tmp
+	)) != 0) {
+		RRR_MSG_0("Failed to push server in %s\n", __func__);
+		goto out;
 	}
 
 	out:
 	return ret;
 }
 
-*/
+
+static int __rrr_raft_server_make_opt_response_server_fields (
+		struct rrr_array *array,
+		struct rrr_raft_server_state *state
+) {
+	struct rrr_raft_bridge *bridge = state->bridge;
+
+	struct rrr_raft_server_make_opt_response_server_fields_iterate_cb_data cb_data = {
+		array
+	};
+
+	return rrr_raft_bridge_configuration_iterate (
+			bridge,
+			__rrr_raft_server_make_opt_response_server_fields_iterate_cb,
+			&cb_data
+	);
+}
+
 static int __rrr_raft_server_make_opt_response (
 		struct rrr_msg_msg **result,
-		void *raft,
-//		struct raft *raft,
+		struct rrr_raft_server_state *state,
 		rrr_u32 req_index
 ) {
-	(void)(raft);
+	struct rrr_raft_bridge *bridge = state->bridge;
 
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
 	struct rrr_array array_tmp = {0};
-//	raft_id leader_id;
-//	const char *leader_address;
+	raft_id leader_id;
+	const char *leader_address;
 
 	*result = NULL;
 
-	assert(0 && "make opt response, missing helpers in bridge");
-
-/*	raft_leader(raft, &leader_id, &leader_address);
+	rrr_raft_bridge_get_leader(&leader_id, &leader_address, bridge);
 
 	ret |= rrr_array_push_value_i64_with_tag (
 			&array_tmp,
 			RRR_RAFT_FIELD_IS_LEADER,
-			raft->state == RAFT_LEADER
+			rrr_raft_bridge_is_leader(bridge)
 	);
 	ret |= rrr_array_push_value_i64_with_tag (
 			&array_tmp,
@@ -337,19 +342,19 @@ static int __rrr_raft_server_make_opt_response (
 			&array_tmp,
 			RRR_RAFT_FIELD_LEADER_ADDRESS,
 			leader_address != NULL ? leader_address : ""
-	);*/
+	);
 
 	if (ret != 0) {
 		RRR_MSG_0("Failed to push array values in %s\n", __func__);
 		goto out;
 	}
 
-/*	if ((ret = __rrr_raft_server_make_opt_response_server_fields (
+	if ((ret = __rrr_raft_server_make_opt_response_server_fields (
 			&array_tmp,
-			raft
+			state
 	)) != 0) {
 		goto out;
-	}*/
+	}
 
 	if ((ret = rrr_array_new_message_from_array (
 			&msg,
@@ -803,8 +808,6 @@ static int __rrr_raft_server_read_msg_cb (
 ) {
 	struct rrr_raft_server_state *state = arg2;
 	struct rrr_raft_bridge *bridge = state->bridge;
-	(void)(bridge);
-//	struct raft *raft = state->raft;
 
 	(void)(arg1);
 
@@ -813,12 +816,12 @@ static int __rrr_raft_server_read_msg_cb (
 //	int ret_tmp;
 //	struct raft_buffer buf = {0};
 //	struct raft_apply *req;
-//	struct rrr_msg msg = {0};
+	struct rrr_msg msg = {0};
 	struct rrr_msg_msg *msg_msg = NULL;
 
 	assert((*message)->msg_value > 0);
 
-/*	if (MSG_IS_OPT(*message)) {
+	if (MSG_IS_OPT(*message)) {
 		if (MSG_IS_ARRAY(*message)) {
 			ret = __rrr_raft_server_handle_cmd (
 					state,
@@ -830,7 +833,7 @@ static int __rrr_raft_server_read_msg_cb (
 
 		if ((ret = __rrr_raft_server_make_opt_response (
 				&msg_msg,
-				bridge->raft,
+				state,
 				(*message)->msg_value
 		)) != 0) {
 			goto out;
@@ -860,11 +863,11 @@ static int __rrr_raft_server_read_msg_cb (
 		goto out_send_ctrl_msg;
 	}
 
-	if (bridge->raft->state != RAFT_LEADER) {
+	if (!rrr_raft_bridge_is_leader(bridge)) {
 		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_NOT_LEADER), (*message)->msg_value);
 		goto out_send_ctrl_msg;
-	}*/
+	}
 
 /*	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
 	if ((buf.base = raft_calloc(1, buf.len)) == NULL) {
@@ -905,11 +908,10 @@ static int __rrr_raft_server_read_msg_cb (
 	goto out;
 //	out_free_req:
 //		raft_free(req);
-//	out_send_ctrl_msg:
+	out_send_ctrl_msg:
 		// Status messages are to be emitted before result messages
-		assert(0 && "Apply status message not implemented");
-//		__rrr_raft_server_send_msg_in_loop(state->channel, state->loop, &msg);
-//	out_send_msg_msg:
+		__rrr_raft_server_send_msg_in_loop(state, &msg);
+	out_send_msg_msg:
 		if (msg_msg != NULL) {
 			__rrr_raft_server_send_msg_in_loop(state, (struct rrr_msg *) msg_msg);
 		}
