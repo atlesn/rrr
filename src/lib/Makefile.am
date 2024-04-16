@@ -143,11 +143,17 @@ endif
 
 if RRR_WITH_RAFT
 libadd_rrrraft = librrrraft.la
-librrrraft_la_SOURCES = raft/channel.c \
+librrrraft_la_SOURCES = raft/arena.c \
+                        raft/bridge.c \
+                        raft/bridge_ack.c \
+                        raft/bridge_conf.c \
+                        raft/bridge_enc.c \
+                        raft/bridge_task.c \
+                        raft/channel.c \
                         raft/client.c \
-                        raft/server.c \
+                        raft/common.c \
                         raft/message_store.c \
-			raft/common.c
+                        raft/server.c
 librrrraft_la_CFLAGS = ${RAFT_CFLAGS} ${AM_CFLAGS}
 librrrraft_la_LIBADD = ${RAFT_LIBS}
 librrrraft_extra_libadd = ${RAFT_LIBS}

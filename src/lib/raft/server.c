@@ -19,9 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-//#include <uv.h>
-#include <raft.h>
-//#include <raft/uv.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -30,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "channel.h"
 #include "channel_struct.h"
 #include "message_store.h"
+#include "bridge.h"
+#include "bridge_task.h"
 
 #include "../allocator.h"
 #include "../array.h"
@@ -46,31 +45,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_time.h"
-#include "../util/rrr_endian.h"
-#include "../util/gnu.h"
-#include "../util/crc32.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
 
 #define RRR_RAFT_SERVER_DBG_FILE(name, msg, ...) \
     RRR_DBG_3("Raft [%i][server][%s] " msg "\n", state->bridge->server_id, name, __VA_ARGS__)
-
-#define RRR_RAFT_BRIDGE_DBG_ARGS(msg, ...) \
-    RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
-
-#define RRR_RAFT_BRIDGE_DBG(msg) \
-    RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
-
-#define RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT "%016llu-%016llu"
-#define RRR_RAFT_FILE_NAME_PREFIX_METADATA "metadata"
-
-#define RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(from, to) \
-    RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT, (unsigned long long) from, (unsigned long long) to
-
-#define RRR_RAFT_ARENA_SENTINEL
-
-#define RRR_RAFT_DISK_FORMAT 1 /* Same format as C-raft */
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -82,93 +62,6 @@ struct rrr_raft_server_fsm_result_collection {
 	struct rrr_raft_server_fsm_result *results;
 	size_t wpos;
 	size_t capacity;
-};
-
-enum rrr_raft_task_type {
-	RRR_RAFT_TASK_TIMEOUT = 1,
-	RRR_RAFT_TASK_READ_FILE = 2,
-	RRR_RAFT_TASK_BOOTSTRAP = 3,
-	RRR_RAFT_TASK_WRITE_FILE = 4
-};
-
-enum rrr_raft_file_type {
-	RRR_RAFT_FILE_TYPE_CONFIGURATION = 1,
-	RRR_RAFT_FILE_TYPE_METADATA = 2
-};
-
-struct rrr_raft_task_cb_data {
-	void *ptr;
-	union {
-		char data[sizeof(uint64_t) * 3];
-	};
-};
-
-struct rrr_raft_arena {
-	void *data;
-	size_t pos;
-	size_t size;
-};
-
-typedef size_t rrr_raft_arena_handle;
-
-#define RRR_RAFT_BRIDGE_READFILE_CB_ARGS \
-    const char *name, char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data
-
-#define RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS \
-    const char *name, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
-
-struct rrr_raft_task {
-	enum rrr_raft_task_type type;
-	union {
-		struct {
-			uint64_t time;
-		} timeout;
-		struct {
-			enum rrr_raft_file_type type;
-			rrr_raft_arena_handle name;
-			// Set by implementation if file exists and called upon acknowledge
-			// until it returns 0 which means completion
-			ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS);
-			struct rrr_raft_task_cb_data cb_data;
-		} readfile;
-		struct {
-			struct raft_configuration *configuration;
-		} bootstrap;
-		struct {
-			enum rrr_raft_file_type type;
-			rrr_raft_arena_handle name;
-			// Set by implementation and called upon acknowledge
-			// multiple times and the last time with 0 size which means completion
-			ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS);
-			struct rrr_raft_task_cb_data cb_data;
-		} writefile;
-	};
-};
-
-struct rrr_raft_task_list {
-	struct rrr_raft_arena arena;
-	rrr_raft_arena_handle tasks;
-	size_t count;
-	size_t capacity;
-};
-
-enum rrr_raft_bridge_state {
-	RRR_RAFT_BRIDGE_STATE_STARTED = 1,
-	RRR_RAFT_BRIDGE_STATE_CONFIGURED
-};
-
-struct rrr_raft_bridge_metadata {
-	unsigned long long version;
-	raft_term term;
-	raft_id voted_for;
-};
-
-struct rrr_raft_bridge {
-	struct raft *raft;
-	int server_id;
-	enum rrr_raft_bridge_state state;
-	struct rrr_raft_bridge_metadata metadata;
-	struct raft_configuration configuration;
 };
 
 struct rrr_raft_server_state {
@@ -215,235 +108,6 @@ static inline void *__rrr_raft_server_aligned_alloc (void *data, size_t alignmen
 static inline void __rrr_raft_server_aligned_free (void *data, size_t alignment, void *ptr) {
 	(void)(data);
 	return rrr_aligned_free(alignment, ptr);
-}
-
-static void __rrr_raft_arena_cleanup (
-		struct rrr_raft_arena *arena
-) {
-	RRR_FREE_IF_NOT_NULL(arena->data);
-	arena->pos = 0;
-	arena->size = 0;
-}
-
-static void __rrr_raft_arena_reset (
-		struct rrr_raft_arena *arena
-) {
-	arena->pos = 0;
-}
-
-static rrr_raft_arena_handle __rrr_raft_arena_alloc (
-		struct rrr_raft_arena *arena,
-		size_t size
-) {
-	static const size_t align = sizeof(uint64_t);
-	static const size_t alloc_min = 65536;
-
-	size_t size_new, pos;
-	void *data_new;
-
-	assert(size > 0);
-
-	size += align - (size % align);
-#ifdef RRR_RAFT_ARENA_SENTINEL
-	size += sizeof(uint64_t);
-	if (arena->data != NULL && * (uint64_t *) (arena->data + arena->pos - sizeof(uint64_t)) != 0xdeadbeefdeadbeef) {
-		RRR_BUG("BUG: Sentinel overwritten in %s, data is %016llx\n",
-			__func__,
-			(unsigned long long) * (uint64_t *) (arena->data + arena->pos - sizeof(uint64_t))
-		);
-	}
-#endif /* RRR_RAFT_ARENA_SENTINEL */
-
-	if (arena->pos + size > arena->size) {
-		size_new = arena->size + size;
-		size_new += alloc_min - (size_new % alloc_min);
-		assert(size_new > arena->size);
-
-		if ((data_new = rrr_reallocate(arena->data, size_new)) == NULL) {
-			RRR_BUG("CRITICAL: Failed to allocate memory in %s\n", __func__);
-		}
-
-		arena->data = data_new;
-		arena->size = size_new;
-	}
-
-#ifdef RRR_RAFT_ARENA_SENTINEL
-	* (uint64_t *) (arena->data + arena->pos + size - sizeof(uint64_t)) = 0xdeadbeefdeadbeef;
-#endif
-
-	pos = arena->pos;
-	arena->pos += size;
-	return pos;
-}
-
-static inline void *__rrr_raft_arena_resolve (
-		struct rrr_raft_arena *arena,
-		rrr_raft_arena_handle handle
-) {
-	assert(handle < arena->pos);
-	return arena->data + handle;
-}
-
-#define ARENA_RESOLVE(handle) \
-    (arena->data + handle)
-
-static rrr_raft_arena_handle __rrr_raft_arena_strdup (
-		struct rrr_raft_arena *arena,
-		const char *str
-) {
-	rrr_raft_arena_handle handle;
-	char *data;
-	size_t len;
-
-	len = strlen(str);
-	handle = __rrr_raft_arena_alloc(arena, len);
-	data = ARENA_RESOLVE(handle);
-	memcpy(data, str, len + 1);
-
-	return handle;
-}
-
-static rrr_raft_arena_handle __rrr_raft_arena_memdup (
-		struct rrr_raft_arena *arena,
-		void *ptr,
-		size_t size
-) {
-	rrr_raft_arena_handle handle_new;
-	char *ptr_new;
-
-	handle_new = __rrr_raft_arena_alloc(arena, size);
-	ptr_new = ARENA_RESOLVE(handle_new);
-
-	memcpy(ptr_new, ptr, size);
-
-	return handle_new;
-}
-
-static rrr_raft_arena_handle __rrr_raft_arena_vasprintf (
-		struct rrr_raft_arena *arena,
-		const char *format,
-		va_list args
-) {
-	char *tmp;
-	rrr_raft_arena_handle handle;
-	int bytes;
-
-	if ((bytes = rrr_vasprintf(&tmp, format, args)) < 0) {
-		RRR_BUG("CRITICAL: Failed to allocate memory in %s\n", __func__);
-	}
-
-	handle = __rrr_raft_arena_memdup(arena, tmp, bytes + 1);
-
-	rrr_free(tmp);
-
-	return handle;
-}
-
-static rrr_raft_arena_handle __rrr_raft_arena_realloc (
-		struct rrr_raft_arena *arena,
-		rrr_raft_arena_handle handle,
-		size_t size,
-		size_t oldsize
-) {
-	rrr_raft_arena_handle handle_new;
-	void *ptr, *data;
-
-	handle_new = __rrr_raft_arena_alloc(arena, size);
-	data = ARENA_RESOLVE(handle_new);
-
-	if (oldsize > 0) {
-		ptr = ARENA_RESOLVE(handle);
-
-		if (oldsize < size) {
-			memcpy(data, ptr, oldsize);
-		}
-		else {
-			memcpy(data, ptr, size);
-		}
-	}
-
-	return handle_new;
-}
-
-static void __rrr_raft_task_list_push (
-		struct rrr_raft_task_list *list,
-		struct rrr_raft_task *task
-) {
-	struct rrr_raft_arena *arena = &list->arena;
-
-	size_t capacity_new;
-	struct rrr_raft_task *tasks;
-	rrr_raft_arena_handle tasks_handle_new;
-
-	if (list->count == list->capacity) {
-		capacity_new = list->capacity + 4;
-		tasks_handle_new = __rrr_raft_arena_realloc (
-				&list->arena,
-				list->tasks,
-				sizeof(*tasks) * capacity_new,
-				sizeof(*tasks) * list->capacity
-		);
-		tasks = ARENA_RESOLVE(tasks_handle_new);
-
-		memset(tasks + list->capacity, '\0', sizeof(*tasks) * (capacity_new - list->capacity));
-
-		list->capacity = capacity_new;
-		list->tasks = tasks_handle_new;
-	}
-	else {
-		tasks = ARENA_RESOLVE(list->tasks);
-	}
-
-	tasks[list->count++] = *task;
-}
-
-static void __rrr_raft_task_list_cleanup (
-		struct rrr_raft_task_list *list
-) {
-	__rrr_raft_arena_cleanup(&list->arena);
-}
-
-static struct rrr_raft_task *__rrr_raft_task_list_get (
-		struct rrr_raft_task_list *list
-) {
-	struct rrr_raft_arena *arena = &list->arena;
-	return ARENA_RESOLVE(list->tasks);
-}
-
-static inline void *__rrr_raft_task_list_resolve (
-		struct rrr_raft_task_list *list,
-		rrr_raft_arena_handle handle
-) {
-	struct rrr_raft_arena *arena = &list->arena;
-	return ARENA_RESOLVE(handle);
-}
-
-#define TASK_LIST_RESOLVE(handle) \
-    (__rrr_raft_task_list_resolve(list, handle))
-
-static rrr_raft_arena_handle __rrr_raft_task_list_strdup (
-		struct rrr_raft_task_list *list,
-		const char *str
-) {
-	struct rrr_raft_arena *arena = &list->arena;
-	return __rrr_raft_arena_strdup(arena, str);
-}
-
-static rrr_raft_arena_handle __rrr_raft_task_list_asprintf (
-		struct rrr_raft_task_list *list,
-		const char *format,
-		...
-) {
-	static rrr_raft_arena_handle handle;
-	va_list args;
-
-	va_start(args, format);
-
-	handle = __rrr_raft_arena_vasprintf(&list->arena, format, args);
-
-	va_end(args);
-
-	return handle;
 }
 
 static void __rrr_raft_server_fsm_result_clear (
@@ -543,6 +207,7 @@ static void __rrr_raft_server_fsm_result_collection_clear (
 	}
 }
 
+/*
 static enum rrr_raft_code __rrr_raft_server_status_translate (
 		int status
 ) {
@@ -556,7 +221,6 @@ static enum rrr_raft_code __rrr_raft_server_status_translate (
 
 	return RRR_RAFT_ERROR;
 }
-
 static int __rrr_raft_server_make_opt_response_server_fields (
 		struct rrr_array *array,
 		struct raft *raft
@@ -637,21 +301,27 @@ static int __rrr_raft_server_make_opt_response_server_fields (
 	return ret;
 }
 
+*/
 static int __rrr_raft_server_make_opt_response (
 		struct rrr_msg_msg **result,
-		struct raft *raft,
+		void *raft,
+//		struct raft *raft,
 		rrr_u32 req_index
 ) {
+	(void)(raft);
+
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
 	struct rrr_array array_tmp = {0};
-	raft_id leader_id;
-	const char *leader_address;
+//	raft_id leader_id;
+//	const char *leader_address;
 
 	*result = NULL;
 
-	raft_leader(raft, &leader_id, &leader_address);
+	assert(0 && "make opt response, missing helpers in bridge");
+
+/*	raft_leader(raft, &leader_id, &leader_address);
 
 	ret |= rrr_array_push_value_i64_with_tag (
 			&array_tmp,
@@ -667,19 +337,19 @@ static int __rrr_raft_server_make_opt_response (
 			&array_tmp,
 			RRR_RAFT_FIELD_LEADER_ADDRESS,
 			leader_address != NULL ? leader_address : ""
-	);
+	);*/
 
 	if (ret != 0) {
 		RRR_MSG_0("Failed to push array values in %s\n", __func__);
 		goto out;
 	}
 
-	if ((ret = __rrr_raft_server_make_opt_response_server_fields (
+/*	if ((ret = __rrr_raft_server_make_opt_response_server_fields (
 			&array_tmp,
 			raft
 	)) != 0) {
 		goto out;
-	}
+	}*/
 
 	if ((ret = rrr_array_new_message_from_array (
 			&msg,
@@ -1133,6 +803,7 @@ static int __rrr_raft_server_read_msg_cb (
 ) {
 	struct rrr_raft_server_state *state = arg2;
 	struct rrr_raft_bridge *bridge = state->bridge;
+	(void)(bridge);
 //	struct raft *raft = state->raft;
 
 	(void)(arg1);
@@ -1140,14 +811,14 @@ static int __rrr_raft_server_read_msg_cb (
 	int ret = 0;
 
 //	int ret_tmp;
-	struct raft_buffer buf = {0};
+//	struct raft_buffer buf = {0};
 //	struct raft_apply *req;
-	struct rrr_msg msg = {0};
+//	struct rrr_msg msg = {0};
 	struct rrr_msg_msg *msg_msg = NULL;
 
 	assert((*message)->msg_value > 0);
 
-	if (MSG_IS_OPT(*message)) {
+/*	if (MSG_IS_OPT(*message)) {
 		if (MSG_IS_ARRAY(*message)) {
 			ret = __rrr_raft_server_handle_cmd (
 					state,
@@ -1193,19 +864,19 @@ static int __rrr_raft_server_read_msg_cb (
 		RRR_MSG_0("Warning: Refusing message to be stored. Not leader.\n");
 		rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_NACK_REASON(RRR_RAFT_NOT_LEADER), (*message)->msg_value);
 		goto out_send_ctrl_msg;
-	}
+	}*/
 
-	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
+/*	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
 	if ((buf.base = raft_calloc(1, buf.len)) == NULL) {
 		RRR_MSG_0("Failed to allocate memory for buffer in %s\n", __func__);
 		ret = 1;
 		goto out;
-	}
+	}*/
 
 	// Message in message store on disk stored with network endianess
-	memcpy(buf.base, *message, MSG_TOTAL_SIZE(*message));
-	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf.base);
-	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf.base);
+//	memcpy(buf.base, *message, MSG_TOTAL_SIZE(*message));
+//	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf.base);
+//	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf.base);
 
 	assert(0 && "Raft apply not implemented");
 
@@ -1234,18 +905,18 @@ static int __rrr_raft_server_read_msg_cb (
 	goto out;
 //	out_free_req:
 //		raft_free(req);
-	out_send_ctrl_msg:
+//	out_send_ctrl_msg:
 		// Status messages are to be emitted before result messages
 		assert(0 && "Apply status message not implemented");
 //		__rrr_raft_server_send_msg_in_loop(state->channel, state->loop, &msg);
-	out_send_msg_msg:
+//	out_send_msg_msg:
 		if (msg_msg != NULL) {
 			__rrr_raft_server_send_msg_in_loop(state, (struct rrr_msg *) msg_msg);
 		}
 	out:
 		RRR_FREE_IF_NOT_NULL(msg_msg);
-		if (buf.base != NULL)
-			raft_free(buf.base);
+//		if (buf.base != NULL)
+//			raft_free(buf.base);
 		return ret;
 }
 
@@ -1253,12 +924,17 @@ static int __rrr_raft_server_msg_to_host (
 		struct rrr_msg_msg *msg,
 		rrr_length actual_length
 ) {
+	(void)(msg);
+	(void)(actual_length);
+
 	int ret = 0;
 
-	rrr_length stated_length;
-	int ret_tmp;
+//	rrr_length stated_length;
+//	int ret_tmp;
 
-	if ((ret_tmp = rrr_msg_get_target_size_and_check_checksum (
+	assert(0 && "server msg to host not implemented");
+
+/*	if ((ret_tmp = rrr_msg_get_target_size_and_check_checksum (
 			&stated_length,
 			(struct rrr_msg *) msg,
 			actual_length
@@ -1291,16 +967,23 @@ static int __rrr_raft_server_msg_to_host (
 		RRR_MSG_0("Message endian conversion failed in %s\n", __func__);
 		ret = RAFT_MALFORMED;
 		goto out;
-	}
+	}*/
 
+	goto out;
 	out:
 	return ret;
 }
 
 static int __rrr_raft_server_buf_msg_to_host (
 		struct rrr_msg_msg **msg,
-		const struct raft_buffer *buf
+//		const struct raft_buffer *buf
+		const void *buf
 ) {
+	(void)(msg);
+	(void)(buf);
+
+	assert(0 && "buf msg to host not implemented");
+/*
 	int ret = 0;
 
 	struct rrr_msg_msg *msg_tmp;
@@ -1325,7 +1008,8 @@ static int __rrr_raft_server_buf_msg_to_host (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	return ret;
+	return ret;*/
+	return 0;
 }
 
 static int __rrr_raft_server_read_msg_ctrl_cb (
@@ -1597,735 +1281,6 @@ static int __rrr_raft_server_fsm_restore_cb (
 
 */
 
-static void __rrr_raft_bridge_start (
-		struct raft_event *event,
-		struct rrr_raft_bridge *bridge
-) {
-	assert(!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
-
-	event->time = rrr_time_get_64() / 1000; 
-	event->capacity = 0;
-	event->type = RAFT_START;
-
-	// TODO : Load persisted metadata here
-	//        - Set current_term, voted_for, metadata, entries and n_entries
-
-	event->start.term = 0;
-	event->start.voted_for = 0;
-	event->start.metadata = NULL;
-	event->start.start_index = 0;
-	event->start.entries = NULL;
-	event->start.n_entries = 0;
-}
-		
-static void __rrr_raft_bridge_cleanup (
-		struct rrr_raft_bridge *bridge
-) {
-	raft_configuration_close(&bridge->configuration);
-}
-
-static int __rrr_raft_bridge_configuration_clone (
-		struct raft_configuration *dest,
-		const struct raft_configuration *src
-) {
-	int ret = 0;
-
-	unsigned i, j;
-	struct raft_configuration conf;
-
-	assert(dest->servers == NULL && dest->n == 0);
-
-	if ((conf.servers = rrr_allocate(sizeof(*conf.servers) * src->n)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory for servers in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	for (i = 0; i < src->n; i++) {
-		conf.servers[i].id = src->servers[i].id;
-		conf.servers[i].role = src->servers[i].role;
-		if ((conf.servers[i].address = rrr_strdup(src->servers[i].address)) == NULL) {
-			RRR_MSG_0("Failed to allocate memory for server name in %s\n", __func__);
-			ret = 1;
-			goto out_free_servers;
-		}
-	}
-
-	conf.n = src->n;
-
-	*dest = conf;
-
-	goto out;
-	out_free_servers:
-		for (j = 0; j < i; j++) {
-			rrr_free(conf.servers[j].address);
-		}
-		rrr_free(conf.servers);
-	out:
-		return ret;
-}
-
-static void __rrr_raft_bridge_set_term (
-		struct rrr_raft_bridge *bridge,
-		raft_term term
-) {
-	bridge->metadata.version++;
-	bridge->metadata.term = term;
-	bridge->metadata.voted_for = 0;
-}
-
-static int __rrr_raft_bridge_read_file (
-		char **data,
-		size_t *data_size,
-		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS),
-		const char *name,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	int ret = 0;
-
-	ssize_t bytes;
-	char buf[65536];
-	char *result = NULL, *result_new;
-	size_t result_size = 0, result_pos = 0;
-
-	do {
-		if ((bytes = read_cb(name, buf, sizeof(buf), cb_data)) < 0) {
-			ret = 1;
-			goto out;
-		}
-		else if (bytes > 0) {
-			if (result_pos + bytes > result_size) {
-				if ((result_new = rrr_reallocate(result, result_size + sizeof(buf))) == NULL) {
-					RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-					ret = 1;
-					goto out;
-				}
-				result_size += sizeof(buf);
-				result = result_new;
-			}
-			memcpy(result + result_pos, buf, bytes);
-			result_pos += bytes;
-		}
-	} while (bytes > 0);
-
-	*data = result;
-	*data_size = result_pos;
-	result = NULL;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(result);
-	return ret;
-}
-
-#define READ(buf)                           \
-    char *rpos = (char *) buf; if (1)       \
-
-#define READ_U64(n)                         \
-    (n) = rrr_be64toh(* (uint64_t *) rpos); \
-    rpos += sizeof(uint64_t)
-
-static int __rrr_raft_bridge_read_metadata (
-		struct rrr_raft_bridge_metadata *metadata,
-		struct rrr_raft_bridge *bridge,
-		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS),
-		const char *name,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	int ret = 0;
-
-	(void)(bridge);
-
-	char *data = NULL;
-	size_t data_size;
-	uint64_t format, version, term, voted_for;
-
-	metadata->version = 0;
-	metadata->term = 0;
-	metadata->voted_for = 0;
-
-	if ((ret = __rrr_raft_bridge_read_file (&data, &data_size, read_cb, name, cb_data)) != 0) {
-		goto out;
-	}
-
-	if (data_size == 0) {
-		goto out;
-	}
-
-	if (data_size != 4 * sizeof(uint64_t)) {
-		RRR_MSG_0("Warning: Incorrect size %llu for metadata file '%s', ignoring it\n", (unsigned long long) data_size, name);
-		goto out;
-	}
-
-	READ(data) {
-		READ_U64(format);
-		READ_U64(version);
-		READ_U64(term);
-		READ_U64(voted_for);
-	}
-
-	if (format != RRR_RAFT_DISK_FORMAT) {
-		RRR_MSG_0("Warning: Incorrect format %llu for metadata file '%s', ignoring it\n", (unsigned long long) format, name);
-		goto out;
-	}
-
-	metadata->version = version;
-	metadata->term = term;
-	metadata->voted_for = voted_for;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(data);
-	return ret;
-}
-
-static int __rrr_raft_bridge_write (
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
-		const char *name,
-		const char *data,
-		size_t data_size,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	int ret = 0;
-
-	size_t pos;
-	ssize_t bytes;
-
-	for (pos = 0; pos < data_size; pos += bytes) {
-		if ((bytes = write_cb(name, data + pos, data_size - pos, cb_data)) < 0) {
-			ret = 1;
-			goto out;
-		}
-		assert(bytes > 0);
-	}
-
-	assert(pos == data_size);
-
-	if ((bytes = write_cb(name, NULL, 0, cb_data)) < 0) {
-		ret = 1;
-		goto out;
-	}
-	assert(bytes == 0);
-
-	out:
-	return ret;
-}
-
-#define WRITE(buf)                          \
-    char *wpos = (char *) (buf); if (1)     \
-
-#define WRITE_U8(n)                         \
-    * (uint8_t *) wpos = n;                 \
-    wpos += sizeof(uint8_t)
-
-#define WRITE_U32(n)                        \
-    * (uint32_t *) wpos = rrr_htobe64(n);   \
-    wpos += sizeof(uint32_t)
-
-#define WRITE_U64(n)                        \
-    * (uint64_t *) wpos = rrr_htobe64(n);   \
-    wpos += sizeof(uint64_t)
-
-#define WRITE_STR(str)                      \
-    do {size_t len = strlen(str);           \
-        memcpy(wpos, str, len + 1);         \
-	wpos += len + 1;                    \
-    } while(0)
-
-#define WRITE_POS()                         \
-    wpos
-
-#define WRITE_INC(n)                        \
-   wpos += n
-
-#define WRITE_VERIFY(buf,len)               \
-    assert((uintptr_t) wpos - (uintptr_t) (buf) == (uintptr_t) len)
-
-static int __rrr_raft_bridge_write_metadata (
-		struct rrr_raft_bridge *bridge,
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
-		const char *name,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	(void)(bridge);
-
-	uint64_t data[4];
-
-	WRITE(data) {
-		WRITE_U64(RRR_RAFT_DISK_FORMAT);
-		WRITE_U64(bridge->metadata.version);
-		WRITE_U64(bridge->metadata.term);
-		WRITE_U64(bridge->metadata.voted_for);
-	}
-	WRITE_VERIFY(data,sizeof(data));
-
-	return __rrr_raft_bridge_write(write_cb, name, (const char *) data, sizeof(data), cb_data);
-}
-
-static int __rrr_raft_bridge_encode_configuration (
-		char **data,
-		size_t *data_size,
-		const struct raft_configuration *conf
-) {
-	int ret = 0;
-
-	size_t total_size = 0;
-	unsigned i;
-	struct raft_server *server;
-	char *buf = NULL;
-
-	total_size += sizeof(uint8_t);  /* Format */
-	total_size += sizeof(uint64_t); /* Server count */
-
-	for (i = 0; i < conf->n; i++) {
-		server = conf->servers + i;
-		assert(server->address != NULL);
-		total_size += sizeof(uint64_t);            /* Server ID */
-		total_size += strlen(server->address) + 1; /* Server address */
-		total_size += sizeof(uint8_t);             /* Voting flag */
-	}
-
-	if ((buf = rrr_allocate(total_size)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	WRITE(buf) {
-		WRITE_U8(RRR_RAFT_DISK_FORMAT);
-		WRITE_U64(conf->n);
-		for (i = 0; i < conf->n; i++) {
-			server = conf->servers + i;
-			WRITE_U64(server->id);
-			WRITE_STR(server->address);
-			WRITE_U8(server->role);
-		}
-	}
-	WRITE_VERIFY(buf,total_size);
-
-	*data = buf;
-	*data_size = total_size;
-	buf = NULL;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(buf);
-	return ret;
-}
-
-#define BATCH_HEADER_SIZE(n) (                        \
-        sizeof(uint64_t) +       /* Entry count */    \
-        sizeof(uint64_t) * 2 * n /* Entry headers */  \
-    )
-
-#define WRITE_BATCH_HEADER(entries, entry_count, crc)                                         \
-    do {char *wpos_begin = wpos; WRITE_U64(entry_count);                                      \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
-	    WRITE_U64(entry->term);                                                           \
-	    WRITE_U8(entry->type);                                                            \
-	    WRITE_U8(0);                                                                      \
-	    WRITE_U8(0);                                                                      \
-	    WRITE_U8(0);                                                                      \
-            WRITE_U32(entry->buf.len);                                                        \
-	}                                                                                     \
-        crc = rrr_crc32buf_init(wpos_begin, wpos - wpos_begin, crc);                          \
-    } while (0)
-
-#define WRITE_BATCH_DATA(entries, entry_count, crc)                                           \
-    do {                                                                                      \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
-	    memcpy(wpos, entry->buf.base, entry->buf.len);                                    \
-	    crc = rrr_crc32buf_init(wpos, entry->buf.len, crc);                               \
-	    wpos += entry->buf.len;                                                           \
-	}                                                                                     \
-    } while (0)
-
-static int __rrr_raft_bridge_encode_entries (
-		char **data,
-		size_t *data_size,
-		size_t preamble_size,
-		const struct raft_entry *entries,
-		unsigned entry_count
-) {
-	int ret = 0;
-
-	size_t total_size = 0;
-	char *crc1_pos, *crc2_pos, *buf = NULL;
-	uint32_t crc1 = 0xffffffff, crc2 = 0xffffffff;
-	unsigned i;
-
-	total_size += preamble_size;
-	total_size += sizeof(uint32_t) * 2;  /* Checksums */
-	total_size += BATCH_HEADER_SIZE(entry_count);
-	for (i = 0; i < entry_count; i++) {
-		total_size += entries[i].buf.len;
-	}
-
-	if ((buf = rrr_allocate(total_size)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory in %sn\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	WRITE(buf) {
-		WRITE_INC(preamble_size);
-		crc1_pos = WRITE_POS();
-		WRITE_U32(0);
-		crc2_pos = WRITE_POS();
-		WRITE_U32(0);
-		WRITE_BATCH_HEADER(entries, entry_count, crc1);
-		WRITE_BATCH_DATA(entries, entry_count, crc2);
-	}
-	WRITE_VERIFY(buf, total_size);
-
-	* (uint32_t *) crc1_pos = crc1;
-	* (uint32_t *) crc2_pos = crc2;
-
-	*data = buf;
-	*data_size = total_size;
-	buf = NULL;
-
-	out:
-	return ret;
-}
-
-static int __rrr_raft_bridge_encode_closed_segment (
-		char **data,
-		size_t *data_size,
-		const char *conf,
-		size_t conf_size,
-		raft_term conf_term
-) {
-	int ret = 0;
-
-	struct raft_entry entry = {0};
-
-	entry.term = conf_term;
-	entry.type = RAFT_CHANGE;
-	entry.buf.base = (void *) conf;
-	entry.buf.len = conf_size;
-
-	if ((ret = __rrr_raft_bridge_encode_entries (
-			data,
-			data_size,
-			sizeof(uint64_t),
-			&entry,
-			1
-	)) != 0) {
-		goto out;
-	}
-
-	WRITE(*data) {
-		WRITE_U64(RRR_RAFT_DISK_FORMAT);	
-	}
-
-	out:
-	return ret;
-}
-
-static int __rrr_raft_bridge_write_first_closed_segment_with_configuration (
-		const struct raft_configuration *conf,
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
-		const char *name,
-		struct rrr_raft_task_cb_data *cb_data
-) {
-	int ret = 0;
-
-	char *configuration_data = NULL, *data = NULL;
-	size_t configuration_data_size, data_size;
-
-	if ((ret = __rrr_raft_bridge_encode_configuration (
-			&configuration_data,
-			&configuration_data_size,
-			conf
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_raft_bridge_encode_closed_segment (
-			&data,
-			&data_size,
-			configuration_data,
-			configuration_data_size,
-			1
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_raft_bridge_write (
-			write_cb,
-			name,
-			data,
-			data_size,
-			cb_data
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(configuration_data);
-	RRR_FREE_IF_NOT_NULL(data);
-	return ret;
-}
-
-static int __rrr_raft_bridge_acknowledge (
-		struct rrr_raft_task_list *list,
-		struct rrr_raft_bridge *bridge
-) {
-	int ret = 0;
-
-	int ret_tmp = 0;
-	struct rrr_raft_task *task, *tasks, task_new;
-	struct rrr_raft_task_list list_new = {0};
-	//struct raft_event event;
-	struct raft_event event;
-	struct raft_update update;
-	struct rrr_raft_bridge_metadata metadata1, metadata2;
-//	uint64_t now;
-
-	assert(list->count > 0);
-
-	tasks = __rrr_raft_task_list_get(list);
-
-//	now = rrr_time_get_64() / 1000;
-
-	for (size_t i = 0; i < list->count; i++) {
-		task = tasks + i;
-
-		switch (task->type) {
-			case RRR_RAFT_TASK_TIMEOUT:
-			// TODO : Check for early timeout
-/*				if (time < now) {
-					RRR_RAFT_BRIDGE_DBG("early timeout, set again");
-					__rrr_raft_task_list_push(&list_new, task);
-					break;
-				}
-				else {*/
-					RRR_RAFT_BRIDGE_DBG("timeout");
-					event.type = RAFT_TIMEOUT;
-					event.time = rrr_time_get_64() / 1000;
-					goto step;
-//				}
-			case RRR_RAFT_TASK_READ_FILE:
-				switch (task->readfile.type) {
-					case RRR_RAFT_FILE_TYPE_METADATA:
-						if (strcmp((char *) TASK_LIST_RESOLVE(task->readfile.name), "metadata1") == 0) {
-							RRR_RAFT_BRIDGE_DBG("loading metadata1");
-
-							if ((ret = __rrr_raft_bridge_read_metadata (
-									&metadata1,
-									bridge,
-									task->readfile.read_cb,
-									"metadata1",
-									&task->readfile.cb_data
-							)) != 0) {
-								goto out_cleanup;
-							}
-						}
-						else {
-							RRR_RAFT_BRIDGE_DBG("loading metadata2");
-
-							if ((ret = __rrr_raft_bridge_read_metadata (
-									&metadata2,
-									bridge,
-									task->readfile.read_cb,
-									"metadata2",
-									&task->readfile.cb_data
-							)) != 0) {
-								goto out_cleanup;
-							}
-
-							if (metadata1.version == 0 && metadata2.version == 0) {
-								bridge->metadata.version = 0;
-								bridge->metadata.term = 0;
-								bridge->metadata.voted_for = 0;
-							}
-							else if (metadata1.version == metadata2.version) {
-								RRR_MSG_0("Both metadata1 and metadata2 contained the same version number\n");
-								ret = 1;
-								goto out_cleanup;
-							}
-							else {
-								if (metadata1.version > metadata2.version) {
-									bridge->metadata = metadata1;
-								}
-								else {
-									bridge->metadata = metadata2;
-								}
-
-								RRR_RAFT_BRIDGE_DBG("metadata loaded");
-
-								bridge->state |= RRR_RAFT_BRIDGE_STATE_CONFIGURED;
-							}
-
-							if (!(bridge->state & RRR_RAFT_BRIDGE_STATE_CONFIGURED)) {
-								RRR_RAFT_BRIDGE_DBG("no metadata loaded, calling for bootstrap");
-
-								task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
-								__rrr_raft_task_list_push(&list_new, &task_new);
-							}
-							else {
-								__rrr_raft_bridge_start(&event, bridge);
-								goto step;
-							}
-						}
-						break;
-					default:
-						RRR_BUG("BUG: Unknown read file type %i in %s\n",
-							task->readfile.type, __func__);
-				};
-				break;
-			case RRR_RAFT_TASK_BOOTSTRAP:
-				__rrr_raft_bridge_set_term(bridge, 1);
-				if ((ret = __rrr_raft_bridge_configuration_clone(&bridge->configuration, task->bootstrap.configuration)) != 0) {
-					goto out_cleanup;
-				}
-
-				// Write metadata
-				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
-				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
-				task_new.writefile.name = __rrr_raft_task_list_strdup (
-						&list_new,
-						bridge->metadata.version % 2 == 1
-							? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"
-							: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2"
-				);
-				__rrr_raft_task_list_push(&list_new, &task_new);
-
-				// Write configuration as first segment
-				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
-				task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
-				task_new.writefile.name = __rrr_raft_task_list_asprintf (
-						&list_new,
-						RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(1, 1)
-				);
-				__rrr_raft_task_list_push(&list_new, &task_new);
-				break;
-			case RRR_RAFT_TASK_WRITE_FILE:
-				switch (task->writefile.type) {
-					case RRR_RAFT_FILE_TYPE_METADATA:
-						if ((ret = __rrr_raft_bridge_write_metadata (
-								bridge,
-								task->writefile.write_cb,
-								(char *) TASK_LIST_RESOLVE(task->writefile.name),
-								&task->writefile.cb_data
-						)) != 0) {
-							goto out_cleanup;
-						}
-						break;
-					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
-						if ((ret = __rrr_raft_bridge_write_first_closed_segment_with_configuration (
-								&bridge->configuration,
-								task->writefile.write_cb,
-								(char *) TASK_LIST_RESOLVE(task->writefile.name),
-								&task->writefile.cb_data
-						)) != 0) {
-							goto out_cleanup;
-						}
-						
-						__rrr_raft_bridge_start(&event, bridge);
-						goto step;
-					default:
-						RRR_BUG("BUG: Unknown write file type %i in %s\n",
-							task->writefile.type, __func__);
-				};
-				break;
-			default:
-				RRR_BUG("BUG: Unkown type %i in %s\n",
-					task->type, __func__);
-		};
-
-		continue;
-
-		step:
-
-		if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
-			RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
-			ret = 1;
-			goto out_cleanup;
-		}
-
-		if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
-			assert(0 && "Update current term not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_VOTED_FOR) {
-			assert(0 && "Update voted for not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_ENTRIES) {
-			assert(0 && "Update entries not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_SNAPSHOT) {
-			assert(0 && "Update snapshot not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_MESSAGES) {
-			assert(0 && "Update messages not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_STATE) {
-			assert(0 && "Update state not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
-			assert(0 && "Update commit index not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_TIMEOUT) {
-			// Ignore, only push timeout task if
-			// there are no other tasks.
-			continue;
-		}
-
-		assert(0 && "Not reachable");
-	}
-
-
-	if (list_new.count == 0) {
-		task_new.type = RRR_RAFT_TASK_TIMEOUT;
-		task_new.timeout.time = raft_timeout(bridge->raft);
-		__rrr_raft_task_list_push(&list_new, &task_new);
-	}
-
-	__rrr_raft_task_list_cleanup(list);
-	*list = list_new;
-
-	goto out_final;
-	out_cleanup:
-		__rrr_raft_task_list_cleanup(&list_new);
-	out_final:
-		return ret;
-}
-
-static int __rrr_raft_bridge_begin (
-		struct rrr_raft_task_list *list,
-		struct rrr_raft_bridge *bridge
-) {
-	int ret = 0;
-
-	struct rrr_raft_task task;
-
-	assert(list->count == 0);
-
-	assert (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
-
-	RRR_RAFT_BRIDGE_DBG("starting, requesting metadata to be loaded from disk");
-
-	task.type = RRR_RAFT_TASK_READ_FILE;
-	task.readfile.type = RRR_RAFT_FILE_TYPE_METADATA;
-	task.readfile.name = __rrr_raft_task_list_strdup(list, RRR_RAFT_FILE_NAME_PREFIX_METADATA "1");
-	__rrr_raft_task_list_push(list, &task);
-
-	task.type = RRR_RAFT_TASK_READ_FILE;
-	task.readfile.type = RRR_RAFT_FILE_TYPE_METADATA;
-	task.readfile.name = __rrr_raft_task_list_strdup(list, RRR_RAFT_FILE_NAME_PREFIX_METADATA "2");
-	__rrr_raft_task_list_push(list, &task);
-
-	goto out;
-
-	out:
-	return ret;
-}
-
 struct rrr_raft_server_file_read_cb_data {
 	int fd;
 };
@@ -2423,7 +1378,7 @@ static int __rrr_raft_server_process_tasks (
 		goto out;
 	}
 
-	tasks = __rrr_raft_task_list_get(list);
+	tasks = rrr_raft_task_list_get(list);
 
 	now = rrr_time_get_64() / 1000;
 
@@ -2444,7 +1399,7 @@ static int __rrr_raft_server_process_tasks (
 			case RRR_RAFT_TASK_READ_FILE:
 				// TODO : Read actual file
 				RRR_RAFT_SERVER_DBG_EVENT("set read file cb for type %i '%s'",
-					task->readfile.type, (char *) TASK_LIST_RESOLVE(task->readfile.name));
+					task->readfile.type, (char *) rrr_raft_task_list_resolve(list, task->readfile.name));
 				RRR_ASSERT(sizeof(file_read_cb_data) <= sizeof(task->readfile.cb_data.data),cb_data_must_hold_server_cb_data);
 				file_read_cb_data = (struct rrr_raft_server_file_read_cb_data *) task->readfile.cb_data.data;
 				file_read_cb_data->fd = -1;
@@ -2456,7 +1411,7 @@ static int __rrr_raft_server_process_tasks (
 				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
 				RRR_RAFT_SERVER_DBG_EVENT("set write file cb for type %i '%s'",
-					task->writefile.type, (char *) TASK_LIST_RESOLVE(task->writefile.name));
+					task->writefile.type, (char *) rrr_raft_task_list_resolve(list, task->writefile.name));
 				RRR_ASSERT(sizeof(file_write_cb_data) <= sizeof(task->writefile.cb_data.data),cb_data_must_hold_server_cb_data);
 				file_write_cb_data = (struct rrr_raft_server_file_write_cb_data *) task->writefile.cb_data.data;
 				file_write_cb_data->fd = -1;
@@ -2484,14 +1439,14 @@ static int __rrr_raft_server_process_and_acknowledge (
 		goto out;
 	}
 
-	if ((ret = __rrr_raft_bridge_acknowledge(state->tasks, state->bridge)) != 0) {
+	if ((ret = rrr_raft_bridge_acknowledge(state->tasks, state->bridge)) != 0) {
 		goto out;
 	}
 
 	assert(state->tasks->count > 0);
 
 
-	task = __rrr_raft_task_list_get(state->tasks);
+	task = rrr_raft_task_list_get(state->tasks);
 
 	if (task->type != RRR_RAFT_TASK_TIMEOUT) {
 		// TODO : Consider tight loop instead of activating timeout
@@ -2667,7 +1622,7 @@ int rrr_raft_server (
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
 */
 
-	if ((ret = __rrr_raft_bridge_begin (&tasks, &bridge)) != 0) {
+	if ((ret = rrr_raft_bridge_begin (&tasks, &bridge)) != 0) {
 		goto out_cleanup_configuration;
 	}
 
@@ -2689,9 +1644,9 @@ int rrr_raft_server (
 
 	goto out_cleanup_bridge;
 	out_cleanup_bridge:
-		__rrr_raft_bridge_cleanup(&bridge);
+		rrr_raft_bridge_cleanup(&bridge);
 //	out_cleanup_tasks:
-		__rrr_raft_task_list_cleanup(&tasks);
+		rrr_raft_task_list_cleanup(&tasks);
 	out_cleanup_configuration:
 		raft_configuration_close(&configuration);
 //	out_raft_close:
