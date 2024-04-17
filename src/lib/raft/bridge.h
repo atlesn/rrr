@@ -32,6 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT "%016llu-%016llu"
 #define RRR_RAFT_FILE_NAME_PREFIX_METADATA "metadata"
+#define RRR_RAFT_FILE_NAME_METADATA(v)                         \
+    (v % 2 == 1 ? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"       \
+		: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2")
 
 #define RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(from, to) \
     RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT, (unsigned long long) from, (unsigned long long) to
@@ -105,8 +108,9 @@ struct rrr_raft_task_list {
 };
 
 enum rrr_raft_bridge_state {
-	RRR_RAFT_BRIDGE_STATE_STARTED = 1,
-	RRR_RAFT_BRIDGE_STATE_CONFIGURED
+	RRR_RAFT_BRIDGE_STATE_STARTED       =   1,
+	RRR_RAFT_BRIDGE_STATE_CONFIGURED    =   2,
+	RRR_RAFT_BRIDGE_STATE_SHUTTING_DOWN =   4
 };
 
 struct rrr_raft_bridge_metadata {
@@ -124,6 +128,8 @@ struct rrr_raft_bridge {
 	struct rrr_raft_log log;
 	raft_index last_applied;
 	raft_index snapshot_index;
+	unsigned short prev_state;
+	struct raft_change *change;
 };
 
 int rrr_raft_bridge_begin (

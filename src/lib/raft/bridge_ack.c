@@ -241,6 +241,35 @@ static void __rrr_raft_bridge_ack_start (
 	event->start.n_entries = entry_count;
 }
 
+static void __rrr_raft_bridge_ack_push_task_write_metadata (
+		struct rrr_raft_task_list *list_new,
+		const struct rrr_raft_bridge *bridge
+) {
+	struct rrr_raft_task task_new;
+
+	task_new.type = RRR_RAFT_TASK_WRITE_FILE;
+	task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
+	task_new.writefile.name = rrr_raft_task_list_strdup (
+			list_new,
+			RRR_RAFT_FILE_NAME_METADATA(bridge->metadata.version)
+	);
+	rrr_raft_task_list_push(list_new, &task_new);
+}
+
+static void __rrr_raft_bridge_ack_push_task_write_configuration (
+		struct rrr_raft_task_list *list_new
+) {
+	struct rrr_raft_task task_new;
+
+	task_new.type = RRR_RAFT_TASK_WRITE_FILE;
+	task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
+	task_new.writefile.name = rrr_raft_task_list_asprintf (
+			list_new,
+			RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(1, 1)
+	);
+	rrr_raft_task_list_push(list_new, &task_new);
+}
+
 static int __rrr_raft_bridge_ack_update_commit_index (
 		struct rrr_raft_bridge *bridge
 ) {
@@ -254,6 +283,11 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 	if (commit_index != 0 && commit_index == bridge->snapshot_index) {
 		assert(0 && "Update commit index with index of snapshot not implemented");
 	}
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("update commit index to %llu last applied is %llu",
+		(unsigned long long) commit_index,
+		(unsigned long long) bridge->last_applied
+	);
 
 	if (bridge->last_applied == commit_index) {
 		goto out;
@@ -270,6 +304,58 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 
 	out:
 	return ret;
+}
+
+static void __rrr_raft_bridge_ack_update_state (
+		struct rrr_raft_bridge *bridge
+) {
+	assert(bridge->prev_state != raft_state(bridge->raft));
+
+	if (bridge->prev_state == RAFT_LEADER) {
+		assert(0 && "Not implemented: Fail pending requests, not leader anymore");
+		// LegacyFailPendingRequests(r)
+		assert(0 && "Not implemented: Assert that pending request queue is empty");
+	}
+
+	if (raft_state(bridge->raft) == RAFT_LEADER) {
+		assert(bridge->change == NULL);
+	}
+
+	if (bridge->state & RRR_RAFT_BRIDGE_STATE_SHUTTING_DOWN) {
+		assert(0 && "Not implemented: Close any active leadership transfer");
+		// if(r->transfer != NULL) LegacyLeadershipTransferClose(r);
+		assert(0 && "Not implemented: Fail pending requests");
+		// LegacyFailPendingRequests(r)
+		assert(0 && "Not implemented: Fire completed requests");
+		// LegacyFireCompletedRequests(r)
+	}
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("state change from %s to %s",
+		raft_state_name(bridge->prev_state),
+		raft_state_name(raft_state(bridge->raft))
+	);
+
+	bridge->prev_state = raft_state(bridge->raft);
+}
+
+static void __rrr_raft_bridge_ack_update_current_term (
+		struct rrr_raft_task_list *list_new,
+		struct rrr_raft_bridge *bridge
+) {
+	raft_term term;
+
+	term = raft_current_term(bridge->raft);
+
+	bridge->metadata.version++;
+	bridge->metadata.term = term;
+	bridge->metadata.voted_for = 0;
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("update current term to %llu version is now %llu",
+		(unsigned long long) bridge->metadata.term,
+		(unsigned long long) bridge->metadata.version
+	);
+
+	__rrr_raft_bridge_ack_push_task_write_metadata(list_new, bridge);
 }
 
 #define TASK_LIST_RESOLVE(handle) \
@@ -392,25 +478,9 @@ int rrr_raft_bridge_acknowledge (
 					goto out_cleanup;
 				}
 
-				// Write metadata
-				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
-				task_new.writefile.type = RRR_RAFT_FILE_TYPE_METADATA;
-				task_new.writefile.name = rrr_raft_task_list_strdup (
-						&list_new,
-						bridge->metadata.version % 2 == 1
-							? RRR_RAFT_FILE_NAME_PREFIX_METADATA "1"
-							: RRR_RAFT_FILE_NAME_PREFIX_METADATA "2"
-				);
-				rrr_raft_task_list_push(&list_new, &task_new);
+				__rrr_raft_bridge_ack_push_task_write_metadata(&list_new, bridge);
+				__rrr_raft_bridge_ack_push_task_write_configuration(&list_new);
 
-				// Write configuration as first segment
-				task_new.type = RRR_RAFT_TASK_WRITE_FILE;
-				task_new.writefile.type = RRR_RAFT_FILE_TYPE_CONFIGURATION;
-				task_new.writefile.name = rrr_raft_task_list_asprintf (
-						&list_new,
-						RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(1, 1)
-				);
-				rrr_raft_task_list_push(&list_new, &task_new);
 				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
 				switch (task->writefile.type) {
@@ -472,8 +542,21 @@ int rrr_raft_bridge_acknowledge (
 			goto out_cleanup;
 		}
 
+		if (!update.flags) {
+			RRR_RAFT_BRIDGE_DBG("no update flags");
+			continue;
+		}
+
+		if (update.flags & RAFT_UPDATE_STATE) {
+			__rrr_raft_bridge_ack_update_state(bridge);
+		}
+
+		if (update.flags & RAFT_UPDATE_SUGGEST_SNAPSHOT) {
+			assert(0 && "Update suggest snapshot not implemented");
+		}
+
 		if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
-			assert(0 && "Update current term not implemented");
+			__rrr_raft_bridge_ack_update_current_term(&list_new, bridge);
 		}
 
 		if (update.flags & RAFT_UPDATE_VOTED_FOR) {
@@ -492,14 +575,8 @@ int rrr_raft_bridge_acknowledge (
 			assert(0 && "Update messages not implemented");
 		}
 
-		if (update.flags & RAFT_UPDATE_STATE) {
-			assert(0 && "Update state not implemented");
-		}
-
 		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
-			if ((ret = __rrr_raft_bridge_ack_update_commit_index (
-					bridge
-			)) != 0) {
+			if ((ret = __rrr_raft_bridge_ack_update_commit_index(bridge)) != 0) {
 				goto out_cleanup;
 			}
 		}
@@ -507,10 +584,10 @@ int rrr_raft_bridge_acknowledge (
 		if (update.flags & RAFT_UPDATE_TIMEOUT) {
 			// Ignore, only push timeout task if
 			// there are no other tasks.
-			continue;
+			RRR_RAFT_BRIDGE_DBG("request to update timeout, ignoring for now");
 		}
 
-		assert(0 && "Not reachable");
+		RRR_MSG_0("TODO: Check for pending leadership transfer request\n");
 	}
 
 
