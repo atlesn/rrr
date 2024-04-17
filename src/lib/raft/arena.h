@@ -48,6 +48,14 @@ static inline void *rrr_raft_arena_resolve (
 	return arena->data + handle;
 }
 
+static inline const void *rrr_raft_arena_resolve_const (
+		const struct rrr_raft_arena *arena,
+		rrr_raft_arena_handle handle
+) {
+	assert(handle < arena->pos);
+	return arena->data + handle;
+}
+
 void rrr_raft_arena_cleanup (
 		struct rrr_raft_arena *arena
 );

@@ -95,6 +95,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define GET_METADATA_SIZE() \
     (sizeof(uint64_t) * 4)
 
+#define GET_MSG_PREAMBLE_SIZE() \
+    (sizeof(uint64_t) * 2)
+
+#define GET_MSG_REQUEST_VOTE_SIZE() \
+    (sizeof(uint64_t) * 5)
+
+#define PUT_MSG_PREAMBLE(type, version, body_size)  \
+    do {                                            \
+        WRITE_U8(type);                             \
+	WRITE_U8(0);                                \
+	WRITE_U8(version);                          \
+	WRITE_U8(0);                                \
+	WRITE_U32(0);                               \
+	WRITE_U64(body_size);                       \
+    } while(0)
+
 /*
  * READ MACROS
  */
@@ -175,51 +191,6 @@ void rrr_raft_bridge_encode_metadata (
 	}
 	WRITE_VERIFY(data,sizeof(uint64_t) * 4);
 }
-
-/*
- * DECODING FUNCTIONS
- */
- 
-int rrr_raft_bridge_decode_metadata_size_ok (
-		size_t data_size
-) {
-	return data_size == GET_METADATA_SIZE();
-}
-
-void rrr_raft_bridge_decode_metadata (
-		int *ok,
-		struct rrr_raft_bridge_metadata *metadata,
-		const char *data,
-		size_t data_size
-) {
-	uint64_t format, version, term, voted_for;
-
-	assert(data_size == GET_METADATA_SIZE());
-
-	metadata->version = 0;
-	metadata->term = 0;
-	metadata->voted_for = 0;
-
-	READ(data) {
-		READ_U64(format);
-		READ_U64(version);
-		READ_U64(term);
-		READ_U64(voted_for);
-	}
-	READ_VERIFY(data, data_size);
-
-	if (format != RRR_RAFT_DISK_FORMAT) {
-		RRR_MSG_0("Warning: Incorrect format %llu for metadata file ignoring it\n", (unsigned long long) format);
-		*ok = 0;
-		return;
-	}
-
-	metadata->version = version;
-	metadata->term = term;
-	metadata->voted_for = voted_for;
-
-	*ok = 1;
- }
 
 int rrr_raft_bridge_encode_entries (
 		char **data,
@@ -303,3 +274,133 @@ int rrr_raft_bridge_encode_closed_segment (
 	out:
 	return ret;
 }
+
+size_t rrr_raft_bridge_encode_message_get_size (
+		enum raft_message_type type
+) {
+	size_t total_size = 0;
+
+	total_size += GET_MSG_PREAMBLE_SIZE();
+
+	switch (type) {
+		case RAFT_REQUEST_VOTE:
+			total_size += GET_MSG_REQUEST_VOTE_SIZE();
+			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			assert(0 && "Request vote result message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "append entries message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result message not implemented");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot message not implemented");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout not message not implemented");
+			break;
+		default:
+			RRR_BUG("BUG: Unknown message type %i in %s\n", type, __func__);
+
+	};
+
+	return total_size;
+}
+
+void rrr_raft_bridge_encode_message_request_vote (
+		void *data,
+		size_t data_size,
+		const struct raft_request_vote *msg
+) {
+	uint64_t flags = 0;
+
+	if (msg->disrupt_leader) {
+		flags |= 1 << 0;
+	}
+
+	if (msg->pre_vote) {
+		flags |= 1 << 1;
+	}
+
+	WRITE(data) {
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, data_size - GET_MSG_REQUEST_VOTE_SIZE());
+		WRITE_U64(msg->term);
+		WRITE_U64(msg->candidate_id);
+		WRITE_U64(msg->last_log_index);
+		WRITE_U64(msg->last_log_term);
+		WRITE_U64(flags);
+	}
+	WRITE_VERIFY(data, data_size);
+}
+
+/*
+ * DECODING FUNCTIONS
+ */
+ 
+int rrr_raft_bridge_decode_metadata_size_ok (
+		size_t data_size
+) {
+	return data_size == GET_METADATA_SIZE();
+}
+
+void rrr_raft_bridge_decode_metadata (
+		int *ok,
+		struct rrr_raft_bridge_metadata *metadata,
+		const char *data,
+		size_t data_size
+) {
+	uint64_t format, version, term, voted_for;
+
+	assert(data_size == GET_METADATA_SIZE());
+
+	metadata->version = 0;
+	metadata->term = 0;
+	metadata->voted_for = 0;
+
+	READ(data) {
+		READ_U64(format);
+		READ_U64(version);
+		READ_U64(term);
+		READ_U64(voted_for);
+	}
+	READ_VERIFY(data, data_size);
+
+	if (format != RRR_RAFT_DISK_FORMAT) {
+		RRR_MSG_0("Warning: Incorrect format %llu for metadata file ignoring it\n", (unsigned long long) format);
+		*ok = 0;
+		return;
+	}
+
+	metadata->version = version;
+	metadata->term = term;
+	metadata->voted_for = voted_for;
+
+	*ok = 1;
+}
+/*
+	switch (message->type) {
+		case RAFT_REQUEST_VOTE:
+			assert(0 && "Request vote message not implemented");
+			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			assert(0 && "Request vote result message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "append entries message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result message not implemented");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot message not implemented");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout not message not implemented");
+			break;
+		default:
+			RRR_BUG("BUG: Unknown message type %i in %s\n", message->type, __func__);
+
+	};
+*/

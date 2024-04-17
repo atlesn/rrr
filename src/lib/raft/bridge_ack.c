@@ -40,7 +40,7 @@ static void __rrr_raft_bridge_ack_set_term (
 static int __rrr_raft_bridge_ack_read_file (
 		char **data,
 		size_t *data_size,
-		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS),
+		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READ_FILE_CB_ARGS),
 		const char *name,
 		struct rrr_raft_task_cb_data *cb_data
 ) {
@@ -82,7 +82,7 @@ static int __rrr_raft_bridge_ack_read_file (
 
 static int __rrr_raft_bridge_ack_read_metadata (
 		struct rrr_raft_bridge_metadata *metadata,
-		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS),
+		ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READ_FILE_CB_ARGS),
 		const char *name,
 		struct rrr_raft_task_cb_data *cb_data
 ) {
@@ -122,7 +122,7 @@ static int __rrr_raft_bridge_ack_read_metadata (
 }
 
 static int __rrr_raft_bridge_ack_write (
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS),
 		const char *name,
 		const char *data,
 		size_t data_size,
@@ -155,7 +155,7 @@ static int __rrr_raft_bridge_ack_write (
 
 static int __rrr_raft_bridge_ack_write_metadata (
 		struct rrr_raft_bridge *bridge,
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS),
 		const char *name,
 		struct rrr_raft_task_cb_data *cb_data
 ) {
@@ -172,7 +172,7 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 		char **result_conf_data,
 		size_t *result_conf_data_size,
 		const struct raft_configuration *conf,
-		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS),
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS),
 		const char *name,
 		struct rrr_raft_task_cb_data *cb_data
 ) {
@@ -219,7 +219,60 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 	return ret;
 }
 
-static void __rrr_raft_bridge_ack_start (
+static int __rrr_raft_bridge_ack_send_message (
+		struct rrr_raft_bridge *bridge,
+		ssize_t (*send_cb)(RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS),
+		raft_id server_id,
+		const char *data,
+		size_t data_size,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	int ret = 0;
+
+	size_t pos;
+	ssize_t bytes;
+	const char *server_address;
+
+	server_address = rrr_raft_bridge_configuration_server_name_get(bridge, server_id);
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("ack send message %llu bytes for server %llu",
+		(unsigned long long) data_size,
+		(unsigned long long) server_id
+	);
+
+	for (pos = 0; pos < data_size; pos += bytes) {
+		if ((bytes = send_cb(server_id, server_address, data + pos, data_size - pos, cb_data)) < 0) {
+			if (bytes == -RRR_RAFT_READ_BUSY) {
+				RRR_RAFT_BRIDGE_DBG_ARGS("ack send message busy for server %llu",
+					(unsigned long long) server_id
+				);
+				ret = RRR_RAFT_READ_BUSY;
+				goto out;
+			}
+			ret = 1;
+			goto out;
+		}
+		assert(bytes > 0);
+	}
+
+	assert(pos == data_size);
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("ack send message complete for server %llu",
+		(unsigned long long) server_id
+	);
+
+	if ((bytes = send_cb(server_id, server_address, NULL, 0, cb_data)) < 0) {
+		assert(bytes != -RRR_RAFT_READ_BUSY);
+		ret = 1;
+		goto out;
+	}
+	assert(bytes == 0);
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_bridge_ack_make_event_start (
 		struct raft_event *event,
 		struct rrr_raft_bridge *bridge,
 		raft_term term,
@@ -268,6 +321,87 @@ static void __rrr_raft_bridge_ack_push_task_write_configuration (
 			RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(1, 1)
 	);
 	rrr_raft_task_list_push(list_new, &task_new);
+}
+
+static int __rrr_raft_bridge_ack_push_task_send (
+		struct rrr_raft_task_list *list_new,
+		struct raft_message *message
+) {
+	int ret = 0;
+
+	struct rrr_raft_task task_new = {0};
+	void *data;
+
+	size_t data_size;
+
+	switch (message->type) {
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "Append entries message not implemented");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot message not implemented");
+			break;
+		default:
+			break;
+	};
+
+	switch (message->type) {
+		case RAFT_REQUEST_VOTE:
+			data_size = rrr_raft_bridge_encode_message_get_size(message->type);
+			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			assert(0 && "Request vote result message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "append entries message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result message not implemented");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot message not implemented");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout not message not implemented");
+			break;
+		default:
+			RRR_BUG("BUG: Unknown message type %i in %s\n", message->type, __func__);
+
+	};
+
+	task_new.type = RRR_RAFT_TASK_SEND_MESSAGE;
+	task_new.sendmessage.server_id = message->server_id;
+	task_new.sendmessage.data_size = data_size;
+
+	data = rrr_raft_task_list_push_and_allocate_data(list_new, &task_new, &task_new.sendmessage.data, data_size);
+
+	switch (message->type) {
+		case RAFT_REQUEST_VOTE:
+			rrr_raft_bridge_encode_message_request_vote(data, data_size, &message->request_vote);
+			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			assert(0 && "Request vote result message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "append entries message not implemented");
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result message not implemented");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot message not implemented");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout not message not implemented");
+			break;
+		default:
+			RRR_BUG("BUG: Unknown message type %i in %s\n", message->type, __func__);
+
+	};
+
+	goto out;
+	out:
+	return ret;
 }
 
 static int __rrr_raft_bridge_ack_update_commit_index (
@@ -356,6 +490,48 @@ static void __rrr_raft_bridge_ack_update_current_term (
 	);
 
 	__rrr_raft_bridge_ack_push_task_write_metadata(list_new, bridge);
+}
+
+static void __rrr_raft_bridge_ack_update_voted_for (
+		struct rrr_raft_task_list *list_new,
+		struct rrr_raft_bridge *bridge
+) {
+	raft_index server_id;
+
+	server_id = raft_voted_for(bridge->raft);
+
+	bridge->metadata.version++;
+	bridge->metadata.voted_for = server_id;
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("update voted for to %llu term %llu version is now %llu",
+		(unsigned long long) bridge->metadata.voted_for,
+		(unsigned long long) bridge->metadata.term,
+		(unsigned long long) bridge->metadata.version
+	);
+
+	__rrr_raft_bridge_ack_push_task_write_metadata(list_new, bridge);
+}
+
+static int __rrr_raft_bridge_ack_update_messages (
+		struct rrr_raft_task_list *list_new,
+		struct raft_message *messages,
+		unsigned n
+) {
+	int ret = 0;
+
+	unsigned i;
+
+	for (i = 0; i < n; i++) {
+		if ((ret = __rrr_raft_bridge_ack_push_task_send (
+				list_new,
+				messages + i
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
 }
 
 #define TASK_LIST_RESOLVE(handle) \
@@ -513,7 +689,7 @@ int rrr_raft_bridge_acknowledge (
 						entry.buf.len = conf_data_size;
 						entry.batch = NULL;
 
-						__rrr_raft_bridge_ack_start (
+						__rrr_raft_bridge_ack_make_event_start (
 								&event,
 								bridge,
 								1,
@@ -526,6 +702,31 @@ int rrr_raft_bridge_acknowledge (
 						RRR_BUG("BUG: Unknown write file type %i in %s\n",
 							task->writefile.type, __func__);
 				};
+				break;
+			case RRR_RAFT_TASK_SEND_MESSAGE:
+				if ((ret = __rrr_raft_bridge_ack_send_message (
+						bridge,
+						task->sendmessage.send_cb,
+						task->sendmessage.server_id,
+						(char *) TASK_LIST_RESOLVE(task->sendmessage.data),
+						task->sendmessage.data_size,
+						&task->sendmessage.cb_data
+				)) != 0) {
+					if (ret == RRR_RAFT_READ_BUSY) {
+						rrr_raft_task_list_push_cloned (
+								&list_new,
+								list,
+								task,
+								&task->sendmessage.cb_data,
+								&task->sendmessage.data,
+								&task->sendmessage.data_size
+						);
+						ret = 0;
+					}
+					else {
+						goto out_cleanup;
+					}
+				}
 				break;
 			default:
 				RRR_BUG("BUG: Unkown type %i in %s\n",
@@ -560,7 +761,7 @@ int rrr_raft_bridge_acknowledge (
 		}
 
 		if (update.flags & RAFT_UPDATE_VOTED_FOR) {
-			assert(0 && "Update voted for not implemented");
+			__rrr_raft_bridge_ack_update_voted_for(&list_new, bridge);
 		}
 
 		if (update.flags & RAFT_UPDATE_ENTRIES) {
@@ -572,7 +773,13 @@ int rrr_raft_bridge_acknowledge (
 		}
 
 		if (update.flags & RAFT_UPDATE_MESSAGES) {
-			assert(0 && "Update messages not implemented");
+			if ((ret = __rrr_raft_bridge_ack_update_messages (
+					&list_new,
+					update.messages.batch,
+					update.messages.n
+			)) != 0) {
+				goto out_cleanup;
+			}	
 		}
 
 		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
@@ -599,6 +806,8 @@ int rrr_raft_bridge_acknowledge (
 
 	rrr_raft_task_list_cleanup(list);
 	*list = list_new;
+
+	RRR_FREE_IF_NOT_NULL(conf_data);
 
 	goto out_final;
 	out_cleanup:

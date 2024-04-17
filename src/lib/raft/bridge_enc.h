@@ -48,6 +48,14 @@ int rrr_raft_bridge_encode_closed_segment (
 		size_t conf_size,
 		raft_term conf_term
 );
+size_t rrr_raft_bridge_encode_message_get_size (
+		enum raft_message_type type
+);
+void rrr_raft_bridge_encode_message_request_vote (
+		void *data,
+		size_t data_size,
+		const struct raft_request_vote *msg
+);
 
 /*
  * DECODING FUNCTIONS

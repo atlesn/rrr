@@ -29,9 +29,23 @@ static inline void *rrr_raft_task_list_resolve (
 	return rrr_raft_arena_resolve(&list->arena, handle);
 }
 
-void rrr_raft_task_list_push (
+struct rrr_raft_task *rrr_raft_task_list_push (
 		struct rrr_raft_task_list *list,
-		struct rrr_raft_task *task
+		const struct rrr_raft_task *task
+);
+void rrr_raft_task_list_push_cloned (
+		struct rrr_raft_task_list *list_dst,
+		const struct rrr_raft_task_list *list_src,
+		const struct rrr_raft_task *task_src,
+		const struct rrr_raft_task_cb_data *cb_data,
+		const rrr_raft_arena_handle *data_src,
+		const size_t *data_size_src
+);
+void *rrr_raft_task_list_push_and_allocate_data (
+		struct rrr_raft_task_list *list,
+		const struct rrr_raft_task *task,
+		const rrr_raft_arena_handle *data,
+		size_t data_size
 );
 void rrr_raft_task_list_cleanup (
 		struct rrr_raft_task_list *list

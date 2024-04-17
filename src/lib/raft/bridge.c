@@ -110,3 +110,20 @@ int rrr_raft_bridge_configuration_iterate (
 	out:
 	return ret;
 }
+
+const char *rrr_raft_bridge_configuration_server_name_get (
+		const struct rrr_raft_bridge *bridge,
+		raft_id server_id
+) {
+	unsigned i;
+	struct raft_server *server;
+
+	for (i = 0; i < bridge->raft->configuration.n; i++) {
+		server = bridge->raft->configuration.servers + i;
+
+		if (server->id == server_id)
+			return server->address;
+	}
+
+	return NULL;
+}

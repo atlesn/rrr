@@ -78,6 +78,7 @@ struct rrr_raft_server_state {
 		rrr_event_handle raft_timeout;
 		rrr_event_handle socket;
 	} events;
+	int exiting;
 };
 
 static inline void *__rrr_raft_server_malloc (void *data, size_t size) {
@@ -1045,6 +1046,8 @@ static void __rrr_raft_server_read_cb (
 	int ret_tmp;
 	uint64_t bytes_read_dummy;
 
+	assert(!state->exiting);
+
 	if ((ret_tmp = rrr_socket_read_message_split_callbacks (
 			&bytes_read_dummy,
 			&state->channel->read_sessions,
@@ -1062,6 +1065,7 @@ static void __rrr_raft_server_read_cb (
 	)) != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
 		RRR_MSG_0("Read failed in %s: %i\n", __func__, ret_tmp);
 		rrr_event_dispatch_break(state->channel->queue);
+		state->exiting = 1;
 	}
 }
 
@@ -1287,7 +1291,7 @@ struct rrr_raft_server_file_read_cb_data {
 	int fd;
 };
 
-static ssize_t __rrr_raft_server_file_read_cb (RRR_RAFT_BRIDGE_READFILE_CB_ARGS) {
+static ssize_t __rrr_raft_server_file_read_cb (RRR_RAFT_BRIDGE_READ_FILE_CB_ARGS) {
 	struct rrr_raft_server_state *state = cb_data->ptr;
 	struct rrr_raft_server_file_read_cb_data *file_read_cb_data = (struct rrr_raft_server_file_read_cb_data *) cb_data->data;
 
@@ -1330,7 +1334,7 @@ struct rrr_raft_server_file_write_cb_data {
 	int fd;
 };
 
-static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS) {
+static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS) {
 	struct rrr_raft_server_state *state = cb_data->ptr;
 	struct rrr_raft_server_file_write_cb_data *file_write_cb_data = (struct rrr_raft_server_file_write_cb_data *) cb_data->data;
 
@@ -1359,6 +1363,22 @@ static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITEFILE_CB_ARG
 		bytes = -1;
 		goto out;
 	}
+
+	out:
+	return bytes;
+}
+
+static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS) {
+	static int test_busy = 0;
+
+	ssize_t bytes = 0;
+
+	if (++test_busy == 1) {
+		bytes = -RRR_RAFT_READ_BUSY;
+		goto out;
+	}
+
+	assert(0 && "Send message not implemted");
 
 	out:
 	return bytes;
@@ -1420,6 +1440,20 @@ static int __rrr_raft_server_process_tasks (
 				task->writefile.write_cb = __rrr_raft_server_file_write_cb;
 				task->writefile.cb_data.ptr = state;
 				break;
+			case RRR_RAFT_TASK_SEND_MESSAGE:
+				if (task->sendmessage.cb_data.ptr != NULL) {
+					RRR_RAFT_SERVER_DBG_EVENT("send message to server %llu (retry)",
+						(unsigned long long) task->sendmessage.server_id);
+					assert (task->sendmessage.send_cb == __rrr_raft_server_message_send_cb);
+					assert (task->sendmessage.cb_data.ptr == state);
+				}
+				else {
+					RRR_RAFT_SERVER_DBG_EVENT("send message to server %llu",
+						(unsigned long long) task->sendmessage.server_id);
+					task->sendmessage.send_cb = __rrr_raft_server_message_send_cb;
+					task->sendmessage.cb_data.ptr = state;
+				}
+				break;
 			default:
 				RRR_BUG("BUG: Unknown task type %i in %s\n",
 					task->type, __func__);
@@ -1447,7 +1481,6 @@ static int __rrr_raft_server_process_and_acknowledge (
 
 	assert(state->tasks->count > 0);
 
-
 	task = rrr_raft_task_list_get(state->tasks);
 
 	if (task->type != RRR_RAFT_TASK_TIMEOUT) {
@@ -1469,8 +1502,11 @@ static void __rrr_raft_server_timeout_cb (
 	(void)(fd);
 	(void)(flags);
 
+	assert(!state->exiting);
+
 	if (__rrr_raft_server_process_and_acknowledge (state) != 0) {
 		rrr_event_dispatch_break(state->channel->queue);
+		state->exiting = 1;
 	}
 }
 

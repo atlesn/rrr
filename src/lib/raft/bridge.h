@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "arena.h"
 #include "log.h"
+#include "../read_constants.h"
 
 #include <raft.h>
 
@@ -47,11 +48,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_DBG(msg) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
+#define RRR_RAFT_READ_BUSY \
+    RRR_READ_BUSY
+
 enum rrr_raft_task_type {
 	RRR_RAFT_TASK_TIMEOUT = 1,
 	RRR_RAFT_TASK_READ_FILE = 2,
 	RRR_RAFT_TASK_BOOTSTRAP = 3,
-	RRR_RAFT_TASK_WRITE_FILE = 4
+	RRR_RAFT_TASK_WRITE_FILE = 4,
+	RRR_RAFT_TASK_SEND_MESSAGE = 5
 };
 
 enum rrr_raft_file_type {
@@ -66,11 +71,14 @@ struct rrr_raft_task_cb_data {
 	};
 };
 
-#define RRR_RAFT_BRIDGE_READFILE_CB_ARGS \
+#define RRR_RAFT_BRIDGE_READ_FILE_CB_ARGS \
     const char *name, char *buf, size_t buf_size, struct rrr_raft_task_cb_data *cb_data
 
-#define RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS \
+#define RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS \
     const char *name, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
+
+#define RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS \
+    raft_id server_id, const char *server_address, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
 
 struct rrr_raft_task {
 	enum rrr_raft_task_type type;
@@ -79,24 +87,34 @@ struct rrr_raft_task {
 			uint64_t time;
 		} timeout;
 		struct {
-			enum rrr_raft_file_type type;
-			rrr_raft_arena_handle name;
 			// Set by implementation if file exists and called upon acknowledge
 			// until it returns 0 which means completion
-			ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READFILE_CB_ARGS);
+			ssize_t (*read_cb)(RRR_RAFT_BRIDGE_READ_FILE_CB_ARGS);
 			struct rrr_raft_task_cb_data cb_data;
+			rrr_raft_arena_handle name;
+			enum rrr_raft_file_type type;
 		} readfile;
 		struct {
 			struct raft_configuration *configuration;
 		} bootstrap;
 		struct {
-			enum rrr_raft_file_type type;
-			rrr_raft_arena_handle name;
 			// Set by implementation and called upon acknowledge
 			// multiple times and the last time with 0 size which means completion
-			ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITEFILE_CB_ARGS);
+			ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS);
 			struct rrr_raft_task_cb_data cb_data;
+			rrr_raft_arena_handle name;
+			enum rrr_raft_file_type type;
 		} writefile;
+		struct {
+			// Implementation may return -SEND_BUSY prior to connection being
+			// established. Called multiple times and the last time with 0 size
+			// which means completion.
+			ssize_t (*send_cb)(RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS);
+			struct rrr_raft_task_cb_data cb_data;
+			rrr_raft_arena_handle data;
+			size_t data_size;
+			raft_id server_id;
+		} sendmessage;
 	};
 };
 
@@ -155,6 +173,10 @@ int rrr_raft_bridge_configuration_iterate (
 		const struct rrr_raft_bridge *bridge,
 		int (*cb)(raft_id server_id, const char *server, int role, int catch_up, void *arg),
 		void *cb_arg
+);
+const char *rrr_raft_bridge_configuration_server_name_get (
+		const struct rrr_raft_bridge *bridge,
+		raft_id server_id
 );
 
 #endif /* RRR_RAFT_BRIDGE_H */

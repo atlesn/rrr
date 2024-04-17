@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 
-void rrr_raft_task_list_push (
+struct rrr_raft_task *rrr_raft_task_list_push (
 		struct rrr_raft_task_list *list,
-		struct rrr_raft_task *task
+		const struct rrr_raft_task *task
 ) {
 	size_t capacity_new;
 	struct rrr_raft_task *tasks;
@@ -52,7 +52,65 @@ void rrr_raft_task_list_push (
 		tasks = rrr_raft_arena_resolve(&list->arena, list->tasks);
 	}
 
-	tasks[list->count++] = *task;
+	tasks[list->count] = *task;
+
+	return &tasks[list->count++];
+}
+
+#define PTR_FROM_OFFSET(oe, o, n)                     \
+    (void *) n + ((void *) oe - (void *) o);          \
+    assert((void *) oe < (void *) o + sizeof(*o) &&   \
+    (void *) oe > (void *) o)
+
+void rrr_raft_task_list_push_cloned (
+		struct rrr_raft_task_list *list_dst,
+		const struct rrr_raft_task_list *list_src,
+		const struct rrr_raft_task *task_src,
+		const struct rrr_raft_task_cb_data *cb_data,
+		const rrr_raft_arena_handle *data_src,
+		const size_t *data_size_src
+) {
+	struct rrr_raft_task *task_dst;
+	struct rrr_raft_task_cb_data *cb_data_dst;
+	rrr_raft_arena_handle *data_src_dst;
+	size_t *data_size_dst;
+
+	task_dst = rrr_raft_task_list_push(list_dst, task_src);
+
+	cb_data_dst = PTR_FROM_OFFSET(cb_data, task_src, task_dst);
+	*cb_data_dst = *cb_data;
+
+	data_src_dst = PTR_FROM_OFFSET(data_src, task_src, task_dst);
+	*data_src_dst = rrr_raft_arena_alloc(&list_dst->arena, *data_size_src);
+
+	memcpy (
+			rrr_raft_arena_resolve(&list_dst->arena, *data_src_dst),
+			rrr_raft_arena_resolve_const(&list_src->arena, *data_src),
+			*data_size_src
+	);
+
+	data_size_dst = PTR_FROM_OFFSET(data_size_src, task_src, task_dst);
+	*data_size_dst = *data_size_src;
+}
+
+void *rrr_raft_task_list_push_and_allocate_data (
+		struct rrr_raft_task_list *list,
+		const struct rrr_raft_task *task,
+		const rrr_raft_arena_handle *data,
+		size_t data_size
+) {
+	rrr_raft_arena_handle *data_new;
+	struct rrr_raft_task *task_new;
+
+	assert((void *) data < (void *) task + sizeof(*task) &&
+	       (void *) data > (void *) task);
+
+	task_new = rrr_raft_task_list_push(list, task);
+
+	data_new = PTR_FROM_OFFSET(data, task, task_new);
+	*data_new = rrr_raft_arena_alloc(&list->arena, data_size);
+
+	return rrr_raft_arena_resolve(&list->arena, *data_new);
 }
 
 void rrr_raft_task_list_cleanup (
@@ -66,9 +124,6 @@ struct rrr_raft_task *rrr_raft_task_list_get (
 ) {
 	return rrr_raft_arena_resolve(&list->arena, list->tasks);
 }
-
-#define TASK_LIST_RESOLVE(handle) \
-    (__rrr_raft_task_list_resolve(list, handle))
 
 rrr_raft_arena_handle rrr_raft_task_list_strdup (
 		struct rrr_raft_task_list *list,
