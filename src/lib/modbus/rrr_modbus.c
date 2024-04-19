@@ -44,9 +44,9 @@ struct rrr_modbus_read_req {
 	uint16_t amount;
 } __attribute((__packed__));
 
-struct rrr_modbus_write_register_req {
-	uint16_t register_address;
-	uint16_t register_value;
+struct rrr_modbus_write_single_register_req {
+	uint16_t starting_address;
+	uint8_t contents[2];
 } __attribute((__packed__));
 
 struct rrr_modbus_write_multiple_registers_req {
@@ -60,17 +60,14 @@ struct rrr_modbus_req {
 	uint8_t function_code;
 	union {
 		struct rrr_modbus_read_req 						read_req;
-		struct rrr_modbus_write_register_req 			write_register_req;
+		struct rrr_modbus_write_single_register_req 	write_single_register_req;
 		struct rrr_modbus_write_multiple_registers_req 	write_multiple_registers_req;
 	};
 } __attribute((__packed__));
 
 #define RRR_MODBUS_READ_REQ_SIZE										(sizeof(struct rrr_modbus_read_req) + 1)
-#define RRR_MODBUS_WRITE_REGISTER_REQ_SIZE 								(sizeof(struct rrr_modbus_write_register_req) + 1)
-#define RRR_MODBUS_WRITE_MULTIPLE_REGISTERS_REQ_SIZE(contents_size) 	(sizeof(uint16_t) + \
-																		 sizeof(uint16_t) + \
-																		 sizeof(uint8_t) + \
-																		 contents_size + 1)
+#define RRR_MODBUS_WRITE_SINGLE_REGISTER_REQ_SIZE						(sizeof(struct rrr_modbus_write_single_register_req) + 1)
+#define RRR_MODBUS_WRITE_MULTIPLE_REGISTERS_REQ_SIZE(contents_size)		(sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint8_t) + contents_size + 1)
 
 struct rrr_modbus_res_error {
 	uint8_t exception_code;
@@ -81,9 +78,9 @@ struct rrr_modbus_read_register_res {
 	uint8_t status[250];
 } __attribute((__packed__));
 
-struct rrr_modbus_write_register_res {
-	uint16_t register_address;
-	uint16_t register_value;
+struct rrr_modbus_write_single_register_res {
+	uint16_t starting_address;
+	uint8_t contents[2];
 } __attribute((__packed__));
 
 struct rrr_modbus_write_multiple_registers_res {
@@ -96,7 +93,7 @@ struct rrr_modbus_res {
 	union {
 		struct rrr_modbus_res_error 					error;
 		struct rrr_modbus_read_register_res 			read_res;
-		struct rrr_modbus_write_register_res 			write_register_res;
+		struct rrr_modbus_write_single_register_res 	write_single_register_res;
 		struct rrr_modbus_write_multiple_registers_res 	write_multiple_registers_res;
 	};
 } __attribute((__packed__));
@@ -267,6 +264,34 @@ static int __rrr_modbus_client_receive_byte_count_and_status (
 	);
 }
 
+static int __rrr_modbus_client_receive_starting_address_and_register_value (
+		struct rrr_modbus_client *client,
+		uint8_t function_code,
+		const struct rrr_modbus_client_transaction *transaction,
+		const struct rrr_modbus_write_single_register_res *pdu,
+		uint16_t pdu_size,
+		int (*callback)(RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS)
+) {
+	if (pdu_size != 5) {
+		RRR_MSG_0("Invalid pdu size of %"PRIu16", expected 5 in %s\n",
+			pdu_size, __func__);
+		return RRR_MODBUS_SOFT_ERROR;
+	}
+
+	if (callback == NULL) {
+		RRR_BUG("Callback for function 0x%02x not set in %s\n", function_code, __func__);
+	}
+
+	return callback (
+			function_code,
+			transaction->transaction_id,
+			pdu->starting_address,
+			pdu->contents,
+			transaction->transaction_private_data,
+			client->callbacks.arg
+	);
+}
+
 static int __rrr_modbus_client_receive_starting_address_and_quantity (
 		struct rrr_modbus_client *client,
 		uint8_t function_code,
@@ -363,6 +388,22 @@ static int __rrr_modbus_client_receive_04_read_input_registers (
 	);
 }
 
+static int __rrr_modbus_client_receive_06_write_single_register (
+		struct rrr_modbus_client *client,
+		const struct rrr_modbus_client_transaction *transaction,
+		const struct rrr_modbus_write_single_register_res *pdu,
+		uint16_t pdu_size
+) {
+	return __rrr_modbus_client_receive_starting_address_and_register_value (
+			client,
+			RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER,
+			transaction,
+			pdu,
+			pdu_size,
+			client->callbacks.cb_res_06_write_single_regsister
+	);
+}
+
 static int __rrr_modbus_client_receive_16_write_multiple_registers (
 		struct rrr_modbus_client *client,
 		const struct rrr_modbus_client_transaction *transaction,
@@ -371,7 +412,7 @@ static int __rrr_modbus_client_receive_16_write_multiple_registers (
 ) {
 	return __rrr_modbus_client_receive_starting_address_and_quantity (
 			client,
-			RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER,
+			RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS,
 			transaction,
 			pdu,
 			pdu_size,
@@ -452,7 +493,11 @@ static int __rrr_modbus_client_receive (
 			VALIDATE_FRAME_SIZE(read_res);
 			ret = __rrr_modbus_client_receive_04_read_input_registers (client, &transaction, &frame->res.read_res, (uint16_t) pdu_size);
 			break;
-		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER:
+		case RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER:
+			VALIDATE_FRAME_SIZE(write_single_register_res);
+			ret = __rrr_modbus_client_receive_06_write_single_register (client, &transaction, &frame->res.write_single_register_res, (uint16_t) pdu_size);
+			break;
+		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS:
 			VALIDATE_FRAME_SIZE(write_multiple_registers_res);
 			ret = __rrr_modbus_client_receive_16_write_multiple_registers (client, &transaction, &frame->res.write_multiple_registers_res, (uint16_t) pdu_size);
 			break;
@@ -639,7 +684,6 @@ static int __rrr_modbus_client_req_push (
 
 	uint16_t transaction_write_pos;
 	void *transaction_private_data;
-
 	if ((ret = client->callbacks.cb_req_transaction_private_data_create (
 			&transaction_private_data,
 			private_data_arg,
@@ -662,7 +706,6 @@ static int __rrr_modbus_client_req_push (
 
 	RRR_DBG_3("Pushed transaction %d function code %d to position %d\n",
 			transaction->transaction_id, transaction->req.function_code, transaction_write_pos);
-
 	goto out;
 	out_destroy_transaction_private_data:
 		client->callbacks.cb_req_transaction_private_data_destroy(transaction_private_data);
@@ -687,6 +730,23 @@ static int __rrr_modbus_client_read_req (
 	return __rrr_modbus_client_req_push(client, &req, RRR_MODBUS_READ_REQ_SIZE, private_data_arg);
 }
 
+static int __rrr_modbus_client_write_single_reg_req (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint8_t *contents,
+		void *private_data_arg
+) {
+	struct rrr_modbus_req req;
+
+	__rrr_modbus_req_init (&req, RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER);
+
+
+	req.write_single_register_req.starting_address = rrr_htobe16(starting_address);
+	memcpy(req.write_single_register_req.contents, contents, 2);
+
+	return __rrr_modbus_client_req_push(client,	&req, RRR_MODBUS_WRITE_SINGLE_REGISTER_REQ_SIZE, private_data_arg);
+}
+
 static int __rrr_modbus_client_write_multiple_regs_req (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
@@ -695,8 +755,7 @@ static int __rrr_modbus_client_write_multiple_regs_req (
 		void *private_data_arg
 ) {
 	struct rrr_modbus_req req;
-
-	__rrr_modbus_req_init (&req, RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER);
+	__rrr_modbus_req_init (&req, RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS);
 
 	uint8_t byte_count = amount * 2; /* Calling function assures amount <= 127 */
 
@@ -777,6 +836,22 @@ int rrr_modbus_client_req_04_read_input_registers (
 			RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS,
 			starting_address,
 			quantity_of_registers,
+			private_data_arg
+	);
+}
+
+int rrr_modbus_client_req_06_write_single_register (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint8_t *contents,
+		void *private_data_arg
+) {
+	assert(contents != NULL);
+
+	return __rrr_modbus_client_write_single_reg_req (
+			client,
+			starting_address,
+			contents,
 			private_data_arg
 	);
 }

@@ -34,11 +34,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MODBUS_DONE        RRR_READ_EOF
 #define RRR_MODBUS_INCOMPLETE  RRR_READ_INCOMPLETE
 
-#define RRR_MODBUS_FUNCTION_CODE_01_READ_COILS               0x01
-#define RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS     0x02
-#define RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS   0x03
-#define RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS     0x04
-#define RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER  0x10
+#define RRR_MODBUS_FUNCTION_CODE_01_READ_COILS                 0x01
+#define RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS       0x02
+#define RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS     0x03
+#define RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS       0x04
+#define RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER      0x06
+#define RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS   0x10
 
 #define RRR_MODBUS_ERROR_CALLBACK_ARGS \
     uint16_t transaction_id, uint8_t function_code, uint8_t error_code, void *transaction_private_data, void *arg
@@ -48,6 +49,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS \
     uint8_t function_code, uint16_t transaction_id, uint8_t byte_count, const uint8_t *register_value, void *transaction_private_data, void *arg
+
+#define RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS \
+    uint8_t function_code, uint16_t transaction_id, uint16_t starting_address, const uint8_t *register_value, void *transaction_private_data, void *arg
 
 #define RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS \
     uint8_t function_code, uint16_t transaction_id, uint16_t starting_address, uint16_t quantity, void *transaction_private_data, void *arg
@@ -60,6 +64,7 @@ struct rrr_modbus_client_callbacks {
 	int  (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
 	int  (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
 	int  (*cb_res_04_read_input_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
+	int  (*cb_res_06_write_single_regsister)(RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS);
 	int  (*cb_res_16_write_multiple_regsisters)(RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS);
 	void  *arg;
 };
@@ -108,6 +113,12 @@ int rrr_modbus_client_req_04_read_input_registers (
 		struct rrr_modbus_client *client,
 		uint16_t starting_address,
 		uint16_t quantity_of_registers,
+		void *private_data_arg
+);
+int rrr_modbus_client_req_06_write_single_register (
+		struct rrr_modbus_client *client,
+		uint16_t starting_address,
+		uint8_t *contents,
 		void *private_data_arg
 );
 int rrr_modbus_client_req_16_write_multiple_registers (

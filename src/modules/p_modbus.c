@@ -52,8 +52,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_PORT 502
 #define MODBUS_DEFAULT_FUNCTION 1 /* Read Coils */
 #define MODBUS_DEFAULT_STARTING_ADDRESS 0
-#define MODBUS_DEFAULT_QUANTITY_COIL 8
-#define MODBUS_DEFAULT_QUANTITY_REGISTER 1
+#define MODBUS_DEFAULT_QUANTITY_READ_COIL 8
+#define MODBUS_DEFAULT_QUANTITY_READ_REGISTER 1
+#define MODBUS_DEFAULT_QUANTITY_WRITE_SINGLE_REGISTER 1
 
 #define MODBUS_DEFAULT_INTERVAL_MS 0
 #define MODBUS_DEFAULT_RESPONSE_TOPIC NULL
@@ -611,6 +612,53 @@ static int modbus_callback_res_byte_count_and_values (
 		return ret;
 }
 
+static int modbus_callback_res_starting_address_and_register_value (
+		RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS
+) {
+	struct modbus_client_data *client_data = arg;
+	struct modbus_transaction_data *transaction_data = transaction_private_data;
+	struct modbus_data *data = client_data->data;
+
+	int ret = 0;
+
+	struct rrr_array array = {0};
+
+	RRR_DBG_2("Response from server %s:%u in modbus instance %s: Transaction %u function %u starting address %u\n",
+		client_data->server,
+		client_data->port,
+		INSTANCE_D_NAME(data->thread_data),
+		transaction_id,
+		function_code,
+		starting_address);
+
+	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_starting_address, starting_address)) != 0) {
+		goto push_fail;
+	}
+
+	if ((ret = rrr_array_push_value_blob_with_tag_with_size (&array, modbus_field_contents, (const char *) register_value, 2)) != 0) {
+		goto push_fail;
+	}
+
+	if ((ret = modbus_output (
+			client_data->data,
+			&array,
+			transaction_data->response_topic,
+			transaction_data->response_topic_length,
+			client_data->server,
+			client_data->port,
+			function_code
+	)) != 0) {
+		goto out;
+	}
+
+	goto out;
+	push_fail:
+		RRR_MSG_0("Failed to push array value in %s\n", __func__);
+	out:
+		rrr_array_clear(&array);
+		return ret;
+}
+
 static int modbus_callback_res_starting_address_and_quantity (
 		RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS
 ) {
@@ -823,7 +871,15 @@ static int modbus_callback_data_prepare (
 					&private_data_create_callback_data
 			);
 			break;
-		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER:
+		case RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER:
+			ret = rrr_modbus_client_req_06_write_single_register (
+					client_data->client,
+					command->starting_address,
+					command->contents,
+					&private_data_create_callback_data
+			);
+			break;
+		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS:
 			ret = rrr_modbus_client_req_16_write_multiple_registers (
 					client_data->client,
 					command->starting_address,
@@ -1060,19 +1116,40 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	GET_VALUE_ULL(function);
 
 	// Default value of quantity depend on function
-	modbus_quantity = ((modbus_function == 0x03) || (modbus_function == 0x04)) // Read (Holding/Input) Registers
-		? MODBUS_DEFAULT_QUANTITY_REGISTER
-		: MODBUS_DEFAULT_QUANTITY_COIL;
+	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_01_READ_COILS ||
+	    modbus_function == RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS) {
+		modbus_quantity = MODBUS_DEFAULT_QUANTITY_READ_COIL;
+	}
+	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS ||
+	         modbus_function == RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS)	{
+		modbus_quantity = MODBUS_DEFAULT_QUANTITY_READ_REGISTER;
+	}
+	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS)
+	{
+		if (!rrr_array_has_tag(&array, modbus_field_quantity)) {
+			RRR_MSG_0("Warning: Failed to get value of field 'modbus_quantity' of command message to modbus instance %s\n",
+				modbus_field_quantity, INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+			goto drop;
+		}
+	}
+	else {
+		/* Function code 0x06 write single register doesn't require the modbus_quantity field.
+		 * Set it to 1 so it's not uninitialized when passed to other functions below.
+		 */
+		modbus_quantity = 1;
+	}
 
 	GET_VALUE_ULL(starting_address);
 	GET_VALUE_ULL(quantity);
 	GET_VALUE_ULL(interval_ms);
 	GET_VALUE_STR(response_topic);
 
-	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER) {
+	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER ||
+		modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
 		const struct rrr_type_value *modbus_contents_value;
 		if((modbus_contents_value = rrr_array_value_get_by_tag_const(&array, modbus_field_contents)) == NULL) {
-			RRR_MSG_0("Warning: Failed to get value of field %s of command message to modbus instance %s\n", \
+			RRR_MSG_0("Warning: Failed to get value of field %s of command message to modbus instance %s\n",
 				modbus_field_contents, INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 			goto drop;
@@ -1113,7 +1190,8 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS &&
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS &&
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS &&
-	    modbus_function != RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER) {
+	    modbus_function != RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER &&
+	    modbus_function != RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
 		RRR_MSG_0("Invalid value for field 'modbus_function' %" PRIu64 " to modbus instance %s, only a value between 1 and 3 is allowed. Dropping it.\n",
 			modbus_function, INSTANCE_D_NAME(data->thread_data));
 		goto drop;
@@ -1142,7 +1220,14 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				goto drop;
 			}
 			break;
-		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTER:
+		case RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER:
+			if (modbus_contents_length != 2) {
+				RRR_MSG_0("Invalid size for field 'modbus_content' to modbus instance %s for function code 0x06. Size should be 2 for while %" PRIu32 " was given, dropping it.\n",
+					INSTANCE_D_NAME(data->thread_data), modbus_contents_length);
+				goto drop;
+			}
+			break;
+		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS:
 			if (modbus_quantity < MODBUS_QUANTITY_WRITE_REGISTER_MIN || modbus_quantity > MODBUS_QUANTITY_WRITE_REGISTER_MAX) {
 				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_WRITE_REGISTER_MIN, MODBUS_QUANTITY_WRITE_REGISTER_MAX, modbus_function, modbus_quantity);
@@ -1150,7 +1235,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 
 			if (modbus_contents_length != modbus_quantity * 2) {
-				RRR_MSG_0("Invalid size for field 'modbus_content' to modbus instance %s. Size should be 'modbus_quantity'*2 (%u) while %" PRIu32 " was given, dropping it.\n",
+				RRR_MSG_0("Invalid size for field 'modbus_content' to modbus instance %s for function code 0x10. Size should be 'modbus_quantity'*2 (%u) while %" PRIu32 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), modbus_quantity*2u, modbus_contents_length);
 				goto drop;
 			}
@@ -1308,6 +1393,7 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	data->modbus_client_callbacks.cb_res_02_read_discrete_inputs = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_03_read_holding_registers = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_04_read_input_registers = modbus_callback_res_byte_count_and_values;
+	data->modbus_client_callbacks.cb_res_06_write_single_regsister = modbus_callback_res_starting_address_and_register_value;
 	data->modbus_client_callbacks.cb_res_16_write_multiple_regsisters = modbus_callback_res_starting_address_and_quantity;
 	data->modbus_client_callbacks.cb_res_error = modbus_callback_res_error;
 
