@@ -347,6 +347,12 @@ int rrr_net_transport_handle_ptr_read_stream (
 		int (*callback)(RRR_NET_TRANSPORT_READ_STREAM_CALLBACK_ARGS),
 		void *arg
 );
+int rrr_net_transport_handle_application_data_bind (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+);
 int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle

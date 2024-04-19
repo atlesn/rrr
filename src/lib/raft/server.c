@@ -50,7 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
+#include "../net_transport/net_transport_ctx.h"
 #include "../util/rrr_time.h"
+#include "../util/gnu.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
@@ -87,7 +89,6 @@ struct rrr_raft_server_state {
 	struct rrr_raft_bridge *bridge;
 	struct rrr_raft_task_list *tasks;
 	struct raft_configuration *configuration;
-	struct rrr_socket_client_collection *connections;
 	struct rrr_net_transport *net_transport;
 /*	uint32_t change_req_index;
 	uint32_t transfer_req_index;
@@ -98,6 +99,10 @@ struct rrr_raft_server_state {
 		rrr_event_handle socket;
 	} events;
 	int exiting;
+};
+
+struct rrr_raft_server_connection {
+	char *server_address;
 };
 
 static inline void *__rrr_raft_server_malloc (void *data, size_t size) {
@@ -239,6 +244,44 @@ static enum rrr_raft_code __rrr_raft_server_status_translate (
 	};
 
 	return RRR_RAFT_ERROR;
+}
+
+static void __rrr_raft_server_connection_destroy_void (
+		void *arg
+) {
+	struct rrr_raft_server_connection *connection = arg;
+	rrr_free(connection->server_address);
+	rrr_free(connection);
+}
+
+static int __rrr_raft_server_connection_new (
+		struct rrr_raft_server_connection **result,
+		const char *server_name,
+		uint16_t server_port
+) {
+	int ret = 0;
+
+	struct rrr_raft_server_connection *connection;
+
+	if ((connection = rrr_allocate_zero(sizeof(*connection))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((rrr_asprintf(&connection->server_address, "%s:%u", server_name, server_port)) <= 0) {
+		RRR_MSG_0("Failed to allocate memory for server address in %s\n", __func__);
+		ret = 1;
+		goto out_free;
+	}
+
+	*result = connection;
+
+	goto out;
+	out_free:
+		rrr_free(connection);
+	out:
+		return ret;
 }
 
 struct rrr_raft_server_make_opt_response_server_fields_iterate_cb_data {
@@ -1387,43 +1430,78 @@ static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITE_FILE_CB_AR
 	return bytes;
 }
 
-struct rrr_raft_server_connect_callback_data {
-	struct rrr_raft_server_state *state;
-	const char *server_address;
+static int __rrr_raft_server_connection_data_create (
+		struct rrr_raft_server_connection **result_connection,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen
+) {
+	int ret = 0;
+
+	char buf[256];
+	uint16_t port;
+	struct rrr_raft_server_connection *connection;
+	struct sockaddr_storage sockaddr_storage;
+	struct sockaddr *sockaddr_clean = (struct sockaddr *) &sockaddr_storage;
+	socklen_t socklen_clean;
+
+	memcpy(sockaddr_clean, sockaddr, socklen);
+	socklen_clean = socklen;
+
+	// Make sure we don't end up having any ::ffff: prefix in the server_address string
+	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt(sockaddr_clean, &socklen_clean);
+
+	rrr_ip_to_str_and_port (
+			&port,
+			buf,
+			sizeof(buf),
+			sockaddr_clean,
+			socklen_clean
+	);
+
+	if ((ret = __rrr_raft_server_connection_new (
+			&connection,
+			buf,
+			port
+	)) != 0) {
+		goto out;
+	}
+
+	*result_connection = connection;
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_server_connection_data_bind (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		struct rrr_raft_server_connection *connection
+) {
+	rrr_net_transport_handle_application_data_bind (
+			transport,
+			transport_handle,
+			connection,
+			__rrr_raft_server_connection_destroy_void
+	);
+}
+
+struct rrr_raft_server_net_connect_callback_data {
+	rrr_net_transport_handle result_handle;
+	struct sockaddr_storage result_sockaddr;
+	socklen_t result_socklen;
 };
 
-static int __rrr_raft_server_connect_callback (
-		int *fd,
+static void __rrr_raft_server_net_connect_callback (
+		struct rrr_net_transport_handle *handle,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void *callback_arg
 ) {
-	struct rrr_raft_server_connect_callback_data *callback_data = callback_arg;
-	struct rrr_raft_server_state *state = callback_data->state;
+	struct rrr_raft_server_net_connect_callback_data *callback_data = callback_arg;
 
-	int ret = 0;
-
-	int tmp_fd;
-
-	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
-			&tmp_fd,
-			addr,
-			addr_len
-	)) != 0) {
-		RRR_RAFT_SERVER_ERR_NET(callback_data->server_address, "error %i while connecting", ret);
-		goto out;
-	}
-
-	if ((ret = rrr_ip_network_connect_nonblock_postcheck(tmp_fd)) != 0) {
-		RRR_RAFT_SERVER_ERR_NET(callback_data->server_address, "error %i from connection postcheck", ret);
-		rrr_socket_close(tmp_fd);
-		goto out;
-	}
-
-	*fd = tmp_fd;
-
-	out:
-	return ret;
+	memcpy(&callback_data->result_sockaddr, addr, addr_len);
+	callback_data->result_socklen = addr_len;
+	callback_data->result_handle = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 }
 
 static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS) {
@@ -1433,33 +1511,74 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 
 	static int test_busy = 0;
 
+	char *server_hostname = NULL;
+	uint16_t server_port;
+	rrr_net_transport_handle transport_handle;
 	ssize_t bytes = 0;
 	int ret_tmp;
-	rrr_length send_chunk_count;
+	struct rrr_raft_server_connection *connection;
 
 	if (++test_busy == 1) {
 		bytes = -RRR_RAFT_READ_BUSY;
 		goto out;
 	}
 
-	struct rrr_raft_server_connect_callback_data callback_data = {
-		state,
-		server_address
-	};
+	if (!((transport_handle = rrr_net_transport_handle_get_by_match (
+			state->net_transport,
+			"x",
+			server_id
+	)) > 0)) {
+		if ((ret_tmp = rrr_ip_address_string_split (
+				&server_hostname,
+				&server_port,
+				server_address
+		)) != 0) {
+			goto out;
+		}
 
-	if ((ret_tmp = rrr_ip_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
-			&send_chunk_count,
-			state->connections,
-			server_address,
+		struct rrr_raft_server_net_connect_callback_data callback_data = {0};
+
+		if ((ret_tmp = rrr_net_transport_connect (
+				state->net_transport,
+				server_port,
+				server_hostname,
+				__rrr_raft_server_net_connect_callback,
+				&callback_data
+		)) != 0) {
+			RRR_RAFT_SERVER_ERR_NET(server_address, "error %i while connecting", ret_tmp);
+			bytes = -RRR_RAFT_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		assert(callback_data.result_handle > 0);
+		assert(callback_data.result_socklen > 0);
+
+		if ((ret_tmp = __rrr_raft_server_connection_data_create (
+				&connection,
+				(const struct sockaddr *) &callback_data.result_sockaddr,
+				callback_data.result_socklen
+		)) != 0) {
+			RRR_MSG_0("Failed to create connection data in %s\n", __func__);
+			bytes = -RRR_RAFT_READ_HARD_ERROR;
+			goto out;
+		}
+
+		__rrr_raft_server_connection_data_bind (
+				state->net_transport,
+				callback_data.result_handle,
+				connection
+		);
+
+		RRR_RAFT_SERVER_DBG_NET(connection->server_address, "connection established to remote server%s", "");
+
+		transport_handle = callback_data.result_handle;
+	}
+
+	if ((ret_tmp = rrr_net_transport_handle_send_push_const (
+			state->net_transport,
+			transport_handle,
 			data,
-			data_size,
-			NULL,
-			NULL,
-			NULL,
-			__rrr_raft_server_connect_callback,
-			&callback_data,
-			NULL,
-			NULL
+			data_size
 	)) != 0) {
 		if (ret_tmp == RRR_SOCKET_NOT_READY) {
 			RRR_RAFT_SERVER_DBG_NET(server_address, "connection not yet ready%s", "");
@@ -1476,8 +1595,6 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 		bytes = -RRR_RAFT_READ_HARD_ERROR;
 		goto out;
 	}
-
-	printf("Return: %i\n", ret_tmp);
 
 	bytes = (ssize_t) data_size;
 
@@ -1614,9 +1731,27 @@ static void __rrr_raft_server_timeout_cb (
 static int __rrr_raft_server_net_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
+	struct rrr_raft_server_state *state = arg;
+
 	int ret = 0;
 
-	assert(0 && "net accept callback not implemented");
+	struct rrr_raft_server_connection *connection;
+
+	if ((ret = __rrr_raft_server_connection_data_create (
+			&connection,
+			sockaddr,
+			socklen
+	)) != 0) {
+		goto out;
+	}
+
+	__rrr_raft_server_connection_data_bind (
+			state->net_transport,
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
+			connection
+	);
+
+	RRR_RAFT_SERVER_DBG_NET(connection->server_address, "accepted connection from remote server%s", "");
 
 	out:
 	return ret;
@@ -1648,9 +1783,11 @@ void __rrr_raft_server_listen_ipv4_and_ipv6_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
+	const char *server_address = arg;
+
 	(void)(handle);
-	(void)(arg);
-	// Nothing to do
+
+	RRR_DBG_1("Raft server now listening for incoming connections on %s\n", server_address);
 }
 
 static int __rrr_raft_server_net_transport_setup (
@@ -1707,7 +1844,7 @@ static int __rrr_raft_server_net_transport_setup (
 			*net_transport,
 			port,
 			__rrr_raft_server_listen_ipv4_and_ipv6_callback,
-			NULL
+			server_address
 	)) != 0) {
 		ret = 1;
 		goto out_destroy_net_transport;
@@ -1743,7 +1880,6 @@ int rrr_raft_server (
 	struct rrr_event_collection events = {0};
 	struct rrr_raft_bridge bridge = {0};
 	struct rrr_raft_task_list tasks = {0};
-	struct rrr_socket_client_collection *connections;
 	struct rrr_net_transport *net_transport;
 	static struct raft_heap rrr_raft_heap = {
 		NULL,                            /* data */
@@ -1810,29 +1946,19 @@ int rrr_raft_server (
 		goto out_cleanup_events;
 	}
 
-	if ((ret = rrr_socket_client_collection_new (
-			&connections,
-			channel->queue,
-			"raft server"
-	)) != 0) {
-		RRR_MSG_0("Failed to create client collection in %s\n", __func__);
-		goto out_destroy_message_store;
-	}
-
 	if ((ret = __rrr_raft_server_net_transport_setup (
 			&net_transport,
 			&state,
 			channel->queue,
 			servers[servers_self].address
 	)) != 0) {
-		goto out_destroy_client_collection;
+		goto out_destroy_message_store;
 	}
 
 	state.channel = channel;
 	state.message_store_state = message_store_state;
 	state.fsm_results = &fsm_results;
 	state.configuration = &configuration;
-	state.connections = connections;
 	state.net_transport = net_transport;
 
 	bridge.raft = &raft;
@@ -1927,8 +2053,6 @@ int rrr_raft_server (
 		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
 	out_destroy_net_transport:
 		rrr_net_transport_destroy(net_transport);
-	out_destroy_client_collection:
-		rrr_socket_client_collection_destroy(connections);
 	out_destroy_message_store:
 		rrr_raft_message_store_destroy(message_store_state);
 	out_cleanup_events:

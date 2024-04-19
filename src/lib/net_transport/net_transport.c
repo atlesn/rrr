@@ -2114,6 +2114,19 @@ int rrr_net_transport_handle_ptr_read_stream (
 	return ret;
 }
 
+int rrr_net_transport_handle_application_data_bind (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+) {
+	RRR_NET_TRANSPORT_HANDLE_GET();
+
+	rrr_net_transport_handle_ptr_application_data_bind(handle, application_data, application_data_destroy);
+
+	return 0;
+}
+
 int rrr_net_transport_handle_check_handshake_complete (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
