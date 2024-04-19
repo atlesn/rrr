@@ -242,14 +242,26 @@ static int __rrr_raft_bridge_ack_send_message (
 
 	for (pos = 0; pos < data_size; pos += bytes) {
 		if ((bytes = send_cb(server_id, server_address, data + pos, data_size - pos, cb_data)) < 0) {
-			if (bytes == -RRR_RAFT_READ_BUSY) {
+			ret = -bytes;
+
+			if (ret == RRR_RAFT_READ_BUSY) {
 				RRR_RAFT_BRIDGE_DBG_ARGS("ack send message busy for server %llu",
 					(unsigned long long) server_id
 				);
-				ret = RRR_RAFT_READ_BUSY;
 				goto out;
 			}
-			ret = 1;
+			else if (ret == RRR_RAFT_READ_SOFT_ERROR) {
+				RRR_RAFT_BRIDGE_ERR_ARGS("ack send message soft error for server %llu",
+					(unsigned long long) server_id
+				);
+				goto out;
+			}
+
+			RRR_RAFT_BRIDGE_ERR_ARGS("ack hard error %i for server %llu while sending message",
+				ret,
+				(unsigned long long) server_id
+			);
+			ret = RRR_RAFT_READ_HARD_ERROR;
 			goto out;
 		}
 		assert(bytes > 0);
@@ -721,6 +733,10 @@ int rrr_raft_bridge_acknowledge (
 								&task->sendmessage.data,
 								&task->sendmessage.data_size
 						);
+						ret = 0;
+					}
+					else if (ret == RRR_RAFT_READ_SOFT_ERROR) {
+						// Do nothing, consider message as lost
 						ret = 0;
 					}
 					else {

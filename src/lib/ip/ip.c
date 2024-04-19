@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -266,6 +266,16 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 		rrr_socket_close(fd);
 	out:
 		return ret;
+}
+
+int rrr_ip_network_connect_nonblock_postcheck (
+		int fd
+) {
+	uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
+	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) != 0) {
+		return RRR_SOCKET_SOFT_ERROR;
+	}
+	return RRR_SOCKET_OK;
 }
 
 static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {

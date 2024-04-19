@@ -194,3 +194,84 @@ int rrr_ip_socket_client_collection_send_push_const_by_host_and_port_connect_as_
 	out:
 		return ret;
 }
+
+int rrr_ip_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		rrr_length *send_chunk_count,
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string,
+		const void *data,
+		rrr_biglength size,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
+		void (*chunk_private_data_destroy)(void *chunk_private_data),
+		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
+		void *connect_callback_data,
+		int (*data_prepare_callback)(const void **data, rrr_biglength *size, void *callback_data, void *private_data),
+		void *data_prepare_callback_data
+) {
+	int ret = 0;
+
+	char *host, *colon, *end;
+	uint16_t port;
+	unsigned long long tmp;
+
+	if ((colon = strchr(addr_string, ':')) == 0) {
+		RRR_MSG_0("Missing : separator in address string '%s' in %s\n",
+			addr_string, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (colon == addr_string) {
+		RRR_MSG_0("Missing hostname before : separator in address string '%s' in %s\n",
+			addr_string, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	tmp = strtoull(colon + 1, &end, 10);
+	if (end == NULL || tmp == 0 || tmp > 65535 || *end != '\0') {
+		RRR_MSG_0("Invalid port '%s' in %s\n", colon + 1, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	port = (uint16_t) tmp;
+
+	if ((host = rrr_strdup(addr_string)) == NULL) {
+		RRR_MSG_0("Failed to allocate host string in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	host[(uintptr_t) colon - (uintptr_t) addr_string] = '\0';
+
+	struct rrr_ip_socket_client_resolve_callback_data callback_data = {
+		host,
+		port
+	};
+
+	if ((ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+			send_chunk_count,
+			collection,
+			addr_string,
+			data,
+			size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy,
+			__rrr_ip_socket_client_resolve_callback,
+			&callback_data,
+			connect_callback,
+			connect_callback_data,
+			data_prepare_callback,
+			data_prepare_callback_data
+	)) != 0) {
+		goto out_free;
+	}
+
+	out_free:
+		rrr_free(host);
+	out:
+		return ret;
+}

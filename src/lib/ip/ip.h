@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -84,6 +84,9 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 		int *result_fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len
+);
+int rrr_ip_network_connect_nonblock_postcheck (
+		int fd
 );
 int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 		uint16_t port,

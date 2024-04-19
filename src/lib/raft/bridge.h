@@ -45,11 +45,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_DBG_ARGS(msg, ...) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
 
+#define RRR_RAFT_BRIDGE_ERR_ARGS(msg, ...) \
+    RRR_MSG_0("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
+
 #define RRR_RAFT_BRIDGE_DBG(msg) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
 #define RRR_RAFT_READ_BUSY \
     RRR_READ_BUSY
+
+#define RRR_RAFT_READ_SOFT_ERROR \
+    RRR_READ_SOFT_ERROR
+
+#define RRR_RAFT_READ_HARD_ERROR \
+    RRR_READ_HARD_ERROR
 
 enum rrr_raft_task_type {
 	RRR_RAFT_TASK_TIMEOUT = 1,
