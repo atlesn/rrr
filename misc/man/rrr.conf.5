@@ -905,7 +905,10 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
 .SS modbus (PA)
-This module implements a modbus client capable of getting coil status from a remote modbus server.
+This module implements a modbus client supporting the functions
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10)
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
 .PP
@@ -935,7 +938,7 @@ is used.
 If given, any messages generated as a result of the command will have this topic set.
 .It modbus_function_code
 The modbus command to send, the commands
-.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06), Write Multiple Registers (0x10)
 are supported. If not given,
 .B 0x01
 is used.
@@ -943,7 +946,24 @@ The function code must be stored in the array field in decimal form.
 .It modbus_starting_address
 The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
 .It modbus_quantity
-The quantity (e.g. number of coils or registers) to use. Defaults to 8  and must be in the range 1 - 2000 for coil functions, and defaults to 1 and must be in the range 1 - 125 for register functions.
+For
+.B Read Coils (0x01), Read Discrete Inputs (0x02)
+quantity defaults to 8 and must be in the range 1 - 2000.
+.br
+For
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+quantity defaults to 1 and must the in the range 1 - 125.
+.br
+For
+.B Write Multiple Registers (0x10)
+quantity defaults to 1 and must the in the range 1 - 123.
+.br
+For any other function code quantity is not required and will be ignored if present.
+.It modbus_contents
+The raw data to write in
+.B Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10).
 .It modbus_interval_ms
 If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
 .El
@@ -958,23 +978,46 @@ and they correspond to fields given in the protocol standard.
 .It Error
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_exception_code
-.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
+.It Read Coils (0x01), Read Discrete Inputs (0x02)
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_status
+.It Read Holding Registers (0x03), Read Input Registers (0x04)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_contents
+.It Write Single Register (0x06)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address, modbus_contents
+.It Write Multiple Registers (0x10)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address
 .El
 .PP
 The array fields have the following contents:
 .PP
 .Bl -tag -width -indent
 .It modbus_function_code
-A one byte unsigned integer indicating a function code
+A one byte unsigned integer indicating a function code.
 .It modbus_exception_code
-A one byte unsigned integer indicating an exception code
+A one byte unsigned integer indicating an exception code.
 .It modbus_bytes
-A one byte unsigned integer indicating the size of a data field
+A one byte unsigned integer indicating the size of a data field.
 .It modbus_status
-A blob containing response data of a length indicated by
-.B modbus_bytes
+A blob containing response data from a 
+.B Read Coils (0x01) 
+or 
+.B Read Discrete Inputs (0x02) 
+response of a length indicated by
+.B modbus_bytes.
+.It modbus_contents
+For 
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+a blob containing response data from of a length indicated by
+.B modbus_bytes.
+.br
+For 
+.B Write Single Register (0x06)
+a blob containing response data of length 2.
+.B 
 .El
 .PP
 .SS python3 (PAI)
