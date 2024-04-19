@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -276,4 +276,53 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
 			addr,
 			*addr_len
 	);
+}
+
+int rrr_ip_address_string_split (
+		char **result_host,
+		uint16_t *result_port,
+		const char *addr_string
+) {
+	int ret = 0;
+
+	char *host, *colon, *end;
+	uint16_t port;
+	unsigned long long tmp;
+
+	if ((colon = strchr(addr_string, ':')) == 0) {
+		RRR_MSG_0("Missing : separator in address string '%s' in %s\n",
+			addr_string, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (colon == addr_string) {
+		RRR_MSG_0("Missing hostname before : separator in address string '%s' in %s\n",
+			addr_string, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	tmp = strtoull(colon + 1, &end, 10);
+	if (end == NULL || tmp == 0 || tmp > 65535 || *end != '\0') {
+		RRR_MSG_0("Invalid port '%s' in %s\n", colon + 1, __func__);
+		ret = 1;
+		goto out;
+	}
+
+	port = (uint16_t) tmp;
+
+	if ((host = rrr_strdup(addr_string)) == NULL) {
+		RRR_MSG_0("Failed to allocate host string in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	host[(uintptr_t) colon - (uintptr_t) addr_string] = '\0';
+
+	*result_host = host;
+	*result_port = port;
+
+	out:
+	return ret;
 }

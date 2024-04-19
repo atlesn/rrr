@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -58,6 +58,11 @@ int rrr_ip_check (
 void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
 		struct sockaddr *addr,
 		socklen_t *addr_len
+);
+int rrr_ip_address_string_split (
+		char **result_host,
+		uint16_t *result_port,
+		const char *addr_string
 );
 
 #endif /* RRR_IP_UTIL_H */

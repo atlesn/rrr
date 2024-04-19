@@ -211,40 +211,16 @@ int rrr_ip_socket_client_collection_send_push_const_by_address_string_connect_as
 ) {
 	int ret = 0;
 
-	char *host, *colon, *end;
+	char *host;
 	uint16_t port;
-	unsigned long long tmp;
 
-	if ((colon = strchr(addr_string, ':')) == 0) {
-		RRR_MSG_0("Missing : separator in address string '%s' in %s\n",
-			addr_string, __func__);
-		ret = 1;
+	if ((ret = rrr_ip_address_string_split (
+			&host,
+			&port,
+			addr_string
+	)) != 0) {
 		goto out;
 	}
-
-	if (colon == addr_string) {
-		RRR_MSG_0("Missing hostname before : separator in address string '%s' in %s\n",
-			addr_string, __func__);
-		ret = 1;
-		goto out;
-	}
-
-	tmp = strtoull(colon + 1, &end, 10);
-	if (end == NULL || tmp == 0 || tmp > 65535 || *end != '\0') {
-		RRR_MSG_0("Invalid port '%s' in %s\n", colon + 1, __func__);
-		ret = 1;
-		goto out;
-	}
-
-	port = (uint16_t) tmp;
-
-	if ((host = rrr_strdup(addr_string)) == NULL) {
-		RRR_MSG_0("Failed to allocate host string in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	host[(uintptr_t) colon - (uintptr_t) addr_string] = '\0';
 
 	struct rrr_ip_socket_client_resolve_callback_data callback_data = {
 		host,

@@ -46,7 +46,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
 #include "../ip/ip_helper.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip.h"
+#include "../net_transport/net_transport.h"
+#include "../net_transport/net_transport_config.h"
 #include "../util/rrr_time.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
@@ -60,6 +63,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_RAFT_SERVER_ERR_NET(address, msg, ...) \
     RRR_MSG_0("Raft [%i][server][%s] " msg "\n", state->bridge->server_id, address, __VA_ARGS__)
+
+#define RRR_RAFT_SERVER_NET_FIRST_READ_TIMEOUT_S              2
+#define RRR_RAFT_SERVER_NET_HARD_TIMEOUT_S                   30
+#define RRR_RAFT_SERVER_NET_TICK_INTERVAL_S                   1
+#define RRR_RAFT_SERVER_NET_SEND_CHUNK_COLLECTION_LIMIT  100000
 
 struct rrr_raft_server_fsm_result {
 	uint32_t req_index;
@@ -80,6 +88,7 @@ struct rrr_raft_server_state {
 	struct rrr_raft_task_list *tasks;
 	struct raft_configuration *configuration;
 	struct rrr_socket_client_collection *connections;
+	struct rrr_net_transport *net_transport;
 /*	uint32_t change_req_index;
 	uint32_t transfer_req_index;
 	uint32_t snapshot_req_index;*/
@@ -1420,6 +1429,8 @@ static int __rrr_raft_server_connect_callback (
 static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS) {
 	struct rrr_raft_server_state *state = cb_data->ptr;
 
+	(void)(server_id);
+
 	static int test_busy = 0;
 
 	ssize_t bytes = 0;
@@ -1600,13 +1611,124 @@ static void __rrr_raft_server_timeout_cb (
 	}
 }
 
+static int __rrr_raft_server_net_accept_callback (
+		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
+) {
+	int ret = 0;
+
+	assert(0 && "net accept callback not implemented");
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_server_net_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	int ret = 0;
+
+	assert(0 && "net read callback not implemented");
+
+	out:
+	return ret;
+}
+
+static int __rrr_raft_server_net_tick_callback (
+		RRR_NET_TRANSPORT_TICK_CALLBACK_ARGS
+) {
+	int ret = 0;
+
+	assert(0 && "net tick callback not implemented");
+
+	out:
+	return ret;
+}
+
+void __rrr_raft_server_listen_ipv4_and_ipv6_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	(void)(handle);
+	(void)(arg);
+	// Nothing to do
+}
+
+static int __rrr_raft_server_net_transport_setup (
+		struct rrr_net_transport **net_transport,
+		struct rrr_raft_server_state *state,
+		struct rrr_event_queue *queue,
+		const char *server_address
+) {
+	int ret = 0;
+
+	char *host;
+	uint16_t port;
+
+	if ((ret = rrr_ip_address_string_split (
+			&host,
+			&port,
+			server_address
+	)) != 0) {
+		goto out;
+	}
+
+	struct rrr_net_transport_config net_transport_config = {
+		.transport_type_p = RRR_NET_TRANSPORT_PLAIN
+	};
+
+	if ((ret = rrr_net_transport_new (
+			net_transport,
+			&net_transport_config,
+			"raft server",
+			0,
+			queue,
+			NULL,
+			0,
+			RRR_RAFT_SERVER_NET_FIRST_READ_TIMEOUT_S * 1000,
+			RRR_RAFT_SERVER_NET_TICK_INTERVAL_S * 1000,
+			RRR_RAFT_SERVER_NET_HARD_TIMEOUT_S * 1000,
+			RRR_RAFT_SERVER_NET_SEND_CHUNK_COLLECTION_LIMIT,
+			__rrr_raft_server_net_accept_callback,
+			state,
+			NULL,
+			NULL,
+			__rrr_raft_server_net_read_callback,
+			state,
+			__rrr_raft_server_net_tick_callback,
+			state,
+			NULL,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Failed to create net transport in %s\n", __func__);
+		goto out_free;
+	}
+
+	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
+			*net_transport,
+			port,
+			__rrr_raft_server_listen_ipv4_and_ipv6_callback,
+			NULL
+	)) != 0) {
+		ret = 1;
+		goto out_destroy_net_transport;
+	}
+
+	goto out_free;
+	out_destroy_net_transport:
+		rrr_net_transport_destroy(*net_transport);
+	out_free:
+		rrr_free(host);
+	out:
+		return ret;
+}
+
 int rrr_raft_server (
 		struct rrr_raft_channel *channel,
 		const char *log_prefix,
 		const struct rrr_raft_server *servers,
 		size_t servers_self,
 		const char *dir,
-		int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
+	int (*patch_cb)(RRR_RAFT_PATCH_CB_ARGS)
 ) {
 	int ret = 0;
 
@@ -1622,6 +1744,7 @@ int rrr_raft_server (
 	struct rrr_raft_bridge bridge = {0};
 	struct rrr_raft_task_list tasks = {0};
 	struct rrr_socket_client_collection *connections;
+	struct rrr_net_transport *net_transport;
 	static struct raft_heap rrr_raft_heap = {
 		NULL,                            /* data */
 		__rrr_raft_server_malloc,        /* malloc */
@@ -1692,8 +1815,17 @@ int rrr_raft_server (
 			channel->queue,
 			"raft server"
 	)) != 0) {
-		RRR_MSG_0("Failed to create client collection in %s", __func__);
+		RRR_MSG_0("Failed to create client collection in %s\n", __func__);
 		goto out_destroy_message_store;
+	}
+
+	if ((ret = __rrr_raft_server_net_transport_setup (
+			&net_transport,
+			&state,
+			channel->queue,
+			servers[servers_self].address
+	)) != 0) {
+		goto out_destroy_client_collection;
 	}
 
 	state.channel = channel;
@@ -1701,6 +1833,7 @@ int rrr_raft_server (
 	state.fsm_results = &fsm_results;
 	state.configuration = &configuration;
 	state.connections = connections;
+	state.net_transport = net_transport;
 
 	bridge.raft = &raft;
 	bridge.server_id = servers[servers_self].id;
@@ -1719,7 +1852,7 @@ int rrr_raft_server (
 		RRR_MSG_0("Failed to initialize raft in %s: %s: %s\n", __func__,
 			raft_strerror(ret_tmp), raft_errmsg(&raft));
 		ret = 1;
-		goto out_destroy_client_collection;
+		goto out_destroy_net_transport;
 	}
 
 	raft_seed(&raft, rrr_rand());
@@ -1792,6 +1925,8 @@ int rrr_raft_server (
 		raft_close(&raft, NULL);
 //	out_cleanup_fsm_results:
 		__rrr_raft_server_fsm_result_collection_clear(&cleared_count, &fsm_results);
+	out_destroy_net_transport:
+		rrr_net_transport_destroy(net_transport);
 	out_destroy_client_collection:
 		rrr_socket_client_collection_destroy(connections);
 	out_destroy_message_store:
