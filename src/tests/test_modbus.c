@@ -44,8 +44,8 @@ static void __rrr_test_modbus_make_response (
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 5;     // Length low
 			dst_buf[8] = 2;     // Byte count
-			dst_buf[9] = 0x01;  // Coil status 0
-			dst_buf[10] = 0x01; // Coil status 1
+			dst_buf[9] = 0xAB;  // Coil status 0
+			dst_buf[10] = 0xCD; // Coil status 1
 			*dst_buf_size = 11;
 			break;
 		case 0x03:
@@ -53,11 +53,40 @@ static void __rrr_test_modbus_make_response (
 			dst_buf[4] = 0;     // Length high
 			dst_buf[5] = 7;     // Length low
 			dst_buf[8] = 4;     // Byte count
-			dst_buf[9] = 0x01;  // Register a high
-			dst_buf[10] = 0x01; // Register a low
-			dst_buf[11] = 0x01; // Register b high
-			dst_buf[12] = 0x01; // Register b low
+			dst_buf[9] = 0x12;  // Register a high
+			dst_buf[10] = 0x34; // Register a low
+			dst_buf[11] = 0x56; // Register b high
+			dst_buf[12] = 0x78; // Register b low
 			*dst_buf_size = 13;
+			break;
+		case 0x04:
+			assert(dst_buf[10] == 0 && dst_buf[11] == 2); // Quantity
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 7;     // Length low
+			dst_buf[8] = 4;     // Byte count
+			dst_buf[9] = 0x9A;  // Register a high
+			dst_buf[10] = 0xBC; // Register a low
+			dst_buf[11] = 0xDE; // Register b high
+			dst_buf[12] = 0xFF; // Register b low
+			*dst_buf_size = 13;
+			break;
+		case 0x06:
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 6;     // Length low
+			dst_buf[8] = 0x12;  // Register address high
+			dst_buf[9] = 0x34;  // Register address low
+			dst_buf[10] = 1;    // Register value high
+			dst_buf[11] = 2;    // Register value low
+			*dst_buf_size = 12;
+			break;
+		case 0x10:
+			dst_buf[4] = 0;     // Length high
+			dst_buf[5] = 6;     // Length low
+			dst_buf[8] = 0x12;  // Register address high
+			dst_buf[9] = 0x34;  // Register address low
+			dst_buf[10] = 0;    // Quantity high
+			dst_buf[11] = 2;    // Quantity low
+			*dst_buf_size = 12;
 			break;
 		default:
 			assert(0);
@@ -121,11 +150,12 @@ static int __rrr_test_modbus_cb_res_01_read_coils (
 	int *status = arg;
 
 	(void)(transaction_id);
-	(void)(byte_count);
-	(void)(coil_status);
 	(void)(transaction_private_data);
 
 	assert(function_code == 1);
+	assert(byte_count == 2);
+	assert(coil_status[0] == 0xAB);
+	assert(coil_status[1] == 0xCD);
 
 	*status = 1;
 
@@ -138,11 +168,12 @@ static int __rrr_test_modbus_cb_res_02_read_discrete_inputs (
 	int *status = arg;
 
 	(void)(transaction_id);
-	(void)(byte_count);
-	(void)(coil_status);
 	(void)(transaction_private_data);
 
 	assert(function_code == 2);
+	assert(byte_count == 2);
+	assert(coil_status[0] == 0xAB);
+	assert(coil_status[1] == 0xCD);
 
 	*status = 2;
 
@@ -155,13 +186,70 @@ static int __rrr_test_modbus_cb_res_03_read_holding_registers (
 	int *status = arg;
 
 	(void)(transaction_id);
-	(void)(byte_count);
-	(void)(register_value);
 	(void)(transaction_private_data);
 
 	assert(function_code == 3);
+	assert(byte_count == 4);
+	assert(register_value[0] == 0x12);
+	assert(register_value[1] == 0x34);
+	assert(register_value[2] == 0x56);
+	assert(register_value[3] == 0x78);
 
 	*status = 3;
+
+	return 0;
+}
+
+static int __rrr_test_modbus_cb_res_04_read_input_registers (
+		RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS
+) {
+	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(transaction_private_data);
+
+	assert(function_code == 4);
+	assert(byte_count == 4);
+	assert(register_value[0] == 0x9A);
+	assert(register_value[1] == 0xBC);
+	assert(register_value[2] == 0xDE);
+	assert(register_value[3] == 0xFF);
+
+	*status = 4;
+
+	return 0;
+}
+
+static int __rrr_test_modbus_cb_res_06_write_single_register (
+		RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS
+) {
+	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(transaction_private_data);
+
+	assert(function_code == 6);
+	assert(starting_address == 0x1234);
+	assert(register_value[0] == 1);
+	assert(register_value[1] == 2);
+	*status = 6;
+
+	return 0;
+}
+
+static int __rrr_test_modbus_cb_res_16_write_multiple_register (
+		RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS
+) {
+	int *status = arg;
+
+	(void)(transaction_id);
+	(void)(transaction_private_data);
+
+	assert(function_code == 16);
+	assert(starting_address == 0x1234);
+	assert(quantity == 2);
+
+	*status = 16;
 
 	return 0;
 }
@@ -172,6 +260,7 @@ int rrr_test_modbus (void) {
 	struct rrr_modbus_client *client;
 	uint8_t buf[256];
 	uint8_t buf2[256];
+	uint8_t conents[4];
 	rrr_length buf_size;
 	rrr_length buf_size2;
 	int cb_status = -1;
@@ -183,6 +272,9 @@ int rrr_test_modbus (void) {
 		.cb_res_01_read_coils = __rrr_test_modbus_cb_res_01_read_coils,
 		.cb_res_02_read_discrete_inputs = __rrr_test_modbus_cb_res_02_read_discrete_inputs,
 		.cb_res_03_read_holding_registers = __rrr_test_modbus_cb_res_03_read_holding_registers,
+		.cb_res_04_read_input_registers = __rrr_test_modbus_cb_res_04_read_input_registers,
+		.cb_res_06_write_single_register = __rrr_test_modbus_cb_res_06_write_single_register,
+		.cb_res_16_write_multiple_registers = __rrr_test_modbus_cb_res_16_write_multiple_register,
 		.arg = &cb_status
 	};
 
@@ -274,6 +366,97 @@ int rrr_test_modbus (void) {
 	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
 	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
 	assert(cb_status == 3);
+
+	TEST_MSG("Testing request function 04 'read input registers'\n");
+
+	if ((ret = rrr_modbus_client_req_04_read_input_registers (client, 0x1234, 2, NULL)) != 0) {
+		TEST_MSG("Failed to create modbus read input registers package\n");
+		ret = 1;
+		goto out;
+	}
+
+	WRITE();
+
+	// Nothing more to write, must return DONE
+	assert(rrr_modbus_client_write (client, buf, &buf_size) == RRR_MODBUS_DONE);
+
+	VERIFY_BYTE(0, 0);     // Transaction ID high
+	VERIFY_BYTE(1, 3);     // Transaction ID low
+	VERIFY_BYTE(7, 4);     // Function code
+	VERIFY_BYTE(8, 0x12);  // Starting address high
+	VERIFY_BYTE(9, 0x34);  // Starting address low
+	VERIFY_BYTE(10, 0x00); // Quantity high
+	VERIFY_BYTE(11, 0x02); // Quantity low
+
+	buf_size2 = sizeof(buf2);
+	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
+	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 4);
+
+	TEST_MSG("Testing request function 06 'write single register'\n");
+
+	conents[0] = 1;
+	conents[1] = 2;
+
+	if ((ret = rrr_modbus_client_req_06_write_single_register (client, 0x1234, conents, NULL)) != 0) {
+		TEST_MSG("Failed to create modbus write single register package\n");
+		ret = 1;
+		goto out;
+	}
+
+	WRITE();
+
+	// Nothing more to write, must return DONE
+	assert(rrr_modbus_client_write (client, buf, &buf_size) == RRR_MODBUS_DONE);
+
+	VERIFY_BYTE(0, 0);     // Transaction ID high
+	VERIFY_BYTE(1, 4);     // Transaction ID low
+	VERIFY_BYTE(7, 6);     // Function code
+	VERIFY_BYTE(8, 0x12);  // Starting address high
+	VERIFY_BYTE(9, 0x34);  // Starting address low
+	VERIFY_BYTE(10, 1);  // Register value high
+	VERIFY_BYTE(11, 2);  // Register value low
+
+	buf_size2 = sizeof(buf2);
+	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
+	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 6);
+
+	TEST_MSG("Testing request function 16 'write multiple registers'\n");
+
+	conents[0] = 1;
+	conents[1] = 2;
+	conents[2] = 3;
+	conents[3] = 4;
+
+	if ((ret = rrr_modbus_client_req_16_write_multiple_registers (client, 0x1234, 2U, conents, NULL)) != 0) {
+		TEST_MSG("Failed to create modbus write multiple registers package\n");
+		ret = 1;
+		goto out;
+	}
+
+	WRITE();
+
+	// Nothing more to write, must return DONE
+	assert(rrr_modbus_client_write (client, buf, &buf_size) == RRR_MODBUS_DONE);
+
+	VERIFY_BYTE(0, 0);     // Transaction ID high
+	VERIFY_BYTE(1, 5);     // Transaction ID low
+	VERIFY_BYTE(7, 16);     // Function code
+	VERIFY_BYTE(8, 0x12);  // Starting address high
+	VERIFY_BYTE(9, 0x34);  // Starting address low
+	VERIFY_BYTE(10, 0);  // Quantity high
+	VERIFY_BYTE(11, 2);  // Quantity low
+	VERIFY_BYTE(12, 4);  // byte count
+	VERIFY_BYTE(13, 1);  // Register value 1 high
+	VERIFY_BYTE(14, 2);  // Register value 1 low
+	VERIFY_BYTE(15, 3);  // Register value 2 high
+	VERIFY_BYTE(16, 4);  // Register value 2 low
+
+	buf_size2 = sizeof(buf2);
+	__rrr_test_modbus_make_response (buf2, &buf_size2, buf, &buf_size);
+	assert(rrr_modbus_client_read(client, buf2, &buf_size2) == RRR_MODBUS_OK);
+	assert(cb_status == 16);
 
 	TEST_MSG("Testing malformed responses for function 01 'read_coils'\n");
 
