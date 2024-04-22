@@ -2096,7 +2096,8 @@ Generated  messages will have the topic
 .B httpserver/request/uuu
 set, where
 .B uuu
-is a unique unsigned decimal number which increase by 1 for every received request.
+is a unique unsigned decimal number which increase by 1 for every received request, method and path may also be added to the topic, see
+.B httpserver_topic_format.
 Messages will not be generated for the 
 .B OPTIONS
 method, only default 204 responses will be sent to these requests.
@@ -2298,6 +2299,26 @@ If defined,
 will send a
 .B Cache-Control
 header with the given string in all response headers.
+
+.It httpserver_topic_format={simple|request}
+If set to 
+.B simple 
+the generated messages will have the topic 
+.B httpserver/request/uuu 
+set, where 
+.B uuu 
+is a unique unsigned decimal number which increase by 1 for every received request. 
+.br
+If set to 
+.B request 
+the topic will be extended to 
+.B httpserver/request/uuu/method/path,
+where 
+.B method 
+is the HTTP method (get/post/etc) and 
+.B path 
+is the path part of the URL (www.example.com/I/AM/THE/PATH.HTML)
+Defaults to simple.
 
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
