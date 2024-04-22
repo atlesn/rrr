@@ -1008,6 +1008,12 @@ or
 .B Read Discrete Inputs (0x02) 
 response of a length indicated by
 .B modbus_bytes.
+.It modbus_starting_address
+An unsigned integer containing the starting address field returned in a response from a
+.B  Write Single Register (0x06)
+or
+.B Write Multiple Registers (0x10)
+response.
 .It modbus_contents
 For 
 .B Read Holding Registers (0x03), Read Input Registers (0x04)
