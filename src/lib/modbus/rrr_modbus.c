@@ -285,7 +285,7 @@ static int __rrr_modbus_client_receive_starting_address_and_register_value (
 	return callback (
 			function_code,
 			transaction->transaction_id,
-			pdu->starting_address,
+			rrr_be16toh(pdu->starting_address),
 			pdu->contents,
 			transaction->transaction_private_data,
 			client->callbacks.arg
@@ -313,8 +313,8 @@ static int __rrr_modbus_client_receive_starting_address_and_quantity (
 	return callback (
 			function_code,
 			transaction->transaction_id,
-			pdu->starting_address,
-			pdu->quantity_of_registers,
+			rrr_be16toh(pdu->starting_address),
+			rrr_be16toh(pdu->quantity_of_registers),
 			transaction->transaction_private_data,
 			client->callbacks.arg
 	);
@@ -400,7 +400,7 @@ static int __rrr_modbus_client_receive_06_write_single_register (
 			transaction,
 			pdu,
 			pdu_size,
-			client->callbacks.cb_res_06_write_single_regsister
+			client->callbacks.cb_res_06_write_single_register
 	);
 }
 
@@ -416,7 +416,7 @@ static int __rrr_modbus_client_receive_16_write_multiple_registers (
 			transaction,
 			pdu,
 			pdu_size,
-			client->callbacks.cb_res_16_write_multiple_regsisters
+			client->callbacks.cb_res_16_write_multiple_registers
 	);
 }
 

@@ -64,8 +64,8 @@ struct rrr_modbus_client_callbacks {
 	int  (*cb_res_02_read_discrete_inputs)(RRR_MODBUS_BYTE_COUNT_AND_COILS_CALLBACK_ARGS);
 	int  (*cb_res_03_read_holding_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
 	int  (*cb_res_04_read_input_registers)(RRR_MODBUS_BYTE_COUNT_AND_REGISTERS_CALLBACK_ARGS);
-	int  (*cb_res_06_write_single_regsister)(RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS);
-	int  (*cb_res_16_write_multiple_regsisters)(RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS);
+	int  (*cb_res_06_write_single_register)(RRR_MODBUS_STARTING_ADDRESS_AND_REGISTER_VALUE_CALLBACK_ARGS);
+	int  (*cb_res_16_write_multiple_registers)(RRR_MODBUS_STARTING_ADDRESS_AND_QUANTITY_CALLBACK_ARGS);
 	void  *arg;
 };
 

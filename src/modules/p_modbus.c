@@ -1393,8 +1393,8 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	data->modbus_client_callbacks.cb_res_02_read_discrete_inputs = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_03_read_holding_registers = modbus_callback_res_byte_count_and_values;
 	data->modbus_client_callbacks.cb_res_04_read_input_registers = modbus_callback_res_byte_count_and_values;
-	data->modbus_client_callbacks.cb_res_06_write_single_regsister = modbus_callback_res_starting_address_and_register_value;
-	data->modbus_client_callbacks.cb_res_16_write_multiple_regsisters = modbus_callback_res_starting_address_and_quantity;
+	data->modbus_client_callbacks.cb_res_06_write_single_register = modbus_callback_res_starting_address_and_register_value;
+	data->modbus_client_callbacks.cb_res_16_write_multiple_registers = modbus_callback_res_starting_address_and_quantity;
 	data->modbus_client_callbacks.cb_res_error = modbus_callback_res_error;
 
 	if (rrr_socket_client_collection_new (&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
