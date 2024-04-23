@@ -1,3 +1,23 @@
+rrr (1.30-0) bookworm; urgency=medium
+
+  * Features:
+    * New option http_server_decode_endpoint to decode the endpoint field
+      when receiving full requests.
+    * Support HTTP3 over QUIC in HTTP server and client.
+    * Start RRR in single thread mode which is useful for debugging and
+      on slower hardware.
+
+  * Improvements:
+    * Implement polite close of connections during shutdown for HTTP1
+      and HTTP2 in HTTP server.
+    * Optimization in message database to avoid excessive chdir calls.
+
+  * Fixes:
+    * Broken TLS mode in MQTT client.
+    * All settings used check not working correctly for JS module.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Apr 2024 07:06:49 +0100
+
 rrr (1.29-2) bookworm; urgency=medium
 
   * Changes:
