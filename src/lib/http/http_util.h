@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "../rrr_types.h"
 #include "../util/linked_list.h"
+#include "../helpers/nullsafe_str.h"
 
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,source) \
 	char name[256]; rrr_nullsafe_str_output_strip_null_append_null_trim(source, name, sizeof(name))
@@ -40,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 struct rrr_array;
-struct rrr_nullsafe_str;
 struct rrr_string_builder;
 
 struct rrr_http_uri_flags {
@@ -151,6 +151,17 @@ int rrr_http_util_uri_host_parse (
 int rrr_http_util_uri_validate_characters (
 		unsigned char *invalid,
 		const char *str
+);
+int rrr_http_util_uri_endpoint_and_query_string_split (
+		const struct rrr_nullsafe_str *str,
+		int (*callback) (
+				const void *endpoint_decoded,
+				rrr_nullsafe_len endpoint_decoded_length,
+				const void *query_string_raw,
+				rrr_nullsafe_len query_string_raw_length,
+				void *arg
+		),
+		void *callback_arg
 );
 void rrr_http_util_nprintf (
 		rrr_length length,

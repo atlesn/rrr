@@ -99,6 +99,7 @@ struct httpserver_data {
 	int do_http_fields_accept_any;
 	int do_allow_empty_messages;
 	int do_receive_full_request;
+	int do_decode_endpoint;
 	int do_accept_websocket_binary;
 	int do_receive_websocket_rrr_message;
 	int do_disable_http2;
@@ -294,10 +295,18 @@ static int httpserver_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_decode_endpoint", do_decode_endpoint, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_test_page_default_response", do_test_page_default_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_favicon_not_found_response", do_favicon_not_found_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
+
+	if (data->do_decode_endpoint && !data->do_receive_full_request) {
+		RRR_MSG_0("http_server_decode_endpoint was 'yes' while http_server_receive_full_request was 'no' in httpserver instance %s, this is an invalid configuration.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (data->do_get_response_from_senders) {
 		if (RRR_INSTANCE_CONFIG_EXISTS("http_server_receive_full_request") && !data->do_receive_full_request) {
@@ -782,6 +791,49 @@ static int httpserver_field_value_search_callback (
 	return RRR_READ_OK;
 }
 
+static int httpserver_receive_callback_uri_endpoint_and_query_string_split_callback (
+		const void *endpoint_decoded,
+		rrr_nullsafe_len endpoint_decoded_length,
+		const void *query_string_raw,
+		rrr_nullsafe_len query_string_raw_length,
+		void *arg
+) {
+	struct rrr_array *target_array = arg;
+
+	int ret = 0;
+
+	if (endpoint_decoded_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Endpoint length exceeds maximum in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (query_string_raw_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Query string length exceeds maximum in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	ret |= rrr_array_push_value_str_with_tag_with_size (
+			target_array,
+			"http_endpoint",
+			endpoint_decoded,
+			rrr_length_from_biglength_bug_const(endpoint_decoded_length)
+	);
+
+	if (query_string_raw_length > 0) {
+		ret |= rrr_array_push_value_str_with_tag_with_size (
+				target_array,
+				"http_query_string",
+				query_string_raw,
+				rrr_length_from_biglength_bug_const(query_string_raw_length)
+		);
+	}
+
+	out:
+	return ret;
+}
+
 static int httpserver_receive_callback_get_full_request_fields (
 		struct rrr_array *target_array,
 		struct httpserver_data *httpserver_data,
@@ -817,7 +869,22 @@ static int httpserver_receive_callback_get_full_request_fields (
 
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
-	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	ret |= rrr_http_util_uri_endpoint_and_query_string_split (
+			part->request_uri_nullsafe,
+			httpserver_receive_callback_uri_endpoint_and_query_string_split_callback,
+			target_array
+	);
+
+	if (httpserver_data->do_decode_endpoint) {
+		ret |= rrr_http_util_uri_endpoint_and_query_string_split (
+				part->request_uri_nullsafe,
+				httpserver_receive_callback_uri_endpoint_and_query_string_split_callback,
+				target_array
+		);
+	}
+	else {
+		ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	}
 
 	if (ret != 0) {
 		goto out_value_error;

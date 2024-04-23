@@ -244,13 +244,10 @@ void rrr_http_util_print_where_message (
 	RRR_MSG_0("       /\\ <-- HERE\n");
 }
 
-static int __rrr_http_util_decode_urlencoded_string_callback (
+static int __rrr_http_util_decode_urlencoded_string (
 		rrr_nullsafe_len *len,
-		void *str,
-		void *arg
+		void *str
 ) {
-	(void)(arg);
-
 	int ret = 0;
 
 	const unsigned char *start = str;
@@ -297,6 +294,15 @@ static int __rrr_http_util_decode_urlencoded_string_callback (
 
 	out:
 	return ret;
+}
+
+static int __rrr_http_util_decode_urlencoded_string_callback (
+		rrr_nullsafe_len *len,
+		void *str,
+		void *arg
+) {
+	(void)(arg);
+	return __rrr_http_util_decode_urlencoded_string (len, str);
 }
 
 int rrr_http_util_urlencoded_string_decode (
@@ -1337,6 +1343,101 @@ int rrr_http_util_uri_validate_characters (
 			__rrr_http_util_uri_validate_characters_nullsafe_callback,
 			invalid
 	);
+}
+
+struct rrr_http_util_uri_endpoint_and_query_string_split_callback_data {
+	int (*callback) (
+			const void *endpoint_decoded,
+			rrr_nullsafe_len endpoint_decoded_length,
+			const void *query_string_raw,
+			rrr_nullsafe_len query_string_raw_length,
+			void *arg
+	);
+	void *callback_arg;
+};
+
+static int __rrr_http_util_uri_endpoint_and_query_string_split_callback (
+		rrr_nullsafe_len *len,
+		void *str,
+		void *arg
+) {
+	struct rrr_http_util_uri_endpoint_and_query_string_split_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *endpoint = str, *query_string = NULL, *pos;
+	rrr_nullsafe_len endpoint_length = 0, query_string_length = 0, i;
+
+	if ((query_string = rrr_allocate(*len)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	for (i = 0; i < *len; i++) {
+		pos = endpoint + i;
+		if (*pos == '?') {
+			*pos = '\0';
+			break;
+		}
+		endpoint_length++;
+	}
+
+	for (i = i + 1, pos = query_string; i < *len; i++, pos++) {
+		*pos = endpoint[i];
+		query_string_length++;
+	}
+
+	if ((ret = __rrr_http_util_decode_urlencoded_string(&endpoint_length, str)) != 0) {
+		goto out;
+	}
+
+	if ((ret = callback_data->callback (
+			endpoint,
+			endpoint_length,
+			query_string,
+			query_string_length,
+			callback_data->callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(query_string);
+	return ret;
+}
+
+int rrr_http_util_uri_endpoint_and_query_string_split (
+		const struct rrr_nullsafe_str *str,
+		int (*callback) (
+				const void *endpoint_decoded,
+				rrr_nullsafe_len endpoint_decoded_length,
+				const void *query_string_raw,
+				rrr_nullsafe_len query_string_raw_length,
+				void *arg
+		),
+		void *callback_arg
+) {
+	struct rrr_http_util_uri_endpoint_and_query_string_split_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	int ret = 0;
+
+	struct rrr_nullsafe_str *tmp = NULL;
+
+	if ((ret = rrr_nullsafe_str_new_or_replace(&tmp, str)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_with_raw_do(tmp, __rrr_http_util_uri_endpoint_and_query_string_split_callback, &callback_data)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_nullsafe_str_destroy_if_not_null(&tmp);
+	return ret;
 }
 
 void rrr_http_util_nprintf (
