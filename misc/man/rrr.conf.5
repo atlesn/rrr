@@ -2234,9 +2234,18 @@ The following array values will be present in generated messages:
 .It http_method
 Always present.
 .It http_protocol
-Always present with the value 1, 2 or 3.
+Always present with the value 1, 2 or 3. Given in uppercase letters.
 .It http_endpoint
-Always present, given in uppercase letters.
+Always present. Percent-decoding and removal of the query string will not be performed unless
+.B http_endpoint_decode
+is set to
+.B yes.
+.It http_query_string
+Present if
+.B http_endpoint_decode
+is set to
+.B yes
+and the query contained a query string (following a ?).
 .It http_body
 Added if a body of non-zero length is present.
 .It http_content_transfer_encoding
@@ -2258,6 +2267,23 @@ Note that if
 is active, no messages without body will be generated.
 
 If set to 'no' or left unset, only fields from the HTTP request will be present in generated messages.
+
+.It http_endpoint_decode={yes|no}
+If this option is set to 'yes', any % sequences present in the
+.B http_endpoint
+field of messages being generated when full requests are received will be decoded into respective bytes.
+
+It is not possible to accurately represent the HTTP endpoint with the query string attached,
+nor the query string by itself after any percent decoding as this might introduce one of the reserved characters
+changing the meaning of the endpoint and/or query string. Due to this, and if the query contained a query string (following a ?),
+the query string will be removed and stored into the field
+.B http_query_string.
+The query string will not be decoded, thus any + (representing spaces) and percent encoded sequences will
+be preserved.
+
+If set to no or left unset, both the endpoint and any query string will be present in
+.B http_endpoint
+without any decoding.
 
 .It http_server_get_response_from_senders={yes|no}
 If this option is set to 'yes', a sender instance of
