@@ -1,32 +1,38 @@
-rrr (1.30-3.0) bookworm; urgency=medium
+rrr (1.30-4.0) bookworm; urgency=medium
 
   * Running development release
 
   * Changes:
 
   * Features:
-    * Single thread mode using -S argument for low resource operation or
-      debugging
+    * Start RRR in single thread mode which is useful for debugging and
+      on slower hardware.
     * Support HTTP3 over QUIC in HTTP server and HTTP client
     * Module for setting up a raft client
+    * New option http_server_decode_endpoint to decode the endpoint field
+      when receiving full requests.
 
   * Improvements:
     * Disable aggressive GCing in JS module to reduce CPU usage
     * Transaction statistics (count and average age) in HTTP server
     * Debug messages for tracing message age and latency 
+    * Implement polite close of connections during shutdown for HTTP1
+      and HTTP2 in HTTP server.
+    * Optimization in message database to avoid excessive chdir calls.
 
   * Fixes:
     * Crash in HTTP server if empty content type was passed from sender module
     * 10ms delay for all requests in HTTP server due to a poll timeout
     * In JS module, run GC more often if needed to avoid max number of persistables
       being exceeded under high load.
+    * Broken TLS mode in MQTT client.
+    * All settings used check not working correctly for JS module.
 
   * Under the hood:
-    * Cache last chdir in message database to reduce the number of this syscall
 
   * Other:
 
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 11 Mar 2024 12:32:27 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Apr 2024 07:06:49 +0100
 
 rrr (1.29-2) bookworm; urgency=medium
 
