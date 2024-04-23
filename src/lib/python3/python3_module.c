@@ -141,7 +141,7 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 	return rrr_python3_module;
 }
 
-int rrr_python3_module_append_inittab() {
+int rrr_python3_module_append_inittab(void) {
 	int ret = 0;
 
 	pthread_mutex_lock(&rrr_python3_module_create_lock);

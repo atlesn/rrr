@@ -34,12 +34,27 @@ enum rrr_socket_send_chunk_priority {
 
 #define RRR_SOCKET_SEND_CHUNK_PRIORITY_COUNT 2
 
+#define RRR_SOCKET_SEND_CHUNK_NOTIFY_CALLBACK_ARGS \
+    const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg
+#define RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS \
+    void *arg
+
+// TODO : Create define for other callback args
+
 struct rrr_socket_send_chunk_collection_list {
 	RRR_LL_HEAD(struct rrr_socket_send_chunk);
 };
 
 struct rrr_socket_send_chunk_collection {
 	struct rrr_socket_send_chunk_collection_list chunk_lists[RRR_SOCKET_SEND_CHUNK_PRIORITY_COUNT];
+};
+
+struct rrr_socket_send_chunk_send_callbacks {
+	void (*send_start)(RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS);
+	void (*send_end)(RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS);
+	void *start_end_arg;
+	void (*success)(RRR_SOCKET_SEND_CHUNK_NOTIFY_CALLBACK_ARGS);
+	void *success_arg;
 };
 
 void rrr_socket_send_chunk_collection_clear (
@@ -106,8 +121,7 @@ int rrr_socket_send_chunk_collection_send (
 int rrr_socket_send_chunk_collection_send_and_notify (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
-		void (*callback)(const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
-		void *callback_arg
+		const struct rrr_socket_send_chunk_send_callbacks *callbacks
 );
 int rrr_socket_send_chunk_collection_send_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,

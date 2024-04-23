@@ -41,7 +41,7 @@ static int __rrr_stats_tree_branch_new (
 
 	struct rrr_stats_tree_branch *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_tree_branch_new A\n");
+		RRR_MSG_0("Could not allocate memory in %s A\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -50,7 +50,7 @@ static int __rrr_stats_tree_branch_new (
 
 	result->name = rrr_strdup(name);
 	if (name == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_stats_tree_branch_new B\n");
+		RRR_MSG_0("Could not allocate memory in %s B\n", __func__);
 		ret = 1;
 		goto out_free_result;
 	}
@@ -142,7 +142,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 	if (strlen(path_position) == 0) {
 		struct rrr_msg_stats *new_value;
 		if (rrr_msg_stats_duplicate(&new_value, value) != 0) {
-			RRR_MSG_0("Could not duplicate message in __rrr_stats_tree_insert_or_update_branch n");
+			RRR_MSG_0("Could not duplicate message in %s\n", __func__);
 			return RRR_STATS_TREE_HARD_ERROR;
 		}
 		if (branch->value != NULL) {
@@ -169,7 +169,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 
 	struct rrr_stats_tree_branch *new_branch;
 	if (__rrr_stats_tree_branch_new(&new_branch, path_tmp) != 0) {
-		RRR_MSG_0("Could not create new branch in __rrr_stats_tree_insert_or_update_branch \n");
+		RRR_MSG_0("Could not create new branch in %s\n", __func__);
 		return RRR_STATS_TREE_HARD_ERROR;
 	}
 	RRR_LL_APPEND(branch, new_branch);
@@ -179,7 +179,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 
 int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct rrr_msg_stats *message) {
 	if (strlen (message->path) < 2) {
-		RRR_MSG_0("Path of message was too short in rrr_stats_tree_insert_or_update (value was '%s')", message->path);
+		RRR_MSG_0("Path of message was too short in %s (value was '%s')", __func__, message->path);
 		return RRR_STATS_TREE_SOFT_ERROR;
 	}
 
@@ -216,10 +216,10 @@ static void __rrr_stats_tree_branch_dump (struct rrr_stats_tree_branch *branch, 
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_BASE10_TEXT ||
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT
 		) {
-			printf ("-- %s/%s: %s\n", path_prefix, branch->name, branch->value->data);
+			printf ("-- %s/%s:\n - %s\n", path_prefix, branch->name, branch->value->data);
 		}
 		else {
-			printf ("-- %s/%s (not text): %s\n", path_prefix, branch->name, branch->value->path);
+			printf ("-- %s/%s (not text):\n - %s\n", path_prefix, branch->name, branch->value->path);
 		}
 	}
 

@@ -124,8 +124,6 @@ struct rrr_log_hook {
 	void (*log)(RRR_LOG_HOOK_ARGS);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
-	int (*event_pass_retry_callback)(void *arg);
-	void *event_pass_retry_callback_arg;
 	int handle;
 };
 
@@ -137,9 +135,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(RRR_LOG_HOOK_ARGS),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue,
-		int (*event_pass_retry_callback)(void *arg),
-		void *event_pass_retry_callback_arg
+		struct rrr_event_queue *notify_queue
 ) {
 	*handle = 0;
 
@@ -154,8 +150,6 @@ void rrr_log_hook_register (
 		 log,
 		 private_arg,
 		 notify_queue,
-		 event_pass_retry_callback,
-		 event_pass_retry_callback_arg,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -215,10 +209,8 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
-		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
-				&write_amount,
 				file,
 				line,
 				loglevel_translated,
@@ -227,16 +219,6 @@ void rrr_log_hooks_call_raw (
 				message,
 				hook->private_arg
 		);
-
-		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass (
-					hook->notify_queue,
-					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
-					write_amount,
-					hook->event_pass_retry_callback,
-					hook->event_pass_retry_callback_arg
-			);
-		}
 	}
 
 	LOCK_HOOK_END;
@@ -544,6 +526,24 @@ void rrr_log_printf (
 	__rrr_log_printf_va(file, line, loglevel, prefix, __format, args);
 
 	va_end(args);
+}
+
+void rrr_log_vprintf (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list ap
+) {
+	return __rrr_log_printf_va (
+			file,
+			line,
+			loglevel,
+			prefix,
+			__format,
+			ap
+	);
 }
 
 void rrr_log_fprintf (

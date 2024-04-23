@@ -30,7 +30,7 @@ typedef struct interpreter PerlInterpreter;
 struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
-struct rrr_instance_settings;
+struct rrr_settings;
 struct rrr_setting;
 struct rrr_array;
 
@@ -95,7 +95,7 @@ void rrr_perl5_destruct_method_sv (
 int rrr_perl5_settings_to_hv (
 		struct rrr_perl5_settings_hv *target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_instance_settings *source
+		struct rrr_settings *source
 );
 int rrr_perl5_method_to_sv (
 		struct rrr_perl5_method_sv *target,

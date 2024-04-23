@@ -478,7 +478,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	pthread_cleanup_push(data_cleanup, data);
@@ -488,12 +488,10 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	RRR_MSG_0("Warning: voltmonitor compiled without USB support. All readings will be 0.\n");
 #endif
 
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
-
 	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		pthread_exit(0);
+		goto out_cleanup_data;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -531,12 +529,11 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	}
 
 	out_message:
-	RRR_DBG_1 ("voltmonitor received encourage stop\n");
-
-//	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_exit(0);
+		RRR_DBG_1 ("voltmonitor received encourage stop\n");
+		pthread_cleanup_pop(1);
+	out_cleanup_data:
+		pthread_cleanup_pop(1);
+		return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

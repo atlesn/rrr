@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #include "../lib/log.h"
 #include "../lib/banner.h"
@@ -40,6 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
 #include "../lib/http/http_util.h"
+#if RRR_WITH_HTTP3
+#include "../lib/http/http_application_http3.h"
+#endif
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/stats/stats_instance.h"
@@ -47,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/ip/ip_defines.h"
 #include "../lib/util/gnu.h"
+#include "../lib/helpers/string_builder.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/helpers/nullsafe_str.h"
@@ -56,6 +61,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 #    define RRR_HTTPSERVER_DEFAULT_PORT_TLS                   443
 #endif
+#if defined(RRR_WITH_HTTP3)
+#    define RRR_HTTPSERVER_DEFAULT_PORT_QUIC                  443
+#endif
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
 #define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
 #define RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB                   10
@@ -63,6 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
 #define RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT     100000
+#define RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS        2000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -77,6 +86,10 @@ struct httpserver_data {
 	uint16_t port_tls;
 #endif
 
+#if defined(RRR_WITH_HTTP3)
+	uint16_t port_quic;
+#endif
+
 	struct rrr_map http_fields_accept;
 
 	rrr_setting_uint request_max_mb;
@@ -86,6 +99,7 @@ struct httpserver_data {
 	int do_http_fields_accept_any;
 	int do_allow_empty_messages;
 	int do_receive_full_request;
+	int do_decode_endpoint;
 	int do_accept_websocket_binary;
 	int do_receive_websocket_rrr_message;
 	int do_disable_http2;
@@ -102,10 +116,13 @@ struct httpserver_data {
 
 	struct rrr_map websocket_topic_filters;
 
+	struct rrr_string_builder alt_svc_header;
 	char *allow_origin_header;
 	char *cache_control_header;
 
 	pthread_mutex_t oustanding_responses_lock;
+
+	uint64_t shutdown_time;
 
 	// Settings for test suite
 	rrr_setting_uint startup_delay_us;
@@ -117,6 +134,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	rrr_string_builder_clear(&data->alt_svc_header);
 	rrr_fifo_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
@@ -144,12 +162,24 @@ static int httpserver_parse_config (
 ) {
 	int ret = 0;
 
+	enum rrr_net_transport_type_f allowed_transport_types = RRR_NET_TRANSPORT_F_PLAIN;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_TLS;
+#endif
+#if defined(RRR_WITH_HTTP3)
+	allowed_transport_types |= RRR_NET_TRANSPORT_F_QUIC;
+#endif
+
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"http_server",
-			1,
-			RRR_NET_TRANSPORT_PLAIN
+			1, // Allow multiple transport types
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+			0, // Don't allow specifying certificate without transport type being TLS
+#endif
+			RRR_NET_TRANSPORT_PLAIN,
+			allowed_transport_types
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -165,10 +195,27 @@ static int httpserver_parse_config (
 		)) != 0) {
 			goto out;
 		}
-		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
-			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-		) {
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)) {
 			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
+	);
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	data->port_quic = RRR_HTTPSERVER_DEFAULT_PORT_QUIC;
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_quic",
+		if ((ret = rrr_instance_config_read_optional_port_number (
+				&data->port_quic,
+				config,
+				"http_server_port_quic"
+		)) != 0) {
+			goto out;
+		}
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC)) {
+			RRR_MSG_0("Setting http_server_port_quic is set for httpserver instance %s but QUIC transport is not configured.\n",
 					config->name);
 			ret = 1;
 			goto out;
@@ -185,15 +232,42 @@ static int httpserver_parse_config (
 		)) != 0) {
 			goto out;
 		}
-		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
-			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-		) {
+
+		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN)) {
 			RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
 					config->name);
 			ret = 1;
 			goto out;
 		}
 	);
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_HTTP3)
+	if (data->net_transport_config.transport_type_f & (
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+		RRR_NET_TRANSPORT_F_TLS |
+#endif
+#if defined(RRR_WITH_HTTP3)
+		RRR_NET_TRANSPORT_F_QUIC |
+#endif
+		0
+	)) {
+		if ((ret = rrr_http_util_make_alt_svc_header (
+				&data->alt_svc_header,
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS ? data->port_tls : 0,
+#else
+				0,
+#endif
+#if defined(RRR_WITH_HTTP3)
+				data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC ? data->port_quic : 0
+#else
+				0
+#endif
+		)) != 0) {
+			goto out;
+		}
+	}
+#endif
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_request_max_mb", request_max_mb, RRR_HTTPSERVER_DEFAULT_REQUEST_MAX_MB);
 	data->request_max_size = data->request_max_mb;
@@ -221,10 +295,18 @@ static int httpserver_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_decode_endpoint", do_decode_endpoint, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_test_page_default_response", do_test_page_default_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_favicon_not_found_response", do_favicon_not_found_response, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
+
+	if (data->do_decode_endpoint && !data->do_receive_full_request) {
+		RRR_MSG_0("http_server_decode_endpoint was 'yes' while http_server_receive_full_request was 'no' in httpserver instance %s, this is an invalid configuration.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (data->do_get_response_from_senders) {
 		if (RRR_INSTANCE_CONFIG_EXISTS("http_server_receive_full_request") && !data->do_receive_full_request) {
@@ -283,12 +365,39 @@ static int httpserver_parse_config (
 	return ret;
 }
 
+static int httpserver_shutdown_complete (struct httpserver_data *data) {
+	return rrr_http_server_shutdown_complete(data->http_server);
+}
+
+static int httpserver_event_shutdown (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	if (data->shutdown_time + RRR_HTTPSERVER_SHUTDOWN_TIMEOUT_MS * 1000 < rrr_time_get_64()) {
+		RRR_MSG_0("httpserver instance %s shutdown timeout reached, exiting now\n",
+			INSTANCE_D_NAME(data->thread_data));
+		return RRR_EVENT_EXIT;
+	}
+
+	if (httpserver_shutdown_complete(data)) {
+		RRR_DBG_1("httpserver instance %s shutdown complete after %" PRIu64 " ms\n",
+			INSTANCE_D_NAME(data->thread_data), (rrr_time_get_64() - data->shutdown_time) / 1000);
+		return RRR_EVENT_EXIT;
+	}
+
+	return RRR_EVENT_OK;
+}
+
+static void httpserver_start_shutdown (struct httpserver_data *data) {
+	data->shutdown_time = rrr_time_get_64();
+	rrr_http_server_start_shutdown(data->http_server);
+}
+
 static int httpserver_start_listening (struct httpserver_data *data) {
 	int ret = 0;
 
-	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
-		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
-	) {
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN) {
 		if ((ret = rrr_http_server_start_plain (
 				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
@@ -305,9 +414,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 	}
 
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS ||
-		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
-	) {
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS) {
 		if ((ret = rrr_http_server_start_tls (
 				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
@@ -320,6 +427,26 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 		)) != 0) {
 			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
 					data->port_tls, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
+#endif
+
+#if defined(RRR_WITH_HTTP3)
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC) {
+		if ((ret = rrr_http_server_start_quic (
+				data->http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
+				data->port_quic,
+				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT,
+				&data->net_transport_config,
+				0
+		)) != 0) {
+			RRR_MSG_0("Could not start listening in QUIC mode on port %u in httpserver instance %s\n",
+					data->port_quic, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
 		}
@@ -392,7 +519,7 @@ static int httpserver_worker_process_field_callback (
 		RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->http_fields_accept);
 			if (rrr_nullsafe_str_cmpto(field->name, node_tag) == 0) {
 				do_add_field = 1;
-				if (node->value != NULL && node->value_size > 0 && *(node->value) != '\0') {
+				if (node->value != NULL && node->value_length > 0 && *(node->value) != '\0') {
 					// Do name translation
 					if (rrr_nullsafe_str_set(name_to_use, node->value, strlen(node->value)) != 0) {
 						RRR_MSG_0("Could not set name in httpserver_worker_process_field_callback\n");
@@ -664,6 +791,49 @@ static int httpserver_field_value_search_callback (
 	return RRR_READ_OK;
 }
 
+static int httpserver_receive_callback_uri_endpoint_and_query_string_split_callback (
+		const void *endpoint_decoded,
+		rrr_nullsafe_len endpoint_decoded_length,
+		const void *query_string_raw,
+		rrr_nullsafe_len query_string_raw_length,
+		void *arg
+) {
+	struct rrr_array *target_array = arg;
+
+	int ret = 0;
+
+	if (endpoint_decoded_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Endpoint length exceeds maximum in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if (query_string_raw_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Query string length exceeds maximum in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	ret |= rrr_array_push_value_str_with_tag_with_size (
+			target_array,
+			"http_endpoint",
+			endpoint_decoded,
+			rrr_length_from_biglength_bug_const(endpoint_decoded_length)
+	);
+
+	if (query_string_raw_length > 0) {
+		ret |= rrr_array_push_value_str_with_tag_with_size (
+				target_array,
+				"http_query_string",
+				query_string_raw,
+				rrr_length_from_biglength_bug_const(query_string_raw_length)
+		);
+	}
+
+	out:
+	return ret;
+}
+
 static int httpserver_receive_callback_get_full_request_fields (
 		struct rrr_array *target_array,
 		struct httpserver_data *httpserver_data,
@@ -699,7 +869,22 @@ static int httpserver_receive_callback_get_full_request_fields (
 
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
-	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	ret |= rrr_http_util_uri_endpoint_and_query_string_split (
+			part->request_uri_nullsafe,
+			httpserver_receive_callback_uri_endpoint_and_query_string_split_callback,
+			target_array
+	);
+
+	if (httpserver_data->do_decode_endpoint) {
+		ret |= rrr_http_util_uri_endpoint_and_query_string_split (
+				part->request_uri_nullsafe,
+				httpserver_receive_callback_uri_endpoint_and_query_string_split_callback,
+				target_array
+		);
+	}
+	else {
+		ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	}
 
 	if (ret != 0) {
 		goto out_value_error;
@@ -957,6 +1142,7 @@ static int httpserver_async_response_process (
 				}
 				break;
 			default:
+				// TODO : body_to_free is not used afterwards?
 				if ((ret = value_body->definition->to_str(&body_to_free, value_body)) != 0) {
 					RRR_MSG_0("Failed to process body field in httpserver instance %s. Data type of array field was %s.\n",
 						INSTANCE_D_NAME(data->thread_data), value_body->definition->identifier);
@@ -977,14 +1163,16 @@ static int httpserver_async_response_process (
 				break;
 		};
 
-		if (value_content_type != 0) {
+		if (value_content_type != NULL) {
 			VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
 			if ((ret = httpserver_async_response_get_process_string_value (&content_type_to_free, value_content_type)) != 0) {
 				RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 				goto out;
 			}
-			content_type_to_use = content_type_to_free;
+			if (*content_type_to_free != '\0') {
+				content_type_to_use = content_type_to_free;
+			}
 		}
 
 		if (content_type_to_use != NULL) {
@@ -1070,9 +1258,10 @@ static int httpserver_async_response_get_and_process (
 		// No timeout
 	}
 	else if (rrr_time_get_64() > response_data->time_begin + data->response_timeout_ms * 1000) {
-		RRR_DBG_1("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
+		RRR_DBG_3("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
 				response_data->request_topic, INSTANCE_D_NAME(data->thread_data));
-		ret = RRR_HTTP_SOFT_ERROR;
+		transaction->response_part->response_code = 504; // Gateway timeout
+		ret = RRR_HTTP_OK;
 		goto out;
 	}
 
@@ -1121,6 +1310,28 @@ static int httpserver_async_response_get_callback (
 	}
 
 	return httpserver_async_response_get_and_process (data, response_data, transaction);
+}
+
+static int httpserver_response_postprocess_callback (
+		RRR_HTTP_SERVER_WORKER_RESPONSE_POSTPROCESS_CALLBACK_ARGS
+) {
+	struct httpserver_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (rrr_string_builder_length(&callback_data->httpserver_data->alt_svc_header) == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_response_alt_svc_set (
+			transaction,
+			rrr_string_builder_buf(&callback_data->httpserver_data->alt_svc_header)
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int httpserver_receive_callback (
@@ -1780,14 +1991,14 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (thread_data->init_data.instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+	if (INSTANCE_D_MISC_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
 		RRR_MSG_1("Note: httpserver instance %s has input buffer disabled, performance when data is retrieved from senders may be impacted.\n",
 			INSTANCE_D_NAME(thread_data));
 	}
 
 	if (httpserver_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("httpserver thread thread_data is %p\n", thread_data);
@@ -1820,16 +2031,12 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	struct rrr_http_server_callbacks callbacks = {
 		httpserver_unique_id_generator_callback,
-		&callback_data,
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
-		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		httpserver_receive_callback,
-		&callback_data,
 		httpserver_async_response_get_callback,
+		httpserver_response_postprocess_callback,
 		&callback_data
 	};
 
@@ -1853,12 +2060,26 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			thread
 	);
 
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown\n", thread, INSTANCE_D_NAME(thread_data));
+
+	httpserver_start_shutdown(data);
+
+	if (!httpserver_shutdown_complete(data)) {
+		rrr_event_dispatch (
+				INSTANCE_D_EVENTS(thread_data),
+				100 * 1000,
+				httpserver_event_shutdown,
+				thread
+		);
+	}
+
+	RRR_DBG_1 ("Thread httpserver %p instance %s shutdown complete\n", thread, INSTANCE_D_NAME(thread_data));
+
 	out_message:
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
 	pthread_cleanup_pop(1);
-
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,35 +19,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-extern "C" {
-#include "allocator.h"
-};
+#ifndef RRR_BSD_H
+#define RRR_BSD_H
 
-#include <string>
+#ifdef RRR_HAVE_LIBBSD
+#  include <bsd/unistd.h>
+#else
+#  define __BSD_VISIBLE 1
+#  include <unistd.h>
+#endif
 
-#include "util/E.hxx"
+#ifdef RRR_HAVE_SETPROCTITLE
+#  define rrr_setproctitle setproctitle
+#else
+static void rrr_setproctitle(const char *fmt, ...) {
+	(void)(fmt);
+}
+#endif
 
-struct rrr_instance_config_data;
+#ifdef RRR_HAVE_SETPROCTITLE_INIT
+#  define rrr_setproctitle_init(a,b,c) setproctitle_init(a,(char**)b,(char**)c)
+#else
+#  define rrr_setproctitle_init(a,b,c) (void)(a); (void)(b); (void)(c);
+#endif
 
-namespace RRR {
-	class InstanceConfig {
-		struct rrr_instance_config_data *config;
-
-		public:
-		class E : public RRR::util::E {
-			public:
-			E(std::string msg) :
-				RRR::util::E(msg)
-			{
-			}
-		};
-
-		InstanceConfig(struct rrr_instance_config_data *config) :
-			config(config)
-		{
-		}
-
-		bool has(std::string name);
-		std::string get(std::string name);
-	};
-} // namespace RRR
+#endif /* RRR_BSD_H */

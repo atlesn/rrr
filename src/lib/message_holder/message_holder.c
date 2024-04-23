@@ -373,7 +373,7 @@ int rrr_msg_holder_nexthop_ok (
 }
 
 int rrr_msg_holder_nexthop_count (
-	const struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry
 ) {
 	return rrr_instance_friend_collection_count(&entry->nexthops);
 }

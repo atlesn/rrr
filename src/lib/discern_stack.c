@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DISCERN_STACK_OK     RRR_READ_OK
 #define RRR_DISCERN_STACK_BAIL   RRR_READ_EOF
 
-#define RRR_DISCERN_STACK_DATA_MAX_SIZE 64
+#define RRR_DISCERN_STACK_MAX 64
 
 enum rrr_discern_stack_element_type {
 	RRR_DISCERN_STACK_E_NONE,
@@ -121,7 +121,7 @@ static int __rrr_discern_stack_storage_push (
 	rrr_length new_capacity = rrr_length_add_bug_const(target->size, data_size);
 	if (new_capacity > target->capacity) {
 		void *new_data;
-		if ((new_data = rrr_reallocate(target->data, target->capacity, new_capacity)) == NULL) {
+		if ((new_data = rrr_reallocate(target->data, new_capacity)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
@@ -263,7 +263,6 @@ static int __rrr_discern_stack_list_expand (
 	return ret;
 }
 
-
 static int __rrr_discern_stack_list_push (
 		struct rrr_discern_stack_list *list,
 		struct rrr_discern_stack_storage *list_storage,
@@ -308,7 +307,7 @@ static int __rrr_discern_stack_list_push (
 		RRR_ASSERT(sizeof(rrr_length) == sizeof(rrr_u32),size_of_rrr_length_is_4_bytes);
 
 		const char *str = value_storage->data + element->value.data_pos;
-		element->value.value = ((rrr_length) str[0] << 16) | ((rrr_length) str[strlen(str) - 1]);
+		element->value.value = RRR_DISCERN_STACK_FIRST_LAST_INDEX(str, strlen(str));
 		element->value.data_size = data_size;
 	}
 	else {
@@ -641,8 +640,11 @@ static int __rrr_discern_stack_execute (
 
 	int ret = 0;
 
-	struct rrr_discern_stack_value_list stack = {0};
-	struct rrr_discern_stack_value *stack_e = NULL;
+	struct rrr_discern_stack_value_list stack = {
+		.data_pos = 0,
+		.size = RRR_DISCERN_STACK_MAX
+	};
+	struct rrr_discern_stack_value stack_e[RRR_DISCERN_STACK_MAX];
 	rrr_length wpos = 0;
 
 	int (*const apply_cbs[2])(RRR_DISCERN_STACK_APPLY_CB_ARGS) = {
@@ -655,19 +657,12 @@ static int __rrr_discern_stack_execute (
 	rrr_length index_tmp_size = 0;
 	rrr_length index_result;
 
+	memset(stack_e, '\0', sizeof(stack_e));
+
 	*fault = RRR_DISCERN_STACK_FAULT_OK;
 
 	for (rrr_length i = 0; i < list->wpos; i++) {
-		if (wpos == stack.size) {
-			struct rrr_discern_stack_value *stack_e_new;
-			if ((stack_e_new = rrr_reallocate(stack_e, sizeof(*stack_e) * stack.size, sizeof(*stack_e) * (stack.size + 8))) == NULL) {
-				RRR_MSG_0("Could not allocate memory in %s\n", __func__);
-				ret = 1;
-				goto out;
-			}
-			stack.size += 8;
-			stack_e = stack_e_new;
-		}
+		assert (wpos < stack.size);
 
 		node = &((const struct rrr_discern_stack_element *) (list_storage->data + list->data_pos))[i];
 
@@ -686,14 +681,13 @@ static int __rrr_discern_stack_execute (
 						break;
 					case RRR_DISCERN_STACK_E_ARRAY_TAG:
 						// Check against any index from the callback. If the first and last
-						// letter does not match, we produce false result immediately.
+						// letter do not match any index entry, we produce false result
+						// immediately.
 						index_result = 1;
-						struct rrr_discern_stack_index_entry *entry = index_tmp;
 						for (rrr_length i = 0; i < index_tmp_size; i++) {
-							if ((index_result = entry->id == node->value.value ? 1 : 0)) {
+							if ((index_result = index_tmp[i].id == node->value.value)) {
 								break;
 							}
-							entry++;
 						}
 
 						if (!index_result) {
@@ -764,7 +758,6 @@ static int __rrr_discern_stack_execute (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(index_tmp);
-	RRR_FREE_IF_NOT_NULL(stack_e);
 	return ret;
 }
 
@@ -894,6 +887,14 @@ static int __rrr_discern_stack_parse_execute_step (
 			break;
 	}
 
+	assert(stack->wpos <= RRR_DISCERN_STACK_MAX);
+	if (stack->wpos == RRR_DISCERN_STACK_MAX) {
+		RRR_MSG_0("Stack overflow in discern stack. The maximum of %u pushed elements exceeded.\n", RRR_DISCERN_STACK_MAX);
+		*fault = RRR_DISCERN_STACK_FAULT_STACK_OVERFLOW;
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -925,7 +926,7 @@ static int __rrr_discern_stack_parse (
 	rrr_parse_ignore_control_and_increment_line(pos);
 
 	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of file while parsing discern_stack definition\n");
+		RRR_MSG_0("Unexpected end of file while parsing discern stack definition\n");
 		ret = 1;
 		*fault = RRR_DISCERN_STACK_FAULT_END_MISSING;
 		goto out;

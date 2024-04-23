@@ -186,12 +186,15 @@ void rrr_signal_default_signal_actions_register(void) {
 	sigaction (SIGUSR1, &action, NULL);
 	// Used to set main_running = 0;
 	sigaction (SIGTERM, &action, NULL);
+	// Used to set sigusr2, usually to output memory profiling information
+	sigaction (SIGUSR2, &action, NULL);
 	// Used to wake up sleeps
 	sigaction (SIGCONT, &action, NULL);
 }
 
 int rrr_signal_default_handler (
-		int *main_running,
+		volatile int *main_running,
+		volatile int *sigusr2,
 		int s,
 		void *arg
 ) {
@@ -221,6 +224,10 @@ int rrr_signal_default_handler (
 		}
 
 		*main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
+	else if (s == SIGUSR2) {
+		*sigusr2 = 1;
 		return RRR_SIGNAL_HANDLED;
 	}
 

@@ -1132,15 +1132,28 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	if ((rrr_net_transport_config_parse(
+	if ((rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"mqtt",
+			0, /* Don't allow multiple transports */
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+			0, /* Don't allow to set certificate without transport type being TLS */
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN|RRR_NET_TRANSPORT_F_TLS
+#else
 			0,
-			RRR_NET_TRANSPORT_PLAIN
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	)) != 0) {
 		goto out;
 	}
+
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+	if (data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)
+		data->net_transport_config.transport_type_p = RRR_NET_TRANSPORT_TLS;
+#endif
 
 	if ((ret = rrr_instance_config_read_optional_port_number (
 			&data->server_port,
@@ -1151,9 +1164,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	}
 
 	if (data->server_port == 0) {
-		data->server_port = data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+		data->server_port = data->net_transport_config.transport_type_p == RRR_NET_TRANSPORT_TLS
 			? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
 			: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+#else
+		data->server_port = RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+#endif
 	}
 
 	ret = 0;
@@ -2173,7 +2190,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	if ((init_ret = mqttclient_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initialize data in MQTT client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("MQTT client instance %s thread %p, disabling processing of input queue until connection with broker is established.\n",
@@ -2328,7 +2345,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		RRR_DBG_1 ("MQTT client %p instance %s exiting\n",
 				thread, INSTANCE_D_NAME(thread_data));
 		pthread_cleanup_pop(1);
-		pthread_exit(0);
+		return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

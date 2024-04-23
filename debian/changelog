@@ -1,19 +1,33 @@
-rrr (1.28-20posten12) bookworm; urgency=medium
+rrr (1.30-5) bookworm; urgency=medium
 
-  * Non-maintainer upload.
+  * Features:
+    * New option http_server_decode_endpoint to decode the endpoint field
+      when receiving full requests.
+    * Support HTTP3 over QUIC in HTTP server and client.
+    * Start RRR in single thread mode which is useful for debugging and
+      on slower hardware.
 
- -- LBSdrift <lbsdrift@posten.local>  Tue, 26 Sep 2023 11:07:03 +0200
+  * Improvements:
+    * Implement polite close of connections during shutdown for HTTP1
+      and HTTP2 in HTTP server.
+    * Optimization in message database to avoid excessive chdir calls.
 
-rrr (1.28-20) bullseye; urgency=medium
+  * Fixes:
+    * Broken TLS mode in MQTT client.
+    * All settings used check not working correctly for JS module.
 
-  * RUNNING DEVELOPMENT RELEASE
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Apr 2024 07:06:49 +0100
+
+rrr (1.29-2) bookworm; urgency=medium
 
   * Changes:
     * In route definition, the I operator is replaced with D. Existing programs
-      must be updated to avoid warning to be printed.
+      must be updated to prevent warning from being printed.
     * Changed signatures for processor functions by adding a new last argument
       'method'. Existing scripts MAY BREAK and should be updated. Refer to
       the rrr.conf.5 manual page for correct function signatures.
+    * Set process and thread names on OS-es where this is possible. This can
+      assist when debugging for instance CPU usage.
 
   * Features:
     * Match generated messages in httpclient with their corresponding message
@@ -30,15 +44,22 @@ rrr (1.28-20) bullseye; urgency=medium
     * New module artnet for controlling DMX devices over ArtNet protocol
     * New OS object in javascript (operating-system) and ability to obtain
       hostname
-    * New ModBus TCP modbule
+    * New ModBus TCP module
+    * New Lua module
     * New method on Message object in JS push_tag_object which serializes
       objects into JSON. Receiving JS instances will automatically de-
       serialize the JSON added to messages this way.
-    * New parameter methods for cmodules (python3, js, perl5 and cmodule)
+    * New parameter methods for cmodules (python3, js, perl5, lua and cmodule)
       allowing messages content to be identified before being processed. The
       processor function receives a method name.
     * Support PATCH requests in httpclient and httpserver
     * New function console.assert in JS
+    * Hook messages between modules and dump them using rrr_stats 
+    * Hook events and show them using rrr_stats
+    * Set mode on file which are written by the file module
+    * Incrementer can use prefixes ORed with incremented ID
+    * Dump memory profiling using functionallity provided by jemalloc
+    * Summarize response errors in httpclient sorted by code
  
   * Improvements:
     * Timeout changes in httpclient and rotate deferred to msgdb PUT
@@ -51,16 +72,38 @@ rrr (1.28-20) bullseye; urgency=medium
       instead of once for every message.
     * Add warning when buffer entry count exceeds a certain configurable limit
     * Add statistics data for message broker costumer buffers
+    * Print warning and disallow requests in HTTP-client if the endpoints has
+      invalid characters.
 
   * Fixes:
     * Raw data messages in JS module now working properly
     * Crash in JS module upon GC due to null pointer access
+    * Httpclient sometimes spinning on CPU indefinitely after handshaking if
+      there is no data to send on a socket.
+    * Readers were blocked in message broker when writer used do_again during
+      slot write (fast writes from dummy module with buffer=no).
+    * Deadlock in rrr_stats due to printing messages during signal handling
+    * Soft error was ignored in socket client collection also when socket
+      surely was closed, like when 0 bytes were read. This caused the socket
+      not to be closed with following CPU spin due do constant POLLIN event.
+      The soft error is now forced to propagate if bytes read is zero so that
+      only data errors are ignored (which is also intention of higher levels).
+    * Connections were closed in IP module when byte by byte sync was used
+      and the alignment used up all remaining buffered bytes.
+    * Non-working default socket name in msgdb module causing crash
+    * Incorrect tick timer in msgdb causing excessive CPU usage
+    * Memory leak of HV in Perl subroutine call helper function
+    * Stale connections in http-client when server accepts connections but does
+      not respond
+    * Discrepancies in httpserver with respect to timeout and response when
+      waiting for responses from sender modules.
+    * Incorrect header name for access-control-allow-methods in httpserver
 
   * Under the hood:
     * Use events in file module
     * Common send loop for file and ip modules
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 11 Feb 2023 08:30:08 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 17 Feb 2024 12:58:49 +0100
 
 rrr (1.27-1) bullseye; urgency=medium
 

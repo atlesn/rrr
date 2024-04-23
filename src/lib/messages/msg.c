@@ -260,7 +260,7 @@ int rrr_msg_to_host_and_verify_with_callback (
 
 		ret = callback_log_msg(message, callback_arg1, callback_arg2);
 	}
-	else if (RRR_MSG_IS_TREE_DATA(*msg)) {
+	else if (RRR_MSG_IS_STATS(*msg)) {
 		if (callback_stats_msg == NULL) {
 			RRR_MSG_0("Received an rrr_msg_stats in %s but no callback is defined for this type\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
@@ -269,7 +269,7 @@ int rrr_msg_to_host_and_verify_with_callback (
 
 		struct rrr_msg_stats tmp;
 
-		if (rrr_msg_stats_unpack(&tmp, (const struct rrr_msg_stats_packed *) (*msg), expected_size) != 0) {
+		if (rrr_msg_stats_flip_and_unpack(&tmp, (const struct rrr_msg_stats_packed *) (*msg), expected_size) != 0) {
 			RRR_MSG_0("Invalid data in received stats message in %s\n", __func__);
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;

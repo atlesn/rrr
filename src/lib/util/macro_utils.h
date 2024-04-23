@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PASTE_4(a, b, c, d) a ## b ## c ## d
 
 #define RRR_QUOTE(value) #value
+#define RRR_QUOTE_MACRO(value) RRR_QUOTE(value)
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)
 

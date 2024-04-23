@@ -19,30 +19,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-extern "C" {
-#include "allocator.h"
-#include "instance_config.h"
-};
+#include <assert.h>
 
-#include <InstanceConfig.hxx>
+#include "lua_common.h"
+#include "../cmodule/cmodule_worker.h"
 
-namespace RRR {
-	bool InstanceConfig::has(std::string name) {
-		return rrr_instance_config_setting_exists(config, name.c_str()) != 0;
-	}
+void rrr_lua_cmodule_library_register (
+		struct rrr_lua *target,
+		struct rrr_cmodule_worker *worker
+) {
+	lua_State *L = target->L;
 
-	std::string InstanceConfig::get(std::string name) {
-		if (!has(name)) {
-			throw E("parameter " + name + " did not exist");
-		}
+	lua_getglobal(L, RRR_LUA_KEY);
+	assert(lua_istable(L, -1));
 
-		char *value = nullptr;
-		if (rrr_instance_config_get_string_noconvert_silent(&value, config, name.c_str()) != 0) {
-			throw E("failed to retrieve parameter " + name);
-		}
-		std::string result(value);
-		rrr_free(value);
+	lua_getmetatable(L, -1);
+	assert(lua_istable(L, -1));
 
-		return result;
-	}
-} // namespace RRR
+	lua_pushstring(L, RRR_LUA_META_KEY_CMODULE);
+	lua_pushlightuserdata(L, worker);
+	lua_settable(L, -3);
+
+	lua_pop(L, 2);
+}

@@ -222,6 +222,8 @@ static void __rrr_mqtt_common_maintenance (
 	(void)(fd);
 	(void)(flags);
 
+	RRR_EVENT_HOOK();
+
 	if (data->sessions == NULL) {
 		return;
 	}

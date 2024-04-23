@@ -81,21 +81,22 @@ int rrr_discern_stack_helper_array_tag_resolve_cb (RRR_DISCERN_STACK_RESOLVE_ARR
 	}
 
 	if (!callback_data->index_produced) {
-		struct rrr_discern_stack_index_entry *entry, *entry_first;
-		if ((entry = entry_first = rrr_allocate(rrr_length_from_slength_bug_const(RRR_LL_COUNT(&array)) * sizeof(*entry))) == NULL) {
+		struct rrr_discern_stack_index_entry *entry;
+		if ((entry = rrr_allocate(rrr_length_from_slength_bug_const(RRR_LL_COUNT(&array)) * sizeof(*entry))) == NULL) {
 			RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
 
+		rrr_length wpos = 0;
 		RRR_LL_ITERATE_BEGIN(&array, struct rrr_type_value);
 			if (!(node->tag_length > 0))
 				RRR_LL_ITERATE_NEXT();
-			(entry++)->id = ((rrr_length) node->tag[0] << 16) | (rrr_length) (node->tag[node->tag_length - 1]);
+			entry[wpos++].id = RRR_DISCERN_STACK_FIRST_LAST_INDEX(node->tag, node->tag_length);
 		RRR_LL_ITERATE_END();
 
-		*new_index = entry_first;
-		*new_index_size = rrr_length_from_slength_bug_const(RRR_LL_COUNT(&array));
+		*new_index = entry;
+		*new_index_size = wpos;
 
 		callback_data->index_produced = 1;
 	}

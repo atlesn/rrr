@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 void rrr_posix_msleep_signal_safe (int mseconds);
 int rrr_posix_usleep(size_t useconds);
+int rrr_posix_sleep_us(rrr_time_us_t t);
 void *rrr_posix_mmap (size_t size, int is_shared);
 void *rrr_posix_mmap_with_fd (int fd, size_t size);
 int rrr_posix_strcasecmp (const char *a, const char *b);

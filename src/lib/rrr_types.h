@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -130,13 +130,17 @@ static inline int rrr_size_from_biglength_err (size_t *target, rrr_biglength ope
 
 #endif
 
-static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
+static inline int rrr_int_from_biglength_err (int *target, rrr_biglength operand) {
 	if (operand > INT_MAX) {
 		RRR_MSG_0("Error: Overflow in %s, input was %" PRIrrrl "\n", __func__, operand);
 		return 1;
 	}
 	*target = (int) operand;
 	return 0;
+}
+
+static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
+	return rrr_int_from_biglength_err(target, operand);
 }
 
 static inline void __rrr_types_asserts (void) {
@@ -190,6 +194,14 @@ static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
 	}
 	*a = r;
 	return 0;
+}
+
+static inline void rrr_biglength_sub_bug (rrr_biglength *a, rrr_biglength b) {
+	rrr_biglength r = *a - b;
+	if (r > *a) {
+		RRR_BUG("Bug: Underflow in rrr_biglength_sub_bug input was %" PRIrrrbl " and %" PRIrrrbl "\n", *a, b);
+	}
+	*a = r;
 }
 
 static inline void rrr_length_add_bug (rrr_length *a, rrr_length b) {
@@ -345,6 +357,13 @@ static inline uint16_t rrr_u16_from_biglength_bug_const (rrr_biglength a) {
 	return (uint16_t) a;
 }
 
+static inline uint16_t rrr_u16_from_slength_bug_const (rrr_slength a) {
+	if (a < 0 || a > UINT16_MAX) {
+		RRR_BUG("Overflow or underflow in rrr_u16_from_slength_bug_const\n");
+	}
+	return (uint16_t) a;
+}
+
 static inline rrr_biglength rrr_biglength_from_ptr_sub_bug_const (const void *a, const void *b) {
 	if (b > a) {
 		RRR_BUG("Underflow in rrr_biglength_from_ptr_sub_bug_const\n");
@@ -434,7 +453,7 @@ static inline int rrr_length_from_size_t_err (rrr_length *r, size_t a) {
 static inline rrr_length rrr_length_from_size_t_bug_const (size_t a) {
 	rrr_length tmp;
 	if (rrr_length_from_size_t_err(&tmp, a) != 0) {
-		RRR_BUG("Bugtrap");
+		RRR_BUG("Overflow in %s\n", __func__);
 	}
 	return tmp;
 }
@@ -464,5 +483,30 @@ typedef uint64_t rrr_type_be;
 typedef uint64_t rrr_type_h;
 typedef uint64_t rrr_type_istr;
 typedef uint64_t rrr_type_ustr;
+
+/*
+ * Types for timestamp. Use these to avoid mixing up time in seconds, milliseconds
+ * and microseconds. There are helper functions in util/rrr_time.h for conversions
+ * and arithmetic operations.
+ */
+
+typedef struct rrr_time_s_s {
+	uint64_t s;
+} rrr_time_s_t;
+
+typedef struct rrr_time_ms_s {
+	uint64_t ms;
+} rrr_time_ms_t;
+
+typedef struct rrr_time_us_s {
+	uint64_t us;
+} rrr_time_us_t;
+
+#define RRR_S(n)  \
+    { .s = n }
+#define RRR_MS(n) \
+    { .ms = n }
+#define RRR_US(n) \
+    { .us = n }
 
 #endif /* RRR_TYPES_H */

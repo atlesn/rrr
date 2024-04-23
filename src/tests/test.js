@@ -386,27 +386,37 @@ function my_method(message, method) {
 
 	// Timeouts
 	let done = {
-		a: false
+		a: false,
+		b: false
 	};
 
 	new Timeout(() => {
+		console.log("Timeout C\n");
 		if (!done["a"]) {
-			throw("Incorrect timeout order");
+			throw("Incorrect timeout order, A did not run first");
+		}
+		if (!done["b"]) {
+			throw("Incorrect timeout order, B did not run first");
 		}
 		console.log("Sending message\n");
 		message.send();
-	}, 101); // 1ms after other timeout. Should be scheduled last.
+	}, 200); // Should run last
 
 	new Timeout((a) => {
+		console.log("Timeout A\n");
 		if (a !== "a") {
 			throw("Value mismatch in timeout a");
 		}
 		done["a"] = true;
+		new Timeout(() => {
+			console.log("Timeout B\n");
+			done["b"] = true;
+		}, 1); // Should run first
 	}, 100, "a");
 
-	let timeout_b = new Timeout((a) => {
-		throw("Timeout b was not cleared");
-	}, 99, "a");
+	let timeout = new Timeout(() => {
+		throw("Timeout was not cleared");
+	}, 99);
 
-	timeout_b.clear();
+	timeout.clear();
 }

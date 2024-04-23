@@ -55,7 +55,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 				INSTANCE_D_TOPIC_STR(thread_data),
 				topic_tmp,
 				(*does_match ? "MATCH" : "MISMATCH"),
-				INSTANCE_D_INSTANCE(thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT ? " (filter inverted)" : ""
+				INSTANCE_D_MISC_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT ? " (filter inverted)" : ""
 		);
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
 	}
@@ -98,7 +98,7 @@ static int __rrr_poll_intermediate_callback (
 		if ((ret = __rrr_poll_intermediate_callback_topic_filter(&does_match, callback_data->thread_data, entry)) != 0) {
 			goto out;
 		}
-		if (INSTANCE_D_INSTANCE(callback_data->thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT) {
+		if (INSTANCE_D_MISC_FLAGS(callback_data->thread_data) & RRR_INSTANCE_MISC_OPTIONS_TOPIC_FILTER_INVERT) {
 			does_match = !does_match;
 		}
 	}
@@ -129,7 +129,7 @@ int rrr_poll_do_poll_delete_custom_arg (
 
 	int message_broker_flags = 0;
 
-	if (!(INSTANCE_D_INSTANCE(thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP)) {
+	if (!(INSTANCE_D_MISC_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP)) {
 		message_broker_flags |= RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP;
 	}
 

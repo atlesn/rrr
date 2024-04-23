@@ -27,8 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "rrr_config.h"
 
-pthread_mutex_t rrr_config_global_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 struct rrr_global_config rrr_config_global = {
 		.debuglevel = 0,
 		.debuglevel_on_exit = 0,
@@ -44,17 +42,13 @@ struct rrr_global_config rrr_config_global = {
 };
 
 void rrr_config_set_debuglevel_on_exit(void) {
-	pthread_mutex_lock(&rrr_config_global_mutex);
 	if (rrr_config_global.debuglevel_on_exit > 0) {
 		rrr_config_global.debuglevel = rrr_config_global.debuglevel_on_exit;
 	}
-	pthread_mutex_unlock(&rrr_config_global_mutex);
 }
 
 void rrr_config_set_debuglevel_orig(void) {
-	pthread_mutex_lock(&rrr_config_global_mutex);
 	rrr_config_global.debuglevel = rrr_config_global.debuglevel_orig;
-	pthread_mutex_unlock(&rrr_config_global_mutex);
 }
 
 void rrr_config_init (
@@ -68,7 +62,6 @@ void rrr_config_init (
 		unsigned int do_journald_output,
 		const char *run_directory
 ) {
-	pthread_mutex_lock(&rrr_config_global_mutex);
 	rrr_config_global.debuglevel = debuglevel;
 	rrr_config_global.debuglevel_orig = debuglevel;
 	rrr_config_global.debuglevel_on_exit = debuglevel_on_exit;
@@ -80,14 +73,11 @@ void rrr_config_init (
 	rrr_config_global.log_prefix = rrr_default_log_prefix;
 	rrr_config_global.do_journald_output = do_journald_output;
 	rrr_config_global.run_directory = run_directory;
-	pthread_mutex_unlock(&rrr_config_global_mutex);
 }
 
 // Usually done per fork
 void rrr_config_set_log_prefix (
 		const char *log_prefix
 ) {
-	pthread_mutex_lock(&rrr_config_global_mutex);
 	rrr_config_global.log_prefix = log_prefix;
-	pthread_mutex_unlock(&rrr_config_global_mutex);
 }

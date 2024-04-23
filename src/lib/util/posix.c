@@ -79,6 +79,11 @@ int rrr_posix_usleep(size_t useconds) {
 	return nanosleep(&req, &rem);
 }
 
+int rrr_posix_sleep_us(rrr_time_us_t t) {
+	assert(t.us <= SIZE_MAX);
+	return rrr_posix_usleep((size_t) t.us);
+}
+
 void *rrr_posix_mmap (size_t size, int is_shared) {
 	return mmap (
 			NULL,

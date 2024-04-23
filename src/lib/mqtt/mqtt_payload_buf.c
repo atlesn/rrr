@@ -85,7 +85,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, r
 		new_size = size_diff + session->buf_size;
 	}
 
-	char *tmp = rrr_reallocate(session->buf, session->buf_size, new_size);
+	char *tmp = rrr_reallocate(session->buf, new_size);
 	if (tmp == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		return RRR_MQTT_PAYLOAD_BUF_ERR;

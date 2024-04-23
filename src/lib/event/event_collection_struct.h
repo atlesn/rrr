@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stddef.h>
 
-#define RRR_EVENT_COLLECTION_STRUCT_MAX 8
+#define RRR_EVENT_COLLECTION_STRUCT_MAX 12
 
 struct event_base;
 struct event;

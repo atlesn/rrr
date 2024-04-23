@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <assert.h>
 #include <stdlib.h>
 
 #include "../log.h"
@@ -28,6 +29,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "net_transport_struct.h"
 
+int rrr_net_transport_ctx_connection_id_push (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+		
+) {
+	return rrr_net_transport_connection_id_collection_push(&handle->cids, cid);
+}
+
+void rrr_net_transport_ctx_connection_id_remove (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_net_transport_connection_id *cid
+) {
+	rrr_net_transport_connection_id_collection_remove(&handle->cids, cid);
+}
+
 void rrr_net_transport_ctx_touch (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -36,11 +52,41 @@ void rrr_net_transport_ctx_touch (
 	}
 }
 
-void rrr_net_transport_ctx_notify_read (
+void rrr_net_transport_ctx_reset_noread_counters (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!EVENT_PENDING(handle->event_read_notify)) {
-		EVENT_ADD(handle->event_read_notify);
+	handle->noread_strike_count = 0;
+}
+
+void rrr_net_transport_ctx_notify_read_fast (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_read_notify_fast)) {
+		EVENT_ADD(handle->event_read_notify_fast);
+	}
+}
+
+void rrr_net_transport_ctx_notify_read_slow (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_read_notify_slow)) {
+		EVENT_ADD(handle->event_read_notify_slow);
+	}
+}
+
+void rrr_net_transport_ctx_notify_tick_fast (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_tick_notify_fast)) {
+		EVENT_ADD(handle->event_tick_notify_fast);
+	}
+}
+
+void rrr_net_transport_ctx_notify_tick_slow (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_tick_notify_slow)) {
+		EVENT_ADD(handle->event_tick_notify_slow);
 	}
 }
 
@@ -50,7 +96,7 @@ int rrr_net_transport_ctx_get_fd (
 	return handle->submodule_fd;
 }
 
-void *rrr_net_transport_ctx_get_private_ptr (
+void *rrr_net_transport_ctx_get_application_private_ptr (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->application_private_ptr;
@@ -62,20 +108,10 @@ rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 	return handle->handle;
 }
 
-int rrr_net_transport_ctx_handle_match_data_set (
-		struct rrr_net_transport_handle *handle,
-		const char *string,
-		uint64_t number
+struct rrr_net_transport *rrr_net_transport_ctx_get_transport (
+		struct rrr_net_transport_handle *handle
 ) {
-	RRR_FREE_IF_NOT_NULL(handle->match_string);
-	if ((handle->match_string = rrr_strdup(string)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
-		return 1;
-	}
-
-	handle->match_number = number;
-
-	return 0;
+	return handle->transport;
 }
 
 int rrr_net_transport_ctx_check_alive (
@@ -210,6 +246,15 @@ int rrr_net_transport_ctx_close_when_send_complete_get (
 	return handle->close_when_send_complete;
 }
 
+void rrr_net_transport_ctx_close_now_set (
+		struct rrr_net_transport_handle *handle
+) {
+	handle->close_now = 1;
+
+	RRR_DBG_7("net transport fd %i [%s] close now activated\n",
+			handle->submodule_fd, handle->transport->application_name);
+}
+
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
@@ -287,6 +332,83 @@ int rrr_net_transport_ctx_send_push_nullsafe (
 	return rrr_nullsafe_str_with_raw_do_const(nullsafe, __rrr_net_transport_ctx_send_push_nullsafe_callback, handle);
 }
 
+int rrr_net_transport_ctx_stream_data_get (
+		void **stream_data,
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+) {
+	return handle->transport->methods->stream_data_get(stream_data, handle, stream_id);
+}
+
+int rrr_net_transport_ctx_stream_data_clear (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id
+) {
+	return handle->transport->methods->stream_data_clear(handle, stream_id);
+}
+
+int rrr_net_transport_ctx_stream_open_local (
+		int64_t *result,
+		struct rrr_net_transport_handle *handle,
+		int flags,
+		void *stream_open_callback_arg_local
+) {
+	assert(flags & RRR_NET_TRANSPORT_STREAM_F_LOCAL);
+
+	return handle->transport->methods->stream_open_local (
+			result,
+			handle,
+			flags,
+			stream_open_callback_arg_local
+	);
+}
+
+int rrr_net_transport_ctx_stream_consume (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t consumed
+) {
+	return handle->transport->methods->stream_consume(handle, stream_id, consumed);
+}
+
+int rrr_net_transport_ctx_stream_shutdown_read (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	return handle->transport->methods->stream_shutdown_read(handle, stream_id, application_error_reason);
+}
+
+int rrr_net_transport_ctx_stream_shutdown_write (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		uint64_t application_error_reason
+) {
+	return handle->transport->methods->stream_shutdown_write(handle, stream_id, application_error_reason);
+}
+
+int rrr_net_transport_ctx_streams_iterate (
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(int64_t stream_id, void *stream_data, void *arg),
+		void *arg
+) {
+	return handle->transport->methods->streams_iterate(handle, callback, arg);
+}
+
+uint64_t rrr_net_transport_ctx_stream_count (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->stream_count(handle);
+}
+
+int rrr_net_transport_ctx_extend_max_streams (
+		struct rrr_net_transport_handle *handle,
+		int64_t stream_id,
+		size_t n
+) {
+	return handle->transport->methods->extend_max_streams(handle, stream_id, n);
+}
+
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -295,7 +417,21 @@ int rrr_net_transport_ctx_read (
 ) {
 	int ret = handle->transport->methods->read(bytes_read, handle, buf, buf_size);
 
+	assert((ret || *bytes_read) && "A return value must be set or data must be returned");
+
 	handle->bytes_read_total += *bytes_read;
+
+	return ret;
+}
+
+int rrr_net_transport_ctx_receive (
+		uint64_t *next_expiry_nano,
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_socket_datagram *datagram
+) {
+	int ret = handle->transport->methods->receive(next_expiry_nano, handle, datagram);
+
+	handle->bytes_read_total += datagram->msg_len;
 
 	return ret;
 }
@@ -304,25 +440,6 @@ int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
 ) {
 	return (handle->application_private_ptr != NULL);
-}
-
-void rrr_net_transport_ctx_handle_application_data_bind (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-) {
-	if (handle->application_private_ptr != NULL) {
-		RRR_BUG("rrr_net_transport_handle_application_data_bind called twice, pointer was already set\n");
-	}
-	handle->application_private_ptr = application_data;
-	handle->application_ptr_destroy = application_data_destroy;
-}
-
-void rrr_net_transport_ctx_handle_pre_destroy_function_set (
-		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
-) {
-	handle->application_ptr_iterator_pre_destroy = pre_destroy_function;
 }
 
 void rrr_net_transport_ctx_get_socket_stats (
@@ -370,9 +487,23 @@ void rrr_net_transport_ctx_connected_address_get (
 	*addr_len = handle->connected_addr_len;
 }
 
-void rrr_net_transport_ctx_selected_proto_get (
-		const char **proto,
+int rrr_net_transport_ctx_selected_proto_get (
+		char **proto,
 		struct rrr_net_transport_handle *handle
 ) {
-	handle->transport->methods->selected_proto_get(proto, handle);
+	return handle->transport->methods->selected_proto_get(proto, handle);
+}
+
+enum rrr_net_transport_type rrr_net_transport_ctx_transport_type_get (
+		const struct rrr_net_transport_handle *handle
+) {
+	return rrr_net_transport_type_get(handle->transport);
+}
+
+int rrr_net_transport_ctx_with_match_data_do (
+		const struct rrr_net_transport_handle *handle,
+		int (*callback)(const char *string, uint64_t number, void *arg),
+		void *arg
+) {
+	return callback(handle->match_string, handle->match_number, arg);
 }

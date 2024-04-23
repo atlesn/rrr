@@ -344,12 +344,13 @@ int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
+    
     HV *stash = gv_stashpv(class, GV_ADD);
     if (stash == NULL) {
     	RRR_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
-    SV *ref = newRV_noinc((SV*) hv);
+    SV *ref = newRV_inc((SV*) hv);
     if (ref == NULL) {
     	RRR_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
@@ -400,6 +401,9 @@ int rrr_perl5_call_blessed_hvref_and_sv (struct rrr_perl5_ctx *ctx, const char *
 	PUTBACK;
 	FREETMPS;
 	LEAVE;
+
+    assert(SvREFCNT(hv) == 2);
+    SvREFCNT_dec(ref);
 
 	return ret;
 }
@@ -524,7 +528,7 @@ void rrr_perl5_destruct_message_hv (
 int rrr_perl5_settings_to_hv (
 		struct rrr_perl5_settings_hv *target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_instance_settings *source
+		struct rrr_settings *source
 ) {
 	int ret = 0;
 
@@ -732,7 +736,7 @@ int rrr_perl5_hv_to_message (
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
-		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, old_total_len, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
+		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
 		if (new_message == NULL) {
 			RRR_MSG_0("Could not re-allocate memory in %s\n", __func__);
 			ret = 1;

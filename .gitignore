@@ -16,6 +16,7 @@
 /src/rrr_msg
 /src/rrr_sub
 /src/rrr_js
+/src/rrr_lua
 /src/rrr_modbus_server
 /src/test.sh
 /src/test.sh.log
@@ -75,7 +76,6 @@ src/vlogger
 *.lai
 .dirstamp
 variables.sh
-variables.sh.in
 /src/lib/rrr-build-config.h
 /src/lib/rrr-build-config.h.in
 
@@ -147,3 +147,6 @@ stamp-h2
 # FreeBSD
 *~
 .test_composite.sh
+
+# jemalloc
+jeprof.*

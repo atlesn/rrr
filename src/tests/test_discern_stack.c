@@ -58,7 +58,13 @@ static const char *fails[] = {
 	"H a H a POP",
 	// End missing
 	"T ##",
-	"H a"
+	"H a",
+	// Stack overflow
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a " \
+	"H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a H a "
+
 };
 
 const enum rrr_discern_stack_fault fail_codes[] = {
@@ -91,7 +97,8 @@ const enum rrr_discern_stack_fault fail_codes[] = {
 
 	RRR_DISCERN_STACK_FAULT_STACK_COUNT,
 	RRR_DISCERN_STACK_FAULT_END_MISSING,
-	RRR_DISCERN_STACK_FAULT_END_MISSING
+	RRR_DISCERN_STACK_FAULT_END_MISSING,
+	RRR_DISCERN_STACK_FAULT_STACK_OVERFLOW
 };
 
 static const char *valids[] = {
@@ -291,6 +298,8 @@ int rrr_test_discern_stack(void) {
 			}
 		}
 	}
+
+	rrr_discern_stack_collection_clear(&routes);
 
 	return ret;
 }
