@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <algorithm>
 #include <set>
 #include <filesystem>
+#include <array>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
