@@ -1,3 +1,9 @@
+rrr (1.30-5posten1) bookworm; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Tue, 23 Apr 2024 10:01:52 +0200
+
 rrr (1.30-5) bookworm; urgency=medium
 
   * Features:

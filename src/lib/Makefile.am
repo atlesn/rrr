@@ -126,6 +126,7 @@ librrropenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
 librrropenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
 librrropenssl_la_LIBADD = ${OPENSSL_LIBADD}
 openssl_extra_libadd = -lrrropenssl
+openssl_extra_ld = -L./.libs/
 endif
 
 if RRR_WITH_LIBRESSL
@@ -135,6 +136,7 @@ librrrlibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
 librrrlibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
 librrrlibressl_la_LIBADD = ${LIBRESSL_LIBADD}
 libressl_extra_libadd = -lrrrlibressl
+libressl_extra_ld = -L./.libs/
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -209,7 +211,9 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${zlib_extra_ld} \
 		    ${quic_extra_ld} \
 		    ${http3_extra_ld} \
-		    ${artnet_extra_ld}
+		    ${artnet_extra_ld} \
+		    ${openssl_extra_ld} \
+		    ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
