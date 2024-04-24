@@ -1,4 +1,4 @@
-rrr (1.30-0) bookworm; urgency=medium
+rrr (1.30-7) bookworm; urgency=medium
 
   * Features:
     * New option http_server_decode_endpoint to decode the endpoint field
@@ -6,6 +6,8 @@ rrr (1.30-0) bookworm; urgency=medium
     * Support HTTP3 over QUIC in HTTP server and client.
     * Start RRR in single thread mode which is useful for debugging and
       on slower hardware.
+    * Support for more ModBus functions
+      - By Fredrik Rosenqvist <rosenqvistfredrik@hotmail.com>
 
   * Improvements:
     * Implement polite close of connections during shutdown for HTTP1
