@@ -1,2 +1,1 @@
-usr/lib/*/librrr.*
-usr/lib/*/librrrcxx.*
+usr/lib/*/librrr*.*
