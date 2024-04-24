@@ -2209,6 +2209,8 @@ Always present.
 Always present with the value 1 or 2.
 .It http_endpoint
 Always present, given in uppercase letters.
+.It http_authority
+Added if the request contained an :authority or a Host: header. The first takes precedence if both are present.
 .It http_body
 Added if a body of non-zero length is present.
 .It http_content_transfer_encoding
@@ -2243,14 +2245,14 @@ Only the first three levels of the topic (up to and including the unique identif
 An instance which receives RRR messages from
 .B httpserver
 containing requests may generate responses in an RRR array message with the following fields of which all are optional:
-.sp
+
 .Bl -tag -width -indent
 .It http_response_code
 The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present
 (httpserver will implicitly force the usage of a 200 response if the status is 204 and a body is present).
 Must be a value >= 100 and <= 599.
 200 or 204 will be selected silently if the provided code is out of this range.
-.sp
+
 .It http_content_type
 The content type to use for the response. If it is defined but is an empty string, no content type header will be sent.
 If not defined, the content type sent will depend on the type of the
@@ -2262,7 +2264,7 @@ In any case, a content type header will not be sent if there is no response body
 The response body to send. The content type set in the response header, unless specified explititly in 
 .B http_content_type,
 depends on the type of this field:
-.sp
+
 .Bl -tag -width -indent
 .It blob
 application/octet-stream
@@ -2273,7 +2275,6 @@ text/plain (also used by other types convertible to strings (numbers etc.))
 .It vain
 No response body generated
 .El
-.sp
 .El
 
 Response messages from another instance may also be a plain data message in which the data of this message will be treated the same way as data from the

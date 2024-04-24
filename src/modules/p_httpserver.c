@@ -694,9 +694,6 @@ static int httpserver_receive_callback_get_full_request_fields (
 
 	// http_method, http_endpoint, http_body, http_content_transfer_encoding, http_content_type, http_content_type_boundary
 
-	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
-	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
-
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
@@ -704,6 +701,11 @@ static int httpserver_receive_callback_get_full_request_fields (
 	if (ret != 0) {
 		goto out_value_error;
 	}
+
+	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
+	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
+	const struct rrr_http_header_field *authority = rrr_http_part_header_field_get(part, ":authority");
+	const struct rrr_http_header_field *host = rrr_http_part_header_field_get(part, "host");
 
 	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
@@ -749,6 +751,21 @@ static int httpserver_receive_callback_get_full_request_fields (
 		if ((ret = rrr_array_push_value_str_with_tag (
 				target_array,
 				"http_content_transfer_encoding",
+				value
+		)) != 0) {
+			goto out_value_error;
+		}
+	}
+
+	if (authority != NULL || host != NULL) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,(authority != NULL ? authority : host)->value);
+
+		// TODO : Remove debug printf
+		printf("HTTP server authority or host header is: '%s'\n", value);
+
+		if ((ret = rrr_array_push_value_str_with_tag (
+				target_array,
+				"http_authority",
 				value
 		)) != 0) {
 			goto out_value_error;
