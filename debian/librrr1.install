@@ -1,1 +1,3 @@
-usr/lib/*/librrr*.*
+usr/lib/*/librrr.*
+usr/lib/*/librrr*ssl.*
+usr/lib/*/librrrcxx.*
