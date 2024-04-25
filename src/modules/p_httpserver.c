@@ -92,6 +92,7 @@ struct httpserver_data {
 	int do_get_response_from_senders;
 	int do_test_page_default_response;
 	int do_favicon_not_found_response;
+	int do_topic_format_request;
 
 	rrr_setting_uint response_timeout_ms;
 
@@ -104,6 +105,7 @@ struct httpserver_data {
 
 	char *allow_origin_header;
 	char *cache_control_header;
+	char *topic_format;
 
 	pthread_mutex_t oustanding_responses_lock;
 
@@ -273,6 +275,23 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_cache_control_header", cache_control_header);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("httpserver_topic_format", topic_format);
+
+	data->do_topic_format_request = 0;
+	if (RRR_INSTANCE_CONFIG_EXISTS("httpserver_topic_format")) {
+		if (rrr_posix_strcasecmp(data->topic_format, "simple") == 0) {
+			data->do_topic_format_request = 0;
+		}
+		else if (rrr_posix_strcasecmp(data->topic_format, "request") == 0) {
+			data->do_topic_format_request = 1;
+		}
+		else {
+			RRR_MSG_0("Unknown value '%s' for httpserver_topic_format in file instance %s, valid options are 'simple', 'request'.\n",
+					data->topic_format, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	// Undocumented, used to test failures in clients
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
@@ -598,7 +617,10 @@ struct httpserver_response_data {
 
 static int httpserver_response_data_new (
 		struct httpserver_response_data **target,
-		rrr_http_unique_id unique_id
+		rrr_http_unique_id unique_id,
+		const char *http_method,
+		const char *authority_host,
+		const char *endpoint
 ) {
 	int ret = 0;
 
@@ -613,11 +635,23 @@ static int httpserver_response_data_new (
 
 	memset(result, '\0', sizeof(*result));
 
+	char *extra= NULL;
+	if (http_method != NULL || authority_host != NULL || endpoint != NULL) {
+		if (rrr_asprintf(&extra, "%s/%s%s",
+				(http_method != NULL) ? http_method : "",
+				(authority_host != NULL) ? authority_host : "",
+				(endpoint != NULL) ? endpoint : "" 
+		) <= 0) {
+			RRR_MSG_0("Could not create topic extra in httpserver_response_data_new\n");
+			goto out_free;
+		}
+	}
+
 	if ((ret = httpserver_generate_unique_topic (
 			&result->request_topic,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
 			unique_id,
-			NULL
+			extra
 	)) != 0) {
 		goto out_free;
 	}
@@ -626,6 +660,7 @@ static int httpserver_response_data_new (
 	goto out;
 	out_free:
 		rrr_free(result);
+		RRR_FREE_IF_NOT_NULL(extra);
 	out:
 		return ret;
 }
@@ -759,9 +794,6 @@ static int httpserver_receive_callback_get_full_request_fields (
 
 	if (authority != NULL || host != NULL) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,(authority != NULL ? authority : host)->value);
-
-		// TODO : Remove debug printf
-		printf("HTTP server authority or host header is: '%s'\n", value);
 
 		if ((ret = rrr_array_push_value_str_with_tag (
 				target_array,
@@ -1141,6 +1173,25 @@ static int httpserver_async_response_get_callback (
 	return httpserver_async_response_get_and_process (data, response_data, transaction);
 }
 
+static int httpserver_receive_callback_uri_endpoint_clean_callback (
+		const void *endpoint_cleaned,
+		rrr_nullsafe_len endpoint_cleaned_length,
+		void *arg
+) {
+	struct rrr_array *target_array = arg;
+
+	int ret = 0;
+
+	ret |= rrr_array_push_value_str_with_tag_with_size (
+			target_array,
+			"http_endpoint_path",
+			endpoint_cleaned,
+			rrr_length_from_biglength_bug_const(endpoint_cleaned_length)
+	);
+
+	return ret;
+}
+
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
@@ -1155,11 +1206,6 @@ static int httpserver_receive_callback (
 	struct rrr_array target_array = {0};
 
 	static int fail_once = 1;
-
-	struct httpserver_response_data *response_data = NULL;
-	if ((ret = httpserver_response_data_new(&response_data, transaction->unique_id)) != 0) {
-		goto out;
-	}
 
 	if (data->do_fail_once && fail_once) {
 		RRR_MSG_0("Fail once debug is active in httpserver, sending 500 to client\n");
@@ -1220,6 +1266,35 @@ static int httpserver_receive_callback (
 			data,
 			transaction->request_part
 	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_util_uri_endpoint_clean (
+		transaction->request_part->request_uri_nullsafe,
+		httpserver_receive_callback_uri_endpoint_clean_callback,
+		&target_array)
+	) != 0){
+		goto out;
+	}
+
+	char *http_method = NULL, *authority_host = NULL, *endpoint_clean = NULL;
+	if (data->do_topic_format_request) {
+
+		if (rrr_array_has_tag(&target_array, "http_method")) {
+			(void)rrr_array_get_value_str_by_tag(&http_method, &target_array, "http_method");
+		}
+
+		if (rrr_array_has_tag(&target_array, "http_authority")) {
+			(void)rrr_array_get_value_str_by_tag(&authority_host, &target_array, "http_authority");
+		}
+
+		if (rrr_array_has_tag(&target_array, "http_endpoint_path")) {
+			(void)rrr_array_get_value_str_by_tag(&endpoint_clean, &target_array, "http_endpoint_path");
+		}
+	}
+
+	struct httpserver_response_data *response_data = NULL;
+	if ((ret = httpserver_response_data_new(&response_data, transaction->unique_id, http_method, authority_host, endpoint_clean)) != 0) {
 		goto out;
 	}
 
@@ -1295,6 +1370,9 @@ static int httpserver_receive_callback (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(http_method);
+	RRR_FREE_IF_NOT_NULL(authority_host);
+	RRR_FREE_IF_NOT_NULL(endpoint_clean);
 	if (response_data != NULL) {
 		httpserver_response_data_destroy(response_data);
 	}
