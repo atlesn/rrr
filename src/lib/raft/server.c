@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport_ctx.h"
 #include "../util/rrr_time.h"
 #include "../util/gnu.h"
+#include "../util/rrr_endian.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
@@ -1757,12 +1758,143 @@ static int __rrr_raft_server_net_accept_callback (
 	return ret;
 }
 
+struct rrr_raft_server_net_read_callback_data {
+	struct rrr_raft_server_state *state;
+	struct rrr_net_transport_handle *handle;
+	struct rrr_raft_server_connection *connection;
+};
+
+static int __rrr_raft_server_net_read_get_target_size_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
+	struct rrr_raft_server_state *state = callback_data->state;
+	struct rrr_raft_server_connection *connection = callback_data->connection;
+
+	int ret = RRR_READ_INCOMPLETE;
+
+	rrr_biglength payload_size;
+	uint64_t preamble0, preamble1_header_size;
+	uint8_t type, version;
+
+	if (read_session->rx_buf_wpos < sizeof(uint64_t) * 2) {
+		goto out;
+	}
+
+	preamble0 = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr));
+	preamble1_header_size = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr + sizeof(uint64_t)));
+
+	if (read_session->parse_pos == 0) {
+		printf("Header size is %" PRIrrrbl "\n", preamble1_header_size);
+
+		if (preamble1_header_size == 0) {
+			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+				"Received RPC with zero header size, closing connection.\n%s", "");
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		read_session->parse_pos = sizeof(uint64_t) * 2 + preamble1_header_size;
+	}
+
+	if (read_session->parse_pos > read_session->rx_buf_wpos) {
+		goto out;
+	}
+
+	/* For backwards compatibility in C-raft, the second
+	 * byte for the type is currently not used. */
+	type = (uint8_t) preamble0;           /* Byte 0 */
+	version = (uint8_t)(preamble0 >> 16); /* Byte 2 */
+
+	printf("Type is %u version is %u\n", type, version);
+
+	switch (type) {
+		case RAFT_REQUEST_VOTE:
+		case RAFT_REQUEST_VOTE_RESULT:
+		case RAFT_APPEND_ENTRIES_RESULT:
+		case RAFT_TIMEOUT_NOW:
+			payload_size = 0;
+			break;
+		case RAFT_APPEND_ENTRIES:
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "RPC with payload not implemented");
+			payload_size = 0;
+			break;
+		default:
+			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+				"Received RPC with unknown type %u, closing connection.\n", type);
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+	};
+
+	read_session->parse_pos += payload_size;
+	read_session->target_size = read_session->parse_pos;
+
+	ret = RRR_READ_OK;
+
+	out:
+	return ret;
+}
+
+static void __rrr_raft_server_net_read_get_target_size_error_callback (
+		struct rrr_read_session *read_session,
+		int is_hard_err,
+		void *arg
+) {
+	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
+
+	(void)(read_session);
+	(void)(is_hard_err);
+	(void)(callback_data);
+
+	// Any error message goes here
+}
+
+static int __rrr_raft_server_net_read_complete_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
+
+	int ret = RRR_READ_INCOMPLETE;
+
+	assert(0 && "net complete callback not implemented");
+
+	out:
+	return ret;
+}
+
 static int __rrr_raft_server_net_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
+	struct rrr_raft_server_state *state = arg;
+	struct rrr_raft_server_connection *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
 	int ret = 0;
 
-	assert(0 && "net read callback not implemented");
+	struct rrr_raft_server_net_read_callback_data callback_data = {
+		.state = state,
+		.handle = handle,
+		.connection = connection
+	};
+
+	if ((ret = rrr_net_transport_ctx_read_message (
+			handle,
+			4096,            /* 4 kB read step initial */
+			1 * 1024 * 1024, /* 1 MB read step max size */
+			0,               /*   no read max size */
+			0,               /*   no ratelimit interval */
+			0,               /*   no ratelimit max bytes */
+			__rrr_raft_server_net_read_get_target_size_callback,
+			&callback_data,
+			__rrr_raft_server_net_read_get_target_size_error_callback,
+			&callback_data,
+			__rrr_raft_server_net_read_complete_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;
