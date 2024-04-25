@@ -286,7 +286,7 @@ static int httpserver_parse_config (
 			data->do_topic_format_request = 1;
 		}
 		else {
-			RRR_MSG_0("Unknown value '%s' for httpserver_topic_format in file instance %s, valid options are 'simple', 'request'.\n",
+			RRR_MSG_0("Unknown value '%s' for httpserver_topic_format in file instance %s, valid options are 'simple' and 'request'.\n",
 					data->topic_format, config->name);
 			ret = 1;
 			goto out;
