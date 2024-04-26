@@ -1758,25 +1758,20 @@ static int __rrr_raft_server_net_accept_callback (
 	return ret;
 }
 
-struct rrr_raft_server_net_read_callback_data {
-	struct rrr_raft_server_state *state;
-	struct rrr_net_transport_handle *handle;
-	struct rrr_raft_server_connection *connection;
-};
-
-static int __rrr_raft_server_net_read_get_target_size_callback (
-		struct rrr_read_session *read_session,
-		void *arg
+static int __rrr_raft_server_net_read_process_header (
+		uint8_t *type,
+		uint8_t *version,
+		rrr_biglength *header_pos,
+		rrr_biglength *payload_pos,
+		rrr_biglength *end_pos,
+		struct rrr_raft_server_state *state,
+		struct rrr_raft_server_connection *connection,
+		const struct rrr_read_session *read_session
 ) {
-	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
-	struct rrr_raft_server_state *state = callback_data->state;
-	struct rrr_raft_server_connection *connection = callback_data->connection;
-
 	int ret = RRR_READ_INCOMPLETE;
 
-	rrr_biglength payload_size;
 	uint64_t preamble0, preamble1_header_size;
-	uint8_t type, version;
+	rrr_biglength target_size, payload_size;
 
 	if (read_session->rx_buf_wpos < sizeof(uint64_t) * 2) {
 		goto out;
@@ -1785,31 +1780,33 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 	preamble0 = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr));
 	preamble1_header_size = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr + sizeof(uint64_t)));
 
-	if (read_session->parse_pos == 0) {
-		printf("Header size is %" PRIrrrbl "\n", preamble1_header_size);
+	printf("Header size is %" PRIrrrbl "\n", preamble1_header_size);
 
-		if (preamble1_header_size == 0) {
-			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-				"Received RPC with zero header size, closing connection.\n%s", "");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		read_session->parse_pos = sizeof(uint64_t) * 2 + preamble1_header_size;
+	if (preamble1_header_size == 0) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+			"Received RPC with zero header size, closing connection.\n%s", "");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
 	}
 
-	if (read_session->parse_pos > read_session->rx_buf_wpos) {
+	target_size = sizeof(uint64_t) * 2;
+	*header_pos = target_size;
+
+	target_size += preamble1_header_size;
+	*payload_pos = target_size;
+
+	if (target_size > read_session->rx_buf_wpos) {
 		goto out;
 	}
 
 	/* For backwards compatibility in C-raft, the second
 	 * byte for the type is currently not used. */
-	type = (uint8_t) preamble0;           /* Byte 0 */
-	version = (uint8_t)(preamble0 >> 16); /* Byte 2 */
+	*type = (uint8_t) preamble0;           /* Byte 0 */
+	*version = (uint8_t)(preamble0 >> 16); /* Byte 2 */
 
-	printf("Type is %u version is %u\n", type, version);
+	printf("Type is %u version is %u\n", *type, *version);
 
-	switch (type) {
+	switch (*type) {
 		case RAFT_REQUEST_VOTE:
 		case RAFT_REQUEST_VOTE_RESULT:
 		case RAFT_APPEND_ENTRIES_RESULT:
@@ -1828,10 +1825,53 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 			goto out;
 	};
 
-	read_session->parse_pos += payload_size;
-	read_session->target_size = read_session->parse_pos;
+	target_size += payload_size;
+	*end_pos = target_size;
+
+	if (target_size < payload_size) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+			"Target size overflow when reading RPC, closing connection.\n%s", "");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
 
 	ret = RRR_READ_OK;
+
+	out:
+	return ret;
+}
+
+struct rrr_raft_server_net_read_callback_data {
+	struct rrr_raft_server_state *state;
+	struct rrr_net_transport_handle *handle;
+	struct rrr_raft_server_connection *connection;
+};
+
+static int __rrr_raft_server_net_read_get_target_size_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
+
+	int ret = RRR_READ_INCOMPLETE;
+
+	uint8_t type, version;
+	rrr_biglength header_pos, payload_pos, end_pos;
+
+	if ((ret = __rrr_raft_server_net_read_process_header (
+			&type,
+			&version,
+			&header_pos,
+			&payload_pos,
+			&end_pos,
+			callback_data->state,
+			callback_data->connection,
+			read_session
+	)) != RRR_READ_OK) {
+		goto out;
+	}
+
+	read_session->target_size = end_pos;
 
 	out:
 	return ret;
@@ -1857,7 +1897,46 @@ static int __rrr_raft_server_net_read_complete_callback (
 ) {
 	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
 
-	int ret = RRR_READ_INCOMPLETE;
+	int ret = RRR_READ_OK;
+
+	uint8_t type, version;
+	rrr_biglength header_pos, payload_pos, end_pos;
+
+	if ((ret = __rrr_raft_server_net_read_process_header (
+			&type,
+			&version,
+			&header_pos,
+			&payload_pos,
+			&end_pos,
+			callback_data->state,
+			callback_data->connection,
+			read_session
+	)) != RRR_READ_OK) {
+		RRR_BUG("BUG: Header process did not return OK in %s\n", __func__);
+	}
+
+	switch (type) {
+		case RAFT_APPEND_ENTRIES:
+			assert(0 && "Append entries not implemented\n");
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result not implemented\n");
+			break;
+		case RAFT_REQUEST_VOTE:
+			assert(0 && "Request vote not implemented\n");
+			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			assert(0 && "Request vote result not implemented\n");
+			break;
+		case RAFT_INSTALL_SNAPSHOT:
+			assert(0 && "Install snapshot not implemented\n");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout now not implemented\n");
+			break;
+		default:
+			RRR_BUG("BUG: Type %u not implemented in %s\n", type, __func__);
+	};
 
 	assert(0 && "net complete callback not implemented");
 
