@@ -69,5 +69,14 @@ void rrr_raft_bridge_decode_metadata (
 		const char *data,
 		size_t data_size
 );
+int rrr_raft_bridge_decode_request_vote_size_ok (
+		uint8_t version,
+		size_t header_size
+);
+int rrr_raft_bridge_decode_request_vote (
+		struct raft_request_vote *p,
+		const char *header,
+		size_t header_size
+);
 
 #endif /* RRR_RAFT_BRIDGE_ENC_H */

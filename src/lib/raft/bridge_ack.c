@@ -337,7 +337,7 @@ static void __rrr_raft_bridge_ack_push_task_write_configuration (
 
 static int __rrr_raft_bridge_ack_push_task_send (
 		struct rrr_raft_task_list *list_new,
-		struct raft_message *message
+		const struct raft_message *message
 ) {
 	int ret = 0;
 

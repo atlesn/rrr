@@ -51,6 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_DBG(msg) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
+#define RRR_RAFT_BRIDGE_ERR(msg) \
+    RRR_MSG_0("Raft [%i][bridge] " msg "\n", bridge->server_id)
+
 #define RRR_RAFT_READ_BUSY \
     RRR_READ_BUSY
 
@@ -186,6 +189,10 @@ int rrr_raft_bridge_configuration_iterate (
 const char *rrr_raft_bridge_configuration_server_name_get (
 		const struct rrr_raft_bridge *bridge,
 		raft_id server_id
+);
+raft_id rrr_raft_bridge_configuration_server_id_get (
+		const struct rrr_raft_bridge *bridge,
+		const char *server_address
 );
 
 #endif /* RRR_RAFT_BRIDGE_H */

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_store.h"
 #include "bridge.h"
 #include "bridge_task.h"
+#include "bridge_read.h"
 
 #include "../allocator.h"
 #include "../array.h"
@@ -53,7 +54,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport_ctx.h"
 #include "../util/rrr_time.h"
 #include "../util/gnu.h"
-#include "../util/rrr_endian.h"
 
 #define RRR_RAFT_SERVER_DBG_EVENT(msg, ...) \
     RRR_DBG_3("Raft [%i][server] " msg "\n", state->bridge->server_id, __VA_ARGS__)
@@ -103,6 +103,7 @@ struct rrr_raft_server_state {
 };
 
 struct rrr_raft_server_connection {
+	raft_id server_id;
 	char *server_address;
 };
 
@@ -247,16 +248,22 @@ static enum rrr_raft_code __rrr_raft_server_status_translate (
 	return RRR_RAFT_ERROR;
 }
 
-static void __rrr_raft_server_connection_destroy_void (
-		void *arg
+static void __rrr_raft_server_connection_destroy (
+		struct rrr_raft_server_connection *connection
 ) {
-	struct rrr_raft_server_connection *connection = arg;
 	rrr_free(connection->server_address);
 	rrr_free(connection);
 }
 
+static void __rrr_raft_server_connection_destroy_void (
+		void *arg
+) {
+	__rrr_raft_server_connection_destroy(arg);
+}
+
 static int __rrr_raft_server_connection_new (
 		struct rrr_raft_server_connection **result,
+		raft_id server_id,
 		const char *server_name,
 		uint16_t server_port
 ) {
@@ -275,6 +282,8 @@ static int __rrr_raft_server_connection_new (
 		ret = 1;
 		goto out_free;
 	}
+
+	connection->server_id = server_id;
 
 	*result = connection;
 
@@ -1433,6 +1442,7 @@ static ssize_t __rrr_raft_server_file_write_cb (RRR_RAFT_BRIDGE_WRITE_FILE_CB_AR
 
 static int __rrr_raft_server_connection_data_create (
 		struct rrr_raft_server_connection **result_connection,
+		raft_id server_id,
 		const struct sockaddr *sockaddr,
 		socklen_t socklen
 ) {
@@ -1461,6 +1471,7 @@ static int __rrr_raft_server_connection_data_create (
 
 	if ((ret = __rrr_raft_server_connection_new (
 			&connection,
+			server_id,
 			buf,
 			port
 	)) != 0) {
@@ -1508,8 +1519,6 @@ static void __rrr_raft_server_net_connect_callback (
 static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS) {
 	struct rrr_raft_server_state *state = cb_data->ptr;
 
-	(void)(server_id);
-
 	static int test_busy = 0;
 
 	char *server_hostname = NULL;
@@ -1556,6 +1565,7 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 
 		if ((ret_tmp = __rrr_raft_server_connection_data_create (
 				&connection,
+				server_id,
 				(const struct sockaddr *) &callback_data.result_sockaddr,
 				callback_data.result_socklen
 		)) != 0) {
@@ -1563,6 +1573,8 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 			bytes = -RRR_RAFT_READ_HARD_ERROR;
 			goto out;
 		}
+
+		printf("Created outvound connection data %p\n", connection);
 
 		__rrr_raft_server_connection_data_bind (
 				state->net_transport,
@@ -1729,113 +1741,58 @@ static void __rrr_raft_server_timeout_cb (
 	}
 }
 
-static int __rrr_raft_server_net_accept_callback (
+static void __rrr_raft_server_net_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
 	struct rrr_raft_server_state *state = arg;
 
-	int ret = 0;
-
 	struct rrr_raft_server_connection *connection;
 
-	if ((ret = __rrr_raft_server_connection_data_create (
+	if (__rrr_raft_server_connection_data_create (
 			&connection,
+			0,
 			sockaddr,
 			socklen
-	)) != 0) {
-		goto out;
+	) != 0) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address, "failed to create connection data in %s, connection will be closed", __func__);
+		return;
 	}
+
+	RRR_RAFT_SERVER_DBG_NET(connection->server_address, "accepted connection from remote server%s", "");
 
 	__rrr_raft_server_connection_data_bind (
 			state->net_transport,
 			RRR_NET_TRANSPORT_CTX_HANDLE(handle),
 			connection
 	);
-
-	RRR_RAFT_SERVER_DBG_NET(connection->server_address, "accepted connection from remote server%s", "");
-
-	out:
-	return ret;
 }
 
-static int __rrr_raft_server_net_read_process_header (
-		uint8_t *type,
-		uint8_t *version,
-		rrr_biglength *header_pos,
-		rrr_biglength *payload_pos,
-		rrr_biglength *end_pos,
-		struct rrr_raft_server_state *state,
-		struct rrr_raft_server_connection *connection,
-		const struct rrr_read_session *read_session
+static int __rrr_raft_server_net_handshake_complete_callback (
+		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
 ) {
-	int ret = RRR_READ_INCOMPLETE;
+	struct rrr_raft_server_connection *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+	struct rrr_raft_server_state *state = arg;
 
-	uint64_t preamble0, preamble1_header_size;
-	rrr_biglength target_size, payload_size;
+	int ret = 0;
 
-	if (read_session->rx_buf_wpos < sizeof(uint64_t) * 2) {
+	raft_id server_id;
+
+	if (connection == NULL) {
+		// Error occured in accept callback if connection is
+		// not set, and we must close the connection.
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	preamble0 = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr));
-	preamble1_header_size = rrr_le64toh(* (uint64_t *) (read_session->rx_buf_ptr + sizeof(uint64_t)));
-
-	printf("Header size is %" PRIrrrbl "\n", preamble1_header_size);
-
-	if (preamble1_header_size == 0) {
-		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-			"Received RPC with zero header size, closing connection.\n%s", "");
-		ret = RRR_READ_SOFT_ERROR;
+	if ((server_id = rrr_raft_bridge_configuration_server_id_get (
+			state->bridge,
+			connection->server_address
+	)) == 0) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address, "connection from unknown remote server%s", "");
 		goto out;
 	}
 
-	target_size = sizeof(uint64_t) * 2;
-	*header_pos = target_size;
-
-	target_size += preamble1_header_size;
-	*payload_pos = target_size;
-
-	if (target_size > read_session->rx_buf_wpos) {
-		goto out;
-	}
-
-	/* For backwards compatibility in C-raft, the second
-	 * byte for the type is currently not used. */
-	*type = (uint8_t) preamble0;           /* Byte 0 */
-	*version = (uint8_t)(preamble0 >> 16); /* Byte 2 */
-
-	printf("Type is %u version is %u\n", *type, *version);
-
-	switch (*type) {
-		case RAFT_REQUEST_VOTE:
-		case RAFT_REQUEST_VOTE_RESULT:
-		case RAFT_APPEND_ENTRIES_RESULT:
-		case RAFT_TIMEOUT_NOW:
-			payload_size = 0;
-			break;
-		case RAFT_APPEND_ENTRIES:
-		case RAFT_INSTALL_SNAPSHOT:
-			assert(0 && "RPC with payload not implemented");
-			payload_size = 0;
-			break;
-		default:
-			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-				"Received RPC with unknown type %u, closing connection.\n", type);
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-	};
-
-	target_size += payload_size;
-	*end_pos = target_size;
-
-	if (target_size < payload_size) {
-		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-			"Target size overflow when reading RPC, closing connection.\n%s", "");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	ret = RRR_READ_OK;
+	connection->server_id = server_id;
 
 	out:
 	return ret;
@@ -1852,26 +1809,40 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 		void *arg
 ) {
 	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
+	struct rrr_raft_server_state *state = callback_data->state;
+	struct rrr_raft_server_connection *connection = callback_data->connection;
 
 	int ret = RRR_READ_INCOMPLETE;
 
-	uint8_t type, version;
-	rrr_biglength header_pos, payload_pos, end_pos;
+	const char *data;
+	size_t data_size;
+	ssize_t bytes;
 
-	if ((ret = __rrr_raft_server_net_read_process_header (
-			&type,
-			&version,
-			&header_pos,
-			&payload_pos,
-			&end_pos,
-			callback_data->state,
-			callback_data->connection,
-			read_session
-	)) != RRR_READ_OK) {
+	data = read_session->rx_buf_ptr;
+	if (rrr_size_from_biglength_err(&data_size, read_session->rx_buf_wpos) != 0) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+			"Read buffer overflow when reading RPC, closing connection.\n%s", "");
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	read_session->target_size = end_pos;
+	if ((bytes = rrr_raft_bridge_read (
+			state->bridge,
+			connection->server_id,
+			connection->server_address,
+			data,
+			data_size
+	)) < 0) {
+		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+			"Error while reading RPC, closing connection.\n%s", "");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+	else if (bytes > 0) {
+		read_session->target_size = (rrr_biglength) bytes;
+		ret = RRR_READ_OK;
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -1897,51 +1868,12 @@ static int __rrr_raft_server_net_read_complete_callback (
 ) {
 	struct rrr_raft_server_net_read_callback_data *callback_data = arg;
 
-	int ret = RRR_READ_OK;
+	(void)(read_session);
+	(void)(callback_data);
 
-	uint8_t type, version;
-	rrr_biglength header_pos, payload_pos, end_pos;
+	// Nothing to do
 
-	if ((ret = __rrr_raft_server_net_read_process_header (
-			&type,
-			&version,
-			&header_pos,
-			&payload_pos,
-			&end_pos,
-			callback_data->state,
-			callback_data->connection,
-			read_session
-	)) != RRR_READ_OK) {
-		RRR_BUG("BUG: Header process did not return OK in %s\n", __func__);
-	}
-
-	switch (type) {
-		case RAFT_APPEND_ENTRIES:
-			assert(0 && "Append entries not implemented\n");
-			break;
-		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result not implemented\n");
-			break;
-		case RAFT_REQUEST_VOTE:
-			assert(0 && "Request vote not implemented\n");
-			break;
-		case RAFT_REQUEST_VOTE_RESULT:
-			assert(0 && "Request vote result not implemented\n");
-			break;
-		case RAFT_INSTALL_SNAPSHOT:
-			assert(0 && "Install snapshot not implemented\n");
-			break;
-		case RAFT_TIMEOUT_NOW:
-			assert(0 && "Timeout now not implemented\n");
-			break;
-		default:
-			RRR_BUG("BUG: Type %u not implemented in %s\n", type, __func__);
-	};
-
-	assert(0 && "net complete callback not implemented");
-
-	out:
-	return ret;
+	return RRR_READ_OK;
 }
 
 static int __rrr_raft_server_net_read_callback (
@@ -2038,8 +1970,8 @@ static int __rrr_raft_server_net_transport_setup (
 			RRR_RAFT_SERVER_NET_SEND_CHUNK_COLLECTION_LIMIT,
 			__rrr_raft_server_net_accept_callback,
 			state,
-			NULL,
-			NULL,
+			__rrr_raft_server_net_handshake_complete_callback,
+			state,
 			__rrr_raft_server_net_read_callback,
 			state,
 			__rrr_raft_server_net_tick_callback,

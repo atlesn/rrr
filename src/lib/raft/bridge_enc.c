@@ -316,6 +316,8 @@ void rrr_raft_bridge_encode_message_request_vote (
 ) {
 	uint64_t flags = 0;
 
+	assert(data_size >= GET_MSG_REQUEST_VOTE_SIZE());
+
 	if (msg->disrupt_leader) {
 		flags |= 1 << 0;
 	}
@@ -325,14 +327,14 @@ void rrr_raft_bridge_encode_message_request_vote (
 	}
 
 	WRITE(data) {
-		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, data_size - GET_MSG_REQUEST_VOTE_SIZE());
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, GET_MSG_REQUEST_VOTE_SIZE());
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->candidate_id);
 		WRITE_U64(msg->last_log_index);
 		WRITE_U64(msg->last_log_term);
 		WRITE_U64(flags);
 	}
-	WRITE_VERIFY(data, data_size);
+	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_SIZE());
 }
 
 /*
@@ -404,3 +406,39 @@ void rrr_raft_bridge_decode_metadata (
 
 	};
 */
+
+int rrr_raft_bridge_decode_request_vote_size_ok (
+		uint8_t version,
+		size_t header_size
+) {
+	if (version != 2) {
+		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
+		return 0;
+	}
+
+	return header_size == GET_MSG_REQUEST_VOTE_SIZE();
+}
+
+int rrr_raft_bridge_decode_request_vote (
+		struct raft_request_vote *p,
+		const char *header,
+		size_t header_size
+) {
+	assert (header_size == GET_MSG_REQUEST_VOTE_SIZE());
+
+	uint64_t flags;
+
+	READ(header) {
+		READ_U64(p->term);
+		READ_U64(p->candidate_id);
+		READ_U64(p->last_log_index);
+		READ_U64(p->last_log_term);
+		READ_U64(flags);
+	}
+	READ_VERIFY(header, header_size);
+
+	p->disrupt_leader = (flags & 1 << 0) != 0;
+	p->pre_vote = (flags & 1 << 1) != 0;
+
+	return 0;
+}

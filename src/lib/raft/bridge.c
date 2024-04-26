@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <string.h>
+
 #include "bridge.h"
 #include "bridge_task.h"
 #include "log.h"
@@ -126,4 +128,22 @@ const char *rrr_raft_bridge_configuration_server_name_get (
 	}
 
 	return NULL;
+}
+
+raft_id rrr_raft_bridge_configuration_server_id_get (
+		const struct rrr_raft_bridge *bridge,
+		const char *server_address
+) {
+	unsigned i;
+	struct raft_server *server;
+
+	for (i = 0; i < bridge->raft->configuration.n; i++) {
+		server = bridge->raft->configuration.servers + i;
+
+		if (strcmp(server->address, server_address) == 0) {
+			return server->id;
+		}
+	}
+
+	return 0;
 }
