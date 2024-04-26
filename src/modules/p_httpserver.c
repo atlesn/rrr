@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -349,19 +349,19 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 	return ret;
 }
 
-struct httpserver_worker_process_field_allocate_callback_data {
+struct httpserver_receive_process_field_allocate_callback_data {
 	struct httpserver_data *data;
 	struct rrr_type_value **value_tmp;
 };
 
-static int httpserver_worker_process_field_import_message_callback (
+static int httpserver_receive_process_field_import_message_callback (
 		const void *value,
 		rrr_nullsafe_len value_length,
 		const void *name,
 		rrr_nullsafe_len name_length,
 		void *arg
 ) {
-	struct httpserver_worker_process_field_allocate_callback_data *callback_data = arg;
+	struct httpserver_receive_process_field_allocate_callback_data *callback_data = arg;
 
 	if (value_length > RRR_LENGTH_MAX || name_length > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Value length or name length overflow while importing message in httpserver instance %s\n",
@@ -381,16 +381,16 @@ static int httpserver_worker_process_field_import_message_callback (
 	);
 }
 
-struct httpserver_worker_process_field_callback {
+struct httpserver_receive_process_field_callback_data {
 	struct rrr_array *array;
 	struct httpserver_data *httpserver_data;
 };
 
-static int httpserver_worker_process_field_callback (
+static int httpserver_receive_process_field_callback (
 		const struct rrr_http_field *field,
 		void *arg
 ) {
-	struct httpserver_worker_process_field_callback *callback_data = arg;
+	struct httpserver_receive_process_field_callback_data *callback_data = arg;
 
 	int ret = RRR_HTTP_OK;
 
@@ -431,7 +431,7 @@ static int httpserver_worker_process_field_callback (
 	if (	rrr_nullsafe_str_isset(field->value) &&
 			rrr_nullsafe_str_cmpto_case(field->content_type, RRR_MESSAGE_MIME_TYPE) == 0
 	) {
-		struct httpserver_worker_process_field_allocate_callback_data allocate_callback_data = {
+		struct httpserver_receive_process_field_allocate_callback_data allocate_callback_data = {
 				callback_data->httpserver_data,
 				&value_tmp
 		};
@@ -439,7 +439,7 @@ static int httpserver_worker_process_field_callback (
 		if ((ret = rrr_nullsafe_str_with_raw_do_double_const (
 				field->value,
 				name_to_use,
-				httpserver_worker_process_field_import_message_callback,
+				httpserver_receive_process_field_import_message_callback,
 				&allocate_callback_data
 		)) != 0) {
 			RRR_MSG_0("Failed to import RRR message from HTTP field\n");
@@ -699,7 +699,7 @@ static int httpserver_field_value_search_callback (
 	return RRR_READ_OK;
 }
 
-static int httpserver_receive_callback_get_full_request_fields (
+static int httpserver_receive_get_full_request_fields (
 		struct rrr_array *target_array,
 		struct httpserver_data *httpserver_data,
 		const struct rrr_http_part *part,
@@ -823,21 +823,21 @@ static int httpserver_receive_callback_get_full_request_fields (
 		return ret;
 }
 
-static int httpserver_receive_callback_get_part_fields (
+static int httpserver_receive_get_part_fields (
 		struct rrr_array *target_array,
 		struct httpserver_data *data,
 		const struct rrr_http_part *part
 ) {
 	int ret = RRR_HTTP_OK;
 
-	struct httpserver_worker_process_field_callback field_callback_data = {
-			target_array,
-			data
+	struct httpserver_receive_process_field_callback_data field_callback_data = {
+		target_array,
+		data
 	};
 
 	if ((ret = rrr_http_part_fields_iterate_const (
 			part,
-			httpserver_worker_process_field_callback,
+			httpserver_receive_process_field_callback,
 			&field_callback_data
 	)) != RRR_HTTP_OK) {
 		goto out;
@@ -847,7 +847,7 @@ static int httpserver_receive_callback_get_part_fields (
 	return ret;
 }
 
-static int httpserver_receive_callback_send_array_message (
+static int httpserver_receive_send_array_message (
 		struct httpserver_data *data,
 		const struct rrr_array *target_array,
 		const struct rrr_net_transport_handle *handle,
@@ -1251,7 +1251,7 @@ static int httpserver_receive_callback (
 	// PROCESS REQUEST FIELDS //
 	//////////////////////////// 
 
-	if ((ret = httpserver_receive_callback_get_full_request_fields (
+	if ((ret = httpserver_receive_get_full_request_fields (
 			&target_array,
 			data,
 			transaction->request_part,
@@ -1261,7 +1261,7 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if ((ret = httpserver_receive_callback_get_part_fields (
+	if ((ret = httpserver_receive_get_part_fields (
 			&target_array,
 			data,
 			transaction->request_part
@@ -1325,7 +1325,7 @@ static int httpserver_receive_callback (
 				goto out;
 			}
 
-			if ((ret = httpserver_receive_callback_send_array_message (
+			if ((ret = httpserver_receive_send_array_message (
 					data,
 					&target_array,
 					handle,
@@ -1336,7 +1336,7 @@ static int httpserver_receive_callback (
 		RRR_LL_ITERATE_END();
 	}
 	else {
-		if ((ret = httpserver_receive_callback_send_array_message (
+		if ((ret = httpserver_receive_send_array_message (
 				data,
 				&target_array,
 				handle,
