@@ -399,7 +399,7 @@ static int httpserver_worker_process_field_callback (
 	struct rrr_nullsafe_str *name_to_use = NULL;
 
 	if (rrr_nullsafe_str_dup(&name_to_use, field->name) != 0) {
-		RRR_MSG_0("Could not duplicate name in httpserver_worker_process_field_callback\n");
+		RRR_MSG_0("Could not duplicate name in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
@@ -414,7 +414,7 @@ static int httpserver_worker_process_field_callback (
 				if (node->value != NULL && node->value_size > 0 && *(node->value) != '\0') {
 					// Do name translation
 					if (rrr_nullsafe_str_set(name_to_use, node->value, strlen(node->value)) != 0) {
-						RRR_MSG_0("Could not set name in httpserver_worker_process_field_callback\n");
+						RRR_MSG_0("Could not set name in %s\n", __func__);
 						ret = RRR_HTTP_HARD_ERROR;
 						goto out;
 					}
@@ -467,7 +467,7 @@ static int httpserver_worker_process_field_callback (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Error while pushing field to array in __rrr_http_server_worker_process_field_callback\n");
+		RRR_MSG_0("Error while pushing field to array in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
@@ -519,7 +519,7 @@ static int httpserver_write_message_callback (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Could not create message in httpserver_write_message_callback\n");
+		RRR_MSG_0("Could not create message in %s\n", __func__);
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
 	}
@@ -549,7 +549,7 @@ static int httpserver_generate_unique_topic (
 			(extra != NULL ? "/" : ""),
 			(extra != NULL ? extra : "")
 	) <= 0) {
-		RRR_MSG_0("Could not create topic in httpserver_generate_unique_topic\n");
+		RRR_MSG_0("Could not create topic in %s\n", __func__);
 		return 1;
 	}
 	return 0;
@@ -584,12 +584,12 @@ static int httpserver_async_response_get_fifo_callback (
 				ret = RRR_FIFO_SEARCH_KEEP;
 				goto out;
 			}
-			RRR_MSG_0("Error while matching topic in httpserver_receive_get_response_callback\n");
+			RRR_MSG_0("Error while matching topic in %s\n", __func__);
 			goto out;
 		}
 		else {
 			if (callback_data->entry != NULL) {
-				RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
+				RRR_BUG("BUG: Response field was not clear in %s\n", __func__);
 			}
 
 			rrr_msg_holder_incref_while_locked(entry);
@@ -628,7 +628,7 @@ static int httpserver_response_data_new (
 
 	struct httpserver_response_data *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in httpserver_response_data_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -642,7 +642,7 @@ static int httpserver_response_data_new (
 				(authority_host != NULL) ? authority_host : "",
 				(endpoint != NULL) ? endpoint : "" 
 		) <= 0) {
-			RRR_MSG_0("Could not create topic extra in httpserver_response_data_new\n");
+			RRR_MSG_0("Could not create topic extra in %s\n", __func__);
 			goto out_free;
 		}
 	}
@@ -907,7 +907,7 @@ static int httpserver_async_response_get_extract_data (
 		}
 	}
 	else {
-		RRR_MSG_0("Unknown message class %u in httpserver_receive_get_response_extract_data\n", MSG_CLASS(msg));
+		RRR_MSG_0("Unknown message class %u in %s\n", MSG_CLASS(msg), __func__);
 		ret = 1;
 		goto out;
 	}
@@ -1111,7 +1111,7 @@ static int httpserver_async_response_get_and_process (
 			httpserver_async_response_get_fifo_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error from poll in httpserver_receive_callback_get_response\n");
+		RRR_MSG_0("Error from poll in %s\n", __func__);
 		goto out;
 	}
 
@@ -1352,7 +1352,7 @@ static int httpserver_receive_callback (
 
 	if (data->cache_control_header != NULL && *(data->cache_control_header) != '\0') {
 		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Cache-Control", data->cache_control_header)) != 0) {
-			RRR_MSG_0("Failed to push cache-control header in httpserver_receive_callback\n");
+			RRR_MSG_0("Failed to push cache-control header in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -1412,7 +1412,7 @@ static int httpserver_receive_raw_broker_callback (
 		}
 
 		if ((msg_to_free = rrr_allocate(data_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for RRR message in httpserver_receive_raw_broker_callback\n");
+			RRR_MSG_0("Could not allocate memory for RRR message in %s\n", __func__);
 			ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
 			goto out;
 		}
@@ -1453,14 +1453,14 @@ static int httpserver_receive_raw_broker_callback (
 			if (write_callback_data->topic != NULL) {
 				if (MSG_TOPIC_LENGTH(msg_msg)) {
 					if (rrr_asprintf(&topic_tmp, "%s/%.*s", write_callback_data->topic, MSG_TOPIC_LENGTH(msg_msg), MSG_TOPIC_PTR(msg_msg)) <= 0) {
-						RRR_MSG_0("Failed to allocate memory for topic A in httpserver_receive_raw_broker_callback\n");
+						RRR_MSG_0("Failed to allocate memory for topic A in %s\n", __func__);
 						ret = RRR_HTTP_HARD_ERROR;
 						goto out;
 					}
 				}
 				else {
 					if (rrr_asprintf(&topic_tmp, "%s", write_callback_data->topic) <= 0) {
-						RRR_MSG_0("Failed to allocate memory for topic B in httpserver_receive_raw_broker_callback\n");
+						RRR_MSG_0("Failed to allocate memory for topic B in %s\n", __func__);
 						ret = RRR_HTTP_HARD_ERROR;
 						goto out;
 					}
@@ -1470,13 +1470,13 @@ static int httpserver_receive_raw_broker_callback (
 			if (topic_tmp != NULL) {
 				size_t topic_length = strlen(topic_tmp);
 				if (topic_length > RRR_MSG_TOPIC_MAX) {
-					RRR_MSG_0("Topic length overflow in httpserver_receive_raw_broker_callback (%llu>%llu)\n",
-						(unsigned long long) topic_length, (unsigned long long) RRR_MSG_TOPIC_MAX);
+					RRR_MSG_0("Topic length overflow in %s (%llu>%llu)\n",
+						__func__, (unsigned long long) topic_length, (unsigned long long) RRR_MSG_TOPIC_MAX);
 					ret = RRR_HTTP_HARD_ERROR;
 					goto out;
 				}
 				if (rrr_msg_msg_topic_set(&msg_msg, topic_tmp, (rrr_u16) topic_length) != 0) {
-					RRR_MSG_0("Failed to set topic in httpserver_receive_raw_broker_callback\n");
+					RRR_MSG_0("Failed to set topic in %s\n", __func__);
 					ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
 					goto out;
 				}
@@ -1505,7 +1505,7 @@ static int httpserver_receive_raw_broker_callback (
 				write_callback_data->topic_length,
 				write_callback_data->data
 		)) != 0) {
-			RRR_MSG_0("Could not create message in httpserver_receive_raw_broker_callback\n");
+			RRR_MSG_0("Could not create message in %s\n", __func__);
 			goto out;
 		}
 
@@ -1602,7 +1602,7 @@ static int httpserver_websocket_handshake_callback (
 	}
 
 	if ((application_topic_new = rrr_strdup(topic_begin)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
+		RRR_MSG_0("Could not allocate memory for application data in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -1657,14 +1657,14 @@ static int httpserver_websocket_get_response_callback_extract_data (
 #endif
 	if (MSG_DATA_LENGTH(msg) == 0) {
 		if ((response_data = rrr_strdup("")) == NULL) {
-			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out_unlock;
 		}
 	}
 	else {
 		if ((response_data = rrr_allocate(MSG_DATA_LENGTH(msg))) == NULL) {
-			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
+			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 			ret = 1;
 			goto out_unlock;
 		}
@@ -1709,7 +1709,7 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 			httpserver_async_response_get_fifo_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error from poll in httpserver_websocket_get_response_callback\n");
+		RRR_MSG_0("Error from poll in %s\n", __func__);
 		goto out;
 	}
 
@@ -1821,7 +1821,7 @@ static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback);
 }
 
-// If we receive messages from senders which no worker seem to want, we must delete them
+// If we receive messages from senders not matching any outstanding request, we must delete them
 static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
 	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
@@ -1833,7 +1833,7 @@ static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	rrr_msg_holder_lock(entry);
 
 	if (entry->buffer_time == 0) {
-		RRR_BUG("BUG: Buffer time was 0 for entry in httpserver_housekeep_callback\n");
+		RRR_BUG("BUG: Buffer time was 0 for entry in %s\n", __func__);
 	}
 
 	uint64_t timeout = entry->buffer_time + callback_data->httpserver_data->response_timeout_ms * 1000;
