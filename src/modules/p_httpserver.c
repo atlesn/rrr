@@ -1080,10 +1080,20 @@ static int httpserver_async_response_get_and_process (
 ) {
 	int ret = 0;
 
+
+	char *topic_filter = NULL;
+
+	if (data->do_topic_format_request) {
+		if (rrr_asprintf (&topic_filter, "%s/#",response_data->request_topic) <= 0) {
+			RRR_MSG_0("Failed to allocate memory for topic filter in %s\n", __func__);
+			goto out;
+		}
+	} 
+
 	struct rrr_array target_array = {0};
 	struct httpserver_async_response_get_callback_data callback_data = {
 		NULL,
-		response_data->request_topic
+		(topic_filter != NULL) ? topic_filter : response_data->request_topic
 	};
 
 	if ((ret = rrr_fifo_search (
@@ -1135,6 +1145,7 @@ static int httpserver_async_response_get_and_process (
 	out:
 	rrr_array_clear(&target_array);
 	httpserver_async_response_get_callback_data_cleanup(&callback_data);
+	RRR_FREE_IF_NOT_NULL(topic_filter);
 	return ret;
 
 }
