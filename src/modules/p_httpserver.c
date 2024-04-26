@@ -1200,11 +1200,11 @@ static int httpserver_receive_endpoint_clean_callback (
 			"%s/%.*s/%.*s%.*s",
 			callback_data->response_data->request_topic,
 			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(callback_data->method)),
-			rrr_nullsafe_str_ptr_const(callback_data->method),
+			(char*)rrr_nullsafe_str_ptr_const(callback_data->method),
 			h_authority != NULL ? rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(h_authority->value)) : 0,
 			h_authority != NULL ? rrr_nullsafe_str_ptr_const(h_authority->value) : "",
 			rrr_int_from_biglength_bug_const(endpoint_cleaned_length),
-			endpoint_cleaned
+			(char*)endpoint_cleaned
 	) <= 0) {
 		RRR_MSG_0("Failed to allocate memory for topic in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
