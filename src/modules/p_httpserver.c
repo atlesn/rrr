@@ -122,6 +122,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_fifo_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
+	RRR_FREE_IF_NOT_NULL(data->topic_format);
 	if (data->http_server != NULL) {
 		rrr_http_server_destroy(data->http_server);
 	}
@@ -275,10 +276,9 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_cache_control_header", cache_control_header);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("httpserver_topic_format", topic_format);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_topic_format", topic_format);
 
-	data->do_topic_format_request = 0;
-	if (RRR_INSTANCE_CONFIG_EXISTS("httpserver_topic_format")) {
+	if (RRR_INSTANCE_CONFIG_EXISTS("http_server_topic_format")) {
 		if (rrr_posix_strcasecmp(data->topic_format, "simple") == 0) {
 			data->do_topic_format_request = 0;
 		}
@@ -286,7 +286,7 @@ static int httpserver_parse_config (
 			data->do_topic_format_request = 1;
 		}
 		else {
-			RRR_MSG_0("Unknown value '%s' for httpserver_topic_format in file instance %s, valid options are 'simple' and 'request'.\n",
+			RRR_MSG_0("Unknown value '%s' for http_server_topic_format in file instance %s, valid options are 'simple' and 'request'.\n",
 					data->topic_format, config->name);
 			ret = 1;
 			goto out;
@@ -617,10 +617,7 @@ struct httpserver_response_data {
 
 static int httpserver_response_data_new (
 		struct httpserver_response_data **target,
-		rrr_http_unique_id unique_id,
-		const char *http_method,
-		const char *authority_host,
-		const char *endpoint
+		rrr_http_unique_id unique_id
 ) {
 	int ret = 0;
 
@@ -635,23 +632,11 @@ static int httpserver_response_data_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	char *extra= NULL;
-	if (http_method != NULL || authority_host != NULL || endpoint != NULL) {
-		if (rrr_asprintf(&extra, "%s/%s%s",
-				(http_method != NULL) ? http_method : "",
-				(authority_host != NULL) ? authority_host : "",
-				(endpoint != NULL) ? endpoint : "" 
-		) <= 0) {
-			RRR_MSG_0("Could not create topic extra in %s\n", __func__);
-			goto out_free;
-		}
-	}
-
 	if ((ret = httpserver_generate_unique_topic (
 			&result->request_topic,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
 			unique_id,
-			extra
+			NULL
 	)) != 0) {
 		goto out_free;
 	}
@@ -660,7 +645,6 @@ static int httpserver_response_data_new (
 	goto out;
 	out_free:
 		rrr_free(result);
-		RRR_FREE_IF_NOT_NULL(extra);
 	out:
 		return ret;
 }
@@ -699,10 +683,11 @@ static int httpserver_field_value_search_callback (
 	return RRR_READ_OK;
 }
 
-static int httpserver_receive_get_full_request_fields (
+static int httpserver_receive_get_full_request (
 		struct rrr_array *target_array,
 		struct httpserver_data *httpserver_data,
 		const struct rrr_http_part *part,
+		const struct rrr_http_header_field *h_authority,
 		const char *data_ptr,
 		enum rrr_http_application_type next_protocol_version
 ) {
@@ -710,10 +695,6 @@ static int httpserver_receive_get_full_request_fields (
 
 	const char * const body_ptr = RRR_HTTP_PART_BODY_PTR(data_ptr,part);
 	const rrr_biglength body_len = RRR_HTTP_PART_BODY_LENGTH(part);
-
-	if (!httpserver_data->do_receive_full_request) {
-		goto out;
-	}
 
 	if (body_len == 0 && !httpserver_data->do_allow_empty_messages) {
 		RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
@@ -737,29 +718,26 @@ static int httpserver_receive_get_full_request_fields (
 		goto out_value_error;
 	}
 
-	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
-	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
-	const struct rrr_http_header_field *authority = rrr_http_part_header_field_get(part, ":authority");
-	const struct rrr_http_header_field *host = rrr_http_part_header_field_get(part, "host");
+	const struct rrr_http_header_field *h_content_type = rrr_http_part_header_field_get(part, "content-type");
+	const struct rrr_http_header_field *h_content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
-	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
-		if ((ret = rrr_array_push_value_str_with_tag (
+	if (h_content_type != NULL && rrr_nullsafe_str_isset(h_content_type->value)) {
+		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
 				"http_content_type",
-				value
+				h_content_type->value
 		)) != 0) {
 			goto out_value_error;
 		}
 
-		if (rrr_nullsafe_str_cmpto_case(content_type->value, "multipart/form-data") == 0) {
+		if (rrr_nullsafe_str_cmpto_case(h_content_type->value, "multipart/form-data") == 0) {
 			struct httpserver_field_value_search_callback_data callback_data = {
 				"boundary",
 				NULL
 			};
 
 			if ((ret = rrr_http_field_collection_iterate_as_strings (
-					&content_type->fields,
+					&h_content_type->fields,
 					httpserver_field_value_search_callback,
 					&callback_data
 			)) != 0) {
@@ -768,7 +746,12 @@ static int httpserver_receive_get_full_request_fields (
 							INSTANCE_D_NAME(httpserver_data->thread_data));
 					goto out;
 				}
-				if ((ret = rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_content_type_boundary", callback_data.result)) != 0) {
+
+				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
+						target_array,
+						"http_content_type_boundary",
+						callback_data.result
+				)) != 0) {
 					RRR_MSG_0("Failed to push content-type boundary value to array in httpserver instance %s\n",
 							INSTANCE_D_NAME(httpserver_data->thread_data));
 					goto out;
@@ -781,24 +764,21 @@ static int httpserver_receive_get_full_request_fields (
 		}
 	}
 
-	if (content_transfer_encoding != NULL && rrr_nullsafe_str_isset(content_transfer_encoding->value)) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_transfer_encoding->value);
-		if ((ret = rrr_array_push_value_str_with_tag (
+	if (h_content_transfer_encoding != NULL && rrr_nullsafe_str_isset(h_content_transfer_encoding->value)) {
+		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
 				"http_content_transfer_encoding",
-				value
+				h_content_transfer_encoding->value
 		)) != 0) {
 			goto out_value_error;
 		}
 	}
 
-	if (authority != NULL || host != NULL) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,(authority != NULL ? authority : host)->value);
-
-		if ((ret = rrr_array_push_value_str_with_tag (
+	if (h_authority != NULL && rrr_nullsafe_str_isset(h_authority->value)) {
+		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
 				"http_authority",
-				value
+				h_authority->value
 		)) != 0) {
 			goto out_value_error;
 		}
@@ -880,7 +860,7 @@ static int httpserver_receive_send_array_message (
 			&write_callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
-		RRR_MSG_0("Error while saving message in httpserver_receive_callback\n");
+		RRR_MSG_0("Error while saving message in %s\n", __func__);
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
@@ -1173,22 +1153,65 @@ static int httpserver_async_response_get_callback (
 	return httpserver_async_response_get_and_process (data, response_data, transaction);
 }
 
-static int httpserver_receive_callback_uri_endpoint_clean_callback (
+struct httpserver_receive_endpoint_clean_callback_data {
+	struct httpserver_data *data;
+	const struct httpserver_response_data *response_data;
+	const struct rrr_nullsafe_str *method;
+	const struct rrr_http_header_field *h_authority;
+	char **result_topic;
+};
+
+static int httpserver_receive_endpoint_clean_callback (
 		const void *endpoint_cleaned,
 		rrr_nullsafe_len endpoint_cleaned_length,
 		void *arg
 ) {
-	struct rrr_array *target_array = arg;
+	struct httpserver_receive_endpoint_clean_callback_data *callback_data = arg;
+	struct httpserver_data *data = callback_data->data;
+	const struct rrr_http_header_field *h_authority = callback_data->h_authority;
 
 	int ret = 0;
 
-	ret |= rrr_array_push_value_str_with_tag_with_size (
-			target_array,
-			"http_endpoint_path",
-			endpoint_cleaned,
-			rrr_length_from_biglength_bug_const(endpoint_cleaned_length)
-	);
+	assert(endpoint_cleaned_length > 0);
+	assert(* (const char *) endpoint_cleaned == '/');
 
+	// NULL bytes are allowed in HTTP, ensure that any values used for the topic do not contain any
+
+	if (rrr_nullsafe_str_has_null_raw(endpoint_cleaned, endpoint_cleaned_length)) {
+		RRR_MSG_0("Endpoint contained NULL bytes while creating message topic with format 'request' " \
+			"in httpserver instance %s, cannot create request message.\n",
+			INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	assert (!rrr_nullsafe_str_has_null(callback_data->method));
+
+	if (h_authority != NULL && rrr_nullsafe_str_has_null(h_authority->value)) {
+		RRR_MSG_0("Authority or host header contained NULL bytes while creating message topic with format 'request' " \
+			"in httpserver instance %s, cannot create request message.\n",
+			INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_asprintf (
+			callback_data->result_topic,
+			"%s/%.*s/%.*s%.*s",
+			callback_data->response_data->request_topic,
+			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(callback_data->method)),
+			rrr_nullsafe_str_ptr_const(callback_data->method),
+			h_authority != NULL ? rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(h_authority->value)) : 0,
+			h_authority != NULL ? rrr_nullsafe_str_ptr_const(h_authority->value) : "",
+			rrr_int_from_biglength_bug_const(endpoint_cleaned_length),
+			endpoint_cleaned
+	) <= 0) {
+		RRR_MSG_0("Failed to allocate memory for topic in %s\n", __func__);
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
@@ -1203,9 +1226,16 @@ static int httpserver_receive_callback (
 
 	int ret = 0;
 
-	struct rrr_array target_array = {0};
-
 	static int fail_once = 1;
+
+	struct rrr_array target_array = {0};
+	struct httpserver_response_data *response_data = NULL;
+	const struct rrr_http_header_field *h_authority, *h_host, *h_access_control_request_headers;
+	char *request_topic = NULL;
+
+	////////////////////////////
+	// PREPARATION AND CHECKS //
+	//////////////////////////// 
 
 	if (data->do_fail_once && fail_once) {
 		RRR_MSG_0("Fail once debug is active in httpserver, sending 500 to client\n");
@@ -1214,30 +1244,7 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
-		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
-			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	{
-		// Used with CORS: Allow all headers which the client wishes to send
-		const struct rrr_http_header_field *access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
-		if (access_control_request_headers != NULL) {
-			if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-allow-headers", access_control_request_headers->value)) != 0) {
-				RRR_MSG_0("Failed to push request-headers header in httpserver_receive_callback\n");
-				ret = 1;
-				goto out;
-			}
-		}
-
-	}
-
-	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
-		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
-		ret = RRR_HTTP_OK;
+	if ((ret = httpserver_response_data_new (&response_data, transaction->unique_id)) != 0) {
 		goto out;
 	}
 
@@ -1247,18 +1254,69 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
+	h_access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
+	h_authority = rrr_http_part_header_field_get(transaction->request_part, ":authority");
+	h_host = rrr_http_part_header_field_get(transaction->request_part, "host");
+
+	if (data->do_topic_format_request) {
+		struct httpserver_receive_endpoint_clean_callback_data callback_data = {
+			data,
+			response_data,
+			transaction->request_part->request_method_str_nullsafe,
+			h_authority != NULL ? h_authority : h_host,
+			&request_topic
+		};
+
+		if ((ret = rrr_http_util_uri_endpoint_clean (
+				transaction->request_part->request_uri_nullsafe,
+				httpserver_receive_endpoint_clean_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+
+		assert(request_topic != NULL);
+	}
+
+	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		ret = RRR_HTTP_OK;
+		goto out;
+	}
+
+	//////////////////////////
+	// PROCESS CORS HEADERS //
+	//////////////////////////
+
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "access-control-allow-origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in %s\n", __func__);
+			goto out;
+		}
+	}
+
+	if (h_access_control_request_headers != NULL) {
+		if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-allow-headers", h_access_control_request_headers->value)) != 0) {
+			RRR_MSG_0("Failed to push request-headers header in %s\n", __func__);
+			goto out;
+		}
+	}
+
 	////////////////////////////
 	// PROCESS REQUEST FIELDS //
 	//////////////////////////// 
 
-	if ((ret = httpserver_receive_get_full_request_fields (
-			&target_array,
-			data,
-			transaction->request_part,
-			data_ptr,
-			next_application_type
-	)) != 0) {
-		goto out;
+	if (data->do_receive_full_request) {
+		if ((ret = httpserver_receive_get_full_request (
+				&target_array,
+				data,
+				transaction->request_part,
+				h_authority != NULL ? h_authority : h_host,
+				data_ptr,
+				next_application_type
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = httpserver_receive_get_part_fields (
@@ -1266,35 +1324,6 @@ static int httpserver_receive_callback (
 			data,
 			transaction->request_part
 	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_util_uri_endpoint_clean (
-		transaction->request_part->request_uri_nullsafe,
-		httpserver_receive_callback_uri_endpoint_clean_callback,
-		&target_array)
-	) != 0){
-		goto out;
-	}
-
-	char *http_method = NULL, *authority_host = NULL, *endpoint_clean = NULL;
-	if (data->do_topic_format_request) {
-
-		if (rrr_array_has_tag(&target_array, "http_method")) {
-			(void)rrr_array_get_value_str_by_tag(&http_method, &target_array, "http_method");
-		}
-
-		if (rrr_array_has_tag(&target_array, "http_authority")) {
-			(void)rrr_array_get_value_str_by_tag(&authority_host, &target_array, "http_authority");
-		}
-
-		if (rrr_array_has_tag(&target_array, "http_endpoint_path")) {
-			(void)rrr_array_get_value_str_by_tag(&endpoint_clean, &target_array, "http_endpoint_path");
-		}
-	}
-
-	struct httpserver_response_data *response_data = NULL;
-	if ((ret = httpserver_response_data_new(&response_data, transaction->unique_id, http_method, authority_host, endpoint_clean)) != 0) {
 		goto out;
 	}
 
@@ -1329,7 +1358,7 @@ static int httpserver_receive_callback (
 					data,
 					&target_array,
 					handle,
-					response_data->request_topic
+					request_topic != NULL ? request_topic : response_data->request_topic
 			)) != 0) {
 				goto out;
 			}
@@ -1340,7 +1369,7 @@ static int httpserver_receive_callback (
 				data,
 				&target_array,
 				handle,
-				response_data->request_topic
+				request_topic != NULL ? request_topic : response_data->request_topic
 		)) != 0) {
 			goto out;
 		}
@@ -1370,9 +1399,7 @@ static int httpserver_receive_callback (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(http_method);
-	RRR_FREE_IF_NOT_NULL(authority_host);
-	RRR_FREE_IF_NOT_NULL(endpoint_clean);
+	RRR_FREE_IF_NOT_NULL(request_topic);
 	if (response_data != NULL) {
 		httpserver_response_data_destroy(response_data);
 	}
