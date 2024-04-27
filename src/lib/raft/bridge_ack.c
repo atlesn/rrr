@@ -347,6 +347,10 @@ static int __rrr_raft_bridge_ack_push_task_send (
 
 	size_t data_size;
 
+	printf("Send message type %u server id %u\n", (unsigned) message->type, (unsigned) message->server_id);
+
+	assert(message->server_id > 0);
+
 	switch (message->type) {
 		case RAFT_APPEND_ENTRIES:
 			assert(0 && "Append entries message not implemented");
@@ -360,10 +364,8 @@ static int __rrr_raft_bridge_ack_push_task_send (
 
 	switch (message->type) {
 		case RAFT_REQUEST_VOTE:
-			data_size = rrr_raft_bridge_encode_message_get_size(message->type);
-			break;
 		case RAFT_REQUEST_VOTE_RESULT:
-			assert(0 && "Request vote result message not implemented");
+			data_size = rrr_raft_bridge_encode_message_get_size(message->type);
 			break;
 		case RAFT_APPEND_ENTRIES:
 			assert(0 && "append entries message not implemented");
@@ -393,7 +395,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 			rrr_raft_bridge_encode_message_request_vote(data, data_size, &message->request_vote);
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
-			assert(0 && "Request vote result message not implemented");
+			rrr_raft_bridge_encode_message_request_vote_result(data, data_size, &message->request_vote_result);
 			break;
 		case RAFT_APPEND_ENTRIES:
 			assert(0 && "append entries message not implemented");

@@ -56,6 +56,11 @@ void rrr_raft_bridge_encode_message_request_vote (
 		size_t data_size,
 		const struct raft_request_vote *msg
 );
+void rrr_raft_bridge_encode_message_request_vote_result (
+		void *data,
+		size_t data_size,
+		const struct raft_request_vote_result *msg
+);
 
 /*
  * DECODING FUNCTIONS

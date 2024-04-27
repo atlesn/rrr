@@ -38,6 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     * (uint8_t *) wpos = n;                 \
     wpos += sizeof(uint8_t)
 
+#define WRITE_U16(n)                        \
+    * (uint16_t *) wpos = n;                \
+    wpos += sizeof(uint16_t)
+
 #define WRITE_U32(n)                        \
     * (uint32_t *) wpos = rrr_htole64(n);   \
     wpos += sizeof(uint32_t)
@@ -100,6 +104,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define GET_MSG_REQUEST_VOTE_SIZE() \
     (sizeof(uint64_t) * 5)
+
+#define GET_MSG_REQUEST_VOTE_RESULT_SIZE() \
+    (sizeof(uint64_t) * 3)
 
 #define PUT_MSG_PREAMBLE(type, version, body_size)  \
     do {                                            \
@@ -287,7 +294,7 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			total_size += GET_MSG_REQUEST_VOTE_SIZE();
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
-			assert(0 && "Request vote result message not implemented");
+			total_size += GET_MSG_REQUEST_VOTE_RESULT_SIZE();
 			break;
 		case RAFT_APPEND_ENTRIES:
 			assert(0 && "append entries message not implemented");
@@ -335,6 +342,34 @@ void rrr_raft_bridge_encode_message_request_vote (
 		WRITE_U64(flags);
 	}
 	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_SIZE());
+}
+
+void rrr_raft_bridge_encode_message_request_vote_result (
+		void *data,
+		size_t data_size,
+		const struct raft_request_vote_result *msg
+) {
+	uint8_t flags = 0;
+
+	assert(data_size >= GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+
+	if (msg->pre_vote) {
+		flags |= 1 << 1;
+	}
+
+	WRITE(data) {
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+		WRITE_U64(msg->term);
+		WRITE_U64(msg->vote_granted);
+
+		WRITE_U8(flags);
+		WRITE_U8(0);
+		WRITE_U16(msg->features);
+
+		WRITE_U16(msg->capacity);
+		WRITE_U16(0);
+	}
+	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_RESULT_SIZE());
 }
 
 /*
