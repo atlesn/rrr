@@ -569,7 +569,7 @@ static int httpserver_generate_unique_topic_request (
 			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(method)),
 			(const char *) rrr_nullsafe_str_ptr_const(method),
 			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(authority)),
-			rrr_nullsafe_str_ptr_const(authority),
+			(const char *) rrr_nullsafe_str_ptr_const(authority),
 			rrr_int_from_biglength_bug_const(endpoint_cleaned_length),
 			(const char *) endpoint_cleaned
 	) <= 0) {
