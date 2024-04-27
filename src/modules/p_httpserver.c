@@ -537,7 +537,7 @@ struct httpserver_callback_data {
 	struct httpserver_data *httpserver_data;
 };
 
-static int httpserver_generate_unique_topic (
+static int httpserver_generate_unique_topic_base (
 		char **result,
 		const char *prefix,
 		rrr_http_unique_id unique_id,
@@ -548,6 +548,30 @@ static int httpserver_generate_unique_topic (
 			unique_id,
 			(extra != NULL ? "/" : ""),
 			(extra != NULL ? extra : "")
+	) <= 0) {
+		RRR_MSG_0("Could not create topic in %s\n", __func__);
+		return 1;
+	}
+	return 0;
+}
+
+
+static int httpserver_generate_unique_topic_request (
+		char **result,
+		const char *base,
+		const struct rrr_nullsafe_str *method,
+		const struct rrr_nullsafe_str *authority,
+		const void *endpoint_cleaned,
+		size_t endpoint_cleaned_length
+) {
+	if (rrr_asprintf(result, "%s/%.*s/%.*s%.*s",
+			base,
+			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(method)),
+			(const char *) rrr_nullsafe_str_ptr_const(method),
+			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(authority)),
+			rrr_nullsafe_str_ptr_const(authority),
+			rrr_int_from_biglength_bug_const(endpoint_cleaned_length),
+			(const char *) endpoint_cleaned
 	) <= 0) {
 		RRR_MSG_0("Could not create topic in %s\n", __func__);
 		return 1;
@@ -611,7 +635,8 @@ static void httpserver_async_response_get_callback_data_cleanup (struct httpserv
 }
 
 struct httpserver_response_data {
-	char *request_topic;
+	char *request_topic_base;
+	char *request_topic_filter_long;
 	uint64_t time_begin;
 };
 
@@ -632,8 +657,8 @@ static int httpserver_response_data_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((ret = httpserver_generate_unique_topic (
-			&result->request_topic,
+	if ((ret = httpserver_generate_unique_topic_base (
+			&result->request_topic_base,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
 			unique_id,
 			NULL
@@ -641,8 +666,15 @@ static int httpserver_response_data_new (
 		goto out_free;
 	}
 
+	if (rrr_asprintf (&result->request_topic_filter_long, "%s/#", result->request_topic_base) <= 0) {
+		RRR_MSG_0("Failed to allocate memory for topic filter in %s\n", __func__);
+		goto out_free_topic_base;
+	}
+
 	*target = result;
 	goto out;
+	out_free_topic_base:
+		rrr_free(result->request_topic_base);
 	out_free:
 		rrr_free(result);
 	out:
@@ -652,7 +684,8 @@ static int httpserver_response_data_new (
 static void httpserver_response_data_destroy (
 		struct httpserver_response_data *data
 ) {
-	RRR_FREE_IF_NOT_NULL(data->request_topic);
+	RRR_FREE_IF_NOT_NULL(data->request_topic_base);
+	RRR_FREE_IF_NOT_NULL(data->request_topic_filter_long);
 	rrr_free(data);
 }
 
@@ -1080,20 +1113,14 @@ static int httpserver_async_response_get_and_process (
 ) {
 	int ret = 0;
 
-
-	char *topic_filter = NULL;
-
-	if (data->do_topic_format_request) {
-		if (rrr_asprintf (&topic_filter, "%s/#",response_data->request_topic) <= 0) {
-			RRR_MSG_0("Failed to allocate memory for topic filter in %s\n", __func__);
-			goto out;
-		}
-	} 
-
 	struct rrr_array target_array = {0};
+	const char *topic_filter_use = data->do_topic_format_request
+		? response_data->request_topic_filter_long
+		: response_data->request_topic_base;
+
 	struct httpserver_async_response_get_callback_data callback_data = {
 		NULL,
-		(topic_filter != NULL) ? topic_filter : response_data->request_topic
+		topic_filter_use
 	};
 
 	if ((ret = rrr_fifo_search (
@@ -1109,16 +1136,16 @@ static int httpserver_async_response_get_and_process (
 		// No timeout
 	}
 	else if (rrr_time_get_64() > response_data->time_begin + data->response_timeout_ms * 1000) {
-		RRR_DBG_3("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
-				response_data->request_topic, INSTANCE_D_NAME(data->thread_data));
+		RRR_DBG_3("Timeout while waiting for response from senders with topic filter '%s' in httpserver instance %s\n",
+			topic_filter_use, INSTANCE_D_NAME(data->thread_data));
 		transaction->response_part->response_code = 504; // Gateway timeout
 		ret = RRR_HTTP_OK;
 		goto out;
 	}
 
 	if (callback_data.entry != NULL) {
-		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s\n",
-				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
+		RRR_DBG_3("httpserver instance %s got a response from senders with topic filter '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), topic_filter_use);
 
 		rrr_msg_holder_lock(callback_data.entry);
 		ret = httpserver_async_response_get_extract_data (
@@ -1145,7 +1172,6 @@ static int httpserver_async_response_get_and_process (
 	out:
 	rrr_array_clear(&target_array);
 	httpserver_async_response_get_callback_data_cleanup(&callback_data);
-	RRR_FREE_IF_NOT_NULL(topic_filter);
 	return ret;
 
 }
@@ -1168,7 +1194,7 @@ struct httpserver_receive_endpoint_clean_callback_data {
 	struct httpserver_data *data;
 	const struct httpserver_response_data *response_data;
 	const struct rrr_nullsafe_str *method;
-	const struct rrr_http_header_field *h_authority;
+	const struct rrr_nullsafe_str *authority;
 	char **result_topic;
 };
 
@@ -1179,7 +1205,6 @@ static int httpserver_receive_endpoint_clean_callback (
 ) {
 	struct httpserver_receive_endpoint_clean_callback_data *callback_data = arg;
 	struct httpserver_data *data = callback_data->data;
-	const struct rrr_http_header_field *h_authority = callback_data->h_authority;
 
 	int ret = 0;
 
@@ -1198,7 +1223,7 @@ static int httpserver_receive_endpoint_clean_callback (
 
 	assert (!rrr_nullsafe_str_has_null(callback_data->method));
 
-	if (h_authority != NULL && rrr_nullsafe_str_has_null(h_authority->value)) {
+	if (rrr_nullsafe_str_has_null(callback_data->authority)) {
 		RRR_MSG_0("Authority or host header contained NULL bytes while creating message topic with format 'request' " \
 			"in httpserver instance %s, cannot create request message.\n",
 			INSTANCE_D_NAME(data->thread_data));
@@ -1206,19 +1231,14 @@ static int httpserver_receive_endpoint_clean_callback (
 		goto out;
 	}
 
-	if (rrr_asprintf (
+	if ((ret = httpserver_generate_unique_topic_request (
 			callback_data->result_topic,
-			"%s/%.*s/%.*s%.*s",
-			callback_data->response_data->request_topic,
-			rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(callback_data->method)),
-			(char*)rrr_nullsafe_str_ptr_const(callback_data->method),
-			h_authority != NULL ? rrr_int_from_biglength_bug_const(rrr_nullsafe_str_len(h_authority->value)) : 0,
-			h_authority != NULL ? rrr_nullsafe_str_ptr_const(h_authority->value) : "",
-			rrr_int_from_biglength_bug_const(endpoint_cleaned_length),
-			(char*)endpoint_cleaned
-	) <= 0) {
-		RRR_MSG_0("Failed to allocate memory for topic in %s\n", __func__);
-		ret = RRR_HTTP_HARD_ERROR;
+			callback_data->response_data->request_topic_base,
+			callback_data->method,
+			callback_data->authority,
+			endpoint_cleaned,
+			rrr_size_from_biglength_bug_const(endpoint_cleaned_length)
+	)) != 0) {
 		goto out;
 	}
 
@@ -1243,6 +1263,7 @@ static int httpserver_receive_callback (
 	struct httpserver_response_data *response_data = NULL;
 	const struct rrr_http_header_field *h_authority, *h_host, *h_access_control_request_headers;
 	char *request_topic = NULL;
+	const char *topic_use;
 
 	////////////////////////////
 	// PREPARATION AND CHECKS //
@@ -1274,7 +1295,11 @@ static int httpserver_receive_callback (
 			data,
 			response_data,
 			transaction->request_part->request_method_str_nullsafe,
-			h_authority != NULL ? h_authority : h_host,
+			h_authority != NULL
+				? h_authority->value
+				: h_host != NULL
+					? h_host->value
+					: NULL,
 			&request_topic
 		};
 
@@ -1287,6 +1312,11 @@ static int httpserver_receive_callback (
 		}
 
 		assert(request_topic != NULL);
+
+		topic_use = request_topic;
+	}
+	else {
+		topic_use = response_data->request_topic_base;
 	}
 
 	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
@@ -1369,7 +1399,7 @@ static int httpserver_receive_callback (
 					data,
 					&target_array,
 					handle,
-					request_topic != NULL ? request_topic : response_data->request_topic
+					topic_use
 			)) != 0) {
 				goto out;
 			}
@@ -1380,7 +1410,7 @@ static int httpserver_receive_callback (
 				data,
 				&target_array,
 				handle,
-				request_topic != NULL ? request_topic : response_data->request_topic
+				topic_use
 		)) != 0) {
 			goto out;
 		}
@@ -1731,7 +1761,7 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	struct httpserver_async_response_get_callback_data callback_data = {0};
 
-	if ((ret = httpserver_generate_unique_topic (
+	if ((ret = httpserver_generate_unique_topic_base (
 			&topic_filter,
 			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
 			unique_id,
@@ -1777,7 +1807,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 
 	char *topic = NULL;
 
-	if ((ret = httpserver_generate_unique_topic (
+	if ((ret = httpserver_generate_unique_topic_base (
 			&topic,
 			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
 			unique_id,
