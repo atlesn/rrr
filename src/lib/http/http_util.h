@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_common.h"
 #include "../rrr_types.h"
-#include "../util/linked_list.h"
 #include "../helpers/nullsafe_str.h"
 
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,source) \
@@ -137,6 +136,15 @@ void rrr_http_util_uri_flags_get (
 int rrr_http_util_uri_endpoint_prepend (
 		struct rrr_http_uri *uri,
 		const char *prefix
+);
+int rrr_http_util_uri_endpoint_clean (
+		const struct rrr_nullsafe_str *str,
+		int (*callback) (
+				const void *endpoint_cleaned,
+				rrr_nullsafe_len endpoint_cleaned_length,
+				void *arg
+		),
+		void *callback_arg
 );
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
