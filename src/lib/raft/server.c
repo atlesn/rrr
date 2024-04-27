@@ -1840,7 +1840,16 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 	}
 	else if (bytes > 0) {
 		read_session->target_size = (rrr_biglength) bytes;
-		ret = RRR_READ_OK;
+
+		if (__rrr_raft_server_process_and_acknowledge (state) != 0) {
+			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+				"Error while processing RPC, closing connection.\n%s", "");
+			ret = RRR_READ_HARD_ERROR;
+		}
+		else {
+			ret = RRR_READ_OK;
+		}
+
 		goto out;
 	}
 
