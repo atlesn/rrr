@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "bridge_enc.h"
 #include "bridge_task.h"
 #include "bridge_conf.h"
+#include "bridge_ack.h"
 #include "log.h"
 
 #include "../allocator.h"
@@ -294,7 +295,7 @@ static void __rrr_raft_bridge_ack_make_event_start (
 ) {
 	assert(!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
 
-	event->time = rrr_time_get_64() / 1000; 
+	event->time = RRR_RAFT_TIME_MS();
 	event->capacity = 0;
 	event->type = RAFT_START;
 
@@ -546,6 +547,78 @@ static int __rrr_raft_bridge_ack_update_messages (
 	return ret;
 }
 
+int rrr_raft_bridge_ack_step (
+		struct rrr_raft_bridge *bridge,
+		struct raft_event *event
+) {
+	int ret = 0;
+
+	struct raft_update update;
+	int ret_tmp;
+
+	if ((ret_tmp = raft_step(bridge->raft, event, &update)) != 0) {
+		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	if (!update.flags) {
+		RRR_RAFT_BRIDGE_DBG("no update flags");
+		goto out;
+	}
+
+	if (update.flags & RAFT_UPDATE_STATE) {
+		__rrr_raft_bridge_ack_update_state(bridge);
+	}
+
+	if (update.flags & RAFT_UPDATE_SUGGEST_SNAPSHOT) {
+		assert(0 && "Update suggest snapshot not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
+		__rrr_raft_bridge_ack_update_current_term(bridge->list_persistent, bridge);
+	}
+
+	if (update.flags & RAFT_UPDATE_VOTED_FOR) {
+		__rrr_raft_bridge_ack_update_voted_for(bridge->list_persistent, bridge);
+	}
+
+	if (update.flags & RAFT_UPDATE_ENTRIES) {
+		assert(0 && "Update entries not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_SNAPSHOT) {
+		assert(0 && "Update snapshot not implemented");
+	}
+
+	if (update.flags & RAFT_UPDATE_MESSAGES) {
+		if ((ret = __rrr_raft_bridge_ack_update_messages (
+				bridge->list_persistent,
+				update.messages.batch,
+				update.messages.n
+		)) != 0) {
+			goto out;
+		}	
+	}
+
+	if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
+		if ((ret = __rrr_raft_bridge_ack_update_commit_index(bridge)) != 0) {
+			goto out;
+		}
+	}
+
+	if (update.flags & RAFT_UPDATE_TIMEOUT) {
+		// Ignore, only push timeout task if
+		// there are no other tasks.
+		RRR_RAFT_BRIDGE_DBG("request to update timeout, ignoring for now");
+	}
+
+	RRR_MSG_0("TODO: Check for pending leadership transfer request\n");
+
+	out:
+	return ret;
+}
+
 #define TASK_LIST_RESOLVE(handle) \
     (rrr_raft_task_list_resolve(list, handle))
 
@@ -555,13 +628,9 @@ int rrr_raft_bridge_acknowledge (
 ) {
 	int ret = 0;
 
-	int ret_tmp = 0;
 	struct rrr_raft_task *task, *tasks, task_new;
-	struct rrr_raft_task_list list_new = {0};
-	//struct raft_event event;
 	struct raft_event event;
 	struct raft_entry entry;
-	struct raft_update update;
 	struct rrr_raft_bridge_metadata metadata1, metadata2;
 	char *conf_data = NULL;
 	size_t conf_data_size;
@@ -588,7 +657,7 @@ int rrr_raft_bridge_acknowledge (
 				else {*/
 					RRR_RAFT_BRIDGE_DBG("timeout");
 					event.type = RAFT_TIMEOUT;
-					event.time = rrr_time_get_64() / 1000;
+					event.time = RRR_RAFT_TIME_MS();
 					goto step;
 //				}
 			case RRR_RAFT_TASK_READ_FILE:
@@ -645,7 +714,7 @@ int rrr_raft_bridge_acknowledge (
 								RRR_RAFT_BRIDGE_DBG("no metadata loaded, calling for bootstrap");
 
 								task_new.type = RRR_RAFT_TASK_BOOTSTRAP;
-								rrr_raft_task_list_push(&list_new, &task_new);
+								rrr_raft_task_list_push(bridge->list_persistent, &task_new);
 							}
 							else {
 								assert(0 && "Load configuration not implemented");
@@ -666,8 +735,8 @@ int rrr_raft_bridge_acknowledge (
 					goto out_cleanup;
 				}
 
-				__rrr_raft_bridge_ack_push_task_write_metadata(&list_new, bridge);
-				__rrr_raft_bridge_ack_push_task_write_configuration(&list_new);
+				__rrr_raft_bridge_ack_push_task_write_metadata(bridge->list_persistent, bridge);
+				__rrr_raft_bridge_ack_push_task_write_configuration(bridge->list_persistent);
 
 				break;
 			case RRR_RAFT_TASK_WRITE_FILE:
@@ -726,7 +795,7 @@ int rrr_raft_bridge_acknowledge (
 				)) != 0) {
 					if (ret == RRR_RAFT_READ_BUSY) {
 						rrr_raft_task_list_push_cloned (
-								&list_new,
+								bridge->list_persistent,
 								list,
 								task,
 								&task->sendmessage.cb_data,
@@ -753,81 +822,27 @@ int rrr_raft_bridge_acknowledge (
 
 		step:
 
-		if ((ret_tmp = raft_step(bridge->raft, &event, &update)) != 0) {
-			RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
-			ret = 1;
+		if ((ret = rrr_raft_bridge_ack_step (
+				bridge,
+				&event
+		)) != 0) {
 			goto out_cleanup;
 		}
-
-		if (!update.flags) {
-			RRR_RAFT_BRIDGE_DBG("no update flags");
-			continue;
-		}
-
-		if (update.flags & RAFT_UPDATE_STATE) {
-			__rrr_raft_bridge_ack_update_state(bridge);
-		}
-
-		if (update.flags & RAFT_UPDATE_SUGGEST_SNAPSHOT) {
-			assert(0 && "Update suggest snapshot not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
-			__rrr_raft_bridge_ack_update_current_term(&list_new, bridge);
-		}
-
-		if (update.flags & RAFT_UPDATE_VOTED_FOR) {
-			__rrr_raft_bridge_ack_update_voted_for(&list_new, bridge);
-		}
-
-		if (update.flags & RAFT_UPDATE_ENTRIES) {
-			assert(0 && "Update entries not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_SNAPSHOT) {
-			assert(0 && "Update snapshot not implemented");
-		}
-
-		if (update.flags & RAFT_UPDATE_MESSAGES) {
-			if ((ret = __rrr_raft_bridge_ack_update_messages (
-					&list_new,
-					update.messages.batch,
-					update.messages.n
-			)) != 0) {
-				goto out_cleanup;
-			}	
-		}
-
-		if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
-			if ((ret = __rrr_raft_bridge_ack_update_commit_index(bridge)) != 0) {
-				goto out_cleanup;
-			}
-		}
-
-		if (update.flags & RAFT_UPDATE_TIMEOUT) {
-			// Ignore, only push timeout task if
-			// there are no other tasks.
-			RRR_RAFT_BRIDGE_DBG("request to update timeout, ignoring for now");
-		}
-
-		RRR_MSG_0("TODO: Check for pending leadership transfer request\n");
 	}
 
-
-	if (list_new.count == 0) {
+	if (bridge->list_persistent->count == 0) {
 		task_new.type = RRR_RAFT_TASK_TIMEOUT;
 		task_new.timeout.time = raft_timeout(bridge->raft);
-		rrr_raft_task_list_push(&list_new, &task_new);
+		rrr_raft_task_list_push(bridge->list_persistent, &task_new);
 	}
 
-	rrr_raft_task_list_cleanup(list);
-	*list = list_new;
+	rrr_raft_task_list_move(list, bridge->list_persistent);
 
 	RRR_FREE_IF_NOT_NULL(conf_data);
 
 	goto out_final;
 	out_cleanup:
-		rrr_raft_task_list_cleanup(&list_new);
+		assert(ret != 0);
 		RRR_FREE_IF_NOT_NULL(conf_data);
 	out_final:
 		return ret;

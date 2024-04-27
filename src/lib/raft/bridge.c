@@ -28,28 +28,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 int rrr_raft_bridge_begin (
-		struct rrr_raft_task_list *list,
-		struct rrr_raft_bridge *bridge
+		struct rrr_raft_task_list *list_work,
+		struct rrr_raft_bridge *bridge,
+		struct rrr_raft_task_list *list_persistent
 ) {
 	int ret = 0;
 
 	struct rrr_raft_task task;
 
-	assert(list->count == 0);
+	assert(list_persistent->count == 0);
+	assert(list_work->count == 0);
 
 	assert (!(bridge->state & RRR_RAFT_BRIDGE_STATE_STARTED));
 
 	RRR_RAFT_BRIDGE_DBG("starting, requesting metadata to be loaded from disk");
 
-	task.type = RRR_RAFT_TASK_READ_FILE;
-	task.readfile.type = RRR_RAFT_FILE_TYPE_METADATA;
-	task.readfile.name = rrr_raft_task_list_strdup(list, RRR_RAFT_FILE_NAME_PREFIX_METADATA "1");
-	rrr_raft_task_list_push(list, &task);
+	bridge->list_persistent = list_persistent;
 
 	task.type = RRR_RAFT_TASK_READ_FILE;
 	task.readfile.type = RRR_RAFT_FILE_TYPE_METADATA;
-	task.readfile.name = rrr_raft_task_list_strdup(list, RRR_RAFT_FILE_NAME_PREFIX_METADATA "2");
-	rrr_raft_task_list_push(list, &task);
+	task.readfile.name = rrr_raft_task_list_strdup(list_work, RRR_RAFT_FILE_NAME_PREFIX_METADATA "1");
+	rrr_raft_task_list_push(list_work, &task);
+
+	task.type = RRR_RAFT_TASK_READ_FILE;
+	task.readfile.type = RRR_RAFT_FILE_TYPE_METADATA;
+	task.readfile.name = rrr_raft_task_list_strdup(list_work, RRR_RAFT_FILE_NAME_PREFIX_METADATA "2");
+	rrr_raft_task_list_push(list_work, &task);
 
 	goto out;
 

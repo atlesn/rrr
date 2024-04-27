@@ -119,6 +119,15 @@ void rrr_raft_task_list_cleanup (
 	rrr_raft_arena_cleanup(&list->arena);
 }
 
+void rrr_raft_task_list_move (
+		struct rrr_raft_task_list *target,
+		struct rrr_raft_task_list *source
+) {
+	rrr_raft_task_list_cleanup(target);
+	*target = *source;
+	memset(source, '\0', sizeof(*source));
+}
+
 struct rrr_raft_task *rrr_raft_task_list_get (
 		struct rrr_raft_task_list *list
 ) {

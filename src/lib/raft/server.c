@@ -2022,7 +2022,7 @@ int rrr_raft_server (
 	struct rrr_raft_message_store *message_store_state;
 	struct rrr_event_collection events = {0};
 	struct rrr_raft_bridge bridge = {0};
-	struct rrr_raft_task_list tasks = {0};
+	struct rrr_raft_task_list tasks_work = {0}, tasks_persistent = {0};
 	struct rrr_net_transport *net_transport;
 	static struct raft_heap rrr_raft_heap = {
 		NULL,                            /* data */
@@ -2107,7 +2107,7 @@ int rrr_raft_server (
 	bridge.raft = &raft;
 	bridge.server_id = servers[servers_self].id;
 	state.bridge = &bridge;
-	state.tasks = &tasks;
+	state.tasks = &tasks_work;
 
 	raft_heap_set(&rrr_raft_heap);
 
@@ -2163,7 +2163,7 @@ int rrr_raft_server (
 	ret_tmp = uv_run(&loop, UV_RUN_DEFAULT);
 */
 
-	if ((ret = rrr_raft_bridge_begin (&tasks, &bridge)) != 0) {
+	if ((ret = rrr_raft_bridge_begin(&tasks_work, &bridge, &tasks_persistent)) != 0) {
 		goto out_cleanup_configuration;
 	}
 
@@ -2187,7 +2187,8 @@ int rrr_raft_server (
 	out_cleanup_bridge:
 		rrr_raft_bridge_cleanup(&bridge);
 //	out_cleanup_tasks:
-		rrr_raft_task_list_cleanup(&tasks);
+		rrr_raft_task_list_cleanup(&tasks_work);
+		rrr_raft_task_list_cleanup(&tasks_persistent);
 	out_cleanup_configuration:
 		raft_configuration_close(&configuration);
 //	out_raft_close:

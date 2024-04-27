@@ -63,6 +63,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_READ_HARD_ERROR \
     RRR_READ_HARD_ERROR
 
+#define RRR_RAFT_TIME_MS() \
+    (rrr_time_get_64() / 1000)
+
 enum rrr_raft_task_type {
 	RRR_RAFT_TASK_TIMEOUT = 1,
 	RRR_RAFT_TASK_READ_FILE = 2,
@@ -156,6 +159,7 @@ struct rrr_raft_bridge {
 	struct rrr_raft_bridge_metadata metadata;
 	struct raft_configuration configuration;
 	struct rrr_raft_log log;
+	struct rrr_raft_task_list *list_persistent;
 	raft_index last_applied;
 	raft_index snapshot_index;
 	unsigned short prev_state;
@@ -163,8 +167,9 @@ struct rrr_raft_bridge {
 };
 
 int rrr_raft_bridge_begin (
-		struct rrr_raft_task_list *list,
-		struct rrr_raft_bridge *bridge
+		struct rrr_raft_task_list *list_work,
+		struct rrr_raft_bridge *bridge,
+		struct rrr_raft_task_list *list_persistent
 );
 int rrr_raft_bridge_acknowledge (
 		struct rrr_raft_task_list *list,

@@ -22,10 +22,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "bridge.h"
 #include "bridge_read.h"
 #include "bridge_enc.h"
+#include "bridge_ack.h"
 
 #include "../log.h"
 #include "../rrr_types.h"
 #include "../util/rrr_endian.h"
+#include "../util/rrr_time.h"
 
 static ssize_t __rrr_raft_bridge_read_process_header (
 		uint8_t *type,
@@ -156,6 +158,7 @@ ssize_t rrr_raft_bridge_read (
 				bytes = -RRR_READ_SOFT_ERROR;
 				goto out;
 			}
+
 			if (rrr_raft_bridge_decode_request_vote (
 					&message.request_vote,
 					data + header_pos,
@@ -165,6 +168,7 @@ ssize_t rrr_raft_bridge_read (
 				bytes = -RRR_READ_SOFT_ERROR;
 				goto out;
 			}
+
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
 			assert(0 && "Request vote result not implemented\n");
@@ -183,7 +187,14 @@ ssize_t rrr_raft_bridge_read (
 	message.server_id = server_id;
 	message.server_address = server_address;
 
-	assert(0 && "raft step not implemented");
+	event.type = RAFT_RECEIVE;
+	event.time = RRR_RAFT_TIME_MS();
+	event.receive.message = &message;
+
+	if (rrr_raft_bridge_ack_step(bridge, &event) != 0) {
+		bytes = -RRR_READ_HARD_ERROR;
+		goto out;
+	}
 
 	out:
 	return bytes;

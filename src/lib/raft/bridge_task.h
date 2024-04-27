@@ -50,6 +50,10 @@ void *rrr_raft_task_list_push_and_allocate_data (
 void rrr_raft_task_list_cleanup (
 		struct rrr_raft_task_list *list
 );
+void rrr_raft_task_list_move (
+		struct rrr_raft_task_list *target,
+		struct rrr_raft_task_list *source
+);
 struct rrr_raft_task *rrr_raft_task_list_get (
 		struct rrr_raft_task_list *list
 );
