@@ -1041,6 +1041,75 @@ static int __rrr_http_util_uri_parse_hostname_and_port (
 	return ret;
 }
 
+struct rrr_http_util_uri_endpoint_clean_callback_data {
+	int (*callback) (
+			const void *endpoint_cleaned,
+			rrr_nullsafe_len endpoint_cleaned_length,
+			void *arg
+	);
+	void *callback_arg;
+};
+
+static int __rrr_http_util_uri_endpoint_clean_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct rrr_http_util_uri_endpoint_clean_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	const char *endpoint = str, *pos;
+	rrr_nullsafe_len endpoint_length = 0, i;
+
+	for (i = 0; i < len; i++) {
+		pos = endpoint + i;
+		if (*pos == '?' || *pos == '#') {
+			break;
+		}
+		endpoint_length++;
+	}
+
+	if ((ret = callback_data->callback (
+			endpoint,
+			endpoint_length,
+			callback_data->callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_util_uri_endpoint_clean (
+		const struct rrr_nullsafe_str *str,
+		int (*callback) (
+				const void *endpoint_cleaned,
+				rrr_nullsafe_len endpoint_cleaned_length,
+				void *arg
+		),
+		void *callback_arg
+) {
+	struct rrr_http_util_uri_endpoint_clean_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	int ret = 0;
+
+	if (!rrr_nullsafe_str_isset(str)) {
+		RRR_BUG("BUG: str was NULL in %s\n", __func__);
+	}
+
+	if ((ret = rrr_nullsafe_str_with_raw_do_const(str, __rrr_http_util_uri_endpoint_clean_callback, &callback_data)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 #define VERIFY_LENGTH()                                                  \
   do {if (len > RRR_LENGTH_MAX) {                                        \
     RRR_MSG_0("HTTP URI too long to be parsed (%" PRIrrrbl ">%llu)\n",   \

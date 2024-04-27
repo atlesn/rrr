@@ -140,9 +140,15 @@ static inline int rrr_int_from_biglength_err (int *target, rrr_biglength operand
 }
 
 static inline int rrr_int_from_slength_bug_const (rrr_slength operand) {
+	if (operand > INT_MAX || operand < INT_MIN) {
+		RRR_BUG("BUG: Overflow or underflow in %s, input was %" PRIrrrsl "\n", __func__, operand);
+	}
+	return (int) operand;
+}
+
+static inline int rrr_int_from_biglength_bug_const (rrr_biglength operand) {
 	if (operand > INT_MAX) {
-		RRR_BUG("Error: Overflow in %s, input was %" PRIrrrsl "\n", __func__, operand);
-		return 1;
+		RRR_BUG("BUG: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
 	}
 	return (int) operand;
 }
@@ -293,12 +299,12 @@ static inline rrr_length rrr_length_from_ptr_sub_bug_const (const void *a, const
 
 static inline int rrr_length_from_slength_sub_err (rrr_length *result, rrr_slength a, rrr_slength b) {
 	if (b > a) {
-		RRR_MSG_0("Underflow in %s\n");
+		RRR_MSG_0("Underflow in %s\n", __func__);
 		return 1;
 	}
 	rrr_slength r = a - b;
 	if (r > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Overflow in %s\n");
+		RRR_MSG_0("Overflow in %s\n", __func__);
 		return 1;
 	}
 	*result = (rrr_length) r;
