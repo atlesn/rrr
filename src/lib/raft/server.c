@@ -1789,6 +1789,7 @@ static int __rrr_raft_server_net_handshake_complete_callback (
 			connection->server_address
 	)) == 0) {
 		RRR_RAFT_SERVER_ERR_NET(connection->server_address, "connection from unknown remote server%s", "");
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
