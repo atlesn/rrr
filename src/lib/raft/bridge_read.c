@@ -179,7 +179,25 @@ ssize_t rrr_raft_bridge_read (
 
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
-			assert(0 && "Request vote result not implemented\n");
+			if (!rrr_raft_bridge_decode_request_vote_result_size_ok (
+					version,
+					payload_pos - header_pos
+			)) {
+				RRR_RAFT_BRIDGE_ERR("Incorrect version or size for request vote result RPC");
+				bytes = -RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
+			if (rrr_raft_bridge_decode_request_vote_result (
+					&message.request_vote_result,
+					data + header_pos,
+					payload_pos - header_pos
+			) != 0) {
+				RRR_RAFT_BRIDGE_ERR("Incorrect data for request vote result RPC");
+				bytes = -RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot not implemented\n");

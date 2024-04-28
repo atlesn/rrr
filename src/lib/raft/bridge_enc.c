@@ -125,6 +125,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define READ(buf)                           \
     char *rpos = (char *) buf; if (1)       \
 
+#define READ_U8(n)                         \
+    (n) = (* (uint8_t *) rpos);            \
+    rpos += sizeof(uint8_t)
+
+#define READ_U16(n)                         \
+    (n) = rrr_le16toh(* (uint16_t *) rpos); \
+    rpos += sizeof(uint16_t)
+
 #define READ_U64(n)                         \
     (n) = rrr_le64toh(* (uint64_t *) rpos); \
     rpos += sizeof(uint64_t)
@@ -474,6 +482,49 @@ int rrr_raft_bridge_decode_request_vote (
 
 	p->disrupt_leader = (flags & 1 << 0) != 0;
 	p->pre_vote = (flags & 1 << 1) != 0;
+
+	return 0;
+}
+
+int rrr_raft_bridge_decode_request_vote_result_size_ok (
+		uint8_t version,
+		size_t header_size
+) {
+	if (version != RRR_RAFT_RPC_VERSION) {
+		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
+		return 0;
+	}
+
+	return header_size == GET_MSG_REQUEST_VOTE_RESULT_SIZE();
+}
+
+int rrr_raft_bridge_decode_request_vote_result (
+		struct raft_request_vote_result *p,
+		const char *header,
+		size_t header_size
+) {
+	assert (header_size == GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+
+	uint8_t flags, dummy;
+
+	READ(header) {
+		READ_U64(p->term);
+		READ_U64(p->vote_granted);
+
+		READ_U8(flags);
+		READ_U8(dummy);
+		READ_U16(p->features);
+
+		READ_U16(p->capacity);
+		READ_U8(dummy);
+		READ_U8(dummy);
+	}
+	READ_VERIFY(header, header_size);
+
+	p->version = RRR_RAFT_RPC_VERSION;
+	p->pre_vote = (flags & (1 << 0));
+
+	(void)(dummy);
 
 	return 0;
 }
