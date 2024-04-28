@@ -334,7 +334,7 @@ void rrr_raft_bridge_encode_message_request_vote (
 	}
 
 	WRITE(data) {
-		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, GET_MSG_REQUEST_VOTE_SIZE());
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, RRR_RAFT_RPC_VERSION, GET_MSG_REQUEST_VOTE_SIZE());
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->candidate_id);
 		WRITE_U64(msg->last_log_index);
@@ -358,7 +358,7 @@ void rrr_raft_bridge_encode_message_request_vote_result (
 	}
 
 	WRITE(data) {
-		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, 2, GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, RRR_RAFT_RPC_VERSION, GET_MSG_REQUEST_VOTE_RESULT_SIZE());
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->vote_granted);
 
@@ -446,7 +446,7 @@ int rrr_raft_bridge_decode_request_vote_size_ok (
 		uint8_t version,
 		size_t header_size
 ) {
-	if (version != 2) {
+	if (version != RRR_RAFT_RPC_VERSION) {
 		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
 		return 0;
 	}
@@ -477,3 +477,5 @@ int rrr_raft_bridge_decode_request_vote (
 
 	return 0;
 }
+
+

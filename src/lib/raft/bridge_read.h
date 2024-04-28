@@ -32,5 +32,13 @@ ssize_t rrr_raft_bridge_read (
 		const char *data,
 		size_t data_size
 );
+ssize_t rrr_raft_bridge_read_handshake (
+		raft_id *server_id,
+		char **server_address,
+		size_t *server_address_length,
+		struct rrr_raft_bridge *bridge,
+		const char *data,
+		size_t data_size
+);
 
 #endif /* RRR_RAFT_BRIDGE_READ_H */

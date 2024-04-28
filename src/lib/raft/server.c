@@ -294,6 +294,38 @@ static int __rrr_raft_server_connection_new (
 		return ret;
 }
 
+static int __rrr_raft_server_connection_update (
+		struct rrr_raft_server_connection *connection,
+		raft_id server_id,
+		const char *server_address,
+		size_t server_address_length
+) {
+	int ret = 0;
+
+	char *server_address_new;
+
+	assert(server_id > 0);
+	assert(server_address_length > 0);
+
+	if ((server_address_new = rrr_allocate(server_address_length + 1)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(server_address_new, server_address, server_address_length);
+	server_address_new[server_address_length] = '\0';
+
+	rrr_free(connection->server_address);
+
+	connection->server_id = server_id;
+	connection->server_address = server_address_new;
+
+	out:
+	return ret;
+
+}
+
 struct rrr_raft_server_make_opt_response_server_fields_iterate_cb_data {
 	struct rrr_array *array;
 };
@@ -1484,6 +1516,20 @@ static int __rrr_raft_server_connection_data_create (
 	return ret;
 }
 
+static int __rrr_raft_server_connection_data_update (
+		struct rrr_raft_server_connection *connection,
+		raft_id server_id,
+		const char *server_address,
+		size_t server_address_length
+) {
+	return __rrr_raft_server_connection_update (
+			connection,
+			server_id,
+			server_address,
+			server_address_length
+	);
+}
+
 static void __rrr_raft_server_connection_data_bind (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
@@ -1529,7 +1575,7 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 	struct rrr_raft_server_connection *connection;
 
 	if (++test_busy == 1) {
-		bytes = -RRR_RAFT_READ_BUSY;
+		bytes = -RRR_RAFT_BUSY;
 		goto out;
 	}
 
@@ -1556,7 +1602,7 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 				&callback_data
 		)) != 0) {
 			RRR_RAFT_SERVER_ERR_NET(server_address, "error %i while connecting", ret_tmp);
-			bytes = -RRR_RAFT_READ_SOFT_ERROR;
+			bytes = -RRR_RAFT_SOFT_ERROR;
 			goto out;
 		}
 
@@ -1570,7 +1616,7 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 				callback_data.result_socklen
 		)) != 0) {
 			RRR_MSG_0("Failed to create connection data in %s\n", __func__);
-			bytes = -RRR_RAFT_READ_HARD_ERROR;
+			bytes = -RRR_RAFT_HARD_ERROR;
 			goto out;
 		}
 
@@ -1595,23 +1641,24 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 	)) != 0) {
 		if (ret_tmp == RRR_SOCKET_NOT_READY) {
 			RRR_RAFT_SERVER_DBG_NET(server_address, "connection not yet ready%s", "");
-			bytes = -RRR_RAFT_READ_BUSY;
+			bytes = -RRR_RAFT_BUSY;
 			goto out;
 		}
 		else if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
 			RRR_RAFT_SERVER_ERR_NET(server_address, "soft error while connecting%s", "");
-			bytes = -RRR_RAFT_READ_SOFT_ERROR;
+			bytes = -RRR_RAFT_SOFT_ERROR;
 			goto out;
 		}
 
 		RRR_RAFT_SERVER_ERR_NET(server_address, "hard error %i while connecting", ret_tmp);
-		bytes = -RRR_RAFT_READ_HARD_ERROR;
+		bytes = -RRR_RAFT_HARD_ERROR;
 		goto out;
 	}
 
 	bytes = (ssize_t) data_size;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(server_hostname);
 	return bytes;
 }
 
@@ -1773,9 +1820,9 @@ static int __rrr_raft_server_net_handshake_complete_callback (
 	struct rrr_raft_server_connection *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	struct rrr_raft_server_state *state = arg;
 
-	int ret = 0;
+	(void)(state);
 
-	raft_id server_id;
+	int ret = 0;
 
 	if (connection == NULL) {
 		// Error occured in accept callback if connection is
@@ -1783,17 +1830,6 @@ static int __rrr_raft_server_net_handshake_complete_callback (
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
-
-	if ((server_id = rrr_raft_bridge_configuration_server_id_get (
-			state->bridge,
-			connection->server_address
-	)) == 0) {
-		RRR_RAFT_SERVER_ERR_NET(connection->server_address, "connection from unknown remote server%s", "");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	connection->server_id = server_id;
 
 	out:
 	return ret;
@@ -1818,6 +1854,10 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 	const char *data;
 	size_t data_size;
 	ssize_t bytes;
+	char *server_address;
+	size_t server_address_length;
+	const char *server_name_configuration;
+	raft_id server_id;
 
 	data = read_session->rx_buf_ptr;
 	if (rrr_size_from_biglength_err(&data_size, read_session->rx_buf_wpos) != 0) {
@@ -1827,32 +1867,78 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 		goto out;
 	}
 
-	if ((bytes = rrr_raft_bridge_read (
-			state->bridge,
-			connection->server_id,
-			connection->server_address,
-			data,
-			data_size
-	)) < 0) {
-		RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-			"Error while reading RPC, closing connection.\n%s", "");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-	else if (bytes > 0) {
-		read_session->target_size = (rrr_biglength) bytes;
+	if (connection->server_id == 0) {
+		if ((bytes = rrr_raft_bridge_read_handshake (
+				&server_id,
+				&server_address,
+				&server_address_length,
+				state->bridge,
+				data,
+				data_size
+		)) > 0) {
+			assert(server_id > 0);
+			assert(server_address != NULL);
+			assert(server_address_length > 0);
 
-		if (__rrr_raft_server_process_and_acknowledge (state) != 0) {
-			RRR_RAFT_SERVER_ERR_NET(connection->server_address,
-				"Error while processing RPC, closing connection.\n%s", "");
-			ret = RRR_READ_HARD_ERROR;
-		}
-		else {
+			if ((server_name_configuration = rrr_raft_bridge_configuration_server_name_get (
+					state->bridge,
+					server_id
+			)) == NULL) {
+				RRR_RAFT_SERVER_ERR_NET(connection->server_address, "connection from unknown remote server%s", "");
+				ret = RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
+			if ((ret = __rrr_raft_server_connection_data_update (
+					connection,
+					server_id,
+					server_address,
+					server_address_length
+			)) != 0) {
+				goto out;
+			}
+
+			assert(connection->server_id > 0);
+
+			printf("Updated connection data %llu %s\n",
+				(unsigned long long) connection->server_id,
+				connection->server_address);
+
+			read_session->target_size = (rrr_biglength) bytes;
+
 			ret = RRR_READ_OK;
-		}
 
-		goto out;
+			goto out;
+		}
 	}
+	else {
+		if ((bytes = rrr_raft_bridge_read (
+				state->bridge,
+				connection->server_id,
+				connection->server_address,
+				data,
+				data_size
+		)) > 0) {
+			assert(connection->server_id > 0);
+
+			read_session->target_size = (rrr_biglength) bytes;
+
+			if (__rrr_raft_server_process_and_acknowledge (state) != 0) {
+				RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+					"Error while processing RPC, closing connection.\n%s", "");
+				ret = RRR_READ_HARD_ERROR;
+			}
+			else {
+				ret = RRR_READ_OK;
+			}
+
+			goto out;
+		}
+	}
+
+	RRR_RAFT_SERVER_ERR_NET(connection->server_address,
+		"Error while reading from remote server, closing connection.\n%s", "");
+	ret = RRR_READ_SOFT_ERROR;
 
 	out:
 	return ret;

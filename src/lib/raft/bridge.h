@@ -40,7 +40,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(from, to) \
     RRR_RAFT_FILE_NAME_TEMPLATE_CLOSED_SEGMENT, (unsigned long long) from, (unsigned long long) to
 
-#define RRR_RAFT_DISK_FORMAT 1 /* Same format as C-raft */
+#define RRR_RAFT_DISK_FORMAT        1 /* Same format as C-raft */
+#define RRR_RAFT_RPC_VERSION        2 /* Same version as max supported byC-raft */
+#define RRR_RAFT_RPC_PROTOCOL       1 /* Same handshake protocol as C-raft */
 
 #define RRR_RAFT_BRIDGE_DBG_ARGS(msg, ...) \
     RRR_DBG_3("Raft [%i][bridge] " msg "\n", bridge->server_id, __VA_ARGS__)
@@ -54,13 +56,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_ERR(msg) \
     RRR_MSG_0("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
-#define RRR_RAFT_READ_BUSY \
+#define RRR_RAFT_BUSY \
     RRR_READ_BUSY
 
-#define RRR_RAFT_READ_SOFT_ERROR \
+#define RRR_RAFT_SOFT_ERROR \
     RRR_READ_SOFT_ERROR
 
-#define RRR_RAFT_READ_HARD_ERROR \
+#define RRR_RAFT_INCOMPLETE \
+    RRR_READ_INCOMPLETE
+
+#define RRR_RAFT_HARD_ERROR \
     RRR_READ_HARD_ERROR
 
 #define RRR_RAFT_TIME_MS() \
