@@ -323,7 +323,7 @@ void rrr_raft_bridge_encode_message_request_vote (
 ) {
 	uint64_t flags = 0;
 
-	assert(data_size >= GET_MSG_REQUEST_VOTE_SIZE());
+	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_SIZE());
 
 	if (msg->disrupt_leader) {
 		flags |= 1 << 0;
@@ -351,14 +351,14 @@ void rrr_raft_bridge_encode_message_request_vote_result (
 ) {
 	uint8_t flags = 0;
 
-	assert(data_size >= GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_RESULT_SIZE());
 
 	if (msg->pre_vote) {
 		flags |= 1 << 1;
 	}
 
 	WRITE(data) {
-		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE, RRR_RAFT_RPC_VERSION, GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+		PUT_MSG_PREAMBLE(RAFT_REQUEST_VOTE_RESULT, RRR_RAFT_RPC_VERSION, GET_MSG_REQUEST_VOTE_RESULT_SIZE());
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->vote_granted);
 

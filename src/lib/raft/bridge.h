@@ -159,6 +159,7 @@ struct rrr_raft_bridge_metadata {
 
 struct rrr_raft_bridge {
 	struct raft *raft;
+	/* TODO : Why is server_id int and not raft_id? */
 	int server_id;
 	enum rrr_raft_bridge_state state;
 	struct rrr_raft_bridge_metadata metadata;

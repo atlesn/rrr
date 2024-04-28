@@ -52,10 +52,10 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 	preamble0 = rrr_le64toh(* (uint64_t *) (data));
 	preamble1_header_size = rrr_le64toh(* (uint64_t *) (data + sizeof(uint64_t)));
 
-	printf("Header size is %" PRIrrrbl "\n", preamble1_header_size);
+	RRR_RAFT_BRIDGE_DBG_ARGS("Processing header of size is %" PRIrrrbl, preamble1_header_size);
 
 	if (preamble1_header_size == 0) {
-		RRR_RAFT_BRIDGE_ERR("RPC had zero header size\n");
+		RRR_RAFT_BRIDGE_ERR("RPC had zero header size");
 		bytes = -RRR_RAFT_SOFT_ERROR;
 		goto out;
 	}
@@ -67,7 +67,7 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 	*payload_pos = rrr_size_from_biglength_bug_const(target_size);
 
 	if (target_size < preamble1_header_size) {
-		RRR_RAFT_BRIDGE_ERR("Target size overflow in preamble of RPC\n");
+		RRR_RAFT_BRIDGE_ERR("Target size overflow in preamble of RPC");
 		bytes = -RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -81,7 +81,7 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 	*type = (uint8_t) preamble0;           /* Byte 0 */
 	*version = (uint8_t)(preamble0 >> 16); /* Byte 2 */
 
-	printf("Type is %u version is %u\n", *type, *version);
+	RRR_RAFT_BRIDGE_DBG_ARGS("Processing header of type %u version is %u", *type, *version);
 
 	switch (*type) {
 		case RAFT_REQUEST_VOTE:
@@ -96,7 +96,7 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 			payload_size = 0;
 			break;
 		default:
-			RRR_RAFT_BRIDGE_ERR_ARGS("RPC had unknown type %u\n", *type);
+			RRR_RAFT_BRIDGE_ERR_ARGS("RPC had unknown type %u", *type);
 			bytes = -RRR_RAFT_SOFT_ERROR;
 			goto out;
 	};
@@ -105,7 +105,7 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 	*end_pos = rrr_size_from_biglength_bug_const(target_size);
 
 	if (target_size < payload_size || target_size > SSIZE_MAX) {
-		RRR_RAFT_BRIDGE_ERR("Target size overflow in RPC\n");
+		RRR_RAFT_BRIDGE_ERR("Target size overflow in RPC");
 		bytes = -RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -143,6 +143,13 @@ ssize_t rrr_raft_bridge_read (
 		goto out;
 	}
 
+	RRR_RAFT_BRIDGE_DBG_ARGS("Positions: header %llu payload %llu end %llu. Data size: %llu",
+		(unsigned long long) header_pos,
+		(unsigned long long) payload_pos,
+		(unsigned long long) end_pos,
+		(unsigned long long) data_size
+	);
+
 	switch (type) {
 		case RAFT_APPEND_ENTRIES:
 			assert(0 && "Append entries not implemented\n");
@@ -155,7 +162,7 @@ ssize_t rrr_raft_bridge_read (
 					version,
 					payload_pos - header_pos
 			)) {
-				RRR_RAFT_BRIDGE_ERR("Incorrect version or size for request vote RPC\n");
+				RRR_RAFT_BRIDGE_ERR("Incorrect version or size for request vote RPC");
 				bytes = -RRR_READ_SOFT_ERROR;
 				goto out;
 			}
@@ -165,7 +172,7 @@ ssize_t rrr_raft_bridge_read (
 					data + header_pos,
 					payload_pos - header_pos
 			) != 0) {
-				RRR_RAFT_BRIDGE_ERR("Incorrect data for request vote RPC\n");
+				RRR_RAFT_BRIDGE_ERR("Incorrect data for request vote RPC");
 				bytes = -RRR_READ_SOFT_ERROR;
 				goto out;
 			}

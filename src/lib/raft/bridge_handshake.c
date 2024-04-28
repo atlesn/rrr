@@ -131,3 +131,45 @@ ssize_t rrr_raft_bridge_handshake_read (
 	out:
 	return bytes;
 }
+
+int rrr_raft_handshake_write (
+		char **handshake,
+		size_t *handshake_size,
+		struct rrr_raft_bridge *bridge
+) {
+	int ret = 0;
+
+	char *buf;
+	size_t total_size;
+	const char *server_address;
+	size_t server_address_length;
+
+	assert(bridge->server_id > 0);
+	server_address = rrr_raft_bridge_configuration_server_name_get(bridge, bridge->server_id);
+	assert(server_address != NULL);
+	server_address_length = strlen(server_address);
+
+	if ((total_size = sizeof(uint64_t) * 3 + server_address_length) < server_address_length) {
+		RRR_RAFT_BRIDGE_ERR("Overflow while writing handshake\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((buf = rrr_allocate(total_size)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	* (uint64_t *) (buf + sizeof(uint64_t) * 0) = rrr_htole64(RRR_RAFT_RPC_PROTOCOL);
+	* (uint64_t *) (buf + sizeof(uint64_t) * 1) = rrr_htole64(bridge->server_id);
+	* (uint64_t *) (buf + sizeof(uint64_t) * 2) = rrr_htole64(server_address_length);
+
+	memcpy(buf + sizeof(uint64_t) * 3, server_address, server_address_length);
+
+	*handshake = buf;
+	*handshake_size = total_size;
+
+	out:
+	return ret;
+}

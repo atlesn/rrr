@@ -33,5 +33,10 @@ ssize_t rrr_raft_bridge_handshake_read (
 		const char *data,
 		size_t data_size
 );
+int rrr_raft_handshake_write (
+		char **handshake,
+		size_t *handshake_size,
+		struct rrr_raft_bridge *bridge
+);
 
 #endif /* RRR_RAFT_BRIDGE_HANDSHAKE_H */
