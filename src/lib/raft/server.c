@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "bridge.h"
 #include "bridge_task.h"
 #include "bridge_read.h"
+#include "bridge_handshake.h"
 
 #include "../allocator.h"
 #include "../array.h"
@@ -1868,7 +1869,7 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 	}
 
 	if (connection->server_id == 0) {
-		if ((bytes = rrr_raft_bridge_read_handshake (
+		if ((bytes = rrr_raft_bridge_handshake_read (
 				&server_id,
 				&server_address,
 				&server_address_length,
