@@ -234,6 +234,7 @@ ssize_t rrr_raft_bridge_read (
 
 	event.type = RAFT_RECEIVE;
 	event.time = RRR_RAFT_TIME_MS();
+	event.capacity = 1; /* TODO : Not implemented */
 	event.receive.message = &message;
 
 	if (rrr_raft_bridge_ack_step(bridge, &event) != 0) {

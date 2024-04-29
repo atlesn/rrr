@@ -822,6 +822,8 @@ int rrr_raft_bridge_acknowledge (
 
 		step:
 
+		event.capacity = 1; /* TODO : Not implemented */
+
 		if ((ret = rrr_raft_bridge_ack_step (
 				bridge,
 				&event
