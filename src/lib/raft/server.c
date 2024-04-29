@@ -922,6 +922,7 @@ static int __rrr_raft_server_read_msg_cb (
 //	int ret_tmp;
 //	struct raft_buffer buf = {0};
 //	struct raft_apply *req;
+	size_t message_size;
 	struct rrr_msg msg = {0};
 	struct rrr_msg_msg *msg_msg = NULL;
 
@@ -975,42 +976,21 @@ static int __rrr_raft_server_read_msg_cb (
 		goto out_send_ctrl_msg;
 	}
 
-/*	buf.len = MSG_TOTAL_SIZE(*message) + 8 - MSG_TOTAL_SIZE(*message) % 8;
-	if ((buf.base = raft_calloc(1, buf.len)) == NULL) {
-		RRR_MSG_0("Failed to allocate memory for buffer in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}*/
+	message_size = MSG_TOTAL_SIZE(*message);
 
-	// Message in message store on disk stored with network endianess
-//	memcpy(buf.base, *message, MSG_TOTAL_SIZE(*message));
-//	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) buf.base);
-//	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) buf.base);
+	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) *message);
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) *message);
 
-	assert(0 && "Raft apply not implemented");
-
-/*
-	if ((req = raft_malloc(sizeof(*req))) == NULL) {
-		RRR_MSG_0("Failed to allocate memory for request in %s\n", __func__);
-		ret = 1;
+	if ((ret = rrr_raft_bridge_apply (
+			bridge,
+			*message,
+			message_size
+	)) != 0) {
 		goto out;
 	}
-*/
-//	req->data = state;
-/*
-	if ((ret_tmp = raft_apply(raft, req, &buf, 1, __rrr_raft_server_apply_cb)) != 0) {
-		// It appears that this data is usually freed also
-		// upon error conditions.
-		buf.base = NULL;
 
-		RRR_MSG_0("Apply failed in %s: %s\n", __func__, raft_errmsg(raft));
-		ret = 1;
-		goto out;
-	}
-	else {
-		buf.base = NULL;
-	}
-*/
+	EVENT_ADD(state->events.raft_timeout);
+
 	goto out;
 //	out_free_req:
 //		raft_free(req);
@@ -1778,22 +1758,19 @@ static int __rrr_raft_server_process_and_acknowledge (
 
 	struct rrr_raft_task *task;
 
-	if ((ret = __rrr_raft_server_process_tasks(state)) != 0) {
-		goto out;
-	}
+	do {
+		if ((ret = __rrr_raft_server_process_tasks(state)) != 0) {
+			goto out;
+		}
 
-	if ((ret = rrr_raft_bridge_acknowledge(state->tasks, state->bridge)) != 0) {
-		goto out;
-	}
+		if ((ret = rrr_raft_bridge_acknowledge(state->tasks, state->bridge)) != 0) {
+			goto out;
+		}
 
-	assert(state->tasks->count > 0);
+		assert(state->tasks->count > 0);
 
-	task = rrr_raft_task_list_get(state->tasks);
-
-	if (task->type != RRR_RAFT_TASK_TIMEOUT) {
-		// TODO : Consider tight loop instead of activating timeout
-		EVENT_ACTIVATE(state->events.raft_timeout);
-	}
+		task = rrr_raft_task_list_get(state->tasks);
+	} while (task->type != RRR_RAFT_TASK_TIMEOUT);
 
 	out:
 	return ret;

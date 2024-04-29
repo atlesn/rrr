@@ -120,7 +120,7 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 
 	total_size += sizeof(uint64_t) * 4;
 	total_size += GET_BATCH_HEADER_SIZE(entry_count);
-	if (entries != NULL) {
+	if (entry_count > 0 && entries != NULL) {
 		for (i = 0; i < entry_count; i++) {
 			total_size += entries[i].buf.len;
 			assert(total_size > entries[i].buf.len);

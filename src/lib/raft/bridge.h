@@ -84,7 +84,8 @@ enum rrr_raft_task_type {
 
 enum rrr_raft_file_type {
 	RRR_RAFT_FILE_TYPE_CONFIGURATION = 1,
-	RRR_RAFT_FILE_TYPE_METADATA = 2
+	RRR_RAFT_FILE_TYPE_METADATA = 2,
+	RRR_RAFT_FILE_TYPE_ENTRY = 3
 };
 
 struct rrr_raft_task_cb_data {
@@ -183,6 +184,11 @@ int rrr_raft_bridge_begin (
 int rrr_raft_bridge_acknowledge (
 		struct rrr_raft_task_list *list,
 		struct rrr_raft_bridge *bridge
+);
+int rrr_raft_bridge_apply (
+		struct rrr_raft_bridge *bridge,
+		const void *data,
+		size_t data_size
 );
 void rrr_raft_bridge_cleanup (
 		struct rrr_raft_bridge *bridge

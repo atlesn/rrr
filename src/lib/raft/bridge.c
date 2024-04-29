@@ -22,10 +22,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "bridge.h"
+#include "bridge_ack.h"
 #include "bridge_task.h"
 #include "log.h"
 
 #include "../log.h"
+#include "../util/rrr_time.h"
 
 int rrr_raft_bridge_begin (
 		struct rrr_raft_task_list *list_work,
@@ -56,6 +58,42 @@ int rrr_raft_bridge_begin (
 	rrr_raft_task_list_push(list_work, &task);
 
 	goto out;
+
+	out:
+	return ret;
+}
+
+int rrr_raft_bridge_apply (
+		struct rrr_raft_bridge *bridge,
+		const void *data,
+		size_t data_size
+) {
+	int ret = 0;
+
+//	raft_index index;
+	struct raft_event event;
+	struct raft_entry entry;
+
+//	index = rrr_raft_get_last_index(&bridge->log);
+
+	entry.type = RAFT_COMMAND;
+	entry.term = bridge->metadata.term;
+	if ((entry.buf.base = raft_malloc(data_size)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+	memcpy(entry.buf.base, data, data_size);
+	entry.buf.len = data_size;
+
+	event.type = RAFT_SUBMIT;
+	event.time = RRR_RAFT_TIME_MS();
+	event.submit.entries = &entry;
+	event.submit.n = 1;
+
+	if ((ret = rrr_raft_bridge_ack_step (bridge, &event)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

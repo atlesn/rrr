@@ -220,6 +220,44 @@ static int __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 	return ret;
 }
 
+static int __rrr_raft_bridge_ack_write_closed_segment (
+		ssize_t (*write_cb)(RRR_RAFT_BRIDGE_WRITE_FILE_CB_ARGS),
+		const char *name,
+		const void *data,
+		size_t data_size,
+		raft_index index,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	int ret = 0;
+
+	char *data_new = NULL;
+	size_t data_new_size;
+
+	if ((ret = rrr_raft_bridge_encode_closed_segment (
+			&data_new,
+			&data_new_size,
+			data,
+			data_size,
+			index
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_raft_bridge_ack_write (
+			write_cb,
+			name,
+			data_new,
+			data_new_size,
+			cb_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
+	return ret;
+}
+
 static int __rrr_raft_bridge_ack_send_message (
 		struct rrr_raft_bridge *bridge,
 		ssize_t (*send_cb)(RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS),
@@ -305,6 +343,21 @@ static void __rrr_raft_bridge_ack_make_event_start (
 	event->start.start_index = start_index;
 	event->start.entries = entries;
 	event->start.n_entries = entry_count;
+}
+
+static void __rrr_raft_bridge_ack_push_task_write_entry (
+		struct rrr_raft_task_list *list_new,
+		raft_index index
+) {
+	struct rrr_raft_task task_new;
+
+	task_new.type = RRR_RAFT_TASK_WRITE_FILE;
+	task_new.writefile.type = RRR_RAFT_FILE_TYPE_ENTRY;
+	task_new.writefile.name = rrr_raft_task_list_asprintf (
+			list_new,
+			RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(index, index)
+	);
+	rrr_raft_task_list_push(list_new, &task_new);
 }
 
 static void __rrr_raft_bridge_ack_push_task_write_metadata (
@@ -524,6 +577,30 @@ static void __rrr_raft_bridge_ack_update_voted_for (
 	__rrr_raft_bridge_ack_push_task_write_metadata(list_new, bridge);
 }
 
+static int __rrr_raft_bridge_ack_update_entries (
+		struct rrr_raft_task_list *list_new,
+		struct rrr_raft_bridge *bridge,
+		raft_index index,
+		struct raft_entry *entries,
+		unsigned n
+) {
+	int ret = 0;
+
+	unsigned i;
+	struct raft_entry *entry;
+
+	for (i = 0; i < n; i++) {
+		entry = entries + i;
+		if ((ret = rrr_raft_log_push(&bridge->log, entry, index + i)) != 0) {
+			goto out;
+		}
+		__rrr_raft_bridge_ack_push_task_write_entry(list_new, index + i);
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_raft_bridge_ack_update_messages (
 		struct rrr_raft_task_list *list_new,
 		struct raft_message *messages,
@@ -583,7 +660,15 @@ int rrr_raft_bridge_ack_step (
 	}
 
 	if (update.flags & RAFT_UPDATE_ENTRIES) {
-		assert(0 && "Update entries not implemented");
+		if ((ret = __rrr_raft_bridge_ack_update_entries (
+				bridge->list_persistent,
+				bridge,
+				update.entries.index,
+				update.entries.batch,
+				update.entries.n
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	if (update.flags & RAFT_UPDATE_SNAPSHOT) {
@@ -777,6 +862,22 @@ int rrr_raft_bridge_acknowledge (
 								&entry,
 								1
 						);
+						goto step;
+					case RRR_RAFT_FILE_TYPE_ENTRY:
+						if ((ret = __rrr_raft_bridge_ack_write_closed_segment (
+								task->writefile.write_cb,
+								(char *) TASK_LIST_RESOLVE(task->writefile.name),
+								data,
+								data_size,
+								index,
+								&task->writefile.cb_data
+						)) != 0) {
+							goto out_cleanup;
+						}
+
+						event.type = RAFT_PERSISTED_ENTRIES;
+						event.persisted_entries.index = index;
+
 						goto step;
 					default:
 						RRR_BUG("BUG: Unknown write file type %i in %s\n",
