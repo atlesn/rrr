@@ -137,6 +137,9 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 #define GET_MSG_APPEND_ENTRIES_HEADER_SIZE(entry_count) \
     (__rrr_raft_encode_get_msg_append_entries_size(NULL, entry_count))
 
+#define GET_MSG_APPEND_ENTRIES_RESULT_SIZE() \
+    (sizeof(uint64_t) * 4)
+
 #define PUT_MSG_PREAMBLE(type, version, body_size)  \
     do {                                            \
         WRITE_U8(type);                             \
@@ -376,7 +379,7 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result message not implemented");
+			total_size += GET_MSG_APPEND_ENTRIES_RESULT_SIZE();
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot message not implemented");
@@ -471,6 +474,25 @@ void rrr_raft_bridge_encode_message_append_entries (
 		PUT_BATCH_DATA(msg->n_entries > 0 ? msg->entries : NULL, msg->n_entries, crc2);
 	}
 	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg->entries, msg->n_entries));
+}
+
+void rrr_raft_bridge_encode_message_append_entries_result (
+		void *data,
+		size_t data_size,
+		const struct raft_append_entries_result *msg
+) {
+	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_RESULT_SIZE());
+
+	WRITE(data) {
+		PUT_MSG_PREAMBLE(RAFT_APPEND_ENTRIES_RESULT, RRR_RAFT_RPC_VERSION, GET_MSG_APPEND_ENTRIES_RESULT_SIZE());
+		WRITE_U64(msg->term);
+		WRITE_U64(msg->rejected);
+		WRITE_U64(msg->last_log_index);
+		WRITE_U16(msg->features);
+		WRITE_U16(msg->capacity);
+		WRITE_U32(0);
+	}
+	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_RESULT_SIZE());
 }
 
 /*
@@ -741,4 +763,45 @@ int rrr_raft_bridge_decode_append_entries (
 		raft_free(entries);
 	out:
 		return ret;
+}
+
+int rrr_raft_bridge_decode_append_entries_result_size_check (
+		uint8_t version,
+		size_t header_size
+) {
+	if (version != RRR_RAFT_RPC_VERSION) {
+		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
+		return RRR_RAFT_SOFT_ERROR;
+	}
+
+	if (header_size != GET_MSG_APPEND_ENTRIES_RESULT_SIZE()) {
+		RRR_MSG_0("Incorrect header size for append entries result\n");
+		return RRR_RAFT_SOFT_ERROR;
+	}
+
+	return RRR_RAFT_OK;
+}
+
+int rrr_raft_bridge_decode_append_entries_result (
+		struct raft_append_entries_result *p,
+		const char *header,
+		size_t header_size
+) {
+	assert (header_size == GET_MSG_APPEND_ENTRIES_RESULT_SIZE());
+
+	uint32_t dummy;
+
+	READ(header) {
+		READ_U64(p->term);
+		READ_U64(p->rejected);
+		READ_U64(p->last_log_index);
+		READ_U16(p->features);
+		READ_U16(p->capacity);
+		READ_U32(dummy);
+	}
+	READ_VERIFY(header, header_size);
+
+	(void)(dummy);
+
+	return 0;
 }

@@ -367,10 +367,8 @@ static int __rrr_raft_bridge_ack_push_task_send (
 		case RAFT_REQUEST_VOTE:
 		case RAFT_REQUEST_VOTE_RESULT:
 		case RAFT_APPEND_ENTRIES:
-			data_size = rrr_raft_bridge_encode_message_get_size(message);
-			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result message not implemented");
+			data_size = rrr_raft_bridge_encode_message_get_size(message);
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot message not implemented");
@@ -400,8 +398,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 			rrr_raft_bridge_encode_message_append_entries(data, data_size, &message->append_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
-//			rrr_raft_bridge_encode_message_append_entries_result(data, data_size, &message->append_entries_result);
-			assert(0);
+			rrr_raft_bridge_encode_message_append_entries_result(data, data_size, &message->append_entries_result);
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot message not implemented");

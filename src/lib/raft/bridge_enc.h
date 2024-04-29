@@ -66,6 +66,11 @@ void rrr_raft_bridge_encode_message_append_entries (
 		size_t data_size,
 		const struct raft_append_entries *msg
 );
+void rrr_raft_bridge_encode_message_append_entries_result (
+		void *data,
+		size_t data_size,
+		const struct raft_append_entries_result *msg
+);
 
 /*
  * DECODING FUNCTIONS
@@ -108,6 +113,15 @@ int rrr_raft_bridge_decode_append_entries (
 		const char *data,
 		size_t header_size,
 		size_t payload_size
+);
+int rrr_raft_bridge_decode_append_entries_result_size_check (
+		uint8_t version,
+		size_t header_size
+);
+int rrr_raft_bridge_decode_append_entries_result (
+		struct raft_append_entries_result *p,
+		const char *header,
+		size_t header_size
 );
 
 #endif /* RRR_RAFT_BRIDGE_ENC_H */

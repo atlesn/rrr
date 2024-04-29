@@ -116,9 +116,6 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 			}
 			payload_size = 0;
 			break;
-		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result not implemented");
-			break;
 		case RAFT_TIMEOUT_NOW:
 			assert(0 && "Timeout now not implemented");
 			break;
@@ -132,6 +129,16 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 				bytes = -ret_tmp;
 				goto out;
 			}
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			if ((ret_tmp = rrr_raft_bridge_decode_append_entries_result_size_check (
+					*version,
+					*payload_pos - *header_pos
+			)) != 0) {
+				bytes = -ret_tmp;
+				goto out;
+			}
+			payload_size = 0;
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "install snapshot not implemented");
@@ -222,7 +229,26 @@ ssize_t rrr_raft_bridge_read (
 
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result not implemented\n");
+			if (rrr_raft_bridge_decode_append_entries_result (
+					&message.append_entries_result,
+					data + header_pos,
+					payload_pos - header_pos
+			) != 0) {
+				RRR_RAFT_BRIDGE_ERR("Incorrect data for append entries result RPC");
+				bytes = -RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
+			RRR_RAFT_BRIDGE_DBG_ARGS("AER[%llu] t %llu r %llu lli %llu f %llu c %llu",
+				(unsigned long long) server_id,
+				(unsigned long long) message.append_entries_result.term,
+				(unsigned long long) message.append_entries_result.rejected,
+				(unsigned long long) message.append_entries_result.last_log_index,
+				(unsigned long long) message.append_entries_result.features,
+				(unsigned long long) message.append_entries_result.capacity
+			);
+
+			break;
 			break;
 		case RAFT_REQUEST_VOTE:
 			if (rrr_raft_bridge_decode_request_vote (
