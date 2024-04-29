@@ -177,6 +177,16 @@ ssize_t rrr_raft_bridge_read (
 				goto out;
 			}
 
+			RRR_RAFT_BRIDGE_DBG_ARGS("RV[%llu] t %llu ci %llu lli %llu llt %llu dl %i pv %i",
+				(unsigned long long) server_id,
+				(unsigned long long) message.request_vote.term,
+				(unsigned long long) message.request_vote.candidate_id,
+				(unsigned long long) message.request_vote.last_log_index,
+				(unsigned long long) message.request_vote.last_log_term,
+				message.request_vote.disrupt_leader,
+				message.request_vote.pre_vote
+			);
+
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
 			if (!rrr_raft_bridge_decode_request_vote_result_size_ok (
@@ -197,6 +207,15 @@ ssize_t rrr_raft_bridge_read (
 				bytes = -RRR_READ_SOFT_ERROR;
 				goto out;
 			}
+
+			RRR_RAFT_BRIDGE_DBG_ARGS("RVR[%llu] t %llu vg %i pv %i f %u c %u",
+				(unsigned long long) server_id,
+				(unsigned long long) message.request_vote_result.term,
+				message.request_vote_result.vote_granted,
+				message.request_vote_result.pre_vote,
+				message.request_vote_result.features,
+				message.request_vote_result.capacity
+			);
 
 			break;
 		case RAFT_INSTALL_SNAPSHOT:

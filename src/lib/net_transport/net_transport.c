@@ -1360,8 +1360,6 @@ static void __rrr_net_transport_event_accept (
 			listen_handle->transport->accept_callback_arg
 	);
 
-	printf("ret tmp was %i\n", ret_tmp);
-
 	if (ret_tmp != 0) {
 		rrr_event_dispatch_break(listen_handle->transport->event_queue);
 	}

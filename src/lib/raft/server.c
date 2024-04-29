@@ -1629,8 +1629,6 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 			goto out;
 		}
 
-		printf("Created outvound connection data %p\n", connection);
-
 		__rrr_raft_server_connection_data_bind (
 				state->net_transport,
 				callback_data.result_handle,

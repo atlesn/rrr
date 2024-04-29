@@ -245,13 +245,13 @@ static int __rrr_raft_bridge_ack_send_message (
 		if ((bytes = send_cb(server_id, server_address, data + pos, data_size - pos, cb_data)) < 0) {
 			ret = -bytes;
 
-			if (ret == RRR_RAFT_READ_BUSY) {
+			if (ret == RRR_RAFT_BUSY) {
 				RRR_RAFT_BRIDGE_DBG_ARGS("ack send message busy for server %llu",
 					(unsigned long long) server_id
 				);
 				goto out;
 			}
-			else if (ret == RRR_RAFT_READ_SOFT_ERROR) {
+			else if (ret == RRR_RAFT_SOFT_ERROR) {
 				RRR_RAFT_BRIDGE_ERR_ARGS("ack send message soft error for server %llu",
 					(unsigned long long) server_id
 				);
@@ -262,7 +262,7 @@ static int __rrr_raft_bridge_ack_send_message (
 				ret,
 				(unsigned long long) server_id
 			);
-			ret = RRR_RAFT_READ_HARD_ERROR;
+			ret = RRR_RAFT_HARD_ERROR;
 			goto out;
 		}
 		assert(bytes > 0);
@@ -275,7 +275,7 @@ static int __rrr_raft_bridge_ack_send_message (
 	);
 
 	if ((bytes = send_cb(server_id, server_address, NULL, 0, cb_data)) < 0) {
-		assert(bytes != -RRR_RAFT_READ_BUSY);
+		assert(bytes != -RRR_RAFT_BUSY);
 		ret = 1;
 		goto out;
 	}
@@ -346,8 +346,6 @@ static int __rrr_raft_bridge_ack_push_task_send (
 	void *data;
 
 	size_t data_size;
-
-	printf("Send message type %u server id %u\n", (unsigned) message->type, (unsigned) message->server_id);
 
 	assert(message->server_id > 0);
 
@@ -795,7 +793,7 @@ int rrr_raft_bridge_acknowledge (
 						task->sendmessage.data_size,
 						&task->sendmessage.cb_data
 				)) != 0) {
-					if (ret == RRR_RAFT_READ_BUSY) {
+					if (ret == RRR_RAFT_BUSY) {
 						rrr_raft_task_list_push_cloned (
 								bridge->list_persistent,
 								list,
@@ -806,7 +804,7 @@ int rrr_raft_bridge_acknowledge (
 						);
 						ret = 0;
 					}
-					else if (ret == RRR_RAFT_READ_SOFT_ERROR) {
+					else if (ret == RRR_RAFT_SOFT_ERROR) {
 						// Do nothing, consider message as lost
 						ret = 0;
 					}
