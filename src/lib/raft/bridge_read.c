@@ -44,6 +44,12 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 
 	uint64_t preamble0, preamble1_header_size;
 	uint64_t target_size, payload_size;
+	int ret_tmp;
+
+	/* Initialize due to scan build warnings */
+	*header_pos = 0;
+	*payload_pos = 0;
+	*end_pos = 0;
 
 	if (data_size < sizeof(uint64_t) * 2) {
 		goto out;
@@ -56,6 +62,12 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 
 	if (preamble1_header_size == 0) {
 		RRR_RAFT_BRIDGE_ERR("RPC had zero header size");
+		bytes = -RRR_RAFT_SOFT_ERROR;
+		goto out;
+	}
+
+	if (preamble1_header_size > SIZE_MAX) {
+		RRR_RAFT_BRIDGE_ERR("RPC had too big header size");
 		bytes = -RRR_RAFT_SOFT_ERROR;
 		goto out;
 	}
@@ -85,14 +97,44 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 
 	switch (*type) {
 		case RAFT_REQUEST_VOTE:
-		case RAFT_REQUEST_VOTE_RESULT:
-		case RAFT_APPEND_ENTRIES_RESULT:
-		case RAFT_TIMEOUT_NOW:
+			if ((ret_tmp = rrr_raft_bridge_decode_request_vote_size_check (
+					*version,
+					*payload_pos - *header_pos
+			)) != 0) {
+				bytes = -ret_tmp;
+				goto out;
+			}
 			payload_size = 0;
 			break;
+		case RAFT_REQUEST_VOTE_RESULT:
+			if ((ret_tmp = rrr_raft_bridge_decode_request_vote_result_size_check (
+					*version,
+					*payload_pos - *header_pos
+			)) != 0) {
+				bytes = -ret_tmp;
+				goto out;
+			}
+			payload_size = 0;
+			break;
+		case RAFT_APPEND_ENTRIES_RESULT:
+			assert(0 && "Append entries result not implemented");
+			break;
+		case RAFT_TIMEOUT_NOW:
+			assert(0 && "Timeout now not implemented");
+			break;
 		case RAFT_APPEND_ENTRIES:
+			if ((ret_tmp = rrr_raft_bridge_decode_append_entries_size_check (
+					*version,
+					&payload_size,
+					data + *header_pos,
+					*payload_pos - *header_pos
+			)) != 0) {
+				bytes = -ret_tmp;
+				goto out;
+			}
+			break;
 		case RAFT_INSTALL_SNAPSHOT:
-			assert(0 && "RPC with payload not implemented");
+			assert(0 && "install snapshot not implemented");
 			payload_size = 0;
 			break;
 		default:
@@ -103,6 +145,10 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 
 	target_size += payload_size;
 	*end_pos = rrr_size_from_biglength_bug_const(target_size);
+
+	if (data_size < *end_pos) {
+		goto out;
+	}
 
 	if (target_size < payload_size || target_size > SSIZE_MAX) {
 		RRR_RAFT_BRIDGE_ERR("Target size overflow in RPC");
@@ -152,21 +198,33 @@ ssize_t rrr_raft_bridge_read (
 
 	switch (type) {
 		case RAFT_APPEND_ENTRIES:
-			assert(0 && "Append entries not implemented\n");
+			if (rrr_raft_bridge_decode_append_entries (
+					&message.append_entries,
+					data + header_pos,
+					payload_pos - header_pos,
+					end_pos - payload_pos
+			) != 0) {
+				RRR_RAFT_BRIDGE_ERR("Incorrect data for append entries RPC");
+				bytes = -RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
+			RRR_RAFT_BRIDGE_DBG_ARGS("AE[%llu] t %llu pli %llu plt %llu lc %llu ne %llu",
+				(unsigned long long) server_id,
+				(unsigned long long) message.append_entries.term,
+				(unsigned long long) message.append_entries.prev_log_index,
+				(unsigned long long) message.append_entries.prev_log_term,
+				(unsigned long long) message.append_entries.leader_commit,
+				(unsigned long long) message.append_entries.n_entries
+			);
+
+			assert(message.append_entries.n_entries == 0 && "Entries >0 not implemented");
+
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			assert(0 && "Append entries result not implemented\n");
 			break;
 		case RAFT_REQUEST_VOTE:
-			if (!rrr_raft_bridge_decode_request_vote_size_ok (
-					version,
-					payload_pos - header_pos
-			)) {
-				RRR_RAFT_BRIDGE_ERR("Incorrect version or size for request vote RPC");
-				bytes = -RRR_READ_SOFT_ERROR;
-				goto out;
-			}
-
 			if (rrr_raft_bridge_decode_request_vote (
 					&message.request_vote,
 					data + header_pos,
@@ -189,15 +247,6 @@ ssize_t rrr_raft_bridge_read (
 
 			break;
 		case RAFT_REQUEST_VOTE_RESULT:
-			if (!rrr_raft_bridge_decode_request_vote_result_size_ok (
-					version,
-					payload_pos - header_pos
-			)) {
-				RRR_RAFT_BRIDGE_ERR("Incorrect version or size for request vote result RPC");
-				bytes = -RRR_READ_SOFT_ERROR;
-				goto out;
-			}
-
 			if (rrr_raft_bridge_decode_request_vote_result (
 					&message.request_vote_result,
 					data + header_pos,

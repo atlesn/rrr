@@ -400,7 +400,8 @@ static int __rrr_raft_bridge_ack_push_task_send (
 			rrr_raft_bridge_encode_message_append_entries(data, data_size, &message->append_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
-			assert(0 && "Append entries result message not implemented");
+//			rrr_raft_bridge_encode_message_append_entries_result(data, data_size, &message->append_entries_result);
+			assert(0);
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot message not implemented");

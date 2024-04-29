@@ -79,7 +79,7 @@ void rrr_raft_bridge_decode_metadata (
 		const char *data,
 		size_t data_size
 );
-int rrr_raft_bridge_decode_request_vote_size_ok (
+int rrr_raft_bridge_decode_request_vote_size_check (
 		uint8_t version,
 		size_t header_size
 );
@@ -88,7 +88,7 @@ int rrr_raft_bridge_decode_request_vote (
 		const char *header,
 		size_t header_size
 );
-int rrr_raft_bridge_decode_request_vote_result_size_ok (
+int rrr_raft_bridge_decode_request_vote_result_size_check (
 		uint8_t version,
 		size_t header_size
 );
@@ -96,6 +96,18 @@ int rrr_raft_bridge_decode_request_vote_result (
 		struct raft_request_vote_result *p,
 		const char *header,
 		size_t header_size
+);
+int rrr_raft_bridge_decode_append_entries_size_check (
+		uint8_t version,
+		size_t *payload_size,
+		const char *header,
+		size_t header_size
+);
+int rrr_raft_bridge_decode_append_entries ( 
+		struct raft_append_entries *p,
+		const char *data,
+		size_t header_size,
+		size_t payload_size
 );
 
 #endif /* RRR_RAFT_BRIDGE_ENC_H */

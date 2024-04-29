@@ -56,6 +56,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_BRIDGE_ERR(msg) \
     RRR_MSG_0("Raft [%i][bridge] " msg "\n", bridge->server_id)
 
+#define RRR_RAFT_OK \
+    RRR_READ_OK
+
 #define RRR_RAFT_BUSY \
     RRR_READ_BUSY
 

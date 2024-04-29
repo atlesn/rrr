@@ -79,7 +79,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define PUT_BATCH_HEADER(entries, entry_count, crc)                                           \
     do {char *wpos_begin = wpos; WRITE_U64(entry_count);                                      \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
+        for (const struct raft_entry *entry = (entries); entry < (entries) + entry_count; entry++) { \
 	    WRITE_U64(entry->term);                                                           \
 	    WRITE_U8(entry->type);                                                            \
 	    WRITE_U8(0);                                                                      \
@@ -92,7 +92,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define PUT_BATCH_DATA(entries, entry_count, crc)                                             \
     do {                                                                                      \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
+        for (const struct raft_entry *entry = (entries); entry < (entries) + entry_count; entry++) { \
 	    memcpy(wpos, entry->buf.base, entry->buf.len);                                    \
 	    crc = rrr_crc32buf_init(wpos, entry->buf.len, crc);                               \
 	    wpos += entry->buf.len;                                                           \
@@ -120,9 +120,11 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 
 	total_size += sizeof(uint64_t) * 4;
 	total_size += GET_BATCH_HEADER_SIZE(entry_count);
-	for (i = 0; i < entry_count; i++) {
-		total_size += entries[i].buf.len;
-		assert(total_size > entries[i].buf.len);
+	if (entries != NULL) {
+		for (i = 0; i < entry_count; i++) {
+			total_size += entries[i].buf.len;
+			assert(total_size > entries[i].buf.len);
+		}
 	}
 	total_size += sizeof(uint64_t);
 
@@ -131,6 +133,9 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 
 #define GET_MSG_APPEND_ENTRIES_SIZE(entries, entry_count) \
     (__rrr_raft_encode_get_msg_append_entries_size(entries, entry_count))
+
+#define GET_MSG_APPEND_ENTRIES_HEADER_SIZE(entry_count) \
+    (__rrr_raft_encode_get_msg_append_entries_size(NULL, entry_count))
 
 #define PUT_MSG_PREAMBLE(type, version, body_size)  \
     do {                                            \
@@ -157,12 +162,48 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
     (n) = rrr_le16toh(* (uint16_t *) rpos); \
     rpos += sizeof(uint16_t)
 
+#define READ_U32(n)                         \
+    (n) = rrr_le32toh(* (uint32_t *) rpos); \
+    rpos += sizeof(uint32_t)
+
 #define READ_U64(n)                         \
     (n) = rrr_le64toh(* (uint64_t *) rpos); \
     rpos += sizeof(uint64_t)
 
+#define READ_U64_PEEK(n)                    \
+    (n) = rrr_le64toh(* (uint64_t *) rpos)
+
 #define READ_VERIFY(buf,len)                \
     assert((uintptr_t) rpos - (uintptr_t) (buf) == (uintptr_t) len)
+
+#define READ_REM(buf,buf_len)               \
+    ((uintptr_t) buf_len - ((uintptr_t) rpos - (uintptr_t) buf))
+
+#define READ_RAW(buf,len)                   \
+    memcpy(buf, rpos, len); rpos += len
+
+
+#define READ_BATCH_HEADER(entry_count, payload_size)         \
+    do {(payload_size) = 0;                                  \
+    READ_U64_PEEK(entry_count);                              \
+    if (READ_REM(header, header_size) < GET_BATCH_HEADER_SIZE(entry_count)) { \
+        return RRR_RAFT_INCOMPLETE;                          \
+    }                                                        \
+    READ_U64(entry_count);                                   \
+    for (uint64_t i = 0; i < entry_count; i++) {             \
+	uint8_t u8; uint32_t u32; uint64_t u64;              \
+	(void)(u8); (void)(u64);                             \
+        READ_U64(u64);                                       \
+        READ_U8(u8);                                         \
+        READ_U8(u8);                                         \
+        READ_U8(u8);                                         \
+	READ_U8(u8);                                         \
+        READ_U32(u32);                                       \
+        (payload_size) += u32;                               \
+        if ((payload_size) < u32) {                          \
+            return RRR_RAFT_SOFT_ERROR;                      \
+        }                                                    \
+    }} while(0)
 
 /*
  * ENCODING FUNCTIONS
@@ -329,7 +370,10 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			total_size += GET_MSG_REQUEST_VOTE_RESULT_SIZE();
 			break;
 		case RAFT_APPEND_ENTRIES:
-			total_size += GET_MSG_APPEND_ENTRIES_SIZE(msg->append_entries.entries, msg->append_entries.n_entries);
+			total_size += GET_MSG_APPEND_ENTRIES_SIZE (
+					msg->append_entries.n_entries > 0 ? msg->append_entries.entries : NULL,
+					msg->append_entries.n_entries
+			);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			assert(0 && "Append entries result message not implemented");
@@ -422,9 +466,9 @@ void rrr_raft_bridge_encode_message_append_entries (
 		WRITE_U64(msg->prev_log_index);
 		WRITE_U64(msg->prev_log_term);
 		WRITE_U64(msg->leader_commit);
-		PUT_BATCH_HEADER(msg->entries, msg->n_entries, crc1);
+		PUT_BATCH_HEADER(msg->n_entries > 0 ? msg->entries : NULL, msg->n_entries, crc1);
 		WRITE_U64(0);
-		PUT_BATCH_DATA(msg->entries, msg->n_entries, crc2);
+		PUT_BATCH_DATA(msg->n_entries > 0 ? msg->entries : NULL, msg->n_entries, crc2);
 	}
 	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg->entries, msg->n_entries));
 }
@@ -499,16 +543,21 @@ void rrr_raft_bridge_decode_metadata (
 	};
 */
 
-int rrr_raft_bridge_decode_request_vote_size_ok (
+int rrr_raft_bridge_decode_request_vote_size_check (
 		uint8_t version,
 		size_t header_size
 ) {
 	if (version != RRR_RAFT_RPC_VERSION) {
 		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
-		return 0;
+		return RRR_RAFT_SOFT_ERROR;
 	}
 
-	return header_size == GET_MSG_REQUEST_VOTE_SIZE();
+	if (header_size != GET_MSG_REQUEST_VOTE_SIZE()) {
+		RRR_MSG_0("Incorrect header size for request vote\n");
+		return RRR_RAFT_SOFT_ERROR;
+	}
+
+	return RRR_RAFT_OK;
 }
 
 int rrr_raft_bridge_decode_request_vote (
@@ -535,16 +584,21 @@ int rrr_raft_bridge_decode_request_vote (
 	return 0;
 }
 
-int rrr_raft_bridge_decode_request_vote_result_size_ok (
+int rrr_raft_bridge_decode_request_vote_result_size_check (
 		uint8_t version,
 		size_t header_size
 ) {
 	if (version != RRR_RAFT_RPC_VERSION) {
 		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
-		return 0;
+		return RRR_RAFT_SOFT_ERROR;
 	}
 
-	return header_size == GET_MSG_REQUEST_VOTE_RESULT_SIZE();
+	if (header_size != GET_MSG_REQUEST_VOTE_RESULT_SIZE()) {
+		RRR_MSG_0("Incorrect header size for request vote result\n");
+		return RRR_RAFT_SOFT_ERROR;
+	}
+
+	return RRR_RAFT_OK;
 }
 
 int rrr_raft_bridge_decode_request_vote_result (
@@ -578,4 +632,113 @@ int rrr_raft_bridge_decode_request_vote_result (
 	return 0;
 }
 
+int rrr_raft_bridge_decode_append_entries_size_check (
+		uint8_t version,
+		size_t *payload_size,
+		const char *header,
+		size_t header_size
+) {
+	uint64_t u64, entry_count;
 
+	if (version != RRR_RAFT_RPC_VERSION) {
+		RRR_MSG_0("Unsupported version %u in %s\n", version, __func__);
+		return RRR_RAFT_SOFT_ERROR;
+	}
+
+	if (header_size < GET_MSG_APPEND_ENTRIES_SIZE(NULL, 0)) {
+		return RRR_RAFT_INCOMPLETE;
+	}
+
+	READ(header) {
+		READ_U64(u64);
+		READ_U64(u64);
+		READ_U64(u64);
+		READ_U64(u64);
+		READ_BATCH_HEADER(entry_count, *payload_size);
+		if (entry_count > UINT_MAX) {
+			RRR_MSG_0("Entry count exceeds maximum in append entries RPC\n");
+			return RRR_RAFT_SOFT_ERROR;
+		}
+		READ_U64(u64);
+	}
+	READ_VERIFY(header, GET_MSG_APPEND_ENTRIES_HEADER_SIZE(entry_count));
+
+	(void)(u64);
+
+	return RRR_RAFT_OK;
+}
+
+int rrr_raft_bridge_decode_append_entries ( 
+		struct raft_append_entries *p,
+		const char *data,
+		size_t header_size,
+		size_t payload_size
+) {
+	int ret = RRR_RAFT_OK;
+
+	uint64_t dummy, entry_count, i, payload_size_check;
+
+	struct raft_entry *entries, *entry;
+
+	assert(header_size >= GET_MSG_APPEND_ENTRIES_SIZE(NULL, 0));
+
+	READ(data) {
+		READ_U64(p->term);
+		READ_U64(p->prev_log_index);
+		READ_U64(p->prev_log_term);
+		READ_U64(p->leader_commit);
+    		READ_U64(entry_count);
+		assert(entry_count <= UINT_MAX);
+		p->n_entries = entry_count;
+		if (entry_count > 0) {
+			if ((entries = raft_malloc(sizeof(*entries) * entry_count)) == NULL) {
+				RRR_MSG_0("Failed to allocate memory for entries in %s\n", __func__);
+				ret = RRR_RAFT_HARD_ERROR;
+				goto out;
+			}
+			payload_size_check = 0;
+			for (i = 0; i < entry_count; i++) {
+				entry = entries + i;
+				READ_U64(entry->term);
+				READ_U8(entry->type);
+				READ_U8(dummy);
+				READ_U8(dummy);
+				READ_U8(dummy);
+				READ_U32(entry->buf.len);
+				payload_size_check += entry->buf.len;
+				assert(payload_size_check > entry->buf.len);
+			}
+			assert(payload_size_check == payload_size);
+		}
+		READ_U64(dummy);
+
+		READ_VERIFY(data, GET_MSG_APPEND_ENTRIES_HEADER_SIZE(entry_count));
+
+		for (i = 0; i < entry_count; i++) {
+			entry = entries + i;
+			if (entry->buf.len == 0) {
+				entry->buf.base = NULL;
+				continue;
+			}
+			if ((entry->buf.base = raft_malloc(entry->buf.len)) == NULL) {
+				RRR_MSG_0("Failed to allocate memory for entry base in %s\n", __func__);
+				ret = RRR_RAFT_HARD_ERROR;
+				goto out_free_entries;
+			}
+    			READ_RAW(entry->buf.base, entry->buf.len);
+		}
+	}
+
+	(void)(dummy);
+
+	goto out;
+	out_free_entries:
+		for (i = i; i != UINT64_MAX; i--) {
+			entry = entries + i;
+			if (entry->buf.base != NULL)
+				raft_free(entry->buf.base);
+		}
+		raft_free(entries);
+	out:
+		return ret;
+}
