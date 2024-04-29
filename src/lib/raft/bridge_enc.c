@@ -62,6 +62,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define WRITE_INC(n)                        \
    wpos += n
 
+#define WRITE_REM(len)                      \
+   ((size_t) ((uintptr_t) len - (uintptr_t) wpos))
+
 #define WRITE_VERIFY(buf,len)               \
     assert((uintptr_t) wpos - (uintptr_t) (buf) == (uintptr_t) len)
 
@@ -107,6 +110,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define GET_MSG_REQUEST_VOTE_RESULT_SIZE() \
     (sizeof(uint64_t) * 3)
+
+static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
+		const struct raft_entry *entries,
+		unsigned entry_count
+) {
+	size_t total_size = 0;
+	unsigned i;
+
+	total_size += sizeof(uint64_t) * 4;
+	total_size += GET_BATCH_HEADER_SIZE(entry_count);
+	for (i = 0; i < entry_count; i++) {
+		total_size += entries[i].buf.len;
+		assert(total_size > entries[i].buf.len);
+	}
+	total_size += sizeof(uint64_t);
+
+	return total_size;
+}
+
+#define GET_MSG_APPEND_ENTRIES_SIZE(entries, entry_count) \
+    (__rrr_raft_encode_get_msg_append_entries_size(entries, entry_count))
 
 #define PUT_MSG_PREAMBLE(type, version, body_size)  \
     do {                                            \
@@ -291,13 +315,13 @@ int rrr_raft_bridge_encode_closed_segment (
 }
 
 size_t rrr_raft_bridge_encode_message_get_size (
-		enum raft_message_type type
+		const struct raft_message *msg
 ) {
 	size_t total_size = 0;
 
 	total_size += GET_MSG_PREAMBLE_SIZE();
 
-	switch (type) {
+	switch (msg->type) {
 		case RAFT_REQUEST_VOTE:
 			total_size += GET_MSG_REQUEST_VOTE_SIZE();
 			break;
@@ -305,7 +329,7 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			total_size += GET_MSG_REQUEST_VOTE_RESULT_SIZE();
 			break;
 		case RAFT_APPEND_ENTRIES:
-			assert(0 && "append entries message not implemented");
+			total_size += GET_MSG_APPEND_ENTRIES_SIZE(msg->append_entries.entries, msg->append_entries.n_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			assert(0 && "Append entries result message not implemented");
@@ -317,7 +341,7 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			assert(0 && "Timeout not message not implemented");
 			break;
 		default:
-			RRR_BUG("BUG: Unknown message type %i in %s\n", type, __func__);
+			RRR_BUG("BUG: Unknown message type %i in %s\n", msg->type, __func__);
 
 	};
 
@@ -378,6 +402,31 @@ void rrr_raft_bridge_encode_message_request_vote_result (
 		WRITE_U16(0);
 	}
 	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_REQUEST_VOTE_RESULT_SIZE());
+}
+
+void rrr_raft_bridge_encode_message_append_entries (
+		void *data,
+		size_t data_size,
+		const struct raft_append_entries *msg
+) {
+	// Note : CRCs are not used (yet)
+	uint32_t crc1 = 0xffffffff, crc2 = 0xffffffff;
+
+	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg->entries, msg->n_entries));
+
+	/* TODO : Look into possibility of not copying entry data */
+
+	WRITE(data) {
+		PUT_MSG_PREAMBLE(RAFT_APPEND_ENTRIES, RRR_RAFT_RPC_VERSION, GET_MSG_APPEND_ENTRIES_SIZE(msg->entries, msg->n_entries));
+		WRITE_U64(msg->term);
+		WRITE_U64(msg->prev_log_index);
+		WRITE_U64(msg->prev_log_term);
+		WRITE_U64(msg->leader_commit);
+		PUT_BATCH_HEADER(msg->entries, msg->n_entries, crc1);
+		WRITE_U64(0);
+		PUT_BATCH_DATA(msg->entries, msg->n_entries, crc2);
+	}
+	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg->entries, msg->n_entries));
 }
 
 /*

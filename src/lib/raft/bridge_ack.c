@@ -349,24 +349,25 @@ static int __rrr_raft_bridge_ack_push_task_send (
 
 	assert(message->server_id > 0);
 
-	switch (message->type) {
-		case RAFT_APPEND_ENTRIES:
-			assert(0 && "Append entries message not implemented");
-			break;
-		case RAFT_INSTALL_SNAPSHOT:
-			assert(0 && "Install snapshot message not implemented");
-			break;
-		default:
-			break;
-	};
+	/* TODO : Check for r->closing */
+	if (0) {
+		switch (message->type) {
+			case RAFT_APPEND_ENTRIES:
+				assert(0 && "Append entries message not implemented");
+				break;
+			case RAFT_INSTALL_SNAPSHOT:
+				assert(0 && "Install snapshot message not implemented");
+				break;
+			default:
+				break;
+		};
+	}
 
 	switch (message->type) {
 		case RAFT_REQUEST_VOTE:
 		case RAFT_REQUEST_VOTE_RESULT:
-			data_size = rrr_raft_bridge_encode_message_get_size(message->type);
-			break;
 		case RAFT_APPEND_ENTRIES:
-			assert(0 && "append entries message not implemented");
+			data_size = rrr_raft_bridge_encode_message_get_size(message);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			assert(0 && "Append entries result message not implemented");
@@ -396,7 +397,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 			rrr_raft_bridge_encode_message_request_vote_result(data, data_size, &message->request_vote_result);
 			break;
 		case RAFT_APPEND_ENTRIES:
-			assert(0 && "append entries message not implemented");
+			rrr_raft_bridge_encode_message_append_entries(data, data_size, &message->append_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			assert(0 && "Append entries result message not implemented");
