@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "bridge.h"
+#include "log.h"
 
 #include "../allocator.h"
 #include "../util/rrr_endian.h"
@@ -118,28 +119,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
      sizeof(uint64_t))
 
 static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
+		const struct rrr_raft_log *log,
 		const struct raft_append_entries *msg
 ) {
 	size_t total_size = 0;
 	unsigned i;
+	raft_index index;
+	const struct rrr_raft_log_entry *log_entry;
 
 	total_size += GET_MSG_APPEND_ENTRIES_HEADER_SIZE(msg->n_entries);
 
 	if (msg->n_entries > 0) {
 		for (i = 0; i < msg->n_entries; i++) {
-			printf("batch %p\n", msg->entries[i].batch);
-			printf("base %p\n", msg->entries[i].buf.base);
-			printf("len %lu\n", msg->entries[i].buf.len);
-			total_size += msg->entries[i].buf.len;
-			assert(total_size > msg->entries[i].buf.len);
+			if (msg->entries == NULL) {
+				index = msg->prev_log_index + i + 1;
+				printf("index %lu\n", (unsigned long) index);
+				log_entry = rrr_raft_log_get(log, index);
+				assert(log_entry != NULL);
+				total_size += log_entry->data_size;
+				printf("data size %lu\n", log_entry->data_size);
+			}
+			else {
+				printf("batch %p\n", msg->entries[i].batch);
+				printf("base %p\n", msg->entries[i].buf.base);
+				printf("len %lu\n", msg->entries[i].buf.len);
+				total_size += msg->entries[i].buf.len;
+				assert(total_size > msg->entries[i].buf.len);
+			}
 		}
 	}
 
 	return total_size;
 }
 
-#define GET_MSG_APPEND_ENTRIES_SIZE(msg) \
-    (__rrr_raft_encode_get_msg_append_entries_size(msg))
+#define GET_MSG_APPEND_ENTRIES_SIZE(log, msg) \
+    (__rrr_raft_encode_get_msg_append_entries_size(log, msg))
 
 #define GET_MSG_APPEND_ENTRIES_RESULT_SIZE() \
     (sizeof(uint64_t) * 4)
@@ -363,6 +377,7 @@ int rrr_raft_bridge_encode_closed_segment (
 }
 
 size_t rrr_raft_bridge_encode_message_get_size (
+		const struct rrr_raft_log *log,
 		const struct raft_message *msg
 ) {
 	size_t total_size = 0;
@@ -377,7 +392,7 @@ size_t rrr_raft_bridge_encode_message_get_size (
 			total_size += GET_MSG_REQUEST_VOTE_RESULT_SIZE();
 			break;
 		case RAFT_APPEND_ENTRIES:
-			total_size += GET_MSG_APPEND_ENTRIES_SIZE(&msg->append_entries);
+			total_size += GET_MSG_APPEND_ENTRIES_SIZE(log, &msg->append_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			total_size += GET_MSG_APPEND_ENTRIES_RESULT_SIZE();
@@ -453,19 +468,21 @@ void rrr_raft_bridge_encode_message_request_vote_result (
 }
 
 void rrr_raft_bridge_encode_message_append_entries (
+		const struct rrr_raft_log *log,
 		void *data,
 		size_t data_size,
 		const struct raft_append_entries *msg
 ) {
 	// Note : CRCs are not used (yet)
 	uint32_t crc1 = 0xffffffff, crc2 = 0xffffffff;
+	const size_t msg_size = GET_MSG_APPEND_ENTRIES_SIZE(log, msg);
 
-	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg));
+	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + msg_size);
 
 	/* TODO : Look into possibility of not copying entry data */
 
 	WRITE(data) {
-		PUT_MSG_PREAMBLE(RAFT_APPEND_ENTRIES, RRR_RAFT_RPC_VERSION, GET_MSG_APPEND_ENTRIES_SIZE(msg));
+		PUT_MSG_PREAMBLE(RAFT_APPEND_ENTRIES, RRR_RAFT_RPC_VERSION, msg_size);
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->prev_log_index);
 		WRITE_U64(msg->prev_log_term);
@@ -474,8 +491,8 @@ void rrr_raft_bridge_encode_message_append_entries (
 		WRITE_U64(0);
 		PUT_BATCH_DATA(msg->entries, msg->n_entries, crc2);
 	}
-	printf("pso %lu exp %lu\n", (uintptr_t) wpos - (uintptr_t) data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg));
-	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + GET_MSG_APPEND_ENTRIES_SIZE(msg));
+	printf("pso %lu exp %lu\n", (uintptr_t) wpos - (uintptr_t) data, GET_MSG_PREAMBLE_SIZE() + msg_size);
+	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + msg_size);
 }
 
 void rrr_raft_bridge_encode_message_append_entries_result (

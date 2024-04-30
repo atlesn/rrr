@@ -188,7 +188,7 @@ int rrr_raft_bridge_acknowledge (
 );
 int rrr_raft_bridge_apply (
 		struct rrr_raft_bridge *bridge,
-		const void *data,
+		void **data,
 		size_t data_size
 );
 void rrr_raft_bridge_cleanup (

@@ -983,7 +983,7 @@ static int __rrr_raft_server_read_msg_cb (
 
 	if ((ret = rrr_raft_bridge_apply (
 			bridge,
-			*message,
+			(void **) message,
 			message_size
 	)) != 0) {
 		goto out;

@@ -392,6 +392,7 @@ static void __rrr_raft_bridge_ack_push_task_write_configuration (
 
 static int __rrr_raft_bridge_ack_push_task_send (
 		struct rrr_raft_task_list *list_new,
+		struct rrr_raft_bridge *bridge,
 		const struct raft_message *message
 ) {
 	int ret = 0;
@@ -423,7 +424,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 		case RAFT_APPEND_ENTRIES:
 		case RAFT_APPEND_ENTRIES_RESULT:
 			printf("Message type %u\n", message->type);
-			data_size = rrr_raft_bridge_encode_message_get_size(message);
+			data_size = rrr_raft_bridge_encode_message_get_size(&bridge->log, message);
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
 			assert(0 && "Install snapshot message not implemented");
@@ -450,7 +451,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 			rrr_raft_bridge_encode_message_request_vote_result(data, data_size, &message->request_vote_result);
 			break;
 		case RAFT_APPEND_ENTRIES:
-			rrr_raft_bridge_encode_message_append_entries(data, data_size, &message->append_entries);
+			rrr_raft_bridge_encode_message_append_entries(&bridge->log, data, data_size, &message->append_entries);
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
 			rrr_raft_bridge_encode_message_append_entries_result(data, data_size, &message->append_entries_result);
@@ -610,6 +611,7 @@ static int __rrr_raft_bridge_ack_update_entries (
 
 static int __rrr_raft_bridge_ack_update_messages (
 		struct rrr_raft_task_list *list_new,
+		struct rrr_raft_bridge *bridge,
 		struct raft_message *messages,
 		unsigned n
 ) {
@@ -622,6 +624,7 @@ static int __rrr_raft_bridge_ack_update_messages (
 	for (i = 0; i < n; i++) {
 		if ((ret = __rrr_raft_bridge_ack_push_task_send (
 				list_new,
+				bridge,
 				messages + i
 		)) != 0) {
 			goto out;
@@ -696,6 +699,7 @@ int rrr_raft_bridge_ack_step (
 		RRR_RAFT_BRIDGE_DBG("-> step update messages");
 		if ((ret = __rrr_raft_bridge_ack_update_messages (
 				bridge->list_persistent,
+				bridge,
 				update.messages.batch,
 				update.messages.n
 		)) != 0) {

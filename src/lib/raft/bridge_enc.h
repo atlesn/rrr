@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_RAFT_BRIDGE_ENC_H
 #define RRR_RAFT_BRIDGE_ENC_H
 
+struct rrr_raft_log;
+
 /*
  * ENCODING FUNCTIONS
  */
@@ -49,6 +51,7 @@ int rrr_raft_bridge_encode_closed_segment (
 		raft_term conf_term
 );
 size_t rrr_raft_bridge_encode_message_get_size (
+		const struct rrr_raft_log *log,
 		const struct raft_message *msg
 );
 void rrr_raft_bridge_encode_message_request_vote (
@@ -62,6 +65,7 @@ void rrr_raft_bridge_encode_message_request_vote_result (
 		const struct raft_request_vote_result *msg
 );
 void rrr_raft_bridge_encode_message_append_entries (
+		const struct rrr_raft_log *log,
 		void *data,
 		size_t data_size,
 		const struct raft_append_entries *msg

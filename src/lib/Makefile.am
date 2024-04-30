@@ -151,6 +151,7 @@ librrrraft_la_SOURCES = raft/arena.c \
                         raft/bridge_task.c \
                         raft/bridge_read.c \
                         raft/bridge_handshake.c \
+                        raft/bridge_apply.c \
                         raft/channel.c \
                         raft/client.c \
                         raft/common.c \
