@@ -357,6 +357,7 @@ static void __rrr_raft_bridge_ack_push_task_write_entry (
 			list_new,
 			RRR_RAFT_FILE_ARGS_CLOSED_SEGMENT(index, index)
 	);
+	task_new.writefile.index = index;
 	rrr_raft_task_list_push(list_new, &task_new);
 }
 
@@ -421,6 +422,7 @@ static int __rrr_raft_bridge_ack_push_task_send (
 		case RAFT_REQUEST_VOTE_RESULT:
 		case RAFT_APPEND_ENTRIES:
 		case RAFT_APPEND_ENTRIES_RESULT:
+			printf("Message type %u\n", message->type);
 			data_size = rrr_raft_bridge_encode_message_get_size(message);
 			break;
 		case RAFT_INSTALL_SNAPSHOT:
@@ -475,7 +477,7 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 	int ret = 0;
 
 	raft_index commit_index, i;
-	const struct raft_entry *entry;
+	const struct rrr_raft_log_entry *entry;
 
 	commit_index = raft_commit_index(bridge->raft);
 
@@ -591,7 +593,12 @@ static int __rrr_raft_bridge_ack_update_entries (
 
 	for (i = 0; i < n; i++) {
 		entry = entries + i;
-		if ((ret = rrr_raft_log_push(&bridge->log, entry, index + i)) != 0) {
+		if ((ret = rrr_raft_log_push (
+				&bridge->log,
+				entry->buf.base,
+				entry->buf.len,
+				index + i
+		)) != 0) {
 			goto out;
 		}
 		__rrr_raft_bridge_ack_push_task_write_entry(list_new, index + i);
@@ -609,6 +616,8 @@ static int __rrr_raft_bridge_ack_update_messages (
 	int ret = 0;
 
 	unsigned i;
+
+	printf("Update messages %p %u\n", messages, n);
 
 	for (i = 0; i < n; i++) {
 		if ((ret = __rrr_raft_bridge_ack_push_task_send (
@@ -632,6 +641,8 @@ int rrr_raft_bridge_ack_step (
 	struct raft_update update;
 	int ret_tmp;
 
+	RRR_RAFT_BRIDGE_DBG_ARGS("step type %lu", (unsigned long) event->type);
+
 	if ((ret_tmp = raft_step(bridge->raft, event, &update)) != 0) {
 		RRR_MSG_0("Step failed in %s: %s\n", __func__, raft_strerror(ret_tmp));
 		ret = 1;
@@ -644,22 +655,27 @@ int rrr_raft_bridge_ack_step (
 	}
 
 	if (update.flags & RAFT_UPDATE_STATE) {
+		RRR_RAFT_BRIDGE_DBG("-> step update state");
 		__rrr_raft_bridge_ack_update_state(bridge);
 	}
 
 	if (update.flags & RAFT_UPDATE_SUGGEST_SNAPSHOT) {
+		RRR_RAFT_BRIDGE_DBG("-> step update suggest snapshot");
 		assert(0 && "Update suggest snapshot not implemented");
 	}
 
 	if (update.flags & RAFT_UPDATE_CURRENT_TERM) {
+		RRR_RAFT_BRIDGE_DBG("-> step update current term");
 		__rrr_raft_bridge_ack_update_current_term(bridge->list_persistent, bridge);
 	}
 
 	if (update.flags & RAFT_UPDATE_VOTED_FOR) {
+		RRR_RAFT_BRIDGE_DBG("-> step update voted for");
 		__rrr_raft_bridge_ack_update_voted_for(bridge->list_persistent, bridge);
 	}
 
 	if (update.flags & RAFT_UPDATE_ENTRIES) {
+		RRR_RAFT_BRIDGE_DBG("-> step update entries");
 		if ((ret = __rrr_raft_bridge_ack_update_entries (
 				bridge->list_persistent,
 				bridge,
@@ -672,10 +688,12 @@ int rrr_raft_bridge_ack_step (
 	}
 
 	if (update.flags & RAFT_UPDATE_SNAPSHOT) {
+		RRR_RAFT_BRIDGE_DBG("-> step update snapshot");
 		assert(0 && "Update snapshot not implemented");
 	}
 
 	if (update.flags & RAFT_UPDATE_MESSAGES) {
+		RRR_RAFT_BRIDGE_DBG("-> step update messages");
 		if ((ret = __rrr_raft_bridge_ack_update_messages (
 				bridge->list_persistent,
 				update.messages.batch,
@@ -686,6 +704,7 @@ int rrr_raft_bridge_ack_step (
 	}
 
 	if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
+		RRR_RAFT_BRIDGE_DBG("-> step update commit index");
 		if ((ret = __rrr_raft_bridge_ack_update_commit_index(bridge)) != 0) {
 			goto out;
 		}
@@ -694,7 +713,7 @@ int rrr_raft_bridge_ack_step (
 	if (update.flags & RAFT_UPDATE_TIMEOUT) {
 		// Ignore, only push timeout task if
 		// there are no other tasks.
-		RRR_RAFT_BRIDGE_DBG("request to update timeout, ignoring for now");
+		RRR_RAFT_BRIDGE_DBG("-> step update timeout, ignoring for now");
 	}
 
 	RRR_MSG_0("TODO: Check for pending leadership transfer request\n");
@@ -715,6 +734,7 @@ int rrr_raft_bridge_acknowledge (
 	struct rrr_raft_task *task, *tasks, task_new;
 	struct raft_event event;
 	struct raft_entry entry;
+	const struct rrr_raft_log_entry *log_entry;
 	struct rrr_raft_bridge_metadata metadata1, metadata2;
 	char *conf_data = NULL;
 	size_t conf_data_size;
@@ -864,19 +884,24 @@ int rrr_raft_bridge_acknowledge (
 						);
 						goto step;
 					case RRR_RAFT_FILE_TYPE_ENTRY:
+						log_entry = rrr_raft_log_get(&bridge->log, task->writefile.index);
+
+						assert(log_entry != NULL);
+						assert(log_entry->index == task->writefile.index);
+
 						if ((ret = __rrr_raft_bridge_ack_write_closed_segment (
 								task->writefile.write_cb,
 								(char *) TASK_LIST_RESOLVE(task->writefile.name),
-								data,
-								data_size,
-								index,
+								log_entry->data,
+								log_entry->data_size,
+								log_entry->index,
 								&task->writefile.cb_data
 						)) != 0) {
 							goto out_cleanup;
 						}
 
 						event.type = RAFT_PERSISTED_ENTRIES;
-						event.persisted_entries.index = index;
+						event.persisted_entries.index = task->writefile.index;
 
 						goto step;
 					default:

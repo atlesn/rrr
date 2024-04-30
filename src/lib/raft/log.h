@@ -24,8 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <raft.h>
 
+struct rrr_raft_log_entry {
+	void *data;
+	size_t data_size;
+	raft_index index;
+};
+
 struct rrr_raft_log {
-	struct raft_entry *entries;
+	struct rrr_raft_log_entry *entries;
 	size_t count;
 	size_t capacity;
 	raft_index first_index;
@@ -36,13 +42,14 @@ raft_index rrr_raft_get_last_index (
 );
 int rrr_raft_log_push (
 		struct rrr_raft_log *log,
-		struct raft_entry *entry,
+		const void *data,
+		size_t data_size,
 		raft_index index
 );
 void rrr_raft_log_cleanup (
 		struct rrr_raft_log *log
 );
-const struct raft_entry *rrr_raft_log_get (
+const struct rrr_raft_log_entry *rrr_raft_log_get (
 		const struct rrr_raft_log *log,
 		raft_index index
 );

@@ -34,13 +34,15 @@ raft_index rrr_raft_get_last_index (
 */
 int rrr_raft_log_push (
 		struct rrr_raft_log *log,
-		struct raft_entry *entry,
+		const void *data,
+		size_t data_size,
 		raft_index index
 ) {
 	int ret = 0;
 
 	size_t capacity_new;
-	struct raft_entry *entries_new;
+	struct rrr_raft_log_entry *entries_new;
+	struct rrr_raft_log_entry *entry;
 
 	assert(index > 0);
 
@@ -63,9 +65,24 @@ int rrr_raft_log_push (
 		log->entries = entries_new;
 	}	
 
-	log->entries[log->count++] = *entry;
-	entry->buf.base = NULL;
-	entry->buf.len = 0;
+	entry = log->entries + log->count;
+
+	if (data_size > 0) {
+		if ((entry->data = rrr_allocate(data_size)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory for entry in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+		memcpy(entry->data, data, data_size);
+	}
+	else {
+		entry->data = NULL;
+	}
+
+	entry->data_size = data_size;
+	entry->index = index;
+
+	log->count++;
 
 	out:
 	return ret;
@@ -75,18 +92,17 @@ void rrr_raft_log_cleanup (
 		struct rrr_raft_log *log
 ) {
 	size_t i;
-	struct raft_entry *entry;
+	struct rrr_raft_log_entry *entry;
 
 	for (i = 0; i < log->count; i++) {
 		entry = log->entries + i;
-		assert(entry->batch == NULL);
-		RRR_FREE_IF_NOT_NULL(entry->buf.base);
+		RRR_FREE_IF_NOT_NULL(entry->data);
 	}
 
 	RRR_FREE_IF_NOT_NULL(log->entries);
 }
 
-const struct raft_entry *rrr_raft_log_get (
+const struct rrr_raft_log_entry *rrr_raft_log_get (
 		const struct rrr_raft_log *log,
 		raft_index index
 ) {

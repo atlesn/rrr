@@ -128,6 +128,7 @@ struct rrr_raft_task {
 			struct rrr_raft_task_cb_data cb_data;
 			rrr_raft_arena_handle name;
 			enum rrr_raft_file_type type;
+			raft_index index;
 		} writefile;
 		struct {
 			// Implementation may return -SEND_BUSY prior to connection being

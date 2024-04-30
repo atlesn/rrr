@@ -249,7 +249,6 @@ ssize_t rrr_raft_bridge_read (
 			);
 
 			break;
-			break;
 		case RAFT_REQUEST_VOTE:
 			if (rrr_raft_bridge_decode_request_vote (
 					&message.request_vote,
