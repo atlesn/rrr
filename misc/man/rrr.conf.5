@@ -2266,12 +2266,12 @@ Always present.
 Always present with the value 1, 2 or 3. Given in uppercase letters.
 .It http_endpoint
 Always present. Percent-decoding and removal of the query string will not be performed unless
-.B http_endpoint_decode
+.B http_server_endpoint_decode
 is set to
 .B yes.
 .It http_query_string
 Present if
-.B http_endpoint_decode
+.B http_server_endpoint_decode
 is set to
 .B yes
 and the query contained a query string (following a ?).
@@ -2300,7 +2300,7 @@ is active, no messages without body will be generated.
 
 If set to 'no' or left unset, only fields from the HTTP request will be present in generated messages.
 
-.It http_endpoint_decode={yes|no}
+.It http_server_endpoint_decode={yes|no}
 If this option is set to 'yes', any % sequences present in the
 .B http_endpoint
 field of messages being generated when full requests are received will be decoded into respective bytes.
