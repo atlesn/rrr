@@ -892,11 +892,6 @@ static int httpserver_receive_get_full_request (
 
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
-	ret |= rrr_http_util_uri_endpoint_and_query_string_split (
-			part->request_uri_nullsafe,
-			httpserver_receive_callback_uri_endpoint_and_query_string_split_callback,
-			target_array
-	);
 
 	if (httpserver_data->do_decode_endpoint) {
 		ret |= rrr_http_util_uri_endpoint_and_query_string_split (
