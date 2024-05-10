@@ -698,6 +698,9 @@ static PyObject *rrr_python3_array_f_has_tag_or_index (PyObject *self, PyObject 
       RRR_MSG_0("Negative index given to rrr_array.has()\n");
       Py_RETURN_FALSE;
     }
+    if (index >= rrr_python3_array_count(data)) {
+      Py_RETURN_FALSE;
+    }
     if (__rrr_python3_array_get_node_by_index(data, index) != NULL) {
       Py_RETURN_TRUE;
     }
