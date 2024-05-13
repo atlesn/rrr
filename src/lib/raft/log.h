@@ -27,7 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_raft_log_entry {
 	void *data;
 	size_t data_size;
+	raft_term term;
 	raft_index index;
+	enum raft_entry_type type;
 };
 
 struct rrr_raft_log {
@@ -44,7 +46,9 @@ int rrr_raft_log_push (
 		struct rrr_raft_log *log,
 		const void *data,
 		size_t data_size,
-		raft_index index
+		raft_term term,
+		raft_index index,
+		enum raft_entry_type type
 );
 void rrr_raft_log_cleanup (
 		struct rrr_raft_log *log

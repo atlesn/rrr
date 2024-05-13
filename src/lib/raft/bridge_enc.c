@@ -78,10 +78,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         sizeof(uint64_t) * 2 * n /* Entry headers */  \
     )
 
-#define PUT_BATCH_HEADER(entries, entry_count, crc)                                           \
+#define PUT_BATCH_HEADER(fetch, entry_count, crc)                                             \
     do {char *wpos_begin = wpos; WRITE_U64(entry_count);                                      \
+        raft_index i;                                                                         \
+	const struct raft_entry *entry;                                                       \
         if (entry_count == 0) break;                                                          \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
+        for (i = 0; i < entry_count; i++) {                                                   \
+	    entry = fetch;                                                                    \
 	    WRITE_U64(entry->term);                                                           \
 	    WRITE_U8(entry->type);                                                            \
 	    WRITE_U8(0);                                                                      \
@@ -90,6 +93,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             WRITE_U32(entry->buf.len);                                                        \
 	}                                                                                     \
         crc = rrr_crc32buf_init(wpos_begin, wpos - wpos_begin, crc);                          \
+    } while (0)
+
+#define PUT_BATCH_HEADER_RAW(entries, entry_count, crc)                                       \
+    PUT_BATCH_HEADER(entries + i)
+
+#define PUT_BATCH_HEADER_LOG(first_index, entry_count, crc)                                   \
+    do {                                                                                      \
+        raft_index index = first_index;                                                       \
+	struct raft_entry raft_entry;                                                         \
+	const struct rrr_raft_log_entry *log_entry;                                           \
+	PUT_BATCH_HEADER(                                                                     \
+		&raft_entry;                                                                  \
+		log_entry = rrr_raft_log_get(log, index++);                                   \
+		raft_entry.term = log_entry->term;                                            \
+		raft_entry.type = log_entry->type;                                            \
+		raft_entry.buf.base = log_entry->data;                                        \
+		raft_entry.buf.len = log_entry->data_size,                                    \
+		entry_count,                                                                  \
+		crc                                                                           \
+	);                                                                                    \
     } while (0)
 
 #define PUT_BATCH_DATA(entries, entry_count, crc)                                             \
@@ -131,21 +154,23 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 
 	if (msg->n_entries > 0) {
 		for (i = 0; i < msg->n_entries; i++) {
-			if (msg->entries == NULL) {
+			assert(msg->entries == NULL && "Entries must be read from the log only");
+			printf("entries %p\n", msg->entries);
+//			if (msg->entries == NULL) {
 				index = msg->prev_log_index + i + 1;
 				printf("index %lu\n", (unsigned long) index);
 				log_entry = rrr_raft_log_get(log, index);
 				assert(log_entry != NULL);
 				total_size += log_entry->data_size;
 				printf("data size %lu\n", log_entry->data_size);
-			}
+/*			}
 			else {
 				printf("batch %p\n", msg->entries[i].batch);
 				printf("base %p\n", msg->entries[i].buf.base);
 				printf("len %lu\n", msg->entries[i].buf.len);
 				total_size += msg->entries[i].buf.len;
 				assert(total_size > msg->entries[i].buf.len);
-			}
+			}*/
 		}
 	}
 
@@ -479,16 +504,15 @@ void rrr_raft_bridge_encode_message_append_entries (
 
 	assert(data_size >= GET_MSG_PREAMBLE_SIZE() + msg_size);
 
-	/* TODO : Look into possibility of not copying entry data */
-
 	WRITE(data) {
 		PUT_MSG_PREAMBLE(RAFT_APPEND_ENTRIES, RRR_RAFT_RPC_VERSION, msg_size);
 		WRITE_U64(msg->term);
 		WRITE_U64(msg->prev_log_index);
 		WRITE_U64(msg->prev_log_term);
 		WRITE_U64(msg->leader_commit);
-		PUT_BATCH_HEADER(msg->entries, msg->n_entries, crc1);
+		PUT_BATCH_HEADER_LOG(msg->prev_log_index + 1, msg->n_entries, crc1);
 		WRITE_U64(0);
+		assert(0 && "fetch data from log not implemented");
 		PUT_BATCH_DATA(msg->entries, msg->n_entries, crc2);
 	}
 	printf("pso %lu exp %lu\n", (uintptr_t) wpos - (uintptr_t) data, GET_MSG_PREAMBLE_SIZE() + msg_size);

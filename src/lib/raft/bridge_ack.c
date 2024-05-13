@@ -593,12 +593,17 @@ static int __rrr_raft_bridge_ack_update_entries (
 	struct raft_entry *entry;
 
 	for (i = 0; i < n; i++) {
+		RRR_RAFT_BRIDGE_DBG_ARGS("push log entry %llu",
+			(unsigned long long) index + i
+		);
 		entry = entries + i;
 		if ((ret = rrr_raft_log_push (
 				&bridge->log,
 				entry->buf.base,
 				entry->buf.len,
-				index + i
+				entry->term,
+				index + i,
+				entry->type
 		)) != 0) {
 			goto out;
 		}

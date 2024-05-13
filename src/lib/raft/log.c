@@ -36,7 +36,9 @@ int rrr_raft_log_push (
 		struct rrr_raft_log *log,
 		const void *data,
 		size_t data_size,
-		raft_index index
+		raft_term term,
+		raft_index index,
+		enum raft_entry_type type
 ) {
 	int ret = 0;
 
@@ -80,7 +82,9 @@ int rrr_raft_log_push (
 	}
 
 	entry->data_size = data_size;
+	entry->term = term;
 	entry->index = index;
+	entry->type = type;
 
 	log->count++;
 
@@ -107,12 +111,14 @@ const struct rrr_raft_log_entry *rrr_raft_log_get (
 		raft_index index
 ) {
 	raft_index pos;
+	struct rrr_raft_log_entry *entry;
 
 	assert(index >= log->first_index);
-
-	pos = index - log->first_index - 1;
+	pos = index - log->first_index;
+	printf("index %llu first index %llu\n", (unsigned long long) index, (unsigned long long) log->first_index);
 	if (pos >= log->count)
 		return NULL;
-	
-	return log->entries + pos;
+	entry = log->entries + pos;
+	assert(entry->index == index);
+	return entry;
 }
