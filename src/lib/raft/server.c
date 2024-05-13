@@ -1952,6 +1952,10 @@ static int __rrr_raft_server_net_read_get_target_size_callback (
 
 			goto out;
 		}
+		else if (bytes == 0) {
+			// Incomplete, must read more
+			goto out;
+		}
 	}
 
 	RRR_RAFT_SERVER_ERR_NET(connection->server_address,
