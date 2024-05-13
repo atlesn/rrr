@@ -79,7 +79,9 @@ enum rrr_raft_task_type {
 	RRR_RAFT_TASK_READ_FILE = 2,
 	RRR_RAFT_TASK_BOOTSTRAP = 3,
 	RRR_RAFT_TASK_WRITE_FILE = 4,
-	RRR_RAFT_TASK_SEND_MESSAGE = 5
+	RRR_RAFT_TASK_SEND_MESSAGE = 5,
+	RRR_RAFT_TASK_APPLY = 6,
+	RRR_RAFT_TASK_REVERT = 7
 };
 
 enum rrr_raft_file_type {
@@ -103,6 +105,12 @@ struct rrr_raft_task_cb_data {
 
 #define RRR_RAFT_BRIDGE_SEND_MESSAGE_CB_ARGS \
     raft_id server_id, const char *server_address, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
+
+#define RRR_RAFT_BRIDGE_REVERT_CB_ARGS \
+    raft_index index, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
+
+#define RRR_RAFT_BRIDGE_APPLY_CB_ARGS \
+    raft_index index, const char *data, size_t data_size, struct rrr_raft_task_cb_data *cb_data
 
 struct rrr_raft_task {
 	enum rrr_raft_task_type type;
@@ -140,6 +148,20 @@ struct rrr_raft_task {
 			size_t data_size;
 			raft_id server_id;
 		} sendmessage;
+		struct {
+			// The implementation should as needed verify that its state machine
+			// is able to successfully process any submitted entries before
+			// submitting them. It is not possible to return an error from the
+			// state machine.
+			void(*apply_cb)(RRR_RAFT_BRIDGE_APPLY_CB_ARGS);
+			struct rrr_raft_task_cb_data cb_data;
+			raft_index index;
+		} apply;
+		struct {
+			void(*revert_cb)(RRR_RAFT_BRIDGE_REVERT_CB_ARGS);
+			struct rrr_raft_task_cb_data cb_data;
+			raft_index last_index;
+		} revert;
 	};
 };
 
@@ -200,6 +222,9 @@ int rrr_raft_bridge_is_leader (
 void rrr_raft_bridge_get_leader (
 		raft_id *id,
 		const char **address,
+		const struct rrr_raft_bridge *bridge
+);
+raft_index rrr_raft_bridge_get_last_log_index (
 		const struct rrr_raft_bridge *bridge
 );
 int rrr_raft_bridge_configuration_iterate (

@@ -24,14 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../allocator.h"
 
-/*
-raft_index rrr_raft_get_last_index (
+raft_index rrr_raft_log_get_last_index (
 		const struct rrr_raft_log *log
 ) {
 	assert(log->count > 0);
 	return log->entries[log->count - 1].index;
 }
-*/
+
 int rrr_raft_log_push (
 		struct rrr_raft_log *log,
 		const void *data,

@@ -39,7 +39,7 @@ struct rrr_raft_log {
 	raft_index first_index;
 };
 
-raft_index rrr_raft_get_last_index (
+raft_index rrr_raft_log_get_last_index (
 		const struct rrr_raft_log *log
 );
 int rrr_raft_log_push (

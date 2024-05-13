@@ -83,6 +83,12 @@ void rrr_raft_bridge_get_leader (
 	raft_leader(bridge->raft, id, address);
 }
 
+raft_index rrr_raft_bridge_get_last_log_index (
+		const struct rrr_raft_bridge *bridge
+) {
+	return rrr_raft_log_get_last_index(&bridge->log);
+}
+
 int rrr_raft_bridge_configuration_iterate (
 		const struct rrr_raft_bridge *bridge,
 		int (*cb)(raft_id server_id, const char *server, int role, int catch_up, void *arg),

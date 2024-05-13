@@ -322,6 +322,32 @@ static int __rrr_raft_bridge_ack_send_message (
 	out:
 	return ret;
 }
+void __rrr_raft_bridge_ack_revert (
+		struct rrr_raft_bridge *bridge,
+		void (*revert_cb)(RRR_RAFT_BRIDGE_REVERT_CB_ARGS),
+		raft_index last_index,
+		struct rrr_raft_task_cb_data *cb_data
+) {
+	raft_index i, max;
+	struct rrr_raft_log_entry *entry;
+
+	max = rrr_raft_log_get_last_index(&bridge->log);
+
+	assert(max > last_index);
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("ack revert for indexes %llu-%llu",
+		(unsigned long long) last_index + 1,
+		(unsigned long long) max
+	);
+
+	for (i = max; i > last_index; i--) {
+		entry = rrr_raft_log_get(&bridge->log, i);
+		assert(entry->index == i);
+		revert_cb(entry->index, entry->data, entry->data_size, cb_data);
+	}
+
+	rrr_raft_log_truncate(&bridge->log, last_index);
+}
 
 static void __rrr_raft_bridge_ack_make_event_start (
 		struct raft_event *event,
@@ -472,11 +498,34 @@ static int __rrr_raft_bridge_ack_push_task_send (
 	return ret;
 }
 
-static int __rrr_raft_bridge_ack_update_commit_index (
+static void __rrr_raft_bridge_ack_push_task_apply (
+		struct rrr_raft_task_list *list_new,
+		raft_index index
+) {
+	struct rrr_raft_task task_new = {0};
+
+	task_new.type = RRR_RAFT_TASK_APPLY;
+	task_new.apply.index = index;
+
+	rrr_raft_task_list_push(list_new, &task_new);
+}
+
+static void __rrr_raft_bridge_ack_push_task_revert (
+		struct rrr_raft_task_list *list_new,
+		raft_index last_index
+) {
+	struct rrr_raft_task task_new = {0};
+
+	task_new.type = RRR_RAFT_TASK_REVERT;
+	task_new.revert.last_index = last_index;
+
+	rrr_raft_task_list_push(list_new, &task_new);
+}
+
+static void __rrr_raft_bridge_ack_update_commit_index (
+		struct rrr_raft_task_list *list_new,
 		struct rrr_raft_bridge *bridge
 ) {
-	int ret = 0;
-
 	raft_index commit_index, i;
 	const struct rrr_raft_log_entry *entry;
 
@@ -492,23 +541,22 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 	);
 
 	if (bridge->last_applied == commit_index) {
-		goto out;
+		return;
 	}
 
 	for (i = bridge->last_applied + 1; i <= commit_index; i++) {
 		if ((entry = rrr_raft_log_get(&bridge->log, i)) == NULL) {
 			// This can happen while installing a snapshot
 			// TODO : Why??
-			goto out;
+			assert(0 && "Update commit index not implemented but no entry not implemented\n");
 		}
-		assert(0 && "Update commit index not implemented\n");
-	}
 
-	out:
-	return ret;
+		__rrr_raft_bridge_ack_push_task_apply(list_new, i);
+	}
 }
 
 static void __rrr_raft_bridge_ack_update_state (
+		struct rrr_raft_task_list *list_new,
 		struct rrr_raft_bridge *bridge
 ) {
 	raft_index commit_index;
@@ -538,7 +586,7 @@ static void __rrr_raft_bridge_ack_update_state (
 			(unsigned long long) bridge->last_applied
 		);
 
-		rrr_raft_log_truncate(&bridge->log, commit_index);
+		 __rrr_raft_bridge_ack_push_task_revert(list_new, commit_index);
 	}
 
 	if (bridge->state & RRR_RAFT_BRIDGE_STATE_SHUTTING_DOWN) {
@@ -677,7 +725,7 @@ int rrr_raft_bridge_ack_step (
 
 	if (update.flags & RAFT_UPDATE_STATE) {
 		RRR_RAFT_BRIDGE_DBG("-> step update state");
-		__rrr_raft_bridge_ack_update_state(bridge);
+		__rrr_raft_bridge_ack_update_state(bridge->list_persistent, bridge);
 	}
 
 	if (update.flags & RAFT_UPDATE_SUGGEST_SNAPSHOT) {
@@ -727,9 +775,10 @@ int rrr_raft_bridge_ack_step (
 
 	if (update.flags & RAFT_UPDATE_COMMIT_INDEX) {
 		RRR_RAFT_BRIDGE_DBG("-> step update commit index");
-		if ((ret = __rrr_raft_bridge_ack_update_commit_index(bridge)) != 0) {
-			goto out;
-		}
+		__rrr_raft_bridge_ack_update_commit_index (
+				bridge->list_persistent,
+				bridge
+		);
 	}
 
 	if (update.flags & RAFT_UPDATE_TIMEOUT) {
@@ -974,6 +1023,14 @@ int rrr_raft_bridge_acknowledge (
 						goto out_cleanup;
 					}
 				}
+				break;
+			case RRR_RAFT_TASK_REVERT:
+				__rrr_raft_bridge_ack_revert (
+						bridge,
+						task->revert.revert_cb,
+						task->revert.last_index,
+						&task->revert.cb_data
+				);
 				break;
 			default:
 				RRR_BUG("BUG: Unkown type %i in %s\n",

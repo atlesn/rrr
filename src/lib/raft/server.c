@@ -926,6 +926,7 @@ static int __rrr_raft_server_read_msg_cb (
 //	int ret_tmp;
 //	struct raft_buffer buf = {0};
 //	struct raft_apply *req;
+	raft_index last_index;
 	size_t message_size;
 	struct rrr_msg msg = {0};
 	struct rrr_msg_msg *msg_msg = NULL;
@@ -992,6 +993,10 @@ static int __rrr_raft_server_read_msg_cb (
 	)) != 0) {
 		goto out;
 	}
+
+	last_index = rrr_raft_bridge_get_last_log_index(bridge);
+
+	RRR_RAFT_SERVER_DBG_EVENT("submitted entry %llu", (unsigned long long) last_index);
 
 	EVENT_ADD(state->events.raft_timeout);
 
@@ -1686,6 +1691,10 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 	return bytes;
 }
 
+static void __rrr_raft_server_revert_cb (RRR_RAFT_SERVER_REVERT_CB_ARGS) {
+	assert(0 && "Revert CB not implemented");
+}
+
 static int __rrr_raft_server_process_tasks (
 		struct rrr_raft_server_state *state
 ) {
@@ -1755,6 +1764,13 @@ static int __rrr_raft_server_process_tasks (
 					task->sendmessage.send_cb = __rrr_raft_server_message_send_cb;
 					task->sendmessage.cb_data.ptr = state;
 				}
+				break;
+			case RRR_RAFT_TASK_REVERT:
+				task->revert.revert_cb = __rrr_raft_server_revert_cb;
+				task->revert.cb_data.ptr = state;
+				break;
+			case RRR_RAFT_TASK_APPLY:
+				assert(0 && "Apply task not implemented");
 				break;
 			default:
 				RRR_BUG("BUG: Unknown task type %i in %s\n",

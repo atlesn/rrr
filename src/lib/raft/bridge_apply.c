@@ -33,11 +33,9 @@ int rrr_raft_bridge_apply (
 ) {
 	int ret = 0;
 
-//	raft_index index;
+	raft_index index;
 	struct raft_event event;
 	struct raft_entry entry;
-
-//	index = rrr_raft_get_last_index(&bridge->log);
 
 	entry.type = RAFT_COMMAND;
 	entry.term = bridge->metadata.term;
