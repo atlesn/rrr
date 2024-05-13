@@ -96,7 +96,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     } while (0)
 
 #define PUT_BATCH_HEADER_RAW(entries, entry_count, crc)                                       \
-    PUT_BATCH_HEADER(entries + i)
+    PUT_BATCH_HEADER(entries + i, entry_count, crc)
 
 #define PUT_BATCH_HEADER_LOG(first_index, entry_count, crc)                                   \
     do {                                                                                      \
@@ -115,13 +115,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	);                                                                                    \
     } while (0)
 
-#define PUT_BATCH_DATA(entries, entry_count, crc)                                             \
-    do {if (entry_count == 0) break;                                                          \
-        for (const struct raft_entry *entry = entries; entry < entries + entry_count; entry++) { \
+#define PUT_BATCH_DATA(fetch, entry_count, crc)                                               \
+    do {                                                                                      \
+        raft_index i;                                                                         \
+	const struct raft_entry *entry;                                                       \
+        if (entry_count == 0) break;                                                          \
+        for (i = 0; i < entry_count; i++) {                                                   \
+            entry = fetch;                                                                    \
 	    memcpy(wpos, entry->buf.base, entry->buf.len);                                    \
 	    crc = rrr_crc32buf_init(wpos, entry->buf.len, crc);                               \
 	    wpos += entry->buf.len;                                                           \
 	}                                                                                     \
+    } while (0)
+
+#define PUT_BATCH_DATA_RAW(entries, entry_count, crc)                                         \
+    PUT_BATCH_DATA(entries + i, entry_count, crc)
+
+#define PUT_BATCH_DATA_LOG(first_index, entry_count, crc)                                     \
+    do {                                                                                      \
+        raft_index index = first_index;                                                       \
+	struct raft_entry raft_entry;                                                         \
+	const struct rrr_raft_log_entry *log_entry;                                           \
+	PUT_BATCH_DATA(                                                                       \
+		&raft_entry;                                                                  \
+		log_entry = rrr_raft_log_get(log, index++);                                   \
+		raft_entry.term = log_entry->term;                                            \
+		raft_entry.type = log_entry->type;                                            \
+		raft_entry.buf.base = log_entry->data;                                        \
+		raft_entry.buf.len = log_entry->data_size,                                    \
+		entry_count,                                                                  \
+		crc                                                                           \
+	);                                                                                    \
     } while (0)
 
 #define GET_METADATA_SIZE() \
@@ -152,28 +176,30 @@ static inline size_t __rrr_raft_encode_get_msg_append_entries_size (
 
 	total_size += GET_MSG_APPEND_ENTRIES_HEADER_SIZE(msg->n_entries);
 
-	if (msg->n_entries > 0) {
-		for (i = 0; i < msg->n_entries; i++) {
-			assert(msg->entries == NULL && "Entries must be read from the log only");
-			printf("entries %p\n", msg->entries);
-//			if (msg->entries == NULL) {
-				index = msg->prev_log_index + i + 1;
-				printf("index %lu\n", (unsigned long) index);
-				log_entry = rrr_raft_log_get(log, index);
-				assert(log_entry != NULL);
-				total_size += log_entry->data_size;
-				printf("data size %lu\n", log_entry->data_size);
-/*			}
-			else {
-				printf("batch %p\n", msg->entries[i].batch);
-				printf("base %p\n", msg->entries[i].buf.base);
-				printf("len %lu\n", msg->entries[i].buf.len);
-				total_size += msg->entries[i].buf.len;
-				assert(total_size > msg->entries[i].buf.len);
-			}*/
+	if (msg->n_entries == 0) {
+		goto out;
+	}
+
+	for (i = 0; i < msg->n_entries; i++) {
+		printf("entries %p\n", msg->entries);
+		if (1 || msg->entries == NULL) {
+			index = msg->prev_log_index + i + 1;
+			printf("- index %lu\n", (unsigned long) index);
+			log_entry = rrr_raft_log_get(log, index);
+			assert(log_entry != NULL);
+			total_size += log_entry->data_size;
+			printf("- data size %lu\n", log_entry->data_size);
+		}
+		else {
+			printf("- batch %p\n", msg->entries[i].batch);
+			printf("- base %p\n", msg->entries[i].buf.base);
+			printf("- len %lu\n", msg->entries[i].buf.len);
+			total_size += msg->entries[i].buf.len;
+			assert(total_size > msg->entries[i].buf.len);
 		}
 	}
 
+	out:
 	return total_size;
 }
 
@@ -351,8 +377,8 @@ int rrr_raft_bridge_encode_entries (
 		WRITE_U32(0);
 		crc2_pos = WRITE_POS();
 		WRITE_U32(0);
-		PUT_BATCH_HEADER(entries, entry_count, crc1);
-		PUT_BATCH_DATA(entries, entry_count, crc2);
+		PUT_BATCH_HEADER_RAW(entries, entry_count, crc1);
+		PUT_BATCH_DATA_RAW(entries, entry_count, crc2);
 	}
 	WRITE_VERIFY(buf, total_size);
 
@@ -512,10 +538,9 @@ void rrr_raft_bridge_encode_message_append_entries (
 		WRITE_U64(msg->leader_commit);
 		PUT_BATCH_HEADER_LOG(msg->prev_log_index + 1, msg->n_entries, crc1);
 		WRITE_U64(0);
-		assert(0 && "fetch data from log not implemented");
-		PUT_BATCH_DATA(msg->entries, msg->n_entries, crc2);
+		PUT_BATCH_DATA_LOG(msg->prev_log_index + 1, msg->n_entries, crc2);
 	}
-	printf("pso %lu exp %lu\n", (uintptr_t) wpos - (uintptr_t) data, GET_MSG_PREAMBLE_SIZE() + msg_size);
+	printf("pos %lu exp %lu\n", (uintptr_t) wpos - (uintptr_t) data, GET_MSG_PREAMBLE_SIZE() + msg_size);
 	WRITE_VERIFY(data, GET_MSG_PREAMBLE_SIZE() + msg_size);
 }
 

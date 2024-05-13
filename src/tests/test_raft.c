@@ -285,7 +285,7 @@ static void __rrr_test_raft_register_response_ack (
 		uint32_t req_index,
 		int ok
 ) {
-	// TEST_MSG("- Register response ACK %u server: %i ok: %i\n", req_index, server_id, ok);
+	TEST_MSG("- Register response ACK %u server: %i ok: %i\n", req_index, server_id, ok);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response((ok ? callback_data->ack_expected : callback_data->nack_expected)[server_id - 1], req_index);
 }
@@ -297,7 +297,7 @@ static void __rrr_test_raft_register_response_msg (
 		const char *data,
 		size_t data_len
 ) {
-	// TEST_MSG("- Register response MSG %u server: %i\n", req_index, server_id);
+	TEST_MSG("- Register response MSG %u server: %i\n", req_index, server_id);
 	assert(server_id > 0 && server_id <= RRR_TEST_RAFT_SERVER_TOTAL_COUNT);
 	__rrr_test_raft_register_response(callback_data->msg_expected[server_id - 1], req_index);
 	__rrr_test_raft_register_response_data(callback_data->data_expected[server_id - 1], req_index, data, data_len);
@@ -396,8 +396,8 @@ static void __rrr_test_raft_pong_callback (RRR_RAFT_PONG_CALLBACK_ARGS) {
 static void __rrr_test_raft_ack_callback (RRR_RAFT_ACK_CALLBACK_ARGS) {
 	struct rrr_test_raft_callback_data *callback_data = arg;
 
-	// TEST_MSG("%s %u received server %i\n",
-	//	(code == 0 ? "ACK" : "NACK"), req_index, server_id);
+	TEST_MSG("%s %u received server %i\n",
+		(code == 0 ? "ACK" : "NACK"), req_index, server_id);
 
 	__rrr_test_raft_register_response_ack(callback_data, server_id, req_index, code == 0);
 }
@@ -706,6 +706,10 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 		} break;
 		case 1: {
+			callback_data->cmd_pos--;
+			TEST_MSG("Waiting indefinately\n");
+		} break;
+		case 1000: {
 			TEST_MSG("- Sending PUT messages to %i...\n", callback_data->leader_index + 1);
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {

@@ -84,6 +84,7 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 		goto out;
 	}
 
+		printf("target size %lu data size %lu\n", target_size, data_size);
 	if (target_size > data_size) {
 		goto out;
 	}
@@ -152,6 +153,8 @@ static ssize_t __rrr_raft_bridge_read_process_header (
 
 	target_size += payload_size;
 	*end_pos = rrr_size_from_biglength_bug_const(target_size);
+
+	printf("data size %lu end pos %lu target size %lu\n", data_size, *end_pos, target_size);
 
 	if (data_size < *end_pos) {
 		goto out;

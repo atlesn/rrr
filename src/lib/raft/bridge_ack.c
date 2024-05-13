@@ -501,7 +501,7 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 			// TODO : Why??
 			goto out;
 		}
-
+		assert(0 && "Update commit index not implemented\n");
 	}
 
 	out:
@@ -513,14 +513,13 @@ static void __rrr_raft_bridge_ack_update_state (
 ) {
 	assert(bridge->prev_state != raft_state(bridge->raft));
 
-	if (bridge->prev_state == RAFT_LEADER) {
-		assert(0 && "Not implemented: Fail pending requests, not leader anymore");
-		// LegacyFailPendingRequests(r)
-		assert(0 && "Not implemented: Assert that pending request queue is empty");
-	}
-
 	if (raft_state(bridge->raft) == RAFT_LEADER) {
-		assert(bridge->change == NULL);
+		if (bridge->change != NULL) {
+			assert(0 && "Not implemented: Fail pending requests, not leader anymore");
+			assert(0 && "Not implemented: Assert that pending request queue is empty");
+			// LegacyFailPendingRequests(r)
+			//	assert(bridge->change == NULL);
+		}
 	}
 
 	if (bridge->state & RRR_RAFT_BRIDGE_STATE_SHUTTING_DOWN) {
