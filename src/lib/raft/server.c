@@ -65,6 +65,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RAFT_SERVER_DBG_NET(address, msg, ...) \
     RRR_DBG_3("Raft [%i][server][%s] " msg "\n", state->bridge->server_id, address, __VA_ARGS__)
 
+#define RRR_RAFT_SERVER_DBG_NET_NOCTX(address, msg, ...) \
+    RRR_DBG_3("Raft [server][%s] " msg "\n", address, __VA_ARGS__)
+
 #define RRR_RAFT_SERVER_ERR_NET(address, msg, ...) \
     RRR_MSG_0("Raft [%i][server][%s] " msg "\n", state->bridge->server_id, address, __VA_ARGS__)
 
@@ -252,6 +255,7 @@ static enum rrr_raft_code __rrr_raft_server_status_translate (
 static void __rrr_raft_server_connection_destroy (
 		struct rrr_raft_server_connection *connection
 ) {
+	RRR_RAFT_SERVER_DBG_NET_NOCTX(connection->server_address, "destroying connection to server%s", "");
 	rrr_free(connection->server_address);
 	rrr_free(connection);
 }
@@ -1597,6 +1601,17 @@ static ssize_t __rrr_raft_server_message_send_cb (RRR_RAFT_BRIDGE_SEND_MESSAGE_C
 
 		assert(callback_data.result_handle > 0);
 		assert(callback_data.result_socklen > 0);
+
+		if ((ret_tmp = rrr_net_transport_handle_match_data_set (
+				state->net_transport,
+				callback_data.result_handle,
+				"x",
+				server_id
+		)) != 0) {
+			RRR_MSG_0("Failed to set match data in %s\n", __func__);
+			bytes = -RRR_RAFT_HARD_ERROR;
+			goto out;
+		}
 
 		if ((ret_tmp = __rrr_raft_server_connection_data_create (
 				&connection,
