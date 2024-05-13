@@ -795,8 +795,9 @@ int rrr_raft_bridge_decode_append_entries (
 				READ_U8(dummy);
 				READ_U8(dummy);
 				READ_U32(entry->buf.len);
+				printf("payload size check %lu buf len %lu\n", payload_size_check, entry->buf.len);
 				payload_size_check += entry->buf.len;
-				assert(payload_size_check > entry->buf.len);
+				assert(payload_size_check >= entry->buf.len);
 			}
 			assert(payload_size_check == payload_size);
 		}

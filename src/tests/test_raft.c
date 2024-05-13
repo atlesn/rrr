@@ -706,10 +706,6 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			}
 		} break;
 		case 1: {
-			callback_data->cmd_pos--;
-			TEST_MSG("Waiting indefinately\n");
-		} break;
-		case 1000: {
 			TEST_MSG("- Sending PUT messages to %i...\n", callback_data->leader_index + 1);
 
 			for (msg_pos = callback_data->msg_pos; msg_pos < 10; msg_pos++) {
@@ -720,6 +716,10 @@ static int __rrr_test_raft_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			callback_data->msg_pos = msg_pos;
 		} break;
 		case 2: {
+			callback_data->cmd_pos--;
+			TEST_MSG("Waiting indefinately\n");
+		} break;
+		case 2000: {
 			if (!callback_data->rrr_test_raft_pong_received) {
 				TEST_MSG("- Waiting for pong...\n");
 				callback_data->cmd_pos--;

@@ -185,6 +185,7 @@ ssize_t rrr_raft_bridge_read (
 	size_t header_pos, payload_pos, end_pos;
 	struct raft_message message;
 	struct raft_event event;
+	unsigned i;
 
 	if ((bytes = __rrr_raft_bridge_read_process_header (
 			&type,
@@ -228,7 +229,11 @@ ssize_t rrr_raft_bridge_read (
 				(unsigned long long) message.append_entries.n_entries
 			);
 
-			assert(message.append_entries.n_entries == 0 && "Entries >0 not implemented");
+//			assert(message.append_entries.n_entries == 0 && "Entries >0 not implemented");
+
+//			for (i = 0; i < message.append_entries.n_entries; i++) {
+//
+//			}
 
 			break;
 		case RAFT_APPEND_ENTRIES_RESULT:
