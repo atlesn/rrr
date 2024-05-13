@@ -57,5 +57,9 @@ const struct rrr_raft_log_entry *rrr_raft_log_get (
 		const struct rrr_raft_log *log,
 		raft_index index
 );
+void rrr_raft_log_truncate (
+		struct rrr_raft_log *log,
+		raft_index index
+);
 
 #endif /* RRR_RAFT_LOG_H */

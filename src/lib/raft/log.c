@@ -122,3 +122,19 @@ const struct rrr_raft_log_entry *rrr_raft_log_get (
 	assert(entry->index == index);
 	return entry;
 }
+
+void rrr_raft_log_truncate (
+		struct rrr_raft_log *log,
+		raft_index index
+) {
+	raft_index count;
+
+	assert(index >= log->first_index);
+
+	if ((count = index - log->first_index) == 0)
+		return;
+
+	log->count -= count;
+
+	assert((log->entries + (index - log->first_index))->index == index);
+}

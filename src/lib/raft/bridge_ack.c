@@ -511,7 +511,14 @@ static int __rrr_raft_bridge_ack_update_commit_index (
 static void __rrr_raft_bridge_ack_update_state (
 		struct rrr_raft_bridge *bridge
 ) {
+	raft_index commit_index;
+
 	assert(bridge->prev_state != raft_state(bridge->raft));
+
+	RRR_RAFT_BRIDGE_DBG_ARGS("state change from %s to %s",
+		raft_state_name(bridge->prev_state),
+		raft_state_name(raft_state(bridge->raft))
+	);
 
 	if (raft_state(bridge->raft) == RAFT_LEADER) {
 		if (bridge->change != NULL) {
@@ -520,6 +527,18 @@ static void __rrr_raft_bridge_ack_update_state (
 			// LegacyFailPendingRequests(r)
 			//	assert(bridge->change == NULL);
 		}
+	}
+	else if (bridge->prev_state == RAFT_LEADER) {
+		commit_index = raft_commit_index(bridge->raft);
+
+		assert(bridge->last_applied <= commit_index);
+
+		RRR_RAFT_BRIDGE_DBG_ARGS("leadership lost, truncate log to index %llu last applied is %llu",
+			(unsigned long long) commit_index,
+			(unsigned long long) bridge->last_applied
+		);
+
+		rrr_raft_log_truncate(&bridge->log, commit_index);
 	}
 
 	if (bridge->state & RRR_RAFT_BRIDGE_STATE_SHUTTING_DOWN) {
@@ -530,11 +549,6 @@ static void __rrr_raft_bridge_ack_update_state (
 		assert(0 && "Not implemented: Fire completed requests");
 		// LegacyFireCompletedRequests(r)
 	}
-
-	RRR_RAFT_BRIDGE_DBG_ARGS("state change from %s to %s",
-		raft_state_name(bridge->prev_state),
-		raft_state_name(raft_state(bridge->raft))
-	);
 
 	bridge->prev_state = raft_state(bridge->raft);
 }
@@ -865,6 +879,7 @@ int rrr_raft_bridge_acknowledge (
 						break;
 					case RRR_RAFT_FILE_TYPE_CONFIGURATION:
 						assert(conf_data == NULL);
+
 						if ((ret = __rrr_raft_bridge_ack_write_first_closed_segment_with_configuration (
 								&conf_data,
 								&conf_data_size,
@@ -875,6 +890,20 @@ int rrr_raft_bridge_acknowledge (
 						)) != 0) {
 							goto out_cleanup;
 						}
+
+						if ((ret = rrr_raft_log_push (
+								&bridge->log,
+								conf_data,
+								conf_data_size,
+								1,
+								1,
+								RAFT_CHANGE
+						)) != 0) {
+							goto out_cleanup;
+						}
+
+						assert(bridge->last_applied == 0);
+						bridge->last_applied = 1;
 
 						entry.term = 1;
 						entry.type = RAFT_CHANGE;
