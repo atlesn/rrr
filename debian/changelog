@@ -1,3 +1,10 @@
+rrr (1.31-2) bookworm; urgency=medium
+
+  * Fixes:
+    * Preflight headers not sendt for OPTIONS request
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 08 Aug 2024 12:02:19 +0200
+
 rrr (1.31-1) bookworm; urgency=medium
 
   * Features:
