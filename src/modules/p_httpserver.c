@@ -1474,11 +1474,15 @@ static int httpserver_receive_callback (
 	// PREPARATION AND CHECKS //
 	//////////////////////////// 
 
+	h_access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
+	h_authority = rrr_http_part_header_field_get(transaction->request_part, ":authority");
+	h_host = rrr_http_part_header_field_get(transaction->request_part, "host");
+
 	if (data->do_fail_once && fail_once) {
 		RRR_MSG_0("Fail once debug is active in httpserver, sending 500 to client\n");
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
 		fail_once = 0;
-		goto out;
+		goto out_cors_headers;
 	}
 
 	if ((ret = httpserver_response_data_new (&response_data, transaction->unique_id)) != 0) {
@@ -1488,12 +1492,8 @@ static int httpserver_receive_callback (
 	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
-		goto out;
+		goto out_cors_headers;
 	}
-
-	h_access_control_request_headers = rrr_http_part_header_field_get(transaction->request_part, "access-control-request-headers");
-	h_authority = rrr_http_part_header_field_get(transaction->request_part, ":authority");
-	h_host = rrr_http_part_header_field_get(transaction->request_part, "host");
 
 	if (data->do_topic_format_request) {
 		struct httpserver_receive_endpoint_clean_callback_data callback_data = {
@@ -1527,25 +1527,7 @@ static int httpserver_receive_callback (
 	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
 		ret = RRR_HTTP_OK;
-		goto out;
-	}
-
-	//////////////////////////
-	// PROCESS CORS HEADERS //
-	//////////////////////////
-
-	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
-		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "access-control-allow-origin", data->allow_origin_header)) != 0) {
-			RRR_MSG_0("Failed to push allow-origin header in %s\n", __func__);
-			goto out;
-		}
-	}
-
-	if (h_access_control_request_headers != NULL) {
-		if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-allow-headers", h_access_control_request_headers->value)) != 0) {
-			RRR_MSG_0("Failed to push request-headers header in %s\n", __func__);
-			goto out;
-		}
+		goto out_cors_headers;
 	}
 
 	////////////////////////////
@@ -1642,6 +1624,25 @@ static int httpserver_receive_callback (
 			goto out;
 		}
 		ret = RRR_HTTP_OK;
+	}
+
+	//////////////////////////
+	// PROCESS CORS HEADERS //
+	//////////////////////////
+
+	out_cors_headers:
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "access-control-allow-origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in %s\n", __func__);
+			goto out;
+		}
+	}
+
+	if (h_access_control_request_headers != NULL) {
+		if ((ret = rrr_http_part_header_field_push_nullsafe(transaction->response_part, "access-control-allow-headers", h_access_control_request_headers->value)) != 0) {
+			RRR_MSG_0("Failed to push request-headers header in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	out:
