@@ -1,9 +1,11 @@
-rrr (1.31-2) bookworm; urgency=medium
+rrr (1.31-4) bookworm; urgency=medium
 
   * Fixes:
     * Preflight headers not sendt for OPTIONS request
+    * Move setproctitle() call to ensure that it cannot clear environment
+      variables prior to them being accessed during initialization.
 
- -- Atle Solbakken <atle@goliathdns.no>  Thu, 08 Aug 2024 12:02:19 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 12 Aug 2024 13:05:28 +0200
 
 rrr (1.31-1) bookworm; urgency=medium
 

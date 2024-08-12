@@ -959,8 +959,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_allocator;
 	}
 
-	rrr_setproctitle_init(argc, argv, env);
-	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	int is_child = 0;
@@ -1020,6 +1018,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+	// Call setproctitle() after argv and envp has been
+	// checked as the call may zero out these arrays.
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 
 	if (cmd_exists(&cmd, "single-thread", 0)) {
 		if (RRR_MAP_COUNT(&config_file_map) > 1) {
