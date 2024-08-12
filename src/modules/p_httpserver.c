@@ -1461,6 +1461,7 @@ static int httpserver_receive_callback (
 	(void)(overshoot_bytes);
 
 	int ret = 0;
+	int ret_result = RRR_HTTP_OK;
 
 	static int fail_once = 1;
 
@@ -1526,7 +1527,6 @@ static int httpserver_receive_callback (
 
 	if (data->do_favicon_not_found_response && rrr_nullsafe_str_cmpto(transaction->request_part->request_uri_nullsafe, "/favicon.ico") == 0) {
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
-		ret = RRR_HTTP_OK;
 		goto out_cors_headers;
 	}
 
@@ -1617,13 +1617,12 @@ static int httpserver_receive_callback (
 
 	if (data->do_get_response_from_senders) {
 		rrr_http_transaction_application_data_set(transaction, (void **) &response_data, httpserver_response_data_destroy_void);
-		ret = RRR_HTTP_NO_RESULT;
+		ret_result = RRR_HTTP_NO_RESULT;
 	}
 	else if (data->do_test_page_default_response) {
 		if ((ret = httpserver_default_test_response_set (transaction)) != 0) {
 			goto out;
 		}
-		ret = RRR_HTTP_OK;
 	}
 
 	//////////////////////////
@@ -1644,6 +1643,9 @@ static int httpserver_receive_callback (
 			goto out;
 		}
 	}
+
+	assert(ret == 0 && (ret_result == RRR_HTTP_OK || ret_result == RRR_HTTP_NO_RESULT));
+	ret = ret_result;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(request_topic);
