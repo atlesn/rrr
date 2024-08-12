@@ -346,8 +346,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_allocator;
 	}
 
-	rrr_setproctitle_init(argc, argv, env);
-	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	struct rrr_stats_engine stats_engine = {0};
@@ -415,6 +413,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+	// Call setproctitle() after argv and envp has been
+	// checked as the call may zero out these arrays.
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
