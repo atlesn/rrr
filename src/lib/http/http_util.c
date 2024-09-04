@@ -1819,6 +1819,8 @@ int rrr_http_util_alpn_iterate (
 	return ret;
 }
 
+#if defined(RRR_WITH_NGHTTP2) || defined(RRR_WITH_HTTP3)
+
 struct rrr_http_util_make_alt_svc_header_callback_data {
 	struct rrr_string_builder *target;
 	uint16_t port;
@@ -1856,6 +1858,8 @@ static int __rrr_http_util_make_alt_svc_header_callback (
 	out:
 	return ret;
 }
+
+#endif /* defined(RRR_WITH_NGHTTP2) || defined(RRR_WITH_HTTP3) */
 
 int rrr_http_util_make_alt_svc_header (
 		struct rrr_string_builder *target,

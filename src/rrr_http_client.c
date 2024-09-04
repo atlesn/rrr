@@ -780,7 +780,9 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
 			data.request_data.protocol_version,
+#ifdef RRR_WITH_NGHTTP2
 			0, // No plain HTTP2
+#endif
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
 		ret = EXIT_FAILURE;

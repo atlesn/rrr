@@ -80,11 +80,13 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_method");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, method_str);
 
+#ifdef RRR_WITH_NGHTTP2
 	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_no_http2_upgrade");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_no_http2_upgrade, 0);
+#endif
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);

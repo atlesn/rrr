@@ -2225,9 +2225,13 @@ static void httpclient_queue_process (
 		}
 
 		// Always set this, also upon redirects
+#ifdef RRR_WITH_NGHTTP2
 		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 || data->http_client_config.do_no_http2_upgrade
 			? RRR_HTTP_UPGRADE_MODE_NONE
 			: RRR_HTTP_UPGRADE_MODE_HTTP2;
+#else
+		request_data_to_use->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+#endif
 
 		if ((ret_tmp = httpclient_request_send (
 				data,
@@ -2649,9 +2653,15 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			http_transport_force,
 			data->http_client_config.method,
 			data->http_client_config.body_format,
+#ifdef RRR_WITH_NGHTTP2
 			data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2,
+#else
+			RRR_HTTP_UPGRADE_MODE_NONE,
+#endif
 			data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11,
+#ifdef RRR_WITH_NGHTTP2
 			data->http_client_config.do_plain_http2,
+#endif
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
 		RRR_MSG_0("Could not initialize http client request data in httpclient instance %s\n",

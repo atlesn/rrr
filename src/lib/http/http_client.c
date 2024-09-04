@@ -305,7 +305,9 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		enum rrr_http_version protocol_version,
+#ifdef RRR_WITH_NGHTTP2
 		int do_plain_http2,
+#endif
 		const char *user_agent
 ) {
 	int ret = 0;
@@ -319,7 +321,9 @@ int rrr_http_client_request_data_reset (
 	data->upgrade_mode = upgrade_mode;
 	data->protocol_version = protocol_version;
 	data->transport_force = transport_force;
+#ifdef RRR_WITH_NGHTTP2
 	data->do_plain_http2 = do_plain_http2;
+#endif
 
 	if (data->concurrent_connections == 0) {
 		data->concurrent_connections = 1;
@@ -361,7 +365,14 @@ int rrr_http_client_request_data_reset_from_uri (
 
 	if (uri_flags.is_http || uri_flags.is_websocket) {
 		data->transport_force = (uri_flags.is_tls ? RRR_HTTP_TRANSPORT_HTTPS : RRR_HTTP_TRANSPORT_HTTP);
-		data->upgrade_mode = (uri_flags.is_websocket ? RRR_HTTP_UPGRADE_MODE_WEBSOCKET : RRR_HTTP_UPGRADE_MODE_HTTP2);
+		data->upgrade_mode = (uri_flags.is_websocket
+			? RRR_HTTP_UPGRADE_MODE_WEBSOCKET
+#ifdef RRR_WITH_NGHTTP2
+			: RRR_HTTP_UPGRADE_MODE_HTTP2
+#else
+			: RRR_HTTP_UPGRADE_MODE_NONE
+#endif
+		);
 	}
 
 	if ((ret = __rrr_http_client_request_data_strings_reset(data, uri->host, uri->endpoint, NULL)) != 0) {
@@ -837,6 +848,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	struct rrr_http_application *upgraded_app = NULL;
 	enum rrr_http_tick_speed tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
+#ifdef RRR_WITH_NGHTTP2
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if ( upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 &&
 	     callback_data->data->method != RRR_HTTP_METHOD_GET &&
@@ -844,6 +856,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
+#endif
 
 	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
 	// protocol version is ignored when HTTP/2 is used.

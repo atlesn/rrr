@@ -156,7 +156,9 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		enum rrr_http_version protocol_version,
+#ifdef RRR_WITH_NGHTTP2
 		int do_plain_http2,
+#endif
 		const char *user_agent
 );
 int rrr_http_client_request_data_reset_from_config (
