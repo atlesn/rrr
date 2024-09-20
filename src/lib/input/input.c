@@ -165,6 +165,7 @@ static const struct map map[] = {
 	{0, "", NULL}
 };
 
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
 static const char *__rrr_input_device_keytoc (
 		struct rrr_input_special_key_state *special_key_state,
 		unsigned int key,
@@ -252,6 +253,7 @@ static const char *__rrr_input_device_keytoc (
 
 	return NULL;
 }
+#endif
 
 int rrr_input_device_grab (int fd, int onoff) {
 #if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
@@ -300,6 +302,8 @@ int rrr_input_device_read_key_character (
 #else
 	(void)(key);
 	(void)(is_down);
+	(void)(socket_read_flags);
+
 	RRR_MSG_0("Error: Input device reading not implemented on this platform\n");
 	ret = RRR_READ_HARD_ERROR;
 	goto out;
