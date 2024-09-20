@@ -6,7 +6,7 @@ if RRR_WITH_LUA
 noinst_lua=rrr_lua
 endif
 
-SUBDIRS = lib modules tests python cmodules
+SUBDIRS = lib modules tests cmodules 
 bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub
 noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb rrr_readdir rrr_modbus_server ${noinst_js} ${noinst_lua}
 TESTS = test.sh
