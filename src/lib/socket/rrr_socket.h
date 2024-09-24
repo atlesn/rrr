@@ -189,6 +189,16 @@ int rrr_socket_unix_connect (
 		const char *filename,
 		int nonblock
 );
+int rrr_socket_sendto_nonblock_with_options (
+		int *err,
+		rrr_biglength *written_bytes,
+		int fd,
+		const struct rrr_socket_options *options,
+		const void *data,
+		const rrr_biglength size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
 int rrr_socket_sendto_nonblock (
 		int *err,
 		rrr_biglength *written_bytes,

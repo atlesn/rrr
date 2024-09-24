@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -77,8 +77,12 @@ void rrr_log_cleanup(void) {
 	pthread_mutex_destroy(&rrr_log_lock);
 }
 
-// This must be separately locked to detect recursion (log functions called from inside hooks)
+// This must be separately locked to detect recursion (log functions called from inside hooks and intercepter)
 static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t rrr_log_intercept_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// The pointer is unset after threads have started and must be protected
+static pthread_mutex_t rrr_log_intercept_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void __rrr_log_printf_unlock_void (void *arg) {
 	(void)(arg);
@@ -88,6 +92,11 @@ static void __rrr_log_printf_unlock_void (void *arg) {
 static void __rrr_log_hook_unlock_void (void *arg) {
 	(void)(arg);
 	pthread_mutex_unlock (&rrr_log_hook_lock);
+}
+
+static void __rrr_log_intercept_unlock_void (void *arg) {
+	(void)(arg);
+	pthread_mutex_unlock (&rrr_log_intercept_lock);
 }
 
 #define LOCK_BEGIN                                                                                                             \
@@ -120,12 +129,40 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 #define LOCK_HOOK_UNCHECKED_END                                                                                                \
         pthread_cleanup_pop(1)
 
+#define LOCK_INTERCEPT_THEN(code,finally)                                                                                      \
+        if (pthread_mutex_trylock (&rrr_log_intercept_lock) == 0) {                                                            \
+            pthread_cleanup_push(__rrr_log_intercept_unlock_void, NULL)                                                        \
+	    code;                                                                                                              \
+            pthread_cleanup_pop(1);                                                                                            \
+	    finally;                                                                                                           \
+        }                                                                                                                      \
+
+#define LOCK_INTERCEPT_PTR_BEGIN \
+	pthread_mutex_lock(&rrr_log_intercept_ptr_lock);
+
+#define LOCK_INTERCEPT_PTR_END \
+	pthread_mutex_unlock(&rrr_log_intercept_ptr_lock);
+
+
 struct rrr_log_hook {
 	void (*log)(RRR_LOG_HOOK_ARGS);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
 	int handle;
 };
+
+static void (* volatile rrr_log_printf_intercept_callback)(RRR_LOG_PRINTF_INTERCEPT_ARGS) = NULL;
+static void * volatile rrr_log_printf_intercept_callback_arg = NULL;
+
+void rrr_log_printf_intercept_set (
+		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
+		void *private_arg
+) {
+	LOCK_INTERCEPT_PTR_BEGIN;
+	rrr_log_printf_intercept_callback = log;
+	rrr_log_printf_intercept_callback_arg = private_arg;
+	LOCK_INTERCEPT_PTR_END;
+}
 
 static int rrr_log_hook_handle_pos = 1;
 static int rrr_log_hook_count = 0;
@@ -366,6 +403,36 @@ static void __rrr_log_sd_journal_sendv (
 }
 #endif
 
+static void __rrr_log_vprintf_intercept (
+		const char *file,
+		int line,
+		unsigned short loglevel_translated,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list args
+) {
+	char *message = NULL;
+
+	if (rrr_vasprintf(&message, __format, args) < 0) {
+		fprintf(stderr, "Warning: Failed to format log message in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_log_printf_intercept_callback (
+			file,
+			line,
+			loglevel_translated,
+			loglevel,
+			prefix,
+			message,
+			rrr_log_printf_intercept_callback_arg
+	);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+}
+
 void rrr_log_printf_nolock (
 		const char *file,
 		int line,
@@ -381,7 +448,14 @@ void rrr_log_printf_nolock (
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
-		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+		__rrr_log_sd_journal_sendv (
+				file,
+				line,
+				RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
+				prefix,
+				__format,
+				args
+		);
 	}
 	else {
 #else
@@ -485,13 +559,41 @@ static void __rrr_log_printf_va (
 	}
 	else {
 #endif
-		LOCK_BEGIN;
-		printf(RRR_LOG_HEADER_FORMAT_FULL,
-				loglevel_translated,
-				prefix
-		);
-		vprintf(__format, args);
-		LOCK_END;
+
+	// Will prevent any recursive calls
+		int has_intercept = rrr_log_printf_intercept_callback != NULL ? 1 : 0;
+		int did_intercept = 0;
+		switch (has_intercept) {
+			case 1:
+				LOCK_INTERCEPT_THEN (
+					LOCK_INTERCEPT_PTR_BEGIN;
+					if (rrr_log_printf_intercept_callback != NULL) {
+						__rrr_log_vprintf_intercept (
+								file,
+								line,
+								loglevel_translated,
+								loglevel,
+								prefix,
+								__format,
+								args
+						);
+						did_intercept = 1;
+					}
+				LOCK_INTERCEPT_PTR_END,
+					if (did_intercept)
+						break;
+				);
+				/* Fallthrough */
+			default:
+				LOCK_BEGIN;
+				printf(RRR_LOG_HEADER_FORMAT_FULL,
+						loglevel_translated,
+						prefix
+				);
+				vprintf(__format, args);
+				LOCK_END;
+				break;
+		}
 #ifdef HAVE_JOURNALD
 	}
 #endif
@@ -506,7 +608,7 @@ static void __rrr_log_printf_va (
 		prefix,
 		__format,
 		args_copy
-);
+	);
 
 	va_end(args_copy);
 }
@@ -562,6 +664,8 @@ void rrr_log_fprintf (
 	va_copy(args_copy, args);
 
 	uint8_t loglevel_translated = 0;
+
+	assert(file_target != stdout && "Use rrr_log_printf for stdout, otherwise interception does not work");
 
 	if (rrr_config_global.rfc5424_loglevel_output) {
 		if (file_target == stderr) {

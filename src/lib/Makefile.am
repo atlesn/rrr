@@ -219,6 +219,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
+		    log_socket.c \
                     ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \

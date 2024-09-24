@@ -66,6 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_mmap_stats.h"
 #include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
+#include "lib/log_socket.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
@@ -964,6 +965,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 	int is_child = 0;
 
 	struct rrr_event_queue *queue = NULL;
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	struct rrr_log_socket log_socket = {0};
+#endif
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -1018,6 +1022,14 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_bind(&log_socket) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+	RRR_DBG_1("Bound to log socket %s\n", log_socket.listen_filename);
+#endif
 
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
@@ -1100,6 +1112,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+			if (rrr_log_socket_after_fork(&log_socket) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+#endif
+
 			if (rrr_event_queue_new(&queue) != 0) {
 				ret = EXIT_FAILURE;
 				goto out_destroy_events;
@@ -1128,6 +1147,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 		}
 	}
 
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_start(&log_socket, queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_events;
+	}
+#endif
+
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	struct main_periodic_callback_data callback_data = {
@@ -1154,13 +1180,18 @@ int main (int argc, const char *argv[], const char *env[]) {
 			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
 			// will hande a SIGCHLD before we send signals to all forks, in which case
 			// it will clean up properly anyway.
-			goto out_run_cleanup_methods;
+			goto out_cleanup_log_socket;
 		}
 
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 
+	out_cleanup_log_socket:
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+		// Must be cleanup of after forks are waited for as they use the log socket
+		rrr_log_socket_cleanup(&log_socket);
+#endif
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_socket_close_all();

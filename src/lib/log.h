@@ -270,11 +270,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             const char *message,                               \
             void *private_arg
 
+#define RRR_LOG_PRINTF_INTERCEPT_ARGS                          \
+            RRR_LOG_HOOK_ARGS
+
 struct rrr_event_queue;
 
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
 void rrr_log_cleanup(void);
+void rrr_log_printf_intercept_set (
+		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
+		void *private_arg
+);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(RRR_LOG_HOOK_ARGS),

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1236,10 +1236,11 @@ static size_t __rrr_socket_send_size_from_biglength (rrr_biglength a) {
 	return (size_t) (a > SIZE_MAX ? SIZE_MAX : a);
 }
 
-int rrr_socket_sendto_nonblock (
+int rrr_socket_sendto_nonblock_with_options (
 		int *err,
 		rrr_biglength *written_bytes,
 		int fd,
+		const struct rrr_socket_options *options,
 		const void *data,
 		const rrr_biglength size,
 		const struct sockaddr *addr,
@@ -1253,18 +1254,11 @@ int rrr_socket_sendto_nonblock (
 	*written_bytes = 0;
 	rrr_biglength done_bytes_total = 0;
 
-	struct rrr_socket_options options;
-	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
-		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-
 	int flags = 0;
-	if ((options.type & SOCK_SEQPACKET) == SOCK_SEQPACKET) {
+	if ((options->type & SOCK_SEQPACKET) == SOCK_SEQPACKET) {
 		flags |= MSG_EOR;
 	}
-	if ((options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
+	if ((options->type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		flags |= MSG_DONTWAIT;
 	}
 
@@ -1347,6 +1341,41 @@ int rrr_socket_sendto_nonblock (
 
 	out:
 	*written_bytes = done_bytes_total;
+	return ret;
+}
+
+int rrr_socket_sendto_nonblock (
+		int *err,
+		rrr_biglength *written_bytes,
+		int fd,
+		const void *data,
+		const rrr_biglength size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = RRR_SOCKET_OK;
+
+	struct rrr_socket_options options;
+	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
+		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_socket_sendto_nonblock_with_options (
+			err,
+			written_bytes,
+			fd,
+			&options,
+			data,
+			size,
+			addr,
+			addr_len
+	)) != RRR_SOCKET_OK) {
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
