@@ -93,6 +93,7 @@ struct rrr_socket_client_collection {
 	// Setable values
 	uint64_t connect_timeout_us;
 	uint64_t idle_timeout_us;
+	int silent;
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
@@ -409,6 +410,9 @@ static int __rrr_socket_client_new_and_add (
 	client->collection = collection;
 	client->create_type = create_type;
 
+	if (collection->silent)
+		rrr_socket_send_chunk_collection_set_silent(&client->send_chunks);
+
 	*result = client;
 	RRR_LL_UNSHIFT(collection, client);
 
@@ -434,6 +438,13 @@ void rrr_socket_client_collection_set_idle_timeout (
 		uint64_t idle_timeout_us
 ) {
 	collection->idle_timeout_us = idle_timeout_us;
+}
+
+void rrr_socket_client_collection_set_silent (
+		struct rrr_socket_client_collection *target,
+		int silent
+) {
+	target->silent = silent != 0;
 }
 
 void rrr_socket_client_collection_destroy (
@@ -560,7 +571,7 @@ static void __rrr_socket_client_read_callback_flags_deduct (
 ) {
 	const struct rrr_socket_client_collection *collection = client->collection;
 
-	*read_flags_socket = client->collection->read_flags_socket;
+	*read_flags_socket = client->collection->read_flags_socket | (collection->silent ? RRR_SOCKET_READ_SILENT : 0);
 
 	if (collection->callback_set_read_flags != NULL) {
 		collection->callback_set_read_flags(read_flags_socket, do_soft_error_propagates, client->private_data, collection->callback_set_read_flags_arg);
@@ -938,28 +949,31 @@ static void __rrr_socket_client_event_read_message (
 	DEDUCT_READ_FLAGS();
 	ENFORCE_SOFT_ERROR_PROPAGATES();
 
+	int ret_tmp = RRR_READ_OK;
 	uint64_t bytes_read = 0;
+
+	ret_tmp = rrr_socket_read_message_default (
+			&bytes_read,
+			&client->read_sessions,
+			fd,
+			sizeof(struct rrr_msg),
+			collection->read_step_max_size,
+			0, // No max size
+			read_flags_socket,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_socket_client_event_message_error_callback,
+			client,
+			__rrr_socket_client_collection_read_message_complete_callback,
+			client
+	);
 
 	__rrr_socket_client_return_value_process (
 		collection,
 		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				fd,
-				sizeof(struct rrr_msg),
-				collection->read_step_max_size,
-				0, // No max size
-				read_flags_socket,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				rrr_read_common_get_session_target_length_from_message_and_checksum,
-				NULL,
-				__rrr_socket_client_event_message_error_callback,
-				client,
-				__rrr_socket_client_collection_read_message_complete_callback,
-				client
-		)
+		ret_tmp
 	);
 }
 

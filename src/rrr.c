@@ -1173,17 +1173,17 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-			if (rrr_log_socket_after_fork(&log_socket) != 0) {
-				ret = EXIT_FAILURE;
-				goto out_cleanup_signal;
-			}
-#endif
-
 			if (rrr_event_queue_new(&queue) != 0) {
 				ret = EXIT_FAILURE;
 				goto out_cleanup_signal;
 			}
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+			if (rrr_log_socket_after_fork_and_start(&log_socket, queue) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+#endif
 
 			if (main_loop (
 					&cmd,
@@ -1210,7 +1210,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_start(&log_socket, queue) != 0) {
+	if (rrr_log_socket_start_listen(&log_socket, queue) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}

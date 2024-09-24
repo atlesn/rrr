@@ -1397,7 +1397,8 @@ int rrr_socket_sendto_nonblock (
 		const void *data,
 		const rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -1417,7 +1418,7 @@ int rrr_socket_sendto_nonblock (
 			size,
 			addr,
 			addr_len,
-			0 /* Not silent */
+			silent
 	)) != RRR_SOCKET_OK) {
 		goto out;
 	}
@@ -1432,10 +1433,11 @@ int rrr_socket_sendto_nonblock_check_retry (
 		const void *data,
 		rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 ) {
 	int err = 0;
-	int ret = rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, addr, addr_len);
+	int ret = rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, addr, addr_len, silent);
 
 	if (ret == RRR_SOCKET_SOFT_ERROR) {
 		if (err == EWOULDBLOCK || err == EAGAIN || err == EINPROGRESS) {
@@ -1450,9 +1452,10 @@ int rrr_socket_send_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength size
+		rrr_biglength size,
+		int silent
 ) {
-	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0);
+	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0, silent);
 }
 
 int rrr_socket_sendto_blocking (
@@ -1479,7 +1482,8 @@ int rrr_socket_sendto_blocking (
 				data + written_bytes_total,
 				rrr_biglength_sub_bug_const(size, written_bytes_total),
 				addr,
-				addr_len
+				addr_len,
+				0 /* Not silent */
 		)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);

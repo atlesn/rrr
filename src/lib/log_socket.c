@@ -33,6 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_log.h"
 #include "messages/msg_msg_struct.h"
 
+#define RRR_LOG_SOCKET_SEND_CHUNK_WARN_LIMIT 10000
+#define RRR_LOG_SOCKET_SEND_CHUNK_CRITICAL_LIMIT 100000
+
 static int __rrr_log_socket_connect (
 		struct rrr_log_socket *log_socket
 ) {
@@ -78,8 +81,7 @@ static void __rrr_log_socket_intercept_callback (
 
 	struct rrr_msg_log *msg_log = NULL;
 	rrr_length msg_size;
-	rrr_biglength written_bytes = 0;
-	int err;
+	rrr_length send_chunk_count;
 
 	assert(log_socket->listen_fd == 0 && "Main process must not intercept log messages");
 	assert(log_socket->connected_fd != 0 && "Log socket must be connected");
@@ -104,23 +106,26 @@ static void __rrr_log_socket_intercept_callback (
 
 	// printf("MSG: %s\n", message);
 
-	if (rrr_socket_sendto_nonblock_with_options (
-			&err,
-			&written_bytes,
+	if (rrr_socket_client_collection_send_push (
+			&send_chunk_count,
+			log_socket->client_collection,
 			log_socket->connected_fd,
-			&log_socket->connected_fd_options,
-			msg_log,
-			msg_size,
-			NULL,
-			0,
-			1 /* Don'*/
-	) != RRR_SOCKET_OK || written_bytes != msg_size) {
-		RRR_BUG("Failed to send message to main in pid %li: '%s'. Bytes to send was %" PRIrrrl " and sent bytes was %" PRIrrrbl ". Cannot continue, aborting now.\n",
+			(void **) &msg_log,
+			msg_size
+	) != 0) {
+		RRR_BUG("Failed to queue log message to main in pid %li. Bytes to send was %" PRIrrrl ". Cannot continue, aborting now.\n",
 			(long int) getpid(),
-			rrr_strerror(err),
-			msg_size,
-			written_bytes
+			msg_size
 		);
+	}
+
+	if (send_chunk_count > RRR_LOG_SOCKET_SEND_CHUNK_CRITICAL_LIMIT) {
+		RRR_BUG("Send chunk limit exceeded with %" PRIrrrl " send chunks, pid is %li. Aborting now.\n",
+			send_chunk_count, (long int) getpid());
+	}
+	else if (send_chunk_count > RRR_LOG_SOCKET_SEND_CHUNK_WARN_LIMIT) {
+		fprintf(stderr, "Warning: %" PRIrrrl " send chunks with log messages in pid %li\n",
+			send_chunk_count, (long int) getpid());
 	}
 
 	out:
@@ -199,18 +204,19 @@ int rrr_log_socket_bind (
 		return ret;
 }
 
-int rrr_log_socket_start (
+int rrr_log_socket_start_listen (
 		struct rrr_log_socket *target,
 		struct rrr_event_queue *queue
 ) {
 	int ret = 0;
 
-	if (rrr_socket_client_collection_new(&target->client_collection, queue, "rrr_central") != 0) {
+	if (rrr_socket_client_collection_new(&target->client_collection, queue, "rrr_log_socket_main") != 0) {
 		RRR_MSG_0("Could not create client collection for log socket in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
+	rrr_socket_client_collection_set_silent(target->client_collection, 1);
 	rrr_socket_client_collection_event_setup (
 			target->client_collection,
 			NULL,
@@ -240,31 +246,64 @@ int rrr_log_socket_start (
 	return ret;
 }
 
-int rrr_log_socket_after_fork (
-		struct rrr_log_socket *log_socket
+int rrr_log_socket_after_fork_and_start (
+		struct rrr_log_socket *log_socket,
+		struct rrr_event_queue *queue
 ) {
 	int ret = 0;
 
-	if (log_socket->listen_fd > 0)
+	if (log_socket->listen_fd > 0) {
 		rrr_socket_close_no_unlink(log_socket->listen_fd);
-	log_socket->listen_fd = 0;
+		log_socket->listen_fd = 0;
+	}
 
-	if (log_socket->connected_fd > 0)
+	if (log_socket->connected_fd > 0) {
 		rrr_socket_close(log_socket->connected_fd);
-	log_socket->connected_fd = 0;
+		log_socket->connected_fd = 0;
+	}
 
-	assert(log_socket->client_collection == NULL && "Parent process must not init client collection prior to fork");
+	if (log_socket->client_collection != NULL) {
+		rrr_socket_client_collection_destroy(log_socket->client_collection);
+		log_socket->client_collection = NULL;
+	}
+
+	if ((ret = rrr_socket_client_collection_new (
+			&log_socket->client_collection,
+			queue,
+			"rrr_log_socket_fork"
+	)) != 0) {
+		RRR_MSG_0("Failed to create client collection in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_socket_client_collection_set_silent(log_socket->client_collection, 1);
+	rrr_socket_client_collection_event_setup_write_only(log_socket->client_collection, NULL, NULL, NULL);
 
 	if ((ret = __rrr_log_socket_connect (log_socket)) != 0) {
-		goto out;
+		goto out_destroy_collection;
+	}
+
+	if ((ret = rrr_socket_client_collection_connected_fd_push (
+			log_socket->client_collection,
+			log_socket->connected_fd,
+			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
+	)) != 0) {
+		RRR_MSG_0("Failed to push fd in %s\n", __func__);
+		goto out_close;
 	}
 
 	RRR_DBG_1("Log socket now connected in pid %li, setting intercept callback.\n", (long int) getpid());
 
 	rrr_log_printf_intercept_set (__rrr_log_socket_intercept_callback, log_socket);
 
+	goto out;
+	out_close:
+		rrr_socket_close(log_socket->connected_fd);
+		log_socket->connected_fd = 0;
+	out_destroy_collection:
+		rrr_socket_client_collection_destroy(log_socket->client_collection);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_log_socket_cleanup (

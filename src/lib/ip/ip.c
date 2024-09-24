@@ -215,7 +215,8 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 				data,
 				size,
 				(struct sockaddr *) rp->ai_addr,
-				rp->ai_addrlen
+				rp->ai_addrlen,
+				0 /* Not silent */
 		) == 0) {
 			break;
 		}

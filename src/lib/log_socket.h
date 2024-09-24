@@ -38,12 +38,13 @@ struct rrr_log_socket {
 int rrr_log_socket_bind (
 		struct rrr_log_socket *target
 );
-int rrr_log_socket_start (
+int rrr_log_socket_start_listen (
 		struct rrr_log_socket *target,
 		struct rrr_event_queue *queue
 );
-int rrr_log_socket_after_fork (
-		struct rrr_log_socket *log_socket
+int rrr_log_socket_after_fork_and_start (
+		struct rrr_log_socket *log_socket,
+		struct rrr_event_queue *queue
 );
 void rrr_log_socket_cleanup (
 		struct rrr_log_socket *log_socket

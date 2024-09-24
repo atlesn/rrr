@@ -209,7 +209,8 @@ int rrr_socket_sendto_nonblock (
 		const void *data,
 		const rrr_biglength size_big,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_sendto_nonblock_check_retry (
 		rrr_biglength *written_bytes,
@@ -217,13 +218,15 @@ int rrr_socket_sendto_nonblock_check_retry (
 		const void *data,
 		rrr_biglength send_size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_send_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength send_size
+		rrr_biglength send_size,
+		int silent
 );
 int rrr_socket_sendto_blocking (
 		int fd,
