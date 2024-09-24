@@ -300,6 +300,14 @@ void rrr_log_hooks_call_raw (
 		const char *prefix,
 		const char *message
 );
+void rrr_log_print_no_hooks (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
+		const char *prefix,
+		const char *message
+);
 void rrr_log_printf_nolock (
 		const char *file,
 		int line,

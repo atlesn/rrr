@@ -48,6 +48,11 @@ int rrr_log_socket_after_fork (
 void rrr_log_socket_cleanup (
 		struct rrr_log_socket *log_socket
 );
+int rrr_log_socket_fds_get (
+		int **log_fds,
+		size_t *log_fds_count,
+		struct rrr_log_socket *log_socket
+);
 
 
 #endif /* RRR_LOG_SOCKET_H */

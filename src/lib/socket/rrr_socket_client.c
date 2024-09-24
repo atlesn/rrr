@@ -1566,6 +1566,15 @@ void rrr_socket_client_collection_send_push_const_multicast (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
 }
 
+#define ALL_LOOP_BEGIN()                                                  \
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);       \
+		struct rrr_socket_client *client = node;                  \
+		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd)
+
+#define ALL_LOOP_END()                                                    \
+		RRR_LL_ITERATE_END();                                     \
+	RRR_LL_ITERATE_END()
+
 #define FIND_LOOP_BEGIN()                                                 \
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);       \
 		if (node->close_when_send_complete) {                     \
@@ -1791,6 +1800,33 @@ static void __rrr_socket_client_collection_close_by_client (
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+}
+
+int rrr_socket_client_collection_get_fds (
+		int **target,
+		size_t *target_count,
+		const struct rrr_socket_client_collection *collection
+) {
+	int *fds;
+	size_t count = 0, pos = 0;
+
+	ALL_LOOP_BEGIN();
+		count++;
+	ALL_LOOP_END();
+
+	if ((fds = rrr_allocate(sizeof(*fds) * count)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	ALL_LOOP_BEGIN();
+		fds[pos++] = node->fd;
+	ALL_LOOP_END();
+
+	*target = fds;
+	*target_count = count;
+
+	return 0;
 }
 
 int rrr_socket_client_collection_has_fd (

@@ -83,6 +83,7 @@ static pthread_mutex_t rrr_log_intercept_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // The pointer is unset after threads have started and must be protected
 static pthread_mutex_t rrr_log_intercept_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t rrr_log_intercept_lock_holder;
 
 static void __rrr_log_printf_unlock_void (void *arg) {
 	(void)(arg);
@@ -130,12 +131,16 @@ static void __rrr_log_intercept_unlock_void (void *arg) {
         pthread_cleanup_pop(1)
 
 #define LOCK_INTERCEPT_THEN(code,finally)                                                                                      \
-        if (pthread_mutex_trylock (&rrr_log_intercept_lock) == 0) {                                                            \
-            pthread_cleanup_push(__rrr_log_intercept_unlock_void, NULL)                                                        \
-	    code;                                                                                                              \
-            pthread_cleanup_pop(1);                                                                                            \
-	    finally;                                                                                                           \
+        if (pthread_mutex_trylock (&rrr_log_intercept_lock) != 0) {                                                            \
+            if (pthread_equal(rrr_log_intercept_lock_holder, pthread_self())) {                                                \
+                RRR_BUG("BUG: Did not intercept due to deadlock, re-entry in intercepted logging (possibly due to socket operations)\n"); \
+            }                                                                                                                  \
+            pthread_mutex_lock(&rrr_log_intercept_lock);                                                                       \
         }                                                                                                                      \
+        pthread_cleanup_push(__rrr_log_intercept_unlock_void, NULL);                                                           \
+        code;                                                                                                                  \
+        pthread_cleanup_pop(1);                                                                                                \
+        finally;
 
 #define LOCK_INTERCEPT_PTR_BEGIN \
 	pthread_mutex_lock(&rrr_log_intercept_ptr_lock);
@@ -431,6 +436,35 @@ static void __rrr_log_vprintf_intercept (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
+}
+
+void rrr_log_print_no_hooks (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
+		const char *prefix,
+		const char *message
+) {
+	(void)(file);
+	(void)(line);
+
+#ifndef RRR_LOG_DISABLE_PRINT
+	LOCK_BEGIN;
+	printf(RRR_LOG_HEADER_FORMAT_FULL "%s",
+			rrr_config_global.rfc5424_loglevel_output
+				? loglevel_translated
+				: loglevel_orig,
+			prefix,
+			message
+	);
+	LOCK_END;
+#else
+	(void)(loglevel_translated);
+	(void)(loglevel_orig);
+	(void)(prefix);
+	(void)(message);
+#endif
 }
 
 void rrr_log_printf_nolock (

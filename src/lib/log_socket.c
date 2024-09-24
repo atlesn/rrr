@@ -134,11 +134,34 @@ static int __rrr_log_socket_read_callback (
 ) {
 	struct rrr_log_socket *log_socket = arg1;
 
+	(void)(log_socket);
 	(void)(arg2);
 
-	int ret = 1;
+	int ret = 0;
 
-	RRR_BUG("NOT IMPLEMENTED");
+	char *prefix;
+	char *message;
+
+	if ((ret = rrr_msg_msg_log_to_str (
+			&prefix,
+			&message,
+			msg
+	)) != 0) {
+		RRR_MSG_0("Failed to allocate prefix and message in %s\n", __func__);
+		goto out;
+	}
+
+	rrr_log_print_no_hooks (
+		msg->file,
+		msg->line,
+		msg->loglevel_translated,
+		msg->loglevel_orig,
+		prefix,
+		message
+	);
+
+	rrr_free(prefix);
+	rrr_free(message);
 
 	out:
 	return ret;
@@ -193,8 +216,8 @@ int rrr_log_socket_start (
 			NULL,
 			NULL,
 			target,
-			1024,
-			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+			1024 * 1024 * 1, // 1MB
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP,
 			NULL,
 			NULL,
 			NULL, // msg
@@ -259,4 +282,42 @@ void rrr_log_socket_cleanup (
 		rrr_socket_close(log_socket->connected_fd);
 	rrr_free(log_socket->listen_filename);
 	memset(log_socket, '\0', sizeof(*log_socket));
+}
+
+int rrr_log_socket_fds_get (
+		int **log_fds,
+		size_t *log_fds_count,
+		struct rrr_log_socket *log_socket
+) {
+	int ret = 0;
+
+	int *client_fds = NULL;
+	size_t client_fds_count = 0;
+	int *all_fds = NULL;
+	size_t all_fds_count = 0;
+
+	if ((log_socket->client_collection != NULL) &&
+	    (ret = rrr_socket_client_collection_get_fds(&client_fds, &client_fds_count, log_socket->client_collection)) != 0
+	) {
+		goto out;
+	}
+
+	if ((all_fds = rrr_reallocate(client_fds, sizeof(*all_fds) * (client_fds_count + 2))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	client_fds = NULL;
+	all_fds_count = client_fds_count;
+
+	all_fds[all_fds_count++] = log_socket->listen_fd;
+	all_fds[all_fds_count++] = log_socket->connected_fd;
+
+	*log_fds = all_fds;
+	*log_fds_count = all_fds_count;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(client_fds);
+	return ret;
 }

@@ -196,6 +196,11 @@ void rrr_socket_client_collection_close_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
 );
+int rrr_socket_client_collection_get_fds (
+		int **target,
+		size_t *target_count,
+		const struct rrr_socket_client_collection *collection
+);
 int rrr_socket_client_collection_has_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd

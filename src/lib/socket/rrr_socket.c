@@ -792,7 +792,7 @@ int rrr_socket_close_ignore_unregistered (int fd) {
 int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlink) {
 	int ret = 0;
 
-	RRR_DBG_7("rrr_socket_close_all_except_array pid %i no_unlink %i\n", getpid(), no_unlink);
+	RRR_DBG_7("%s pid %i no_unlink %i\n", __func__, getpid(), no_unlink);
 
 	int count = 0;
 
@@ -808,6 +808,37 @@ int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlin
 		}
 		if (match) {
 			RRR_DBG_7("- Not closing %i, was in except list\n", node->options.fd);
+		}
+		else {
+			RRR_DBG_7("- Closing %i\n", node->options.fd);
+			RRR_LL_ITERATE_SET_DESTROY();
+			count++;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
+
+	if (RRR_DEBUGLEVEL_7) {
+		__rrr_socket_dump_unlocked();
+	}
+
+	pthread_mutex_unlock(&socket_lock);
+
+	RRR_DBG_1("Closed %i sockets pid %i\n", count, getpid());
+
+	return ret;
+}
+
+static int __rrr_socket_close_all_except_cb (int no_unlink, int (*except_cb)(int fd, void *arg), void *arg) {
+	int ret = 0;
+
+	RRR_DBG_7("%s pid %i no_unlink %i\n", __func__, getpid(), no_unlink);
+
+	int count = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (except_cb(node->options.fd, arg)) {
+			RRR_DBG_7("- Not closing %i as instructed by except callback\n", node->options.fd);
 		}
 		else {
 			RRR_DBG_7("- Closing %i\n", node->options.fd);
@@ -853,6 +884,14 @@ int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
 
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
 	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
+}
+
+int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg) {
+	return __rrr_socket_close_all_except_cb (0, except_cb, arg);
+}
+
+int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg) {
+	return __rrr_socket_close_all_except_cb (1, except_cb, arg);
 }
 
 int rrr_socket_fifo_create (
