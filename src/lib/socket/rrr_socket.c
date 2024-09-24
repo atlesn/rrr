@@ -1244,7 +1244,8 @@ int rrr_socket_sendto_nonblock_with_options (
 		const void *data,
 		const rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -1267,13 +1268,16 @@ int rrr_socket_sendto_nonblock_with_options (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_7("fd %i max retries reached in rrr_socket_sendto_nonblock\n", fd);
+		if (!silent)
+			RRR_DBG_7("fd %i max retries reached in %s\n", fd, __func__);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		*err = EAGAIN;
 		goto out;
 	}
 
-	RRR_DBG_7("fd %i nonblock send loop starting, writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete) address length %u\n",
+
+	if (!silent)
+		RRR_DBG_7("fd %i nonblock send loop starting, writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
 	// Truncate to size_t
@@ -1303,12 +1307,14 @@ int rrr_socket_sendto_nonblock_with_options (
 				goto retry;
 			}
 			else if (errno == EPIPE) {
-				RRR_DBG_7 ("Pipe full or connection closed by remote\n");
+				if (!silent)
+					RRR_DBG_7 ("Pipe full or connection closed by remote\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
 			else if (errno == ECONNREFUSED || errno == ECONNRESET) {
-				RRR_DBG_7 ("Connection refused\n");
+				if (!silent)
+					RRR_DBG_7 ("Connection refused\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
@@ -1317,13 +1323,14 @@ int rrr_socket_sendto_nonblock_with_options (
 				goto retry;
 			}
 			else {
-				RRR_MSG_0("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
+				if (!silent)
+					RRR_MSG_0("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
 						addr_len,
 						rrr_strerror(errno)
-				);
+					);
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -1370,7 +1377,8 @@ int rrr_socket_sendto_nonblock (
 			data,
 			size,
 			addr,
-			addr_len
+			addr_len,
+			0 /* Not silent */
 	)) != RRR_SOCKET_OK) {
 		goto out;
 	}

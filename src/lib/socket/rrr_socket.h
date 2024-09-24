@@ -197,7 +197,8 @@ int rrr_socket_sendto_nonblock_with_options (
 		const void *data,
 		const rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_sendto_nonblock (
 		int *err,

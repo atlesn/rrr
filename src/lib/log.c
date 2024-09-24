@@ -562,7 +562,6 @@ static void __rrr_log_printf_va (
 
 	// Will prevent any recursive calls
 		int has_intercept = rrr_log_printf_intercept_callback != NULL ? 1 : 0;
-		int did_intercept = 0;
 		switch (has_intercept) {
 			case 1:
 				LOCK_INTERCEPT_THEN (
@@ -577,13 +576,12 @@ static void __rrr_log_printf_va (
 								__format,
 								args
 						);
-						did_intercept = 1;
 					}
-				LOCK_INTERCEPT_PTR_END,
-					if (did_intercept)
-						break;
+					LOCK_INTERCEPT_PTR_END,
+					break;
 				);
-				/* Fallthrough */
+				RRR_BUG("BUG: Did not intercept due to deadlock, re-entry in intercepted logging (possibly due to socket operations)\n");
+				break;
 			default:
 				LOCK_BEGIN;
 				printf(RRR_LOG_HEADER_FORMAT_FULL,

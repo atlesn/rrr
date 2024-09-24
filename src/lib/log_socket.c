@@ -42,7 +42,7 @@ static int __rrr_log_socket_connect (
 
 	if ((ret = rrr_socket_unix_connect (
 			&log_socket->connected_fd,
-			"log_socket",
+			"rrr_log_socket_child",
 			log_socket->listen_filename,
 			1 /* Nonblock */
 	)) != RRR_SOCKET_OK) {
@@ -78,7 +78,7 @@ static void __rrr_log_socket_intercept_callback (
 
 	struct rrr_msg_log *msg_log = NULL;
 	rrr_length msg_size;
-	rrr_biglength written_bytes;
+	rrr_biglength written_bytes = 0;
 	int err;
 
 	assert(log_socket->listen_fd == 0 && "Main process must not intercept log messages");
@@ -102,6 +102,8 @@ static void __rrr_log_socket_intercept_callback (
 	rrr_msg_msg_log_prepare_for_network(msg_log);
 	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_log);
 
+	// printf("MSG: %s\n", message);
+
 	if (rrr_socket_sendto_nonblock_with_options (
 			&err,
 			&written_bytes,
@@ -110,10 +112,15 @@ static void __rrr_log_socket_intercept_callback (
 			msg_log,
 			msg_size,
 			NULL,
-			0
+			0,
+			1 /* Don'*/
 	) != RRR_SOCKET_OK || written_bytes != msg_size) {
-		RRR_BUG("Failed to send message to main in pid %li: '%s'. Cannot continue, aborting now.\n",
-			(long int) getpid(), rrr_strerror(err));
+		RRR_BUG("Failed to send message to main in pid %li: '%s'. Bytes to send was %" PRIrrrl " and sent bytes was %" PRIrrrbl ". Cannot continue, aborting now.\n",
+			(long int) getpid(),
+			rrr_strerror(err),
+			msg_size,
+			written_bytes
+		);
 	}
 
 	out:
@@ -153,7 +160,7 @@ int rrr_log_socket_bind (
 
 	unlink(target->listen_filename); // OK to ignore errors
 
-	if (rrr_socket_unix_create_bind_and_listen(&target->listen_fd, "rrr_log_socket", target->listen_filename, 2, 1, 0, 0) != 0) {
+	if (rrr_socket_unix_create_bind_and_listen(&target->listen_fd, "rrr_log_socket_main", target->listen_filename, 2, 1, 0, 0) != 0) {
 		RRR_MSG_0("Could not create socket for log socket with filename '%s' in %s\n", target->listen_filename, __func__);
 		ret = 1;
 		goto out_free;
@@ -198,6 +205,14 @@ int rrr_log_socket_start (
 			target
 	);
 
+	if ((ret = rrr_socket_client_collection_listen_fd_push (
+			target->client_collection,
+			target->listen_fd
+	)) != 0) {
+		RRR_MSG_0("Failed to push listen fd in %s\n", __func__);
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -239,7 +254,7 @@ void rrr_log_socket_cleanup (
 	if (log_socket->client_collection != NULL)
 		rrr_socket_client_collection_destroy(log_socket->client_collection);
 	if (log_socket->listen_fd > 0)
-		rrr_socket_close(log_socket->listen_fd);
+		rrr_socket_close_no_unlink(log_socket->listen_fd);
 	if (log_socket->connected_fd > 0)
 		rrr_socket_close(log_socket->connected_fd);
 	rrr_free(log_socket->listen_filename);
