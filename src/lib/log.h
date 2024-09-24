@@ -278,7 +278,7 @@ struct rrr_event_queue;
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
 void rrr_log_cleanup(void);
-void rrr_log_printf_intercept_set (
+void rrr_log_printf_thread_local_intercept_set (
 		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
 		void *private_arg
 );

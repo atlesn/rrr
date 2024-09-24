@@ -79,11 +79,6 @@ void rrr_log_cleanup(void) {
 
 // This must be separately locked to detect recursion (log functions called from inside hooks and intercepter)
 static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t rrr_log_intercept_lock = PTHREAD_MUTEX_INITIALIZER;
-
-// The pointer is unset after threads have started and must be protected
-static pthread_mutex_t rrr_log_intercept_ptr_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_t rrr_log_intercept_lock_holder;
 
 static void __rrr_log_printf_unlock_void (void *arg) {
 	(void)(arg);
@@ -93,11 +88,6 @@ static void __rrr_log_printf_unlock_void (void *arg) {
 static void __rrr_log_hook_unlock_void (void *arg) {
 	(void)(arg);
 	pthread_mutex_unlock (&rrr_log_hook_lock);
-}
-
-static void __rrr_log_intercept_unlock_void (void *arg) {
-	(void)(arg);
-	pthread_mutex_unlock (&rrr_log_intercept_lock);
 }
 
 #define LOCK_BEGIN                                                                                                             \
@@ -142,13 +132,6 @@ static void __rrr_log_intercept_unlock_void (void *arg) {
         pthread_cleanup_pop(1);                                                                                                \
         finally;
 
-#define LOCK_INTERCEPT_PTR_BEGIN \
-	pthread_mutex_lock(&rrr_log_intercept_ptr_lock);
-
-#define LOCK_INTERCEPT_PTR_END \
-	pthread_mutex_unlock(&rrr_log_intercept_ptr_lock);
-
-
 struct rrr_log_hook {
 	void (*log)(RRR_LOG_HOOK_ARGS);
 	void *private_arg;
@@ -156,17 +139,15 @@ struct rrr_log_hook {
 	int handle;
 };
 
-static void (* volatile rrr_log_printf_intercept_callback)(RRR_LOG_PRINTF_INTERCEPT_ARGS) = NULL;
-static void * volatile rrr_log_printf_intercept_callback_arg = NULL;
+_Thread_local void (*rrr_log_printf_intercept_callback)(RRR_LOG_PRINTF_INTERCEPT_ARGS) = NULL;
+_Thread_local void *rrr_log_printf_intercept_callback_arg = NULL;
 
-void rrr_log_printf_intercept_set (
+void rrr_log_printf_thread_local_intercept_set (
 		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
 		void *private_arg
 ) {
-	LOCK_INTERCEPT_PTR_BEGIN;
 	rrr_log_printf_intercept_callback = log;
 	rrr_log_printf_intercept_callback_arg = private_arg;
-	LOCK_INTERCEPT_PTR_END;
 }
 
 static int rrr_log_hook_handle_pos = 1;
@@ -423,6 +404,7 @@ static void __rrr_log_vprintf_intercept (
 		fprintf(stderr, "Warning: Failed to format log message in %s\n", __func__);
 		goto out;
 	}
+	printf("Intercept %s\n", message);
 
 	rrr_log_printf_intercept_callback (
 			file,
@@ -594,38 +576,26 @@ static void __rrr_log_printf_va (
 	else {
 #endif
 
-	// Will prevent any recursive calls
-		int has_intercept = rrr_log_printf_intercept_callback != NULL ? 1 : 0;
-		switch (has_intercept) {
-			case 1:
-				LOCK_INTERCEPT_THEN (
-					LOCK_INTERCEPT_PTR_BEGIN;
-					if (rrr_log_printf_intercept_callback != NULL) {
-						__rrr_log_vprintf_intercept (
-								file,
-								line,
-								loglevel_translated,
-								loglevel,
-								prefix,
-								__format,
-								args
-						);
-					}
-					LOCK_INTERCEPT_PTR_END,
-					break;
-				);
-				RRR_BUG("BUG: Did not intercept due to deadlock, re-entry in intercepted logging (possibly due to socket operations)\n");
-				break;
-			default:
-				LOCK_BEGIN;
-				printf(RRR_LOG_HEADER_FORMAT_FULL,
-						loglevel_translated,
-						prefix
-				);
-				vprintf(__format, args);
-				LOCK_END;
-				break;
-		}
+	if (rrr_log_printf_intercept_callback != NULL) {
+		__rrr_log_vprintf_intercept (
+				file,
+				line,
+				loglevel_translated,
+				loglevel,
+				prefix,
+				__format,
+				args
+		);
+	}
+	else {
+		LOCK_BEGIN;
+		printf(RRR_LOG_HEADER_FORMAT_FULL,
+				loglevel_translated,
+				prefix
+		);
+		vprintf(__format, args);
+		LOCK_END;
+	}
 #ifdef HAVE_JOURNALD
 	}
 #endif

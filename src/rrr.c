@@ -354,9 +354,6 @@ struct main_loop_event_callback_data {
 	struct rrr_instance_collection *instances;
 	struct rrr_instance_config_collection *config;
 	struct cmd_data *cmd;
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	struct rrr_log_socket *log_socket;
-#endif
 	struct stats_data *stats_data;
 	struct rrr_message_broker *message_broker;
 	struct rrr_fork_handler *fork_handler;
@@ -407,7 +404,7 @@ static void main_loop_close_sockets_except (
 	rrr_event_queue_fds_get (event_fds, &event_fds_count, data->queue);
 
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_fds_get(&log_fds, &log_fds_count, data->log_socket) != 0) {
+	if (rrr_log_socket_fds_get(&log_fds, &log_fds_count) != 0) {
 		RRR_BUG("Failed to get log sockets in %s. Cannot continue, aborting now.\n", __func__);
 	}
 #endif
@@ -658,9 +655,6 @@ static int main_loop (
 		const char *config_file,
 		struct rrr_event_queue *queue,
 		struct rrr_fork_handler *fork_handler,
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-		struct rrr_log_socket *log_socket,
-#endif
 		int single_thread
 ) {
 	int ret = 0;
@@ -745,9 +739,6 @@ static int main_loop (
 		&instances,
 		config,
 		cmd,
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-		log_socket,
-#endif
 		&stats_data,
 		message_broker,
 		fork_handler,
@@ -1025,9 +1016,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 	int is_child = 0;
 
 	struct rrr_event_queue *queue = NULL;
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	struct rrr_log_socket log_socket = {0};
-#endif
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -1084,12 +1072,16 @@ int main (int argc, const char *argv[], const char *env[]) {
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_bind(&log_socket) != 0) {
+	if (rrr_log_socket_bind() != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
-	RRR_DBG_1("Bound to log socket %s\n", log_socket.listen_filename);
 #endif
+
+	if (rrr_event_queue_new(&queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
 
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
@@ -1108,17 +1100,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 		rrr_setproctitle("[%s]", config_string);
 
-		if (rrr_event_queue_new(&queue) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
-
 		if (main_loop (
 				&cmd,
 				config_string,
 				queue,
 				fork_handler,
-				&log_socket,
 				1 /* Single thread mode */
 		) != 0) {
 			ret = EXIT_FAILURE;
@@ -1173,13 +1159,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
-			if (rrr_event_queue_new(&queue) != 0) {
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+			if (rrr_log_socket_after_fork() != 0) {
 				ret = EXIT_FAILURE;
 				goto out_cleanup_signal;
 			}
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-			if (rrr_log_socket_after_fork_and_start(&log_socket, queue) != 0) {
+			if (rrr_log_socket_thread_start_say(queue) != 0) {
 				ret = EXIT_FAILURE;
 				goto out_cleanup_signal;
 			}
@@ -1190,7 +1176,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 					config_string,
 					queue,
 					fork_handler,
-					&log_socket,
 					0 /* Not single thread mode */
 			) != 0) {
 				ret = EXIT_FAILURE;
@@ -1201,16 +1186,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 			increment:
 			config_i++;
 		RRR_MAP_ITERATE_END();
-
-		// Create queue after forking to prevent it and it's FDs from existing in the forks
-		if (rrr_event_queue_new(&queue) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
 	}
 
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_start_listen(&log_socket, queue) != 0) {
+	if (rrr_log_socket_start_listen(queue) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
@@ -1250,10 +1229,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 	out_cleanup_log_socket_and_events:
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
 		// Must be cleanup of after forks are waited for as they use the log socket
-		rrr_log_socket_cleanup(&log_socket);
+		rrr_log_socket_cleanup();
 #endif
-		if (queue != NULL)
+		if (queue != NULL) {
 			rrr_event_queue_destroy(queue);
+		}
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();

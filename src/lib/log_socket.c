@@ -36,21 +36,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_SOCKET_SEND_CHUNK_WARN_LIMIT 10000
 #define RRR_LOG_SOCKET_SEND_CHUNK_CRITICAL_LIMIT 100000
 
+struct rrr_log_socket_sayer {
+	int connected_fd;
+	struct rrr_socket_options connected_options;
+	struct rrr_socket_client_collection *client_collection;
+};
+
+struct rrr_log_socket_listener {
+	char *listen_filename;
+	int listen_fd;
+	struct rrr_socket_client_collection *client_collection;
+};
+
+static struct rrr_log_socket_listener rrr_log_socket_listener = {0};
+static _Thread_local struct rrr_log_socket_sayer rrr_log_socket_sayer = {0};
+
 static int __rrr_log_socket_connect (
-		struct rrr_log_socket *log_socket
+		int *fd,
+		struct rrr_socket_options *options
 ) {
+	const struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+
 	int ret = 0;
 
-	assert (log_socket->connected_fd == 0 && "Double call to __rrr_log_socket_connect\n");
+	int fd_tmp;
 
 	if ((ret = rrr_socket_unix_connect (
-			&log_socket->connected_fd,
+			&fd_tmp,
 			"rrr_log_socket_child",
-			log_socket->listen_filename,
+			listener->listen_filename,
 			1 /* Nonblock */
 	)) != RRR_SOCKET_OK) {
 		RRR_MSG_0("Failed to connect to log socket '%s' in pid %li\n",
-			log_socket->listen_filename, (long int) getpid());
+			listener->listen_filename, (long int) getpid());
 		ret = 1;
 		goto out;
 	}
@@ -59,17 +77,18 @@ static int __rrr_log_socket_connect (
 	   deadlock. We must extract the socket options first and pass
 	   it ourselves for each write. */
 	if ((ret = rrr_socket_get_options_from_fd (
-			&log_socket->connected_fd_options,
-			log_socket->connected_fd
+			options,
+			fd_tmp
 	)) != 0) {
 		RRR_MSG_0("Failed to get socket options in %s\n", __func__);
 		goto out_close;
 	}
 
+	*fd = fd_tmp;
+
 	goto out;
 	out_close:
-		rrr_socket_close(log_socket->connected_fd);
-		log_socket->connected_fd = 0;
+		rrr_socket_close(fd_tmp);
 	out:
 		return ret;
 }
@@ -77,14 +96,17 @@ static int __rrr_log_socket_connect (
 static void __rrr_log_socket_intercept_callback (
 		RRR_LOG_PRINTF_INTERCEPT_ARGS
 ) {
-	struct rrr_log_socket *log_socket = private_arg;
+
+	struct rrr_log_socket_listener *listener = private_arg; 
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
+
+	(void)(listener);
+
+	assert(sayer->connected_fd > 0 && "No call to __rrr_log_socket_connect\n");
 
 	struct rrr_msg_log *msg_log = NULL;
 	rrr_length msg_size;
 	rrr_length send_chunk_count;
-
-	assert(log_socket->listen_fd == 0 && "Main process must not intercept log messages");
-	assert(log_socket->connected_fd != 0 && "Log socket must be connected");
 
 	if (rrr_msg_msg_log_new (
 			&msg_log,
@@ -108,8 +130,8 @@ static void __rrr_log_socket_intercept_callback (
 
 	if (rrr_socket_client_collection_send_push (
 			&send_chunk_count,
-			log_socket->client_collection,
-			log_socket->connected_fd,
+			sayer->client_collection,
+			sayer->connected_fd,
 			(void **) &msg_log,
 			msg_size
 	) != 0) {
@@ -137,9 +159,7 @@ static int __rrr_log_socket_read_callback (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_log_socket *log_socket = arg1;
-
-	(void)(log_socket);
+	(void)(arg1);
 	(void)(arg2);
 
 	int ret = 0;
@@ -172,9 +192,9 @@ static int __rrr_log_socket_read_callback (
 	return ret;
 }
 
-int rrr_log_socket_bind (
-		struct rrr_log_socket *target
-) {
+int rrr_log_socket_bind (void) {
+	struct rrr_log_socket_listener *target = &rrr_log_socket_listener;
+
 	int ret = 0;
 
 	assert(target->listen_fd == 0 && "Double call to rrr_log_socket_bind()");
@@ -194,6 +214,8 @@ int rrr_log_socket_bind (
 		goto out_free;
 	}
 
+	RRR_DBG_1("Bound to log socket %s\n", target->listen_filename);
+
 	goto out_final;
 //	out_close_socket:
 //		rrr_socket_close(target->listen_fd);
@@ -205,10 +227,13 @@ int rrr_log_socket_bind (
 }
 
 int rrr_log_socket_start_listen (
-		struct rrr_log_socket *target,
 		struct rrr_event_queue *queue
 ) {
+	struct rrr_log_socket_listener *target = &rrr_log_socket_listener;
+
 	int ret = 0;
+
+	assert(target->client_collection == NULL && "Double call to rrr_log_socket_start_listen");
 
 	if (rrr_socket_client_collection_new(&target->client_collection, queue, "rrr_log_socket_main") != 0) {
 		RRR_MSG_0("Could not create client collection for log socket in %s\n", __func__);
@@ -231,7 +256,7 @@ int rrr_log_socket_start_listen (
 			__rrr_log_socket_read_callback,
 			NULL, // ctrl
 			NULL, // stats
-			target
+			NULL
 	);
 
 	if ((ret = rrr_socket_client_collection_listen_fd_push (
@@ -246,29 +271,15 @@ int rrr_log_socket_start_listen (
 	return ret;
 }
 
-int rrr_log_socket_after_fork_and_start (
-		struct rrr_log_socket *log_socket,
+int rrr_log_socket_thread_start_say (
 		struct rrr_event_queue *queue
 ) {
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
+
 	int ret = 0;
 
-	if (log_socket->listen_fd > 0) {
-		rrr_socket_close_no_unlink(log_socket->listen_fd);
-		log_socket->listen_fd = 0;
-	}
-
-	if (log_socket->connected_fd > 0) {
-		rrr_socket_close(log_socket->connected_fd);
-		log_socket->connected_fd = 0;
-	}
-
-	if (log_socket->client_collection != NULL) {
-		rrr_socket_client_collection_destroy(log_socket->client_collection);
-		log_socket->client_collection = NULL;
-	}
-
 	if ((ret = rrr_socket_client_collection_new (
-			&log_socket->client_collection,
+			&sayer->client_collection,
 			queue,
 			"rrr_log_socket_fork"
 	)) != 0) {
@@ -276,16 +287,19 @@ int rrr_log_socket_after_fork_and_start (
 		goto out;
 	}
 
-	rrr_socket_client_collection_set_silent(log_socket->client_collection, 1);
-	rrr_socket_client_collection_event_setup_write_only(log_socket->client_collection, NULL, NULL, NULL);
+	rrr_socket_client_collection_set_silent(sayer->client_collection, 1);
+	rrr_socket_client_collection_event_setup_write_only(sayer->client_collection, NULL, NULL, NULL);
 
-	if ((ret = __rrr_log_socket_connect (log_socket)) != 0) {
+	if ((ret = __rrr_log_socket_connect (
+			&sayer->connected_fd,
+			&sayer->connected_options
+	)) != 0) {
 		goto out_destroy_collection;
 	}
 
 	if ((ret = rrr_socket_client_collection_connected_fd_push (
-			log_socket->client_collection,
-			log_socket->connected_fd,
+			sayer->client_collection,
+			sayer->connected_fd,
 			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
 	)) != 0) {
 		RRR_MSG_0("Failed to push fd in %s\n", __func__);
@@ -294,50 +308,79 @@ int rrr_log_socket_after_fork_and_start (
 
 	RRR_DBG_1("Log socket now connected in pid %li, setting intercept callback.\n", (long int) getpid());
 
-	rrr_log_printf_intercept_set (__rrr_log_socket_intercept_callback, log_socket);
-
+	rrr_log_printf_thread_local_intercept_set (__rrr_log_socket_intercept_callback, NULL);
+	
 	goto out;
 	out_close:
-		rrr_socket_close(log_socket->connected_fd);
-		log_socket->connected_fd = 0;
+		rrr_socket_close(sayer->connected_fd);
+		sayer->connected_fd = 0;
 	out_destroy_collection:
-		rrr_socket_client_collection_destroy(log_socket->client_collection);
+		rrr_socket_client_collection_destroy(sayer->client_collection);
+		sayer->client_collection = NULL;
 	out:
 		return ret;
 }
 
-void rrr_log_socket_cleanup (
-		struct rrr_log_socket *log_socket
-) {
-	assert (log_socket->listen_filename != NULL && "Double call to rrr_log_socket_cleanup()");
+int rrr_log_socket_after_fork (void) {
+	struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
 
-	rrr_log_printf_intercept_set (NULL, NULL);
+	int ret = 0;
 
-	if (log_socket->client_collection != NULL)
-		rrr_socket_client_collection_destroy(log_socket->client_collection);
-	if (log_socket->listen_fd > 0)
-		rrr_socket_close_no_unlink(log_socket->listen_fd);
-	if (log_socket->connected_fd > 0)
-		rrr_socket_close(log_socket->connected_fd);
-	rrr_free(log_socket->listen_filename);
-	memset(log_socket, '\0', sizeof(*log_socket));
+	if (listener->listen_fd > 0) {
+		rrr_socket_close_no_unlink(listener->listen_fd);
+		listener->listen_fd = 0;
+	}
+
+	if (listener->client_collection != NULL) {
+		rrr_socket_client_collection_destroy(listener->client_collection);
+		listener->client_collection = NULL;
+	}
+
+	goto out;
+	out:
+		return ret;
+}
+
+void rrr_log_socket_cleanup (void) {
+	struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
+
+	rrr_log_printf_thread_local_intercept_set (NULL, NULL);
+
+	if (listener->listen_fd > 0)
+		printf("Expecting %i to be closed\n", listener->listen_fd);
+	if (listener->client_collection != NULL)
+		rrr_socket_client_collection_destroy(listener->client_collection);
+	rrr_free(listener->listen_filename);
+
+	if (sayer->connected_fd > 0)
+		printf("Expection %i to be closed\n", sayer->connected_fd);
+	if (sayer->client_collection != NULL)
+		rrr_socket_client_collection_destroy(sayer->client_collection);
 }
 
 int rrr_log_socket_fds_get (
 		int **log_fds,
-		size_t *log_fds_count,
-		struct rrr_log_socket *log_socket
+		size_t *log_fds_count
 ) {
+	const struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+	const struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
+
 	int ret = 0;
 
 	int *client_fds = NULL;
 	size_t client_fds_count = 0;
 	int *all_fds = NULL;
 	size_t all_fds_count = 0;
+	struct rrr_socket_client_collection *client_collection_use;
 
-	if ((log_socket->client_collection != NULL) &&
-	    (ret = rrr_socket_client_collection_get_fds(&client_fds, &client_fds_count, log_socket->client_collection)) != 0
-	) {
+	assert((listener->client_collection || sayer->client_collection) && "Either client collection must be set");
+
+	client_collection_use = sayer->client_collection != NULL
+		? sayer->client_collection
+		: listener->client_collection;
+
+	if ((ret = rrr_socket_client_collection_get_fds(&client_fds, &client_fds_count, client_collection_use)) != 0) {
 		goto out;
 	}
 
@@ -350,8 +393,8 @@ int rrr_log_socket_fds_get (
 	client_fds = NULL;
 	all_fds_count = client_fds_count;
 
-	all_fds[all_fds_count++] = log_socket->listen_fd;
-	all_fds[all_fds_count++] = log_socket->connected_fd;
+	all_fds[all_fds_count++] = listener->listen_fd;
+	all_fds[all_fds_count++] = sayer->connected_fd;
 
 	*log_fds = all_fds;
 	*log_fds_count = all_fds_count;

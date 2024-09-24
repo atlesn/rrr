@@ -25,35 +25,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 
 struct rrr_event_queue *queue;
-struct rrr_socket_client_collection;
 
-struct rrr_log_socket {
-	char *listen_filename;
-	int listen_fd;
-	int connected_fd;
-	struct rrr_socket_options connected_fd_options;
-	struct rrr_socket_client_collection *client_collection;
-};
-
-int rrr_log_socket_bind (
-		struct rrr_log_socket *target
-);
+int rrr_log_socket_bind (void);
 int rrr_log_socket_start_listen (
-		struct rrr_log_socket *target,
 		struct rrr_event_queue *queue
 );
-int rrr_log_socket_after_fork_and_start (
-		struct rrr_log_socket *log_socket,
+int rrr_log_socket_thread_start_say (
 		struct rrr_event_queue *queue
 );
-void rrr_log_socket_cleanup (
-		struct rrr_log_socket *log_socket
-);
+int rrr_log_socket_after_fork (void);
+void rrr_log_socket_cleanup (void);
 int rrr_log_socket_fds_get (
 		int **log_fds,
-		size_t *log_fds_count,
-		struct rrr_log_socket *log_socket
+		size_t *log_fds_count
 );
-
 
 #endif /* RRR_LOG_SOCKET_H */
