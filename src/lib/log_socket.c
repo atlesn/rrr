@@ -40,6 +40,7 @@ struct rrr_log_socket_sayer {
 	int connected_fd;
 	struct rrr_socket_options connected_options;
 	struct rrr_socket_client_collection *client_collection;
+	struct rrr_event_queue *queue;
 };
 
 struct rrr_log_socket_listener {
@@ -278,15 +279,24 @@ int rrr_log_socket_thread_start_say (
 
 	int ret = 0;
 
+	assert(sayer->queue == NULL && "Queue must be null when say is stared");
+	assert(sayer->client_collection == NULL && "Client collection must be null when say is stared");
+	assert(sayer->connected_fd == 0 && "Connected fd must be zero when say is stared");
+
+	// Must preserve event queue as it would otherwise be
+	// destroyed prior to the sayer as thread shuts down
+	sayer->queue = queue;
+	rrr_event_queue_incref(queue);
+
 	if ((ret = rrr_socket_client_collection_new (
 			&sayer->client_collection,
 			queue,
 			"rrr_log_socket_fork"
 	)) != 0) {
 		RRR_MSG_0("Failed to create client collection in %s\n", __func__);
-		goto out;
+		goto out_decref;
 	}
-
+	
 	rrr_socket_client_collection_set_silent(sayer->client_collection, 1);
 	rrr_socket_client_collection_event_setup_write_only(sayer->client_collection, NULL, NULL, NULL);
 
@@ -311,6 +321,9 @@ int rrr_log_socket_thread_start_say (
 	rrr_log_printf_thread_local_intercept_set (__rrr_log_socket_intercept_callback, NULL);
 	
 	goto out;
+	out_decref:
+		rrr_event_queue_destroy(queue);
+		sayer->queue = NULL;
 	out_close:
 		rrr_socket_close(sayer->connected_fd);
 		sayer->connected_fd = 0;
@@ -341,22 +354,29 @@ int rrr_log_socket_after_fork (void) {
 		return ret;
 }
 
-void rrr_log_socket_cleanup (void) {
-	struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+void rrr_log_socket_cleanup_sayer (void) {
 	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
 
 	rrr_log_printf_thread_local_intercept_set (NULL, NULL);
 
-	if (listener->listen_fd > 0)
-		printf("Expecting %i to be closed\n", listener->listen_fd);
+	if (sayer->connected_fd > 0) {
+		// Should be closed when destroying client collection
+	}
+	if (sayer->client_collection != NULL)
+		rrr_socket_client_collection_destroy(sayer->client_collection);
+	if (sayer->queue != NULL)
+		rrr_event_queue_destroy(sayer->queue);
+}
+
+void rrr_log_socket_cleanup_listener (void) {
+	struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+
+	if (listener->listen_fd > 0) {
+		// Should be closed when destroying client collection
+	}
 	if (listener->client_collection != NULL)
 		rrr_socket_client_collection_destroy(listener->client_collection);
 	rrr_free(listener->listen_filename);
-
-	if (sayer->connected_fd > 0)
-		printf("Expection %i to be closed\n", sayer->connected_fd);
-	if (sayer->client_collection != NULL)
-		rrr_socket_client_collection_destroy(sayer->client_collection);
 }
 
 int rrr_log_socket_fds_get (

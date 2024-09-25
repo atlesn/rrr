@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "discern_stack.h"
 #include "discern_stack_helper.h"
 #include "instance_config.h"
+#include "log_socket.h"
 #include "message_broker.h"
 #include "message_helper.h"
 #include "message_holder/message_holder_struct.h"
@@ -1000,6 +1001,38 @@ static int __rrr_instance_thread_preload (
 	return ret;
 }
 
+static int __rrr_instance_thread_early_init (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	int ret = 0;
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+#else
+	(void)(thread_data);
+#endif
+
+	if ((ret = rrr_log_socket_thread_start_say(INSTANCE_D_EVENTS(thread_data))) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static void __rrr_instance_thread_late_deinit (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	(void)(thread_data);
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	rrr_log_socket_cleanup_sayer();
+#endif
+}
+
 struct rrr_instance_collection_start_threads_check_wait_for_callback_data {
 	struct rrr_instance_collection *instances;
 };
@@ -1116,6 +1149,8 @@ static int __rrr_instances_create_threads (
 				thread_collection,
 				__rrr_instance_thread_entry_intermediate,
 				__rrr_instance_thread_preload,
+				__rrr_instance_thread_early_init,
+				__rrr_instance_thread_late_deinit,
 				node->module_data->instance_name,
 				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data
@@ -1293,6 +1328,8 @@ int rrr_instance_run (
 			thread_collection,
 			__rrr_instance_thread_entry_intermediate,
 			__rrr_instance_thread_preload,
+			__rrr_instance_thread_early_init,
+			__rrr_instance_thread_late_deinit,
 			instance->module_data->instance_name,
 			RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 			runtime_data

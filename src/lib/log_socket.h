@@ -24,7 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "socket/rrr_socket.h"
 
-struct rrr_event_queue *queue;
+#include <stdio.h>
+
+struct rrr_event_queue;
 
 int rrr_log_socket_bind (void);
 int rrr_log_socket_start_listen (
@@ -34,7 +36,8 @@ int rrr_log_socket_thread_start_say (
 		struct rrr_event_queue *queue
 );
 int rrr_log_socket_after_fork (void);
-void rrr_log_socket_cleanup (void);
+void rrr_log_socket_cleanup_sayer (void);
+void rrr_log_socket_cleanup_listener (void);
 int rrr_log_socket_fds_get (
 		int **log_fds,
 		size_t *log_fds_count

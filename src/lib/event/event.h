@@ -103,6 +103,9 @@ void rrr_event_queue_destroy (
 void rrr_event_queue_destroy_void (
 		void *queue
 );
+void rrr_event_queue_incref (
+		struct rrr_event_queue *queue
+);
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );
