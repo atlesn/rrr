@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event/event_collection_struct.h"
 #include "util/gnu.h"
 #include "util/posix.h"
+#include "util/linked_list.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_client.h"
 #include "messages/msg_log.h"
@@ -38,6 +39,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LOG_SOCKET_SEND_CHUNK_WARN_LIMIT 10000
 #define RRR_LOG_SOCKET_SEND_CHUNK_CRITICAL_LIMIT 100000
+#define RRR_LOG_SOCKET_QUEUE_LIMIT 10000
+
+struct rrr_log_socket_msg_holder {
+	RRR_LL_NODE(struct rrr_log_socket_msg_holder);
+	struct rrr_msg *msg;
+};
+
+struct rrr_log_socket_msg_collection {
+	RRR_LL_HEAD(struct rrr_log_socket_msg_holder);
+};
 
 struct rrr_log_socket_sayer {
 	int connected_fd;
@@ -47,6 +58,8 @@ struct rrr_log_socket_sayer {
 	struct rrr_event_collection events;
 	struct rrr_event_handle event_periodic;
 	struct rrr_event_handle event_connect;
+	struct rrr_event_handle event_send;
+	struct rrr_log_socket_msg_collection msg_collection;
 };
 
 struct rrr_log_socket_listener {
@@ -56,8 +69,31 @@ struct rrr_log_socket_listener {
 };
 
 static struct rrr_log_socket_listener rrr_log_socket_listener = {0};
+
 static _Thread_local struct rrr_log_socket_sayer rrr_log_socket_sayer = {0};
 static _Thread_local pthread_mutex_t rrr_log_socket_reentry_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void __rrr_log_socket_msg_holder_destroy (
+		struct rrr_log_socket_msg_holder *holder
+) {
+	rrr_free(holder->msg);
+	rrr_free(holder);
+}
+
+static int __rrr_log_socket_msg_holder_new (
+		struct rrr_log_socket_msg_holder **target
+) {
+	struct rrr_log_socket_msg_holder *holder;
+
+	if ((holder = rrr_allocate_zero(sizeof(*holder))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	*target = holder;
+
+	return 0;
+}
 
 static int __rrr_log_socket_connect (
 		int *fd,
@@ -81,9 +117,7 @@ static int __rrr_log_socket_connect (
 		goto out;
 	}
 
-	/* When debug messages are active, the socket subsystem might
-	   deadlock. We must extract the socket options first and pass
-	   it ourselves for each write. */
+	/* Prevent socket framework looking this up each time */
 	if ((ret = rrr_socket_get_options_from_fd (
 			options,
 			fd_tmp
@@ -145,7 +179,7 @@ static void __rrr_log_socket_connect_as_needed_sayer(void) {
 	RRR_BUG("Max reconnect attempts, cannot continue.\n");
 }
 
-static void __rrr_log_socket_msg_send_sayer (
+static int __rrr_log_socket_msg_send_sayer (
 		struct rrr_msg *msg
 ) {
 	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
@@ -155,6 +189,7 @@ static void __rrr_log_socket_msg_send_sayer (
 	rrr_length send_chunk_count;
 
 	msg_size = MSG_TOTAL_SIZE(msg);
+
 	rrr_msg_checksum_and_to_network_endian(msg);
 
 	if (sayer->connected_fd == 0 || (ret_tmp = rrr_socket_client_collection_send_push_const (
@@ -172,7 +207,10 @@ static void __rrr_log_socket_msg_send_sayer (
 
 		EVENT_ACTIVATE(sayer->event_connect);
 
-		return;
+		if (rrr_msg_head_to_host_and_verify(msg, msg_size) != 0)
+			RRR_BUG("Error when reverting endianess in %s\n", __func__);
+
+		return 1;
 	}
 
 	if (send_chunk_count > RRR_LOG_SOCKET_SEND_CHUNK_CRITICAL_LIMIT) {
@@ -183,22 +221,35 @@ static void __rrr_log_socket_msg_send_sayer (
 		RRR_MSG_ERR("Warning: %" PRIrrrl " send chunks with log socket messages in pid %li\n",
 			send_chunk_count, (long int) getpid());
 	}
+
+	return 0;
+}
+
+
+static void __rrr_log_socket_send_sayer (void) {
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
+
+	RRR_LL_ITERATE_BEGIN(&sayer->msg_collection, struct rrr_log_socket_msg_holder);
+		if (__rrr_log_socket_msg_send_sayer(node->msg) != 0)
+			return;
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&sayer->msg_collection, 0; __rrr_log_socket_msg_holder_destroy(node));
 }
 
 static void __rrr_log_socket_intercept_callback (
 		RRR_LOG_PRINTF_INTERCEPT_ARGS
 ) {
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
 
-	struct rrr_log_socket_listener *listener = private_arg; 
-
-	(void)(listener);
+	(void)(private_arg);
 
 	struct rrr_msg_log *msg_log = NULL;
+	struct rrr_log_socket_msg_holder *msg_holder = NULL;
 
 	// printf("Intercept %s", message);
 
-	if (!(pthread_mutex_trylock(&rrr_log_socket_reentry_lock)) == 0) {
-		RRR_MSG_ERR("Warning: Re-entry in log socket, possibly during re-connection. Logs are lost.\n");
+	if (!(pthread_mutex_trylock(&rrr_log_socket_reentry_lock) == 0)) {
+		RRR_MSG_ERR("Warning: Re-entry in log socket. Logs are lost.\n");
 		return;
 	}
 
@@ -217,11 +268,27 @@ static void __rrr_log_socket_intercept_callback (
 
 	rrr_msg_msg_log_prepare_for_network(msg_log);
 
-	__rrr_log_socket_msg_send_sayer((struct rrr_msg *) msg_log);
+	if (__rrr_log_socket_msg_holder_new(&msg_holder) != 0) {
+		RRR_MSG_ERR("Warning: Failed to create log message holder in %s\n", __func__);
+		goto out;
+	}
+
+	msg_holder->msg = (struct rrr_msg *) msg_log;
+	msg_log = NULL;
+
+	RRR_LL_APPEND(&sayer->msg_collection, msg_holder);
+	msg_holder = NULL;
+
+	if (RRR_LL_COUNT(&sayer->msg_collection) > RRR_LOG_SOCKET_QUEUE_LIMIT) {
+		RRR_BUG("Queue limit exceeded in %s, aborting now.\n", __func__);
+	}
+
+	EVENT_ACTIVATE(sayer->event_send);
 
 	out:
-	pthread_mutex_unlock(&rrr_log_socket_reentry_lock);
 	RRR_FREE_IF_NOT_NULL(msg_log);
+	RRR_FREE_IF_NOT_NULL(msg_holder);
+	pthread_mutex_unlock(&rrr_log_socket_reentry_lock);
 }
 
 static int __rrr_log_socket_read_log_callback (
@@ -270,8 +337,7 @@ static int __rrr_log_socket_read_ctrl_callback (
 	(void)(arg1);
 	(void)(arg2);
 
-	// Note that we do not respond with pong, the
-	// client does not read anything.
+	// Note that we do not respond with pong, the client does not read anything.
 	assert(RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING) && "Control message was not a ping");
 
 	return 0;
@@ -370,7 +436,7 @@ static void __rrr_log_socket_send_ping_sayer (void) {
 
 	rrr_msg_populate_control_msg(&msg_ctrl, RRR_MSG_CTRL_F_PING, 0);
 
-//	__rrr_log_socket_msg_send_sayer((struct rrr_msg *) &msg_ctrl);
+	__rrr_log_socket_msg_send_sayer((struct rrr_msg *) &msg_ctrl);
 }
 
 static void __rrr_log_socket_event_periodic_sayer (
@@ -395,6 +461,18 @@ static void __rrr_log_socket_event_connect_sayer (
 	(void)(arg);
 
 	__rrr_log_socket_connect_as_needed_sayer();
+}
+
+static void __rrr_log_socket_event_send_sayer (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+	(void)(arg);
+
+	__rrr_log_socket_send_sayer();
 }
 
 int rrr_log_socket_thread_start_say (
@@ -436,11 +514,9 @@ int rrr_log_socket_thread_start_say (
 			&sayer->events,
 			__rrr_log_socket_event_periodic_sayer,
 			NULL,
-			1000 * 1000
-			//RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2
+			RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2
 	)) != 0) {
 		RRR_MSG_0("Failed to push periodic function in %s\n", __func__);
-		// Note: Socket will be destroyed by client collection, skip out_close
 		goto out_destroy_collection;
 	}
 
@@ -451,16 +527,27 @@ int rrr_log_socket_thread_start_say (
 			&sayer->events,
 			__rrr_log_socket_event_connect_sayer,
 			NULL,
-			1000 * 1000
-			//RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2
+			1 * 1000 * 1000 // 1 second
 	)) != 0) {
 		RRR_MSG_0("Failed to push connect function in %s\n", __func__);
-		// Note: Socket will be destroyed by client collection, skip out_close
 		goto out_destroy_collection;
 	}
 
 	EVENT_ADD(sayer->event_connect);
 	EVENT_ACTIVATE(sayer->event_connect);
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&sayer->event_send,
+			&sayer->events,
+			__rrr_log_socket_event_send_sayer,
+			NULL,
+			100 * 1000 // 100 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to push send function in %s\n", __func__);
+		goto out_destroy_collection;
+	}
+
+	EVENT_ADD(sayer->event_send);
 
 	__rrr_log_socket_connect_as_needed_sayer();
 
@@ -481,6 +568,7 @@ int rrr_log_socket_thread_start_say (
 
 int rrr_log_socket_after_fork (void) {
 	struct rrr_log_socket_listener *listener = &rrr_log_socket_listener;
+	struct rrr_log_socket_sayer *sayer = &rrr_log_socket_sayer;
 
 	int ret = 0;
 
@@ -490,20 +578,11 @@ int rrr_log_socket_after_fork (void) {
 	// Preserve filename only
 	listener->listen_fd = 0;
 	listener->client_collection = NULL;
-//	memset(&rrr_log_socket_listener, '\0', sizeof(rrr_log_socket_listener));
-/*	if (listener->client_collection != NULL) {
-		rrr_socket_client_collection_set_no_unlink(listener->client_collection, 1);
-		rrr_socket_client_collection_destroy(listener->client_collection);
-	}
-	else if (listener->listen_fd > 0) {
-		rrr_socket_close_no_unlink(listener->listen_fd);
-	}*/
-
-//	listener->client_collection = NULL;
-//	listener->listen_fd = 0;
 
 	memset(&rrr_log_socket_sayer, '\0', sizeof(rrr_log_socket_sayer));
 	rrr_log_printf_thread_local_intercept_set (NULL, NULL);
+
+	assert(RRR_LL_COUNT(&sayer->msg_collection) == 0 && "Queue was not empty");
 
 	goto out;
 	out:
@@ -536,6 +615,8 @@ void rrr_log_socket_cleanup_sayer (void) {
 		rrr_event_queue_destroy(sayer->queue);
 
 	sayer->queue = NULL;
+
+	RRR_LL_DESTROY(&sayer->msg_collection, struct rrr_log_socket_msg_holder, __rrr_log_socket_msg_holder_destroy(node));
 }
 
 void rrr_log_socket_cleanup_listener (void) {
@@ -544,11 +625,13 @@ void rrr_log_socket_cleanup_listener (void) {
 	//printf("Cleanup listener pid %i connected fd %i listen fd %i\n",
 	//	getpid(), rrr_log_socket_sayer.connected_fd, rrr_log_socket_listener.listen_fd);
 
-	if (listener->listen_fd > 0) {
-		// Should be closed when destroying client collection
-	}
-	if (listener->client_collection != NULL)
+	if (listener->client_collection != NULL) {
 		rrr_socket_client_collection_destroy(listener->client_collection);
+	}
+	else if (listener->listen_fd > 0) {
+		rrr_socket_close(listener->listen_fd);
+	}
+
 	rrr_free(listener->listen_filename);
 }
 
