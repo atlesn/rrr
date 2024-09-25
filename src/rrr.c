@@ -1228,6 +1228,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	out_cleanup_log_socket_and_events:
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
+		// For forks
+		rrr_log_socket_cleanup_sayer();
+
 		// Must be cleanup of after forks are waited for as they use the log socket
 		rrr_log_socket_cleanup_listener();
 #endif

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../log.h"
+#include "../log_socket.h"
 #include "../allocator.h"
 
 #include "cmodule_worker.h"
@@ -927,6 +928,73 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 	return ret;
 }
 
+struct rrr_cmodule_worker_main_close_sockets_except_callback_data {
+	int *fds_a;
+	size_t fds_a_len;
+	int *fds_b;
+	size_t fds_b_len;
+	int *fds_c;
+	size_t fds_c_len;
+};
+
+static int __rrr_cmodule_worker_main_close_sockets_except_cb (int fd, void *arg) {
+	struct rrr_cmodule_worker_main_close_sockets_except_callback_data *callback_data = arg;
+
+	for (size_t i = 0; i < callback_data->fds_a_len; i++) {
+		if (callback_data->fds_a[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_b_len; i++) {
+		if (callback_data->fds_b[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_c_len; i++) {
+		if (callback_data->fds_c[i] == fd)
+			return 1;
+	}
+
+	return 0;
+}
+
+static void __rrr_cmodule_worker_main_close_sockets_except (
+		struct rrr_cmodule_worker *worker
+) {
+	int event_fds[RRR_EVENT_QUEUE_FD_MAX*2];
+	size_t event_fds_count_a = 0;
+	size_t event_fds_count_b = 0;
+	int *log_fds = NULL;
+	size_t log_fds_count = 0;
+	int single_fds[] = {0};
+	size_t single_fds_count = sizeof(single_fds) / sizeof(single_fds[0]);
+
+	// We need to preserve the open event signal sockets, any other FDs are closed
+	rrr_event_queue_fds_get(event_fds, &event_fds_count_a, worker->event_queue_parent);
+	rrr_event_queue_fds_get(event_fds + event_fds_count_a, &event_fds_count_b, worker->event_queue_worker);
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_fds_get(&log_fds, &log_fds_count) != 0) {
+		RRR_BUG("Failed to get log sockets in %s. Cannot continue, aborting now.\n", __func__);
+	}
+#endif
+
+	printf("Not closing %lu event fds %lu log fds\n", event_fds_count_a + event_fds_count_b, log_fds_count);
+
+	struct rrr_cmodule_worker_main_close_sockets_except_callback_data callback_data = {
+		event_fds,
+		event_fds_count_a + event_fds_count_b,
+		log_fds,
+		log_fds_count,
+		single_fds,
+		single_fds_count
+	};
+
+	rrr_socket_close_all_except_cb_no_unlink (__rrr_cmodule_worker_main_close_sockets_except_cb, &callback_data);
+
+	RRR_FREE_IF_NOT_NULL(log_fds);
+}
+
 int rrr_cmodule_worker_main (
 		struct rrr_cmodule_worker *worker,
 		const char *log_prefix,
@@ -936,18 +1004,11 @@ int rrr_cmodule_worker_main (
 ) {
 	int ret = 0;
 
-	int event_fds[RRR_EVENT_QUEUE_FD_MAX * 2];
-	size_t event_fds_count = 0;
 	int log_hook_handle;
 
+	__rrr_cmodule_worker_main_close_sockets_except(worker);
+
 	rrr_log_hook_unregister_all_after_fork();
-
-	memset(event_fds, '\0', sizeof(event_fds));
-
-	// We need to preserve the open event signal sockets, any other FDs are closed
-	rrr_event_queue_fds_get(event_fds, &event_fds_count, worker->event_queue_parent);
-	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
-	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	rrr_event_hook_set(__rrr_cmodule_worker_event_hook, worker);
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);

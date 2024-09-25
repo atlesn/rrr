@@ -389,11 +389,13 @@ int rrr_socket_with_lock_do (
 }
 
 static void __rrr_socket_dump_unlocked (void) {
+	RRR_DBG_7("There are now %i sockets\n", RRR_LL_COUNT(&socket_list));
+/*	Noisy
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		const char *filename = (node->filename_unlink ? node->filename_unlink : node->filename_no_unlink);
 		RRR_DBG_7 ("fd %i pid %i creator %s filename %s%s\n", node->options.fd, getpid(), node->creator, filename, node->filename_unlink ? " (listen)" : "");
 	RRR_LL_ITERATE_END();
-	RRR_DBG_7("---\n");
+	RRR_DBG_7("---\n");*/
 }
 
 static int __rrr_socket_add_unlocked (
@@ -1404,7 +1406,7 @@ int rrr_socket_sendto_nonblock (
 
 	struct rrr_socket_options options;
 	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
-		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
+		RRR_MSG_0("Could not get socket options for fd %i in %s\n", fd, __func__);
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}

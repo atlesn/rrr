@@ -94,6 +94,7 @@ struct rrr_socket_client_collection {
 	uint64_t connect_timeout_us;
 	uint64_t idle_timeout_us;
 	int silent;
+	int no_unlink;
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
@@ -131,6 +132,7 @@ struct rrr_socket_client_fd {
 
 	struct rrr_socket_client *client;
 
+	int destroyed;
 	int fd;
 
 	struct rrr_event_collection events;
@@ -178,6 +180,8 @@ static int __rrr_socket_client_fd_destroy (
 ) {
 	struct rrr_socket_client_collection *collection = client_fd->client->collection;
 
+	client_fd->destroyed = 1;
+
 	if (collection->client_fd_close_callback) {
 		collection->client_fd_close_callback (
 				client_fd->fd,
@@ -192,7 +196,10 @@ static int __rrr_socket_client_fd_destroy (
 
 	rrr_event_collection_clear(&client_fd->events);
 	if (client_fd->fd > 0) {
-		rrr_socket_close(client_fd->fd);
+		if (collection->no_unlink)
+			rrr_socket_close_no_unlink(client_fd->fd);
+		else
+			rrr_socket_close(client_fd->fd);
 	}
 	RRR_FREE_IF_NOT_NULL(client_fd->addr_string);
 	rrr_free(client_fd);
@@ -353,6 +360,8 @@ static void __rrr_socket_client_send_push_notify (
 		return;
 	}
 
+	assert (client->connected_fd->destroyed == 0 && "Was destroyed");
+
 	EVENT_ADD(client->connected_fd->event_write);
 }
 
@@ -445,6 +454,13 @@ void rrr_socket_client_collection_set_silent (
 		int silent
 ) {
 	target->silent = silent != 0;
+}
+
+void rrr_socket_client_collection_set_no_unlink (
+		struct rrr_socket_client_collection *target,
+		int no_unlink
+) {
+	target->no_unlink = no_unlink != 0;
 }
 
 void rrr_socket_client_collection_destroy (

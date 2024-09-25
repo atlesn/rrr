@@ -125,6 +125,10 @@ void rrr_socket_client_collection_set_silent (
 		struct rrr_socket_client_collection *target,
 		int silent
 );
+void rrr_socket_client_collection_set_no_unlink (
+		struct rrr_socket_client_collection *target,
+		int no_unlink
+);
 void rrr_socket_client_collection_set_connect_timeout (
 		struct rrr_socket_client_collection *collection,
 		uint64_t connect_timeout_us
