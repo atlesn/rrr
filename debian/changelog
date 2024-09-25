@@ -1,6 +1,12 @@
-rrr (1.32-4) bookworm; urgency=medium
+rrr (1.32-5) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * Compilation option (for now) to enable central printf logging so that
+      each thread sends log output over a socket to the main process. This
+      ensures that printf outputs are not mixed up from different threads
+      and processes.
 
   * Improvements:
     * Remove all references to http2 when RRR is built without nghttp2, in
@@ -10,7 +16,7 @@ rrr (1.32-4) bookworm; urgency=medium
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
       cases
- 
+
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
 
 rrr (1.31-4) bookworm; urgency=medium
