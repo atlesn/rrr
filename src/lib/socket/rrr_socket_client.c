@@ -484,6 +484,19 @@ static void __rrr_socket_client_fd_find_and_destroy (
 	}
 }
 
+static void __rrr_socket_client_fd_notify_read (
+		struct rrr_socket_client *client,
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+		if (fd == node->fd) {
+			EVENT_ACTIVATE(node->event_read);
+			return;
+		}
+	RRR_LL_ITERATE_END();
+	assert(0 && "FD not found during notify read");
+}
+
 static int __rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
 		struct rrr_event_queue *queue,
@@ -770,11 +783,17 @@ static void __rrr_socket_client_return_value_process (
 	}
 }
 
+struct rrr_socket_client_collection_read_message_callback_data {
+	struct rrr_socket_client *client;
+	int fd;
+};
+
 static int __rrr_socket_client_collection_read_message_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection_read_message_callback_data *callback_data = arg;
+	struct rrr_socket_client *client = callback_data->client;
 	struct rrr_socket_client_collection *collection = client->collection;
 
 #if SSIZE_MAX > RRR_LENGTH_MAX
@@ -783,6 +802,10 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 		return RRR_READ_SOFT_ERROR;
 	}
 #endif
+
+	if (read_session->rx_overshoot_size) {
+		__rrr_socket_client_fd_notify_read (client, callback_data->fd);
+	}
 
 	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
 	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
@@ -923,7 +946,8 @@ static void __rrr_socket_client_event_message_error_callback (
 		int is_hard_err,
 		void *arg
 ) {
-	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection_read_message_callback_data *callback_data = arg;
+	struct rrr_socket_client *client = callback_data->client;
 
 	(void)(read_session);
 	(void)(is_hard_err);
@@ -940,7 +964,6 @@ static void __rrr_socket_client_event_read_message (
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
 
-	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
@@ -951,6 +974,11 @@ static void __rrr_socket_client_event_read_message (
 
 	int ret_tmp = RRR_READ_OK;
 	uint64_t bytes_read = 0;
+
+	struct rrr_socket_client_collection_read_message_callback_data callback_data = {
+		client,
+		fd
+	};
 
 	ret_tmp = rrr_socket_read_message_default (
 			&bytes_read,
@@ -965,9 +993,9 @@ static void __rrr_socket_client_event_read_message (
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_client_event_message_error_callback,
-			client,
+			&callback_data,
 			__rrr_socket_client_collection_read_message_complete_callback,
-			client
+			&callback_data
 	);
 
 	__rrr_socket_client_return_value_process (

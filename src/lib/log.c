@@ -404,7 +404,6 @@ static void __rrr_log_vprintf_intercept (
 		fprintf(stderr, "Warning: Failed to format log message in %s\n", __func__);
 		goto out;
 	}
-	printf("Intercept %s\n", message);
 
 	rrr_log_printf_intercept_callback (
 			file,
