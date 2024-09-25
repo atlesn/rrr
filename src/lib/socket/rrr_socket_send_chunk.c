@@ -59,6 +59,12 @@ static void __rrr_socket_send_chunk_destroy (
 #define RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_END() \
 	}} while(0)
 
+void rrr_socket_send_chunk_collection_set_silent (
+		struct rrr_socket_send_chunk_collection *chunks
+) {
+	chunks->silent = 1;
+}
+
 void rrr_socket_send_chunk_collection_clear (
 		struct rrr_socket_send_chunk_collection *chunks
 ) {
@@ -308,8 +314,9 @@ static int __rrr_socket_send_chunk_collection_send (
 
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();
 		RRR_LL_ITERATE_BEGIN(list, struct rrr_socket_send_chunk);
-			RRR_DBG_7("Chunk non-blocking sendto on fd %i, pos/size %lld/%lld\n",
-				fd,  (long long int) node->data_pos, (long long int) node->data_size);
+			if (!chunks->silent)
+				RRR_DBG_7("Chunk non-blocking sendto on fd %i, pos/size %lld/%lld\n",
+					fd,  (long long int) node->data_pos, (long long int) node->data_size);
 
 			rrr_biglength written_bytes = 0;
 			if ((ret = rrr_socket_sendto_nonblock_check_retry (
@@ -318,7 +325,8 @@ static int __rrr_socket_send_chunk_collection_send (
 					node->data + node->data_pos,
 					node->data_size - node->data_pos,
 					(const struct sockaddr *) &node->addr,
-					node->addr_len
+					node->addr_len,
+					chunks->silent
 			)) != 0) {
 				if (ret == RRR_SOCKET_WRITE_INCOMPLETE) {
 					node->data_pos += written_bytes;
@@ -374,8 +382,9 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 	int max = 10;
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();
 		RRR_LL_ITERATE_BEGIN(list, struct rrr_socket_send_chunk);
-			RRR_DBG_7("Chunk send with callback pos/size %lld/%lld\n",
-				(long long int) node->data_pos, (long long int) node->data_size);
+			if (!chunks->silent)
+				RRR_DBG_7("Chunk send with callback pos/size %lld/%lld\n",
+					(long long int) node->data_pos, (long long int) node->data_size);
 
 			rrr_biglength written_bytes = 0;
 

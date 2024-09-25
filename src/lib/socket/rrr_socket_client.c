@@ -93,6 +93,7 @@ struct rrr_socket_client_collection {
 	// Setable values
 	uint64_t connect_timeout_us;
 	uint64_t idle_timeout_us;
+	int silent;
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
@@ -409,6 +410,9 @@ static int __rrr_socket_client_new_and_add (
 	client->collection = collection;
 	client->create_type = create_type;
 
+	if (collection->silent)
+		rrr_socket_send_chunk_collection_set_silent(&client->send_chunks);
+
 	*result = client;
 	RRR_LL_UNSHIFT(collection, client);
 
@@ -434,6 +438,13 @@ void rrr_socket_client_collection_set_idle_timeout (
 		uint64_t idle_timeout_us
 ) {
 	collection->idle_timeout_us = idle_timeout_us;
+}
+
+void rrr_socket_client_collection_set_silent (
+		struct rrr_socket_client_collection *target,
+		int silent
+) {
+	target->silent = silent != 0;
 }
 
 void rrr_socket_client_collection_destroy (
@@ -471,6 +482,19 @@ static void __rrr_socket_client_fd_find_and_destroy (
 	if (RRR_LL_COUNT(client) == 0) {
 		__rrr_socket_client_collection_find_and_destroy(collection, client);
 	}
+}
+
+static void __rrr_socket_client_fd_notify_read (
+		struct rrr_socket_client *client,
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+		if (fd == node->fd) {
+			EVENT_ACTIVATE(node->event_read);
+			return;
+		}
+	RRR_LL_ITERATE_END();
+	assert(0 && "FD not found during notify read");
 }
 
 static int __rrr_socket_client_collection_new (
@@ -560,7 +584,7 @@ static void __rrr_socket_client_read_callback_flags_deduct (
 ) {
 	const struct rrr_socket_client_collection *collection = client->collection;
 
-	*read_flags_socket = client->collection->read_flags_socket;
+	*read_flags_socket = client->collection->read_flags_socket | (collection->silent ? RRR_SOCKET_READ_SILENT : 0);
 
 	if (collection->callback_set_read_flags != NULL) {
 		collection->callback_set_read_flags(read_flags_socket, do_soft_error_propagates, client->private_data, collection->callback_set_read_flags_arg);
@@ -759,11 +783,17 @@ static void __rrr_socket_client_return_value_process (
 	}
 }
 
+struct rrr_socket_client_collection_read_message_callback_data {
+	struct rrr_socket_client *client;
+	int fd;
+};
+
 static int __rrr_socket_client_collection_read_message_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection_read_message_callback_data *callback_data = arg;
+	struct rrr_socket_client *client = callback_data->client;
 	struct rrr_socket_client_collection *collection = client->collection;
 
 #if SSIZE_MAX > RRR_LENGTH_MAX
@@ -772,6 +802,10 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 		return RRR_READ_SOFT_ERROR;
 	}
 #endif
+
+	if (read_session->rx_overshoot_size) {
+		__rrr_socket_client_fd_notify_read (client, callback_data->fd);
+	}
 
 	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
 	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
@@ -912,7 +946,8 @@ static void __rrr_socket_client_event_message_error_callback (
 		int is_hard_err,
 		void *arg
 ) {
-	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection_read_message_callback_data *callback_data = arg;
+	struct rrr_socket_client *client = callback_data->client;
 
 	(void)(read_session);
 	(void)(is_hard_err);
@@ -929,7 +964,6 @@ static void __rrr_socket_client_event_read_message (
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
 
-	(void)(fd);
 	(void)(flags);
 
 	RRR_EVENT_HOOK();
@@ -938,28 +972,36 @@ static void __rrr_socket_client_event_read_message (
 	DEDUCT_READ_FLAGS();
 	ENFORCE_SOFT_ERROR_PROPAGATES();
 
+	int ret_tmp = RRR_READ_OK;
 	uint64_t bytes_read = 0;
+
+	struct rrr_socket_client_collection_read_message_callback_data callback_data = {
+		client,
+		fd
+	};
+
+	ret_tmp = rrr_socket_read_message_default (
+			&bytes_read,
+			&client->read_sessions,
+			fd,
+			sizeof(struct rrr_msg),
+			collection->read_step_max_size,
+			0, // No max size
+			read_flags_socket,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_socket_client_event_message_error_callback,
+			&callback_data,
+			__rrr_socket_client_collection_read_message_complete_callback,
+			&callback_data
+	);
 
 	__rrr_socket_client_return_value_process (
 		collection,
 		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				fd,
-				sizeof(struct rrr_msg),
-				collection->read_step_max_size,
-				0, // No max size
-				read_flags_socket,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes
-				rrr_read_common_get_session_target_length_from_message_and_checksum,
-				NULL,
-				__rrr_socket_client_event_message_error_callback,
-				client,
-				__rrr_socket_client_collection_read_message_complete_callback,
-				client
-		)
+		ret_tmp
 	);
 }
 
@@ -1566,6 +1608,15 @@ void rrr_socket_client_collection_send_push_const_multicast (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
 }
 
+#define ALL_LOOP_BEGIN()                                                  \
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);       \
+		struct rrr_socket_client *client = node;                  \
+		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd)
+
+#define ALL_LOOP_END()                                                    \
+		RRR_LL_ITERATE_END();                                     \
+	RRR_LL_ITERATE_END()
+
 #define FIND_LOOP_BEGIN()                                                 \
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);       \
 		if (node->close_when_send_complete) {                     \
@@ -1791,6 +1842,33 @@ static void __rrr_socket_client_collection_close_by_client (
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
+}
+
+int rrr_socket_client_collection_get_fds (
+		int **target,
+		size_t *target_count,
+		const struct rrr_socket_client_collection *collection
+) {
+	int *fds;
+	size_t count = 0, pos = 0;
+
+	ALL_LOOP_BEGIN();
+		count++;
+	ALL_LOOP_END();
+
+	if ((fds = rrr_allocate(sizeof(*fds) * count)) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	ALL_LOOP_BEGIN();
+		fds[pos++] = node->fd;
+	ALL_LOOP_END();
+
+	*target = fds;
+	*target_count = count;
+
+	return 0;
 }
 
 int rrr_socket_client_collection_has_fd (

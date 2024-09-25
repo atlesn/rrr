@@ -131,6 +131,10 @@ struct rrr_thread {
 	// Start routines
 	void *(*start_routine) (struct rrr_thread *);
 
+	// Init/deinit routines
+	int (*early_init_routine) (struct rrr_thread *);
+	void (*late_deinit_routine) (struct rrr_thread *);
+
 	// External data to clean up
 	struct rrr_thread_managed_data_collection managed_data;
 
@@ -274,6 +278,8 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
+		int (*early_init_routine) (struct rrr_thread *),
+		void (*late_deinit_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data

@@ -154,6 +154,8 @@ int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
 int rrr_socket_close_all_except_array (int *fds, size_t fd_count);
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count);
+int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg);
+int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg);
 int rrr_socket_fifo_create (
 		int *fd_result,
 		const char *filename,
@@ -189,6 +191,17 @@ int rrr_socket_unix_connect (
 		const char *filename,
 		int nonblock
 );
+int rrr_socket_sendto_nonblock_with_options (
+		int *err,
+		rrr_biglength *written_bytes,
+		int fd,
+		const struct rrr_socket_options *options,
+		const void *data,
+		const rrr_biglength size,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int silent
+);
 int rrr_socket_sendto_nonblock (
 		int *err,
 		rrr_biglength *written_bytes,
@@ -196,7 +209,8 @@ int rrr_socket_sendto_nonblock (
 		const void *data,
 		const rrr_biglength size_big,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_sendto_nonblock_check_retry (
 		rrr_biglength *written_bytes,
@@ -204,13 +218,15 @@ int rrr_socket_sendto_nonblock_check_retry (
 		const void *data,
 		rrr_biglength send_size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_send_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength send_size
+		rrr_biglength send_size,
+		int silent
 );
 int rrr_socket_sendto_blocking (
 		int fd,

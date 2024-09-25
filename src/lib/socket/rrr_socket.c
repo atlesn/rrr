@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -792,7 +792,7 @@ int rrr_socket_close_ignore_unregistered (int fd) {
 int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlink) {
 	int ret = 0;
 
-	RRR_DBG_7("rrr_socket_close_all_except_array pid %i no_unlink %i\n", getpid(), no_unlink);
+	RRR_DBG_7("%s pid %i no_unlink %i\n", __func__, getpid(), no_unlink);
 
 	int count = 0;
 
@@ -808,6 +808,37 @@ int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlin
 		}
 		if (match) {
 			RRR_DBG_7("- Not closing %i, was in except list\n", node->options.fd);
+		}
+		else {
+			RRR_DBG_7("- Closing %i\n", node->options.fd);
+			RRR_LL_ITERATE_SET_DESTROY();
+			count++;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
+
+	if (RRR_DEBUGLEVEL_7) {
+		__rrr_socket_dump_unlocked();
+	}
+
+	pthread_mutex_unlock(&socket_lock);
+
+	RRR_DBG_1("Closed %i sockets pid %i\n", count, getpid());
+
+	return ret;
+}
+
+static int __rrr_socket_close_all_except_cb (int no_unlink, int (*except_cb)(int fd, void *arg), void *arg) {
+	int ret = 0;
+
+	RRR_DBG_7("%s pid %i no_unlink %i\n", __func__, getpid(), no_unlink);
+
+	int count = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (except_cb(node->options.fd, arg)) {
+			RRR_DBG_7("- Not closing %i as instructed by except callback\n", node->options.fd);
 		}
 		else {
 			RRR_DBG_7("- Closing %i\n", node->options.fd);
@@ -853,6 +884,14 @@ int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
 
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
 	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
+}
+
+int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg) {
+	return __rrr_socket_close_all_except_cb (0, except_cb, arg);
+}
+
+int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg) {
+	return __rrr_socket_close_all_except_cb (1, except_cb, arg);
 }
 
 int rrr_socket_fifo_create (
@@ -1236,14 +1275,16 @@ static size_t __rrr_socket_send_size_from_biglength (rrr_biglength a) {
 	return (size_t) (a > SIZE_MAX ? SIZE_MAX : a);
 }
 
-int rrr_socket_sendto_nonblock (
+int rrr_socket_sendto_nonblock_with_options (
 		int *err,
 		rrr_biglength *written_bytes,
 		int fd,
+		const struct rrr_socket_options *options,
 		const void *data,
 		const rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -1253,18 +1294,11 @@ int rrr_socket_sendto_nonblock (
 	*written_bytes = 0;
 	rrr_biglength done_bytes_total = 0;
 
-	struct rrr_socket_options options;
-	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
-		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-
 	int flags = 0;
-	if ((options.type & SOCK_SEQPACKET) == SOCK_SEQPACKET) {
+	if ((options->type & SOCK_SEQPACKET) == SOCK_SEQPACKET) {
 		flags |= MSG_EOR;
 	}
-	if ((options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
+	if ((options->type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		flags |= MSG_DONTWAIT;
 	}
 
@@ -1273,13 +1307,16 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_7("fd %i max retries reached in rrr_socket_sendto_nonblock\n", fd);
+		if (!silent)
+			RRR_DBG_7("fd %i max retries reached in %s\n", fd, __func__);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		*err = EAGAIN;
 		goto out;
 	}
 
-	RRR_DBG_7("fd %i nonblock send loop starting, writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete) address length %u\n",
+
+	if (!silent)
+		RRR_DBG_7("fd %i nonblock send loop starting, writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
 	// Truncate to size_t
@@ -1309,12 +1346,14 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else if (errno == EPIPE) {
-				RRR_DBG_7 ("Pipe full or connection closed by remote\n");
+				if (!silent)
+					RRR_DBG_7 ("Pipe full or connection closed by remote\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
 			else if (errno == ECONNREFUSED || errno == ECONNRESET) {
-				RRR_DBG_7 ("Connection refused\n");
+				if (!silent)
+					RRR_DBG_7 ("Connection refused\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
@@ -1323,13 +1362,14 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_MSG_0("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
+				if (!silent)
+					RRR_MSG_0("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
 						addr_len,
 						rrr_strerror(errno)
-				);
+					);
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -1350,16 +1390,54 @@ int rrr_socket_sendto_nonblock (
 	return ret;
 }
 
+int rrr_socket_sendto_nonblock (
+		int *err,
+		rrr_biglength *written_bytes,
+		int fd,
+		const void *data,
+		const rrr_biglength size,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int silent
+) {
+	int ret = RRR_SOCKET_OK;
+
+	struct rrr_socket_options options;
+	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
+		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_socket_sendto_nonblock_with_options (
+			err,
+			written_bytes,
+			fd,
+			&options,
+			data,
+			size,
+			addr,
+			addr_len,
+			silent
+	)) != RRR_SOCKET_OK) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_socket_sendto_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
 		rrr_biglength size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 ) {
 	int err = 0;
-	int ret = rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, addr, addr_len);
+	int ret = rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, addr, addr_len, silent);
 
 	if (ret == RRR_SOCKET_SOFT_ERROR) {
 		if (err == EWOULDBLOCK || err == EAGAIN || err == EINPROGRESS) {
@@ -1374,9 +1452,10 @@ int rrr_socket_send_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength size
+		rrr_biglength size,
+		int silent
 ) {
-	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0);
+	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0, silent);
 }
 
 int rrr_socket_sendto_blocking (
@@ -1403,7 +1482,8 @@ int rrr_socket_sendto_blocking (
 				data + written_bytes_total,
 				rrr_biglength_sub_bug_const(size, written_bytes_total),
 				addr,
-				addr_len
+				addr_len,
+				0 /* Not silent */
 		)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);

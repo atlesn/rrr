@@ -66,6 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_mmap_stats.h"
 #include "lib/message_holder/message_holder_struct.h"
 #include "lib/util/rrr_readdir.h"
+#include "lib/log_socket.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
@@ -360,17 +361,66 @@ struct main_loop_event_callback_data {
 	struct rrr_event_queue *queue;
 };
 
+struct main_loop_sockets_close_all_callback_data {
+	int *fds_a;
+	size_t fds_a_len;
+	int *fds_b;
+	size_t fds_b_len;
+	int *fds_c;
+	size_t fds_c_len;
+};
+
+static int main_loop_sockets_close_all_except_cb (int fd, void *arg) {
+	struct main_loop_sockets_close_all_callback_data *callback_data = arg;
+
+	for (size_t i = 0; i < callback_data->fds_a_len; i++) {
+		if (callback_data->fds_a[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_b_len; i++) {
+		if (callback_data->fds_b[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_c_len; i++) {
+		if (callback_data->fds_c[i] == fd)
+			return 1;
+	}
+
+	return 0;
+}
+
 static void main_loop_close_sockets_except (
-		int stats_socket,
-		struct rrr_event_queue *queue
+		struct main_loop_event_callback_data *data
 ) {
-	int fds[RRR_EVENT_QUEUE_FD_MAX + 1];
-	size_t fds_count;
-	rrr_event_queue_fds_get (fds, &fds_count, queue);
+	int event_fds[RRR_EVENT_QUEUE_FD_MAX];
+	size_t event_fds_count;
+	int *log_fds = NULL;
+	size_t log_fds_count = 0;
+	int single_fds[] = {data->stats_data->engine.socket};
+	size_t single_fds_count = sizeof(single_fds) / sizeof(single_fds[0]);
 
-	fds[fds_count++] = stats_socket;
+	rrr_event_queue_fds_get (event_fds, &event_fds_count, data->queue);
 
-	rrr_socket_close_all_except_array_no_unlink (fds, fds_count);
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_fds_get(&log_fds, &log_fds_count) != 0) {
+		RRR_BUG("Failed to get log sockets in %s. Cannot continue, aborting now.\n", __func__);
+	}
+#endif
+
+	struct main_loop_sockets_close_all_callback_data callback_data = {
+		event_fds,
+		event_fds_count,
+		log_fds,
+		log_fds_count,
+		single_fds,
+		single_fds_count
+	};
+
+	rrr_socket_close_all_except_cb_no_unlink (main_loop_sockets_close_all_except_cb, &callback_data);
+
+	RRR_FREE_IF_NOT_NULL(log_fds);
 }
 
 static int main_mmap_periodic (struct stats_data *stats_data) {
@@ -538,7 +588,9 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 	//        bugtrap.
 
 	if (*(callback_data->collection) == NULL) {
-		main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
+		main_loop_close_sockets_except (
+				callback_data
+		);
 
 		if (rrr_instances_create_and_start_threads (
 				callback_data->collection,
@@ -1019,6 +1071,18 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_bind() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+#endif
+
+	if (rrr_event_queue_new(&queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
 	rrr_setproctitle_init(argc, argv, env);
@@ -1036,11 +1100,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 		rrr_setproctitle("[%s]", config_string);
 
-		if (rrr_event_queue_new(&queue) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
-
 		if (main_loop (
 				&cmd,
 				config_string,
@@ -1051,7 +1110,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			ret = EXIT_FAILURE;
 		}
 
-		goto out_destroy_events;
+		goto out_cleanup_signal;
 	}
 	else {
 		// Load configuration and fork
@@ -1100,10 +1159,17 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
-			if (rrr_event_queue_new(&queue) != 0) {
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+			if (rrr_log_socket_after_fork() != 0) {
 				ret = EXIT_FAILURE;
-				goto out_destroy_events;
+				goto out_cleanup_signal;
 			}
+
+			if (rrr_log_socket_thread_start_say(queue) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+#endif
 
 			if (main_loop (
 					&cmd,
@@ -1115,18 +1181,19 @@ int main (int argc, const char *argv[], const char *env[]) {
 				ret = EXIT_FAILURE;
 			}
 
-			goto out_destroy_events;
+			goto out_cleanup_signal;
 
 			increment:
 			config_i++;
 		RRR_MAP_ITERATE_END();
-
-		// Create queue after forking to prevent it and it's FDs from existing in the forks
-		if (rrr_event_queue_new(&queue) != 0) {
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
 	}
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_start_listen(queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+#endif
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
@@ -1141,8 +1208,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 			&callback_data
 	);
 
-	out_destroy_events:
-		rrr_event_queue_destroy(queue);
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
@@ -1154,12 +1219,21 @@ int main (int argc, const char *argv[], const char *env[]) {
 			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
 			// will hande a SIGCHLD before we send signals to all forks, in which case
 			// it will clean up properly anyway.
-			goto out_run_cleanup_methods;
+			goto out_cleanup_log_socket_and_events;
 		}
 
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
+
+	out_cleanup_log_socket_and_events:
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+		// Must be cleanup of after forks are waited for as they use the log socket
+		rrr_log_socket_cleanup_listener();
+#endif
+		if (queue != NULL) {
+			rrr_event_queue_destroy(queue);
+		}
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();

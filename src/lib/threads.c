@@ -876,6 +876,17 @@ static void *__rrr_thread_watchdog_entry (
 	pthread_exit(0);
 }
 
+static void __rrr_thread_late_deinit (
+		void *arg
+) {
+	struct rrr_thread *thread = arg;
+
+	RRR_DBG_8("Thread %p/%s late deinit\n", thread, thread->name);
+
+	if (thread->late_deinit_routine != NULL)
+		thread->late_deinit_routine(thread);
+}
+
 static void __rrr_thread_cleanup (
 		void *arg
 ) {
@@ -898,10 +909,16 @@ static void *__rrr_thread_start_routine_intermediate (
 ) {
 	struct rrr_thread *thread = arg;
 
+	RRR_DBG_8("Thread %p early init\n", thread);
+	if (thread->early_init_routine && thread->early_init_routine(thread) != 0) {
+		RRR_DBG_8("Thread %p early init failed, exiting\n", thread);
+	}
+
 	__rrr_thread_set_name(thread);
 
 	// STOPPED must be set at the very end, a  data structures to be freed
 	pthread_cleanup_push(__rrr_thread_state_set_stopped, thread);
+	pthread_cleanup_push(__rrr_thread_late_deinit, thread);
 	pthread_cleanup_push(__rrr_thread_cleanup, thread);
 
 	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
@@ -914,6 +931,7 @@ static void *__rrr_thread_start_routine_intermediate (
 		RRR_DBG_8("Thread %p/%s received encourage stop before initializing, exiting\n", thread, thread->name);
 	}
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
@@ -989,6 +1007,8 @@ static int __rrr_thread_allocate (
 		struct rrr_thread **target,
 		struct rrr_thread **target_wd,
 		void *(*start_routine) (struct rrr_thread *),
+		int (*early_init_routine) (struct rrr_thread *),
+		void (*late_deinit_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1014,6 +1034,8 @@ static int __rrr_thread_allocate (
 
 	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->start_routine = start_routine;
+	thread->early_init_routine = early_init_routine;
+	thread->late_deinit_routine = late_deinit_routine;
 	thread->private_data = private_data;
 
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_NEW);
@@ -1053,6 +1075,8 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
+		int (*early_init_routine) (struct rrr_thread *),
+		void (*late_deinit_routine) (struct rrr_thread *),
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data
@@ -1065,6 +1089,8 @@ struct rrr_thread *rrr_thread_collection_thread_create_and_preload (
 			&thread,
 			&thread_wd,
 			start_routine,
+			early_init_routine,
+			late_deinit_routine,
 			name,
 			watchdog_timeout_us,
 			private_data
