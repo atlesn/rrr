@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../build_timestamp.h"
 #include "../lib/allocator.h"
 #include "../lib/log.h"
+#include "../lib/log_socket.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
 #include "../lib/instance_config.h"
@@ -326,6 +327,22 @@ int rrr_test_fork_executable (const char *fork_executable) {
 	return 1;
 }
 
+struct rrr_test_periodic_callback_data {
+	struct rrr_instance_collection *instances;
+};
+
+static int rrr_test_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_test_periodic_callback_data *callback_data = arg;
+
+	if (!main_running ||
+	     some_fork_has_stopped ||
+	    (!rrr_config_global.no_thread_restart && rrr_instance_check_threads_stopped(callback_data->instances) != 0)
+	) {
+		return RRR_EVENT_EXIT;
+	}
+	return RRR_EVENT_OK;
+}
+
 int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler_interrupt = NULL;
@@ -414,6 +431,20 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_bind() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_cmd;
+	}
+#endif
+
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+	if (rrr_log_socket_start_listen(event_queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_log_socket;
+	}
+#endif
+
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
 	rrr_setproctitle_init(argc, argv, env);
@@ -422,13 +453,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
 		ret = rrr_test_library_functions(&main_running, fork_handler, event_queue);
-		goto out_cleanup_cmd;
+		goto out_cleanup_log_socket;
 	}
 
 	if ((config_file = cmd_get_value(&cmd, "config", 0)) == NULL) {
 		RRR_MSG_0("No configuration file specified for test program\n");
 		ret = 1;
-		goto out_cleanup_cmd;
+		goto out_cleanup_log_socket;
 	}
 
 	TEST_BEGIN(config_file) {
@@ -448,17 +479,17 @@ int main (int argc, const char *argv[], const char *env[]) {
 					rrr_posix_usleep(50000);
 					rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 				}
-				goto out_cleanup_cmd;
+				goto out_cleanup_log_socket;
 			}
 			if (pid < 0) {
 				TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
 				ret = 1;
-				goto out_cleanup_cmd;
+				goto out_cleanup_log_socket;
 			}
 		}
 
 		if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0 || config == NULL) {
-			goto out_cleanup_cmd;
+			goto out_cleanup_log_socket;
 		}
 
 		if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
@@ -478,17 +509,20 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_cleanup_instances;
 		}
 
-		while (  main_running &&
-		        !some_fork_has_stopped &&
-		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)
-		) {
-			rrr_posix_usleep(100000);
-			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
-			if (sigusr2) {
-				RRR_MSG_0("Received SIGUSR2, but this is not implemented in test suite\n");
-				sigusr2 = 0;
-			}
-		}
+		struct rrr_test_periodic_callback_data callback_data = {
+			&instances
+		};
+
+		RRR_DBG_1("Dispatching\n");
+
+		ret = rrr_event_dispatch (
+				event_queue,
+				100 * 1000, // 100ms
+				rrr_test_periodic,
+				&callback_data
+		);
+
+		RRR_DBG_1("Return from dispatch: %i\n", ret);
 
 		ret = main_get_test_result(&instances);
 
@@ -514,6 +548,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 		if (config != NULL) {
 			rrr_instance_config_collection_destroy(config);
 		}
+
+	out_cleanup_log_socket:
+#ifdef RRR_ENABLE_CENTRAL_LOGGING
+		rrr_log_socket_cleanup_listener();
+#endif
 
 	out_cleanup_cmd:
 		cmd_destroy(&cmd);
