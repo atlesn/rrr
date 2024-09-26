@@ -551,10 +551,10 @@ int rrr_log_socket_thread_start_say (
 
 	__rrr_log_socket_connect_as_needed_sayer();
 
-	RRR_DBG_1("Log socket sayer pid %li setting intercept callback.\n", (long int) getpid());
-
 	rrr_log_printf_thread_local_intercept_set (__rrr_log_socket_intercept_callback, NULL);
-	
+
+	RRR_DBG_1("Log socket sayer pid %li has set intercept callback.\n", (long int) getpid());
+
 	goto out;
 	out_destroy_collection:
 		rrr_socket_client_collection_destroy(sayer->client_collection);
