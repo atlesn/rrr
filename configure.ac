@@ -1474,6 +1474,8 @@ AS_IF([test "x$enable_central_logging" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AM_CONDITIONAL([RRR_ENABLE_CENTRAL_LOGGING], [test "x$enable_central_logging" != xno])
+
 AC_DEFUN([REQUIRE_CONFDIR], [
 	if [test "x$enable_confdir" != "xyes"]; then
 		AC_MSG_ERROR([confdir was not enabled, but is required])

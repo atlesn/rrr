@@ -12,6 +12,10 @@ if RRR_WITH_FREEBSD_INPUT
 input_system = input/linux.c
 endif
 
+if RRR_ENABLE_CENTRAL_LOGGING
+central_logging = log_socket.c
+endif
+
 if RRR_WITH_MYSQL
 lib_mysql = librrrmysql.la
 librrrmysql_la_SOURCES = mysql.c
@@ -219,7 +223,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
-		    log_socket.c \
+		    ${central_logging} \
                     ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \

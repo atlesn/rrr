@@ -1009,13 +1009,12 @@ static int __rrr_instance_thread_early_init (
 	int ret = 0;
 
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
-#else
-	(void)(thread_data);
-#endif
-
 	if ((ret = rrr_log_socket_thread_start_say(INSTANCE_D_EVENTS(thread_data))) != 0) {
 		goto out;
 	}
+#else
+	(void)(thread_data);
+#endif
 
 	out:
 	return ret;
