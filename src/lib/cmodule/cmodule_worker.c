@@ -979,7 +979,7 @@ static void __rrr_cmodule_worker_main_close_sockets_except (
 	}
 #endif
 
-	printf("Not closing %lu event fds %lu log fds\n", event_fds_count_a + event_fds_count_b, log_fds_count);
+	// printf("Not closing %lu event fds %lu log fds\n", event_fds_count_a + event_fds_count_b, log_fds_count);
 
 	struct rrr_cmodule_worker_main_close_sockets_except_callback_data callback_data = {
 		event_fds,
