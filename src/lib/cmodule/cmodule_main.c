@@ -213,8 +213,8 @@ int rrr_cmodule_main_worker_fork_start (
 			callbacks
 	);
 
-	out_child_exit:
 #ifdef RRR_ENABLE_CENTRAL_LOGGING
+	out_child_exit:
 	rrr_log_socket_cleanup_sayer();
 	rrr_log_socket_cleanup_listener();
 #endif
