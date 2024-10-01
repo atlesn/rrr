@@ -291,6 +291,8 @@ static int __rrr_array_tree_interpret_conditional_node (
 		}
 	}
 
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+
 	if (rrr_parse_match_word(pos, "ELSE")) {
 		struct rrr_array_tree *tree_else;
 		if ((ret = rrr_array_tree_interpret(&tree_else, pos, NULL)) != 0) {
@@ -904,7 +906,8 @@ int rrr_array_tree_interpret (
 	}
 
 	int semicolon_found = 0;
-	while (!RRR_PARSE_CHECK_EOF(pos)) {
+
+	RRR_PARSE_ROUND_IN(pos);
 		rrr_parse_ignore_spaces_and_increment_line(pos);
 		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
@@ -950,7 +953,11 @@ int rrr_array_tree_interpret (
 		if (semicolon_found) {
 			break;
 		}
-	}
+	RRR_PARSE_ROUND_OUT_VERIFY_PROGRESS (
+		RRR_MSG_0("Syntax error, possible invalid characters\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out_destroy;
+	);
 
 	if (!semicolon_found) {
 		RRR_MSG_0("Could not find terminating ; in array tree\n");
