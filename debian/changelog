@@ -1,4 +1,4 @@
-rrr (1.32-7) bookworm; urgency=medium
+rrr (1.32-8) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -16,6 +16,7 @@ rrr (1.32-7) bookworm; urgency=medium
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
       cases
+    * Fix misc. hangs and crashes when parsing invalid configuration files
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
 
