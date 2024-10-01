@@ -606,7 +606,7 @@ void rrr_parse_make_location_message (
 
 		if (line_length > 128) {
 			line_length = 128;
-			str_tmp[start + line_length] = '\0';
+			str_tmp[line_length] = '\0';
 		}
 	}
 	else {
