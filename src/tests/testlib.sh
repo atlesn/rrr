@@ -6,7 +6,10 @@ SUFFIX=`echo $0 | tr './' '__'`
 TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_DATA_GENERATOR=./make_test_data
 TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
-TEST_DATA_FILE=/tmp/rrr-test-data.tmp.$SUFFIX
+TEST_DATA_FILE_DIR=/tmp
+TEST_DATA_FILE_PREFIX=rrr-test-data.tmp
+TEST_DATA_FILE_NAME=rrr-test-data.tmp.$SUFFIX
+TEST_DATA_FILE=$TEST_DATA_FILE_DIR/$TEST_DATA_FILE_NAME
 
 rm -f $TEST_DATA_FILE
 
@@ -40,6 +43,10 @@ ensure_test_data() {
 	if test $? -ne 0; then
 		fail "data generation"
 	fi
+}
+
+get_test_data_file_name() {
+	echo $TEST_DATA_FILE_NAME
 }
 
 ensure_config() {
