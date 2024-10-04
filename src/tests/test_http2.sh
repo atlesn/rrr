@@ -1,10 +1,8 @@
 #!/bin/bash
 
-# NOTE : Generated from test.sh.in
-
 set -e
 
 source ./testlib.sh
 source ../../variables.sh
 
-do_test_simple --library-tests
+do_test_socket test_http2.conf

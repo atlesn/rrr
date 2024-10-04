@@ -41,7 +41,7 @@ sub source {
 		# getting timed out, which means that these messages
 		# should be sent immediately by being bumped in the
 		# queue.
-		send_message($message, "localhost", "8880", 1);
+		send_message($message, "localhost", "8884", 1);
 	}
 	else {
 		# Done

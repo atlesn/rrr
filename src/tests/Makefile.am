@@ -95,4 +95,30 @@ sha256_shatest_SOURCES = sha256/shatest.c
 sha256_shatest_CFLAGS = -fpie
 sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
-TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test}
+TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
+	test.sh                  \
+	test_averager.sh         \
+	test_cacher.sh           \
+	test_cmodule.sh          \
+	test_dummy.sh            \
+	test_fifo.sh             \
+	test_file.sh             \
+	test_http.sh             \
+	test_http2.sh            \
+	test_http3.sh            \
+	test_http_graylist.sh    \
+	test_http_report_tag.sh  \
+	test_incrementer.sh      \
+	test_ip.sh               \
+	test_ipclient.sh         \
+	test_journal.sh          \
+	test_js.sh               \
+	test_lua.sh              \
+	test_mqtt.sh             \
+	test_mqtt_commands.sh    \
+	test_mysql.sh            \
+	test_passwd.sh           \
+	test_perl5.sh            \
+	test_python3.sh          \
+	test_socket.sh           \
+	test_websocket.sh

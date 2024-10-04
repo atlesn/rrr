@@ -1,10 +1,8 @@
 #!/bin/bash
 
-# NOTE : Generated from test.sh.in
-
 set -e
 
 source ./testlib.sh
 source ../../variables.sh
 
-do_test_simple --library-tests
+do_test_simple test_http_report_tag.conf
