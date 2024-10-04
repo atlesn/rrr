@@ -1,4 +1,4 @@
-rrr (1.32-8) bookworm; urgency=medium
+rrr (1.32-9) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -12,6 +12,7 @@ rrr (1.32-8) bookworm; urgency=medium
     * Remove all references to http2 when RRR is built without nghttp2, in
       particular avoid noisy notification caused by inconsistencies in the
       code
+    * Speed up tests by running them in parallel
 
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
