@@ -3,13 +3,6 @@
 source ./testlib.sh
 source ../../variables.sh
 
-#if test "x$TEST_VARIABLES_SET" != "x1"; then
-#	restart_with_variables test.sh
-#fi
-
-echo "lua : $RRR_WITH_LUA"
-exit 1
-
 TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_SOCKET=/tmp/rrr-test.sock
 TEST_DATA_FILE=/tmp/rrr-test-data.tmp
