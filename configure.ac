@@ -198,6 +198,14 @@ AC_MSG_CHECKING([for libbsd])
 have_setproctitle=no
 LIBBSD_LIBS=""
 
+AC_MSG_CHECKING("for bash shell")
+if bash --version > /dev/null; then
+	AC_MSG_RESULT([yes])
+else
+	AC_MSG_RESULT([no])
+	AC_MSG_ERROR([Could not run bash which is needed for the test suite]);
+fi
+
 # Check for setproctitle. Should be in unistd.h on both BSD and Linux,
 # but on linux it's in the libbsd library while on BSD it's in libc.
 AC_CHECK_LIB([bsd], [setproctitle], [

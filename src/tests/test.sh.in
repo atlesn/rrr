@@ -1,17 +1,14 @@
-#!/bin/sh
+#!/bin/bash
 
-TEST_COMPOSITE_FILE=./.test_composite.sh
-VARIABLES_FILE=../../variables.sh
+source ./testlib.sh
+source ../../variables.sh
 
-if test "x$TEST_VARIABLES_SET" != "x1"; then
-	printf "#!/bin/sh\n\nTEST_VARIABLES_SET=1\n" > $TEST_COMPOSITE_FILE
-	cat $VARIABLES_FILE | grep '=' >> $TEST_COMPOSITE_FILE
-	cat test.sh | grep -v '/bin/sh' >> $TEST_COMPOSITE_FILE
-	chmod +x $TEST_COMPOSITE_FILE
-	$TEST_COMPOSITE_FILE $1 $2 $3 $4
-	exit $?
-fi
+#if test "x$TEST_VARIABLES_SET" != "x1"; then
+#	restart_with_variables test.sh
+#fi
 
+echo "lua : $RRR_WITH_LUA"
+exit 1
 
 TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_SOCKET=/tmp/rrr-test.sock
