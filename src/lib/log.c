@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 
+#include "../../config.h"
+
 #ifdef HAVE_JOURNALD
 #	define SD_JOURNAL_SUPPRESS_LOCATION
 #	include <systemd/sd-journal.h>
@@ -34,11 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "allocator.h"
 #include "event/event.h"
-#include "event/event_functions.h"
 #include "util/gnu.h"
 #include "util/posix.h"
 #include "util/macro_utils.h"
-#include "rrr_strerror.h"
+#include "util/rrr_time.h"
 
 // Uncomment for debug purposes, logs are only delivered to hooks
 //#define RRR_LOG_DISABLE_PRINT
@@ -46,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_HOOK_MAX 5
 
 static volatile int rrr_log_is_initialized = 0;
+static volatile uint64_t rrr_log_boot_timestamp_us = 0;
 
 // This locking merely prevents (or attempts to prevent) output from different threads to getting mixed up
 static pthread_mutex_t rrr_log_lock;
@@ -64,6 +66,7 @@ int rrr_log_init(void) {
 		goto out;
 	}
 
+	rrr_log_boot_timestamp_us = rrr_time_get_64();
 	rrr_log_is_initialized = 1;
 
 	out:
@@ -131,6 +134,17 @@ static void __rrr_log_hook_unlock_void (void *arg) {
         code;                                                                                                                  \
         pthread_cleanup_pop(1);                                                                                                \
         finally;
+
+static void __rrr_log_make_timestamp(char buf[32]) {
+#ifdef RRR_ENABLE_LOG_TIMESTAMPS
+	uint64_t ts = rrr_time_get_64() - rrr_log_boot_timestamp_us;
+	uint64_t seconds = ts / 1000 / 1000;
+	uint64_t micros = ts - seconds * 1000 * 1000;
+	sprintf(buf, "%010" PRIu64 ".%06" PRIu64, seconds, micros);
+#else
+	*buf = '\0';
+#endif
+}
 
 struct rrr_log_hook {
 	void (*log)(RRR_LOG_HOOK_ARGS);
@@ -268,7 +282,7 @@ static void __rrr_log_hooks_call (
 
 	char tmp[RRR_LOG_HOOK_MSG_MAX_SIZE];
 	char *wpos = tmp;
-	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix_rpos);
+	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT_NO_TS, loglevel_translated, prefix_rpos);
 	if (size <= 0) {
 		// NOTE ! Jumping out of function
 		return;
@@ -431,12 +445,19 @@ void rrr_log_print_no_hooks (
 	(void)(line);
 
 #ifndef RRR_LOG_DISABLE_PRINT
+	char ts[32];
+
+	__rrr_log_make_timestamp(ts),
+
 	LOCK_BEGIN;
-	printf(RRR_LOG_HEADER_FORMAT_FULL "%s",
-			rrr_config_global.rfc5424_loglevel_output
-				? loglevel_translated
-				: loglevel_orig,
-			prefix,
+	printf(RRR_LOG_HEADER_FORMAT_WITH_TS "%s",
+			RRR_LOG_HEADER_ARGS(
+				ts,
+				rrr_config_global.rfc5424_loglevel_output
+					? loglevel_translated
+					: loglevel_orig,
+				prefix
+			),
 			message
 	);
 	LOCK_END;
@@ -459,6 +480,10 @@ void rrr_log_printf_nolock (
 	va_list args;
 	va_start(args, __format);
 
+	char ts[32];
+
+	__rrr_log_make_timestamp(ts);
+
 	// Don't call the hooks here due to potential lock problems
 
 #ifdef HAVE_JOURNALD
@@ -479,9 +504,12 @@ void rrr_log_printf_nolock (
 #endif
 
 #ifndef RRR_LOG_DISABLE_PRINT
-		printf(RRR_LOG_HEADER_FORMAT_FULL,
+		printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
+			RRR_LOG_HEADER_ARGS(
+				ts,
 				RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
-				prefix
+				 prefix
+			)
 		);
 		vprintf(__format, args);
 #endif
@@ -587,10 +615,17 @@ static void __rrr_log_printf_va (
 		);
 	}
 	else {
+		char ts[32];
+
+		__rrr_log_make_timestamp(ts);
+
 		LOCK_BEGIN;
-		printf(RRR_LOG_HEADER_FORMAT_FULL,
+		printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
+			RRR_LOG_HEADER_ARGS(
+				ts,
 				loglevel_translated,
 				prefix
+			)
 		);
 		vprintf(__format, args);
 		LOCK_END;
@@ -678,8 +713,20 @@ void rrr_log_fprintf (
 	}
 
 #ifndef RRR_LOG_DISABLE_PRINT
+	char ts[32];
+
+	__rrr_log_make_timestamp(ts);
+
 	LOCK_BEGIN;
-	fprintf(file_target, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix);
+	fprintf(
+		file_target,
+		RRR_LOG_HEADER_FORMAT_WITH_TS,
+		RRR_LOG_HEADER_ARGS(
+			ts,
+			loglevel_translated,
+			prefix
+		)
+	);
 	vfprintf(file_target, __format, args);
 	LOCK_END;
 #endif

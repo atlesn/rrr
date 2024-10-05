@@ -72,6 +72,7 @@ AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debug
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
 AC_ARG_ENABLE([central-logging], [AS_HELP_STRING([--enable-central-logging],[instead of printing logs from each fork, forward messages up to main process for printing. This prevents output from different forks being mixed up.])],[enable_central_logging=yes],[enable_central_logging=no])
+AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
@@ -1482,7 +1483,16 @@ AS_IF([test "x$enable_central_logging" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([enabled log timestamps])
+AS_IF([test "x$enable_log_timestamps" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_LOG_TIMESTAMPS], [1], [Enable timestamps in log messages printed to standard output])
+],[
+	AC_MSG_RESULT([no])
+])
+
 AM_CONDITIONAL([RRR_ENABLE_CENTRAL_LOGGING], [test "x$enable_central_logging" != xno])
+AM_CONDITIONAL([RRR_ENABLE_LOG_TIMESTAMPS], [test "x$enable_log_timestamps" != xno])
 
 AC_DEFUN([REQUIRE_CONFDIR], [
 	if [test "x$enable_confdir" != "xyes"]; then

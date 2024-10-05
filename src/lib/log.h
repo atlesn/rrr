@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_H
 
 #include "rrr_config.h"
+#include "../../config.h"
 
 #ifdef __cplusplus
 #	include <cstdio>
@@ -256,8 +257,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
 
-#define RRR_LOG_HEADER_FORMAT_NO_LEVEL "<%s> "
-#define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
+#define RRR_LOG_HEADER_FORMAT_WHAT "<%s> "
+#define RRR_LOG_HEADER_FORMAT_LEVEL "<%u> "
+#define RRR_LOG_HEADER_FORMAT_TIMESTAMP "<%s> "
+#define RRR_LOG_HEADER_FORMAT_NO_TS      \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+
+#ifdef RRR_ENABLE_LOG_TIMESTAMPS
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_TIMESTAMP  \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	ts, loglevel, prefix
+#else
+#define RRR_LOG_FORMAT_WITH_TS           \
+	RRR_LOG_HEADER_FORMAT_DEFAULT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	loglevel, prefix
+#endif
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
