@@ -265,18 +265,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_LOG_HEADER_FORMAT_WHAT
 
 #ifdef RRR_ENABLE_LOG_TIMESTAMPS
+
 #define RRR_LOG_HEADER_FORMAT_WITH_TS    \
 	RRR_LOG_HEADER_FORMAT_TIMESTAMP  \
 	RRR_LOG_HEADER_FORMAT_LEVEL      \
 	RRR_LOG_HEADER_FORMAT_WHAT
 #define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
 	ts, loglevel, prefix
+
 #else
-#define RRR_LOG_FORMAT_WITH_TS           \
-	RRR_LOG_HEADER_FORMAT_DEFAULT
+
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
 #define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
 	loglevel, prefix
-#endif
+
+#endif /* RRR_ENABLE_LOG_TIMESTAMPS */
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
