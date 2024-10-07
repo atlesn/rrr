@@ -1,9 +1,12 @@
 #!/bin/bash
 
-set -e
-
 source ./testlib.sh
 source ../../variables.sh
+
+# We rely on checking return values and
+# fail if we use -e. Reset in case it is
+# already set.
+set +e
 
 if test "x$RRR_WITH_JS" != 'xno'; then
 	PWD=`pwd`
