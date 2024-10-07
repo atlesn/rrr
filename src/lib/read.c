@@ -450,7 +450,10 @@ static int __rrr_read_message_using_callbacks (
 
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
+			assert(read_session->rx_buf_skip <= read_session->rx_buf_wpos && "skip nust not be longer than wpos");
+
 			rrr_biglength overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
+
 
 			RRR_DBG_7("Aligning buffer, skipping %" PRIrrrbl " bytes while reading from socket (%" PRIrrrbl " bytes overshoot)\n",
 				read_session->rx_buf_skip, overshoot_size);

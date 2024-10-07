@@ -150,3 +150,6 @@ stamp-h2
 
 # jemalloc
 jeprof.*
+
+# fuzz
+fuzz/

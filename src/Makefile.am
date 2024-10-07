@@ -51,7 +51,7 @@ rrr_http_client_LDADD = -levent
 
 rrr_http_server_SOURCES = rrr_http_server.c main.c
 rrr_http_server_CFLAGS = ${AM_CFLAGS} -fpie
-rrr_http_server_LDFLAGS = ${ldflags} -pie
+rrr_http_server_LDFLAGS = ${ldflags} -levent -pie
 
 rrr_modbus_server_SOURCES = rrr_modbus_server.c main.c
 rrr_modbus_server_CFLAGS = ${AM_CFLAGS} -fpie
