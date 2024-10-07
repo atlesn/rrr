@@ -61,7 +61,7 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
-test_LDFLAGS = ${JEMALLOC_LIBS} ${js_extra_ldflags} ${JS_LDFLAGS} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie -L../lib/.libs
+test_LDFLAGS = -L../lib/.libs ${JEMALLOC_LIBS} ${js_extra_ldflags} ${JS_LDFLAGS} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
 test_LDADD =                          \
     -levent                           \
     -ldl                              \
