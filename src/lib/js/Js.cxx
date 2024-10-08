@@ -163,6 +163,10 @@ namespace RRR::JS {
 		return str;
 	}
 
+	String::operator v8::Local<v8::Name>() {
+		return str;
+	}
+
 	String::operator std::string() {
 		static const char *empty = "";
 		return std::string(str.IsEmpty() ? empty : *utf8);
@@ -760,7 +764,21 @@ v8::Local<v8::FixedArray> import_assertions,
 	void Module::compile(CTX &ctx) {
 		compile_str_wrap(ctx, [&ctx,this](auto str){
 			auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
-#ifdef RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN
+
+#if defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE)
+			auto origin = v8::ScriptOrigin (
+					(v8::Local<v8::String>) String(ctx, get_path_()),
+					0,
+					0,
+					false,
+					-1,
+					v8::Local<v8::Value>(),
+					false,
+					false,
+					true, // is_module
+					host_defined_options
+			);
+#elif defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN)
 			auto origin = v8::ScriptOrigin (
 					ctx,
 					(v8::Local<v8::String>) String(ctx, get_path_()),

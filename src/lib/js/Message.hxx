@@ -145,6 +145,20 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 		v8::Local<v8::FunctionTemplate> tmpl_send;
 
+		v8::Local<v8::FunctionTemplate> tmpl_ip_addr_get;
+		v8::Local<v8::FunctionTemplate> tmpl_ip_so_type_get;
+		v8::Local<v8::FunctionTemplate> tmpl_ip_so_type_set;
+		v8::Local<v8::FunctionTemplate> tmpl_topic_get;
+		v8::Local<v8::FunctionTemplate> tmpl_topic_set;
+		v8::Local<v8::FunctionTemplate> tmpl_timestamp_get;
+		v8::Local<v8::FunctionTemplate> tmpl_timestamp_set;
+		v8::Local<v8::FunctionTemplate> tmpl_data_get;
+		v8::Local<v8::FunctionTemplate> tmpl_data_set;
+		v8::Local<v8::FunctionTemplate> tmpl_class_get;
+		v8::Local<v8::FunctionTemplate> tmpl_class_set;
+		v8::Local<v8::FunctionTemplate> tmpl_constant_get;
+		v8::Local<v8::FunctionTemplate> tmpl_throw;
+
 		MessageDrop &message_drop;
 
 		Message *new_native(v8::Isolate *isolate) final;
