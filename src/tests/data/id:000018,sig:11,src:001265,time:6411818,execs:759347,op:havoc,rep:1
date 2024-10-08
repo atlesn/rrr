@@ -1,0 +1,8 @@
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:: Upgrade, HTTP2-Settin%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+Connection:Upgrade,  Upgrade, HTTP2-Settings
+Upgrade: h2c
+HTTP2-Settings: AAMAAABkAAQAAQAAAAIAAAEA
+
