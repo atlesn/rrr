@@ -235,28 +235,35 @@ static int __rrr_http_header_parse_first_string_value (RRR_HTTP_HEADER_FIELD_PAR
 	return ret;
 }
 
-static void __rrr_http_header_parse_unquote_fields (
-		int *found,
+static int __rrr_http_header_parse_field_name_matches (
 		struct rrr_http_field *field,
-		const char *parent_field_name,
 		const char *names_match[],
 		size_t names_match_count
 ) {
-	*found = 0;
-
 	for (size_t i = 0; i < names_match_count; i++) {
 		if (rrr_nullsafe_str_cmpto_case(field->name, names_match[i]) == 0) {
-			*found = 1;
-			break;
+			return 1;
 		}
 	}
+	return 0;
+}
 
-	if (*found == 0) {
+static void __rrr_http_header_parse_unquote_fields (
+		rrr_nullsafe_len *unquoted_length,
+		struct rrr_http_field *field,
+		const char *parent_field_name
+) {
+	int found = 0;
+
+	*unquoted_length = 0;
+
+
+	if (!found) {
 		return;
 	}
 
 	if (!rrr_nullsafe_str_isset(field->value)) {
-		RRR_BUG("BUG: value was NULL in __rrr_http_header_parse_unquote_fields\n");
+		return;
 	}
 
 	if (rrr_http_util_unquote_string(field->value) != 0) {
@@ -272,6 +279,8 @@ static void __rrr_http_header_parse_unquote_fields (
 				name, parent_field_name);
 		return;
 	}
+
+	*unquoted_length = rrr_nullsafe_str_len(field->value);
 }
 
 static int __rrr_http_header_parse_content_type_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
@@ -281,12 +290,24 @@ static int __rrr_http_header_parse_content_type_value (RRR_HTTP_HEADER_FIELD_PAR
 		goto out;
 	}
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(parent_name,field->name);
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		int found = 0;
 		const char *unquote_field_names[] = {"charset", "boundary"};
-		__rrr_http_header_parse_unquote_fields(&found, node, name, unquote_field_names, 2);
+		rrr_nullsafe_len unquoted_length;
+
+		if (!__rrr_http_header_parse_field_name_matches(node, unquote_field_names, 2))
+			RRR_LL_ITERATE_NEXT();
+
+		__rrr_http_header_parse_unquote_fields(&unquoted_length, node, parent_name);
+
+		if (unquoted_length == 0) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name, node->name);
+			RRR_DBG_1("Error: Mandatory HTTP header field '%s' of '%s' has no value\n",
+				node_name, parent_name);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
 	RRR_LL_ITERATE_END();
 
 	out:
@@ -305,8 +326,8 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		if (RRR_LL_FIRST(&field->fields) == node) {
 			if (rrr_nullsafe_str_cmpto_case(node->name, "form-data") != 0 &&
-					rrr_nullsafe_str_cmpto_case(node->name, "attachment") != 0 &&
-					rrr_nullsafe_str_cmpto_case(node->name, "inline") != 0
+			    rrr_nullsafe_str_cmpto_case(node->name, "attachment") != 0 &&
+			    rrr_nullsafe_str_cmpto_case(node->name, "inline") != 0
 			) {
 				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name,node->name);
 				RRR_DBG_1("Warning: Unknown content-disposition type '%s'\n", node_name);
@@ -315,18 +336,20 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (!rrr_nullsafe_str_isset(node->value)) {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name,node->name);
-			RRR_DBG_1("Warning: Empty field '%s' in content-disposition\n", node_name);
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		int found = 0;
+		rrr_nullsafe_len unquoted_length;
 		const char *unquote_field_names[] = {"name", "filename"};
-		__rrr_http_header_parse_unquote_fields(&found, node, parent_name, unquote_field_names, 2);
-		if (found == 0) {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name,node->name);
-			RRR_DBG_1("Warning: Unknown field '%s' in content-disposition header\n", node_name);
+
+		if (!__rrr_http_header_parse_field_name_matches(node, unquote_field_names, 2))
+			RRR_LL_ITERATE_NEXT();
+
+		__rrr_http_header_parse_unquote_fields(&unquoted_length, node, parent_name);
+
+		if (unquoted_length == 0) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name, node->name);
+			RRR_DBG_1("Error: Mandatory HTTP header field '%s' of '%s' has no value\n",
+				node_name, parent_name);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -337,27 +360,29 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 static int __rrr_http_header_parse_alt_svc_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		if (!rrr_nullsafe_str_isset(node->value)) {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-			RRR_DBG_1("Warning: Empty field '%s' in alt-svc header\n", name);
-			RRR_LL_ITERATE_NEXT();
-		}
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(parent_name,field->name);
 
+	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		// h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
 
-		int found;
+		rrr_nullsafe_len unquoted_length;
 		const char *unquote_field_names[] = {"h2", "h3", "h3-29", "h3-32", "ma", "persist"};
-		__rrr_http_header_parse_unquote_fields(&found, node, "alt-svc", unquote_field_names, 6);
-		if (found == 0) {
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-			RRR_DBG_1("Warning: Unknown field '%s' in alt-svc header\n", name);
-		}
 
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		if (!__rrr_http_header_parse_field_name_matches(node, unquote_field_names, 6))
+			RRR_LL_ITERATE_NEXT();
+
+		__rrr_http_header_parse_unquote_fields(&unquoted_length, node, parent_name);
+
+		if (unquoted_length == 0) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(node_name, node->name);
+			RRR_DBG_1("Error: Mandatory HTTP header field '%s' of '%s' has no value\n",
+				node_name, parent_name);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
 	RRR_LL_ITERATE_END();
 
+	out:
 	return ret;
 }
 
@@ -1073,7 +1098,7 @@ static int __rrr_http_header_field_parse (
 
 		if (field->definition != NULL && field->definition->parse != NULL && field->definition->parse(field) != 0) {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
-			RRR_MSG_0("Could not process HTTP header field '%s'\n", name);
+			RRR_DBG_1("Could not process HTTP header field '%s'\n", name);
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
