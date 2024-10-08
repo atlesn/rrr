@@ -1,0 +1,12 @@
+POST /%TESTNUMBER HTTP/1.1
+H2-Settings: AAMAAAPost: %HTTPPORT
+Acept: */*
+Content-Length: 156
+Content-Type: muloipadat}; boundary
+c2VjcmV0156
+Content-Type: multipadat};
+A003 SÿÿÿT %TESTNUM=----------IN "\"user""sec\"ret{"
+A003 
+Host: %HP:%HTTPPORT
+Accept: */*
+Co
