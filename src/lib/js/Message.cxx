@@ -404,11 +404,6 @@ namespace RRR::JS {
 		ip_addr_len = 0;
 	}
 
-	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
-		auto isolate = info.GetIsolate();
-		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
-	}
-
 	void Message::cb_ip_addr_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto message = self(info);
 		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
@@ -773,13 +768,13 @@ namespace RRR::JS {
 		message->send(info.GetIsolate());
 	}
 
-	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_topic_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set((v8::Local<v8::Value>) String(isolate, message->topic));
 	}
 
-	void Message::cb_topic_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_topic_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
@@ -803,13 +798,13 @@ namespace RRR::JS {
 		message->topic = topic_;
 	}
 
-	void Message::cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_timestamp_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::BigInt::NewFromUnsigned(isolate, message->timestamp));
 	}
 
-	void Message::cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_timestamp_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
@@ -834,14 +829,14 @@ namespace RRR::JS {
 		message->timestamp = (uint64_t) timestamp_;
 	}
 
-	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_data_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		auto store = BackingStore::create(isolate, message->data.data(), message->data.size());
 		info.GetReturnValue().Set(store.second());
 	}
 
-	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_data_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
@@ -870,13 +865,13 @@ namespace RRR::JS {
 		}
 	}
 
-	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_type_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->type));
 	}
 
-	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_type_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
@@ -900,13 +895,13 @@ namespace RRR::JS {
 		message->type = (rrr_msg_msg_type) type_;
 	}
 
-	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_class_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->get_class()));
 	}
 
-	void Message::cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_constant_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		info.GetReturnValue().Set(info.Data());
 	}
 
@@ -925,9 +920,9 @@ namespace RRR::JS {
 		tmpl_set_tag(v8::FunctionTemplate::New(ctx, Message::cb_set_tag)),
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, Message::cb_clear_tag)),
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, Message::cb_get_tag_all)),
-		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send)),
+		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
 
-		tmpl_ip_addr_get(v8::FunctionTemplate::new(ctx, Message::cb_ip_addr_get)),
+/*		tmpl_ip_addr_get(v8::FunctionTemplate::new(ctx, Message::cb_ip_addr_get)),
 		tmpl_ip_so_type_get(v8::FunctionTemplate::new(ctx, Message::cb_so_type_get)),
 		tmpl_ip_so_type_set(v8::FunctionTemplate::new(ctx, Message::cb_so_type_set)),
 		tmpl_topic_get(v8::FunctionTemplate::new(ctx, Message::cb_topic_get)),
@@ -937,8 +932,7 @@ namespace RRR::JS {
 		tmpl_data_get(v8::FunctionTemplate::new(ctx, Message::cb_data_get)),
 		tmpl_data_set(v8::FunctionTemplate::new(ctx, Message::cb_data_set)),
 		tmpl_class_get(v8::FunctionTemplate::new(ctx, Message::cb_class_get)),
-		tmpl_class_set(v8::FunctionTemplate::new(ctx, Message::cb_class_set)),
-		tmpl_throw(v8::FunctionTemplate::new(ctx, Message::cb_throw))
+		tmpl_class_set(v8::FunctionTemplate::new(ctx, Message::cb_class_set))*/
 	{
 		auto tmpl = get_object_template();
 		tmpl->Set(ctx, "ip_get", tmpl_ip_get);
@@ -963,7 +957,13 @@ namespace RRR::JS {
 		tmpl->Set(ctx, "MSG_CLASS_DATA", v8::Uint32::New(ctx, MSG_CLASS_DATA), v8::PropertyAttribute::ReadOnly);
 		tmpl->Set(ctx, "MSG_CLASS_ARRAY", v8::Uint32::New(ctx, MSG_CLASS_ARRAY), v8::PropertyAttribute::ReadOnly);
 
-		tmpl->SetNativeDataProperty(String(ctx, "ip_addr", Message::cb_ip_addr_get));
+		tmpl->SetNativeDataProperty(String(ctx, "ip_addr"), Message::cb_ip_addr_get);
+		tmpl->SetNativeDataProperty(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
+		tmpl->SetNativeDataProperty(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);
+		tmpl->SetNativeDataProperty(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);
+		tmpl->SetNativeDataProperty(String(ctx, "data"), Message::cb_data_get, Message::cb_data_set);
+		tmpl->SetNativeDataProperty(String(ctx, "type"), Message::cb_type_get, Message::cb_type_set);
+		tmpl->SetNativeDataProperty(String(ctx, "class"), Message::cb_class_get, Message::cb_class_set);
 #if 1
 	/*
 	 *
@@ -974,7 +974,7 @@ namespace RRR::JS {
       PropertyAttribute attribute = None);
 
 	 * */
-		tmpl->SetAccessorProperty(String(ctx, "ip_addr"), tmpl_ip_get,Message::cb_ip_addr_get, Message::cb_throw);
+//		tmpl->SetAccessorProperty(String(ctx, "ip_addr"), tmpl_ip_get,Message::cb_ip_addr_get, Message::cb_throw);
 #else
 -		tmpl->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
 -		tmpl->SetAccessor(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
