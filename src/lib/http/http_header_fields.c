@@ -253,14 +253,7 @@ static void __rrr_http_header_parse_unquote_fields (
 		struct rrr_http_field *field,
 		const char *parent_field_name
 ) {
-	int found = 0;
-
 	*unquoted_length = 0;
-
-
-	if (!found) {
-		return;
-	}
 
 	if (!rrr_nullsafe_str_isset(field->value)) {
 		return;
