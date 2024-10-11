@@ -1,8 +1,0 @@
-GET /%TESTNUMBER HTTP/1.1
-Host: %HOSTIP:%HTTPPORT
-User-Agent: curl/%VERSION
-Accept: *נננננננננננננננננננננננננננ/*
-Connection: Upgrade,,, HTTP2-Settings
-Upgrade: h2c
-HTTP2-Settings: AAlarge-46; name45=could-be-large-45; name44=could-be-large-44; name43=could-be-large-43; name42=could-ve-large-42; name41=could-be-large-41; name40=co name39=could-be-large-39; name38=could-be-large-38; name37=could-be-large-37; name36=coMAAABkAAQAAQAAAAIAAAAA
-

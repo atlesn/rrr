@@ -1,9 +1,0 @@
-GET /%TESTNUMBER HTTP/1.1
-Host: %HOSGET /HTTPPORT
-User-Agent: curl/%VERSION
-Accept: */*
-Connection: Upgrade, HTTP2-Settings
-Upgrade: h2c
-HTTP2-Settings: AAMAAABkAAQAAQAAAAIle.com>
-RCPT TO:<recipientAAAAA
-
