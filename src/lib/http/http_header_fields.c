@@ -1053,6 +1053,7 @@ static int __rrr_http_header_field_parse (
 
 	const char *start = start_orig;
 
+	int empty_subvalues = 0;
 	int missing_space_after_comma = 0;
 	int more_fields = 1;
 	while (more_fields) {
@@ -1084,6 +1085,13 @@ static int __rrr_http_header_field_parse (
 				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 			}
+			goto out;
+		}
+
+		if (subvalues_parsed_bytes == 0 && ++empty_subvalues == 4) {
+			/* Prevent spamming with long sequences of commas */
+			RRR_DBG_1("Error: Too many empty subvalues in HTTP header field with name %s\n", name);
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
 
