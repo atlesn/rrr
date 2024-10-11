@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -276,7 +276,13 @@ static int __rrr_type_import_numeric_str_raw (
 	memset(tmp, '\0', sizeof(tmp));
 
 	for (const char *pos = start; pos < end; pos++) {
-		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || *pos == ' ' || *pos == '\t' || (is_signed && *pos == '-')) {
+		if (*pos == ' ' || *pos == '\t')
+		       continue;
+		break;
+	}
+
+	for (const char *pos = start; pos < end; pos++) {
+		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || (is_signed && *pos == '-')) {
 			tmp[total_length++] = *pos;
 
 			// Make sure we don't overwrite last \0 needed by conversion function
