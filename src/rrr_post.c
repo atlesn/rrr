@@ -539,10 +539,16 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				&callback_data
 		);
 
+		/*
+		 * XXX [atle]: Removed as it might cause infinite loop if invalid
+		 *             data is received. If something breaks because this
+		 *             is commented out, another solution should be found.
+		 *
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_MSG_0("Warning: Invalid or unexpected data received\n");
 			ret = 0;
 		}
+		*/
 
 		if (rrr_post_print_stats != 0) {
 			__rrr_post_print_statistics(data);
