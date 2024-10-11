@@ -318,8 +318,6 @@ static int rrr_http_server_response_get_target_size(RRR_SOCKET_CLIENT_RAW_GET_TA
 	(void)(private_data);
 	(void)(arg);
 
-	int ret = 0;
-
 	assert(read_session->rx_buf_wpos <= INT_MAX);
 
 	printf("%.*s", (int) read_session->rx_buf_wpos, read_session->rx_buf_ptr);
