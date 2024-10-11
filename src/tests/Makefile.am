@@ -121,4 +121,5 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_perl5.sh            \
 	test_python3.sh          \
 	test_socket.sh           \
-	test_websocket.sh
+	test_websocket.sh        \
+	test_log_daemon.sh
