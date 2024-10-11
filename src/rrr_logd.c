@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "lib/rrr_types.h"
 #include "lib/socket/rrr_socket_constants.h"
+#include "lib/type.h"
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -34,9 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/common.h"
 #include "lib/version.h"
+#include "lib/array.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/event/event.h"
+#include "lib/messages/msg_msg.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_logd");
 
@@ -50,6 +53,7 @@ int rrr_signal_handler(int s, void *arg) {
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   's',    "socket",                "[-s|--socket[=]SOCKET]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "file-descriptor",       "[-f|--file-descriptor[=]FILE DESCRIPTOR]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -63,6 +67,7 @@ struct rrr_logd_data {
 	const char *receive_socket;
 	int receive_socket_fd;
 	int receive_fd;
+	int persist;
 };
 
 static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *cmd) {
@@ -110,6 +115,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 		data->receive_fd = rrr_int_from_slength_bug_const(fd_tmp);
 	}
 
+	if (cmd_exists(cmd, "persist", 0)) {
+		data->persist = 1;
+	}
+
 	return 0;
 }
 
@@ -143,6 +152,192 @@ static int rrr_logd_periodic (void *arg) {
 	return RRR_EVENT_OK;
 }
 
+static void rrr_logd_print (
+	const char *file,
+	int line,
+	uint8_t loglevel,
+	const char *prefix,
+	const char *message
+) {
+	if (line == 0 || file == NULL || *file == '\0') {
+		line = __LINE__;
+		file = __FILE__;
+	}
+
+	if (prefix == NULL || *prefix == '\0') {
+		prefix = "rrr_logd";
+	}
+
+	assert(message != NULL);
+
+	rrr_log_printf_nolock (
+			file,
+			line,
+			loglevel,
+			prefix,
+			"%s\n",
+			message
+	);
+}
+
+static int rrr_logd_read_message_extract_uint_field (
+		uint64_t *target,
+		struct rrr_array *array,
+		const char *field,
+		int mandatory
+) {
+	int ret = RRR_READ_OK;
+
+	const struct rrr_type_value *value_tmp;
+
+	if ((value_tmp = rrr_array_value_get_by_tag_const(array, field)) == NULL && mandatory) {
+		RRR_MSG_0("Received array message did not have the required field '%s'\n",
+			field);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+	else if (value_tmp == NULL) {
+		goto out;
+	}
+	else if (!RRR_TYPE_IS_64(value_tmp->definition->type)) {
+		RRR_MSG_0("The field '%s' of received array message was not an integer\n",
+			field);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+	else if (!RRR_TYPE_FLAG_IS_UNSIGNED(value_tmp->definition->type)) {
+		RRR_MSG_0("The field '%s' of received array message was not unsigned\n",
+			field);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_array_get_value_unsigned_64_by_tag(target, array, "log_level", 0)) {
+		RRR_MSG_0("Failed to get unsigned field '%s' from array\n",
+			field);
+		ret = RRR_READ_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int rrr_logd_read_msg_extract_string_field (
+		char **target,
+		struct rrr_array *array,
+		const char *field,
+		int mandatory
+) {
+	int ret = RRR_READ_OK;
+
+	const struct rrr_type_value *value_tmp;
+
+	if ((value_tmp = rrr_array_value_get_by_tag_const(array, field)) == NULL && mandatory) {
+		RRR_MSG_0("Received array message did not have the required field '%s'\n",
+			field);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+	else if (value_tmp == NULL) {
+		goto out;
+	}
+	else if (!RRR_TYPE_IS_STR(value_tmp->definition->type)) {
+		RRR_MSG_0("The field '%s' of received array message was not a string\n",
+			field);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_array_get_value_str_by_tag(target, array, field) != 0) {
+		RRR_MSG_0("Failed to get string field '%s' from array\n",
+			field);
+		ret = RRR_READ_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int rrr_logd_read_msg_callback (
+		struct rrr_msg_msg **message,
+		void *arg1,
+		void *arg2
+) {
+	struct rrr_msg_msg *msg = *message;
+	struct rrr_logd_data *data = arg1;
+
+	struct rrr_array array = {0};
+	char *log_message = NULL;
+	char *log_prefix = NULL;
+	char *log_file = NULL;
+	uint64_t log_level = 7;
+	uint64_t log_line = 0;
+
+	int ret = RRR_READ_OK;
+
+	(void)(arg2);
+
+	if (!MSG_IS_ARRAY(msg)) {
+		RRR_MSG_0("Received non-array RRR standard message from client, this is not supported\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	uint16_t array_version;
+	if ((ret = rrr_array_message_append_to_array(&array_version, &array, msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_logd_read_msg_extract_string_field(&log_message, &array, "log_message", 1)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_logd_read_msg_extract_string_field(&log_prefix, &array, "log_prefix", 0)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_logd_read_msg_extract_string_field(&log_prefix, &array, "log_file", 0)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_logd_read_message_extract_uint_field(&log_level, &array, "log_level", 0)) != 0) {
+		goto out;
+	}
+
+	if (log_level > 7) {
+		RRR_MSG_0("Log level in received array message exceeded the maximum of 7\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_logd_read_message_extract_uint_field(&log_line, &array, "log_line", 0)) != 0) {
+		goto out;
+	}
+
+	if (log_line > INT_MAX) {
+		RRR_MSG_0("Line number in received array message exceeded the maximum of %i\n", INT_MAX);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_logd_print (
+			log_file,
+			log_line,
+			log_level,
+			log_prefix,
+			log_message
+	);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(log_message);
+	RRR_FREE_IF_NOT_NULL(log_prefix);
+	RRR_FREE_IF_NOT_NULL(log_file);
+	rrr_array_clear(&array);
+	return ret;
+}
+
 static int rrr_logd_read_log_callback (
 		const struct rrr_msg_log *message,
 		void *arg1,
@@ -167,10 +362,12 @@ static void rrr_logd_fd_close_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS
 	(void)(addr);
 	(void)(addr_len);
 	(void)(addr_string);
-	(void)(create_type);
-	(void)(data);
 
 	if (!main_running)
+		return;
+
+	if (data->persist &&
+	    create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND)
 		return;
 
 	RRR_DBG_1("Received close notification for fd %i, stopping now. Was finalized is %i.\n",
@@ -249,7 +446,7 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP,
 			NULL,
 			NULL,
-			NULL,
+			rrr_logd_read_msg_callback,
 			NULL,
 			rrr_logd_read_log_callback,
 			rrr_logd_read_ctrl_callback,
