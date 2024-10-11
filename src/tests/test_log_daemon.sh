@@ -5,11 +5,13 @@ set +e
 
 VALGRIND=valgrind
 SOCKET=/tmp/rrr-logd-socket.sock
+#EXTRA_ARGS="-d 71"
 
 #../rrr_logd
 
 function wait_and_verify() {
-	EXPECTED_RET=$1
+	PID=$1
+	EXPECTED_RET=$2
 
 	wait $PID
 	RET=$?
@@ -19,7 +21,7 @@ function wait_and_verify() {
 		exit 1
 	fi
 
-	return $RET
+	return 0
 }
 
 ####################################################
@@ -28,7 +30,7 @@ function wait_and_verify() {
 
 rm -f $SOCKET || exit 1
 
-$VALGRIND ../.libs/rrr_logd -s $SOCKET &
+$VALGRIND ../.libs/rrr_logd -s $SOCKET $EXTRA_ARGS &
 PID=$!
 
 sleep 2
@@ -40,7 +42,7 @@ if ! [ -S $SOCKET ]; then
 fi
 
 kill -SIGUSR1 $PID || exit $?
-wait_and_verify 0
+wait_and_verify $PID 0
 RET=$?
 
 if [ -e $SOCKET ]; then
@@ -52,5 +54,11 @@ fi
 # Verify that incorrect fd produces error
 ####################################################
 
-#$VALGRIND ../.libs/rrr_logd -s $SOCKET &
+$VALGRIND ../.libs/rrr_logd -f 666 $EXTRA_ARGS &
 PID=$!
+
+sleep 2
+
+kill -SIGKILL $PID > /dev/null 2>&1
+
+wait_and_verify $PID 1

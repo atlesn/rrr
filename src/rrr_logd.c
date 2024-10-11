@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/allocator.h"
 
 #include "lib/rrr_types.h"
+#include "lib/socket/rrr_socket_constants.h"
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -33,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/common.h"
 #include "lib/version.h"
-#include "lib/util/posix.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/event/event.h"
@@ -143,6 +143,41 @@ static int rrr_logd_periodic (void *arg) {
 	return RRR_EVENT_OK;
 }
 
+static int rrr_logd_read_log_callback (
+		const struct rrr_msg_log *message,
+		void *arg1,
+		void *arg2
+) {
+	assert(0 && "Read log not implemented");
+	return 0;
+}
+
+static int rrr_logd_read_ctrl_callback (
+		const struct rrr_msg *message,
+		void *arg1,
+		void *arg2
+) {
+	assert(0 && "Read ctrl no implemented");
+	return 0;
+}
+
+static void rrr_logd_fd_close_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS) {
+	struct rrr_logd_data *data = arg;
+
+	(void)(addr);
+	(void)(addr_len);
+	(void)(addr_string);
+	(void)(create_type);
+	(void)(data);
+
+	if (!main_running)
+		return;
+
+	RRR_DBG_1("Received close notification for fd %i, stopping now. Was finalized is %i.\n",
+		fd, was_finalized);
+	main_running = 0;
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -205,7 +240,30 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_events;
 	}
 
-	if (data.receive_socket_fd > 0 && rrr_socket_client_collection_listen_fd_push(
+	rrr_socket_client_collection_event_setup (
+			clients,
+			NULL,
+			NULL,
+			NULL,
+			65536,
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			rrr_logd_read_log_callback,
+			rrr_logd_read_ctrl_callback,
+			NULL,
+			&data
+	);
+
+	rrr_socket_client_collection_fd_close_notify_setup (
+			clients,
+			rrr_logd_fd_close_callback,
+			&data
+	);
+
+	if (data.receive_socket_fd > 0 && rrr_socket_client_collection_listen_fd_push (
 			clients,
 			data.receive_socket_fd
 	) != 0) {
@@ -213,14 +271,25 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_clients;
 	}
 
-	if (data.receive_fd > 0 && rrr_socket_client_collection_connected_fd_push (
-			clients,
-			data.receive_fd,
-			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
-	) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_clients;
+	if (data.receive_fd > 0) {
+		if (rrr_socket_check_alive (data.receive_fd) != 0) {
+			RRR_MSG_0("Given file descriptor %i was unusable, exiting now.\n",
+				data.receive_fd);
+			ret = EXIT_FAILURE;
+			goto out_cleanup_clients;
+		}
+
+		if (rrr_socket_client_collection_connected_fd_push (
+				clients,
+				data.receive_fd,
+				RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_cleanup_clients;
+		}
 	}
+
+	RRR_DBG_1("RRR log deamon starting dispatch\n");
 
 	if (rrr_event_dispatch (
 			events,
@@ -231,6 +300,8 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_clients;
 	}
+
+	RRR_DBG_1("RRR log deamon dispatch ended\n");
 
 	out_cleanup_clients:
 		rrr_socket_client_collection_destroy(clients);
