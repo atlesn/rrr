@@ -34,6 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/common.h"
 #include "lib/version.h"
 #include "lib/util/posix.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_client.h"
+#include "lib/event/event.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_logd");
 
@@ -58,6 +61,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_logd_data {
 	const char *receive_socket;
+	int receive_socket_fd;
 	int receive_fd;
 };
 
@@ -109,6 +113,36 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 	return 0;
 }
 
+static int rrr_logd_socket_setup(struct rrr_logd_data *data) {
+	if (data->receive_socket == NULL)
+		return 0;
+
+	if (rrr_socket_unix_create_bind_and_listen (
+			&data->receive_socket_fd,
+			"rrr_logd",
+			data->receive_socket,
+			SOMAXCONN,
+			1, /* Non-blocking */
+			0, /* No mkstemp */
+			0  /* No unlink if exists */
+	) != 0) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static int rrr_logd_periodic (void *arg) {
+	struct rrr_logd_data *data = arg;
+
+	(void)(data);
+
+	if (!main_running)
+		return RRR_EVENT_EXIT;
+
+	return RRR_EVENT_OK;
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -120,6 +154,8 @@ int main (int argc, const char **argv, const char **env) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct cmd_data cmd = {0};
 	struct rrr_logd_data data = {0};
+	struct rrr_event_queue *events;
+	struct rrr_socket_client_collection *clients;
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
@@ -154,10 +190,57 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
-	while (main_running) {
-		rrr_posix_usleep(100 * 1000 /* 100 ms */);
+	if (rrr_logd_socket_setup(&data) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_socket;
 	}
 
+	if (rrr_event_queue_new(&events) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_socket;
+	}
+
+	if (rrr_socket_client_collection_new(&clients, events, "rrr_logd") != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_events;
+	}
+
+	if (data.receive_socket_fd > 0 && rrr_socket_client_collection_listen_fd_push(
+			clients,
+			data.receive_socket_fd
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_clients;
+	}
+
+	if (data.receive_fd > 0 && rrr_socket_client_collection_connected_fd_push (
+			clients,
+			data.receive_fd,
+			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_clients;
+	}
+
+	if (rrr_event_dispatch (
+			events,
+			100 * 1000, /* 100 ms */
+			rrr_logd_periodic,
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_clients;
+	}
+
+	out_cleanup_clients:
+		rrr_socket_client_collection_destroy(clients);
+		data.receive_socket_fd = 0;
+	out_cleanup_events:
+		rrr_event_queue_destroy(events);
+	out_cleanup_socket:
+		if (data.receive_socket_fd > 0)
+			rrr_socket_close(data.receive_socket_fd);
+		rrr_socket_close_all();
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_signal_handler_remove(signal_handler);
