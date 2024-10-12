@@ -513,6 +513,9 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
 		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
+	if (strcmp (data->filename, "-") == 0) {
+		socket_read_flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
+	}
 
 	struct rrr_post_read_callback_data callback_data = {
 			data
