@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <signal.h>
 
+#include "lib/util/macro_utils.h"
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/rrr_config.h"
@@ -44,14 +45,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/read.h"
 #include "lib/messages/msg_msg.h"
+#include "lib/messages/msg_log.h"
 #include "lib/util/rrr_time.h"
 #include "lib/util/gnu.h"
 #include "lib/util/linked_list.h"
+#include "lib/helpers/log_helper.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_post");
 
-#define RRR_POST_DEFAULT_ARRAY_DEFINITION	"msg"
-#define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE	4096
+#define RRR_POST_DEFAULT_ARRAY_DEFINITION       "msg"
+#define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE       4096
+#define RRR_POST_DEFAULT_LOG_ARRAY_DEFINITION   "nsep#log_message,sep1"
 
 static volatile int rrr_post_abort = 0;
 static volatile int rrr_post_print_stats = 0;
@@ -62,6 +66,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT |
          CMD_ARG_FLAG_SPLIT_COMMA,     'r',    "readings",             "[-r|--readings[=]reading1,reading2,...]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
+	{0,                            'L',    "log-delivery",         "[-L|--log-delivery]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'm',    "max-message-size",     "[-m|--max-message-size]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "count",                "[-c|--count[=]MAX FILE ELEMENTS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "topic",                "[-t|--topic[=]MQTT TOPIC]"},
@@ -99,6 +104,7 @@ struct rrr_post_data {
 	int strip_separators;
 	int sync_byte_by_byte;
 	int quiet;
+	int log_delivery;
 
 	int input_fd;
 	int output_fd;
@@ -273,11 +279,18 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		}
 	}
 
+	// Log delivery
+	if (cmd_exists(cmd, "log-delivery", 0)) {
+		data->log_delivery = 1;
+	}
+
 	// Array definition
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
 
 	if (array_definition == NULL || *array_definition == '\0') {
-		array_definition = RRR_POST_DEFAULT_ARRAY_DEFINITION;
+		array_definition = data->log_delivery
+			? RRR_POST_DEFAULT_LOG_ARRAY_DEFINITION
+			: RRR_POST_DEFAULT_ARRAY_DEFINITION;
 	}
 
 	array_tree_tmp = rrr_allocate(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
@@ -373,11 +386,11 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 	}
 }
 
-static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_msg *message) {
+static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg *message) {
 	int ret = 0;
 
 	if ((ret = rrr_socket_common_prepare_and_send_msg_blocking (
-			(struct rrr_msg *) message,
+			message,
 			data->output_fd,
 			NULL,
 			NULL,
@@ -418,7 +431,7 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 
 	memcpy(MSG_DATA_PTR(message), text, strlen(text) + 1);
 
-	ret = __rrr_post_send_message(data, message);
+	ret = __rrr_post_send_message(data, (struct rrr_msg *) message);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(text);
@@ -442,7 +455,70 @@ struct rrr_post_read_callback_data {
 	struct rrr_post_data *data;
 };
 
-static int __rrr_post_read_callback (struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg) {
+static int __rrr_post_read_log_delivery_callback (
+		struct rrr_read_session *read_session,
+		struct rrr_array *array_final,
+		void *arg
+) {
+	struct rrr_post_read_callback_data *callback_data = arg;
+	struct rrr_post_data *data = callback_data->data;
+
+	(void)(read_session);
+	(void)(data);
+
+	int ret = 0;
+
+	struct rrr_msg_log *msg_log = NULL;
+	char *log_message = NULL;
+	char *log_prefix = NULL;
+	char *log_file = NULL;
+	uint8_t log_level = 7;
+	int log_line = 0;
+
+	if ((ret = rrr_log_helper_extract_log_fields_from_array (
+			&log_file,
+			&log_line,
+			&log_level,
+			&log_prefix,
+			&log_message,
+			array_final
+	)) != 0) {
+		RRR_MSG_0("Failed to extract log fields\n");
+		goto out;
+	}
+
+	int no_file_or_line = log_file == NULL || *log_file == '\0' || log_line == 0;
+	int no_prefix       = log_prefix == NULL || *log_prefix == '\0';
+
+	if ((ret = rrr_msg_msg_log_new (
+			&msg_log,
+			no_file_or_line ? __FILE__ : log_file,
+			no_file_or_line ? __LINE__ : log_line,
+			rrr_log_translate_loglevel_rfc5424_stdout(log_level),
+			log_level,
+			no_prefix ? "rrr_post" : log_prefix,
+			log_message
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_post_send_message(data, (struct rrr_msg *) msg_log)) != 0) {
+		// Message printed in called function
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_log);
+	RRR_FREE_IF_NOT_NULL(log_message);
+	RRR_FREE_IF_NOT_NULL(log_prefix);
+	RRR_FREE_IF_NOT_NULL(log_file);
+	return ret;
+}
+
+static int __rrr_post_read_array_callback (
+		struct rrr_read_session *read_session,
+		struct rrr_array *array_final,
+		void *arg
+) {
 	struct rrr_post_read_callback_data *callback_data = arg;
 	struct rrr_post_data *data = callback_data->data;
 
@@ -467,7 +543,7 @@ static int __rrr_post_read_callback (struct rrr_read_session *read_session, stru
 		goto out;
 	}
 
-	if ((ret = __rrr_post_send_message(data, message)) != 0) {
+	if ((ret = __rrr_post_send_message(data, (struct rrr_msg *) message)) != 0) {
 		// Message printed in called function
 	}
 
@@ -536,8 +612,12 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				4096,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
-				data->max_message_size > RRR_LENGTH_MAX ? RRR_LENGTH_MAX : (rrr_length) data->max_message_size,
-				__rrr_post_read_callback,
+				data->max_message_size > RRR_LENGTH_MAX
+					? RRR_LENGTH_MAX
+					: (rrr_length) data->max_message_size,
+				data->log_delivery
+					? __rrr_post_read_log_delivery_callback
+					: __rrr_post_read_array_callback,
 				NULL,
 				&callback_data
 		);

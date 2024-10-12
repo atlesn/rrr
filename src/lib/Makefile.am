@@ -178,7 +178,7 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
-helpers = helpers/nullsafe_str.c helpers/string_builder.c
+helpers = helpers/nullsafe_str.c helpers/string_builder.c helpers/log_helper.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 

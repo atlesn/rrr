@@ -304,37 +304,6 @@ static void __rrr_log_hooks_call (
 	);
 }
 
-static uint8_t __rrr_log_translate_loglevel_rfc5424_stdout (
-		uint8_t loglevel
-) {
-	uint8_t result = 0;
-
-	switch (loglevel) {
-		case __RRR_LOG_PREFIX_0:
-			result = RRR_RFC5424_LOGLEVEL_ERROR;
-			break;
-		case __RRR_LOG_PREFIX_1:
-		case __RRR_LOG_PREFIX_2:
-		case __RRR_LOG_PREFIX_3:
-		case __RRR_LOG_PREFIX_4:
-		case __RRR_LOG_PREFIX_5:
-		case __RRR_LOG_PREFIX_6:
-		case __RRR_LOG_PREFIX_7:
-		default:
-			result = RRR_RFC5424_LOGLEVEL_DEBUG;
-			break;
-	};
-
-	return result;
-}
-
-static uint8_t __rrr_log_translate_loglevel_rfc5424_stderr (
-		uint8_t loglevel
-) {
-	(void)(loglevel);
-	return RRR_RFC5424_LOGLEVEL_ERROR;
-}
-
 #define RRR_LOG_TRANSLATE_LOGLEVEL(translate) \
 	(rrr_config_global.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
 
@@ -469,20 +438,23 @@ void rrr_log_print_no_hooks (
 #endif
 }
 
-void rrr_log_printf_nolock (
+static void __rrr_log_printf_nolock_va (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		int is_translated,
 		const char *prefix,
 		const char *__restrict __format,
-		...
+		va_list args
 ) {
-	va_list args;
-	va_start(args, __format);
-
 	char ts[32];
+	uint8_t loglevel_translated;
 
 	__rrr_log_make_timestamp(ts);
+
+	loglevel_translated = is_translated
+		? loglevel
+		: RRR_LOG_TRANSLATE_LOGLEVEL(rrr_log_translate_loglevel_rfc5424_stdout);
 
 	// Don't call the hooks here due to potential lock problems
 
@@ -491,7 +463,7 @@ void rrr_log_printf_nolock (
 		__rrr_log_sd_journal_sendv (
 				file,
 				line,
-				RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
+				loglevel_translated,
 				prefix,
 				__format,
 				args
@@ -507,8 +479,8 @@ void rrr_log_printf_nolock (
 		printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
 			RRR_LOG_HEADER_ARGS(
 				ts,
-				RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
-				 prefix
+				loglevel_translated,
+				prefix
 			)
 		);
 		vprintf(__format, args);
@@ -517,6 +489,52 @@ void rrr_log_printf_nolock (
 #ifdef HAVE_JOURNALD
 	}
 #endif
+}
+
+void rrr_log_printf_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
+	va_list(args);
+	va_start(args, __format);
+
+	__rrr_log_printf_nolock_va (
+			file,
+			line,
+			loglevel,
+			0, /* Is not translated */
+			prefix,
+			__format,
+			args
+	);
+
+	va_end(args);
+}
+
+void rrr_log_printf_nolock_loglevel_translated (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
+	va_list(args);
+	va_start(args, __format);
+
+	__rrr_log_printf_nolock_va (
+			file,
+			line,
+			loglevel,
+			1, /* Is already translated */
+			prefix,
+			__format,
+			args
+	);
 
 	va_end(args);
 }
@@ -592,13 +610,13 @@ static void __rrr_log_printf_va (
 
 	va_copy(args_copy, args);
 
-	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
+	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(rrr_log_translate_loglevel_rfc5424_stdout);
 
 #ifndef RRR_LOG_DISABLE_PRINT
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
-		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+		__rrr_log_sd_journal_sendv(file, line, RRR_LOG_TRANSLATE_LOGLEVEL(rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
 	}
 	else {
 #endif
@@ -705,10 +723,10 @@ void rrr_log_fprintf (
 
 	if (rrr_config_global.rfc5424_loglevel_output) {
 		if (file_target == stderr) {
-			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
+			loglevel_translated = rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
 		}
 		else {
-			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+			loglevel_translated = rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
 		}
 	}
 

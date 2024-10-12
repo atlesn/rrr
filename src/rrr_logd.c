@@ -25,9 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/log.h"
 #include "lib/allocator.h"
 
+#include "lib/messages/msg_log.h"
 #include "lib/rrr_types.h"
 #include "lib/socket/rrr_socket_constants.h"
 #include "lib/type.h"
+#include "lib/util/macro_utils.h"
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -40,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/event/event.h"
 #include "lib/messages/msg_msg.h"
+#include "lib/helpers/log_helper.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_logd");
 
@@ -170,7 +173,7 @@ static void rrr_logd_print (
 
 	assert(message != NULL);
 
-	rrr_log_printf_nolock (
+	rrr_log_printf_nolock_loglevel_translated (
 			file,
 			line,
 			loglevel,
@@ -178,86 +181,6 @@ static void rrr_logd_print (
 			"%s\n",
 			message
 	);
-}
-
-static int rrr_logd_read_message_extract_uint_field (
-		uint64_t *target,
-		struct rrr_array *array,
-		const char *field,
-		int mandatory
-) {
-	int ret = RRR_READ_OK;
-
-	const struct rrr_type_value *value_tmp;
-
-	if ((value_tmp = rrr_array_value_get_by_tag_const(array, field)) == NULL && mandatory) {
-		RRR_MSG_0("Received array message did not have the required field '%s'\n",
-			field);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-	else if (value_tmp == NULL) {
-		goto out;
-	}
-	else if (!RRR_TYPE_IS_64(value_tmp->definition->type)) {
-		RRR_MSG_0("The field '%s' of received array message was not an integer\n",
-			field);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-	else if (!RRR_TYPE_FLAG_IS_UNSIGNED(value_tmp->definition->type)) {
-		RRR_MSG_0("The field '%s' of received array message was not unsigned\n",
-			field);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_array_get_value_unsigned_64_by_tag(target, array, "log_level", 0)) {
-		RRR_MSG_0("Failed to get unsigned field '%s' from array\n",
-			field);
-		ret = RRR_READ_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-static int rrr_logd_read_msg_extract_string_field (
-		char **target,
-		struct rrr_array *array,
-		const char *field,
-		int mandatory
-) {
-	int ret = RRR_READ_OK;
-
-	const struct rrr_type_value *value_tmp;
-
-	if ((value_tmp = rrr_array_value_get_by_tag_const(array, field)) == NULL && mandatory) {
-		RRR_MSG_0("Received array message did not have the required field '%s'\n",
-			field);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-	else if (value_tmp == NULL) {
-		goto out;
-	}
-	else if (!RRR_TYPE_IS_STR(value_tmp->definition->type)) {
-		RRR_MSG_0("The field '%s' of received array message was not a string\n",
-			field);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_array_get_value_str_by_tag(target, array, field) != 0) {
-		RRR_MSG_0("Failed to get string field '%s' from array\n",
-			field);
-		ret = RRR_READ_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
 }
 
 static int rrr_logd_read_msg_callback (
@@ -268,14 +191,16 @@ static int rrr_logd_read_msg_callback (
 	struct rrr_msg_msg *msg = *message;
 	struct rrr_logd_data *data = arg1;
 
+	(void)(data);
+
+	int ret = RRR_READ_OK;
+
 	struct rrr_array array = {0};
 	char *log_message = NULL;
 	char *log_prefix = NULL;
 	char *log_file = NULL;
-	uint64_t log_level = 7;
-	uint64_t log_line = 0;
-
-	int ret = RRR_READ_OK;
+	uint8_t log_level = 7;
+	int log_line = 0;
 
 	(void)(arg2);
 
@@ -290,35 +215,16 @@ static int rrr_logd_read_msg_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_logd_read_msg_extract_string_field(&log_message, &array, "log_message", 1)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_logd_read_msg_extract_string_field(&log_prefix, &array, "log_prefix", 0)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_logd_read_msg_extract_string_field(&log_prefix, &array, "log_file", 0)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_logd_read_message_extract_uint_field(&log_level, &array, "log_level", 0)) != 0) {
-		goto out;
-	}
-
-	if (log_level > 7) {
-		RRR_MSG_0("Log level in received array message exceeded the maximum of 7\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if ((ret = rrr_logd_read_message_extract_uint_field(&log_line, &array, "log_line", 0)) != 0) {
-		goto out;
-	}
-
-	if (log_line > INT_MAX) {
-		RRR_MSG_0("Line number in received array message exceeded the maximum of %i\n", INT_MAX);
-		ret = RRR_READ_SOFT_ERROR;
+	if ((ret = rrr_log_helper_extract_log_fields_from_array (
+			&log_file,
+			&log_line,
+			&log_level,
+			&log_prefix,
+			&log_message,
+			&array
+	)) != 0) {
+		// Returns hard or soft error
+		RRR_MSG_0("Error while processing received array message\n");
 		goto out;
 	}
 
@@ -343,8 +249,34 @@ static int rrr_logd_read_log_callback (
 		void *arg1,
 		void *arg2
 ) {
-	assert(0 && "Read log not implemented");
-	return 0;
+	struct rrr_logd_data *data = arg1;
+
+	(void)(arg2);
+	(void)(data);
+
+	int ret = RRR_READ_OK;
+
+	char *log_prefix = NULL;
+	char *log_message = NULL;
+
+	if ((ret = rrr_msg_msg_log_to_str(&log_prefix, &log_message, message)) != 0) {
+		goto out;
+	}
+
+	rrr_logd_print (
+			message->file,
+			message->line > INT_MAX
+				? INT_MAX
+				: rrr_int_from_biglength_bug_const(message->line),
+			message->loglevel_orig,
+			log_prefix,
+			log_message
+	);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(log_prefix);
+	RRR_FREE_IF_NOT_NULL(log_message);
+	return ret;
 }
 
 static int rrr_logd_read_ctrl_callback (
@@ -352,7 +284,12 @@ static int rrr_logd_read_ctrl_callback (
 		void *arg1,
 		void *arg2
 ) {
+	(void)(message);
+	(void)(arg1);
+	(void)(arg2);
+
 	assert(0 && "Read ctrl no implemented");
+
 	return 0;
 }
 

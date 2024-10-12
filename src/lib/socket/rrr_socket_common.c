@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
 #include "../read.h"
 
 struct receive_callback_data {
@@ -177,6 +178,25 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				wait_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error while sending control message in %s\n", __func__);
+			goto out;
+		}
+	}
+	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
+		struct rrr_msg_log *message = (struct rrr_msg_log *) msg;
+
+		const rrr_length msg_size = MSG_TOTAL_SIZE(message);
+
+		rrr_msg_msg_log_prepare_for_network(message);
+		rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message);
+
+		if ((ret = rrr_socket_send_blocking (
+				fd,
+				message,
+				msg_size,
+				wait_callback,
+				wait_callback_arg
+		)) != 0) {
+			RRR_MSG_0("Error while sending log message in %s\n", __func__);
 			goto out;
 		}
 	}

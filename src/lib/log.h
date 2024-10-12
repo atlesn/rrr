@@ -297,6 +297,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_PRINTF_INTERCEPT_ARGS                          \
             RRR_LOG_HOOK_ARGS
 
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
+) {
+	uint8_t result = 0;
+
+	switch (loglevel) {
+		case __RRR_LOG_PREFIX_0:
+			result = RRR_RFC5424_LOGLEVEL_ERROR;
+			break;
+		case __RRR_LOG_PREFIX_1:
+		case __RRR_LOG_PREFIX_2:
+		case __RRR_LOG_PREFIX_3:
+		case __RRR_LOG_PREFIX_4:
+		case __RRR_LOG_PREFIX_5:
+		case __RRR_LOG_PREFIX_6:
+		case __RRR_LOG_PREFIX_7:
+		default:
+			result = RRR_RFC5424_LOGLEVEL_DEBUG;
+			break;
+	};
+
+	return result;
+}
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
+) {
+	(void)(loglevel);
+	return RRR_RFC5424_LOGLEVEL_ERROR;
+}
+
 struct rrr_event_queue;
 
 // Call from main() before and after /anything/ else
@@ -333,6 +364,14 @@ void rrr_log_print_no_hooks (
 		const char *message
 );
 void rrr_log_printf_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
+void rrr_log_printf_nolock_loglevel_translated (
 		const char *file,
 		int line,
 		uint8_t loglevel,
