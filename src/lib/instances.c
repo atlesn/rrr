@@ -1054,7 +1054,7 @@ static void __rrr_instance_thread_late_deinit (
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	rrr_event_collection_clear(&thread_data->events);
+	(void)(thread_data);
 
 	rrr_log_socket_close();
 }
