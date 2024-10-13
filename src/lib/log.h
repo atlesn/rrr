@@ -212,6 +212,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	endif
 #endif
 
+// XXX : MSG_0 and DBG_9 should use correct prefix 
+
 #define RRR_MSG_0_PRINTF(...) \
 	do { printf ("<" __RRR_LOG_PREFIX_0_Q "> <rrr> " __VA_ARGS__); } while(0)
 

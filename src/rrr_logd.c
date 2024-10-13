@@ -181,7 +181,7 @@ static void rrr_logd_print (
 
 	assert(message != NULL);
 
-	rrr_log_printf_nolock_loglevel_translated (
+	rrr_log_printf_nolock (//_loglevel_translated (
 			file,
 			line,
 			loglevel,

@@ -1,4 +1,4 @@
-rrr (1.32-15) bookworm; urgency=medium
+rrr (1.32-16) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -8,7 +8,9 @@ rrr (1.32-15) bookworm; urgency=medium
       ensures that printf outputs are not mixed up from different threads
       and processes.
     * Log socket daemon with ability to collect logs from multiple RRR
-      instances
+      processes
+        * TODO : Discrepancies with log level orig / log level translated
+                 coming from rrr_post.
 
   * Improvements:
     * Remove all references to http2 when RRR is built without nghttp2, in
