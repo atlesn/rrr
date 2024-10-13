@@ -25,6 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../array.h"
 #include "../log.h"
+#include "../messages/msg_log.h"
+#include "../messages/msg_msg_struct.h"
+#include "../socket/rrr_socket.h"
 #include "../allocator.h"
 
 static int __rrr_log_helper_extract_uint_field (
@@ -174,3 +177,48 @@ int rrr_log_helper_extract_log_fields_from_array (
 		return ret;
 }
 
+int rrr_log_helper_log_msg_send (
+		int fd,
+		const char *log_file,
+		int log_line,
+		uint8_t log_level_translated,
+		uint8_t log_level_orig,
+		const char *log_prefix,
+		const char *log_message
+) {
+	int ret = 0;
+
+	struct rrr_msg_log *msg_log = NULL;
+
+	if ((ret = rrr_msg_msg_log_new (
+			&msg_log,
+			log_file,
+			log_line,
+			log_level_translated,
+			log_level_orig,
+			log_prefix,
+			log_message
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_length msg_size = MSG_TOTAL_SIZE(msg_log);
+
+	rrr_msg_msg_log_prepare_for_network(msg_log);
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_log);
+
+	if ((ret = rrr_socket_send_blocking (
+			fd,
+			(struct rrr_msg *) msg_log,
+			msg_size,
+			NULL,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Error while sending log message in %s\n", __func__);
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_log);
+	return ret;
+}

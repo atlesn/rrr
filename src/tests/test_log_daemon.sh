@@ -3,11 +3,17 @@
 # Must disable auto bail
 set +e
 
+# VALGRIND=valgrind
+# LOGD=../.libs/rrr_logd
+# POST=../.libs/rrr_post
+# RRR=../.libs/rrr
+
 VALGRIND=
-LOGD=../.libs/rrr_logd
+LOGD=../rrr_logd
+POST=../rrr_post
+RRR=../rrr
+
 PID=
-POST=../.libs/rrr_post
-EXTRA_ARGS=""
 SOCKET=/tmp/rrr-logd-socket.sock
 TMP=/tmp/rrr-logd-output
 LOG_MSG="DEADBEEF"
@@ -70,7 +76,7 @@ function verify_socket_exists() {
 
 function logd_start() {
 	ARGS=$1
-	$VALGRIND $LOGD -p $ARGS $EXTRA_ARGS -s $SOCKET > $TMP &
+	$VALGRIND $LOGD -p $ARGS -s $SOCKET > $TMP &
 	PID=$!
 	sleep $SLEEP
 }
@@ -97,7 +103,7 @@ function logd_start_stop() {
 		verify_socket_exists
 		logd_stop $EXPECTED_RET
 	else
-		if kill -SIGKILL $PID; then
+		if kill -SIGKILL $PID 2>/dev/null; then
 			bail "Process did not terminate early although expected"
 		fi
 	fi
@@ -112,7 +118,7 @@ function log_delivery() {
 	verify_socket_exists
 
 	# Test using specified array definition
-	if ! echo "$IN" | $POST $SOCKET $POST_ARGS -c 1 -f - $EXTRA_ARGS; then
+	if ! echo "$IN" | $VALGRIND $POST $SOCKET $POST_ARGS -c 1 -f -; then
 		sigkill_and_bail "Failed to post log messages"
 		exit 1
 	fi
@@ -132,6 +138,32 @@ function log_delivery() {
 	rm -f $TMP
 }
 
+function log_delivery_from_rrr() {
+	RRR_ARGS=$1
+	RRR_OUTPUT=$2
+
+	logd_start
+	verify_socket_exists
+
+	RRR_OUT=`$VALGRIND $RRR $RRR_ARGS -L $SOCKET`
+	RET=$?
+
+	if [ $RET -ne 0 ]; then
+		sigkill_and_bail "Unexpected return $RET from rrr"
+	fi
+
+	if [ "x$RRR_OUT" != "x" ]; then
+		sigkill_and_bail "Unexpected output from rrr, should be delivered to socket only"
+	fi
+
+	logd_stop 0
+
+	OUTPUT=`logd_output`
+	if ! echo "$OUTPUT" | grep "$RRR_OUTPUT" > /dev/null; then
+		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon"
+	fi
+}
+
 ####################################################
 # Verify that logd terminates neatly
 ####################################################
@@ -141,6 +173,7 @@ logd_start_stop "" 0
 ####################################################
 # Verify that incorrect fd produces error
 ####################################################
+
 logd_start_stop "-f 666" 1
 
 ####################################################
@@ -159,4 +192,4 @@ log_delivery "$LOG_MSG" "-L" "$LOG_OUT_7"
 # Verify log message delivery from main process
 ####################################################
 
-
+log_delivery_from_rrr -v "Read Route Record"

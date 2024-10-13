@@ -7,8 +7,8 @@ rrr (1.32-15) bookworm; urgency=medium
       each thread sends log output over a socket to the main process. This
       ensures that printf outputs are not mixed up from different threads
       and processes.
-    * Compilation option to enable timestamps in messages printed to standard
-      output
+    * Log socket daemon with ability to collect logs from multiple RRR
+      instances
 
   * Improvements:
     * Remove all references to http2 when RRR is built without nghttp2, in

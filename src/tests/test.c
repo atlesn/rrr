@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../build_timestamp.h"
 #include "../lib/allocator.h"
 #include "../lib/log.h"
-#include "../lib/log_socket.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
 #include "../lib/instance_config.h"
@@ -431,20 +430,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_bind() != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
-	}
-#endif
-
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_start_listen(event_queue) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_log_socket;
-	}
-#endif
-
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
 	rrr_setproctitle_init(argc, argv, env);
@@ -453,13 +438,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
 		ret = rrr_test_library_functions(&main_running, fork_handler, event_queue);
-		goto out_cleanup_log_socket;
+		goto out_cleanup_cmd;
 	}
 
 	if ((config_file = cmd_get_value(&cmd, "config", 0)) == NULL) {
 		RRR_MSG_0("No configuration file specified for test program\n");
 		ret = 1;
-		goto out_cleanup_log_socket;
+		goto out_cleanup_cmd;
 	}
 
 	TEST_BEGIN(config_file) {
@@ -479,17 +464,17 @@ int main (int argc, const char *argv[], const char *env[]) {
 					rrr_posix_usleep(50000);
 					rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 				}
-				goto out_cleanup_log_socket;
+				goto out_cleanup_cmd;
 			}
 			if (pid < 0) {
 				TEST_MSG("Error while forking: %s\n", rrr_strerror(errno));
 				ret = 1;
-				goto out_cleanup_log_socket;
+				goto out_cleanup_cmd;
 			}
 		}
 
 		if ((ret = rrr_instance_config_parse_file(&config, config_file)) != 0 || config == NULL) {
-			goto out_cleanup_log_socket;
+			goto out_cleanup_cmd;
 		}
 
 		if ((ret = rrr_instances_create_from_config(&instances, config, library_paths)) != 0) {
@@ -548,11 +533,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		if (config != NULL) {
 			rrr_instance_config_collection_destroy(config);
 		}
-
-	out_cleanup_log_socket:
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-		rrr_log_socket_cleanup_listener();
-#endif
 
 	out_cleanup_cmd:
 		cmd_destroy(&cmd);

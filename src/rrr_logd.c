@@ -178,7 +178,7 @@ static void rrr_logd_print (
 			line,
 			loglevel,
 			prefix,
-			"%s\n",
+			"%s",
 			message
 	);
 }

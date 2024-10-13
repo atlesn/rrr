@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../log.h"
-#include "../log_socket.h"
 #include "../allocator.h"
 
 #include "cmodule_worker.h"
@@ -964,7 +963,7 @@ static void __rrr_cmodule_worker_main_close_sockets_except (
 	int event_fds[RRR_EVENT_QUEUE_FD_MAX*2];
 	size_t event_fds_count_a = 0;
 	size_t event_fds_count_b = 0;
-	int *log_fds = NULL;
+	int log_fds[] = {0};
 	size_t log_fds_count = 0;
 	int single_fds[] = {0};
 	size_t single_fds_count = sizeof(single_fds) / sizeof(single_fds[0]);
@@ -973,11 +972,10 @@ static void __rrr_cmodule_worker_main_close_sockets_except (
 	rrr_event_queue_fds_get(event_fds, &event_fds_count_a, worker->event_queue_parent);
 	rrr_event_queue_fds_get(event_fds + event_fds_count_a, &event_fds_count_b, worker->event_queue_worker);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_fds_get(&log_fds, &log_fds_count) != 0) {
-		RRR_BUG("Failed to get log sockets in %s. Cannot continue, aborting now.\n", __func__);
-	}
-#endif
+	// Preserve recently opened log connection, if any
+	log_fds[0] = rrr_log_socket_fd_get();
+	if (log_fds[0] > 0)
+		log_fds_count++;
 
 	// printf("Not closing %lu event fds %lu log fds\n", event_fds_count_a + event_fds_count_b, log_fds_count);
 
@@ -991,8 +989,6 @@ static void __rrr_cmodule_worker_main_close_sockets_except (
 	};
 
 	rrr_socket_close_all_except_cb_no_unlink (__rrr_cmodule_worker_main_close_sockets_except_cb, &callback_data);
-
-	RRR_FREE_IF_NOT_NULL(log_fds);
 }
 
 int rrr_cmodule_worker_main (

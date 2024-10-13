@@ -642,7 +642,7 @@ int rrr_read_message_using_callbacks (
 	}
 
 	// Noisy and also causes log messages to be
-	// debugged when central logging is active
+	// debugged when log soscket is being used
 	// RRR_DBG_7("%i messages read in read framework\n", read_count);
 
 	ret &= ~(RRR_READ_INCOMPLETE);

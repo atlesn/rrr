@@ -24,9 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <threads.h>
 #include <unistd.h>
 
 #include "../../config.h"
+#include "helpers/log_helper.h"
 
 #ifdef HAVE_JOURNALD
 #	define SD_JOURNAL_SUPPRESS_LOCATION
@@ -40,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
+#include "socket/rrr_socket.h"
 
 // Uncomment for debug purposes, logs are only delivered to hooks
 //#define RRR_LOG_DISABLE_PRINT
@@ -48,6 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static volatile int rrr_log_is_initialized = 0;
 static volatile uint64_t rrr_log_boot_timestamp_us = 0;
+
+static _Thread_local int rrr_log_socket_fd = 0;
+static const char *rrr_log_socket_file = NULL;
 
 // This locking merely prevents (or attempts to prevent) output from different threads to getting mixed up
 static pthread_mutex_t rrr_log_lock;
@@ -74,10 +80,15 @@ int rrr_log_init(void) {
 }
 
 void rrr_log_cleanup(void) {
-	if (!rrr_log_is_initialized) {
-		return;
+	if (rrr_log_socket_fd > 0) {
+		rrr_socket_close(rrr_log_socket_fd);
+		rrr_log_socket_fd = 0;
 	}
-	pthread_mutex_destroy(&rrr_log_lock);
+
+	if (rrr_log_is_initialized) {
+		pthread_mutex_destroy(&rrr_log_lock);
+		rrr_log_is_initialized = 0;
+	}
 }
 
 // This must be separately locked to detect recursion (log functions called from inside hooks and intercepter)
@@ -135,6 +146,9 @@ static void __rrr_log_hook_unlock_void (void *arg) {
         pthread_cleanup_pop(1);                                                                                                \
         finally;
 
+#define RRR_LOG_PRINTF_INTERCEPT_ARGS                          \
+            RRR_LOG_HOOK_ARGS
+
 static void __rrr_log_make_timestamp(char buf[32]) {
 #ifdef RRR_ENABLE_LOG_TIMESTAMPS
 	uint64_t ts = rrr_time_get_64() - rrr_log_boot_timestamp_us;
@@ -156,7 +170,7 @@ struct rrr_log_hook {
 _Thread_local void (*rrr_log_printf_intercept_callback)(RRR_LOG_PRINTF_INTERCEPT_ARGS) = NULL;
 _Thread_local void *rrr_log_printf_intercept_callback_arg = NULL;
 
-void rrr_log_printf_thread_local_intercept_set (
+static void __rrr_log_printf_thread_local_intercept_set (
 		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
 		void *private_arg
 ) {
@@ -761,4 +775,66 @@ void rrr_log_fprintf (
 
 	va_end(args);
 	va_end(args_copy);
+}
+
+static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_PRINTF_INTERCEPT_ARGS) {
+	(void)(private_arg);
+
+	if (rrr_log_helper_log_msg_send (
+			rrr_log_socket_fd,
+			file,
+			line,
+			loglevel_translated,
+			loglevel_orig,
+			prefix,
+			message
+	) != 0) {
+		fprintf(stderr, "Failed to send log message in %s, cannot continue.\n", __func__);
+		abort();
+	}
+}
+
+int rrr_log_socket_connect (
+		const char *log_socket
+) {
+	int ret = 0;
+
+	assert(rrr_log_socket_fd == 0);
+
+	if (rrr_socket_unix_connect(&rrr_log_socket_fd, "log", log_socket, 0 /* Not nonblock */) != 0) {
+		RRR_MSG_0("Failed to connect to log socket '%s'\n", log_socket);
+		ret = 1;
+		goto out;
+	}
+
+	assert(rrr_log_socket_file == NULL);
+	rrr_log_socket_file = log_socket;
+
+	__rrr_log_printf_thread_local_intercept_set (__rrr_log_socket_printf_intercept_callback, NULL);
+
+	out:
+	return ret;
+}
+
+int rrr_log_socket_fd_get (void) {
+	return rrr_log_socket_fd;
+}
+
+int rrr_log_socket_reconnect (void) {
+	assert(rrr_log_socket_fd == 0);
+
+	if (rrr_log_socket_file == NULL)
+		return 0;
+
+	const char *log_socket = rrr_log_socket_file;
+	rrr_log_socket_file = NULL;
+
+	return rrr_log_socket_connect(log_socket);
+}
+
+void rrr_log_socket_close (void) {
+	if (rrr_log_socket_fd > 0) {
+		rrr_socket_close(rrr_log_socket_fd);
+		rrr_log_socket_fd = 0;
+	}
 }

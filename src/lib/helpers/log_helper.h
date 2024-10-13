@@ -40,5 +40,14 @@ int rrr_log_helper_extract_log_fields_from_array (
 		char **log_message,
 		struct rrr_array *array
 );
+int rrr_log_helper_log_msg_send (
+		int fd,
+		const char *log_file,
+		int log_line,
+		uint8_t log_level_translated,
+		uint8_t log_level_orig,
+		const char *log_prefix,
+		const char *log_message
+);
 
 #endif /* RRR_LOG_HELPER_H */

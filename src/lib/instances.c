@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "discern_stack.h"
 #include "discern_stack_helper.h"
 #include "instance_config.h"
-#include "log_socket.h"
 #include "message_broker.h"
 #include "message_helper.h"
 #include "message_holder/message_holder_struct.h"
@@ -1006,19 +1005,9 @@ static int __rrr_instance_thread_early_init (
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	int ret = 0;
-
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if ((ret = rrr_log_socket_thread_start_say(INSTANCE_D_EVENTS(thread_data))) != 0) {
-		goto out;
-	}
-
-	out:
-#else
 	(void)(thread_data);
-#endif
 
-	return ret;
+	return rrr_log_socket_reconnect();
 }
 
 static void __rrr_instance_thread_late_deinit (
@@ -1028,9 +1017,7 @@ static void __rrr_instance_thread_late_deinit (
 
 	(void)(thread_data);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	rrr_log_socket_cleanup_sayer();
-#endif
+	rrr_log_socket_close();
 }
 
 struct rrr_instance_collection_start_threads_check_wait_for_callback_data {
