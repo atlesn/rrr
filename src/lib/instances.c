@@ -675,9 +675,7 @@ static void __rrr_instance_periodic_callback (
 	(void)(flags);
 	(void)(thread_data);
 
-	printf("PING\n");
-
-	rrr_log_socket_ping();
+	rrr_log_socket_ping_or_flush();
 }
 
 static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (

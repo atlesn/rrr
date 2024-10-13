@@ -52,6 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_LOG_DISABLE_PRINT
 
 #define RRR_LOG_HOOK_MAX 5
+#define RRR_LOG_SOCKET_PING_INTERVAL_MIN_S 2
 
 static volatile int rrr_log_is_initialized = 0;
 static volatile uint64_t rrr_log_boot_timestamp_us = 0;
@@ -60,6 +61,7 @@ static _Thread_local int rrr_log_socket_fd = 0;
 static _Thread_local void *rrr_log_socket_send_queue = NULL;
 static _Thread_local size_t rrr_log_socket_send_queue_size = 0;
 static _Thread_local size_t rrr_log_socket_send_queue_pos = 0;
+static _Thread_local uint64_t rrr_log_socket_last_send_time = 0;
 static const char *rrr_log_socket_file = NULL;
 
 // This locking merely prevents (or attempts to prevent) output from different threads to getting mixed up
@@ -807,6 +809,30 @@ void rrr_log_fprintf (
 	va_end(args_copy);
 }
 
+static void __rrr_log_socket_send (
+		const void *to_send,
+		size_t to_send_size
+) {
+	// Don't use socket framework, might cause deadlocks
+	ssize_t sent_bytes = write(rrr_log_socket_fd, to_send, to_send_size);
+	if (sent_bytes < 0 || (size_t) sent_bytes != to_send_size) {
+		fprintf(stderr, "Error while sending log message in %s: %s\n",
+			__func__, rrr_strerror(errno));
+		abort();
+	}
+
+	rrr_log_socket_last_send_time = rrr_time_get_64();
+}
+
+static void __rrr_log_socket_send_from_queue (void) {
+	__rrr_log_socket_send (
+		rrr_log_socket_send_queue,
+		rrr_log_socket_send_queue_pos
+	);
+
+	rrr_log_socket_send_queue_pos = 0;
+}
+
 static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	(void)(private_arg);
 
@@ -876,34 +902,16 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	pthread_cleanup_push(__rrr_log_socket_unlock_void, NULL);
 	pthread_cleanup_push(__rrr_log_free_dbl_ptr, &msg_log);
 
-//	fprintf(stderr, "=== Sending, send queue is now %lu bytes\n", rrr_log_socket_send_queue_pos);
-
 	if (rrr_log_socket_fd == 0) {
 		goto cleanup;
 	}
 
-	void *to_send;
-	size_t to_send_size;
-
 	if (rrr_log_socket_send_queue_pos > 0) {
-		to_send = rrr_log_socket_send_queue;
-		to_send_size = rrr_log_socket_send_queue_pos;
-		rrr_log_socket_send_queue_pos = 0;
+		__rrr_log_socket_send_from_queue();
 	}
 	else {
-		to_send = msg_log;
-		to_send_size = msg_size;
+		__rrr_log_socket_send(msg_log, msg_size);
 	}
-
-	// Don't use socket framework, might cause deadlocks
-	ssize_t sent_bytes = write(rrr_log_socket_fd, to_send, to_send_size);
-	if (sent_bytes < 0 || (size_t) sent_bytes != to_send_size) {
-		fprintf(stderr, "Error while sending log message in %s: %s\n",
-			__func__, rrr_strerror(errno));
-		abort();
-	}
-
-///	fprintf(stderr, "=== Send queue is now empty\n");
 
 	cleanup:
 	pthread_cleanup_pop(1);
@@ -926,9 +934,6 @@ int rrr_log_socket_connect (
 		rrr_log_socket_file = log_socket;
 		__rrr_log_printf_intercept_set (__rrr_log_socket_printf_intercept_callback, NULL);
 	}
-
-	printf("Pid %i connecting to log socket %s\n",
-		getpid(), log_socket);
 
 	if (rrr_socket_unix_connect(&rrr_log_socket_fd, "log", log_socket, 0 /* Not nonblock */) != 0) {
 		RRR_MSG_0("Failed to connect to log socket '%s'\n", log_socket);
@@ -963,18 +968,30 @@ void rrr_log_socket_close (void) {
 	rrr_log_socket_fd = 0;
 }
 
-void rrr_log_socket_ping (void) {
+void rrr_log_socket_ping_or_flush (void) {
+	struct rrr_msg msg;
+	size_t msg_size;
+	ssize_t bytes_sent;
+	uint64_t now = rrr_time_get_64();
+
 	if (rrr_log_socket_fd == 0)
 		return;
 
-	struct rrr_msg msg;
+	if (rrr_log_socket_send_queue_pos > 0) {
+		__rrr_log_socket_send_from_queue();
+		return;
+	}
+
+	if (now - rrr_log_socket_last_send_time <
+	    RRR_LOG_SOCKET_PING_INTERVAL_MIN_S * 1000 * 1000)
+		return;
 
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
-	size_t msg_size = MSG_TOTAL_SIZE(&msg);
+	msg_size = MSG_TOTAL_SIZE(&msg);
 
 	rrr_msg_checksum_and_to_network_endian(&msg);
 
-	ssize_t bytes_sent = write(rrr_log_socket_fd, &msg, sizeof(msg));
+	bytes_sent = write(rrr_log_socket_fd, &msg, sizeof(msg));
 	if (bytes_sent < 0 || (size_t) bytes_sent != msg_size) {
 		fprintf(stderr, "Failed to send ping in %s: %s\n",
 			__func__,
@@ -982,4 +999,6 @@ void rrr_log_socket_ping (void) {
 		);
 		abort();
 	}
+
+	rrr_log_socket_last_send_time = now;
 }

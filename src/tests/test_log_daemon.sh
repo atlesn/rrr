@@ -153,7 +153,7 @@ function log_delivery_from_rrr() {
 	fi
 
 	if [ "x$RRR_OUT" != "x" ]; then
-		sigkill_and_bail "Unexpected output from rrr, should be delivered to socket only"
+		sigkill_and_bail "Unexpected output '$RRR_OUT' from rrr, should be delivered to socket only"
 	fi
 
 	logd_stop 0

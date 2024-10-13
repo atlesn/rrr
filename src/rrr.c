@@ -536,7 +536,7 @@ static int main_loop_periodic_maintenance (
 		goto out;
 	}
 
-	rrr_log_socket_ping();
+	rrr_log_socket_ping_or_flush();
 
 	if (sigusr2) {
 		rrr_profiling_dump();
@@ -565,7 +565,7 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 		return;
 	}
 
-	rrr_log_socket_ping();
+	rrr_log_socket_ping_or_flush();
 }
 
 static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
@@ -639,7 +639,7 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 		goto out_destroy_thread_collection;
 	}
 
-	rrr_log_socket_ping();
+	rrr_log_socket_ping_or_flush();
 
 	return;
 
@@ -994,7 +994,7 @@ static int main_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	rrr_log_socket_ping();
+	rrr_log_socket_ping_or_flush();
 
 	return RRR_EVENT_OK;
 }
