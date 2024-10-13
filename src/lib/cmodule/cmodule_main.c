@@ -192,6 +192,8 @@ int rrr_cmodule_main_worker_fork_start (
 
 	rrr_setproctitle("[worker %s]", worker->name);
 
+	rrr_log_socket_close();
+
 	if ((ret = rrr_log_socket_reconnect()) != 0)
 		goto out_child_exit;
 
@@ -204,9 +206,9 @@ int rrr_cmodule_main_worker_fork_start (
 	);
 
 	out_child_exit:
-		rrr_log_socket_close();
 		// Clean up any events created after forking
 		rrr_event_queue_destroy(worker_queue);
+		rrr_log_cleanup();
 		exit(ret);
 
 	out_parent_cleanup_worker:

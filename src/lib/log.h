@@ -417,5 +417,8 @@ int rrr_log_socket_reconnect (
 void rrr_log_socket_close (
 		void
 );
+void rrr_log_socket_ping (
+		void
+);
 
 #endif /* RRR_LOG_H */

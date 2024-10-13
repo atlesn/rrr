@@ -716,6 +716,8 @@ static int __rrr_cmodule_worker_event_periodic (
 		worker->ping_received = 0;
 	}
 
+	rrr_log_socket_ping();
+
 	return 0;
 }
 

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "allocator.h"
 #include "event/event_functions.h"
+#include "event/event_collection.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 #include "util/gnu.h"
@@ -1000,14 +1001,50 @@ static int __rrr_instance_thread_preload (
 	return ret;
 }
 
+static void __rrr_instance_thread_periodic_callback (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+	(void)(thread_data);
+
+	printf("PING\n");
+
+	rrr_log_socket_ping();
+}
+
 static int __rrr_instance_thread_early_init (
 		struct rrr_thread *thread
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	(void)(thread_data);
+	int ret = 0;
 
-	return rrr_log_socket_reconnect();
+	rrr_event_handle event_log_ping = {0};
+
+	rrr_event_collection_init(&thread_data->events, INSTANCE_D_EVENTS(thread_data));
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&event_log_ping,
+			&thread_data->events,
+			__rrr_instance_thread_periodic_callback,
+			thread_data,
+			5 * 1000 * 1000 // 5 seconds
+	)) != 0) {
+		goto out;
+	}
+	EVENT_ADD(event_log_ping);
+
+	if ((ret = rrr_log_socket_reconnect()) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static void __rrr_instance_thread_late_deinit (
@@ -1015,7 +1052,7 @@ static void __rrr_instance_thread_late_deinit (
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	(void)(thread_data);
+	rrr_event_collection_clear(&thread_data->events);
 
 	rrr_log_socket_close();
 }

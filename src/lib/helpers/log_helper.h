@@ -25,12 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../read_constants.h"
+#include "../rrr_types.h"
 
 #define RRR_LOG_HELPER_OK          RRR_READ_OK
 #define RRR_LOG_HELPER_SOFT_ERROR  RRR_READ_SOFT_ERROR
 #define RRR_LOG_HELPER_HARD_ERROR  RRR_READ_HARD_ERROR
 
 struct rrr_array;
+struct rrr_msg_log;
 
 int rrr_log_helper_extract_log_fields_from_array (
 		char **log_file,
@@ -40,8 +42,9 @@ int rrr_log_helper_extract_log_fields_from_array (
 		char **log_message,
 		struct rrr_array *array
 );
-int rrr_log_helper_log_msg_send (
-		int fd,
+int rrr_log_helper_log_msg_make (
+		struct rrr_msg_log **target,
+		rrr_length *target_size,
 		const char *log_file,
 		int log_line,
 		uint8_t log_level_translated,

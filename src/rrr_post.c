@@ -394,7 +394,8 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg *m
 			data->output_fd,
 			NULL,
 			NULL,
-			NULL
+			NULL,
+			0 /* Not silent */
 	)) != 0) {
 		RRR_MSG_0("Error while sending message in __rrr_post_send_message\n");
 		goto out;

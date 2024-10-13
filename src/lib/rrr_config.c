@@ -81,3 +81,9 @@ void rrr_config_set_log_prefix (
 ) {
 	rrr_config_global.log_prefix = log_prefix;
 }
+
+void rrr_config_reset_log_prefix (
+		void
+) {
+	rrr_config_global.log_prefix = rrr_default_log_prefix;
+}

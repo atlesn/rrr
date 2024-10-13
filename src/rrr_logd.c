@@ -25,7 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/log.h"
 #include "lib/allocator.h"
 
+#include "lib/messages/msg_head.h"
 #include "lib/messages/msg_log.h"
+#include "lib/messages/msg_msg_struct.h"
 #include "lib/rrr_types.h"
 #include "lib/socket/rrr_socket_constants.h"
 #include "lib/type.h"
@@ -57,6 +59,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   's',    "socket",                "[-s|--socket[=]SOCKET]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "file-descriptor",       "[-f|--file-descriptor[=]FILE DESCRIPTOR]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -71,6 +74,7 @@ struct rrr_logd_data {
 	int receive_socket_fd;
 	int receive_fd;
 	int persist;
+	int quiet;
 };
 
 static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *cmd) {
@@ -120,6 +124,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 
 	if (cmd_exists(cmd, "persist", 0)) {
 		data->persist = 1;
+	}
+
+	if (cmd_exists(cmd, "quiet", 0)) {
+		data->quiet = 1;
 	}
 
 	return 0;
@@ -189,9 +197,9 @@ static int rrr_logd_read_msg_callback (
 		void *arg2
 ) {
 	struct rrr_msg_msg *msg = *message;
-	struct rrr_logd_data *data = arg1;
+	struct rrr_logd_data *data = arg2;
 
-	(void)(data);
+	(void)(arg1);
 
 	int ret = RRR_READ_OK;
 
@@ -202,7 +210,8 @@ static int rrr_logd_read_msg_callback (
 	uint8_t log_level = 7;
 	int log_line = 0;
 
-	(void)(arg2);
+	if (data->quiet)
+		goto out;
 
 	if (!MSG_IS_ARRAY(msg)) {
 		RRR_MSG_0("Received non-array RRR standard message from client, this is not supported\n");
@@ -249,15 +258,17 @@ static int rrr_logd_read_log_callback (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_logd_data *data = arg1;
+	struct rrr_logd_data *data = arg2;
 
-	(void)(arg2);
-	(void)(data);
+	(void)(arg1);
 
 	int ret = RRR_READ_OK;
 
 	char *log_prefix = NULL;
 	char *log_message = NULL;
+
+	if (data->quiet)
+		goto out;
 
 	if ((ret = rrr_msg_msg_log_to_str(&log_prefix, &log_message, message)) != 0) {
 		goto out;
@@ -284,11 +295,13 @@ static int rrr_logd_read_ctrl_callback (
 		void *arg1,
 		void *arg2
 ) {
-	(void)(message);
 	(void)(arg1);
 	(void)(arg2);
 
-	assert(0 && "Read ctrl no implemented");
+	if (!RRR_MSG_CTRL_F_HAS(message, RRR_MSG_CTRL_F_PING)) {
+		RRR_MSG_0("Received control message did not have ping flag set\n");
+		return RRR_READ_SOFT_ERROR;
+	}
 
 	return 0;
 }
@@ -406,7 +419,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (data.receive_fd > 0) {
-		if (rrr_socket_check_alive (data.receive_fd) != 0) {
+		if (rrr_socket_check_alive (data.receive_fd, 0 /* Not silent */) != 0) {
 			RRR_MSG_0("Given file descriptor %i was unusable, exiting now.\n",
 				data.receive_fd);
 			ret = EXIT_FAILURE;

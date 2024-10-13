@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../config.h"
 #include "helpers/log_helper.h"
+#include "messages/msg.h"
+#include "messages/msg_head.h"
+#include "messages/msg_msg_struct.h"
 
 #ifdef HAVE_JOURNALD
 #	define SD_JOURNAL_SUPPRESS_LOCATION
@@ -37,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "allocator.h"
+#include "rrr_strerror.h"
 #include "event/event.h"
 #include "util/gnu.h"
 #include "util/posix.h"
@@ -53,10 +57,49 @@ static volatile int rrr_log_is_initialized = 0;
 static volatile uint64_t rrr_log_boot_timestamp_us = 0;
 
 static _Thread_local int rrr_log_socket_fd = 0;
+static _Thread_local void *rrr_log_socket_send_queue = NULL;
+static _Thread_local size_t rrr_log_socket_send_queue_size = 0;
+static _Thread_local size_t rrr_log_socket_send_queue_pos = 0;
 static const char *rrr_log_socket_file = NULL;
 
 // This locking merely prevents (or attempts to prevent) output from different threads to getting mixed up
 static pthread_mutex_t rrr_log_lock;
+static pthread_t rrr_log_lock_holder;
+
+// This must be separately locked to detect recursion (log functions called from inside hooks and intercepter)
+static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t rrr_log_hook_lock_holder;
+
+// Each thread has its own connection to the log socket, if
+// used. Use mutex to detect recursion only.
+static _Thread_local pthread_mutex_t rrr_log_socket_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
+static void (*rrr_log_printf_intercept_callback)(RRR_LOG_HOOK_ARGS) = NULL;
+static void *rrr_log_printf_intercept_callback_arg = NULL;
+
+static void __rrr_log_free_dbl_ptr(void *arg) {
+	void **dbl_ptr = (void **) arg;
+	RRR_FREE_IF_NOT_NULL(*dbl_ptr);
+}
+
+static void __rrr_log_socket_send_queue_free(void) {
+	RRR_FREE_IF_NOT_NULL(rrr_log_socket_send_queue);
+	rrr_log_socket_send_queue_pos = 0;
+	rrr_log_socket_send_queue_size = 0;
+}
+
+static void __rrr_log_socket_send_queue_reset(void) {
+	rrr_log_socket_send_queue_pos = 0;
+}
+
+static void __rrr_log_printf_intercept_set (
+		void (*log)(RRR_LOG_HOOK_ARGS),
+		void *private_arg
+) {
+	rrr_log_printf_intercept_callback = log;
+	rrr_log_printf_intercept_callback_arg = private_arg;
+}
 
 int rrr_log_init(void) {
 	if (rrr_log_is_initialized) {
@@ -80,19 +123,15 @@ int rrr_log_init(void) {
 }
 
 void rrr_log_cleanup(void) {
-	if (rrr_log_socket_fd > 0) {
-		rrr_socket_close(rrr_log_socket_fd);
-		rrr_log_socket_fd = 0;
-	}
+	rrr_log_socket_close();
 
 	if (rrr_log_is_initialized) {
 		pthread_mutex_destroy(&rrr_log_lock);
 		rrr_log_is_initialized = 0;
 	}
-}
 
-// This must be separately locked to detect recursion (log functions called from inside hooks and intercepter)
-static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
+	__rrr_log_socket_send_queue_free();
+}
 
 static void __rrr_log_printf_unlock_void (void *arg) {
 	(void)(arg);
@@ -104,17 +143,31 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 	pthread_mutex_unlock (&rrr_log_hook_lock);
 }
 
+static void __rrr_log_socket_unlock_void (void *arg) {
+	(void)(arg);
+	pthread_mutex_unlock (&rrr_log_socket_lock);
+}
+
 #define LOCK_BEGIN                                                                                                             \
-        pthread_mutex_lock (&rrr_log_lock);                                                                                    \
+        if (pthread_mutex_trylock (&rrr_log_lock) != 0) {                                                                      \
+	    if (rrr_log_lock_holder == pthread_self())                                                                         \
+		goto lock_out; /* Re-entry */                                                                                  \
+	    pthread_mutex_lock(&rrr_log_lock);                                                                                 \
+	}                                                                                                                      \
+        rrr_log_lock_holder = pthread_self();                                                                                  \
         pthread_cleanup_push(__rrr_log_printf_unlock_void, NULL)
 
 #define LOCK_END                                                                                                               \
-        pthread_cleanup_pop(1)
+        pthread_cleanup_pop(1);                                                                                                \
+	lock_out:
 
 #define LOCK_HOOK_BEGIN                                                                                                        \
         if (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) {                                                                 \
-            goto lock_hook_out;                                                                                                \
+            if (rrr_log_hook_lock_holder == pthread_self())                                                                    \
+	        goto lock_hook_out;                                                                                            \
+            pthread_mutex_lock(&rrr_log_hook_lock);                                                                            \
         }                                                                                                                      \
+        rrr_log_hook_lock_holder = pthread_self();                                                                             \
         pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
 #define LOCK_HOOK_END                                                                                                          \
@@ -134,21 +187,6 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 #define LOCK_HOOK_UNCHECKED_END                                                                                                \
         pthread_cleanup_pop(1)
 
-#define LOCK_INTERCEPT_THEN(code,finally)                                                                                      \
-        if (pthread_mutex_trylock (&rrr_log_intercept_lock) != 0) {                                                            \
-            if (pthread_equal(rrr_log_intercept_lock_holder, pthread_self())) {                                                \
-                RRR_BUG("BUG: Did not intercept due to deadlock, re-entry in intercepted logging (possibly due to socket operations)\n"); \
-            }                                                                                                                  \
-            pthread_mutex_lock(&rrr_log_intercept_lock);                                                                       \
-        }                                                                                                                      \
-        pthread_cleanup_push(__rrr_log_intercept_unlock_void, NULL);                                                           \
-        code;                                                                                                                  \
-        pthread_cleanup_pop(1);                                                                                                \
-        finally;
-
-#define RRR_LOG_PRINTF_INTERCEPT_ARGS                          \
-            RRR_LOG_HOOK_ARGS
-
 static void __rrr_log_make_timestamp(char buf[32]) {
 #ifdef RRR_ENABLE_LOG_TIMESTAMPS
 	uint64_t ts = rrr_time_get_64() - rrr_log_boot_timestamp_us;
@@ -166,17 +204,6 @@ struct rrr_log_hook {
 	struct rrr_event_queue *notify_queue;
 	int handle;
 };
-
-_Thread_local void (*rrr_log_printf_intercept_callback)(RRR_LOG_PRINTF_INTERCEPT_ARGS) = NULL;
-_Thread_local void *rrr_log_printf_intercept_callback_arg = NULL;
-
-static void __rrr_log_printf_thread_local_intercept_set (
-		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
-		void *private_arg
-) {
-	rrr_log_printf_intercept_callback = log;
-	rrr_log_printf_intercept_callback_arg = private_arg;
-}
 
 static int rrr_log_hook_handle_pos = 1;
 static int rrr_log_hook_count = 0;
@@ -430,7 +457,7 @@ void rrr_log_print_no_hooks (
 #ifndef RRR_LOG_DISABLE_PRINT
 	char ts[32];
 
-	__rrr_log_make_timestamp(ts),
+	__rrr_log_make_timestamp(ts);
 
 	LOCK_BEGIN;
 	printf(RRR_LOG_HEADER_FORMAT_WITH_TS "%s",
@@ -652,6 +679,7 @@ static void __rrr_log_printf_va (
 		__rrr_log_make_timestamp(ts);
 
 		LOCK_BEGIN;
+
 		printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
 			RRR_LOG_HEADER_ARGS(
 				ts,
@@ -660,8 +688,10 @@ static void __rrr_log_printf_va (
 			)
 		);
 		vprintf(__format, args);
+
 		LOCK_END;
 	}
+
 #ifdef HAVE_JOURNALD
 	}
 #endif
@@ -777,11 +807,17 @@ void rrr_log_fprintf (
 	va_end(args_copy);
 }
 
-static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_PRINTF_INTERCEPT_ARGS) {
+static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	(void)(private_arg);
 
-	if (rrr_log_helper_log_msg_send (
-			rrr_log_socket_fd,
+	struct rrr_msg_log *msg_log = NULL;
+	rrr_length msg_size;
+
+	assert(rrr_log_is_initialized);
+
+	if (rrr_log_helper_log_msg_make (
+			&msg_log,
+			&msg_size,
 			file,
 			line,
 			loglevel_translated,
@@ -789,9 +825,89 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_PRINTF_INTERCEPT
 			prefix,
 			message
 	) != 0) {
-		fprintf(stderr, "Failed to send log message in %s, cannot continue.\n", __func__);
+		fprintf(stderr, "Failed to make log message in %s, cannot continue.\n", __func__);
 		abort();
 	}
+
+	const int try_lock_result = pthread_mutex_trylock(&rrr_log_socket_lock);
+
+	// Must always append to send queue if:
+	// - Lock is not obtained, re-entry situation
+	// - Send queue is already populated, ensure ordering
+	// - Re-entry in socket framework
+	// - Log socket not yet ready (after a thread or fork has started)
+	if (try_lock_result != 0 ||
+	    rrr_log_socket_send_queue_pos > 0 ||
+	    rrr_socket_is_locked() ||
+	    rrr_log_socket_fd == 0
+	) {
+		size_t new_size = rrr_log_socket_send_queue_pos + msg_size;
+		assert(new_size >= msg_size);
+
+		if (new_size > rrr_log_socket_send_queue_size) {
+			void *new_buf = rrr_reallocate(rrr_log_socket_send_queue, new_size);
+			if (new_buf == NULL) {
+				fprintf(stderr, "Failed to allocate %llu bytes in %s\n",
+					(unsigned long long) new_size, __func__);
+				abort();
+			}
+			rrr_log_socket_send_queue = new_buf;
+			rrr_log_socket_send_queue_size = new_size;
+		}
+
+		memcpy(rrr_log_socket_send_queue + rrr_log_socket_send_queue_pos, msg_log, msg_size);
+		rrr_log_socket_send_queue_pos += msg_size;
+		assert(rrr_log_socket_send_queue_pos >= msg_size);
+
+//		fprintf(stderr, "=== Appended, send queue is now %lu bytes\n", rrr_log_socket_send_queue_pos);
+
+		if (try_lock_result == 0)
+			goto send;
+
+		// Possible re-entry from socket framework, flush on
+		// next call which is not re-entry.
+
+		rrr_free(msg_log);
+
+		return;
+	}
+
+	send:
+	pthread_cleanup_push(__rrr_log_socket_unlock_void, NULL);
+	pthread_cleanup_push(__rrr_log_free_dbl_ptr, &msg_log);
+
+//	fprintf(stderr, "=== Sending, send queue is now %lu bytes\n", rrr_log_socket_send_queue_pos);
+
+	if (rrr_log_socket_fd == 0) {
+		goto cleanup;
+	}
+
+	void *to_send;
+	size_t to_send_size;
+
+	if (rrr_log_socket_send_queue_pos > 0) {
+		to_send = rrr_log_socket_send_queue;
+		to_send_size = rrr_log_socket_send_queue_pos;
+		rrr_log_socket_send_queue_pos = 0;
+	}
+	else {
+		to_send = msg_log;
+		to_send_size = msg_size;
+	}
+
+	// Don't use socket framework, might cause deadlocks
+	ssize_t sent_bytes = write(rrr_log_socket_fd, to_send, to_send_size);
+	if (sent_bytes < 0 || (size_t) sent_bytes != to_send_size) {
+		fprintf(stderr, "Error while sending log message in %s: %s\n",
+			__func__, rrr_strerror(errno));
+		abort();
+	}
+
+///	fprintf(stderr, "=== Send queue is now empty\n");
+
+	cleanup:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 }
 
 int rrr_log_socket_connect (
@@ -801,16 +917,24 @@ int rrr_log_socket_connect (
 
 	assert(rrr_log_socket_fd == 0);
 
+	if  (log_socket == NULL) {
+		assert(rrr_log_socket_file != NULL);
+		log_socket = rrr_log_socket_file;
+	}
+	else {
+		assert(rrr_log_socket_file == NULL);
+		rrr_log_socket_file = log_socket;
+		__rrr_log_printf_intercept_set (__rrr_log_socket_printf_intercept_callback, NULL);
+	}
+
+	printf("Pid %i connecting to log socket %s\n",
+		getpid(), log_socket);
+
 	if (rrr_socket_unix_connect(&rrr_log_socket_fd, "log", log_socket, 0 /* Not nonblock */) != 0) {
 		RRR_MSG_0("Failed to connect to log socket '%s'\n", log_socket);
 		ret = 1;
 		goto out;
 	}
-
-	assert(rrr_log_socket_file == NULL);
-	rrr_log_socket_file = log_socket;
-
-	__rrr_log_printf_thread_local_intercept_set (__rrr_log_socket_printf_intercept_callback, NULL);
 
 	out:
 	return ret;
@@ -826,15 +950,36 @@ int rrr_log_socket_reconnect (void) {
 	if (rrr_log_socket_file == NULL)
 		return 0;
 
-	const char *log_socket = rrr_log_socket_file;
-	rrr_log_socket_file = NULL;
+	__rrr_log_socket_send_queue_reset();
 
-	return rrr_log_socket_connect(log_socket);
+	return rrr_log_socket_connect(NULL);
 }
 
 void rrr_log_socket_close (void) {
-	if (rrr_log_socket_fd > 0) {
-		rrr_socket_close(rrr_log_socket_fd);
-		rrr_log_socket_fd = 0;
+	if (rrr_log_socket_fd == 0)
+		return;
+
+	rrr_socket_close(rrr_log_socket_fd);
+	rrr_log_socket_fd = 0;
+}
+
+void rrr_log_socket_ping (void) {
+	if (rrr_log_socket_fd == 0)
+		return;
+
+	struct rrr_msg msg;
+
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+	size_t msg_size = MSG_TOTAL_SIZE(&msg);
+
+	rrr_msg_checksum_and_to_network_endian(&msg);
+
+	ssize_t bytes_sent = write(rrr_log_socket_fd, &msg, sizeof(msg));
+	if (bytes_sent < 0 || (size_t) bytes_sent != msg_size) {
+		fprintf(stderr, "Failed to send ping in %s: %s\n",
+			__func__,
+			rrr_strerror(errno)
+		);
+		abort();
 	}
 }

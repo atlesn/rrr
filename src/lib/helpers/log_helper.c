@@ -177,8 +177,9 @@ int rrr_log_helper_extract_log_fields_from_array (
 		return ret;
 }
 
-int rrr_log_helper_log_msg_send (
-		int fd,
+int rrr_log_helper_log_msg_make (
+		struct rrr_msg_log **target,
+		rrr_length *target_size,
 		const char *log_file,
 		int log_line,
 		uint8_t log_level_translated,
@@ -188,10 +189,8 @@ int rrr_log_helper_log_msg_send (
 ) {
 	int ret = 0;
 
-	struct rrr_msg_log *msg_log = NULL;
-
 	if ((ret = rrr_msg_msg_log_new (
-			&msg_log,
+			target,
 			log_file,
 			log_line,
 			log_level_translated,
@@ -202,23 +201,11 @@ int rrr_log_helper_log_msg_send (
 		goto out;
 	}
 
-	rrr_length msg_size = MSG_TOTAL_SIZE(msg_log);
+	*target_size = MSG_TOTAL_SIZE(*target);
 
-	rrr_msg_msg_log_prepare_for_network(msg_log);
-	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_log);
-
-	if ((ret = rrr_socket_send_blocking (
-			fd,
-			(struct rrr_msg *) msg_log,
-			msg_size,
-			NULL,
-			NULL
-	)) != 0) {
-		RRR_MSG_0("Error while sending log message in %s\n", __func__);
-		goto out;
-	}
+	rrr_msg_msg_log_prepare_for_network(*target);
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) *target);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(msg_log);
 	return ret;
 }

@@ -536,6 +536,8 @@ static int main_loop_periodic_maintenance (
 		goto out;
 	}
 
+	rrr_log_socket_ping();
+
 	if (sigusr2) {
 		rrr_profiling_dump();
 		sigusr2 = 0;
@@ -562,6 +564,8 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 		rrr_event_dispatch_break(callback_data->queue);
 		return;
 	}
+
+	rrr_log_socket_ping();
 }
 
 static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
@@ -634,6 +638,8 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 	if (main_loop_periodic_maintenance (callback_data) != 0) {
 		goto out_destroy_thread_collection;
 	}
+
+	rrr_log_socket_ping();
 
 	return;
 
@@ -988,6 +994,8 @@ static int main_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
+	rrr_log_socket_ping();
+
 	return RRR_EVENT_OK;
 }
 
@@ -1162,6 +1170,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
+			rrr_log_socket_close();
+
 			if (rrr_log_socket_reconnect() != 0) {
 				ret = EXIT_FAILURE;
 				goto out_cleanup_signal;
@@ -1231,6 +1241,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		}
 		cmd_destroy(&cmd);
 		rrr_map_clear(&config_file_map);
+		rrr_config_reset_log_prefix();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out_cleanup_allocator:
