@@ -411,10 +411,13 @@ int rrr_log_socket_connect (
 int rrr_log_socket_fd_get (
 		void
 );
-int rrr_log_socket_reconnect (
+void rrr_log_socket_flush_and_close (
 		void
 );
-void rrr_log_socket_close (
+void rrr_log_socket_after_fork (
+		void
+);
+void rrr_log_socket_after_thread (
 		void
 );
 void rrr_log_socket_ping_or_flush (

@@ -124,17 +124,6 @@ int rrr_log_init(void) {
 	return ret;
 }
 
-void rrr_log_cleanup(void) {
-	rrr_log_socket_close();
-
-	if (rrr_log_is_initialized) {
-		pthread_mutex_destroy(&rrr_log_lock);
-		rrr_log_is_initialized = 0;
-	}
-
-	__rrr_log_socket_send_queue_free();
-}
-
 static void __rrr_log_printf_unlock_void (void *arg) {
 	(void)(arg);
 	pthread_mutex_unlock (&rrr_log_lock);
@@ -862,6 +851,7 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	// - Send queue is already populated, ensure ordering
 	// - Re-entry in socket framework
 	// - Log socket not yet ready (after a thread or fork has started)
+
 	if (try_lock_result != 0 ||
 	    rrr_log_socket_send_queue_pos > 0 ||
 	    rrr_socket_is_locked() ||
@@ -869,7 +859,6 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	) {
 		size_t new_size = rrr_log_socket_send_queue_pos + msg_size;
 		assert(new_size >= msg_size);
-
 		if (new_size > rrr_log_socket_send_queue_size) {
 			void *new_buf = rrr_reallocate(rrr_log_socket_send_queue, new_size);
 			if (new_buf == NULL) {
@@ -877,6 +866,7 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 					(unsigned long long) new_size, __func__);
 				abort();
 			}
+
 			rrr_log_socket_send_queue = new_buf;
 			rrr_log_socket_send_queue_size = new_size;
 		}
@@ -885,8 +875,6 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 		rrr_log_socket_send_queue_pos += msg_size;
 		assert(rrr_log_socket_send_queue_pos >= msg_size);
 
-//		fprintf(stderr, "=== Appended, send queue is now %lu bytes\n", rrr_log_socket_send_queue_pos);
-
 		if (try_lock_result == 0)
 			goto send;
 
@@ -894,6 +882,8 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 		// next call which is not re-entry.
 
 		rrr_free(msg_log);
+
+		pthread_mutex_unlock(&rrr_log_socket_lock);
 
 		return;
 	}
@@ -949,23 +939,57 @@ int rrr_log_socket_fd_get (void) {
 	return rrr_log_socket_fd;
 }
 
-int rrr_log_socket_reconnect (void) {
+static void __rrr_log_socket_reconnect (void) {
 	assert(rrr_log_socket_fd == 0);
 
-	if (rrr_log_socket_file == NULL)
-		return 0;
-
-	__rrr_log_socket_send_queue_reset();
-
-	return rrr_log_socket_connect(NULL);
+	if (rrr_log_socket_connect(NULL) != 0) {
+		fprintf(stderr, "Reconnection to log socket failed in %s\n",
+			__func__);
+		abort();
+	}
 }
 
-void rrr_log_socket_close (void) {
-	if (rrr_log_socket_fd == 0)
+void rrr_log_socket_flush_and_close (void) {
+	if (rrr_log_socket_fd > 0) {
+		if (rrr_log_socket_send_queue_pos > 0) {
+			__rrr_log_socket_send_from_queue();
+		}
+		rrr_socket_close(rrr_log_socket_fd);
+		rrr_log_socket_fd = 0;
+	}
+
+	__rrr_log_socket_send_queue_free();
+
+}
+
+void rrr_log_socket_after_thread (void) {
+	if (rrr_log_socket_file == NULL)
 		return;
+
+	// No need to reset send queue as pthread will
+	// do that prior to any messages being delivered.
+	// If any messages are there, they were added 
+	// after the thread started.
+
+	__rrr_log_socket_reconnect();
+}
+
+void rrr_log_socket_after_fork (void) {
+	if (rrr_log_socket_file == NULL)
+		return;
+
+	// Thread local variables should be preserved
+	// across the fork
+	assert(rrr_log_socket_fd > 0);
+
+	// Queue may have remnants from parent
+	// process, make sure it is cleared.
+	__rrr_log_socket_send_queue_reset();
 
 	rrr_socket_close(rrr_log_socket_fd);
 	rrr_log_socket_fd = 0;
+
+	__rrr_log_socket_reconnect();
 }
 
 void rrr_log_socket_ping_or_flush (void) {
@@ -1001,4 +1025,13 @@ void rrr_log_socket_ping_or_flush (void) {
 	}
 
 	rrr_log_socket_last_send_time = now;
+}
+
+void rrr_log_cleanup(void) {
+	rrr_log_socket_flush_and_close();
+
+	if (rrr_log_is_initialized) {
+		pthread_mutex_destroy(&rrr_log_lock);
+		rrr_log_is_initialized = 0;
+	}
 }

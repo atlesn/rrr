@@ -1170,12 +1170,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
-			rrr_log_socket_close();
-
-			if (rrr_log_socket_reconnect() != 0) {
-				ret = EXIT_FAILURE;
-				goto out_cleanup_signal;
-			}
+			rrr_log_socket_after_fork();
 
 			if (main_loop (
 					&cmd,

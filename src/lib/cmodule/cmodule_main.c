@@ -192,10 +192,7 @@ int rrr_cmodule_main_worker_fork_start (
 
 	rrr_setproctitle("[worker %s]", worker->name);
 
-	rrr_log_socket_close();
-
-	if ((ret = rrr_log_socket_reconnect()) != 0)
-		goto out_child_exit;
+	rrr_log_socket_after_fork();
 
 	ret = rrr_cmodule_worker_main (
 			worker,

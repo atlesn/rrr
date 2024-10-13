@@ -1037,14 +1037,9 @@ static int __rrr_instance_thread_early_init (
 
 	(void)(thread_data);
 
-	int ret = 0;
+	rrr_log_socket_after_thread();
 
-	if ((ret = rrr_log_socket_reconnect()) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	return 0;
 }
 
 static void __rrr_instance_thread_late_deinit (
@@ -1054,7 +1049,7 @@ static void __rrr_instance_thread_late_deinit (
 
 	(void)(thread_data);
 
-	rrr_log_socket_close();
+	rrr_log_socket_flush_and_close();
 }
 
 struct rrr_instance_collection_start_threads_check_wait_for_callback_data {
