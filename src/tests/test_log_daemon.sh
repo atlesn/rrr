@@ -141,8 +141,9 @@ function log_delivery() {
 function log_delivery_from_rrr() {
 	RRR_ARGS=$1
 	RRR_OUTPUT=$2
+	LOGD_ARGS=$3
 
-	logd_start
+	logd_start "$LOGD_ARGS"
 	verify_socket_exists
 
 	RRR_OUT=`$VALGRIND $RRR $RRR_ARGS -L $SOCKET`
@@ -192,4 +193,10 @@ log_delivery "$LOG_MSG" "-L" "$LOG_OUT_7"
 # Verify log message delivery from main process
 ####################################################
 
-log_delivery_from_rrr -v "Read Route Record"
+log_delivery_from_rrr -v "<0> <rrr> Read Route Record"
+
+####################################################
+# Verify log level translation
+####################################################
+
+log_delivery_from_rrr -v "<3> <rrr> Read Route Record" -l
