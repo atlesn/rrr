@@ -61,6 +61,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-a|--add-newline]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'm',    "message-only",          "[-m|--message-only]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -77,6 +78,7 @@ struct rrr_logd_data {
 	int persist;
 	int quiet;
 	int add_newline;
+	int message_only;
 };
 
 static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *cmd) {
@@ -136,6 +138,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 		data->add_newline = 1;
 	}
 
+	if (cmd_exists(cmd, "message-only", 0)) {
+		data->message_only = 1;
+	}
+
 	return 0;
 }
 
@@ -180,6 +186,16 @@ static void rrr_logd_print (
 ) {
 	int add_newline = 0;
 
+	assert(message != NULL);
+
+	if (data->add_newline && message[strlen(message) - 1] != '\n')
+		add_newline = 1;
+
+	if (data->message_only) {
+		printf(add_newline ? "%s\n" : "%s", message);
+		return;
+	}
+
 	if (line == 0 || file == NULL || *file == '\0') {
 		line = __LINE__;
 		file = __FILE__;
@@ -188,11 +204,6 @@ static void rrr_logd_print (
 	if (prefix == NULL || *prefix == '\0') {
 		prefix = "rrr_logd";
 	}
-
-	assert(message != NULL);
-
-	if (data->add_newline && message[strlen(message) - 1] != '\n')
-		add_newline = 1;
 
 	if (loglevel_orig == RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN) {
 		rrr_log_printf_nolock_loglevel_translated (

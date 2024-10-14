@@ -113,8 +113,9 @@ function log_delivery() {
 	IN=$1
 	POST_ARGS=$2
 	OUT=$3
+	LOGD_ARGS=$4
 
-	logd_start
+	logd_start $LOGD_ARGS
 	verify_socket_exists
 
 	# Test using specified array definition
@@ -190,6 +191,12 @@ log_delivery "$LOG_IN" "-a $LOG_DEF" "$LOG_OUT_4"
 log_delivery "$LOG_MSG" "-L" "$LOG_OUT_7" 
 
 ####################################################
+# Verify message only print
+####################################################
+
+log_delivery "$LOG_MSG" "-L" "$LOG_MSG" "-m"
+
+####################################################
 # Verify log message delivery from main process
 ####################################################
 
@@ -200,3 +207,4 @@ log_delivery_from_rrr -v "<0> <rrr> Read Route Record"
 ####################################################
 
 log_delivery_from_rrr -v "<3> <rrr> Read Route Record" -l
+
