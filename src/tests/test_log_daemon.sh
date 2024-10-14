@@ -22,7 +22,7 @@ LOG_LEVEL="4"
 LOG_OUT_4="<4> <$LOG_PREFIX> $LOG_MSG"
 LOG_OUT_7="<7> <rrr_post> $LOG_MSG"
 LOG_IN="$LOG_LEVEL	$LOG_PREFIX	$LOG_MSG	"
-LOG_DEF="ustr#log_level,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
+LOG_DEF="ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
 
 if [ "x$VALGRIND" != "x" ]; then
 	SLEEP=2
@@ -76,7 +76,7 @@ function verify_socket_exists() {
 
 function logd_start() {
 	ARGS=$1
-	$VALGRIND $LOGD -p $ARGS -s $SOCKET > $TMP &
+	$VALGRIND $LOGD -p $ARGS -s $SOCKET -n > $TMP &
 	PID=$!
 	sleep $SLEEP
 }

@@ -37,7 +37,7 @@ struct rrr_msg_log;
 int rrr_log_helper_extract_log_fields_from_array (
 		char **log_file,
 		int *log_line,
-		uint8_t *log_level,
+		uint8_t *log_level_translated,
 		char **log_prefix,
 		char **log_message,
 		struct rrr_array *array

@@ -60,6 +60,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "file-descriptor",       "[-f|--file-descriptor[=]FILE DESCRIPTOR]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-a|--add-newline]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -75,6 +76,7 @@ struct rrr_logd_data {
 	int receive_fd;
 	int persist;
 	int quiet;
+	int add_newline;
 };
 
 static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *cmd) {
@@ -130,6 +132,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 		data->quiet = 1;
 	}
 
+	if (cmd_exists(cmd, "add-newline", 0)) {
+		data->add_newline = 1;
+	}
+
 	return 0;
 }
 
@@ -164,12 +170,16 @@ static int rrr_logd_periodic (void *arg) {
 }
 
 static void rrr_logd_print (
-	const char *file,
-	int line,
-	uint8_t loglevel,
-	const char *prefix,
-	const char *message
+		struct rrr_logd_data *data,
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
+		const char *prefix,
+		const char *message
 ) {
+	int add_newline = 0;
+
 	if (line == 0 || file == NULL || *file == '\0') {
 		line = __LINE__;
 		file = __FILE__;
@@ -181,14 +191,29 @@ static void rrr_logd_print (
 
 	assert(message != NULL);
 
-	rrr_log_printf_nolock (//_loglevel_translated (
-			file,
-			line,
-			loglevel,
-			prefix,
-			"%s",
-			message
-	);
+	if (data->add_newline && message[strlen(message) - 1] != '\n')
+		add_newline = 1;
+
+	if (loglevel_orig == RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN) {
+		rrr_log_printf_nolock_loglevel_translated (
+				file,
+				line,
+				loglevel_translated,
+				prefix,
+				add_newline ? "%s\n" : "%s",
+				message
+		);
+	}
+	else {
+		rrr_log_printf_nolock (
+				file,
+				line,
+				loglevel_orig,
+				prefix,
+				add_newline ? "%s\n" : "%s",
+				message
+		);
+	}
 }
 
 static int rrr_logd_read_msg_callback (
@@ -207,7 +232,7 @@ static int rrr_logd_read_msg_callback (
 	char *log_message = NULL;
 	char *log_prefix = NULL;
 	char *log_file = NULL;
-	uint8_t log_level = 7;
+	uint8_t log_level_translated = 7;
 	int log_line = 0;
 
 	if (data->quiet)
@@ -227,7 +252,7 @@ static int rrr_logd_read_msg_callback (
 	if ((ret = rrr_log_helper_extract_log_fields_from_array (
 			&log_file,
 			&log_line,
-			&log_level,
+			&log_level_translated,
 			&log_prefix,
 			&log_message,
 			&array
@@ -238,9 +263,11 @@ static int rrr_logd_read_msg_callback (
 	}
 
 	rrr_logd_print (
+			data,
 			log_file,
 			log_line,
-			log_level,
+			log_level_translated,
+			RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN,
 			log_prefix,
 			log_message
 	);
@@ -275,10 +302,12 @@ static int rrr_logd_read_log_callback (
 	}
 
 	rrr_logd_print (
+			data,
 			message->file,
 			message->line > INT_MAX
 				? INT_MAX
 				: rrr_int_from_biglength_bug_const(message->line),
+			message->loglevel_translated,
 			message->loglevel_orig,
 			log_prefix,
 			log_message

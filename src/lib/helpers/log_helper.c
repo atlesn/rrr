@@ -62,7 +62,7 @@ static int __rrr_log_helper_extract_uint_field (
 		goto out;
 	}
 
-	if (rrr_array_get_value_unsigned_64_by_tag(target, array, "log_level", 0)) {
+	if (rrr_array_get_value_unsigned_64_by_tag(target, array, field, 0)) {
 		RRR_MSG_0("Failed to get unsigned field '%s' from array\n",
 			field);
 		ret = RRR_LOG_HELPER_HARD_ERROR;
@@ -113,7 +113,7 @@ static int __rrr_log_helper_extract_string_field (
 int rrr_log_helper_extract_log_fields_from_array (
 		char **log_file,
 		int *log_line,
-		uint8_t *log_level,
+		uint8_t *log_level_translated,
 		char **log_prefix,
 		char **log_message,
 		struct rrr_array *array
@@ -123,32 +123,10 @@ int rrr_log_helper_extract_log_fields_from_array (
 	char *log_file_tmp = NULL;
 	char *log_message_tmp = NULL;
 	char *log_prefix_tmp = NULL;
-	uint64_t log_level_tmp = 7;
+	uint64_t log_level_translated_tmp = 7;
 	uint64_t log_line_tmp = 0;
 
-	if ((ret = __rrr_log_helper_extract_string_field(&log_message_tmp, array, "log_message", 1)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_log_helper_extract_string_field(&log_prefix_tmp, array, "log_prefix", 0)) != 0) {
-		goto out;
-	}
-
 	if ((ret = __rrr_log_helper_extract_string_field(&log_file_tmp, array, "log_file", 0)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_log_helper_extract_uint_field(&log_level_tmp, array, "log_level", 0)) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_log_helper_extract_uint_field(&log_line_tmp, array, "log_line", 0)) != 0) {
-		goto out;
-	}
-
-	if (log_level_tmp > 7) {
-		RRR_MSG_0("Log level exceeded the maximum of 7\n");
-		ret = RRR_LOG_HELPER_SOFT_ERROR;
 		goto out;
 	}
 
@@ -162,10 +140,28 @@ int rrr_log_helper_extract_log_fields_from_array (
 		goto out;
 	}
 
+	if ((ret = __rrr_log_helper_extract_uint_field(&log_level_translated_tmp, array, "log_level_translated", 0)) != 0) {
+		goto out;
+	}
+
+	if (log_level_translated_tmp > 7) {
+		RRR_MSG_0("Log level exceeded the maximum of 7\n");
+		ret = RRR_LOG_HELPER_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = __rrr_log_helper_extract_string_field(&log_prefix_tmp, array, "log_prefix", 0)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_log_helper_extract_string_field(&log_message_tmp, array, "log_message", 1)) != 0) {
+		goto out;
+	}
+
 	*log_message = log_message_tmp;
 	*log_prefix = log_prefix_tmp;
 	*log_file = log_file_tmp;
-	*log_level = (uint8_t) log_level_tmp;
+	*log_level_translated = (uint8_t) log_level_translated_tmp;
 	*log_line = rrr_int_from_slength_bug_const(log_line_tmp);
 
 	goto out_final;

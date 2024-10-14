@@ -473,13 +473,13 @@ static int __rrr_post_read_log_delivery_callback (
 	char *log_message = NULL;
 	char *log_prefix = NULL;
 	char *log_file = NULL;
-	uint8_t log_level = 7;
+	uint8_t log_level_translated = 7;
 	int log_line = 0;
 
 	if ((ret = rrr_log_helper_extract_log_fields_from_array (
 			&log_file,
 			&log_line,
-			&log_level,
+			&log_level_translated,
 			&log_prefix,
 			&log_message,
 			array_final
@@ -495,8 +495,8 @@ static int __rrr_post_read_log_delivery_callback (
 			&msg_log,
 			no_file_or_line ? __FILE__ : log_file,
 			no_file_or_line ? __LINE__ : log_line,
-			rrr_log_translate_loglevel_rfc5424_stdout(log_level),
-			log_level,
+			log_level_translated,
+			RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN,
 			no_prefix ? "rrr_post" : log_prefix,
 			log_message
 	)) != 0) {
