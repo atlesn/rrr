@@ -1,0 +1,117 @@
+.Dd 2024-10-14
+.TH RRR_LOGD 1
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.PP
+.B rrr_logd,
+the RRR log daemon, receives log messages on a socket from either
+.B rrr_post
+or the
+.B rrr
+main daemon. Multiple processes may connect to the log daemon socket,
+and the log messages are printed to standard output.
+.PP
+The log daemon may help in situations where standard output from multiple processes gets interleaved. 
+.SH SYNOPSIS
+.B rrr_logd
+.Dl [-s|--socket[=]SOCKET]
+.Dl [-f|--file-descriptor[=]FILE DESCRIPTOR]
+.Dl [-p|--persist]
+.Dl [-q|--quiet]
+.Dl [-a|--add-newline]
+.Dl [-m|--message-only]
+.Dl [-l|--loglevel-translation]
+.Dl [-e|--environment-file[=]ENVIRONMENT FILE]
+.Dl [-d|--debuglevel[=]DEBUG FLAGS]
+.Dl [-D|--debuglevel-on-exit[=]DEBUG FLAGS]
+.Dl [-h|--help]
+.Dl [-v|--version]
+
+.SH DESCRIPTION
+The log daemon may receive both native RRR log messages and RRR array messages with specific fields set.
+
+If array messages are used, the following fields are expected to be present of which most are optional:
+
+.Bl -tag -width -indent
+
+.It log_level_translated
+RFC 5424 loglevel, small integer. If not given, 7 is used.
+
+.It log_prefix
+The log prefix. If not given, "rrr_logd" will be used.
+
+.It log_message
+The actual log message. This value is mandatory.
+
+.It log_file
+.It log_line
+The file name and line from where the log message originates, string and integer.
+If either is not given, values from the
+.B rrr_logd
+code will be used.
+
+.El
+
+.SH OPTIONS
+.IP -s|--socket[=SOCKET]
+The filename of the socket on which to listen for incoming connections from other RRR processes.
+
+.IP -f|--file-descriptor[=FILE DESCRIPTOR]
+If
+.B rrr_logd
+is started by for instance
+.Xr execve(2)
+after a fork, a numeric file handle may be given for a socket on which the parent process sends messages.
+
+.IP -p|--persist
+If not set, the process will terminate once the last user has disconnected.
+
+.IP -q|--quiet
+Don't print any messages received from other processes. Used for debugging.
+
+.IP -a|--add-newline
+Add a newline (ASCII decimal 10) to any message received not already ending with one.
+
+.IP -m|--message-only
+Print only the message text and not log level and prefix.
+
+.IP -l|--loglevel-translation
+Translate any RRR native log level in received messages to RFC 5424 format.
+This will only affect messages coming from the main RRR daemon.
+Messages from
+.B rrr_post
+must always have RFC 5424 format.
+
+.IP -d|--debuglevel[=]FLAGS
+Debuglevel to use. Will only affect log messages internal to
+.B rrr_logd.
+
+.IP -e|--environment-file
+See
+.Xr rrr(1)
+for usage.
+
+.SH SIGNALS
+.IP SIGURS1
+Terminal process nicely.
+.IP SIGINT/CTRL+C
+Terminal process nicely.
+.IP SIGTERM
+Terminal process nicely.
+.IP SIGPIPE
+Ignored (an error message is printed).
+.PP
+
+.SH RETURN VALUE
+.B rrr_post
+returns 0 on success and 1 on failure.
+
+.SH DEBUG FLAGS
+Refer to
+.Xr rrr(1)
+for possible debug flags.
+
+.SH SEE ALSO
+.Xr rrr(1),
+.Xr rrr_post(1)

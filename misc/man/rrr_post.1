@@ -77,7 +77,13 @@ The actual log message. This value is mandatory.
 .It log_file
 .It log_line
 The file name and line from where the log message originates, string and integer.
-If either is not given, values from the rrr_post code will be used.
+If either is not given, values from the
+.B rrr_post
+code will be used.
+
+The
+.B rrr_logd
+daemon is also capable of recieving array messages with the fields above, but the native log messages are more efficient.
 
 .El
 
@@ -374,4 +380,5 @@ for possible debug flags.
 
 .SH SEE ALSO
 .Xr rrr(1),
-.Xr rrr.conf(5)
+.Xr rrr.conf(5),
+.Xr rrr_logd(1)
