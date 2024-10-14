@@ -187,7 +187,7 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent;
 	}
 
-	// CHILD PROCESS CODE
+	// START CHILD PROCESS CODE
 	// Use of global locks OK beyond this point
 
 	rrr_setproctitle("[worker %s]", worker->name);
@@ -202,11 +202,12 @@ int rrr_cmodule_main_worker_fork_start (
 			callbacks
 	);
 
-	out_child_exit:
-		// Clean up any events created after forking
-		rrr_event_queue_destroy(worker_queue);
-		rrr_log_cleanup();
-		exit(ret);
+	// Clean up any events created after forking
+	rrr_event_queue_destroy(worker_queue);
+	rrr_log_cleanup();
+	exit(ret);
+
+	// END CHILD PROCESS CODE
 
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
