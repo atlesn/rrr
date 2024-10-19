@@ -223,6 +223,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
     if ((parse_state->ret = func (                             \
             &type->target,                                     \
             parse_state->start,                                \
+            session->buf + session->target_size,               \
             session->buf + session->buf_wpos,                  \
             &(parse_state->bytes_parsed),                      \
             &(parse_state->blob_length)                        \
@@ -247,6 +248,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
     if ((parse_state->ret = __rrr_mqtt_parse_utf8 (            \
             &type->target,                                     \
             parse_state->start,                                \
+            session->buf + session->target_size,               \
             session->buf + session->buf_wpos,                  \
             &(parse_state->bytes_parsed),                      \
             min_length                                         \
@@ -395,7 +397,8 @@ static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, c
 static int __rrr_mqtt_parse_blob (
 		char **target,
 		const char *start,
-		const char *final_end,
+	        const char *target_end,
+		const char *buffer_end,
 		rrr_biglength *bytes_parsed,
 		uint16_t *blob_length
 ) {
@@ -404,7 +407,7 @@ static int __rrr_mqtt_parse_blob (
 	const char *end = start + 2;
 	*bytes_parsed = 2;
 
-	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+	PARSE_CHECK_END_AND_RETURN_RAW(end,buffer_end);
 	*blob_length = rrr_be16toh(*((uint16_t *) start));
 
 	*target = rrr_allocate(((rrr_biglength) *blob_length) + 1);
@@ -417,7 +420,11 @@ static int __rrr_mqtt_parse_blob (
 	start = end;
 	end = start + *blob_length;
 
-	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+	if (PARSE_CHECK_END_RAW(end, target_end)) {
+		RRR_MSG_0("Invalid size for blob data, traverses packet end\n");
+		return RRR_MQTT_SOFT_ERROR;
+	}
+	PARSE_CHECK_END_AND_RETURN_RAW(end,buffer_end);
 
 	memcpy(*target, start, *blob_length);
 	(*target)[*blob_length] = '\0';
@@ -430,7 +437,8 @@ static int __rrr_mqtt_parse_blob (
 static int __rrr_mqtt_parse_blob_nullsafe (
 		struct rrr_nullsafe_str **target,
 		const char *start,
-		const char *final_end,
+		const char *target_end,
+		const char *buffer_end,
 		rrr_biglength *bytes_parsed,
 		uint16_t *blob_length
 ) {
@@ -441,13 +449,17 @@ static int __rrr_mqtt_parse_blob_nullsafe (
 	const char *end = start + 2;
 	*bytes_parsed = 2;
 
-	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+	PARSE_CHECK_END_AND_RETURN_RAW(end,buffer_end);
 	*blob_length = rrr_be16toh(*((uint16_t *) start));
 
 	start = end;
 	end = start + *blob_length;
 
-	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
+	if (PARSE_CHECK_END_RAW(end, target_end)) {
+		RRR_MSG_0("Invalid size for blob data, traverses packet end\n");
+		return RRR_MQTT_SOFT_ERROR;
+	}
+	PARSE_CHECK_END_AND_RETURN_RAW(end,buffer_end);
 
 	if (rrr_nullsafe_str_new_or_replace_raw (target, start, *blob_length) != 0) {
 		RRR_MSG_0("Could not allocate memory for blob in %s\n", __func__);
@@ -499,12 +511,13 @@ static int __rrr_mqtt_parse_utf8_validate (
 static int __rrr_mqtt_parse_utf8 (
 		char **target,
 		const char *start,
-		const char *final_end,
+		const char *target_end,
+		const char *buffer_end,
 		rrr_biglength *bytes_parsed,
 		uint16_t minimum_length
 ) {
 	uint16_t utf8_length = 0;
-	int ret = __rrr_mqtt_parse_blob(target, start, final_end, bytes_parsed, &utf8_length);
+	int ret = __rrr_mqtt_parse_blob(target, start, target_end, buffer_end, bytes_parsed, &utf8_length);
 	if (ret != RRR_MQTT_OK) {
 		return ret;
 	}
@@ -625,10 +638,16 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 	uint16_t blob_length = 0;
 	rrr_biglength bytes_parsed = 0;
 
-	if ((ret = __rrr_mqtt_parse_blob(&target->data, start, session->buf + session->buf_wpos, &bytes_parsed, &blob_length)) != 0) {
+	if ((ret = __rrr_mqtt_parse_blob (
+			&target->data,
+			start,
+			session->buf + session->target_size,
+			session->buf + session->buf_wpos,
+			&bytes_parsed,
+			&blob_length
+	)) != 0) {
 		return ret;
 	}
-
 
 	target->length = blob_length;
 	target->length_orig = blob_length;
@@ -644,7 +663,14 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = 0;
 
-	ret = __rrr_mqtt_parse_utf8 (&target->data, start, session->buf + session->buf_wpos, bytes_parsed_final, 0);
+	ret = __rrr_mqtt_parse_utf8 (
+			&target->data,
+			start,
+			session->buf + session->target_size,
+			session->buf + session->buf_wpos,
+			bytes_parsed_final,
+			0
+	);
 
 	target->length = target->length_orig = rrr_length_from_biglength_sub_bug_const ((*bytes_parsed_final), sizeof(uint16_t));
 	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
