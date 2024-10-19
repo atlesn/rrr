@@ -2,15 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "../src/lib/mqtt/mqtt_parse.h"
 #include "../src/lib/mqtt/mqtt_packet.h"
 
 const char *rrr_default_log_prefix = "mqtt_parse.c";
 
-int main() {
+int main(int argc, const char **argv) {
 	int ret = 0;
 
+	int fd = 0;
 	ssize_t bytes;
 	const char tmp[1024];
 	char *buf = NULL;
@@ -21,6 +24,17 @@ int main() {
 		.id = 4,
 		.name = "MQTT"
 	};
+
+	if (argc > 2) {
+		RRR_MSG_0("Usage: %s [packet file]\n", argv[0]);
+		return EXIT_FAILURE;
+	}
+	else if (argc == 2) {
+		if ((fd = open(argv[1], O_RDONLY)) < 0) {
+			RRR_MSG_0("Failed to open %s: %s\n", argv[1], strerror(errno));
+			return EXIT_FAILURE;
+		}
+	}
 
 	rrr_config_init (
 			71,  /* debuglevel */
@@ -36,8 +50,8 @@ int main() {
 	rrr_log_init();
 	rrr_mqtt_parse_session_init(&parse_session);
 
-	while ((bytes = read(0, (void *) tmp, sizeof(tmp))) > 0) {
-		printf("Read %lli bytes\n", (long long int) bytes);
+	while ((bytes = read(fd, (void *) tmp, sizeof(tmp))) > 0) {
+		RRR_DBG_1("Read %lli bytes\n", (long long int) bytes);
 		if (buf_pos + bytes > buf_size) {
 			buf = realloc(buf, buf_size + sizeof(tmp));
 			buf_size += sizeof(tmp);
@@ -55,7 +69,7 @@ int main() {
 		rrr_mqtt_packet_parse(&parse_session);
 	}
 
-	printf("Status: %i\n", parse_session.status);
+	RRR_DBG_1("Status: %i\n", parse_session.status);
 
 	out:
 	rrr_mqtt_parse_session_destroy(&parse_session);

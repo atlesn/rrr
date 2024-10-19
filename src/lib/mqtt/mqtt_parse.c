@@ -243,7 +243,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 #define PARSE_BLOB_NULLSAFE(type,target)                       \
     PARSE_BLOB_FINAL(type,target,__rrr_mqtt_parse_blob_nullsafe)
 
-#define PARSE_UTF8(type,target,min_length,field_name)          \
+#define PARSE_UTF8_WITH_LENGTH(type,target,length,min_length,field_name) \
     parse_state->start = parse_state->end;                     \
     if ((parse_state->ret = __rrr_mqtt_parse_utf8 (            \
             &type->target,                                     \
@@ -251,6 +251,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
             session->buf + session->target_size,               \
             session->buf + session->buf_wpos,                  \
             &(parse_state->bytes_parsed),                      \
+	    &length,                                           \
             min_length                                         \
     )) != 0) {                                                 \
         if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
@@ -260,7 +261,12 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
         }                                                      \
         return parse_state->ret;                               \
     }                                                          \
-    parse_state->end = parse_state->start + parse_state->bytes_parsed\
+    parse_state->end = parse_state->start + parse_state->bytes_parsed \
+
+#define PARSE_UTF8(type,target,min_length,field_name)                      \
+    do { uint16_t length;                                                  \
+        PARSE_UTF8_WITH_LENGTH(type,target,length,min_length,field_name);  \
+    } while(0)
 
 #define PARSE_VARIABLE_INT_RAW(target)                         \
     start = end;                                               \
@@ -514,16 +520,16 @@ static int __rrr_mqtt_parse_utf8 (
 		const char *target_end,
 		const char *buffer_end,
 		rrr_biglength *bytes_parsed,
+		uint16_t *utf8_length,
 		uint16_t minimum_length
 ) {
-	uint16_t utf8_length = 0;
-	int ret = __rrr_mqtt_parse_blob(target, start, target_end, buffer_end, bytes_parsed, &utf8_length);
+	int ret = __rrr_mqtt_parse_blob(target, start, target_end, buffer_end, bytes_parsed, utf8_length);
 	if (ret != RRR_MQTT_OK) {
 		return ret;
 	}
 	return __rrr_mqtt_parse_utf8_validate (
 			*target,
-			utf8_length,
+			*utf8_length,
 			minimum_length
 	);
 }
@@ -662,6 +668,7 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 
 static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = 0;
+	uint16_t utf8_length;
 
 	ret = __rrr_mqtt_parse_utf8 (
 			&target->data,
@@ -669,6 +676,7 @@ static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 			session->buf + session->target_size,
 			session->buf + session->buf_wpos,
 			bytes_parsed_final,
+			&utf8_length,
 			0
 	);
 
@@ -1067,10 +1075,16 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 	 * checkpoint to avoid doing this with all of the subscriptions, only at most one should actually
 	 * be overwritten. */
 	while (!PARSE_CHECK_TARGET_END()) {
-		PARSE_UTF8(sub_usub,data_tmp,1,topic);
+		uint16_t utf8_length;
+		PARSE_UTF8_WITH_LENGTH(sub_usub,data_tmp,utf8_length,1,topic);
 
 		if (PARSE_PREV_PARSED_BYTES() == 0) {
 			RRR_MSG_0("Received SUBSCRIBE/UNSUBSCRIBE with zero-length topic\n");
+			return RRR_MQTT_SOFT_ERROR;
+		}
+
+		if (strnlen(sub_usub->data_tmp, utf8_length) != utf8_length) {
+			RRR_MSG_0("Received SUBSCRIBE/UNSUBSCRIBE in which topic contained one or more NULL characters\n");
 			return RRR_MQTT_SOFT_ERROR;
 		}
 
