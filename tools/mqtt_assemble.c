@@ -15,6 +15,7 @@
 #include "../src/lib/mqtt/mqtt_packet.h"
 #include "../src/lib/mqtt/mqtt_assemble.h"
 #include "../src/lib/mqtt/mqtt_payload.h"
+#include "../src/lib/mqtt/mqtt_subscription.h"
 #include "../src/lib/cmdlineparser/cmdline.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("mqtt_assemble");
@@ -181,13 +182,36 @@ int main(int argc, const char **argv, const char **env) {
 			goto out;
 		}
 
-		((struct rrr_mqtt_p_publish *) p)->packet_identifier = 0x102;
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p, 2);
+	}
+	else if (strcmp(argv[1], "subscribe") == 0) {
+		if ((p = rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBSCRIBE, &protocol_version)) == NULL) {
+			RRR_MSG_ERR("Failed to allocate subscribe packet\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		struct rrr_mqtt_p_subscribe *sub = (struct rrr_mqtt_p_subscribe *) p;
+
+		if (rrr_mqtt_subscription_collection_push_unique_str (
+				sub->subscriptions,
+				"topic/filter/+/#",
+				0,
+				0,
+				0,
+				0
+		) != 0) {
+			RRR_MSG_ERR("Failed to put to subscription collection\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 	}
 	else {
 		RRR_MSG_ERR("Unknown packet type '%s'\n", argv[1]);
 		goto out;
 	}
+
+	p->packet_identifier = 0x102;
 
 	if (rrr_tools_mqtt_assemble_output(&data, p) != 0) {
 		ret = EXIT_FAILURE;
