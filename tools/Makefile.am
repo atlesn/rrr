@@ -4,9 +4,9 @@ librrr_ldflags=${JEMALLOC_LIBS} -L../src/lib/.libs -lrrr
 ldflags=${librrr_ldflags}
 
 mqtt_parse_SOURCES = mqtt_parse.c ../src/main.c
-mqtt_parse_CFLAGS = ${AM_CFLAGS} -fpie
-mqtt_parse_LDFLAGS = ${ldflags} -pie
+mqtt_parse_CFLAGS = ${AM_CFLAGS} -fpie -O0
+mqtt_parse_LDFLAGS = ${ldflags} -pie -O0
 
 mqtt_assemble_SOURCES = mqtt_assemble.c ../src/main.c
-mqtt_assemble_CFLAGS = ${AM_CFLAGS} -fpie
-mqtt_assemble_LDFLAGS = ${ldflags}
+mqtt_assemble_CFLAGS = ${AM_CFLAGS} -fpie -O0
+mqtt_assemble_LDFLAGS = ${ldflags} -O0
