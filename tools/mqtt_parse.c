@@ -103,6 +103,8 @@ int main(int argc, const char **argv) {
 				RRR_DBG_1("         QoS       : %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(pub));
 			}
 
+			assert (buf_pos >= parse_session.target_size);
+
 			size_t rest = buf_pos - parse_session.target_size;
 			if (rest > 0) {
 				memmove(buf, buf + parse_session.target_size, rest);

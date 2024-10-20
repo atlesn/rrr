@@ -332,6 +332,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
     if (!PARSE_CHECK_TARGET_END()) {                           \
         RRR_MSG_0("Data after fixed header in mqtt packet type %s which has no variable header\n", \
                 session->type_properties->name);               \
+        return RRR_MQTT_SOFT_ERROR;                            \
     }                                                          \
     PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type);        \
     PARSE_END_PAYLOAD()                                        \
