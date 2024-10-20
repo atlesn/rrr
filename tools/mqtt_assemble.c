@@ -8,18 +8,20 @@
 #include "../build_timestamp.h"
 #include "../src/main.h"
 #include "../src/lib/version.h"
+#include "../src/lib/rrr_strerror.h"
+#include "../src/lib/allocator.h"
+#include "../src/lib/random.h"
 #include "../src/lib/mqtt/mqtt_parse.h"
 #include "../src/lib/mqtt/mqtt_packet.h"
 #include "../src/lib/mqtt/mqtt_assemble.h"
 #include "../src/lib/mqtt/mqtt_payload.h"
-#include "../src/lib/rrr_strerror.h"
 #include "../src/lib/cmdlineparser/cmdline.h"
-#include "../src/lib/allocator.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("mqtt_assemble");
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',    "type",                 "{PACKET TYPE}"},
+	{0,                            's',    "single-byte-fuzz",     "[-s|--single-byte-fuzz]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -29,18 +31,41 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            '\0',    NULL,                   NULL}
 };
 
+struct rrr_tools_mqtt_assemble_data {
+	int do_single_byte_fuzz;
+};
+
 struct rrr_tools_mqtt_assemble_header {
 	uint8_t type_and_flags;
 	uint8_t remaining_length;
 };
 
-static int rrr_tools_mqtt_assemble_output(struct rrr_mqtt_p *p) {
+static void rrr_tools_mqtt_assemble_fuzz_single_byte(void *data, rrr_length data_size) {
+	rrr_length wpos;
+	uint8_t byte;
+
+	wpos = rrr_rand() % data_size;
+	byte = rrr_rand();
+
+	RRR_MSG_ERR("Fuzz at wpos: %04" PRIrrrl "/%04" PRIrrrl " to 0x%02x\n",
+	     wpos, data_size, byte);
+
+	((char *) data)[wpos] = byte;
+}
+
+static int rrr_tools_mqtt_assemble_output (
+		const struct rrr_tools_mqtt_assemble_data *data,
+		struct rrr_mqtt_p *p
+) {
 	int ret = 0;
 
 	char *p_data = NULL;
+	char *f_data = NULL;
+	char *f_data_pos;
 	rrr_length p_length;
 	struct rrr_tools_mqtt_assemble_header header = {0};
 	rrr_length payload_size = 0;
+	rrr_length total_size = 0;
 
 	RRR_MQTT_P_GET_ASSEMBLER(p) (
 			&p_data,
@@ -65,26 +90,41 @@ static int rrr_tools_mqtt_assemble_output(struct rrr_mqtt_p *p) {
 	header.remaining_length = p->assembled_data_size + payload_size;
 	header.type_and_flags = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(p);
 
-	if (write(1, &header, 2) != 2) {
-		RRR_MSG_ERR("Failed to output packet header: %s\n", rrr_strerror(errno));
+	total_size = 2 + p->assembled_data_size + payload_size;
+
+	if ((f_data = f_data_pos = rrr_allocate(total_size)) == NULL) {
+		RRR_MSG_ERR("Failed to allocate final packet data\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (write(1, p->_assembled_data, p->assembled_data_size) != p->assembled_data_size) {
-		RRR_MSG_ERR("Failed to output packet assembled data: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out;
+	memcpy(f_data_pos, &header, 2);
+	f_data_pos += 2;
+
+	memcpy(f_data_pos, p->_assembled_data, p->assembled_data_size);
+	f_data_pos += p->assembled_data_size;
+
+
+	if (p->payload != NULL) {
+		memcpy(f_data_pos, p->payload->payload_start, payload_size);
+		f_data_pos += payload_size;
 	}
 
-	if (p->payload != NULL && write(1, p->payload->payload_start, payload_size) != payload_size) {
-		RRR_MSG_ERR("Failed to output packet payload data: %s\n", rrr_strerror(errno));
+	assert(f_data_pos == f_data + total_size);
+
+	if (data->do_single_byte_fuzz) {
+		rrr_tools_mqtt_assemble_fuzz_single_byte(f_data, total_size);
+	}
+
+	if (write(1, f_data, total_size) != total_size) {
+		RRR_MSG_ERR("Failed to output packet: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(p_data);
+	RRR_FREE_IF_NOT_NULL(f_data);
 	return ret;
 }
 
@@ -100,9 +140,10 @@ int main(int argc, const char **argv, const char **env) {
 		.id = 4,
 		.name = "MQTT"
 	};
-	struct rrr_mqtt_p *p = NULL;
-
+	struct rrr_tools_mqtt_assemble_data data = {0};
 	struct cmd_data cmd;
+
+	struct rrr_mqtt_p *p = NULL;
 
 	rrr_strerror_init();
 	if (rrr_allocator_init() != 0) {
@@ -121,6 +162,10 @@ int main(int argc, const char **argv, const char **env) {
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
+	}
+
+	if (cmd_exists(&cmd, "single-byte-fuzz", 0)) {
+		data.do_single_byte_fuzz = 1;
 	}
 
 	if (strcmp(argv[1], "publish") == 0) {
@@ -144,7 +189,7 @@ int main(int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_tools_mqtt_assemble_output(p) != 0) {
+	if (rrr_tools_mqtt_assemble_output(&data, p) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

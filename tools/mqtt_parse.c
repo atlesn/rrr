@@ -46,8 +46,8 @@ int main(int argc, const char **argv) {
 	}
 
 	rrr_config_init (
-			71,  /* debuglevel */
-			71,  /* debuglevel_on_exit */
+			0,  /* debuglevel */
+			0,  /* debuglevel_on_exit */
 			0,   /* start_interval */
 			0,   /* no_watcdog_timers */
 			0,   /* no_thread_restart */
