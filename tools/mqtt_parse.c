@@ -7,6 +7,7 @@
 
 #include "../src/lib/mqtt/mqtt_parse.h"
 #include "../src/lib/mqtt/mqtt_packet.h"
+#include "../src/lib/rrr_strerror.h"
 
 #define PARSE_BYTE_BY_BYTE
 
@@ -31,13 +32,15 @@ int main(int argc, const char **argv) {
 		.name = "MQTT"
 	};
 
+	rrr_strerror_init();
+
 	if (argc > 2) {
 		RRR_MSG_0("Usage: %s [packet file]\n", argv[0]);
 		return EXIT_FAILURE;
 	}
 	else if (argc == 2) {
 		if ((fd = open(argv[1], O_RDONLY)) < 0) {
-			RRR_MSG_0("Failed to open %s: %s\n", argv[1], strerror(errno));
+			RRR_MSG_0("Failed to open %s: %s\n", argv[1], rrr_strerror(errno));
 			return EXIT_FAILURE;
 		}
 	}
@@ -102,5 +105,6 @@ int main(int argc, const char **argv) {
 		rrr_log_cleanup();
 		if (buf)
 			free(buf);
+		rrr_strerror_cleanup();
 		return ret;
 }

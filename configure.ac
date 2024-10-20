@@ -1625,6 +1625,7 @@ AC_CONFIG_FILES(
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile
+	tools/Makefile
 )
 
 AC_OUTPUT

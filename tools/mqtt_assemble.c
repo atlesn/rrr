@@ -9,6 +9,7 @@
 #include "../src/lib/mqtt/mqtt_packet.h"
 #include "../src/lib/mqtt/mqtt_assemble.h"
 #include "../src/lib/mqtt/mqtt_payload.h"
+#include "../src/lib/rrr_strerror.h"
 #include "../src/lib/allocator.h"
 
 #define PARSE_BYTE_BY_BYTE
@@ -32,6 +33,8 @@ int main(int argc, const char **argv) {
 	struct rrr_mqtt_p *p = NULL;
 	struct rrr_tools_mqtt_assemble_header header = {0};
 	rrr_length payload_size = 0;
+
+	rrr_strerror_init();
 
 	if (argc != 2) {
 		usage:
@@ -96,19 +99,19 @@ int main(int argc, const char **argv) {
 	header.type_and_flags = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(p);
 
 	if (write(1, &header, 2) != 2) {
-		RRR_MSG_ERR("Failed to output packet header: %s\n", strerror(errno));
+		RRR_MSG_ERR("Failed to output packet header: %s\n", rrr_strerror(errno));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	if (write(1, p->_assembled_data, p->assembled_data_size) != p->assembled_data_size) {
-		RRR_MSG_ERR("Failed to output packet assembled data: %s\n", strerror(errno));
+		RRR_MSG_ERR("Failed to output packet assembled data: %s\n", rrr_strerror(errno));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	if (p->payload != NULL && write(1, p->payload->payload_start, payload_size) != payload_size) {
-		RRR_MSG_ERR("Failed to output packet payload data: %s\n", strerror(errno));
+		RRR_MSG_ERR("Failed to output packet payload data: %s\n", rrr_strerror(errno));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -117,5 +120,6 @@ int main(int argc, const char **argv) {
 		RRR_MQTT_P_DECREF(p);
 		rrr_log_cleanup();
 		RRR_FREE_IF_NOT_NULL(p_data);
+		rrr_strerror_cleanup();
 		return ret;
 }
