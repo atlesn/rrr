@@ -107,7 +107,9 @@ int main(int argc, const char **argv) {
 
 			size_t rest = buf_pos - parse_session.target_size;
 			if (rest > 0) {
+				RRR_DBG_1("Overshoot %llu bytes\n", (unsigned long long int) rest);
 				memmove(buf, buf + parse_session.target_size, rest);
+				buf_pos = rest;
 			}
 			else {
 				buf_pos = 0;
