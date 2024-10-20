@@ -960,6 +960,7 @@ int rrr_mqtt_parse_connack (struct rrr_mqtt_parse_session *session) {
 	PARSE_PROPERTIES_IF_V5(connack,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(connack);
+	PARSE_VERIFY_NO_PAYLOAD();
 	PARSE_END_PAYLOAD();
 }
 
