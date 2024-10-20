@@ -7,23 +7,27 @@ FUZZ_PARSE_LOG=fuzz_parse.log
 function fuzz() {
 	TYPE=$1
 
-	echo -en "Fuzz $TYPE: "
+	echo "Fuzz $TYPE: "
 
-	./.libs/mqtt_assemble $TYPE -s > $FUZZ_PACKET 2>>$FUZZ_ASSEMBLE_LOG || exit 1
+	./.libs/mqtt_assemble $TYPE -m > $FUZZ_PACKET 2>>$FUZZ_ASSEMBLE_LOG || exit 1
 	./mqtt_parse < $FUZZ_PACKET >> $FUZZ_PARSE_LOG 2>&1
 	RET=$?
 
 	if [ $RET -eq 0 ] || [ $RET -eq 1 ]; then
 		# OK, not crash
-		echo "$RET"
+		echo "= $RET"
 		true
 	else
-		echo "Crash with return value $RET"
+		echo "= Crash with return value $RET"
 		exit $RET
 	fi
 }
 
+echo > $FUZZ_ASSEMBLE_LOG
+echo > $FUZZ_PARSE_LOG
+
 while true; do
 	fuzz publish
 	fuzz subscribe
+	fuzz connect
 done

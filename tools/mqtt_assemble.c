@@ -23,6 +23,7 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("mqtt_assemble");
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',    "type",                 "{PACKET TYPE}"},
 	{0,                            's',    "single-byte-fuzz",     "[-s|--single-byte-fuzz]"},
+	{0,                            'm',    "multi-byte-fuzz",      "[-m|--multi-byte-fuzz]"},
         {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -34,6 +35,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_tools_mqtt_assemble_data {
 	int do_single_byte_fuzz;
+	int do_multi_byte_fuzz;
 };
 
 struct rrr_tools_mqtt_assemble_header {
@@ -53,6 +55,17 @@ static void rrr_tools_mqtt_assemble_fuzz_single_byte(void *data, rrr_length data
 
 	((char *) data)[wpos] = byte;
 }
+
+static void rrr_tools_mqtt_assemble_fuzz_multi_byte(void *data, rrr_length data_size) {
+	rrr_length amount = data_size / 16;
+	if (amount == 0)
+		amount = rrr_rand() & 0xff;
+
+	for (rrr_length i = 0; i < amount; i++) {
+		rrr_tools_mqtt_assemble_fuzz_single_byte(data, data_size);
+	}
+}
+
 
 static int rrr_tools_mqtt_assemble_output (
 		const struct rrr_tools_mqtt_assemble_data *data,
@@ -105,7 +118,6 @@ static int rrr_tools_mqtt_assemble_output (
 	memcpy(f_data_pos, p->_assembled_data, p->assembled_data_size);
 	f_data_pos += p->assembled_data_size;
 
-
 	if (p->payload != NULL) {
 		memcpy(f_data_pos, p->payload->payload_start, payload_size);
 		f_data_pos += payload_size;
@@ -115,6 +127,10 @@ static int rrr_tools_mqtt_assemble_output (
 
 	if (data->do_single_byte_fuzz) {
 		rrr_tools_mqtt_assemble_fuzz_single_byte(f_data, total_size);
+	}
+
+	if (data->do_multi_byte_fuzz) {
+		rrr_tools_mqtt_assemble_fuzz_multi_byte(f_data, total_size);
 	}
 
 	if (write(1, f_data, total_size) != total_size) {
@@ -169,6 +185,10 @@ int main(int argc, const char **argv, const char **env) {
 		data.do_single_byte_fuzz = 1;
 	}
 
+	if (cmd_exists(&cmd, "multi-byte-fuzz", 0)) {
+		data.do_multi_byte_fuzz = 1;
+	}
+
 	if (strcmp(argv[1], "publish") == 0) {
 		if (rrr_mqtt_p_new_publish (
 				(struct rrr_mqtt_p_publish **) &p,
@@ -206,8 +226,62 @@ int main(int argc, const char **argv, const char **env) {
 			goto out;
 		}
 	}
+	else if (strcmp(argv[1], "connect") == 0) {
+		if ((p = rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, &protocol_version)) == NULL) {
+			RRR_MSG_ERR("Failed to allocate connect packet\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) p;
+
+		RRR_MQTT_P_CONNECT_SET_FLAG_CLEAN_START(connect);
+		connect->client_identifier = strdup(argv[0]);
+
+		RRR_MQTT_P_CONNECT_SET_FLAG_WILL(connect);
+		connect->will_topic = strdup("will/topic");
+		if (rrr_nullsafe_str_new_or_replace_empty(&connect->will_message) != 0) {
+			RRR_MSG_ERR("Failed to create connect will message nullsafe\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (rrr_nullsafe_str_append_asprintf(connect->will_message, "%s", "WILL MESSAGE") != 0) {
+			RRR_MSG_ERR("Failed to set connect will message\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
+				&connect->properties,
+				0x16,
+				"PROPERTY",
+				8
+		) != 0) {
+			RRR_MSG_ERR("Failed to push connect property\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
+				&connect->will_properties,
+				23,
+				"WILL PROPERTY",
+				13
+		) != 0) {
+			RRR_MSG_ERR("Failed to push connect will property\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(connect);
+		RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(connect);
+		connect->username = strdup("username");
+		connect->password = strdup("password");
+	}
+
 	else {
 		RRR_MSG_ERR("Unknown packet type '%s'\n", argv[1]);
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 

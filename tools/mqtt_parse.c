@@ -9,7 +9,7 @@
 #include "../src/lib/mqtt/mqtt_packet.h"
 #include "../src/lib/rrr_strerror.h"
 
-#define PARSE_BYTE_BY_BYTE
+// #define PARSE_BYTE_BY_BYTE
 
 const char *rrr_default_log_prefix = "mqtt_parse.c";
 
@@ -46,8 +46,8 @@ int main(int argc, const char **argv) {
 	}
 
 	rrr_config_init (
-			0,  /* debuglevel */
-			0,  /* debuglevel_on_exit */
+			0,   /* debuglevel */
+			0,   /* debuglevel_on_exit */
 			0,   /* start_interval */
 			0,   /* no_watcdog_timers */
 			0,   /* no_thread_restart */
