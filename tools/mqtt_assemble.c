@@ -5,23 +5,41 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "../build_timestamp.h"
+#include "../src/main.h"
+#include "../src/lib/version.h"
 #include "../src/lib/mqtt/mqtt_parse.h"
 #include "../src/lib/mqtt/mqtt_packet.h"
 #include "../src/lib/mqtt/mqtt_assemble.h"
 #include "../src/lib/mqtt/mqtt_payload.h"
 #include "../src/lib/rrr_strerror.h"
+#include "../src/lib/cmdlineparser/cmdline.h"
 #include "../src/lib/allocator.h"
 
-#define PARSE_BYTE_BY_BYTE
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("mqtt_assemble");
 
-const char *rrr_default_log_prefix = "mqtt_parse.c";
+static const struct cmd_arg_rule cmd_rules[] = {
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',    "type",                 "{PACKET TYPE}"},
+        {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",   "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                 "[-h|--help]"},
+        {0,                            'v',    "version",              "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
+};
 
 struct rrr_tools_mqtt_assemble_header {
 	uint8_t type_and_flags;
 	uint8_t remaining_length;
 };
 
-int main(int argc, const char **argv) {
+int main(int argc, const char **argv, const char **env) {
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		fprintf(stderr, "Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	int ret = EXIT_SUCCESS;
 
 	char *p_data = NULL;
@@ -34,26 +52,26 @@ int main(int argc, const char **argv) {
 	struct rrr_tools_mqtt_assemble_header header = {0};
 	rrr_length payload_size = 0;
 
-	rrr_strerror_init();
+	struct cmd_data cmd;
 
-	if (argc != 2) {
-		usage:
-		RRR_MSG_ERR("Usage: %s {publish}\n", argv[0]);
-		return EXIT_FAILURE;
+	rrr_strerror_init();
+	if (rrr_allocator_init() != 0) {
+		goto out_cleanup_strerror;
 	}
 
-	rrr_config_init (
-			0,  /* debuglevel */
-			0,  /* debuglevel_on_exit */
-			0,   /* start_interval */
-			0,   /* no_watcdog_timers */
-			0,   /* no_thread_restart */
-			0,   /* rfc5424_loglevel_output */
-			0,   /* output_buffer_warn_limit */
-			0,   /* do_journald_output */
-			"./" /* run_directory */
-	);
-	rrr_log_init();
+	if (rrr_log_init() != 0) {
+		goto out_cleanup_allocator;
+	}
+
+	cmd_init(&cmd, cmd_rules, argc, argv);
+
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
+		goto out_cleanup_cmd;
+	}
+
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
+		goto out_cleanup_cmd;
+	}
 
 	if (strcmp(argv[1], "publish") == 0) {
 		if (rrr_mqtt_p_new_publish (
@@ -72,7 +90,8 @@ int main(int argc, const char **argv) {
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p, 2);
 	}
 	else {
-		goto usage;
+		RRR_MSG_ERR("Unknown packet type '%s'\n", argv[1]);
+		goto out;
 	}
 
 	RRR_MQTT_P_GET_ASSEMBLER(p) (
@@ -118,8 +137,14 @@ int main(int argc, const char **argv) {
 
 	out:
 		RRR_MQTT_P_DECREF(p);
-		rrr_log_cleanup();
 		RRR_FREE_IF_NOT_NULL(p_data);
+	out_cleanup_cmd:
+		cmd_destroy(&cmd);
+		rrr_log_cleanup();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
+	out_cleanup_strerror:
 		rrr_strerror_cleanup();
+
 		return ret;
 }
