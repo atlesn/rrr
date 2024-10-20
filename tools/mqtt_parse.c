@@ -8,14 +8,20 @@
 #include "../src/lib/mqtt/mqtt_parse.h"
 #include "../src/lib/mqtt/mqtt_packet.h"
 
+#define PARSE_BYTE_BY_BYTE
+
 const char *rrr_default_log_prefix = "mqtt_parse.c";
 
 int main(int argc, const char **argv) {
-	int ret = 0;
+	int ret = EXIT_SUCCESS;
 
 	int fd = 0;
 	ssize_t bytes;
-	const char tmp[1024];
+#ifdef PARSE_BYTE_BY_BYTE
+	char tmp[1];
+#else
+	char tmp[1024];
+#endif
 	char *buf = NULL;
 	size_t buf_size = 0;
 	size_t buf_pos = 0;
@@ -67,14 +73,34 @@ int main(int argc, const char **argv) {
 		);
 
 		rrr_mqtt_packet_parse(&parse_session);
+
+		if (RRR_MQTT_PARSE_IS_ERR(&parse_session)) {
+			RRR_DBG_1("Bail, status: %i\n", parse_session.status);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		if (RRR_MQTT_PARSE_IS_COMPLETE(&parse_session)) {
+			RRR_DBG_1("Complete, status: %i\n", parse_session.status);
+
+			if (parse_session.type == RRR_MQTT_P_TYPE_PUBLISH) {
+				struct rrr_mqtt_p_publish *pub = (struct rrr_mqtt_p_publish *) parse_session.packet;
+
+				RRR_DBG_1("Publish: Identifier: %u\n", pub->packet_identifier);
+				RRR_DBG_1("         Topic     : %s\n", pub->topic);
+				RRR_DBG_1("         QoS       : %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(pub));
+			}
+
+			goto out;
+		}
 	}
 
-	RRR_DBG_1("Status: %i\n", parse_session.status);
+	RRR_DBG_1("Incomplete, status: %i\n", parse_session.status);
 
 	out:
-	rrr_mqtt_parse_session_destroy(&parse_session);
-	rrr_log_cleanup();
-	if (buf)
-		free(buf);
-	return EXIT_SUCCESS;
+		rrr_mqtt_parse_session_destroy(&parse_session);
+		rrr_log_cleanup();
+		if (buf)
+			free(buf);
+		return ret;
 }
