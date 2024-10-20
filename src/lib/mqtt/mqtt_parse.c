@@ -299,6 +299,13 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
         return RRR_MQTT_SOFT_ERROR;                            \
     }} while(0)                                                \
 
+#define PARSE_VERIFY_PAYLOAD_END()                             \
+    do {if (!PARSE_CHECK_TARGET_END()) {                       \
+        RRR_MSG_0("Data after payload in mqtt packet type %s\n", \
+                session->type_properties->name);               \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }} while(0)                                                \
+
 #define PARSE_CHECK_ZERO_PAYLOAD()                             \
     do {parse_state->payload_length = rrr_length_from_biglength_sub_bug_const (session->target_size, session->payload_pos);  \
     if (parse_state->payload_length == 0) {                    \
@@ -933,6 +940,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 		PARSE_UTF8(connect,password,1,password);
 	}
 
+	PARSE_VERIFY_PAYLOAD_END();
 	PARSE_END_PAYLOAD();
  }
 
@@ -1065,7 +1073,7 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 	}
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(def_puback);
-	PARSE_VERIFY_PAYLOAD_LENGTH();
+	PARSE_VERIFY_NO_PAYLOAD();
 	PARSE_END_PAYLOAD();
 }
 
@@ -1163,6 +1171,7 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 		PARSE_PAYLOAD_SAVE_CHECKPOINT();
 	}
 
+	PARSE_VERIFY_PAYLOAD_END();
 	PARSE_END_PAYLOAD();
 }
 
@@ -1290,6 +1299,7 @@ static int __rrr_mqtt_parse_suback_unsuback (
 		}
 	}
 
+        PARSE_VERIFY_PAYLOAD_END();
 	PARSE_END_PAYLOAD();
 }
 
@@ -1377,6 +1387,7 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 	PARSE_PROPERTIES_IF_V5(disconnect,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(disconnect);
+	PARSE_VERIFY_NO_PAYLOAD();
 	PARSE_END_PAYLOAD();
 }
 

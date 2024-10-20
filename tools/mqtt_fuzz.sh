@@ -14,9 +14,24 @@ function fuzz() {
 	RET=$?
 
 	if [ $RET -eq 0 ] || [ $RET -eq 1 ]; then
-		# OK, not crash
 		echo "= $RET"
-		true
+	else
+		echo "= Crash with return value $RET"
+		exit $RET
+	fi
+}
+
+function check() {
+	TYPE=$1
+
+	echo "Test $TYPE: "
+
+	./.libs/mqtt_assemble $TYPE > $FUZZ_PACKET 2>>$FUZZ_ASSEMBLE_LOG || exit 1
+	./mqtt_parse < $FUZZ_PACKET >> $FUZZ_PARSE_LOG 2>&1
+	RET=$?
+
+	if [ $RET -eq 0 ]; then
+		echo "= 0"
 	else
 		echo "= Crash with return value $RET"
 		exit $RET
@@ -25,6 +40,21 @@ function fuzz() {
 
 echo > $FUZZ_ASSEMBLE_LOG
 echo > $FUZZ_PARSE_LOG
+	
+check connect
+check connack
+check publish
+check puback
+check pubrec
+check pubrel
+check pubcomp
+check subscribe
+check suback
+check unsubscribe
+check unsuback
+check pingreq
+check pingresp
+check disconnect
 
 while true; do
 	fuzz connect
