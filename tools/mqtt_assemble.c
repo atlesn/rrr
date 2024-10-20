@@ -34,6 +34,60 @@ struct rrr_tools_mqtt_assemble_header {
 	uint8_t remaining_length;
 };
 
+static int rrr_tools_mqtt_assemble_output(struct rrr_mqtt_p *p) {
+	int ret = 0;
+
+	char *p_data = NULL;
+	rrr_length p_length;
+	struct rrr_tools_mqtt_assemble_header header = {0};
+	rrr_length payload_size = 0;
+
+	RRR_MQTT_P_GET_ASSEMBLER(p) (
+			&p_data,
+			&p_length,
+			p
+	);
+
+	if (p_length == 0) {
+		RRR_FREE_IF_NOT_NULL(p_data);
+	}
+
+	p->_assembled_data = p_data;
+	p->assembled_data_size = p_length;
+
+	p_data = NULL;
+
+	if (p->payload != NULL)
+		payload_size = p->payload->size;
+
+	// Support only one byte vint here
+	assert(p->assembled_data_size + payload_size < 0x80);
+	header.remaining_length = p->assembled_data_size + payload_size;
+	header.type_and_flags = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(p);
+
+	if (write(1, &header, 2) != 2) {
+		RRR_MSG_ERR("Failed to output packet header: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (write(1, p->_assembled_data, p->assembled_data_size) != p->assembled_data_size) {
+		RRR_MSG_ERR("Failed to output packet assembled data: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (p->payload != NULL && write(1, p->payload->payload_start, payload_size) != payload_size) {
+		RRR_MSG_ERR("Failed to output packet payload data: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(p_data);
+	return ret;
+}
+
 int main(int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -42,15 +96,11 @@ int main(int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	char *p_data = NULL;
-	rrr_length p_length;
 	struct rrr_mqtt_p_protocol_version protocol_version = {
 		.id = 4,
 		.name = "MQTT"
 	};
 	struct rrr_mqtt_p *p = NULL;
-	struct rrr_tools_mqtt_assemble_header header = {0};
-	rrr_length payload_size = 0;
 
 	struct cmd_data cmd;
 
@@ -94,50 +144,13 @@ int main(int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	RRR_MQTT_P_GET_ASSEMBLER(p) (
-			&p_data,
-			&p_length,
-			p
-	);
-
-	if (p_length == 0) {
-		RRR_FREE_IF_NOT_NULL(p_data);
-	}
-
-	p->_assembled_data = p_data;
-	p->assembled_data_size = p_length;
-
-	p_data = NULL;
-
-	if (p->payload != NULL)
-		payload_size = p->payload->size;
-
-	// Support only one byte vint here
-	assert(p->assembled_data_size + payload_size < 0x80);
-	header.remaining_length = p->assembled_data_size + payload_size;
-	header.type_and_flags = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(p);
-
-	if (write(1, &header, 2) != 2) {
-		RRR_MSG_ERR("Failed to output packet header: %s\n", rrr_strerror(errno));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	if (write(1, p->_assembled_data, p->assembled_data_size) != p->assembled_data_size) {
-		RRR_MSG_ERR("Failed to output packet assembled data: %s\n", rrr_strerror(errno));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	if (p->payload != NULL && write(1, p->payload->payload_start, payload_size) != payload_size) {
-		RRR_MSG_ERR("Failed to output packet payload data: %s\n", rrr_strerror(errno));
+	if (rrr_tools_mqtt_assemble_output(p) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	out:
 		RRR_MQTT_P_DECREF(p);
-		RRR_FREE_IF_NOT_NULL(p_data);
 	out_cleanup_cmd:
 		cmd_destroy(&cmd);
 		rrr_log_cleanup();
