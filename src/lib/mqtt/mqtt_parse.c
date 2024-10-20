@@ -286,6 +286,12 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 #define PARSE_PREV_PARSED_BYTES()                              \
     (parse_state->bytes_parsed)                                \
 
+#define PARSE_CHECK_PAYLOAD_LENGTH()                           \
+    do {if (session->payload_pos > session->target_size) {     \
+        RRR_MSG_0("Payload position exceeds end of packet\n"); \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }} while(0)
+
 #define PARSE_CHECK_ZERO_PAYLOAD()                             \
     do {parse_state->payload_length = rrr_length_from_biglength_sub_bug_const (session->target_size, session->payload_pos);  \
     if (parse_state->payload_length == 0) {                    \
@@ -311,6 +317,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
     session->payload_pos = rrr_length_from_ptr_sub_bug_const (parse_state->end, session->buf); \
     goto parse_payload;                                        \
     parse_payload:                                             \
+    PARSE_CHECK_PAYLOAD_LENGTH();                              \
     type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet;  \
     parse_state->end = session->buf + session->payload_checkpoint   \
 
@@ -1049,6 +1056,7 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 	}
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(def_puback);
+	PARSE_CHECK_PAYLOAD_LENGTH();
 	PARSE_END_PAYLOAD();
 }
 

@@ -11,6 +11,7 @@ while true; do
 
 	if [ $RET -eq 0 ] || [ $RET -eq 1 ]; then
 		# OK, not crash
+		echo "OK with return value $RET"
 		true
 	else
 		echo "Crash with return value $RET"
