@@ -27,7 +27,18 @@ echo > $FUZZ_ASSEMBLE_LOG
 echo > $FUZZ_PARSE_LOG
 
 while true; do
-	fuzz publish
-	fuzz subscribe
 	fuzz connect
+	fuzz connack
+	fuzz publish
+	fuzz puback
+	fuzz pubrec
+	fuzz pubrel
+	fuzz pubcomp
+	fuzz subscribe
+	fuzz suback
+	fuzz unsubscribe
+	fuzz unsuback
+	fuzz pingreq
+	fuzz pingresp
+	fuzz disconnect
 done

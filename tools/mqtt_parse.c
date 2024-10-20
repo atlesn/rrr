@@ -46,7 +46,7 @@ int main(int argc, const char **argv) {
 	}
 
 	rrr_config_init (
-			0,   /* debuglevel */
+			71,   /* debuglevel */
 			0,   /* debuglevel_on_exit */
 			0,   /* start_interval */
 			0,   /* no_watcdog_timers */
@@ -59,6 +59,7 @@ int main(int argc, const char **argv) {
 	rrr_log_init();
 	rrr_mqtt_parse_session_init(&parse_session);
 
+	int attempts = 0;
 	while ((bytes = read(fd, (void *) tmp, sizeof(tmp))) > 0) {
 		RRR_DBG_1("Read %lli bytes\n", (long long int) bytes);
 		if (buf_pos + bytes > buf_size) {
@@ -68,13 +69,21 @@ int main(int argc, const char **argv) {
 		memcpy(buf + buf_pos, tmp, bytes);
 		buf_pos += bytes;
 
+		parse:
+
+		if (++attempts == 10) {
+			RRR_MSG_ERR("Too many attempts\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
 		rrr_mqtt_parse_session_update (
 			&parse_session,
 			buf,
 			buf_pos,
 			&protocol_version
 		);
-
+	
 		rrr_mqtt_packet_parse(&parse_session);
 
 		if (RRR_MQTT_PARSE_IS_ERR(&parse_session)) {
@@ -94,11 +103,24 @@ int main(int argc, const char **argv) {
 				RRR_DBG_1("         QoS       : %u\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(pub));
 			}
 
-			goto out;
+			size_t rest = buf_pos - parse_session.target_size;
+			if (rest > 0) {
+				memmove(buf, buf + parse_session.target_size, rest);
+			}
+			else {
+				buf_pos = 0;
+			}
+
+			rrr_mqtt_parse_session_destroy(&parse_session);
+			rrr_mqtt_parse_session_init(&parse_session);
+
+			attempts = 0;
+
+			if (buf_pos > 0) {
+				goto parse;
+			}
 		}
 	}
-
-	RRR_DBG_1("Incomplete, status: %i\n", parse_session.status);
 
 	out:
 		rrr_mqtt_parse_session_destroy(&parse_session);
