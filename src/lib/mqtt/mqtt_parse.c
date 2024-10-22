@@ -470,9 +470,7 @@ static int __rrr_mqtt_parse_blob_nullsafe (
 		rrr_biglength *bytes_parsed,
 		uint16_t *blob_length
 ) {
-	if (*target != NULL) {
-		RRR_BUG ("target was not NULL in %s\n", __func__);
-	}
+	rrr_nullsafe_str_destroy_if_not_null(target);
 
 	const char *end = start + 2;
 	*bytes_parsed = 2;
