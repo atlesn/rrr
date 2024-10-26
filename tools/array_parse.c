@@ -85,6 +85,12 @@ static int array_parse_process_file(const char *filename) {
 		goto out;
 	}
 
+	if (rrr_array_tree_is_empty(array_tree)) {
+		RRR_MSG_0("Array tree in file '%s' was empty\n", filename);
+		ret = 1;
+		goto out_destroy_array_tree;
+	}
+
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("%s dumping array tree...\n", filename);
 		rrr_array_tree_dump(array_tree);
@@ -105,7 +111,7 @@ static int array_parse_process_file(const char *filename) {
 	do {
 		callback_data.round++;
 
-		if ((ret_tmp = rrr_array_tree_import_from_buffer(
+		if ((ret_tmp = rrr_array_tree_import_from_buffer (
 				&parsed_bytes,
 				buf + parse_pos.pos,
 				size - parse_pos.pos,
@@ -114,6 +120,13 @@ static int array_parse_process_file(const char *filename) {
 				&callback_data
 		)) != 0) {
 			break;
+		}
+
+		if (parsed_bytes == 0) {
+			RRR_MSG_0("%s:%i Array tree import succeeded but no input was parsed. Hint: Check that the definition contains some values with size (e.g. not just vain type)\n",
+				filename, callback_data.round);
+			ret = 1;
+			goto out_destroy_array_tree;
 		}
 
 		RRR_DBG_1("%s:%i parsed %" PRIrrrl " bytes...\n",
