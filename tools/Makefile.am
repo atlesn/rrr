@@ -1,4 +1,4 @@
-noinst_PROGRAMS = mqtt_parse mqtt_assemble
+noinst_PROGRAMS = mqtt_parse mqtt_assemble array_parse
 
 librrr_ldflags=${JEMALLOC_LIBS} -L../src/lib/.libs -lrrr
 ldflags=${librrr_ldflags}
@@ -10,3 +10,7 @@ mqtt_parse_LDFLAGS = ${ldflags} -pie -O0
 mqtt_assemble_SOURCES = mqtt_assemble.c ../src/main.c
 mqtt_assemble_CFLAGS = ${AM_CFLAGS} -fpie -O0
 mqtt_assemble_LDFLAGS = ${ldflags} -O0
+
+array_parse_SOURCES = array_parse.c ../src/main.c
+array_parse_CFLAGS = ${AM_CFLAGS} -fpie -O0
+array_parse_LDFLAGS = ${ldflags} -O0
