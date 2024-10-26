@@ -1,4 +1,4 @@
-rrr (1.32-17) bookworm; urgency=medium
+rrr (1.32-18) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -19,8 +19,9 @@ rrr (1.32-17) bookworm; urgency=medium
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
       cases
-    * Fix misc. hangs and crashes when parsing invalid configuration files
-    * Fix misc. crashes in HTTP handling
+    * Misc. hangs and crashes when parsing invalid configuration files
+    * Misc. crashes in HTTP handling
+    * Broken parsing of leading spaces in istr and ustr types in arrays
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
 
