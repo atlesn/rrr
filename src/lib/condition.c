@@ -619,10 +619,6 @@ struct rrr_condition_running_result {
 		return (a * b);					\
 	}									\
 	else if (op == operator_div) {		\
-		if (b == 0) {       \
-			*fpe = 1;   \
-			return 0;   \
-		}                   \
 		return (a / b);					\
 	}} while(0)
 
@@ -632,6 +628,11 @@ static uint64_t __rrr_condition_evaluate_operator (
 		uint64_t b,
 		const struct rrr_condition_op *op
 ) {
+	if (op == operator_div && b == 0) {
+		*fpe = 1;
+		return 0;
+	}
+
 	EVALUATION;
 
 	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
@@ -645,6 +646,11 @@ static int64_t __rrr_condition_evaluate_operator_signed (
 		int64_t b,
 		const struct rrr_condition_op *op
 ) {
+	if (op == operator_div && (b == 0 || (a == INT64_MIN && b == -1))) {
+		*fpe = 1;
+		return 0;
+	}
+
 	EVALUATION;
 
 	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
@@ -652,14 +658,19 @@ static int64_t __rrr_condition_evaluate_operator_signed (
 	return 0;
 }
 
-static int64_t __rrr_condition_evalute_ensure_signed (
+static int64_t __rrr_condition_evaluate_ensure_signed (
+		int *fpe,
 		struct rrr_condition_running_result *result
 ) {
 	int64_t signed_result = 0;
 
+	*fpe = 0;
+
 	if (!result->is_signed && result->result > INT64_MAX) {
-		RRR_MSG_0("Warning: Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
+		RRR_DBG_3("Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
 			result->result);
+		*fpe = 1;
+		return 0;
 	}
 
 	if (result->is_signed) {
@@ -709,10 +720,18 @@ static int __rrr_condition_evaluate_op (
 		int64_t signed_b = 0;
 
 		if (result_a != NULL) {
-			signed_a = __rrr_condition_evalute_ensure_signed(result_a);
+			signed_a = __rrr_condition_evaluate_ensure_signed(&fpe, result_a);
+			if (fpe) {
+				ret = RRR_CONDITION_SOFT_ERROR;
+				goto out;
+			}
 		}
 
-		signed_b = __rrr_condition_evalute_ensure_signed(result_b);
+		signed_b = __rrr_condition_evaluate_ensure_signed(&fpe, result_b);
+		if (fpe) {
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
 
 		int64_t result_tmp = __rrr_condition_evaluate_operator_signed (
 				&fpe,
@@ -722,7 +741,7 @@ static int __rrr_condition_evaluate_op (
 		);
 
 		if (fpe) {
-			RRR_DBG_3("Array tree division by zero in condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
+			RRR_DBG_3("Array tree division overflow in condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
 					signed_a, op->op, signed_b, position->result);
 			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
@@ -772,7 +791,7 @@ static int __rrr_condition_evaluate_op (
 	return ret;
 }
 
-static int __rrr_condition_evalute_value (
+static int __rrr_condition_evaluate_value (
 		struct rrr_condition_running_result *position,
 		int (*name_evaluate_callback)(RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS),
 		void *name_evaluate_callback_arg
@@ -880,7 +899,7 @@ int rrr_condition_evaluate (
 			}
 		}
 		else {
-			if ((ret = __rrr_condition_evalute_value (
+			if ((ret = __rrr_condition_evaluate_value (
 					position,
 					name_evaluate_callback,
 					name_evaluate_callback_arg

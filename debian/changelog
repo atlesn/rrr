@@ -22,7 +22,7 @@ rrr (1.32-18) bookworm; urgency=medium
     * Misc. hangs and crashes when parsing invalid configuration files
     * Misc. crashes in HTTP handling
     * Broken parsing of leading spaces in istr and ustr types in arrays
-    * Crash in array tree parsing when division by zero occured in conditions,
+    * Crash in array tree imoport for division overflow in conditions,
       emit soft error instead.
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
