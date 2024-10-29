@@ -1,4 +1,4 @@
-rrr (1.32-17) bookworm; urgency=medium
+rrr (1.32-18) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -15,6 +15,8 @@ rrr (1.32-17) bookworm; urgency=medium
       particular avoid noisy notification caused by inconsistencies in the
       code
     * Speed up tests by running them in parallel
+    * In httpclient, by default ignore all meta fields from httpserver which
+      should usually not be added as request fields.
 
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
@@ -24,7 +26,7 @@ rrr (1.32-17) bookworm; urgency=medium
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
 
-rrr (1.31-4) bookworm; urgency=medium
+rrr (1.31-5) bookworm; urgency=medium
 
   * Fixes:
     * Preflight headers not sendt for OPTIONS request
