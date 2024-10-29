@@ -1,4 +1,12 @@
-rrr (1.31-4) bookworm; urgency=medium
+rrr (1.32-1) bookworm; urgency=medium
+
+  * Improvements:
+    * In httpclient, by default ignore all meta fields from httpserver which
+      should usually not be added as request fields.
+
+ -- Atle Sobakken <atle@goliathdns.no>  Tue, 29 Oct 2024 14:50:47 +0100
+
+rrr (1.31-5) bookworm; urgency=medium
 
   * Fixes:
     * Preflight headers not sendt for OPTIONS request

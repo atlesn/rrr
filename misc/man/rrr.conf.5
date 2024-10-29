@@ -2700,6 +2700,22 @@ Ignore any meta tags when array values to the HTTP query (controlled by)
 .B http_tags.
 If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
 
+.It http_request_tags_ignore={yes|no}
+Ignore any tags possibly originating from
+.B httpserver
+when the configuration parameter
+.B http_server_receive_full_request
+is active.
+Any fields specified in the documentation for this parameter will not be added to query strings or form data body,
+but the fields will still work as expecting when controlling the behaviour of a query whenever applicable.
+If set to no or left unset, these fields may be included in requests depending on other configuration parameters.
+
+Other fields added by
+.B httpserver,
+like
+.B http_request_partials
+will also be ignored.
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If

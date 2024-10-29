@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "http_common.h"
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
@@ -126,6 +127,7 @@ struct httpclient_data {
 	int do_endpoint_from_topic_force;
 
 	int do_meta_tags_ignore;
+	int do_request_tags_ignore;
 
 	char *taint_tag;
 	char *report_tag;
@@ -155,6 +157,7 @@ struct httpclient_data {
 	int do_body_tag_force;
 
 	struct rrr_map meta_tags_all;
+	struct rrr_map request_tags_all;
 
 	char *http_header_accept;
 
@@ -1531,6 +1534,12 @@ static int httpclient_session_query_prepare_callback (
 		RRR_MAP_ITERATE_END();
 	}
 
+	if (data->do_request_tags_ignore) {
+		RRR_MAP_ITERATE_BEGIN(&data->request_tags_all);
+			rrr_array_clear_by_tag(&array_to_send_tmp, node_tag);
+		RRR_MAP_ITERATE_END();
+	}
+
 	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
 		// Add all array fields
 		RRR_LL_ITERATE_BEGIN(&array_to_send_tmp, const struct rrr_type_value);
@@ -2024,6 +2033,17 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_request_tags_ignore", do_request_tags_ignore, 1); // Default YES
+
+	if (data->do_request_tags_ignore) {
+		HTTP_COMMON_REQUEST_FIELDS_FOREACH(field) {
+			if ((ret = rrr_map_item_add_new(&data->request_tags_all, field, NULL)) != 0) {
+				RRR_MSG_0("Failed to add request tag in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_report_tag",
@@ -2565,6 +2585,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
 	RRR_FREE_IF_NOT_NULL(data->body_tag);
 	rrr_map_clear(&data->meta_tags_all);
+	rrr_map_clear(&data->request_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
 	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
