@@ -1359,18 +1359,19 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 		goto out;
 	}
 
-	if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
-		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
-		goto out;
-	}
+	if (MSG_TOPIC_LENGTH(message) > 1 || *MSG_TOPIC_PTR(message) != '/') {
+		if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
+			RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
+			goto out;
+		}
 
-	if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
-		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
-		goto out;
+		if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
+			RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	*target = rrr_string_builder_buffer_takeover(string_builder);
-
 
 	out:
 	if (string_builder != NULL) {

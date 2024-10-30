@@ -17,6 +17,8 @@ rrr (1.32-18) bookworm; urgency=medium
     * Speed up tests by running them in parallel
     * In httpclient, by default ignore all meta fields from httpserver which
       should usually not be added as request fields.
+    * Int httpclient, prevent using // endpoint when using endpoint from topic
+      and url is /
 
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
