@@ -52,17 +52,16 @@ static int __rrr_http_redirect_collection_entry_new (
 
 	char *endpoint_path_tmp = NULL;
 
-	struct rrr_http_redirect_collection_entry *entry = rrr_allocate(sizeof(*entry));
-	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_http_redirect_collection_entry_new\n");
+	struct rrr_http_redirect_collection_entry *entry;
+
+	if ((entry = rrr_allocate_zero(sizeof(*entry))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	memset(entry, '\0', sizeof(*entry));
-
 	if ((ret = rrr_nullsafe_str_dup(&entry->uri, uri)) != 0) {
-		RRR_MSG_0("Could not allocate memory for uri in __rrr_http_redirect_collection_entry_new\n");
+		RRR_MSG_0("Could not allocate memory for uri in %s\n", __func__);
 		ret = 1;
 		goto out_free;
 	}
@@ -72,6 +71,8 @@ static int __rrr_http_redirect_collection_entry_new (
 	*target = entry;
 
 	goto out;
+//	out_destroy_nullsafe:
+//		rrr_nullsafe_str_destroy_if_not_null(&entry->uri);
 	out_free:
 		rrr_free(entry);
 	out:
@@ -101,7 +102,11 @@ int rrr_http_redirect_collection_push (
 
 	struct rrr_http_redirect_collection_entry *entry = NULL;
 
-	if ((ret = __rrr_http_redirect_collection_entry_new(&entry, transaction, uri)) != 0) {
+	if ((ret = __rrr_http_redirect_collection_entry_new (
+			&entry,
+			transaction,
+			uri
+	)) != 0) {
 		goto out;
 	}
 
@@ -113,7 +118,7 @@ int rrr_http_redirect_collection_push (
 
 int rrr_http_redirect_collection_iterate (
 		struct rrr_http_redirect_collection *collection,
-		int (*callback)(struct rrr_http_transaction *transaction, const struct rrr_nullsafe_str *uri, void *arg),
+		int (*callback)(RRR_HTTP_REDIRECT_COLLECTION_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -126,7 +131,11 @@ int rrr_http_redirect_collection_iterate (
 					RRR_HTTP_REDIRECT_TIMEOUT_MS, endpoint_path_tmp);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if ((ret = callback(node->transaction, node->uri, callback_arg)) == RRR_HTTP_BUSY) {
+		else if ((ret = callback (
+				node->transaction,
+				node->uri,
+				callback_arg
+		)) == RRR_HTTP_BUSY) {
 			// OK, busy. Try again later.
 			ret = RRR_HTTP_OK;
 		}

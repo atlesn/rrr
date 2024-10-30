@@ -37,6 +37,11 @@ struct rrr_http_redirect_collection {
 	RRR_LL_HEAD(struct rrr_http_redirect_collection_entry);
 };
 
+#define RRR_HTTP_REDIRECT_COLLECTION_ITERATE_CALLBACK_ARGS \
+    struct rrr_http_transaction *transaction,              \
+    const struct rrr_nullsafe_str *redirect_uri,           \
+    void *arg
+
 void rrr_http_redirect_collection_clear (
 		struct rrr_http_redirect_collection *collection
 );
@@ -50,7 +55,7 @@ int rrr_http_redirect_collection_push (
 );
 int rrr_http_redirect_collection_iterate (
 		struct rrr_http_redirect_collection *collection,
-		int (*callback)(struct rrr_http_transaction *transaction, const struct rrr_nullsafe_str *uri, void *arg),
+		int (*callback)(RRR_HTTP_REDIRECT_COLLECTION_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
 
