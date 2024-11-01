@@ -1,12 +1,6 @@
-rrr (1.32-18) bookworm; urgency=medium
-
-  * RUNNING DEVELOPMENT RELEASE
+rrr (1.33-1) bookworm; urgency=medium
 
   * Features:
-    * Compilation option (for now) to enable central printf logging so that
-      each thread sends log output over a socket to the main process. This
-      ensures that printf outputs are not mixed up from different threads
-      and processes.
     * Log socket daemon with ability to collect logs from multiple RRR
       processes
 
@@ -26,7 +20,7 @@ rrr (1.32-18) bookworm; urgency=medium
     * Fix misc. hangs and crashes when parsing invalid configuration files
     * Fix misc. crashes in HTTP handling
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 01 Nov 2024 07:02:09 +0100
 
 rrr (1.31-5) bookworm; urgency=medium
 
