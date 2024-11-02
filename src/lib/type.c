@@ -260,7 +260,8 @@ static int __rrr_type_import_numeric_str_raw (
 	}
 
 	int found_end_char = 0;
-	int total_length = 0;
+	int ignore_length = 0;
+	int number_length = 0;
 
 	union {
 		long long int s;
@@ -276,17 +277,19 @@ static int __rrr_type_import_numeric_str_raw (
 	memset(tmp, '\0', sizeof(tmp));
 
 	for (const char *pos = start; pos < end; pos++) {
-		if (*pos == ' ' || *pos == '\t')
-		       continue;
+		if (*pos == ' ' || *pos == '\t') {
+			ignore_length++;
+			continue;
+		}
 		break;
 	}
 
-	for (const char *pos = start; pos < end; pos++) {
+	for (const char *pos = start + ignore_length; pos < end; pos++) {
 		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || (is_signed && *pos == '-')) {
-			tmp[total_length++] = *pos;
+			tmp[number_length++] = *pos;
 
 			// Make sure we don't overwrite last \0 needed by conversion function
-			if ((unsigned int) total_length > sizeof(tmp) - 1) {
+			if ((unsigned int) number_length > sizeof(tmp) - 1) {
 				RRR_MSG_0("Import failed in %s, number too long (> 63 characters)\n", __func__);
 				return RRR_TYPE_PARSE_SOFT_ERR;
 			}
@@ -302,7 +305,7 @@ static int __rrr_type_import_numeric_str_raw (
 		return RRR_TYPE_PARSE_INCOMPLETE;
 	}
 
-	if (total_length == 0) {
+	if (number_length == 0) {
 		RRR_MSG_0("Import failed in %s, no number found.\n", __func__);
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
@@ -322,7 +325,7 @@ static int __rrr_type_import_numeric_str_raw (
 		}
 	}
 
-	if (convert_end - tmp != total_length) {
+	if (convert_end - tmp != number_length) {
 		RRR_MSG_0("Error while converting number in %s B, input data was '%s'\n", __func__, tmp);
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
@@ -332,7 +335,7 @@ static int __rrr_type_import_numeric_str_raw (
 	if (convert_end < tmp) {
 		RRR_BUG("BUG: convert_end was less than tmp in %s\n", __func__);
 	}
-	*parsed_bytes = (rrr_length) total_length;
+	*parsed_bytes = (rrr_length) number_length + (rrr_length) ignore_length;
 
 	return RRR_TYPE_PARSE_OK;
 }

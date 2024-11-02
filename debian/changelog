@@ -1,3 +1,10 @@
+rrr (1.33-2) bookworm; urgency=medium
+
+  * Fixes:
+    * Misc. crashes regarding array handling
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 02 Nov 2024 12:39:23 +0000
+
 rrr (1.33-1) bookworm; urgency=medium
 
   * Features:
@@ -17,8 +24,11 @@ rrr (1.33-1) bookworm; urgency=medium
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
       cases
-    * Fix misc. hangs and crashes when parsing invalid configuration files
-    * Fix misc. crashes in HTTP handling
+    * Misc. hangs and crashes when parsing invalid configuration files
+    * Misc. crashes in HTTP handling
+    * Broken parsing of leading spaces in istr and ustr types in arrays
+    * Crash in array tree import for division overflow in conditions,
+      emit soft error instead.
 
  -- Atle Solbakken <atle@goliathdns.no>  Fri, 01 Nov 2024 07:02:09 +0100
 
