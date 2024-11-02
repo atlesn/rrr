@@ -73,7 +73,7 @@ ldflags = -L../lib/.libs ${JEMALLOC_LIBS} -lrrr
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
-make_test_data_LDFLAGS = ${ldflags} -pie
+make_test_data_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fpie

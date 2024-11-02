@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1248,6 +1248,8 @@ static int __rrr_mqtt_parse_suback_unsuback (
 
 	for (rrr_biglength i = 0; i < suback_unsuback->acknowledgements_size; i++) {
 		const struct rrr_mqtt_p_reason *reason_struct = NULL;
+
+		PARSE_U8(suback_unsuback,dummy);
 
 		if (PARSE_CHECK_V5(suback_unsuback)) {
 			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback_unsuback,i);

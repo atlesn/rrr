@@ -402,6 +402,7 @@ struct rrr_mqtt_p_unsubscribe {
     /* Used only when assembling */                            \
     struct rrr_mqtt_subscription_collection *subscriptions_;   \
     /* Used only when parsing/handling */                      \
+    uint8_t dummy;                                             \
     const uint8_t *acknowledgements;                           \
     rrr_length acknowledgements_size
 

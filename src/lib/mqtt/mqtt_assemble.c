@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -268,11 +268,11 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		PUT_U16(0);
 	}
 
-	if (RRR_MQTT_P_IS_V5(packet)) {
-		PUT_PROPERTIES(&connect->will_properties);
-	}
-
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
+                if (RRR_MQTT_P_IS_V5(packet)) {
+                        PUT_PROPERTIES(&connect->will_properties);
+                }
+
 		PUT_AND_VERIFY_RAW_WITH_LENGTH(
 			connect->will_topic,
 			strlen(connect->will_topic),
