@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define SPECIAL_NUMLOCK		(1<<5)
 #define SPECIAL_RCTRL		(1<<6)
 
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
 struct map {
 	unsigned int key;
 	const char *lower;
@@ -252,6 +253,7 @@ static const char *__rrr_input_device_keytoc (
 
 	return NULL;
 }
+#endif
 
 int rrr_input_device_grab (int fd, int onoff) {
 #if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
@@ -300,6 +302,8 @@ int rrr_input_device_read_key_character (
 #else
 	(void)(key);
 	(void)(is_down);
+	(void)(socket_read_flags);
+
 	RRR_MSG_0("Error: Input device reading not implemented on this platform\n");
 	ret = RRR_READ_HARD_ERROR;
 	goto out;

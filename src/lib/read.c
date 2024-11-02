@@ -396,7 +396,7 @@ static int __rrr_read_message_using_callbacks (
 			rrr_biglength new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
 
 			RRR_SIZE_CHECK(new_size,"Read buffer too big B",ret = RRR_READ_SOFT_ERROR; goto out);
-			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
 
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in %s\n",
@@ -450,7 +450,10 @@ static int __rrr_read_message_using_callbacks (
 
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
+			assert(read_session->rx_buf_skip <= read_session->rx_buf_wpos && "skip nust not be longer than wpos");
+
 			rrr_biglength overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
+
 
 			RRR_DBG_7("Aligning buffer, skipping %" PRIrrrbl " bytes while reading from socket (%" PRIrrrbl " bytes overshoot)\n",
 				read_session->rx_buf_skip, overshoot_size);
@@ -638,7 +641,9 @@ int rrr_read_message_using_callbacks (
 		}
 	}
 
-	RRR_DBG_7("%i messages read in read framework\n", read_count);
+	// Noisy and also causes log messages to be
+	// debugged when log soscket is being used
+	// RRR_DBG_7("%i messages read in read framework\n", read_count);
 
 	ret &= ~(RRR_READ_INCOMPLETE);
 

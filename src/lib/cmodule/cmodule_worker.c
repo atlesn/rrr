@@ -322,7 +322,7 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 }
 
 static int __rrr_cmodule_worker_send_setting_to_parent (
-		struct rrr_setting_packed *setting,
+		const struct rrr_setting_packed *setting,
 		void *arg
 ) {
 	struct rrr_cmodule_worker *worker = arg;
@@ -716,6 +716,8 @@ static int __rrr_cmodule_worker_event_periodic (
 		worker->ping_received = 0;
 	}
 
+	rrr_log_socket_ping_or_flush();
+
 	return 0;
 }
 
@@ -758,6 +760,7 @@ static int __rrr_cmodule_worker_loop (
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
 
 	struct rrr_event_collection events = {0};
+
 	rrr_event_handle event_spawn = RRR_EVENT_HANDLE_STRUCT_INITIALIZER;
 	rrr_event_handle event_periodic = RRR_EVENT_HANDLE_STRUCT_INITIALIZER;
 
@@ -847,7 +850,12 @@ int rrr_cmodule_worker_loop_start (
 			goto out;
 		}
 
-		if ((ret = rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker)) != 0) {
+		if ((ret = rrr_settings_iterate_packed (
+				worker->settings,
+				&worker->settings_used,
+				__rrr_cmodule_worker_send_setting_to_parent,
+				worker
+		)) != 0) {
 			goto out;
 		}
 
@@ -921,6 +929,70 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 	return ret;
 }
 
+struct rrr_cmodule_worker_main_close_sockets_except_callback_data {
+	int *fds_a;
+	size_t fds_a_len;
+	int *fds_b;
+	size_t fds_b_len;
+	int *fds_c;
+	size_t fds_c_len;
+};
+
+static int __rrr_cmodule_worker_main_close_sockets_except_cb (int fd, void *arg) {
+	struct rrr_cmodule_worker_main_close_sockets_except_callback_data *callback_data = arg;
+
+	for (size_t i = 0; i < callback_data->fds_a_len; i++) {
+		if (callback_data->fds_a[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_b_len; i++) {
+		if (callback_data->fds_b[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_c_len; i++) {
+		if (callback_data->fds_c[i] == fd)
+			return 1;
+	}
+
+	return 0;
+}
+
+static void __rrr_cmodule_worker_main_close_sockets_except (
+		struct rrr_cmodule_worker *worker
+) {
+	int event_fds[RRR_EVENT_QUEUE_FD_MAX*2];
+	size_t event_fds_count_a = 0;
+	size_t event_fds_count_b = 0;
+	int log_fds[] = {0};
+	size_t log_fds_count = 0;
+	int single_fds[] = {0};
+	size_t single_fds_count = sizeof(single_fds) / sizeof(single_fds[0]);
+
+	// We need to preserve the open event signal sockets, any other FDs are closed
+	rrr_event_queue_fds_get(event_fds, &event_fds_count_a, worker->event_queue_parent);
+	rrr_event_queue_fds_get(event_fds + event_fds_count_a, &event_fds_count_b, worker->event_queue_worker);
+
+	// Preserve recently opened log connection, if any
+	log_fds[0] = rrr_log_socket_fd_get();
+	if (log_fds[0] > 0)
+		log_fds_count++;
+
+	// printf("Not closing %lu event fds %lu log fds\n", event_fds_count_a + event_fds_count_b, log_fds_count);
+
+	struct rrr_cmodule_worker_main_close_sockets_except_callback_data callback_data = {
+		event_fds,
+		event_fds_count_a + event_fds_count_b,
+		log_fds,
+		log_fds_count,
+		single_fds,
+		single_fds_count
+	};
+
+	rrr_socket_close_all_except_cb_no_unlink (__rrr_cmodule_worker_main_close_sockets_except_cb, &callback_data);
+}
+
 int rrr_cmodule_worker_main (
 		struct rrr_cmodule_worker *worker,
 		const char *log_prefix,
@@ -930,18 +1002,11 @@ int rrr_cmodule_worker_main (
 ) {
 	int ret = 0;
 
-	int event_fds[RRR_EVENT_QUEUE_FD_MAX * 2];
-	size_t event_fds_count = 0;
 	int log_hook_handle;
 
+	__rrr_cmodule_worker_main_close_sockets_except(worker);
+
 	rrr_log_hook_unregister_all_after_fork();
-
-	memset(event_fds, '\0', sizeof(event_fds));
-
-	// We need to preserve the open event signal sockets, any other FDs are closed
-	rrr_event_queue_fds_get(event_fds, &event_fds_count, worker->event_queue_parent);
-	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
-	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	rrr_event_hook_set(__rrr_cmodule_worker_event_hook, worker);
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
@@ -1003,16 +1068,23 @@ struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 	return worker->event_queue_worker;
 }
 
-struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
+struct rrr_settings *rrr_cmodule_worker_get_settings (
 		struct rrr_cmodule_worker *worker
 ) {
 	return worker->settings;
 }
 
+struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
+		struct rrr_cmodule_worker *worker
+) {
+	return &worker->settings_used;
+}
+
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
 		const char *name,
-		struct rrr_instance_settings *settings,
+		const struct rrr_settings *settings,
+		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
@@ -1052,6 +1124,21 @@ int rrr_cmodule_worker_init (
 		goto out_free_name;
 	}
 
+	if ((worker->settings = rrr_settings_copy (settings)) == NULL) {
+		RRR_MSG_0("Could not copy settings in %s\n", __func__);
+		ret = 1;
+		goto out_destroy_pid_lock;
+	}
+
+	if ((ret = rrr_settings_used_copy (
+			&worker->settings_used,
+			settings_used,
+			settings
+	)) != 0) {
+		RRR_MSG_0("Could not copy settings used in %s\n", __func__);
+		goto out_destroy_settings;
+	}
+
 	rrr_event_function_set (
 			event_queue_worker,
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
@@ -1061,7 +1148,6 @@ int rrr_cmodule_worker_init (
 
 
 	worker->event_queue_worker = event_queue_worker;
-	worker->settings = settings;
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
 	worker->methods = methods;
@@ -1077,8 +1163,12 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-//	out_destroy_pid_lock:
-//		pthread_mutex_destroy(&worker->pid_lock);
+//	out_cleanup_settings_used:
+//		rrr_settings_used_cleanup(&worker->settings_used);
+	out_destroy_settings:
+		rrr_settings_destroy(worker->settings);
+	out_destroy_pid_lock:
+		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
 		rrr_free(worker->name);
 	out_destroy_channel_to_parent:
@@ -1097,6 +1187,9 @@ int rrr_cmodule_worker_init (
 void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker
 ) {
+	rrr_settings_used_cleanup(&worker->settings_used);
+	rrr_settings_destroy(worker->settings);
+
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "rrr_time.h"
 
@@ -73,6 +74,23 @@ int64_t rrr_time_get_i64(void) {
 rrr_time_us_t rrr_time_get_us(void) {
 	rrr_time_us_t result = { rrr_time_get_64() };
 	return result;
+}
+
+int rrr_time_get_64_nano(uint64_t *result, uint64_t s_factor) {
+	struct timespec tp;
+
+	*result = 0;
+
+	if (clock_gettime(CLOCK_REALTIME, &tp) != 0) {
+		RRR_MSG_0("Failed to get time in %s: %s\n", __func__, rrr_strerror(errno));
+		return 1;
+	}
+
+	assert(tp.tv_sec > 0);
+
+	*result = (uint64_t) tp.tv_sec * s_factor + (uint64_t) tp.tv_nsec;
+
+	return 0;
 }
 
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add) {

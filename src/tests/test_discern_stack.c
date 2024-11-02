@@ -299,6 +299,8 @@ int rrr_test_discern_stack(void) {
 		}
 	}
 
+	rrr_discern_stack_collection_clear(&routes);
+
 	return ret;
 }
 

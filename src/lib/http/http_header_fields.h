@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -91,6 +91,12 @@ int rrr_http_header_field_collection_has_subvalue (
 		const char *name_lowercase,
 		const char *name_subvalue_lowercase
 );
+int rrr_http_header_field_collection_subvalues_iterate (
+		const struct rrr_http_header_field_collection *collection,
+		const char *name_lowercase,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, void *arg),
+		void *callback_arg
+);
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
@@ -105,6 +111,21 @@ int rrr_http_header_field_new_with_value_nullsafe (
 		struct rrr_http_header_field **result,
 		const char *name,
 		const struct rrr_nullsafe_str *value
+);
+int rrr_http_header_field_new_with_value_raw (
+		struct rrr_http_header_field **result,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
+);
+int rrr_http_header_field_parse_value_raw (
+		struct rrr_http_header_field_collection *target_list,
+		rrr_length *parsed_bytes,
+		const char *name,
+		rrr_length name_length,
+		const char *value,
+		rrr_length value_length
 );
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,

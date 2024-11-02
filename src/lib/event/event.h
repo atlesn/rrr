@@ -24,12 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <pthread.h>
+#include <string.h>
 
 #include <event2/event.h>
 #undef _GNU_SOURCE
 
 #include "event_handle_struct.h"
 #include "../read_constants.h"
+#include "../util/rrr_time.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
 	uint16_t *amount, void *arg
@@ -98,6 +100,12 @@ ssize_t rrr_event_hook_string_format (
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );
+void rrr_event_queue_destroy_void (
+		void *queue
+);
+void rrr_event_queue_incref (
+		struct rrr_event_queue *queue
+);
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );
@@ -164,6 +172,11 @@ void rrr_event_count (
 		struct rrr_event_queue *queue,
 		uint8_t function
 );
+static inline void rrr_event_handle_clear (
+		rrr_event_handle *handle
+) {
+	memset(handle, 0, sizeof(rrr_event_handle));
+}
 static inline void rrr_event_activate (
 		rrr_event_handle *handle
 ) {

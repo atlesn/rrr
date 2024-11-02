@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -344,17 +344,20 @@ int rrr_event_dispatch (
 
 	struct timeval tv_interval = {0};
 
-	tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
-	tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
+	if (function_periodic != NULL) {
+		tv_interval.tv_usec = (int) (periodic_interval_us % 1000000);
+		tv_interval.tv_sec = (long int) ((periodic_interval_us - (long unsigned int) tv_interval.tv_usec) / 1000000);
 
-	if (event_add(queue->periodic_event, &tv_interval)) {
-		RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
-		ret = 1;
-		goto out;
+		if (event_add(queue->periodic_event, &tv_interval)) {
+			RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
+			ret = 1;
+			goto out;
+		}
+
+		queue->callback_periodic = function_periodic;
+		queue->callback_arg = callback_arg;
 	}
 
-	queue->callback_periodic = function_periodic;
-	queue->callback_arg = callback_arg;
 	queue->callback_ret = 0;
 
 	if ((ret = event_base_dispatch(queue->event_base)) != 0) {
@@ -447,7 +450,12 @@ void rrr_event_count (
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
-	RRR_DBG_9_PRINTF("EQ DSTY %p\n", queue);
+	RRR_DBG_9_PRINTF("EQ DSTY %p CNT %i\n", queue, queue->usercount);
+
+	assert(queue->usercount > 0);
+
+	if (queue->usercount-- > 1)
+		return;
 
 	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		rrr_socket_eventfd_cleanup(&queue->functions[i].eventfd);
@@ -465,9 +473,24 @@ void rrr_event_queue_destroy (
 	rrr_free(queue);
 }
 
+
+void rrr_event_queue_destroy_void (
+		void *queue
+) {
+	rrr_event_queue_destroy(queue);
+}
+
 #ifdef RRR_WITH_LIBEVENT_DEBUG
 static int debug_active = 0;
 #endif
+
+void rrr_event_queue_incref (
+		struct rrr_event_queue *queue
+) {
+	RRR_DBG_9_PRINTF("EQ INC %p CNT %i\n", queue, queue->usercount);
+
+	queue->usercount++;
+}
 
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
@@ -508,6 +531,8 @@ int rrr_event_queue_new (
 	}
 
 	memset(queue, '\0', sizeof(*queue));
+
+	queue->usercount = 1;
 
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");

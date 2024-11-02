@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -85,6 +85,7 @@ struct rrr_msgdb_server {
 	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
 	struct rrr_event_queue *queue;
+	char prev_chdir[PATH_MAX];
 };
 
 void rrr_msgdb_server_destroy_void (
@@ -122,10 +123,15 @@ static void __rrr_msgdb_server_client_destroy_void (
 }
 
 static int __rrr_msgdb_server_chdir (
+		struct rrr_msgdb_server *server,
 		const char *directory,
 		int silent
 ) {
 	int ret = 0;
+
+	if (directory[0] == '/' && strcmp(directory, server->prev_chdir) == 0) {
+		goto out;
+	}
 
 	if (chdir(directory) != 0) {
 		if (!silent) {
@@ -142,6 +148,14 @@ static int __rrr_msgdb_server_chdir (
 		goto out;
 	}
 
+	if (directory[0] == '/') {
+		strncpy(server->prev_chdir, directory, sizeof(server->prev_chdir));
+		server->prev_chdir[sizeof(server->prev_chdir) - 1] = '\0';
+	}
+	else {
+		server->prev_chdir[0] = '\0';
+	}
+
 	RRR_DBG_3("msgdb chdir '%s'\n", directory);
 
 	out:
@@ -149,6 +163,7 @@ static int __rrr_msgdb_server_chdir (
 }
 
 static int __rrr_msgdb_server_mkdir_chdir (
+		struct rrr_msgdb_server *server,
 		const char *directory
 ) {
 	int ret = 0;
@@ -165,14 +180,9 @@ static int __rrr_msgdb_server_mkdir_chdir (
 		}
 	}
 
-	if (chdir(directory) != 0) {
-		RRR_MSG_0("Could not change to directory '%s' in message db server: %s\n",
-			directory, rrr_strerror(errno));
-		ret = 1;
+	if ((ret = __rrr_msgdb_server_chdir (server, directory, 0)) != 0) {
 		goto out;
 	}
-
-	RRR_DBG_3("msgdb chdir '%s'\n", directory);
 
 	out:
 	return ret;
@@ -187,7 +197,7 @@ static int __rrr_msgdb_server_mkdir_chdir_levels (
 	const char *pos = str;
 	for (size_t i = 0; i < server->directory_levels && *pos != '\0'; i++) {
 		const char tmp[2] = { *pos, '\0' };
-		if ((ret = __rrr_msgdb_server_mkdir_chdir (tmp)) != 0) {
+		if ((ret = __rrr_msgdb_server_mkdir_chdir (server, tmp)) != 0) {
 			goto out;
 		}
 		pos++;
@@ -206,7 +216,7 @@ static int __rrr_msgdb_server_mkdir_chdir_levels (
 static int __rrr_msgdb_server_chdir_base (
 		struct rrr_msgdb_server *server
 ) {
-	return __rrr_msgdb_server_mkdir_chdir(server->directory);
+	return __rrr_msgdb_server_mkdir_chdir(server, server->directory);
 }
 
 static int __rrr_msgdb_server_put (
@@ -616,7 +626,7 @@ static int __rrr_msgdb_server_get (
 	}
 
 	// Note that successful return is an error
-	if (__rrr_msgdb_server_chdir(str, 1) == 0) {
+	if (__rrr_msgdb_server_chdir(server, str, 1) == 0) {
 		RRR_MSG_0("Could not read file '%s' in message db server, it was a directory\n",
 			str);
 		ret = RRR_MSGDB_SOFT_ERROR;
@@ -762,7 +772,7 @@ static int __rrr_msgdb_server_client_iteration_session_process (
 		}
 
 		if (rrr_type_value_is_tag(node, "dir")) {
-			if (__rrr_msgdb_server_chdir (path_tmp, 1) != 0) {
+			if (__rrr_msgdb_server_chdir (server, path_tmp, 1) != 0) {
 				// Ignore
 				RRR_LL_ITERATE_NEXT();
 			}
@@ -1179,13 +1189,13 @@ static int __rrr_msgdb_server_make_directories (
 
 	for (size_t i = 0; i < server->directory_levels; i++) {
 		char dirname[2] = { filename[i], '\0' };
-		if ((ret = __rrr_msgdb_server_mkdir_chdir (dirname)) != 0) {
+		if ((ret = __rrr_msgdb_server_mkdir_chdir (server, dirname)) != 0) {
 			goto out;
 		}
 	}
 
 	for (size_t i = 0; i < server->directory_levels; i++) {
-		if ((ret = __rrr_msgdb_server_chdir ("..", 0)) != 0) {
+		if ((ret = __rrr_msgdb_server_chdir (server, "..", 0)) != 0) {
 			goto out;
 		}
 	}

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -58,22 +58,32 @@ struct rrr_message_broker_split_buffer_collection {
 	pthread_mutex_t lock;
 };
 
+struct rrr_message_broker_costumer_managed_data {
+	RRR_LL_NODE(struct rrr_message_broker_costumer_managed_data);
+	void *data;
+	void (*destroy)(void *data);
+};
+
+struct rrr_message_broker_costumer_managed_data_collection {
+	RRR_LL_HEAD(struct rrr_message_broker_costumer_managed_data);
+};
+
 struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
 	struct rrr_message_broker *broker;
 	struct rrr_fifo_protected main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
 	struct rrr_msg_holder_slot *slot;
+	struct rrr_event_queue *events;
 	char *name;
 	int usercount;
-	int flags;
 	int split_buffers_active;
 	uint64_t unique_counter;
-	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 	struct rrr_message_broker_costumer *senders[RRR_MESSAGE_BROKER_SENDERS_MAX];
 	int (*entry_pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg);
 	void *callback_arg;
+	struct rrr_message_broker_costumer_managed_data_collection managed_data;
 };
 
 struct rrr_message_broker {
@@ -82,12 +92,6 @@ struct rrr_message_broker {
 	pthread_t creator;
 	struct rrr_message_broker_hooks hooks;
 };
-
-struct rrr_event_queue *rrr_message_broker_event_queue_get (
-		struct rrr_message_broker_costumer *costumer
-) {
-	return costumer->events;
-}
 
 static void __rrr_message_broker_split_buffer_node_destroy (
 		struct rrr_message_broker_split_buffer_node *node
@@ -215,11 +219,15 @@ static void __rrr_message_broker_costumer_destroy (
 ) {
 	RRR_DBG_1 ("Message broker destroy costumer '%s'\n", costumer->name);
 
+	RRR_LL_ITERATE_BEGIN(&costumer->managed_data, struct rrr_message_broker_costumer_managed_data);
+		node->destroy(node->data);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&costumer->managed_data, 0; rrr_free(node));
+
 	if (costumer->slot != NULL) {
 		rrr_msg_holder_slot_destroy(costumer->slot);
 	}
 
-	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_protected_destroy(&costumer->main_queue);
 	rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
@@ -296,15 +304,9 @@ static int __rrr_message_broker_costumer_new (
 		goto out_destroy_fifo;
 	}
 
-	if ((ret = rrr_event_queue_new(&costumer->events)) != 0){
-		RRR_MSG_0("Could not create event queue in %s\n", __func__);
-		ret = 1;
-		goto out_destroy_split_buffer_lock;
-	}
-
 	if (no_buffer) {
 		if ((ret = rrr_msg_holder_slot_new(&costumer->slot)) != 0) {
-			goto out_cleanup_events;
+			goto out_destroy_split_buffer_lock;
 		}
 	}
 
@@ -314,8 +316,6 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
-	out_cleanup_events:
-		rrr_event_queue_destroy(costumer->events);
 	out_destroy_split_buffer_lock:
 		rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
@@ -503,6 +503,61 @@ int rrr_message_broker_costumer_register (
 	*result = costumer;
 
 	RRR_DBG_8("Message broker registered costumer '%s' handle is %p no buffer is %i\n", name_unique, costumer, no_buffer);
+
+	out:
+	pthread_mutex_unlock(&broker->lock);
+	return ret;
+}
+
+void rrr_message_broker_costumer_event_queue_set (
+		struct rrr_message_broker *broker,
+		const char *name,
+		struct rrr_event_queue *events
+) {
+	struct rrr_message_broker_costumer *costumer;
+
+	pthread_mutex_lock(&broker->lock);
+
+	if ((costumer = __rrr_message_broker_costumer_find_by_name_unlocked(broker, name)) == NULL) {
+		RRR_BUG("BUG: Costumer '%s' not found in in %s\n",
+			name, __func__);
+	}
+
+	assert(costumer->events == NULL && "Double call to message broker event queue set");
+
+	costumer->events = events;
+
+	pthread_mutex_unlock(&broker->lock);
+}
+
+int rrr_message_broker_costumer_managed_data_push (
+		struct rrr_message_broker *broker,
+		const char *name,
+		void *data,
+		void (*destroy)(void *data)
+) {
+	int ret = 0;
+
+	struct rrr_message_broker_costumer *costumer;
+	struct rrr_message_broker_costumer_managed_data *managed_data;
+
+	pthread_mutex_lock(&broker->lock);
+
+	if ((costumer = __rrr_message_broker_costumer_find_by_name_unlocked(broker, name)) == NULL) {
+		RRR_BUG("BUG: Costumer '%s' not found in in %s\n",
+			name, __func__);
+	}
+
+	if ((managed_data = rrr_allocate_zero(sizeof(*managed_data))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	managed_data->data = data;
+	managed_data->destroy = destroy;
+
+	RRR_LL_PUSH(&costumer->managed_data, managed_data);
 
 	out:
 	pthread_mutex_unlock(&broker->lock);

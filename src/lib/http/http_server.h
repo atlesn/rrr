@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,9 +38,15 @@ struct rrr_http_server {
 	struct rrr_net_transport *transport_https;
 #endif
 
+#if defined(RRR_WITH_HTTP3)
+	struct rrr_net_transport *transport_quic;
+#endif
+
 	struct rrr_http_server_callbacks callbacks;
 
 	struct rrr_http_rules rules;
+
+	int shutdown_started;
 };
 
 void rrr_http_server_destroy (
@@ -81,7 +87,25 @@ int rrr_http_server_start_tls (
 		int net_transport_flags
 );
 #endif
+#if defined(RRR_WITH_HTTP3)
+int rrr_http_server_start_quic (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
+		rrr_length send_chunk_count_limit,
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
+);
+#endif
 void rrr_http_server_response_available_notify (
+		struct rrr_http_server *server
+);
+void rrr_http_server_start_shutdown (
+		struct rrr_http_server *server
+);
+int rrr_http_server_shutdown_complete (
 		struct rrr_http_server *server
 );
 

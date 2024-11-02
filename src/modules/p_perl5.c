@@ -116,10 +116,11 @@ static int xsub_send_message (
 
 static char *xsub_get_setting(const char *key, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_instance_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
+	struct rrr_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
+	struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_settings_used(perl5_child_data->worker);
 
 	char *value = NULL;
-	if (rrr_settings_get_string_noconvert_silent(&value, settings, key)) {
+	if (rrr_settings_get_string_noconvert_silent(&value, settings_used, settings, key)) {
 		RRR_MSG_0("Warning: Setting '%s', requested by perl5 program in instance %s, could not be retrieved\n",
 				key, INSTANCE_D_NAME(perl5_child_data->parent_data->thread_data));
 		return NULL;
@@ -130,7 +131,7 @@ static char *xsub_get_setting(const char *key, void *private_data) {
 
 static int xsub_set_setting(const char *key, const char *value, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_instance_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
+	struct rrr_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
 
 	int ret = rrr_settings_replace_string(settings, key, value);
 	if (ret != 0) {
@@ -305,7 +306,7 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	struct perl5_data *data = child_data->parent_data;
 	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
-	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
+	struct rrr_settings *settings = data->thread_data->init_data.instance_config->settings;
 	struct rrr_perl5_settings_hv settings_hv = {0};
 
 	if (cmodule_config_data->config_method == NULL || *(cmodule_config_data->config_method) == '\0') {
@@ -456,7 +457,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	if (perl5_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	pthread_cleanup_push(data_cleanup, data);
@@ -480,7 +481,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread);
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

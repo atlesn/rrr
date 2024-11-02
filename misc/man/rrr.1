@@ -1,4 +1,4 @@
-.Dd 2023-11-29
+.Dd 2024-10-13
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -7,12 +7,14 @@ for collecting, buffering, processing and storing messages and measurements.
 .B rrr {CONFIGURATION FILES OR DIRECTORIES}
 .Dl [-W|--no-watchdog-timers]
 .Dl [-T|--no-thread-restart]
+.Dl [-S|--single-thread]
 .Dl [-t|--start-interval]
 .Dl [-s|--stats]
 .Dl [-E|--event-hooks]
 .Dl [-M|--message-hooks]
 .Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
+.Dl [-L|--log-socket[=]LOG SOCKET]
 .Dl [-o|--output-buffer-warn-limit[=]LIMIT]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -102,6 +104,9 @@ Do not monitor threads for becoming unresponsive. If not set and a thread is fou
 will then restart all of them. One instance of a module corresponds to one thread.
 .IP -T|--no-thread-restart
 When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
+.IP -S|--single-thread
+Start only one single instance running in the main process.
+In single thread mode, only one configuration file may be used and it can only have one instance specified in it.
 .IP -t|--start-interval
 When starting multiple configuration files, this interval may be used to delay the starting of each configuration.
 This is useful when RRR with multiple configuration files on slow hardware.
@@ -133,6 +138,14 @@ Specify an alternative default prefix for runtime sockets.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
+.IP -L|--log-socket[=]LOG SOCKET
+Instead of delivering logs to standard output or SystemD (if in such environment), deliver all
+log output to a log socket typically owned by
+.Xr rrr_logd(1)
+which will then print the log messages to standard output or deliver them to SystemD.
+
+This is useful if log output from different RRR configuratitions running at the same tiume gets mixed
+up or if a persistent log service is to handle log output from multiple RRR instances.
 .IP -o|--output-buffer-warn-limit[=]LIMIT
 Maximum number of messages in an instance's output buffer before warnings are
 printed. Warnings will be printed every second if the limit is exceeded. This
@@ -203,6 +216,7 @@ returns 0 on success and 1 on failure.
 .Xr rrr_post(1),
 .Xr rrr_stats(1),
 .Xr rrr_msg(1),
+.Xr rrr_logd(1),
 .Xr rrr.conf(5),
 .Xr rrr_python3(5),
 .Xr jemalloc(3),

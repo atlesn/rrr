@@ -26,5 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_rand(void);
 void rrr_random_string(char *target, size_t target_size);
+void rrr_random_bytes(void *target, size_t bytes);
 
 #endif /* RRR_RANDOM_H */

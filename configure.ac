@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.29-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.29-1", [Full version])
+AC_INIT([Read Route Record],[1.33-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.33-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 29, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 33, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -47,12 +47,12 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
-AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
-AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
-AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
+AC_ARG_WITH([libressl], [AS_HELP_STRING([--without-libressl], [Force disable LibreSSL support])], [enable_libressl=no], [enable_libressl=yes])
+AC_ARG_WITH([openssl], [AS_HELP_STRING([--without-openssl], [Force disable OpenSSL support])], [enable_openssl=no], [enable_openssl=yes])
 AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
 AC_ARG_WITH([zlib],[AS_HELP_STRING([--without-zlib],[build without the zlib bindings])],[enable_zlib=no],[enable_zlib=yes])
 AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
+AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
@@ -63,11 +63,15 @@ AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bind
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--with-jemalloc],[build with jemalloc support])],[enable_jemalloc=yes],[enable_jemalloc=no])
 AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[set root directory for the V8 bindings in where the out/ directory exists])],[],[with_v8=yes])
+AC_ARG_WITH([node],[AS_HELP_STRING([--with-node],[build with the NodeJS JavaScript bindings])],[enable_node=yes],[enable_node=no])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
+AC_ARG_ENABLE([tls],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
+AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
@@ -145,13 +149,12 @@ SHELL_VARS_INIT([variables.sh])
 
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
+SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
-
-SHELL_VARS_OUTPUT
 
 AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
@@ -162,6 +165,7 @@ AM_CONDITIONAL([RRR_WITH_JS], [test "x$enable_js" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
+AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
@@ -198,6 +202,14 @@ AC_MSG_CHECKING([for libbsd])
 
 have_setproctitle=no
 LIBBSD_LIBS=""
+
+AC_MSG_CHECKING("for bash shell")
+if bash --version > /dev/null; then
+	AC_MSG_RESULT([yes])
+else
+	AC_MSG_RESULT([no])
+	AC_MSG_ERROR([Could not run bash which is needed for the test suite]);
+fi
 
 # Check for setproctitle. Should be in unistd.h on both BSD and Linux,
 # but on linux it's in the libbsd library while on BSD it's in libc.
@@ -260,6 +272,25 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+AC_MSG_CHECKING([for IP_PKTINFO])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <netinet/in.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			printf("IP_PKTINFO: %i\n", IP_PKTINFO);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_IP_PKTINFO], [1], [Use Linux style IP_PKTINFO])
+], [
+	AC_MSG_RESULT([no])
+])
+
 AC_MSG_CHECKING([precense of gettid()])
 AC_RUN_IFELSE([
 	AC_LANG_SOURCE([[
@@ -283,117 +314,185 @@ AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent h
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
 
-AC_SUBST([TLS_CFLAGS])
-AC_SUBST([TLS_LDFLAGS])
-AC_SUBST([TLS_LIBADD])
+LIBRESSL_CFLAGS=
+LIBRESSL_LDFLAGS=
+LIBRESSL_LIBADD=
 
-TLS_CFLAGS=
-TLS_LDFLAGS=
-TLS_LIBADD=
+OPENSSL_CFLAGS=
+OPENSSL_LDFLAGS=
+OPENSSL_LIBADD=
 
-CHECK_LIBRESSL_LIBTLS
+CRYPTO_CFLAGS=
+CRYPTO_LDFLAGS=
+CRYPTO_LIBADD=
 
-AC_MSG_CHECKING([for automatic LibreSSL/OpenSSL selection])
-AS_IF([test "x$enable_auto_ssl" != xno], [
+WITH_LIBRESSL=no
+WITH_OPENSSL=no
+WITH_CRYPTO=no
+WITH_TLS=no
+
+AC_MSG_CHECKING([for TLS usage])
+AS_IF([test "x$enable_tls" != "xno"], [
 	AC_MSG_RESULT([yes])
-	AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" != "x"],[ enable_libressl=yes ])
-	AC_CHECK_HEADERS([openssl/err.h], [ enable_openssl=yes ], [])
-], [
-	AC_MSG_RESULT([no])
-])
 
-AC_MSG_CHECKING([for LibreSSL usage])
-AS_IF([test "x$enable_libressl" = xyes], [
-	AC_MSG_RESULT([yes])
-	AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" = "x"],[
-		AC_MSG_ERROR([LibreSSL usage requested but libtls was not found])
+	AC_DEFINE([RRR_WITH_TLS], [1], [Enable encryption in network modules])
+
+	AC_MSG_CHECKING([for LibreSSL enabled])
+	AS_IF([test "x$enable_libressl" != xno], [
+		AC_MSG_RESULT([yes])
+
+		CHECK_LIBRESSL_LIBTLS
+
+		AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" != "x"],[
+			AC_DEFINE([RRR_WITH_LIBRESSL], [1], [Enable encryption in network modules with LibreSSL])
+
+			LIBRESSL_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
+			LIBRESSL_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
+			LIBRESSL_LIBADD=$LIBRESSL_LIBTLS_LIBADD
+
+			AC_MSG_CHECKING([LibreSSL CFLAGS])
+			AC_MSG_RESULT([$LIBRESSL_CFGFLAGS])
+
+			AC_MSG_CHECKING([LibreSSL LDFLAGS])
+			AC_MSG_RESULT([$LIBRESSL_LDFLAGS])
+
+			AC_MSG_CHECKING([LibreSSL LIBADD])
+			AC_MSG_RESULT([$LIBRESSL_LIBADD])
+
+			AC_CHECK_HEADERS([libressl/tls.h],[have_libressl_tls_h_subfolder=yes])
+			AC_CHECK_HEADERS([tls.h],[have_libressl_tls_h=yes])
+
+			if test "x$have_libressl_tls_h_subfolder" = "xyes"; then
+				AC_DEFINE([RRR_HAVE_TLS_H_SUBFOLDER], [1], [LibreSSL tls.h is present and is in a subfolder])
+			elif test "x$have_libressl_tls_h" = "xyes"; then
+				AC_DEFINE([RRR_HAVE_TLS_H], [1], [LibreSSL tls.h is present and is not in a subfolder])
+			else
+				AC_MSG_ERROR([Could not locate tls.h for LibreSSL])
+			fi
+
+			WITH_LIBRESSL=yes
+			WITH_TLS=yes
+		])
+	], [
+		AC_MSG_RESULT([no])
 	])
-	AC_DEFINE([RRR_WITH_LIBRESSL], [1], [Enable encryption in network modules with LibreSSL])
 
-	AC_MSG_CHECKING([LibreSSL CFLAGS])
-	AC_MSG_RESULT([$LIBRESSL_LIBTLS_CFLAGS])
+	AC_MSG_CHECKING([for OpenSSL enabled])
+	AS_IF([test "x$enable_openssl" != xno], [
+		AC_MSG_RESULT([yes])
 
-	AC_MSG_CHECKING([LibreSSL LDFLAGS])
-	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LDFLAGS])
+		AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules with OpenSSL])
+		AX_CHECK_OPENSSL([
+			AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+		# Only version >=1.1 supported
+		#	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
+			AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+			AC_CHECK_LIB(ssl, SSL_get1_peer_certificate, [AC_DEFINE([RRR_HAVE_GET1_PEER_CERTIFICATE], [1], [Have get peer certificate with and without reference incrementing])], [])
 
-	AC_MSG_CHECKING([LibreSSL LIBADD])
-	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
+			AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
 
-	TLS_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
-	TLS_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
-	TLS_LIBADD=$LIBRESSL_LIBTLS_LIBADD
-], [
-	AC_MSG_RESULT([Not compiling with LibreSSL])
-])
+			# This appears not to be used
+			# OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
+			# AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 
-AC_MSG_CHECKING([for LibreSSL overrides OpenSSL])
-AS_IF([test "x$enable_auto_ssl" != "xno" && test "x$enable_openssl" = "xyes" && test "x$enable_libressl" = "xyes" ], [
-	AC_MSG_RESULT([yes])
-	enable_openssl=no
-], [
-	AC_MSG_RESULT([no])
-])
+			WITH_OPENSSL=yes
+			WITH_TLS=yes
+		], [])
 
-AC_MSG_CHECKING([for OpenSSL usage])
-AS_IF([test "x$enable_openssl" = xyes], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules with OpenSSL])
-	AX_CHECK_OPENSSL([], [
-		AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
+		OPENSSL_LIBADD=$OPENSSL_LIBS
+
+		AC_MSG_CHECKING([OpenSSL CFLAGS])
+		AC_MSG_RESULT([$OPENSSL_CFLAGS])
+
+		AC_MSG_CHECKING([OpenSSL LDFLAGS])
+		AC_MSG_RESULT([$OPENSSL_LDFLAGS])
+
+		AC_MSG_CHECKING([OpenSSL LIBADD])
+		AC_MSG_RESULT([$OPENSSL_LIBADD])
+	], [
+		AC_MSG_RESULT([no])
 	])
-	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
-# Only version >=1.1 supported
-#	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
-	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
-	AC_CHECK_LIB(ssl, SSL_get1_peer_certificate, [AC_DEFINE([RRR_HAVE_GET1_PEER_CERTIFICATE], [1], [Have get peer certificate with and without reference incrementing])], [])
-	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
-	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
-	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
 
-	AC_SUBST([TLS_CFLAGS])
-	AC_SUBST([TLS_LDFLAGS])
-	AC_SUBST([TLS_LIBADD])
+	AC_MSG_CHECKING([at least one TLS library was chosen])
+	AS_IF([test "x$WITH_TLS" = xyes ], [
+		AC_MSG_RESULT([yes])
+	], [
+		AC_MSG_ERROR([No TLS library was chosen])
+	])
+
+	AC_MSG_CHECKING([only one of LibreSSL or OpenSSL was chosen])
+	AS_IF([test "x$WITH_LIBRESSL" = xyes -a "x$WITH_OPENSSL" = xyes], [
+		AC_MSG_ERROR([Both LibreSSL and OpenSSL were chosen, please disable one of them using --without-libressl or --without-openssl])
+	], [
+		AC_MSG_RESULT([yes])
+	])
+
+	AC_MSG_CHECKING([for LibreSSL/OpenSSL common cryptography functions enabled])
+	AS_IF([test "x$enable_encryption" != "xno" ], [
+		AC_MSG_RESULT([yes])
+
+		AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
+
+		AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
+
+#		AS_IF([test "x$WITH_LIBRESSL" = xyes], [
+#			CRYPTO_CFLAGS=$LIBRESSL_CFLAGS
+#			CRYPTO_LDFLAGS=$LIBRESSL_LDFLAGS
+#			CRYPTO_LIBADD=$LIBRESSL_LIBADD
+#		], [
+#			CRYPTO_CFLAGS=$OPENSSL_CFLAGS
+#			CRYPTO_LDFLAGS=$OPENSSL_LDFLAGS
+#			CRYPTO_LIBADD=$OPENSSL_LIBADD
+#		])
+	], [
+		AC_MSG_RESULT([no])
+	])
 ], [
-	AC_MSG_RESULT([Not compiling with OpenSSL])
-])
-
-AC_MSG_CHECKING([only one SSL/TLS library was chosen])
-AS_IF([test "x$enable_openssl" = xyes && test "x$enable_libressl" = xyes ], [
 	AC_MSG_RESULT([no])
-	AC_MSG_ERROR([cannot use both OpenSSL and LibreSSL at the same time, make sure auto-selection is not disabled])
-], [
-	AC_MSG_RESULT([yes])
-])
 
-AC_MSG_CHECKING([for LibreSSL/OpenSSL common cryptography functions])
-AS_IF([test "x$enable_encryption" != "xno" ], [
-	AC_MSG_RESULT([yes])
-	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
-	AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
-	AS_IF([test "x$TLS_LDFLAGS" = "x"], [
+	AC_MSG_CHECKING([for LibreSSL/OpenSSL common cryptography functions enabled])
+	AS_IF([test "x$enable_encryption" != "xno" ], [
+		AC_MSG_RESULT([yes])
+
+		AC_MSG_ERROR([Cannot compile with encryption, no TLS method used. Consider using --without-encription.])
+
+		AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
+
+		AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
+
 		AX_CHECK_OPENSSL([], [
 			AC_MSG_ERROR([Cannot compile with encryption, OpenSSL/LibreSSL missing])
 		])
-		TLS_CFLAGS=$OPENSSL_INCLUDES
-		TLS_LDFLAGS=$OPENSSL_LDFLAGS
-		TLS_LIBADD=$OPENSSL_LIBS
+
+		CRYPTO_CFLAGS=$OPENSSL_INCLUDES
+		CRYPTO_LDFLAGS=$OPENSSL_LDFLAGS
+		CRYPTO_LIBADD=$OPENSSL_LIBS
+	], [
+		AC_MSG_RESULT([no])
 	])
-], [
-	AC_MSG_RESULT([not enabled])
 ])
 
-AC_SUBST([TLS_CFLAGS])
-AC_SUBST([TLS_LDFLAGS])
-AC_SUBST([TLS_LIBADD])
+AC_SUBST([LIBRESSL_CFLAGS])
+AC_SUBST([LIBRESSL_LDFLAGS])
+AC_SUBST([LIBRESSL_LIBADD])
 
-SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
-SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $enable_libressl)
-SHELL_VARS_EXPORT([RRR_WITH_AUTO_SSL], $enable_auto_ssl)
+AC_SUBST([OPENSSL_CFLAGS])
+AC_SUBST([OPENSSL_LDFLAGS])
+AC_SUBST([OPENSSL_LIBADD])
 
-AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_openssl" != xno])
+AC_SUBST([CRYPTO_CFLAGS])
+AC_SUBST([CRYPTO_LDFLAGS])
+AC_SUBST([CRYPTO_LIBADD])
+
+SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $WITH_OPENSSL)
+SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $WITH_LIBRESSL)
+SHELL_VARS_EXPORT([RRR_WITH_TLS], $WITH_TLS)
+SHELL_VARS_EXPORT([RRR_WITH_CRYPTO], $WITH_CRYPTO)
+
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$WITH_OPENSSL" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
-AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
-AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
+AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$WITH_LIBRESSL" != xno])
+AM_CONDITIONAL([RRR_WITH_TLS], [test "x$WITH_TLS" != xno])
 
 # Make sure jemalloc-test does not include any libraries
 LIBS=""
@@ -413,7 +512,7 @@ AC_SUBST([JEMALLOC_LIBS])
 
 AC_DEFUN([V8COMPILE], [
 	cxx_flags="$TEST_CXXFLAGS $JS_CXXFLAGS $FREEBSD_CXXFLAGS -w"
-	ld_flags="$AM_LDFLAGS $JS_LDFLAGS $JS_LIBS"
+	ld_flags="$JS_LDFLAGS $JS_LIBS $AM_LDFLAGS"
 	$CXX $cxx_flags -o conftest.o -c conftest.cpp && $CXX $cxx_flags conftest.o -o conftest $ld_flags > /dev/null 2>&1 && ./conftest
 	if test "$?" = 0; then
 		AC_MSG_RESULT([present])
@@ -523,7 +622,6 @@ AC_DEFUN([V8TESTS],[
 		AC_LANG_SOURCE([[
 			#include <v8.h>
 			int main (int argc, char **argv) {
-				auto size = sizeof(v8::BackingStore);
 				return sizeof(v8::BackingStore) == 0;
 			}
 		]])
@@ -556,6 +654,31 @@ AC_DEFUN([V8TESTS],[
 	])
 	V8COMPILE([
 		AC_DEFINE([RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK], [1], [Have FixedArray in ResolveModuleCallback])
+	],[
+		# Not found, no action required
+	])
+
+	AC_MSG_CHECKING([V8 has MemorySpan in CreateSyntheticModule])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-script.h>
+
+			int main (int argc, char **argv) {
+				if (0) {
+					auto dummy = v8::Module::CreateSyntheticModule (
+							nullptr,
+							v8::String::NewFromUtf8(nullptr, "test").ToLocalChecked(),
+							v8::MemorySpan<const v8::Local<v8::String>>(),
+							nullptr
+					);
+				}
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_MEMORYSPAN_IN_CSM], [1], [Have MemorySpan in CreateSyntheticModule])
 	],[
 		# Not found, no action required
 	])
@@ -1196,6 +1319,48 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LIBS])
 ])
 
+AC_MSG_CHECKING([HTTP3 usage with NGHTTP3 and NGTCP2 bindings])
+AS_IF([test "x$enable_http3" = xno], [
+	AC_MSG_RESULT([Not compiling with HTTP3])
+], [
+	# AS_IF([test "x$HAVE_OPENSSL_QUIC" != xyes], [AC_MSG_ERROR([OpenSSL with QUIC was not found or disabled])], [])
+	AC_MSG_RESULT([yes])
+
+	AC_DEFINE([RRR_WITH_HTTP3], [1], [Compile with NGHTTP3 bindings])
+
+	AC_CHECK_HEADERS([ngtcp2/ngtcp2.h])
+	AC_CHECK_HEADERS([nghttp3/nghttp3.h])
+
+	AC_CHECK_LIB(ngtcp2, ngtcp2_version, [], AC_MSG_ERROR([ngtcp2_version from ngtcp2 not found]))
+	AC_CHECK_LIB(ngtcp2_crypto_gnutls, ngtcp2_crypto_encrypt_cb, [], AC_MSG_ERROR([ngtcp2_crypto_encrypt_cb from ngtcp2_crypto_gnutls not found]))
+	AC_CHECK_LIB(nghttp3, nghttp3_version, [], AC_MSG_ERROR([nghttp3_version from nghttp3 not found]))
+
+	HTTP3_CFLAGS=""
+	HTTP3_LDFLAGS="-lnghttp3"
+	NGTCP2_CFLAGS=""
+	NGTCP2_LDFLAGS="-lngtcp2 -lngtcp2_crypto_gnutls"
+
+	AC_SUBST([HTTP3_CFLAGS])
+	AC_SUBST([HTTP3_LDFLAGS])
+	AC_SUBST([NGTCP2_CFLAGS])
+	AC_SUBST([NGTCP2_LDFLAGS])
+
+	AC_DEFINE([RRR_WITH_GNUTLS], [1], [Compile with GnuTLS bindings])
+
+	AC_CHECK_HEADERS([gnutls/gnutls.h])
+	AC_CHECK_LIB(gnutls, gnutls_bye, [], AC_MSG_ERROR([gnutls_bye from gnutls not found]))
+
+	GNUTLS_CFLAGS=`pkg-config --cflags gnutls`
+	GNUTLS_LIBS=`pkg-config --libs gnutls`
+
+	if [ test "x$GNUTLS_LIBS" = x ]; then
+		GNUTLS_LIBS="-lgnutls"
+	fi
+
+	AC_SUBST([GNUTLS_CFLAGS])
+	AC_SUBST([GNUTLS_LIBS])
+])
+
 # Make sure MySQL-test does not include any libraries
 LIBS=""
 
@@ -1270,6 +1435,16 @@ AS_IF([test "x$enable_printf_logging" = xyes], [
 ],[
 	AC_MSG_RESULT([no])
 ])
+
+AC_MSG_CHECKING([enabled log timestamps])
+AS_IF([test "x$enable_log_timestamps" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_LOG_TIMESTAMPS], [1], [Enable timestamps in log messages printed to standard output])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AM_CONDITIONAL([RRR_ENABLE_LOG_TIMESTAMPS], [test "x$enable_log_timestamps" != xno])
 
 AC_DEFUN([REQUIRE_CONFDIR], [
 	if [test "x$enable_confdir" != "xyes"]; then
@@ -1396,10 +1571,11 @@ AC_SUBST([CMODULE_DIR])
 LIBS=""
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
-AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
+
+SHELL_VARS_OUTPUT
 
 AC_CONFIG_FILES(
 	Makefile
@@ -1414,6 +1590,7 @@ AC_CONFIG_FILES(
 )
 
 AC_OUTPUT
+
 SHELL_VARS_CLEANUP
 
 # Make sure dependency_libs is always set to empty in new .la files to avoid

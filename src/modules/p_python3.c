@@ -213,7 +213,10 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	// NOTE : The python config object operates on the original settings structure
-	config = rrr_python3_config_new (rrr_cmodule_worker_get_settings(worker));
+	config = rrr_python3_config_new (
+		rrr_cmodule_worker_get_settings(worker),
+		rrr_cmodule_worker_get_settings_used(worker)
+	);
 
 	if (config == NULL) {
 		RRR_MSG_0("Could not create config object in __rrr_py_persistent_send_config \n");
@@ -514,7 +517,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1("python3 instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -539,7 +542,8 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

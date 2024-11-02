@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_H
 
 #include "rrr_config.h"
+#include "../../config.h"
 
 #ifdef __cplusplus
 #	include <cstdio>
@@ -211,6 +212,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	endif
 #endif
 
+// XXX : MSG_0 and DBG_9 should use correct prefix 
+
 #define RRR_MSG_0_PRINTF(...) \
 	do { printf ("<" __RRR_LOG_PREFIX_0_Q "> <rrr> " __VA_ARGS__); } while(0)
 
@@ -256,8 +259,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
 
-#define RRR_LOG_HEADER_FORMAT_NO_LEVEL "<%s> "
-#define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
+#define RRR_LOG_HEADER_FORMAT_WHAT "<%s> "
+#define RRR_LOG_HEADER_FORMAT_LEVEL "<%u> "
+#define RRR_LOG_HEADER_FORMAT_TIMESTAMP "<%s> "
+#define RRR_LOG_HEADER_FORMAT_NO_TS      \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+
+#ifdef RRR_ENABLE_LOG_TIMESTAMPS
+
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_TIMESTAMP  \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	ts, loglevel, prefix
+
+#else
+
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	loglevel, prefix
+
+#endif /* RRR_ENABLE_LOG_TIMESTAMPS */
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
@@ -269,6 +295,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             const char *prefix,                                \
             const char *message,                               \
             void *private_arg
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
+) {
+	uint8_t result = 0;
+
+	switch (loglevel) {
+		case __RRR_LOG_PREFIX_0:
+			result = RRR_RFC5424_LOGLEVEL_ERROR;
+			break;
+		case __RRR_LOG_PREFIX_1:
+		case __RRR_LOG_PREFIX_2:
+		case __RRR_LOG_PREFIX_3:
+		case __RRR_LOG_PREFIX_4:
+		case __RRR_LOG_PREFIX_5:
+		case __RRR_LOG_PREFIX_6:
+		case __RRR_LOG_PREFIX_7:
+		default:
+			result = RRR_RFC5424_LOGLEVEL_DEBUG;
+			break;
+	};
+
+	return result;
+}
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
+) {
+	(void)(loglevel);
+	return RRR_RFC5424_LOGLEVEL_ERROR;
+}
 
 struct rrr_event_queue;
 
@@ -293,7 +350,23 @@ void rrr_log_hooks_call_raw (
 		const char *prefix,
 		const char *message
 );
+void rrr_log_print_no_hooks (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
+		const char *prefix,
+		const char *message
+);
 void rrr_log_printf_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
+void rrr_log_printf_nolock_loglevel_translated (
 		const char *file,
 		int line,
 		uint8_t loglevel,
@@ -333,6 +406,24 @@ void rrr_log_fprintf (
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+int rrr_log_socket_connect (
+		const char *log_socket
+);
+int rrr_log_socket_fd_get (
+		void
+);
+void rrr_log_socket_flush_and_close (
+		void
+);
+void rrr_log_socket_after_fork (
+		void
+);
+void rrr_log_socket_after_thread (
+		void
+);
+void rrr_log_socket_ping_or_flush (
+		void
 );
 
 #endif /* RRR_LOG_H */

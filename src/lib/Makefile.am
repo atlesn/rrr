@@ -18,13 +18,6 @@ librrrmysql_la_SOURCES = mysql.c
 librrrmysql_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} 
 endif
 
-if RRR_WITH_OPENSSL
-encryption = rrr_openssl.c
-endif
-if RRR_WITH_OPENSSL_CRYPT
-encryption = rrr_openssl.c
-endif
-
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_message.c \
@@ -62,6 +55,20 @@ librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
 
+if RRR_WITH_HTTP3
+libadd_http3 = librrrhttp3.la
+librrrhttp3_la_SOURCES = http3/http3.c http/http_application_http3.c
+librrrhttp3_la_CFLAGS = ${HTTP3_CFLAGS} ${AM_CFLAGS}
+librrrhttp3_la_LDFLAGS = ${HTTP3_LDFLAGS}
+http3_extra_ld = ${HTTP3_LDFLAGS}
+
+libadd_quic = librrrquic.la
+librrrquic_la_SOURCES = net_transport/net_transport_quic.c
+librrrquic_la_CFLAGS = ${GNUTLS_CFLAGS} ${AM_CFLAGS}
+librrrquic_la_LDFLAGS = ${GNUTLS_LIBS}
+quic_extra_ld = ${GNUTLS_LIBS} ${NGTCP2_LDFLAGS}
+endif
+
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
@@ -84,8 +91,45 @@ libadd_js = librrrjs.la
 librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
 librrrjs_la_CXXFLAGS = ${JS_CXXFLAGS} ${AM_CXXFLAGS}
 librrrjs_la_LDFLAGS = ${JS_LDFLAGS} ${JS_LIBS}
-js_extra_ldflags = ${JS_LDFLAGS}
+js_extra_ld = ${JS_LDFLAGS}
 js_extra_libadd = $(JS_LIBS)
+endif
+
+if RRR_WITH_TLS
+net_transport_tls = net_transport/net_transport_tls_common.c
+endif
+if RRR_WITH_HTTP3
+net_transport_tls = net_transport/net_transport_tls_common.c
+endif
+
+if RRR_WITH_OPENSSL_CRYPT
+libadd_rrrcrypto = librrrcrypto.la
+librrrcrypto_la_SOURCES = rrr_openssl.c
+librrrcrypto_la_CFLAGS = ${CRYPTO_CFLAGS} ${AM_CFLAGS}
+librrrcrypto_la_LDFLAGS = ${CRYPTO_LDFLAGS}
+librrrcrypto_la_LIBADD = ${CRYPTO_LIBADD}
+crypto_extra_ld = ${CRYPTO_LDFLAGS}
+crypto_extra_libadd = ${CRYPTO_LIBADD}
+endif
+
+if RRR_WITH_OPENSSL
+libadd_rrropenssl = librrropenssl.la
+librrropenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_transport/net_transport_openssl.c
+librrropenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
+librrropenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
+librrropenssl_la_LIBADD = ${OPENSSL_LIBADD}
+openssl_extra_ld = ${OPENSSL_LDFLAGS}
+openssl_extra_libadd = ${OPENSSL_LIBADD}
+endif
+
+if RRR_WITH_LIBRESSL
+libadd_rrrlibressl = librrrlibressl.la
+librrrlibressl_la_SOURCES = net_transport/net_transport_libressl.c
+librrrlibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
+librrrlibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
+librrrlibressl_la_LIBADD = ${LIBRESSL_LIBADD}
+libressl_extra_ld = ${LIBRESSL_LDFLAGS}
+libressl_extra_libadd = ${LIBRESSL_LIBADD}
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -101,10 +145,10 @@ socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chu
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
        http/http_common.c http/http_query_builder.c http/http_client_config.c \
-       http/http_server.c http/http_header_fields.c \
+       http/http_server.c http/http_header_fields.c http/http_service.c \
        http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
-       http/http_application.c http/http_application_http1.c \
-       http/http_redirect.c
+       http/http_application.c http/http_application_http1.c http/http_application_http2_http3_common.c \
+       http/http_redirect.c http/http_stream.c
 
 websocket = websocket/websocket.c
 
@@ -114,7 +158,7 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
-                net_transport/net_transport_ctx.c net_transport/net_transport_common.c
+                net_transport/net_transport_ctx.c net_transport/net_transport_common.c net_transport/net_transport_connection_id.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
@@ -130,19 +174,11 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
-helpers = helpers/nullsafe_str.c helpers/string_builder.c
+helpers = helpers/nullsafe_str.c helpers/string_builder.c helpers/log_helper.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
 event = event/event.c event/event_collection.c
-
-if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
-endif
-
-if RRR_WITH_LIBRESSL
-net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
-endif
 
 if RRR_WITH_CXX
 lib_cxx=librrrcxx.la
@@ -151,12 +187,13 @@ util_cxx = util/Readfile.cxx
 
 event_cxx = event/Event.cxx
 
-librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs ${js_extra_ldflags}
+librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs \
+		       ${js_extra_ld}
 librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
-librrrcxx_la_SOURCES = Array.cxx InstanceConfig.cxx ${util_cxx} ${event_cxx}
+librrrcxx_la_SOURCES = Array.cxx ${util_cxx} ${event_cxx}
 endif
 
-librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_CFLAGS = ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
@@ -165,7 +202,13 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${jsonc_extra_ld} \
 		    ${nghttp2_extra_ld} \
 		    ${python3_extra_ld} \
-		    ${zlib_extra_ld}
+		    ${zlib_extra_ld} \
+		    ${quic_extra_ld} \
+		    ${http3_extra_ld} \
+                    ${crypto_extra_ld} \
+                    ${openssl_extra_ld} \
+                    ${libressl_extra_ld}
+librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
@@ -176,13 +219,16 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
-                    ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-                    ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
+                    ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
+                    ${net_transport} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
 
-lib_LTLIBRARIES = librrr.la ${lib_mysql} ${lib_cxx}
+lib_LTLIBRARIES =           \
+        librrr.la           \
+	${lib_mysql}        \
+	${lib_cxx}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -234,6 +280,8 @@ libadd_all =                         \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \
+    ${libadd_http3}                  \
+    ${libadd_quic}                   \
     ${libadd_rrr_readdir}            \
     ${libadd_rrr_strerror}           \
     ${libadd_rrr_fork}               \
@@ -242,7 +290,10 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}	             \
+    ${libadd_rrrcrypto}              \
+    ${libadd_rrropenssl}             \
+    ${libadd_rrrlibressl}
 
 if RRR_WITH_CXX
 libadd_all_cxx =                     \
@@ -250,7 +301,18 @@ libadd_all_cxx =                     \
 endif
 
 noinst_LTLIBRARIES = ${libadd_all} ${libadd_all_cxx}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD =                   \
+    ${libadd_all}                    \
+    ${JOURNALD_LIBS}                 \
+    ${LIBRT_LIBADD}                  \
+    ${crypto_extra_libadd}           \
+    ${openssl_extra_libadd}          \
+    ${libressl_extra_libadd}         \
+    -lpthread                        \
+    -ldl                             \
+    -lm                              \
+    -levent                          \
+    -levent_pthreads
 
 if RRR_WITH_CXX
 librrrcxx_la_LIBADD = ${libadd_all_cxx} ${js_extra_libadd} -lpthread -ldl -lm -levent -levent_pthreads

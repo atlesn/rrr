@@ -56,8 +56,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
 		struct rrr_socket_common_in_flight_counter *in_flight,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 );
 
 #endif /* RRR_SOCKET_COMMON_H */
