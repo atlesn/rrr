@@ -1,7 +1,9 @@
 rrr (1.33-2) bookworm; urgency=medium
 
   * Fixes:
-    * Misc. crashes regarding array handling
+    * Broken parsing of leading spaces in istr and ustr types in arrays
+    * Crash in array tree import for division overflow in conditions,
+      emit soft error instead.
 
  -- Atle Solbakken <atle@goliathdns.no>  Sat, 02 Nov 2024 12:39:23 +0000
 
@@ -18,7 +20,7 @@ rrr (1.33-1) bookworm; urgency=medium
     * Speed up tests by running them in parallel
     * In httpclient, by default ignore all meta fields from httpserver which
       should usually not be added as request fields.
-    * Int httpclient, prevent using // endpoint when using endpoint from topic
+    * In httpclient, prevent using // endpoint when using endpoint from topic
       and url is /
 
   * Fixes:
@@ -26,9 +28,6 @@ rrr (1.33-1) bookworm; urgency=medium
       cases
     * Misc. hangs and crashes when parsing invalid configuration files
     * Misc. crashes in HTTP handling
-    * Broken parsing of leading spaces in istr and ustr types in arrays
-    * Crash in array tree import for division overflow in conditions,
-      emit soft error instead.
 
  -- Atle Solbakken <atle@goliathdns.no>  Fri, 01 Nov 2024 07:02:09 +0100
 
