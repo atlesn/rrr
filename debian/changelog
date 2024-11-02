@@ -1,12 +1,6 @@
-rrr (1.32-17) bookworm; urgency=medium
-
-  * RUNNING DEVELOPMENT RELEASE
+rrr (1.33-1) bookworm; urgency=medium
 
   * Features:
-    * Compilation option (for now) to enable central printf logging so that
-      each thread sends log output over a socket to the main process. This
-      ensures that printf outputs are not mixed up from different threads
-      and processes.
     * Log socket daemon with ability to collect logs from multiple RRR
       processes
 
@@ -15,6 +9,10 @@ rrr (1.32-17) bookworm; urgency=medium
       particular avoid noisy notification caused by inconsistencies in the
       code
     * Speed up tests by running them in parallel
+    * In httpclient, by default ignore all meta fields from httpserver which
+      should usually not be added as request fields.
+    * Int httpclient, prevent using // endpoint when using endpoint from topic
+      and url is /
 
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
@@ -22,9 +20,9 @@ rrr (1.32-17) bookworm; urgency=medium
     * Fix misc. hangs and crashes when parsing invalid configuration files
     * Fix misc. crashes in HTTP handling
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 01 Nov 2024 07:02:09 +0100
 
-rrr (1.31-4) bookworm; urgency=medium
+rrr (1.31-5) bookworm; urgency=medium
 
   * Fixes:
     * Preflight headers not sendt for OPTIONS request

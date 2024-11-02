@@ -49,6 +49,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     const struct rrr_http_uri *uri,                            \
     void *arg
 
+#define RRR_HTTP_CLIENT_REDIRECT_STOP_CALLBACK_ARGS            \
+    const struct rrr_http_transaction *transaction,            \
+    void *arg
+
 #define RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS           \
     enum rrr_http_method *chosen_method,                       \
     void *arg
@@ -87,6 +91,7 @@ struct rrr_http_client_callbacks {
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	int (*failure_callback)(RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS);
 	int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
+	void (*redirect_stop_callback)(RRR_HTTP_CLIENT_REDIRECT_STOP_CALLBACK_ARGS);
 	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
 	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
