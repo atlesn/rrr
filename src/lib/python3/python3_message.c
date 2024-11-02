@@ -261,10 +261,14 @@ static PyObject *rrr_python3_rrr_message_f_get_data(PyObject *self, PyObject *ar
 
 	const rrr_biglength msg_data_length = MSG_DATA_LENGTH(data->message_dynamic);
 
+	RRR_ASSERT(sizeof(rrr_biglength) > sizeof(data->message_dynamic->msg_size),biglength_cannot_hold_msg_size);
+
+#if RRR_MSG_SIZE_MAX > SSIZE_MAX
 	if (msg_data_length > SSIZE_MAX) {
 		RRR_MSG_0("Message size overflow while getting data in python3\n");
 		Py_RETURN_FALSE;
-	}	
+	}
+#endif
 
 	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), (ssize_t) msg_data_length);
 

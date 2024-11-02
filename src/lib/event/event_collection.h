@@ -19,27 +19,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_EVENT_COLLECTION
-#define RRR_EVENT_COLLECTION
+#ifndef RRR_EVENT_COLLECTION_H
+#define RRR_EVENT_COLLECTION_H
 
-#include <stddef.h>
+#include <inttypes.h>
+#include <event2/event.h>
 
-#include "event.h"
+#include "../rrr_types.h"
 
-#define RRR_EVENT_COLLECTION_MAX 8
-
-struct event_base;
-struct event;
-
-struct rrr_event_collection {
-	struct event_base *event_base;
-	struct event *events[RRR_EVENT_COLLECTION_MAX];
-	size_t event_count;
-};
+struct rrr_event_queue;
+struct rrr_event_handle;
+struct rrr_event_collection;
 
 void rrr_event_collection_init (
 		struct rrr_event_collection *collection,
 		struct rrr_event_queue *queue
+);
+void rrr_event_collection_clear_soft (
+		struct rrr_event_collection *collection
 );
 void rrr_event_collection_clear (
 		struct rrr_event_collection *collection
@@ -60,6 +57,14 @@ int rrr_event_collection_push_periodic (
 		void *arg,
 		uint64_t interval_us
 );
+// TODO : Replace old function with this
+int rrr_event_collection_push_periodic_new (
+		struct rrr_event_handle *target,
+		struct rrr_event_collection *collection,
+		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void *arg,
+		rrr_time_us_t interval
+);
 int rrr_event_collection_push_read (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
@@ -77,4 +82,4 @@ int rrr_event_collection_push_write (
 		uint64_t interval_us
 );
 
-#endif /* RRR_EVENT_COLLECTION */
+#endif /* RRR_EVENT_COLLECTION_H */

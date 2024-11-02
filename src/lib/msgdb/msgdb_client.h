@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../messages/msg_msg.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 #define RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_ARGS \
     struct rrr_msg_msg **msg, short positive_ack, short negative_ack, void *arg

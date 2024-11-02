@@ -43,7 +43,7 @@ static int __rrr_json_to_array_recurse (
 );
 
 static int __rrr_json_to_array_recurse_object (
-		struct json_object *object,
+		struct json_object *object_in,
 		const int max_levels,
 		const int cur_level,
 		int (*callback)(const struct rrr_array *array, void *arg),
@@ -58,8 +58,8 @@ static int __rrr_json_to_array_recurse_object (
 		goto out;
 	}
 
-	struct json_object_iterator iterator = json_object_iter_begin(object);
-	struct json_object_iterator end = json_object_iter_end(object);
+	struct json_object_iterator iterator = json_object_iter_begin(object_in);
+	struct json_object_iterator end = json_object_iter_end(object_in);
 
 	while (!json_object_iter_equal(&iterator, &end)) {
 		const char *key = json_object_iter_peek_name(&iterator);

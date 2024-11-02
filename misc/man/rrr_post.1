@@ -13,6 +13,7 @@ program to post data to its modules.
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
 .Dl [-a|--array-definition[=]ARRAY DEFINITION]
+.Dl [-L|--log-delivery]
 .Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
@@ -51,6 +52,46 @@ reading messages are generated before any reading of a file or standard input be
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
+.IP -L|--log-delivery
+If given, log messages are expected to be read  which are then delivered as native
+RRR log messages to the specified socket.
+A socket set up by the log daemon
+.B rrr_logd(1)
+may be used to receive these log messages.
+
+A given array definition in
+.B -a|--array-definition
+must provide values with the following fields of which some are optional.
+
+.Bl -tag -width -indent
+
+.It log_level_translated
+RFC 5424 loglevel, small integer. If not given, 7 is used.
+
+.It log_prefix
+The log prefix. If not given, "rrr_post" will be used.
+
+.It log_message
+The actual log message. This value is mandatory.
+
+.It log_file
+.It log_line
+The file name and line from where the log message originates, string and integer.
+If either is not given, values from the
+.B rrr_post
+code will be used.
+
+The
+.B rrr_logd
+daemon is also capable of recieving array messages with the fields above, but the native log messages are more efficient.
+
+.El
+
+If no array definition is specified, the following simple definition expecting
+one message per line is used.
+
+.B nsep#log_message,sep1
+
 .IP -m|--max-message-size[=]BYTES
 Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
 A value of 0 means unlimited message size.
@@ -133,7 +174,7 @@ Length in bytes of the type (if required)
 Item count of the specific type, defaults to 1 if not specified
 
 .It tag
-Optional custom identifier tag of the type
+Optional custom identifier tag of the type (containing letters, numbers and/or underscores)
 .El
 .SS FIXED LENGTH TYPES
 These types require the
@@ -192,6 +233,11 @@ The length of these types are identified automatically and must not have length 
 .Bl -tag -width -indent
 .It msg
 A full RRR message complete with headers and checksums.
+
+.It hdlc
+An HDLC (High-Level Data Link Control) message delimeted by 0x7e at the beginning and end.
+Any data before the start byte is ignored.
+The final value does not contain the boundaries and has all escape sequences resolved.
 
 .It str
 An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \\. The
@@ -334,4 +380,5 @@ for possible debug flags.
 
 .SH SEE ALSO
 .Xr rrr(1),
-.Xr rrr.conf(5)
+.Xr rrr.conf(5),
+.Xr rrr_logd(1)

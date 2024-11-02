@@ -38,7 +38,7 @@ struct rrr_msg_msg *rrr_msg_msg_new_array (
 int rrr_msg_msg_new_empty (
 		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 class_,
 		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
@@ -46,7 +46,7 @@ int rrr_msg_msg_new_empty (
 int rrr_msg_msg_new_with_data (
 		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 class_,
 		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,
@@ -56,7 +56,7 @@ int rrr_msg_msg_new_with_data (
 int rrr_msg_msg_new_with_data_nullsafe (
 		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
-		rrr_u8 class,
+		rrr_u8 class_,
 		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,

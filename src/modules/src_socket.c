@@ -86,7 +86,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	int ret = 0;
 
 	// Socket path
-	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
+	if (rrr_instance_config_get_string_noconvert(&data->socket_path, config, "socket_path") != 0) {
 		RRR_MSG_0("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
 		ret = 1;
 		goto out;
@@ -330,6 +330,8 @@ static int socket_start (
 				NULL,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				NULL,
+				NULL,
 				socket_read_rrr_msg_msg_callback,
 				NULL,
 				NULL,
@@ -346,6 +348,8 @@ static int socket_start (
 				NULL,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				NULL,
+				NULL,
 				socket_read_raw_get_target_size_callback,
 				raw_callback_data,
 				socket_read_raw_error_callback,
@@ -380,7 +384,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
@@ -426,7 +430,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+	return NULL;
 }
 
 static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -443,8 +447,6 @@ static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
-	NULL,
-	NULL,
 	NULL
 };
 

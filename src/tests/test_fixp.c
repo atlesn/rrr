@@ -63,11 +63,17 @@ int rrr_test_fixp(void) {
 	}
 
 	ret |= rrr_fixp_str_to_fixp(&fixp_c, c_str, (rrr_length) strlen(c_str), &endptr);
+	if (endptr - c_str != 9) {
+		TEST_MSG("End pointer position was incorrect for C\n");
+		ret = 1;
+		goto out;
+	}
 
 	if (ret != 0) {
 		TEST_MSG("Conversion from string to fixed point failed\n");
 		goto out;
 	}
+
 
 	if (fixp_a == 0) {
 		TEST_MSG("Zero returned while converting string to fixed point\n");
@@ -137,25 +143,68 @@ int rrr_test_fixp(void) {
 
 	const char *a_hex = "16#+1.8/¤#";
 	if (rrr_fixp_str_to_fixp(&fixp_a, a_hex, (rrr_length) strlen(a_hex), &endptr) != 0) {
-		TEST_MSG("Hexadecimal conversion failed\n");
+		TEST_MSG("Hexadecimal conversion A failed\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (endptr - a_hex != 7) {
-		TEST_MSG("End pointer position was incorrect for hex\n");
+		TEST_MSG("End pointer position was incorrect for hex A\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_fixp_to_ldouble(&dbl, fixp_a) != 0) {
-		TEST_MSG("Conversion from fixed point to ldouble failed (hex)\n");
+		TEST_MSG("Conversion from fixed point to ldouble failed for hex A\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (dbl != 1.5) {
 		TEST_MSG("Wrong output while converting fixed point to double (hex test), expected 1.5 but got %Lf\n", dbl);
+		ret = 1;
+		goto out;
+	}
+
+	const char *b_hex = "16#-0.000001";
+	if (rrr_fixp_str_to_fixp(&fixp_b, b_hex, (rrr_length) strlen(b_hex), &endptr) != 0) {
+		TEST_MSG("Hexadecimal conversion B failed\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (endptr - b_hex != 12) {
+		TEST_MSG("End pointer position was incorrect for hex B\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((uint64_t) fixp_b != 0xffffffffffffffff) {
+		TEST_MSG("Wrong output while converting fixed point to double (hex B), expected 0xffffffffffffffff but got 0x%llx\n", (unsigned long long) fixp_b);
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_fixp_to_ldouble(&dbl, fixp_b) != 0) {
+		TEST_MSG("Conversion from fixed point to ldouble failed for hex B\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (dbl != -0.00000005960464477539f) {
+		TEST_MSG("Wrong output while converting fixed point to double (hex B), expected -0.00000005960464477539f but got %Lf\n", dbl);
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_fixp_from_ldouble(&test, dbl) != 0) {
+		TEST_MSG("Conversion from ldouble to fixed point failed for hex B\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (test != fixp_b) {
+		TEST_MSG("Wrong output while converting ldouble to fixed point (hex B), expected 0xffffffffffffffff but got 0x%llx\n", (unsigned long long) test);
 		ret = 1;
 		goto out;
 	}

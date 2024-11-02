@@ -566,6 +566,7 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	switch (def_orig->type) {
 		case RRR_TYPE_BLOB:
 		case RRR_TYPE_MSG:
+		case RRR_TYPE_HDLC:
 			do_binary = 1;
 			break;
 		default:
@@ -836,6 +837,7 @@ static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
 	DEFINE_PERL5_TYPE(STX,  stx,  __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //12
 	DEFINE_PERL5_TYPE(ERR,  err,  NULL,                        NULL),                                //13
 	DEFINE_PERL5_TYPE(VAIN, vain, __rrr_perl5_type_to_sv_vain, __rrr_perl5_type_to_value_vain),      //14
+	DEFINE_PERL5_TYPE(HDLC, hdlc, __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //15
 	{ 0, NULL, NULL, NULL }
 };
 // NOTE : Count correctly here

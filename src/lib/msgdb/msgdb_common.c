@@ -44,7 +44,7 @@ static int __rrr_msgdb_common_ctrl_msg_send (
 	RRR_DBG_3("msgdb fd %i send CTRL flags %i\n", fd, flags);
 
 	if ((msg_tmp = rrr_allocate(sizeof(*msg_tmp)))== NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_ctrl_msg_send\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -122,7 +122,7 @@ int rrr_msgdb_common_msg_send (
 	RRR_DBG_3("msgdb fd %i send MSG size %" PRIrrrl "\n", fd, MSG_TOTAL_SIZE(msg));
 
 	if ((msg_tmp = rrr_allocate(MSG_TOTAL_SIZE(msg))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_msg_send\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}

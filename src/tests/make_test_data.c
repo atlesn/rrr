@@ -33,6 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_checksum.h"
 #include "../lib/messages/msg_head.h"
 #include "../lib/util/rrr_endian.h"
+#include "../lib/rrr_config.h"
+
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("make_test_data");
 
 /* Remember to disable compiler alignment */
 struct test_data {

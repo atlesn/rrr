@@ -25,10 +25,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define TEST_MSG(...) \
 	do {printf (__VA_ARGS__);}while(0)
 
-#define TEST_BEGIN(...) \
-	do { printf("Testing %s: ", __VA_ARGS__); do
+#define TEST_BEGIN(...)                                 \
+  do {                                                  \
+    printf("\x1b[34m\n");                               \
+    printf("======================================\n"); \
+    printf("== %s\n\n", __VA_ARGS__);                   \
+    printf("\x1b[0m");                                  \
+    do
 
-#define TEST_RESULT(ok) \
-	while(0); printf("%s\n", (ok) ? "passed" : "failed");} while (0)
+#define TEST_RESULT(ok)                                 \
+  while(0);                                             \
+    printf(ok ? "\x1b[32m" : "\x1b[31m");               \
+    printf("\n== %s\n", (ok) ? "PASSED" : "FAILED");    \
+    printf("======================================\n"); \
+    printf("\x1b[0m");                                  \
+  } while (0)
 
 #endif /* RRR_TEST_H */

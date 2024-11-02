@@ -52,8 +52,10 @@ typedef unsigned long long int rrr_u64;
 
 #ifdef RRR_SOCKET_32_IS_UINT
     typedef unsigned int rrr_u32;
+#   define RRR_U32_MAX UINT_MAX
 #elif defined (RRR_SOCKET_32_IS_LONG)
     typedef unsigned long int rrr_u32;
+#   define RRR_U32_MAX ULONG_MAX
 #else
 #  error "Could not get size of 32 bit unsigned integer"
 #endif

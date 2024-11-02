@@ -28,13 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "condition.h"
 #include "read_constants.h"
 
-#define RRR_ARRAY_TREE_OK 					RRR_READ_OK
-#define RRR_ARRAY_TREE_HARD_ERROR			RRR_READ_HARD_ERROR
-#define RRR_ARRAY_TREE_SOFT_ERROR			RRR_READ_SOFT_ERROR
-#define RRR_ARRAY_TREE_PARSE_INCOMPLETE		RRR_READ_INCOMPLETE
-#define RRR_ARRAY_TREE_CONDITION_FALSE		RRR_READ_EOF
-#define RRR_ARRAY_TREE_CONDITION_TRUE		RRR_READ_OK
-#define RRR_ARRAY_TREE_CONTINUE				RRR_READ_CONTINUE
+#define RRR_ARRAY_TREE_OK                RRR_READ_OK
+#define RRR_ARRAY_TREE_HARD_ERROR        RRR_READ_HARD_ERROR
+#define RRR_ARRAY_TREE_SOFT_ERROR        RRR_READ_SOFT_ERROR
+#define RRR_ARRAY_TREE_PARSE_INCOMPLETE  RRR_READ_INCOMPLETE
+#define RRR_ARRAY_TREE_CONDITION_FALSE   RRR_READ_EOF
+#define RRR_ARRAY_TREE_CONDITION_TRUE    RRR_READ_OK
+#define RRR_ARRAY_TREE_CONTINUE          RRR_READ_CONTINUE
 
 struct rrr_array_branch;
 struct rrr_array_node;
@@ -68,6 +68,12 @@ struct rrr_array_tree {
 struct rrr_array_tree_list {
 	RRR_LL_HEAD(struct rrr_array_tree);
 };
+
+static inline int rrr_array_tree_is_empty (
+		const struct rrr_array_tree *tree
+) {
+	return RRR_LL_COUNT(tree) == 0;
+}
 
 void rrr_array_tree_clear (
 		struct rrr_array_tree *tree

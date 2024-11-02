@@ -24,14 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "msg_head.h"
 
-#define MSG_TYPE_MSG 1
-#define MSG_TYPE_TAG 2
-#define MSG_TYPE_GET 3
-#define MSG_TYPE_PUT 4
-#define MSG_TYPE_DEL 5
+enum rrr_msg_msg_type {
+	MSG_TYPE_MSG = 1,
+	MSG_TYPE_TAG = 2,
+	MSG_TYPE_GET = 3,
+	MSG_TYPE_PUT = 4,
+	MSG_TYPE_DEL = 5
+};
 
-#define MSG_CLASS_DATA 1
-#define MSG_CLASS_ARRAY 11
+enum rrr_msg_msg_class {
+	MSG_CLASS_DATA  =  1,
+	MSG_CLASS_ARRAY = 11
+};
 
 #define MSG_TYPE_MSG_STRING "MSG"
 #define MSG_TYPE_TAG_STRING "TAG"
@@ -94,6 +98,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     rrr_u16 topic_length
 
 #define RRR_MSG_TOPIC_MAX (0xffff)
+#define RRR_MSG_DATA_MAX (0xffffffff)
 
 struct rrr_msg_msg {
 	RRR_MSG_HEAD;

@@ -80,8 +80,13 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_method");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, method_str);
 
+#ifdef RRR_WITH_NGHTTP2
 	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_no_http2_upgrade");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_no_http2_upgrade, 0);
+#endif
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);
@@ -98,7 +103,13 @@ int rrr_http_client_config_parse (
 	data->method = rrr_http_util_method_str_to_enum(data->method_str); // Any value allowed, also NULL
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_tags");
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_arrow, &data->tags)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
+			&config->settings_used,
+			config->settings,
+			config_string,
+			rrr_map_parse_pair_arrow,
+			&data->tags
+	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 			ret = 1;
@@ -115,7 +126,7 @@ int rrr_http_client_config_parse (
 	);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_fields");
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
 		ret &= ~(RRR_SETTING_NOT_FOUND);
 		if (ret != 0) {
 			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
@@ -132,7 +143,7 @@ int rrr_http_client_config_parse (
 
 	if (enable_fixed) {
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_tags");
-		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
+		if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
 			ret &= ~(RRR_SETTING_NOT_FOUND);
 			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
@@ -142,7 +153,7 @@ int rrr_http_client_config_parse (
 		}
 
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_fields");
-		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
+		if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
 			ret &= ~(RRR_SETTING_NOT_FOUND);
 			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,8 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_LOG_H
 
 #include "msg.h"
-#include "../socket/rrr_socket.h"
-#include "../util/rrr_endian.h"
 
 #define RRR_MSG_LOG_PREFIX_SIZE(msg)										\
 	((msg)->prefix_size)
@@ -37,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MSG_LOG_SIZE_OK(msg)											\
 	((msg)->prefix_size > (msg)->msg_size - sizeof(*(msg)) - 1 ? 0 : 1)
+
+#define RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN 0xff
 
 struct rrr_msg_log {
 	RRR_MSG_HEAD;

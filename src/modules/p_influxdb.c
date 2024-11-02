@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/allocator.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
@@ -215,15 +216,11 @@ static void influxdb_send_data_callback (
 			handle,
 			RRR_HTTP_CLIENT_USER_AGENT,
 			NULL,
-			NULL,
 			influxdb_receive_http_response,
-			&response_callback_data,
 			NULL, /* Failure callback, not implemented in InfluxDB) */
 			NULL,
 			NULL,
-			NULL,
-			NULL,
-			NULL
+			&response_callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -466,10 +463,12 @@ static void influxdb_event_process_entries (
 		short flags,
 		void *arg
 ) {
+	struct influxdb_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct influxdb_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
@@ -583,8 +582,16 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			&data->net_transport_config,
 			config,
 			"influxdb",
+			0, // Disallow multiple transports
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+			0, // Don't allow specifying certificate without transport type being TLS
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN | RRR_NET_TRANSPORT_F_TLS
+#else
 			0,
-			RRR_NET_TRANSPORT_PLAIN
+			RRR_NET_TRANSPORT_PLAIN,
+			RRR_NET_TRANSPORT_F_PLAIN
+#endif
 	) != 0) {
 		ret = 1;
 	}
@@ -667,24 +674,22 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	out_message:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2\n",
+			thread, INSTANCE_D_NAME(thread_data));
 
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_influxdb,
-		NULL,
-		NULL,
 		NULL
 };
 

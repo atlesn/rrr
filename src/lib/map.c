@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,9 +42,10 @@ void rrr_map_clear (
 	RRR_LL_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
 }
 
-int rrr_map_item_new (
+static int __rrr_map_item_new (
 		struct rrr_map_item **target,
-		rrr_length field_size
+		rrr_length tag_size,
+		rrr_length value_length
 ) {
 	int ret = 0;
 
@@ -56,17 +57,15 @@ int rrr_map_item_new (
 	}
 	memset (item, '\0', sizeof(*item));
 
-	item->tag = rrr_allocate(field_size);
-	item->value = rrr_allocate(field_size);
+	item->tag = rrr_allocate_zero(tag_size + 1);
+	item->value = rrr_allocate_zero(value_length + 1);
+	item->value_length = value_length;
 
 	if (item->tag == NULL || item->value == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
 		goto out;
 	}
-
-	memset(item->tag, '\0', field_size);
-	memset(item->value, '\0', field_size);
 
 	*target = item;
 	item = NULL;
@@ -76,6 +75,13 @@ int rrr_map_item_new (
 		rrr_map_item_destroy(item);
 	}
 	return ret;
+}
+
+int rrr_map_item_new (
+		struct rrr_map_item **target,
+		rrr_length field_size
+) {
+	return __rrr_map_item_new(target, field_size, field_size);
 }
 
 static void __rrr_map_item_remove_by_tag (
@@ -132,19 +138,20 @@ static int __rrr_map_item_new_with_values (
 	struct rrr_map_item *item_new = NULL;
 
 	// Remember + 1 and minimum size 1
-	rrr_length tag_size = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) + 1 : 1);
-	rrr_length value_size = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) + 1 : 1);
-	rrr_length max_size = (tag_size > value_size ? tag_size : value_size);
+	rrr_length tag_length = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) : 0);
+	rrr_length value_length = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) : 0);
+	rrr_length max_length = (tag_length > value_length ? tag_length : value_length);
 
-	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
+	if ((ret = rrr_map_item_new(&item_new, max_length)) != 0) {
 		goto out;
 	}
 
 	if (tag != NULL) {
-		memcpy(item_new->tag, tag, tag_size);
+		memcpy(item_new->tag, tag, tag_length);
 	}
 	if (value != NULL) {
-		memcpy(item_new->value, value, value_size);
+		memcpy(item_new->value, value, value_length);
+		item_new->value_length = value_length;
 	}
 
 	*result = item_new;
@@ -220,6 +227,29 @@ int rrr_map_item_add_new (
 		const char *value
 ) {
 	return __rrr_map_item_add_new(map, tag, value, 0, 0);
+}
+
+int rrr_map_item_add_new_with_size (
+		struct rrr_map *map,
+		const char *tag,
+		const void *value,
+		rrr_length value_size
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new (&item_new, rrr_length_from_size_t_bug_const(strlen(tag)), value_size)) != 0) {
+		goto out;
+	}
+
+	strcpy(item_new->tag, tag);
+	memcpy(item_new->value, value, value_size);
+
+	__rrr_map_item_add(map, item_new, 0, 0);
+
+	out:
+	return ret;
 }
 
 int rrr_map_item_prepend_new (

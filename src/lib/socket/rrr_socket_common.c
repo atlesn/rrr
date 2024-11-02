@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
 #include "../read.h"
 
 struct receive_callback_data {
@@ -108,14 +109,13 @@ int rrr_socket_common_receive_array_tree (
 			// OK, return EOF
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array_tree\n");
+			RRR_DBG_3("Soft error while reading data in %s\n", __func__);
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
-			ret = RRR_SOCKET_HARD_ERROR;
+			RRR_MSG_0("Hard error while reading data in %s\n", __func__);
 		}
 		else {
-			RRR_BUG("Unknown return value %i while reading data in rrr_socket_common_receive_array_tree\n", ret);
+			RRR_BUG("Unknown return value %i while reading data in %s\n", ret, __func__);
 		}
 	}
 
@@ -126,8 +126,9 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
 		struct rrr_socket_common_in_flight_counter *in_flight,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 ) {
 	int ret = 0;
 
@@ -144,9 +145,11 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				message,
 				msg_size,
 				wait_callback,
-				wait_callback_arg
+				wait_callback_arg,
+				silent
 		)) != 0) {
-			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			if (!silent)
+				RRR_MSG_0("Error while sending message in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -161,9 +164,11 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				message,
 				sizeof(struct rrr_msg_addr),
 				wait_callback,
-				wait_callback_arg
+				wait_callback_arg,
+				silent
 		)) != 0) {
-			RRR_MSG_0("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			if (!silent)
+				RRR_MSG_0("Error while sending address message in %s\n", __func__);
 			goto out;
 		}
 	}
@@ -175,14 +180,43 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 				msg,
 				sizeof(*msg),
 				wait_callback,
-				wait_callback_arg
+				wait_callback_arg,
+				silent
 		)) != 0) {
-			RRR_MSG_0("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");
+			if (!silent)
+				RRR_MSG_0("Error while sending control message in %s\n", __func__);
+			goto out;
+		}
+	}
+	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
+		struct rrr_msg_log *message = (struct rrr_msg_log *) msg;
+
+		const rrr_length msg_size = MSG_TOTAL_SIZE(message);
+
+		rrr_msg_msg_log_prepare_for_network(message);
+		rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message);
+
+		if ((ret = rrr_socket_send_blocking (
+				fd,
+				message,
+				msg_size,
+				wait_callback,
+				wait_callback_arg,
+				silent
+		)) != 0) {
+			if (!silent)
+				RRR_MSG_0("Error while sending log message in %s\n", __func__);
 			goto out;
 		}
 	}
 	else {
-		RRR_BUG("Unknown socket msg in rrr_socket_common_prepare_and_msg");
+		if (silent) {
+			fprintf(stderr, "Unknown socket msg in %s\n", __func__);
+			abort();
+		}
+		else {
+			RRR_BUG("Unknown socket msg in %s\n", __func__);
+		}
 	}
 
 	if (ret == RRR_SOCKET_OK && in_flight != NULL) {

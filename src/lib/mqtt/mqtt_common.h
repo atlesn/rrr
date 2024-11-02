@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
+#include "../event/event_collection_struct.h"
 
 #define RRR_MQTT_OK                        RRR_READ_OK
 #define RRR_MQTT_INTERNAL_ERROR            RRR_READ_HARD_ERROR

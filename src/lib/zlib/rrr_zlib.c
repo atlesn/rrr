@@ -38,7 +38,8 @@ static void *__rrr_zlib_allocate (void *arg, unsigned int items, unsigned int si
 	(void)(arg);
 	rrr_biglength size_final = size;
 	if (rrr_biglength_mul_err(&size_final, items) != 0) {
-		RRR_MSG_0("Maximum allocation size exceeded in %s (attempted to allocate %u * %u bytes)\n", items, size);
+		RRR_MSG_0("Maximum allocation size exceeded in %s (attempted to allocate %u * %u bytes)\n",
+			__func__, items, size);
 		return NULL;
 	}
 	return rrr_allocate(size_final);
@@ -74,6 +75,8 @@ static int __rrr_zlib_loop (
 
 	rrr_length buf_size = 0;
 	rrr_length buf_size_old = 0;
+	rrr_length outsize_max = outsize;
+	rrr_length_mul_bug(&outsize_max, 4);
 
 	int flush = Z_NO_FLUSH;
 
@@ -81,6 +84,11 @@ static int __rrr_zlib_loop (
 	RRR_ASSERT(sizeof(buf_size) >= sizeof(stream->avail_out),zstream_unsigned_cannot_hold_outsize);
 
 	while (1) {
+		if (stream->avail_out > outsize_max) {
+			RRR_MSG_0("Too many allocation attempts in %s. Possibly corrupt input.\n", __func__);
+			return RRR_ZLIB_INCOMPLETE;
+		}
+
 		buf_size_old = buf_size;
 
 		if (rrr_length_add_err (&buf_size, outsize)) {
@@ -102,7 +110,8 @@ static int __rrr_zlib_loop (
 			rrr_free(buf);
 		}
 #else
-		if ((buf_new = rrr_reallocate(buf, buf_size_old, buf_size)) == NULL) {
+		(void)(buf_size_old);
+		if ((buf_new = rrr_reallocate(buf, buf_size)) == NULL) {
 			RRR_MSG_0("Buffer (re)allocation failed in %s (%" PRIrrrl ")\n",
 				__func__, buf_size);
 			ret = RRR_ZLIB_ERR;

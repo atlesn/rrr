@@ -284,9 +284,11 @@ static int __rrr_msg_selftest (
 	return ret;
 }
 
-static int main_running = 1;
+static volatile int main_running = 1;
+static volatile int sigusr2 = 0;
+
 int rrr_signal_handler(int s, void *arg) {
-	return rrr_signal_default_handler(&main_running, s, arg);
+	return rrr_signal_default_handler(&main_running, &sigusr2, s, arg);
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -341,6 +343,10 @@ int main (int argc, const char **argv, const char **env) {
 	else {
 		const char *arg = NULL;
 		for (cmd_arg_count i = 0; main_running && (arg = cmd_get_value(&cmd, "file", i)) != NULL; i++) {
+			if (sigusr2) {
+				RRR_MSG_0("Received SIGUSR2, but this is not implemented in message parser\n");
+				sigusr2 = 0;
+			}
 			if (data.mode == RRR_MSG_MODE_READ) {
 				if (__rrr_msg_read(arg) != 0 && !data.do_ignore_errors) {
 					ret = EXIT_FAILURE;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ struct rrr_instance; /* From instances.h */
 struct rrr_instance_friend {
 	RRR_LL_NODE(struct rrr_instance_friend);
 	struct rrr_instance *instance;
+	void *parameter;
 };
 
 struct rrr_instance_friend_collection {
@@ -42,9 +43,14 @@ int rrr_instance_friend_collection_check_exists (
 		const struct rrr_instance_friend_collection *collection,
 		const struct rrr_instance *sender
 );
-int rrr_instance_friend_collection_append (
+void rrr_instance_friend_collection_remove (
 		struct rrr_instance_friend_collection *collection,
 		struct rrr_instance *sender
+);
+int rrr_instance_friend_collection_append (
+		struct rrr_instance_friend_collection *collection,
+		struct rrr_instance *sender,
+		void *parameter
 );
 int rrr_instance_friend_collection_append_from (
 		struct rrr_instance_friend_collection *target,
@@ -58,12 +64,12 @@ int rrr_instance_friend_collection_count (
 );
 int rrr_instance_friend_collection_iterate (
 		struct rrr_instance_friend_collection *collection,
-		int (*callback)(struct rrr_instance *instance, void *arg),
+		int (*callback)(struct rrr_instance *instance, void *parameter, void *arg),
 		void *arg
 );
 int rrr_instance_friend_collection_iterate_const (
 		const struct rrr_instance_friend_collection *collection,
-		int (*callback)(const struct rrr_instance *instance, void *arg),
+		int (*callback)(const struct rrr_instance *instance, void *parameter, void *arg),
 		void *arg
 );
 

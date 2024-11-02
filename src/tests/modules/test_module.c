@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instance_config.h"
 #include "../../lib/util/posix.h"
 #include "../../lib/util/macro_utils.h"
+#include "../../lib/map.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;
@@ -50,6 +51,8 @@ struct test_module_data {
 	int dummy;
 
 	char *test_method;
+	struct rrr_map array_check_values;
+	struct rrr_map array_fail_values;
 
 	struct rrr_test_function_data test_function_data;
 };
@@ -64,6 +67,8 @@ void data_cleanup(void *_data) {
 	struct test_module_data *data = _data;
 	data->dummy = 0;
 	RRR_FREE_IF_NOT_NULL(data->test_method);
+	RRR_MAP_CLEAR(&data->array_check_values);
+	RRR_MAP_CLEAR(&data->array_fail_values);
 }
 
 int parse_config (struct test_module_data *data, struct rrr_instance_config_data *config) {
@@ -73,6 +78,7 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 	if (data->test_method == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
+		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
@@ -80,10 +86,35 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_str_to_h_conversion", test_function_data.do_array_str_to_h_conversion, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_blob_field_divide", test_function_data.do_blob_field_divide, 0);
 
-	out:
-	if (ret != 0) {
-		RRR_FREE_IF_NOT_NULL(data->test_method);
+	if (strcmp(data->test_method, "test_anything") == 0) {
+		if ((ret = rrr_instance_config_parse_comma_separated_to_map (
+				&data->array_check_values,
+				config,
+				"test_anything_check_values"
+		)) != 0) {
+			if (ret != RRR_SETTING_NOT_FOUND) {
+				RRR_MSG_0("Failed to parse parameter 'test_check_values' of test module instance %s\n",
+						config->name);
+				goto out;
+			}
+			ret = 0;
+		}
+
+		if  ((ret = rrr_instance_config_parse_comma_separated_to_map (
+				&data->array_fail_values,
+				config,
+				"test_anything_fail_values"
+		)) != 0) {
+			if (ret != RRR_SETTING_NOT_FOUND) {
+				RRR_MSG_0("Failed to parse parameter 'test_fail_values' of test module instance %s\n",
+						config->name);
+				goto out;
+			}
+			ret = 0;
+		}
 	}
+
+	out:
 	return ret;
 }
 
@@ -92,6 +123,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int ret = 0;
+
 	data_init(data);
 
 	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %llu\n",
@@ -139,7 +171,9 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = test_anything (
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
-				thread_data
+				thread_data,
+				&data->array_check_values,
+				&data->array_fail_values
 		);
 		TEST_MSG("Result from anything test: %i\n", ret);
 	}
@@ -179,8 +213,6 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_test_module,
-		NULL,
-		NULL,
 		NULL
 };
 static const char *module_name = "test_module";

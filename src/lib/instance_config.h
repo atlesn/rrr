@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "settings.h"
 #include "util/linked_list.h"
+#include "util/rrr_time.h"
 
 #define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)                                                            \
     do { const char *__prefix = prefix; char *config_string = NULL
@@ -41,6 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_INSTANCE_CONFIG_STRING_SET(name)                                                                \
     RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
+
+#define RRR_INSTANCE_CONFIG_SET_USED(name)                                                                  \
+    do { rrr_instance_config_set_used(config, name); } while (0)
 
 #define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)                                                    \
     do { if ( rrr_instance_config_setting_exists(config, string)) { then;                                   \
@@ -97,6 +101,13 @@ do {rrr_setting_uint tmp_uint = (default_uint);                                 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)                           \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, data->target, default_uint)
 
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(string, target, default_ms)                                   \
+do {rrr_time_ms_t tmp_time_ms;                                                                              \
+    RRR_ASSERT(sizeof(tmp_time_ms.ms) >= sizeof(rrr_setting_uint),size_of_rrr_time_ms_t_ms_must_be_at_least_size_of_rrr_setting_uint); \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, tmp_time_ms.ms, default_ms.ms);                 \
+    data->target = rrr_time_us_from_ms(tmp_time_ms);                                                        \
+    } while(0)
+
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, target, default_double)                       \
 do {rrr_setting_double tmp_double = (default_double);                                                       \
     if ((ret = rrr_instance_config_read_double(&tmp_double, config, string)) != 0) {                        \
@@ -112,8 +123,15 @@ do {rrr_setting_double tmp_double = (default_double);                           
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE(string, target, default_double)                           \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, data->target, default_double)
 
+enum rrr_instance_config_write_method {
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE,
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_RRR_MESSAGE,
+	RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES
+};
+
 struct rrr_array;
 struct rrr_array_tree;
+struct rrr_discern_stack_collection;
 struct rrr_map;
 struct rrr_instance_friend_collection;
 struct rrr_instance_collection;
@@ -123,8 +141,11 @@ struct rrr_mqtt_topic_token;
 struct rrr_instance_config_data {
 	RRR_LL_NODE(struct rrr_instance_config_data);
 	char *name;
-	struct rrr_instance_settings *settings;
+	struct rrr_settings *settings;
+	struct rrr_settings_used settings_used;
 	const struct rrr_array_tree_list *global_array_trees;
+	const struct rrr_discern_stack_collection *global_routes;
+	const struct rrr_discern_stack_collection *global_methods;
 };
 
 struct rrr_instance_config_collection {
@@ -132,11 +153,19 @@ struct rrr_instance_config_collection {
 	struct rrr_config *config;
 };
 
+static inline int rrr_instance_config_replace_string (
+		struct rrr_instance_config_data *target,
+		const char *name,
+		const char *value
+) {
+	return rrr_settings_replace_string(target->settings, name, value);
+}
+
 static inline int rrr_instance_config_setting_exists (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_exists(source->settings, name);
+	return rrr_settings_exists(&source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_get_string_noconvert (
@@ -144,7 +173,7 @@ static inline int rrr_instance_config_get_string_noconvert (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_get_string_noconvert(target, source->settings, name);
+	return rrr_settings_get_string_noconvert(target, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_get_string_noconvert_silent (
@@ -152,7 +181,7 @@ static inline int rrr_instance_config_get_string_noconvert_silent (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_get_string_noconvert_silent(target, source->settings, name);
+	return rrr_settings_get_string_noconvert_silent(target, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_read_unsigned_integer (
@@ -160,7 +189,7 @@ static inline int rrr_instance_config_read_unsigned_integer (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_read_unsigned_integer (target, source->settings, name);
+	return rrr_settings_read_unsigned_integer (target, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_read_double (
@@ -168,7 +197,7 @@ static inline int rrr_instance_config_read_double (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_read_double (target, source->settings, name);
+	return rrr_settings_read_double (target, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_check_yesno (
@@ -176,7 +205,7 @@ static inline int rrr_instance_config_check_yesno (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_check_yesno (result, source->settings, name);
+	return rrr_settings_check_yesno (result, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_traverse_split_commas_silent_fail (
@@ -185,7 +214,7 @@ static inline int rrr_instance_config_traverse_split_commas_silent_fail (
 		int (*callback)(const char *value, void *arg),
 		void *arg
 ) {
-	return rrr_settings_traverse_split_commas_silent_fail (source->settings, name, callback, arg);
+	return rrr_settings_traverse_split_commas_silent_fail (&source->settings_used, source->settings, name, callback, arg);
 }
 
 static inline int rrr_instance_config_split_commas_to_array (
@@ -193,7 +222,7 @@ static inline int rrr_instance_config_split_commas_to_array (
 		struct rrr_instance_config_data *source,
 		const char *name
 ) {
-	return rrr_settings_split_commas_to_array (target, source->settings, name);
+	return rrr_settings_split_commas_to_array (target, &source->settings_used, source->settings, name);
 }
 
 static inline int rrr_instance_config_collection_count (
@@ -202,6 +231,35 @@ static inline int rrr_instance_config_collection_count (
 	return RRR_LL_COUNT(collection);
 }
 
+static inline void rrr_instance_config_set_used (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_used(&source->settings_used, source->settings, name);
+}
+
+static inline void rrr_instance_config_set_unused (
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	rrr_settings_set_unused(&source->settings_used, source->settings, name);
+}
+
+void rrr_instance_config_move_from_settings (
+		struct rrr_instance_config_data *config,
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings
+);
+void rrr_instance_config_move_to_settings (
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings,
+		struct rrr_instance_config_data *config
+);
+void rrr_instance_config_update_used (
+		struct rrr_instance_config_data *config,
+		const char *name,
+		int was_used
+);
 int rrr_instance_config_string_set (
 		char **target,
 		const char *prefix,
@@ -224,8 +282,21 @@ int rrr_instance_config_read_port_number (
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config_data *config
 );
+void rrr_instance_config_verify_all_settings_used (
+		struct rrr_instance_config_data *config
+);
 int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		struct rrr_array_tree **target_array_tree,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+);
+int rrr_instance_config_parse_route_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+);
+int rrr_instance_config_parse_method_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );
@@ -239,6 +310,13 @@ int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_map *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
+);
+int rrr_instance_config_parse_optional_write_method (
+		struct rrr_map *array_values,
+		enum rrr_instance_config_write_method *method,
+		struct rrr_instance_config_data *config,
+		const char *string_write_rrr_message,
+		const char *string_array_values
 );
 int rrr_instance_config_parse_optional_utf8 (
 		char **target,
@@ -268,14 +346,14 @@ int rrr_instance_config_parse_file (
 int rrr_instance_config_friend_collection_populate_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 );
 int rrr_instance_config_friend_collection_populate_receivers_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances_all,
 		const struct rrr_instance *instance,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 );
 

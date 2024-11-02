@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -17,6 +17,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+#include "../util/bsd.h"
+#include "../util/posix.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -35,14 +38,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event.h"
 #include "../fork.h"
 #include "../mmap_channel.h"
-#include "../util/posix.h"
+#include "../discern_stack.h"
+#include "../util/rrr_time.h"
 
 static void __rrr_cmodule_main_worker_kill (
 		struct rrr_cmodule_worker *worker
 ) {
 	pid_t pid = 0;
 
-	RRR_DBG_1("Terminate worker fork %s, pid is %i\n",
+	RRR_DBG_1("Parent terminate worker fork %s, pid is %i\n",
 			worker->name, worker->pid);
 
 	// Make sure locking/unlocking is correct
@@ -60,13 +64,13 @@ static void __rrr_cmodule_main_worker_kill (
 	// Don't wrap these inside lock
 	// Just do our ting disregarding return values
 
-	RRR_DBG_1("Sending SIGUSR1 to worker fork %s pid %i, then sleeping for 100ms\n",
+	RRR_DBG_1("Parent sending SIGUSR1 to worker fork %s pid %i, then sleeping for 100ms\n",
 			worker->name, pid);
 	kill(pid, SIGUSR1);
 
 	rrr_posix_usleep(150000); // 150 ms
 
-	RRR_DBG_1("Sending SIGKILL to worker fork %s pid %i\n",
+	RRR_DBG_1("Parent sending SIGKILL to worker fork %s pid %i\n",
 			worker->name, pid);
 
 	kill(pid, SIGKILL);
@@ -89,7 +93,12 @@ static void __rrr_cmodule_worker_kill_and_cleanup (
 	// OK to call kill etc. despite fork not being started
 	__rrr_cmodule_main_worker_kill(worker);
 
+	RRR_DBG_1("Parent destroying event queue for worker fork %s pid %i\n",
+			worker->name, worker->pid);
 	rrr_event_queue_destroy(worker->event_queue_worker);
+
+	RRR_DBG_1("Parent destroying worker and shared memory for worker fork %s pid %i\n",
+			worker->name, worker->pid);
 	rrr_cmodule_worker_cleanup(worker);
 }
 
@@ -113,16 +122,13 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
-		struct rrr_instance_settings *settings,
+		const struct rrr_settings *settings,
+		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *notify_queue,
+		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg,
-		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
-		void *custom_tick_callback_arg
+		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -144,14 +150,14 @@ int rrr_cmodule_main_worker_fork_start (
 			worker,
 			name,
 			settings,
+			settings_used,
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
-			cmodule->config_data.worker_spawn_interval_us,
-			cmodule->config_data.worker_sleep_time_us,
-			cmodule->config_data.worker_nothing_happened_limit,
+			methods,
+			cmodule->config_data.worker_spawn_interval,
+			cmodule->config_data.process_mode,
 			cmodule->config_data.do_spawning,
-			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
@@ -181,26 +187,27 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent;
 	}
 
-	// CHILD PROCESS CODE
+	// START CHILD PROCESS CODE
 	// Use of global locks OK beyond this point
+
+	rrr_setproctitle("[worker %s]", worker->name);
+
+	rrr_log_socket_after_fork();
 
 	ret = rrr_cmodule_worker_main (
 			worker,
 			cmodule->config_data.log_prefix,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg,
-			custom_tick_callback,
-			custom_tick_callback_arg
+			callbacks
 	);
 
 	// Clean up any events created after forking
 	rrr_event_queue_destroy(worker_queue);
-
+	rrr_log_cleanup();
 	exit(ret);
+
+	// END CHILD PROCESS CODE
 
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
@@ -224,9 +231,9 @@ void __rrr_cmodule_main_workers_stop (
 static void __rrr_cmodule_config_data_cleanup (
 	struct rrr_cmodule_config_data *config_data
 ) {
-	RRR_FREE_IF_NOT_NULL(config_data->config_function);
-	RRR_FREE_IF_NOT_NULL(config_data->process_function);
-	RRR_FREE_IF_NOT_NULL(config_data->source_function);
+	RRR_FREE_IF_NOT_NULL(config_data->config_method);
+	RRR_FREE_IF_NOT_NULL(config_data->process_method);
+	RRR_FREE_IF_NOT_NULL(config_data->source_method);
 	RRR_FREE_IF_NOT_NULL(config_data->log_prefix);
 }
 
@@ -271,9 +278,7 @@ int rrr_cmodule_new (
 	cmodule->fork_handler = fork_handler;
 
 	// Default settings for modules which do not parse config
-	cmodule->config_data.worker_spawn_interval_us = RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS * 1000;
-	cmodule->config_data.worker_sleep_time_us = RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS * 1000;
-	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
+	cmodule->config_data.worker_spawn_interval = rrr_time_us_from_ms(rrr_cmodule_worker_default_spawn_interval);
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	// Memory map not allocated until needed

@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "settings.h"
 #include "array_tree.h"
+#include "discern_stack.h"
 
 #define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
 #define RRR_CONFIG_MAX_SIZE 16*1024*1024
@@ -31,13 +32,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		
 #define RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS     void **block, \
                                                struct rrr_config *config, \
-                                               const void *name, \
-                                               rrr_length name_length, \
+                                               const char *name, \
 					       void *callback_arg
 #define RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS   void *block, const char *name, const char *value, void *callback_arg
 
 struct rrr_config {
 	struct rrr_array_tree_list array_trees;
+	struct rrr_discern_stack_collection routes;
+	struct rrr_discern_stack_collection methods;
 };
 
 int rrr_config_new (
@@ -54,6 +56,12 @@ int rrr_config_parse_file (
 		void *callback_arg
 );
 const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
+		struct rrr_config *config
+);
+const struct rrr_discern_stack_collection *rrr_config_get_routes (
+		struct rrr_config *config
+);
+const struct rrr_discern_stack_collection *rrr_config_get_methods (
 		struct rrr_config *config
 );
 

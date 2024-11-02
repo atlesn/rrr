@@ -1261,7 +1261,7 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 		RRR_DBG_3("Preserved PUBLISH topic '%s' qos %u client %s\n",
 				publish_new->topic,
 				RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish_new),
-				preserve_callback_data->ram_session
+				preserve_callback_data->ram_session->client_id_
 		);
 	}
 

@@ -71,8 +71,8 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 
 		void *ptr;
 
-		for (int i = 0; i < 20; i++) {
-			rrr_posix_usleep(50000); // 50ms
+		for (int i = 0; i < 40; i++) {
+			rrr_posix_usleep(25000); // 25ms
 			ptr = rrr_shm_resolve(&slave_child, 0 /* Handle is expected to be 0 since we only have one allocation */);
 			if (ptr && strcmp (ptr, test_data) == 0) {
 				break;

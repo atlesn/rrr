@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -159,70 +159,24 @@ static int __rrr_test_conversion_validate_str (
 	return ret;
 }
 
-int rrr_test_conversion(void) {
+static int __rrr_test_conversion_convert_and_validate (
+		const char **expected_results,
+		size_t expected_results_len,
+		const struct rrr_array *array_input,
+		const struct rrr_map *conversion_map
+) {
 	int ret = 0;
 
-	struct rrr_array array_input = {0};
 	struct rrr_array array_converted = {0};
-	struct rrr_map conversion_map = {0};
 
-	int64_t values_multi[] = {
-		12345,
-		-12345
-	};
-	const char values_multi_as_str[] = "               12345              -12345";
-
-	uint64_t values_single[] = {
-		0xffffffffffffffff
-	};
-	const char values_single_as_str[] = "18446744073709551615";
-
-	uint64_t values_single_zero[] = {
-		0
-	};
-	const char values_single_zero_as_str[] = "0";
-
-	const char value_empty_str[] = "";
-
-	ret |= __rrr_test_conversion_push_field_h(&array_input, (uint64_t *) values_multi, sizeof(values_multi) / sizeof(*values_multi), 1);
-	ret |= __rrr_test_conversion_push_field_h(&array_input, values_single, sizeof(values_single) / sizeof(*values_single), 0);
-	ret |= __rrr_test_conversion_push_field_h(&array_input, values_single_zero, sizeof(values_single_zero) / sizeof(*values_single_zero), 0);
-	ret |= __rrr_test_conversion_push_field_str(&array_input, value_empty_str);
-
-	if (ret != 0) {
+	if ((ret = __rrr_test_conversion_convert(&array_converted, array_input, conversion_map)) != 0) {
 		goto out;
 	}
 
-	ret |= rrr_map_item_add_new(&conversion_map, "h2str", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "str2blob", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "blob2str", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "str2h", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "h2vain", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "vain2h", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "h2str", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "str2vain", NULL);
-	ret |= rrr_map_item_add_new(&conversion_map, "vain2str", NULL);
-
-	if (ret != 0) {
-		TEST_MSG("Creation of map elements failed in rrr_test_conversion\n");
-		goto out;
-	}
-
-	if ((ret = __rrr_test_conversion_convert(&array_converted, &array_input, &conversion_map)) != 0) {
-		goto out;
-	}
-
-	const char *expected_results[] = {
-			values_multi_as_str,
-			values_single_as_str,
-			values_single_zero_as_str,
-			value_empty_str
-	};
-
-	int i = 0;
+	size_t i = 0;
 	RRR_LL_ITERATE_BEGIN(&array_converted, const struct rrr_type_value);
-		if (i == sizeof(expected_results) / sizeof(*expected_results)) {
-			TEST_MSG("Too many elements in converted array in rrr_test_conversion\n");
+		if (i == expected_results_len) {
+			TEST_MSG("Too many elements in converted array in %s\n", __func__);
 			ret = 1;
 			goto out;
 		}
@@ -238,20 +192,119 @@ int rrr_test_conversion(void) {
 		i++;
 	RRR_LL_ITERATE_END();
 
-	if (i != sizeof(expected_results) / sizeof(*expected_results)) {
-		TEST_MSG("Not enough elements in converted array in rrr_test_conversion\n");
+	if (i != expected_results_len) {
+		TEST_MSG("Not enough elements in converted array in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
-
-	// Return value propagates
 
 	out:
 	if (RRR_DEBUGLEVEL_2) {
 		rrr_array_dump(&array_converted);
 	}
+	rrr_array_clear(&array_converted);
+	return ret;
+}
+
+int rrr_test_conversion(void) {
+	int ret = 0;
+
+	struct rrr_array array_input = {0};
+	struct rrr_map conversion_map = {0};
+
+	{
+		int64_t values_multi[] = {
+			12345,
+			-12345
+		};
+		const char values_multi_as_str[] = "               12345              -12345";
+
+		uint64_t values_single[] = {
+			0xffffffffffffffff
+		};
+		const char values_single_as_str[] = "18446744073709551615";
+
+		uint64_t values_single_zero[] = {
+			0
+		};
+		const char values_single_zero_as_str[] = "0";
+
+		const char value_empty_str[] = "";
+
+		ret |= __rrr_test_conversion_push_field_h(&array_input, (uint64_t *) values_multi, sizeof(values_multi) / sizeof(*values_multi), 1);
+		ret |= __rrr_test_conversion_push_field_h(&array_input, values_single, sizeof(values_single) / sizeof(*values_single), 0);
+		ret |= __rrr_test_conversion_push_field_h(&array_input, values_single_zero, sizeof(values_single_zero) / sizeof(*values_single_zero), 0);
+		ret |= __rrr_test_conversion_push_field_str(&array_input, value_empty_str);
+
+		ret |= rrr_map_item_add_new(&conversion_map, "h2str", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "str2blob", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "blob2str", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "str2h", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "h2vain", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "vain2h", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "h2str", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "str2vain", NULL);
+		ret |= rrr_map_item_add_new(&conversion_map, "vain2str", NULL);
+
+		if (ret != 0) {
+			TEST_MSG("Creation of map elements or values failed in %s\n", __func__);
+			goto out;
+		}
+
+		const char *expected_results[] = {
+				values_multi_as_str,
+				values_single_as_str,
+				values_single_zero_as_str,
+				value_empty_str
+		};
+
+		if ((ret = __rrr_test_conversion_convert_and_validate (
+				expected_results,
+				sizeof(expected_results) / sizeof(*expected_results),
+				&array_input,
+				&conversion_map
+		)) != 0) {
+			goto out;
+		}
+	}
+
 	rrr_map_clear(&conversion_map);
 	rrr_array_clear(&array_input);
-	rrr_array_clear(&array_converted);
+
+	{
+		uint64_t values_ascii[] = {
+			83,
+			84
+		};
+
+		const char values_ascii_as_str[] = "ST";
+
+		ret |= __rrr_test_conversion_push_field_h(&array_input, (uint64_t *) values_ascii, sizeof(values_ascii) / sizeof(*values_ascii), 1);
+		ret |= rrr_map_item_add_new(&conversion_map, "hchar2str", NULL);
+
+		if (ret != 0) {
+			TEST_MSG("Creation of map elements or values failed in %s\n", __func__);
+			goto out;
+		}
+
+		const char *expected_results[] = {
+			values_ascii_as_str
+		};
+
+		if ((ret = __rrr_test_conversion_convert_and_validate (
+				expected_results,
+				sizeof(expected_results) / sizeof(*expected_results),
+				&array_input,
+				&conversion_map
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	// Return value propagates
+
+	out:
+	rrr_map_clear(&conversion_map);
+	rrr_array_clear(&array_input);
 	return ret;
 }

@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../util/rrr_endian.h"
 #include "msg_log.h"
 #include "msg.h"
 
@@ -150,12 +151,10 @@ int rrr_msg_msg_log_to_str (
 	char *prefix = NULL;
 	char *message = NULL;
 
+	RRR_ASSERT(sizeof(rrr_biglength) > sizeof(msg->msg_size),biglength_cannot_hold_msg_size);
+
 	const rrr_biglength log_prefix_allocate_size = (rrr_biglength) RRR_MSG_LOG_PREFIX_SIZE(msg) + 1;
 	const rrr_biglength log_msg_allocate_size = (rrr_biglength) RRR_MSG_LOG_MSG_SIZE(msg) + 1;
-
-	if (log_prefix_allocate_size == 0 || log_msg_allocate_size == 0) {
-		RRR_BUG("Bug: Overflow in rrr_msg_msg_log_to_str\n");
-	}
 
 	RRR_SIZE_CHECK(log_prefix_allocate_size,"rrr_msg_msg_log_to_str log prefix",ret = 1; goto out;);
 	RRR_SIZE_CHECK(log_msg_allocate_size,"rrr_msg_msg_log_to_str log msg",ret = 1; goto out;);

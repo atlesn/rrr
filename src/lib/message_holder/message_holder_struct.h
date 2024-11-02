@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -57,8 +57,14 @@ struct rrr_msg_holder {
 	rrr_msg_holder_nexthops nexthops;
 
 	// Available for modules
-	uint64_t send_time;
-	uint64_t send_index;
+	union {
+		uint64_t send_time;
+		uint64_t queue_time;
+	};
+	union {
+		uint64_t send_index;
+		uint64_t queue_index;
+	};
 
 	// Used by higher levels to control partial sends
 	rrr_biglength bytes_sent;

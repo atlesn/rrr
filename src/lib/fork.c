@@ -155,7 +155,7 @@ void rrr_fork_handler_destroy (
 }
 
 // This is per fork
-static int rrr_fork_handler_signal_pending = 0;
+static volatile int rrr_fork_handler_signal_pending = 0;
 
 int rrr_fork_signal_handler (int s, void *arg) {
 	(void)(arg);

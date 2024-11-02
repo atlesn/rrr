@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,8 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LINKED_LIST_H
 #define RRR_LINKED_LIST_H
 
-#include <stdlib.h>
-
 #include "slow_noop.h"
 
 #define RRR_LL_DID_DESTROY   0
@@ -35,9 +33,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     type *ptr_last;                                            \
     int node_count                                             \
 
+struct rrr_ll_head {
+	RRR_LL_HEAD(struct rrr_ll_node);
+};
+
 #define RRR_LL_NODE(type)                                      \
     type *ptr_prev;                                            \
     type *ptr_next                                             \
+
+struct rrr_ll_node {
+	RRR_LL_NODE(struct rrr_ll_node);
+};
 
 #define RRR_LL_NODE_INIT(node)                                 \
     node->ptr_prev = NULL;                                     \
@@ -127,6 +133,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_LAST(head)                                      \
     ((head)->ptr_last)                                         \
+
+#define RRR_LL_PREV(node)                                      \
+    ((node)->ptr_prev)                                         \
+
 
 #define RRR_LL_DESTROY(head, type, destroy_func) do {          \
     type *node = (head)->ptr_first;                            \
@@ -249,6 +259,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_BEGIN_REVERSE(head, type)               \
     RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_last, 1)   \
 
+static inline void *rrr_ll_at (struct rrr_ll_head *head, int i) {
+	struct rrr_ll_node *node = head->ptr_first;
+	while (i-- > 0) {
+		node = node->ptr_next;
+	}
+	return node;
+}
+
+#define RRR_LL_AT(head, pos)                                   \
+    rrr_ll_at((struct rrr_ll_head *) head, pos)
+
 #define RRR_LL_ITERATE_INSERT(head, new_node) do {             \
     (head)->node_count++;                                      \
     (new_node)->ptr_prev = node->ptr_prev;                     \
@@ -334,5 +355,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)         \
     RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())   \
+
+#define RRR_LL_ROTATE(head, type, pos)                         \
+    do{assert(pos < RRR_LL_COUNT((head)));assert(pos>=0);      \
+    if (RRR_LL_COUNT(head) <= 1) { break; }                    \
+    int i = 0; RRR_LL_ITERATE_BEGIN((head), type);             \
+        if (i++ != pos) { RRR_LL_ITERATE_NEXT(); }             \
+        node->ptr_prev->ptr_next = NULL;                       \
+        (head)->ptr_last->ptr_next = (head)->ptr_first;        \
+        (head)->ptr_first->ptr_prev = (head)->ptr_last;        \
+        (head)->ptr_last = node->ptr_prev;                     \
+        (head)->ptr_first = node;                              \
+        node->ptr_prev = 0;                                    \
+        RRR_LL_ITERATE_BREAK();                                \
+    RRR_LL_ITERATE_END();}while(0)
 
 #endif /* RRR_LINKED_LIST_H */

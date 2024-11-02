@@ -34,19 +34,9 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([yes])
 ])
 
-CFLAGS_CODECOV=""
-AC_MSG_CHECKING([for code coverage compilation])
-AS_IF([test "x$enable_codecov" = xyes], [
-	CFLAGS_CODECOV="-ftest-coverage -fprofile-arcs"
-	AC_MSG_RESULT([$CFLAGS_CODECOV])
-], [
-	AC_MSG_RESULT([no])
-])
-AC_SUBST([CFLAGS_CODECOV])
-
 AC_CHECK_HEADERS([rrr/rrr-build-config.h])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
+AM_CFLAGS="$AM_CFLAGS -std=c11 -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
 AM_LDFLAGS=""
 
 AC_SUBST(AM_CFLAGS)

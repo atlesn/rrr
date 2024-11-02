@@ -44,16 +44,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 unsigned int rrr_perl5_message_send (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
-	struct rrr_perl5_message_hv *message_new_hv = NULL;
+	struct rrr_perl5_message_hv message_hv = {0};
 	struct rrr_msg_msg *message_new = NULL;
 
 	int ret = 0;
-
-	if ((message_new_hv = rrr_perl5_allocate_message_hv_with_hv (ctx, hv)) == NULL) { // Will incref
-		RRR_MSG_0("Could not allocate message hv in rrr_perl5_message_send\n");
-		ret = 1;
-		goto out;
-	}
 
 	struct rrr_msg_addr addr_msg;
 	if (rrr_msg_msg_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
@@ -61,7 +55,10 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 		ret = 1;
 		goto out;
 	}
-	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
+
+	message_hv.hv = hv;
+
+	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, &message_hv) != 0) {
 		ret = 1;
 		goto out;
 	}
@@ -69,9 +66,6 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	ctx->send_message(message_new, &addr_msg, ctx->private_data);
 
 	out:
-		if (message_new_hv != NULL) {
-			rrr_perl5_destruct_message_hv(ctx, message_new_hv);
-		}
 		RRR_FREE_IF_NOT_NULL(message_new);
 		return ret;
 }

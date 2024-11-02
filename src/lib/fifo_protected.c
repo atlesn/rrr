@@ -676,6 +676,10 @@ static void __rrr_fifo_protected_do_ratelimit(struct rrr_fifo_protected *buffer)
 		}
 
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+		// Cancellation point without lock being held
+		pthread_testcancel();
+
 		uint64_t time_start = rrr_time_get_64();
 		long long int spin_time_orig = spin_time;
 

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/event/event.h"
 #include "../lib/event/event_functions.h"
 #include "../lib/event/event_collection.h"
+#include "../lib/event/event_collection_struct.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
@@ -683,10 +684,12 @@ static void mysql_event_process_entries (
 		short flags,
 		void *arg
 ) {
+	struct mysql_data *data = arg;
+
 	(void)(fd);
 	(void)(flags);
 
-	struct mysql_data *data = arg;
+	RRR_EVENT_HOOK();
 
 	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
@@ -952,7 +955,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("mysql thread data is %p, size of private data: %llu\n", thread_data, (long long unsigned) sizeof(*data));
@@ -1004,14 +1007,13 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mysql,
-		NULL,
-		NULL,
 		NULL
 };
 

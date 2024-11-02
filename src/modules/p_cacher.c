@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -175,6 +175,8 @@ static int cacher_get_from_msgdb (
 		struct cacher_data *data,
 		const char *topic
 ) {
+	// Note: Callback is async, don't pass stack data as private argument
+
 	return rrr_msgdb_helper_get_from_msgdb (
 			&data->msgdb_conn_get,
 			data->msgdb_socket,
@@ -715,6 +717,13 @@ static int cacher_parse_receivers (
 ) {
 	int ret = 0;
 
+	if (RRR_INSTANCE_CONFIG_EXISTS("route") && RRR_INSTANCE_CONFIG_EXISTS(setting)) {
+		RRR_MSG_0("Both route and %s were set for cacher instance %s, this is an invalid configuration.\n",
+				setting, config->name);
+		ret = 1;
+		goto out;
+	}
+
 	if ((ret = rrr_instance_config_friend_collection_populate_receivers_from_config (
 			target,
 			INSTANCE_D_INSTANCES(data->thread_data),
@@ -736,7 +745,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cacher_msgdb_socket", msgdb_socket);
 	if (data->msgdb_socket == NULL || *(data->msgdb_socket) == '\0') {
-		RRR_MSG_0("Required aramenter cacher_msgdb_socket missing in cacher instance %s\n",
+		RRR_MSG_0("Required parameter cacher_msgdb_socket missing in cacher instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -893,14 +902,13 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	RRR_DBG_1 ("Thread cacher %p exiting\n", thread);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_cacher,
-		NULL,
-		NULL,
 		NULL
 };
 
