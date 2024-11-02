@@ -210,6 +210,13 @@ LIBBSD_LIBS=""
 AC_MSG_CHECKING("for bash shell")
 if bash --version > /dev/null; then
 	AC_MSG_RESULT([yes])
+	AC_MSG_CHECKING("for bash shell in /bin/")
+	if test -x /usr/local/bin/bash && ! test -x /bin/bash; then
+		AC_MSG_RESULT([no])
+		AC_MSG_ERROR([bash was found in /usr/local/bin/bash only, please make a symbolic link in /bin/ for test cases to work]);
+	else
+		AC_MSG_RESULT([yes])
+	fi
 else
 	AC_MSG_RESULT([no])
 	AC_MSG_ERROR([Could not run bash which is needed for the test suite]);
