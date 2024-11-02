@@ -17,24 +17,36 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
 dnl  
 
-dnl Use /bin/echo to avoid problems with -e flag
+dnl Use explicit bash echo to avoid problems with -e flag
+
+AC_DEFUN([SHELL_VARS_REPLACE], [
+	/usr/bin/env bash -c 'echo -en $1' > $2
+])
+
+AC_DEFUN([SHELL_VARS_APPEND_NAME], [
+	/usr/bin/env bash -c 'echo -en $1=' >> $2
+])
+
+AC_DEFUN([SHELL_VARS_APPEND_VALUE], [
+	/usr/bin/env bash -c "echo -en $1" >> $2
+	/usr/bin/env bash -c "echo" >> $2
+])
 
 # SHELL_VARS_INIT(FILENAME)
 # --------------
 AC_DEFUN([SHELL_VARS_INIT], [
 	shell_vars_in_reset () {
-		/bin/echo -e "#!/bin/sh\n\n# DO NOT DELETE THIS FILE\n" > $1.in
+		SHELL_VARS_REPLACE(["#!/bin/sh\n\n# DO NOT DELETE THIS FILE\n"], $1.in)
 	}
 	SHELL_VARS_FILENAME=$1
-	/bin/echo -e "#!/bin/sh\n\nSHELL_VARS_SET=1\n" > $SHELL_VARS_FILENAME.in
+	SHELL_VARS_REPLACE(["#!/bin/sh\n\nSHELL_VARS_SET=1\n"], $SHELL_VARS_FILENAME.in)
 ])
 
 # SHELL_VARS_EXPORT(VARIABLE, VALUE)
 # --------------
 AC_DEFUN([SHELL_VARS_EXPORT], [
-	/bin/echo -n $1 >> $SHELL_VARS_FILENAME.in
-	/bin/echo -n "=" >> $SHELL_VARS_FILENAME.in
-	/bin/echo $2 >> $SHELL_VARS_FILENAME.in
+	SHELL_VARS_APPEND_NAME(["$1"], $SHELL_VARS_FILENAME.in)
+	SHELL_VARS_APPEND_VALUE([$2], $SHELL_VARS_FILENAME.in)
 ])
 
 # SHELL_VARS_OUTPUT()
