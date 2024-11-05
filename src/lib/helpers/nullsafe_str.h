@@ -280,5 +280,10 @@ int rrr_nullsafe_str_foreach_byte_do (
 void rrr_nullsafe_str_trim (
 		struct rrr_nullsafe_str *nullsafe
 );
+void rrr_nullsafe_str_trim_set (
+		struct rrr_nullsafe_str *nullsafe,
+		const char *set,
+		rrr_length set_size
+);
 
 #endif /* RRR_NULLSAFE_STR_H */

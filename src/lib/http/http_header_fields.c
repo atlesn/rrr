@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_util.h"
 #include "../util/base64.h"
+#include "../map.h"
 
 static int __rrr_http_header_field_trim_name_if_required (
 		struct rrr_http_header_field *field
@@ -392,6 +393,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"accept-encoding",        RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
 	{"access-control-request-headers",
 	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
+//	{"access-control-allow-methods",
+//	                           RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"cache-control",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
         {"connection",             RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_single_string_value},
         {"upgrade",                RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
@@ -456,6 +459,7 @@ void rrr_http_header_field_destroy (
 	rrr_nullsafe_str_destroy_if_not_null(&field->name);
 	rrr_nullsafe_str_destroy_if_not_null(&field->binary_value_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&field->value);
+	rrr_nullsafe_str_destroy_if_not_null(&field->value_full);
 	rrr_free (field);
 }
 
@@ -1052,6 +1056,7 @@ static int __rrr_http_header_field_parse (
 	SIZE_CHECK();
 
 	const char *start = start_orig;
+	const char *value_start = NULL;
 
 	int empty_subvalues = 0;
 	int missing_space_after_comma = 0;
@@ -1067,6 +1072,9 @@ static int __rrr_http_header_field_parse (
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
+
+		if (value_start == NULL)
+			value_start = start;
 
 		CALL_CALLBACK(whitespace_check_callback);
 
@@ -1107,6 +1115,25 @@ static int __rrr_http_header_field_parse (
 		RRR_LL_APPEND(&fields_tmp, field);
 		field = NULL;
 	}
+
+	value_start += rrr_http_util_count_whsp(value_start, start);
+	field = RRR_LL_FIRST(&fields_tmp);
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw (
+			&field->value_full,
+			value_start,
+			rrr_length_from_ptr_sub_bug_const(start, value_start)
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_nullsafe_str_trim_set (
+		field->value_full,
+		"\r\n\t ",
+		4
+	);
+
+	field = NULL;
 
 	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target_list, &fields_tmp);
 	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);

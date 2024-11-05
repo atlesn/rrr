@@ -2880,6 +2880,9 @@ The received headers will be in the format
 .B http_HEADER-NAME
 all in lowercase letters. Dashes and undescores are preserved as-is.
 
+The value is stripped of leading spaces (SP only) as well as trailing spaces and line end (LF, CR, TAB or SP).
+Otherwise the value is left untouched, e.g. any encoding, quoted strings or subvalues are not handled.
+
 If a specified header is not present, this is indicated by the value being empty.
 
 .It http_receive_ignore_error_part_data={yes|no}

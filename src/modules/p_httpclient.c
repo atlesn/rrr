@@ -966,13 +966,13 @@ static int httpclient_final_callback (
 		}
 
 		RRR_MAP_ITERATE_BEGIN(&httpclient_data->http_client_config.extra_parse_headers);
-			if ((field = rrr_http_part_header_field_get (transaction->response_part, node_tag)) != NULL && field->value != NULL) {
+			if ((field = rrr_http_part_header_field_get_raw(transaction->response_part, node_tag)) != NULL) {
 				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 						&structured_data,
 						node_value,
-						field->value
+						field->value_full
 				)) != 0) {
-					RRR_MSG_0("Failed to push header value %s to array in %s A\n", node_tag, __func__);
+					RRR_MSG_0("Failed to push full header value %s to array in %s A\n", node_tag, __func__);
 					goto out;
 				}
 			}
