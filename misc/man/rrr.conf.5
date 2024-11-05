@@ -1,4 +1,4 @@
-.Dd 2024-02-13
+.Dd 2024-11-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -2870,6 +2870,17 @@ The
 tag will not be present for JSON messages.
 Also, if the JSON data in the response contains any of the above fields, both will be present in the message
 with the HTTP-response fields being placed first.
+
+.It http_trap_headers=HEADER-NAME[,HEADER-NAME]...
+
+If given, the listed headers will be present as array values in generated structured messages.
+Implies
+.B http_receive_structured=yes.
+The received headers will be in the format
+.B http_HEADER-NAME
+all in lowercase letters. Dashes and undescores are preserved as-is.
+
+If a specified header is not present, this is indicated by the value being empty.
 
 .It http_receive_ignore_error_part_data={yes|no}
 If set to no, attempts will be made to create messages from the part data of any responses from the server, even

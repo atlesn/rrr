@@ -1,6 +1,9 @@
-rrr (1.34-1) bookworm; urgency=medium
+rrr (1.34-2) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * Configuration option in http client to trap any header field
 
   * Fixes:
     * Crashes in MQTT for malformed packets with tailing payload

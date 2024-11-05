@@ -109,6 +109,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_http_tag_ignore.sh  \
 	test_http_graylist.sh    \
 	test_http_report_tag.sh  \
+	test_http_headers_trap.sh\
 	test_incrementer.sh      \
 	test_ip.sh               \
 	test_ipclient.sh         \
