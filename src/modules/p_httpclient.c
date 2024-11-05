@@ -166,7 +166,6 @@ struct httpclient_data {
 
 	struct rrr_map meta_tags_all;
 	struct rrr_map request_tags_all;
-	struct rrr_map headers_trap;
 
 	char *http_header_accept;
 
@@ -966,7 +965,7 @@ static int httpclient_final_callback (
 			}
 		}
 
-		RRR_MAP_ITERATE_BEGIN(&httpclient_data->headers_trap);
+		RRR_MAP_ITERATE_BEGIN(&httpclient_data->http_client_config.extra_parse_headers);
 			if ((field = rrr_http_part_header_field_get (transaction->response_part, node_tag)) != NULL && field->value != NULL) {
 				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 						&structured_data,
@@ -2179,6 +2178,19 @@ static int httpclient_parse_config (
 		}
 	}
 
+	if (RRR_LL_COUNT(&data->http_client_config.extra_parse_headers) > 0) {
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_receive_structured") &&
+		    data->do_receive_structured
+		) {
+			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_trap_headers' was 'yes' in httpclient instance %s, " \
+				  "this is a configuration error.", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		data->do_receive_structured = 1;
+	}
+
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type_boundary);
@@ -2209,44 +2221,6 @@ static int httpclient_parse_config (
 		ret = 1;
 		goto out;
 	}
-
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_headers_trap",
-		if (RRR_INSTANCE_CONFIG_EXISTS("http_receive_structured") && !data->do_receive_structured) {
-			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_headers_trap' was 'yes' in httpclient instance %s, " \
-			          "this is a configuration error.", config->name);
-			ret = 1;
-			goto out;
-		}
-
-		data->do_receive_structured = 1;
-
-		if  ((ret = rrr_instance_config_parse_comma_separated_to_map (
-				&data->headers_trap,
-				config,
-				"http_headers_trap"
-		)) != 0) {
-			RRR_MSG_0("Failed to parse parameter 'http_headers_trap' of httpclient instance %s\n",
-				config->name);
-			goto out;
-		}
-
-		RRR_MAP_ITERATE_BEGIN(&data->headers_trap);
-			RRR_FREE_IF_NOT_NULL(value_tmp);
-
-			rrr_str_tolower(node->tag);
-
-			if (rrr_asprintf(&value_tmp, "http_%s", node->tag) <= 0) {
-				RRR_MSG_0("Failed to create header trap value in %s\n", __func__);
-				ret = 1;
-				goto out;
-			}
-
-			if ((ret = rrr_map_item_value_set(node, value_tmp)) != 0) {
-				RRR_MSG_0("Failed to set header trap value in %s\n", __func__);
-				goto out;
-			}
-		RRR_MAP_ITERATE_END();
-	);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(value_tmp);
@@ -2692,7 +2666,6 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->body_tag);
 	rrr_map_clear(&data->meta_tags_all);
 	rrr_map_clear(&data->request_tags_all);
-	rrr_map_clear(&data->headers_trap);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
 	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
