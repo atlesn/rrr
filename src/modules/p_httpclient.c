@@ -2180,7 +2180,7 @@ static int httpclient_parse_config (
 
 	if (RRR_LL_COUNT(&data->http_client_config.extra_parse_headers) > 0) {
 		if (RRR_INSTANCE_CONFIG_EXISTS("http_receive_structured") &&
-		    data->do_receive_structured
+		    !data->do_receive_structured
 		) {
 			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_trap_headers' was 'yes' in httpclient instance %s, " \
 				  "this is a configuration error.", config->name);
