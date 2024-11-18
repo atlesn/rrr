@@ -915,7 +915,7 @@ int rrr_log_socket_connect (
 
 	assert(rrr_log_socket_fd == 0);
 
-	if  (log_socket == NULL) {
+	if (log_socket == NULL) {
 		assert(rrr_log_socket_file != NULL);
 		log_socket = rrr_log_socket_file;
 	}
@@ -926,13 +926,18 @@ int rrr_log_socket_connect (
 	}
 
 	if (rrr_socket_unix_connect(&rrr_log_socket_fd, "log", log_socket, 0 /* Not nonblock */) != 0) {
+		// Make sure error messages are printed
+		__rrr_log_printf_intercept_set (NULL, NULL);
+
 		RRR_MSG_0("Failed to connect to log socket '%s'\n", log_socket);
+
 		ret = 1;
 		goto out;
 	}
 
+	goto out;
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_log_socket_fd_get (void) {
