@@ -46,23 +46,19 @@ static int __rrr_mqtt_topic_filter_char_is_ok(uint32_t c, void *arg) {
 	seq->c2 = c;
 
 	if (seq->c2 == '#' && seq->c1 != '/' && seq->c1 != '\0') {
-		RRR_MSG_0("Wildcard '#' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
-				seq->orig);
+		RRR_MSG_0("Wildcard '#' must be preceded by separator '/' or be at the beginning in mqtt topic filter\n");
 		return 1;
 	}
 	if (seq->c2 == '+' && seq->c1 != '/' && seq->c1 != '\0') {
-		RRR_MSG_0("Wildcard '+' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
-				seq->orig);
+		RRR_MSG_0("Wildcard '+' must be preceded by separator '/' or be at the beginning in mqtt topic filter\n");
 		return 1;
 	}
 	if (seq->c1 == '#') {
-		RRR_MSG_0("Wildcard '#' must be at the very end in mqtt topic filter '%s'\n",
-				seq->orig);
+		RRR_MSG_0("Wildcard '#' must be at the very end in mqtt topic filter\n");
 		return 1;
 	}
 	if (seq->c1 == '+' && seq->c2 != '/' && seq->c1 != '\0') {
-		RRR_MSG_0("Wildcard '+' must precede separator '/' or be at the end in mqtt topic filter '%s'\n",
-				seq->orig);
+		RRR_MSG_0("Wildcard '+' must precede separator '/' or be at the end in mqtt topic filter\n");
 		return 1;
 	}
 
@@ -70,13 +66,14 @@ static int __rrr_mqtt_topic_filter_char_is_ok(uint32_t c, void *arg) {
 }
 
 static int __rrr_mqtt_topic_name_char_is_ok(uint32_t c, void *arg) {
-	int ret = 0;
-
 	struct topic_name_seq *seq = arg;
 
+	int ret = 0;
+
+	(void)(seq);
+
 	if (c == '#' || c == '+') {
-		RRR_MSG_0("mqtt topic name cannot contain '+' and '#', name was '%s'\n",
-				seq->orig);
+		RRR_MSG_0("mqtt topic name cannot contain '+' and '#'\n");
 		return 1;
 	}
 

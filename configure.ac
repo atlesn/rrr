@@ -1212,8 +1212,8 @@ AS_IF([test "x$enable_python3" = xno], [
 	AC_SUBST([PYTHON3_CFLAGS])
 	AC_SUBST([PYTHON3_LDFLAGS])
 
-	chmod +x test_python3.sh
-	./test_python3.sh "$CC" "$python3_config_bin"
+	chmod +x check_python3.sh
+	./check_python3.sh "$CC" "$python3_config_bin"
 	PYTHON3_TEST_RESULT="$?"
 
 	AC_MSG_CHECKING([functional python3 config])
@@ -1625,6 +1625,7 @@ AC_CONFIG_FILES(
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile
+	tools/Makefile
 )
 
 AC_OUTPUT
