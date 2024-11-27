@@ -1,3 +1,11 @@
+rrr (1.33-2) bookworm; urgency=medium
+
+  * Fixes:
+    * Memory leak in Python3 where values added to array had incorrect
+      reference count causing memory leaks
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 27 Nov 2024 18:14:00 +0100
+
 rrr (1.33-1) bookworm; urgency=medium
 
   * Features:

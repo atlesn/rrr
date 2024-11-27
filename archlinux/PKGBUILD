@@ -10,7 +10,7 @@ depends=('python3' 'perl' 'mariadb-clients' 'libnghttp2' 'ngtcp2-git' 'libnghttp
 optdepends=('systemd: systemd daemon support' 'libbsd: set process titles')
 makedepends=('git')
 provides=('rrr')
-source=("git+https://github.com/atlesn/$pkgname.git#tag=v1.31-1")
+source=("git+https://github.com/atlesn/$pkgname.git#tag=v1.31-2")
 md5sums=('SKIP')
 
 pkgver() {
