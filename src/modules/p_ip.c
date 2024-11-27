@@ -261,7 +261,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	}
 
 	// Default target protocol
-	if ((ret = rrr_settings_get_string_noconvert_silent(&protocol, config->settings, "ip_target_protocol")) != 0) {
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&protocol, config, "ip_target_protocol")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name);
 			ret = 1;
@@ -759,7 +759,8 @@ static int ip_connect_raw_callback (
 			ip_data->tcp_graylist,
 			addr,
 			addr_len,
-			ip_data->close_grace_ms * 1000
+			ip_data->close_grace_ms * 1000,
+			1
 	);
 
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
@@ -847,9 +848,6 @@ static int ip_resolve_push_sendto_callback (
 	char buf[256];
 	*buf = '\0';
 	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
-
-	// If no translation is needed, the original address is copied
-	// rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
 
 	if ( callback_data->ip_data->udp_send_fd_ip6 > 0 &&
 	     ip_resolve_push_sendto_callback_test_fd (
@@ -1606,7 +1604,8 @@ static void ip_fd_close_notify_callback (RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARG
 				ip_data->tcp_graylist,
 				addr,
 				addr_len,
-				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU
+				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU,
+				1
 		);
 	}
 }
@@ -1751,7 +1750,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	if (ip_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
@@ -1839,7 +1838,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name);
 
-	pthread_exit(0);
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

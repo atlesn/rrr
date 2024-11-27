@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -104,7 +104,12 @@ int rrr_msg_holder_nexthop_ok (
 		const struct rrr_instance *instance
 );
 int rrr_msg_holder_nexthop_count (
-	const struct rrr_msg_holder *entry
+		const struct rrr_msg_holder *entry
+);
+int rrr_msg_holder_nexthops_get (
+		const struct rrr_msg_holder *entry,
+		int (*callback)(const struct rrr_instance **instances, int count, void *arg),
+		void *arg
 );
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,

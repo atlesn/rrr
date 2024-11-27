@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,11 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdarg.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 int rrr_vasprintf (char **resultp, const char *format, va_list args);
 int rrr_asprintf (char **resultp, const char *format, ...);
 char *rrr_strcasestr (const char *haystack, const char *needle);
 pid_t rrr_gettid(void);
+void rrr_set_thread_name(pthread_t t, const char *name);
 
 /* Use this instead of asm("") */ 
 int rrr_slow_noop (void);

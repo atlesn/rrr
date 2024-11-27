@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <assert.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -165,7 +166,7 @@ int rrr_nullsafe_str_append_raw (
 
 	RRR_SIZE_CHECK(len,"New nullsafe string append",return 1);
 
-	void *new_str = rrr_reallocate(nullsafe->str, nullsafe->len, new_size_a);
+	void *new_str = rrr_reallocate(nullsafe->str, new_size_a);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append\n");
 		return 1;
@@ -176,6 +177,32 @@ int rrr_nullsafe_str_append_raw (
 	nullsafe->len += len;
 
 	return 0;
+}
+
+int rrr_nullsafe_str_new_or_append_raw (
+		struct rrr_nullsafe_str **result,
+		const void *str,
+		rrr_nullsafe_len len
+) {
+	int ret = 0;
+
+	struct rrr_nullsafe_str *nullsafe = *result;
+
+	if (nullsafe == NULL) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_raw (&nullsafe, str, len)) != 0) {
+			goto out;
+		}
+		*result = nullsafe;
+	}
+	else {
+		if ((ret = rrr_nullsafe_str_append_raw (nullsafe, str, len)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+	
 }
 
 int rrr_nullsafe_str_append_asprintf (
@@ -346,6 +373,12 @@ int rrr_nullsafe_str_set (
 	}
 
 	return 0;
+}
+
+void rrr_nullsafe_str_clear (
+		struct rrr_nullsafe_str *nullsafe
+) {
+	rrr_nullsafe_str_set(nullsafe, NULL, 0);
 }
 
 int rrr_nullsafe_str_chr (
@@ -683,6 +716,50 @@ void rrr_nullsafe_str_output_strip_null_append_null_trim (
 	rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok (buf, buf_size, nullsafe->str, nullsafe->len);
 }
 
+int rrr_nullsafe_str_extract_append_null (
+		char **result,
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	char *str;
+	rrr_nullsafe_len len = nullsafe != NULL ? nullsafe->len : 0;
+
+	if ((str = rrr_allocate(len + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		return 1;
+	}
+
+	if (nullsafe != NULL) {
+		memcpy(str, nullsafe->str, len);
+	}
+
+	str[len] = '\0';
+
+	*result = str;
+
+	return 0;
+}
+
+int rrr_nullsafe_str_has_null_raw (
+		const void *str,
+		rrr_biglength len
+) {
+	for (rrr_nullsafe_len i = 0; i < len; i++) {
+		char a = * (const char *) (str + i);
+		if (a == '\0')
+			return 1;
+	}
+	return 0;
+}
+
+int rrr_nullsafe_str_has_null (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	if (nullsafe == NULL || nullsafe->len == 0)
+		return 0;
+
+	return rrr_nullsafe_str_has_null_raw(nullsafe->str, nullsafe->len);
+}
+
 void rrr_nullsafe_str_copyto (
 		rrr_nullsafe_len *written_size,
 		void *target,
@@ -814,8 +891,9 @@ int rrr_nullsafe_str_raw_null_terminated_dump (
 		RRR_PASTE_3(len_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->len;		\
 	}} while (0)
 
-int rrr_nullsafe_str_with_raw_do_const (
+static int __rrr_nullsafe_str_with_raw_do_const (
 		const struct rrr_nullsafe_str *nullsafe_a,
+		rrr_nullsafe_len offset,
 		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
 		void *callback_arg
 ) {
@@ -823,7 +901,34 @@ int rrr_nullsafe_str_with_raw_do_const (
 
 	RRR_NULLSAFE_STR_WITH_STR_DO_STR_AND_LEN_TO_USE_SET(a);
 
+	if (offset > len_to_use_a) {
+		RRR_BUG("Offset out of range in %s: %" PRIrrr_nullsafe_len ">%" PRIrrr_nullsafe_len "\n",
+			__func__, offset, len_to_use_a);
+	}
+
+	if (offset > 0) {
+		str_to_use_a += offset;
+		len_to_use_a -= offset;
+	}
+
 	return callback(str_to_use_a, len_to_use_a, callback_arg);
+}
+
+int rrr_nullsafe_str_with_raw_do_const (
+		const struct rrr_nullsafe_str *nullsafe_a,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+) {
+	return __rrr_nullsafe_str_with_raw_do_const(nullsafe_a, 0, callback, callback_arg);
+}
+
+int rrr_nullsafe_str_with_raw_do_const_offset (
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len offset,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
+) {
+	return __rrr_nullsafe_str_with_raw_do_const(nullsafe, offset, callback, callback_arg);
 }
 
 int rrr_nullsafe_str_with_raw_do_double_const (
@@ -905,5 +1010,30 @@ void rrr_nullsafe_str_trim (
 		else {
 			break;
 		}
+	}
+}
+
+void rrr_nullsafe_str_trim_set (
+		struct rrr_nullsafe_str *nullsafe,
+		const char *set,
+		rrr_length set_size
+) {
+	if (nullsafe->len == 0) {
+		return;
+	}
+
+	char *str = nullsafe->str;
+
+	// Note : loop wraps from 0 to max then exits
+	for (rrr_nullsafe_len i = nullsafe->len - 1; i < nullsafe->len; i--) {
+		for (rrr_length j = 0; j < set_size; j++) {
+			if (str[i] == set[j])
+				goto found;
+		}
+		break;
+
+		found:
+		str[i] = '\0';
+		nullsafe->len--;
 	}
 }

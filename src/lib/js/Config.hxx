@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Js.hxx"
 
 extern "C" {
+#include "../settings.h"
 };
 
 #include <v8.h>
@@ -36,7 +37,8 @@ namespace RRR::JS {
 		friend class ConfigFactory;
 
 		private:
-		struct rrr_instance_config_data *config = nullptr;
+		struct rrr_settings *settings = nullptr;
+		struct rrr_settings_used *settings_used = nullptr;
 
 		protected:
 		int64_t get_total_memory() final {
@@ -46,8 +48,12 @@ namespace RRR::JS {
 		static void cb_has(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 
-		void set_config(struct rrr_instance_config_data *config) {
-			this->config = config;
+		void set_config (
+				struct rrr_settings *settings,
+				struct rrr_settings_used *settings_used
+		) {
+			this->settings = settings;
+			this->settings_used = settings_used;
 		}
 	};
 
@@ -64,7 +70,8 @@ namespace RRR::JS {
 		ConfigFactory(CTX &ctx, PersistentStorage &persistent_storage);
 		Duple<v8::Local<v8::Object>, Config *> new_external (
 				v8::Isolate *isolate,
-				struct rrr_instance_config_data *config
+				struct rrr_settings *settings,
+				struct rrr_settings_used *settings_used
 		);
 	};
 } // namespace RRR::JS

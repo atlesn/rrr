@@ -56,3 +56,5 @@ usr/lib/rrr/artnet.la
 usr/lib/rrr/artnet.so
 usr/lib/rrr/modbus.la
 usr/lib/rrr/modbus.so
+usr/lib/rrr/lua.la
+usr/lib/rrr/lua.so

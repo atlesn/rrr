@@ -28,7 +28,7 @@ def source(socket: rrr_socket, message : rrr_message):
 
 	return True
 
-def process(socket: rrr_socket, message: rrr_message):
+def my_method(socket: rrr_socket, message: rrr_message):
 	global persistent_setting_a
 	global persistent_setting_b
 
@@ -109,6 +109,22 @@ def process(socket: rrr_socket, message: rrr_message):
 		print ("\titem in array with tag " + item.get_tag())
 
 	message.discard_array()
+
+	if (not array_old.has("blob")):
+		print("python3 has() failed for unicode tag\n");
+		return False
+
+	if (array_old.has("xxxxxxx")):
+		print("python3 has() failed for unicode non-existing tag\n");
+		return False
+
+	if (not array_old.has(array_old.count() - 1)):
+		print("python3 has() failed for in range index\n");
+		return False
+
+	if (array_old.has(array_old.count())):
+		print("python3 has() failed for out of range index\n");
+		return False
 
 	blob_item = array_old.get("blob")
 	blob_item.set_type(blob_item.TYPE_STR)

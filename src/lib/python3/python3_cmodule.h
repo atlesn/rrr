@@ -62,7 +62,8 @@ struct python3_fork_runtime {
 int rrr_py_cmodule_call_application_raw (
 		PyObject *function,
 		PyObject *arg1,
-		PyObject *arg2
+		PyObject *arg2,
+		PyObject *arg3
 );
 int rrr_py_cmodule_runtime_init (
 		struct python3_fork_runtime *runtime,

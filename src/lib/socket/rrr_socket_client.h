@@ -84,6 +84,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     void *chunk_private_data,                               \
     void *callback_arg
 
+#define RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS      \
+    RRR_SOCKET_SEND_CHUNK_START_END_CALLBACK_ARGS
+
 #define RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS            \
     int fd,                                                 \
     const struct sockaddr *addr,                            \
@@ -117,6 +120,14 @@ int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
 		struct rrr_event_queue *queue,
 		const char *creator
+);
+void rrr_socket_client_collection_set_silent (
+		struct rrr_socket_client_collection *target,
+		int silent
+);
+void rrr_socket_client_collection_set_no_unlink (
+		struct rrr_socket_client_collection *target,
+		int no_unlink
 );
 void rrr_socket_client_collection_set_connect_timeout (
 		struct rrr_socket_client_collection *collection,
@@ -192,6 +203,11 @@ int rrr_socket_client_collection_migrate_by_fd (
 void rrr_socket_client_collection_close_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
+);
+int rrr_socket_client_collection_get_fds (
+		int **target,
+		size_t *target_count,
+		const struct rrr_socket_client_collection *collection
 );
 int rrr_socket_client_collection_has_fd (
 		struct rrr_socket_client_collection *collection,
@@ -269,13 +285,24 @@ int rrr_socket_client_collection_connected_fd_push (
 );
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
-		void *callback_arg
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void *arg
+);
+void rrr_socket_client_collection_send_notify_setup_with_gates (
+		struct rrr_socket_client_collection *collection,
+		void (*notify)(RRR_SOCKET_CLIENT_SEND_NOTIFY_CALLBACK_ARGS),
+		void (*start)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void (*end)(RRR_SOCKET_CLIENT_SEND_START_END_CALLBACK_ARGS),
+		void *arg
 );
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,
 		void (*callback)(RRR_SOCKET_CLIENT_FD_CLOSE_CALLBACK_ARGS),
 		void *callback_arg
+);
+void rrr_socket_client_collection_mask_write_event_hooks_setup (
+		struct rrr_socket_client_collection *collection,
+		int set
 );
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,

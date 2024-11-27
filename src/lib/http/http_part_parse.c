@@ -453,6 +453,9 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PUT") == 0) {
 		*method = RRR_HTTP_METHOD_PUT;
 	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PATCH") == 0) {
+		*method = RRR_HTTP_METHOD_PATCH;
+	}
 	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "HEAD") == 0) {
 		*method = RRR_HTTP_METHOD_HEAD;
 	}
@@ -461,7 +464,7 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 	}
 	else {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,part->request_method_str_nullsafe);
-		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/HEAD/DELETE)\n", value);
+		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/PATCH/HEAD/DELETE)\n", value);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -657,8 +660,11 @@ int rrr_http_part_parse (
 			goto out;
 		}
 	}
+	else if (part->response_code > 0) {
+		RRR_DBG_3("HTTP completed parsing of a header, response code %u\n", part->response_code);
+	}
 	else {
-		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
+		RRR_DBG_3("HTTP completed parsing of a header\n");
 	}
 
 	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(part, "connection");

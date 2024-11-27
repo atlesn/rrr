@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
+#include "../lib/cmodule/cmodule_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
@@ -118,20 +119,20 @@ struct cmodule_run_data {
 
 	struct cmodule_data *data;
 
-	int (*config_function)(RRR_CONFIG_ARGS);
-	int (*source_function)(RRR_SOURCE_ARGS);
-	int (*process_function)(RRR_PROCESS_ARGS);
+	int (*config_method)(RRR_CONFIG_ARGS);
+	int (*source_method)(RRR_SOURCE_ARGS);
+	int (*process_method)(RRR_PROCESS_ARGS);
 	int (*cleanup_function)(RRR_CLEANUP_ARGS);
 };
 
-#define GET_FUNCTION(from,name)															\
-	do { if (from->name != NULL && *(from->name) != '\0') {								\
-		if ((run_data->name = dlsym(handle, from->name)) == NULL) {						\
-			RRR_MSG_0("Could not load function '%s' from cmodule instance %s: %s\n",	\
-					from->name, INSTANCE_D_NAME(data->thread_data), dlerror());			\
-			function_err = 1;															\
-		}																				\
-	} } while(0)
+#define GET_FUNCTION(from,name)                                                                                                \
+    do { if (from->name != NULL && *(from->name) != '\0') {                                                                    \
+        if ((run_data->name = dlsym(handle, from->name)) == NULL) {                                                            \
+            RRR_MSG_0("Could not load function '%s' from cmodule instance %s: %s\n",                                           \
+                    from->name, INSTANCE_D_NAME(data->thread_data), dlerror());                                                \
+            function_err = 1;                                                                                                  \
+        }                                                                                                                      \
+    } } while(0)                                                                                                               \
 
 static void __cmodule_dl_unload (
 		void *handle
@@ -182,9 +183,9 @@ static int __cmodule_load (
 
 		int function_err = 0;
 
-		GET_FUNCTION(cmodule_config_data,config_function);
-		GET_FUNCTION(cmodule_config_data,source_function);
-		GET_FUNCTION(cmodule_config_data,process_function);
+		GET_FUNCTION(cmodule_config_data,config_method);
+		GET_FUNCTION(cmodule_config_data,source_method);
+		GET_FUNCTION(cmodule_config_data,process_method);
 		GET_FUNCTION(data,cleanup_function);
 
 		if (function_err != 0) {
@@ -270,24 +271,34 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	struct cmodule_run_data *run_data = private_arg;
 
-	(void)(worker);
-
 	int ret = 0;
 
-	if (run_data->config_function == NULL) {
+	struct rrr_instance_config_data instance_config = {0};
+
+	rrr_instance_config_move_from_settings (
+			&instance_config,
+			&worker->settings_used,
+			&worker->settings
+	);
+
+	if (run_data->config_method == NULL) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
 				INSTANCE_D_NAME(run_data->data->thread_data));
 		goto out;
 	}
 
-	if ((ret = run_data->config_function(&run_data->ctx, INSTANCE_D_CONFIG(run_data->data->thread_data))) != 0) {
+	if ((ret = run_data->config_method(&run_data->ctx, &instance_config)) != 0) {
 		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
 				ret, INSTANCE_D_NAME(run_data->data->thread_data));
-		ret = 1;
 		goto out;
 	}
 
 	out:
+	rrr_instance_config_move_to_settings (
+			&worker->settings_used,
+			&worker->settings,
+			&instance_config
+	);
 	return ret;
 }
 
@@ -306,17 +317,17 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
-		if (run_data->source_function == NULL) {
+		if (run_data->source_method == NULL) {
 			RRR_BUG("BUG: Source function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->source_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->source_method(&run_data->ctx, message_copy, message_addr);
 		// Don't goto out here, print error further down
 	}
 	else {
-		if (run_data->process_function == NULL) {
+		if (run_data->process_method == NULL) {
 			RRR_BUG("BUG: Process function was NULL but we tried to source anyway in cmodule_process_callback\n");
 		}
-		ret = run_data->process_function(&run_data->ctx, message_copy, message_addr);
+		ret = run_data->process_method(&run_data->ctx, message_copy, message_addr, method);
 		// Don't goto out here, print error further down
 	}
 
@@ -374,7 +385,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	if (cmodule_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
-		pthread_exit(0);
+		return NULL;
 	}
 
 	RRR_DBG_1 ("cmodule thread thread_data is %p\n", thread_data);
@@ -401,7 +412,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread_data);
 
 	pthread_cleanup_pop(1);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

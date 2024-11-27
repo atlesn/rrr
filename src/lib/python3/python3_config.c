@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,7 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_python3_config_data {
 	PyObject_HEAD
-	struct rrr_instance_settings *settings;
+	struct rrr_settings *settings;
+	struct rrr_settings_used *settings_used;
 };
 
 static PyObject *rrr_python3_config_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
@@ -44,6 +45,7 @@ static PyObject *rrr_python3_config_f_new (PyTypeObject *type, PyObject *args, P
 	struct rrr_python3_config_data *data = (struct rrr_python3_config_data *) self;
 
 	data->settings = NULL;
+	data->settings_used = NULL;
 
 	return self;
 }
@@ -54,6 +56,7 @@ static int rrr_python3_config_f_init(PyObject *self, PyObject *args, PyObject *k
 	(void)(args);
 	(void)(kwds);
 	data->settings = NULL;
+	data->settings_used = NULL;
 	return 0;
 }
 
@@ -64,7 +67,7 @@ static void rrr_python3_config_f_dealloc (PyObject *self) {
 static PyObject *__rrr_python3_config_set (PyObject *self, PyObject * const *argv, Py_ssize_t argc, int do_replace) {
 	struct rrr_python3_config_data *data = (struct rrr_python3_config_data *) self;
 
-	if (data->settings == NULL) {
+	if (data->settings == NULL || data->settings_used == NULL) {
 		RRR_MSG_0("Configuration class not properly initialized. This class can only be created by RRR internally.\n");
 		Py_RETURN_FALSE;
 	}
@@ -129,7 +132,7 @@ PyObject *rrr_python3_config_f_get (PyObject *self, PyObject *name) {
 	const char *string_name = PyUnicode_AsUTF8(name);
 
 	int ret_tmp = 0;
-	if ((ret_tmp = rrr_settings_get_string_noconvert_silent(&string_value_tmp, data->settings, string_name)) != 0) {
+	if ((ret_tmp = rrr_settings_get_string_noconvert_silent(&string_value_tmp, data->settings_used, data->settings, string_name)) != 0) {
 		if (ret_tmp == RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Setting '%s' could not be found in get function of config class, check spelling.\n", string_name);
 		}
@@ -230,12 +233,13 @@ PyTypeObject rrr_python3_config_type = {
 	    .tp_finalize	= NULL
 };
 
-PyObject *rrr_python3_config_new (struct rrr_instance_settings *settings) {
+PyObject *rrr_python3_config_new (struct rrr_settings *settings, struct rrr_settings_used *settings_used) {
 	struct rrr_python3_config_data *new_config = NULL;
 
 	new_config = PyObject_New(struct rrr_python3_config_data, &rrr_python3_config_type);
 	if (new_config) {
 		new_config->settings = settings;
+		new_config->settings_used = settings_used;
 	}
 
 	return (PyObject *) new_config;

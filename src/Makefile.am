@@ -1,10 +1,14 @@
-if RRR_WITH_NODE
+if RRR_WITH_JS
 noinst_js=rrr_js
 endif
 
-SUBDIRS = lib modules tests python cmodules
-bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub
-noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb rrr_readdir rrr_modbus_server ${noinst_js}
+if RRR_WITH_LUA
+noinst_lua=rrr_lua
+endif
+
+SUBDIRS = lib modules tests cmodules 
+bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg rrr_sub rrr_logd
+noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb rrr_readdir rrr_modbus_server ${noinst_js} ${noinst_lua}
 TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
@@ -25,7 +29,8 @@ endif
 
 rrr_SOURCES = rrr.c main.c
 rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"@MODULE_DIR@\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fpie
-rrr_LDFLAGS = ${ldflags} -pie
+rrr_LDFLAGS = ${ldflags} ${LIBBSD_LIBS} -pie
+rrr_LDADD = -levent
 
 rrr_post_SOURCES = rrr_post.c main.c
 rrr_post_CFLAGS = ${AM_CFLAGS} -fpie
@@ -46,7 +51,7 @@ rrr_http_client_LDADD = -levent
 
 rrr_http_server_SOURCES = rrr_http_server.c main.c
 rrr_http_server_CFLAGS = ${AM_CFLAGS} -fpie
-rrr_http_server_LDFLAGS = ${ldflags} -pie
+rrr_http_server_LDFLAGS = ${ldflags} -levent -pie
 
 rrr_modbus_server_SOURCES = rrr_modbus_server.c main.c
 rrr_modbus_server_CFLAGS = ${AM_CFLAGS} -fpie
@@ -73,9 +78,21 @@ rrr_sub_SOURCES = rrr_sub.c main.c
 rrr_sub_CFLAGS = ${AM_CFLAGS} -fpie
 rrr_sub_LDFLAGS = ${ldflags} -pie
 
+rrr_logd_SOURCES = rrr_logd.c main.c
+rrr_logd_CFLAGS = ${AM_CFLAGS} -fpie
+rrr_logd_LDFLAGS = ${ldflags} -pie
+
+if RRR_WITH_LUA
+rrr_lua_SOURCES = rrr_lua.c main.c
+rrr_lua_CFLAGS = ${AM_CFLAGS} ${LUA_CFLAGS} -fpie
+rrr_lua_LDFLAGS = ${ldflags} ${LUA_LDFLAGS} ${LUA_LIBS} -pie
+endif
+
+if RRR_WITH_JS
 rrr_js_SOURCES = rrr_js.cxx
-rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${NODE_CXXFLAGS} -fpie
-rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${NODE_LDFLAGS} ${NODE_LIBS} -pie
+rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS} -fpie
+rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS} -pie
+endif
 
 if RRR_WITH_PERL5
 all-local:

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,10 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <assert.h>
 #include <artnet/artnet.h>
-
-#ifdef RRR_HAVE_SIMD_128
-#include <immintrin.h>
-#endif
 
 #define RRR_ARTNET_UNIVERSE_MAX 16
 #define RRR_ARTNET_CHANNEL_MAX 512
@@ -331,26 +327,6 @@ static void __rrr_artnet_process_node_entry (
 	}
 }
 
-/*
-#ifdef RRR_HAVE_SIMD_128
-__m128i _mm_blend(__m128i a, __m128i b, __m128i mask)
-{
-	__m128i mask_inverse = _mm_andnot_si128(mask, _mm_set1_epi8(0xFF));
-	__m128i blended = _mm_or_si128(_mm_and_si128(a, mask_inverse), _mm_and_si128(b, mask));
-	return blended;
-}
-#define _mm_cmpge_epu8(a, b) \
-	        _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
-
-#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
-
-#define _mm_cmpgt_epu8(a, b) \
-	        _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
-
-#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
-#endif
-*/
-
 static void __rrr_artnet_universe_fade_interpolate (
 		struct rrr_artnet_universe *universe
 ) {
@@ -358,38 +334,6 @@ static void __rrr_artnet_universe_fade_interpolate (
 	RRR_ASSERT(sizeof(*(universe->dmx) == 1),dmx_size_is_a_byte);
 	RRR_ASSERT(sizeof(*(universe->dmx_fade_target) == 1),dmx_size_is_a_byte);
 
-/*
- * SIMD 128 NOT BENEFITIAL. CONSIDER 512 LATER.
- *
-#ifdef RRR_HAVE_SIMD_128
-	for (int i = 0; i < universe->dmx_size; i += 16) {
-		__m128i step_size_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_speed + i));
-		__m128i current_vec = _mm_loadu_si128((__m128i*) (universe->dmx + i));
-		__m128i orig_vec = current_vec;
-		__m128i target_vec = _mm_loadu_si128((__m128i*) (universe->dmx_fade_target + i));
-
-		__m128i shall_increment = _mm_cmplt_epu8(current_vec, target_vec);
-		__m128i shall_decrement = _mm_cmpgt_epu8(current_vec, target_vec);
-
-		__m128i inc_vec = _mm_and_si128(shall_increment, step_size_vec);
-		__m128i dec_vec = _mm_and_si128(shall_decrement, step_size_vec);
-
-		current_vec = _mm_add_epi8(current_vec, inc_vec);
-		current_vec = _mm_sub_epi8(current_vec, dec_vec);
-
-		__m128i result_cmp_less = _mm_cmplt_epu8(current_vec, orig_vec);
-		__m128i result_cmp_greater = _mm_cmpgt_epu8(current_vec, orig_vec);
-
-		__m128i overflow_decrement = _mm_and_si128(result_cmp_greater, shall_decrement);
-		__m128i overflow_increment = _mm_and_si128(result_cmp_less, shall_increment);
-
-		current_vec = _mm_blend(current_vec, target_vec, overflow_decrement);
-		current_vec = _mm_blend(current_vec, target_vec, overflow_increment);
-
-		_mm_storeu_si128((__m128i*) (universe->dmx + i), current_vec);
-	}
-#else
-*/
 	for (int i = 0; i < universe->dmx_size; i += 1) {
 		const rrr_artnet_dmx_t dmx_orig = universe->dmx[i];
 		const rrr_artnet_dmx_t dmx_fade_speed = universe->dmx_fade_speed[i];
@@ -408,9 +352,6 @@ static void __rrr_artnet_universe_fade_interpolate (
 			universe->dmx[i] = dmx_new;
 		}
 	}
-/*
-#endif
-*/
 }
 
 static void __rrr_artnet_universe_update (

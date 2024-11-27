@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2023 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ int rrr_msg_holder_slot_write (
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		uint8_t protocol,
-		int (*callback)(int *do_drop, int *do_again, struct rrr_msg_holder *entry, void *arg),
+		int (*callback)(int *do_drop, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg

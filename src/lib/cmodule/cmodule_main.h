@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_holder/message_holder_collection.h"
 
 struct rrr_instance_config_data;
-struct rrr_instance_settings;
+struct rrr_settings;
 struct rrr_fork_handler;
 struct rrr_mmap_channel;
 struct rrr_cmodule_worker;
@@ -45,14 +45,17 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_event_queue;
 struct rrr_cmodule_worker_callbacks;
+struct rrr_discern_stack_collection;
 
 struct rrr_cmodule;
 
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
-		struct rrr_instance_settings *settings,
+		const struct rrr_settings *settings,
+		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *notify_queue,
+		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks

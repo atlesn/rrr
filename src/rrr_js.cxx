@@ -9,6 +9,7 @@ extern "C" {
 #include <functional>
 
 #include "lib/js/Js.hxx"
+#include "lib/js/OS.hxx"
 
 using namespace RRR::JS;
 
@@ -51,7 +52,7 @@ int main(int argc, const char **argv) {
 
 	while ((size = fread (tmp, 1, 4096, stdin)) > 0) {
 		{
-			char *in_tmp = reinterpret_cast<char *>(rrr_reallocate(in, in == NULL ? 0 : size_total + 1, size_total + size + 1));
+			char *in_tmp = reinterpret_cast<char *>(rrr_reallocate(in, size_total + size + 1));
 			if (in_tmp == NULL) {
 				fprintf(stderr, "Failed to allocate memory in %s\n", __func__);
 				ret = EXIT_FAILURE;
@@ -77,6 +78,11 @@ int main(int argc, const char **argv) {
 		auto isolate = Isolate(env);
 		auto ctx = CTX(env, "-");
 		auto scope = Scope(ctx);
+		auto persistent_storage = PersistentStorage(ctx);
+		auto os_factory = RRR::JS::OSFactory(ctx, persistent_storage);
+
+		os_factory.register_as_global(ctx);
+
 		auto program = (is_module
 			? std::function<std::shared_ptr<Program>()>([&](){
 				return std::dynamic_pointer_cast<Program>(isolate.make_module<Module>(ctx, cwd, "-", std::string(in)));
@@ -86,9 +92,11 @@ int main(int argc, const char **argv) {
 				script->compile(ctx);
 				return std::dynamic_pointer_cast<Program>(script);
 			}))();
+
 		if (program->is_compiled()) {
 			program->run(ctx);
 		}
+
 		if (ctx.trycatch_ok([](std::string &&msg){
 			throw E(std::string(msg));
 		})) {

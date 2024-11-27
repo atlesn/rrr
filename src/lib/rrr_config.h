@@ -66,5 +66,8 @@ void rrr_config_init (
 void rrr_config_set_log_prefix (
 		const char *log_prefix
 );
+void rrr_config_reset_log_prefix (
+		void
+);
 
 #endif /* RRR_CONFIG_H */

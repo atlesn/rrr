@@ -172,12 +172,18 @@ void rrr_msg_holder_util_timeout_check (
 		uint64_t timeout_us,
 		struct rrr_msg_holder *entry
 ) {
-	uint64_t timeout_limit = rrr_time_get_64() - timeout_us;
+	// TTL timeout takes precedence if both times have expired
 
 	if (ttl_us > 0 && !rrr_msg_msg_ttl_ok(entry->message, ttl_us)) {
 		*ttl_timeout = 1;
+		*timeout = 0;
 	}
-	else if (timeout_us > 0 && entry->send_time > 0 && entry->send_time < timeout_limit) {
+	else if (timeout_us > 0 && entry->send_time > 0 && entry->send_time < (rrr_time_get_64() - timeout_us)) {
+		*ttl_timeout = 0;
 		*timeout = 1;
+	}
+	else {
+		*ttl_timeout = 0;
+		*timeout = 0;
 	}
 }

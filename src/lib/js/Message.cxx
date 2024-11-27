@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Js.hxx"
 
 extern "C" {
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "../ip/ip_util.h"

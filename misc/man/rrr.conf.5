@@ -1,4 +1,4 @@
-.Dd 2023-08-26
+.Dd 2024-11-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -44,7 +44,7 @@ do not matter. An instance section ends when a new begins or when we reach the e
 Multiple instances of a module may co-exist as long as their settings don't collide, like if they try to use the same
 network ports.
 .PP
-.nf
+.EX
 # Comment are like this, they must be on separate lines. The instance name
 # and module name are the ony parameters which are always required. Spaces
 # around the = are ignored as well as spaces at the end of a line.
@@ -65,7 +65,7 @@ wait_for=WAIT FOR,...
 duplicate=yes
 
 # Set a route definition to apply on output messages to control which reader instance messages
-# are destined fore (optional). If not given, or the definition produces no result, all readers
+# are destined for (optional). If not given, or the definition produces no result, all readers
 # may receive any message.
 
 # If a route definition is given, the duplicate keyword still controls wether or not messages may be
@@ -73,6 +73,24 @@ duplicate=yes
 # the block, enclose its name in angle brackets like <NAME>. Multiple names may be given, in which
 # the definitions will be run in order.
 route=ROUTE DEFINITION|<ROUTE DEFINITION NAME>[,<ROUTE DEFINITION NAME>]...
+
+# Set a method definition to apply on inbound messages to set the method tags given to cmodule
+# processor functions. The methods tags can be used to dispatch messages to respective functions
+# within the cmodule code. If multiple methods are applied to a single method, the processor function
+# will be called once for each method.
+
+# If not given, the processor function will be called with a method argument indicating that no method
+# is set. If given but execution produces no result for a particular message, the processor function
+# will not be called.
+
+# To refer to a method definition specified outside the block, enclose its name in parentheses like
+# (NAME). Multiple names may be given, in which the definitions will be run in order.
+methods=METHOD DEFINITION|(METHOD DEFINITION NAME)[,(METHOD DEFINITION NAME)]...
+
+# When using methods, call a named processor function directly inside the cmodule program (optional). By
+# default, and if set to no, the default processor function will be called instead with the resolved method
+# name as argument.
+methods_direct_dispatch=yes
 
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
@@ -93,6 +111,8 @@ argument1 = value1
 [INSTANCE_2_NAME]
 module=...
 
+# ##### ARRAY TREE DEFINITIONS
+
 # Any number of named array trees may be specified
 # Modules parsing array data may refer to these instead of having them defined inside each instance block
 {ARRAY_TREE_DEFINITION_A}
@@ -111,6 +131,8 @@ ELSE
 sep1#separator
 ;
 
+# ##### ROUTE DEFINITIONS
+
 # Any number of named route definitions may be specified.
 # Modules with defined output routes may refer to these instead of having them defined inside each instance block.
 # Use tab, newline or carriage return characters (ASCII 0x0B, 0x0A, 0x0D) to separate statements. Spaces (ASCII 0x20)
@@ -118,16 +140,21 @@ sep1#separator
 
 # Postfix notation is used, and the route definition is processed from top to bottom.
 
-# Values are pushed to a stack by placing one of the following keywords in front of them:
-# - T - Topic    - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
-#                  spaces are valid characters in topic filters, end the string with newlines or tabs.
-# - H - Has      - Push a boolean value indicating precence of a given array tag in a message
-# - I - Instance - Push an instance name to the stack
+# String values are pushed to a stack by placing one of the following keywords in front of them:
+# - T - Topic      - Push the result of applying the given MQTT topic filter to the topic of a message. Note that
+#                    spaces are valid characters in topic filters, end the string with newlines or tabs.
+# - H - Has         - Push a boolean value indicating precence of a given array tag in a message
+# - D - Destinaton  - Push an instance name to the stack
+
+# Boolean values may be pushed to the stack:
+# - TRUE    - Push a boolean true to the stack
+# - FALSE   - Push a boolean false to the stack
 
 # Operators are used after pushing elements to the stack. These require one or two values to be present
 # on the stack. After an operator has been run, the values are consumed and the result of the condition is
 # pushed onto the stack. The route definition must be constructed such that no values are present on the stack
-# after processing, which means that a route definition usually ends with one or more POP operators.
+# after processing, which means that a route definition usually ends with one or more POP operators. If BAIL is
+# used, it also counts as a POP.
 
 # The following operators may be used:
 # - AND    - Apply boolean AND on the two preceeding values and push the result.
@@ -136,6 +163,7 @@ sep1#separator
 # - APPLY  - Set the message to be routed to the given instance or not. Requires a boolean value
 #            and an instance name to be present on the stack. Leaves the boolean value on the stack.
 # - POP    - Remove one value from the stack.
+# - BAIL   - Stop processing if the top value on the stack is true. The value is removed from the stack.
 
 # Comments may be indicated by using #, they may be placed anywhere except from when a value is expected.
 
@@ -150,16 +178,62 @@ sep1#separator
 	# Run OR operator on the two stack values, leaves a boolean value on the stack 
 	OR
 	# Set the reader instance_receier_1 to receive messages matching one of the filters
-	I instance_receiver_1
+	D instance_receiver_1
 	APPLY
 	# Invert the result
 		NOT
 	# Set the reader instance_receier_1 to receive messages not matching ant of the filters
-	instance_receiver_2
+	D instance_receiver_2
 		APPLY
 	# Remove the remaining value from the stack
 		POP
-.fi
+
+# ##### METHOD DEFINITIONS
+
+# Any number of named method definitions may be specified.
+# Modules supporting methods (cmodule, perl5, js and python) may refer to a definition by setting the methods=
+# parameter. The method definition allows messages to be matched depending on their topic or what values they
+# contain. The message is then tagged with a chosen method name which later can be retrieved in the processor
+# function of the module.
+
+# Method definitions are useful when a processor module receives messages from many other modules as they provide
+# a structured way of identifying the type of a message. If the programming language of the module used supports it,
+# the names used in the method definition may map directly to methods or functions inside a processor script.
+
+# Refer to the module-specific documentation on how to use the method tags inside the modules.
+
+# The syntax for a method definition is very much like a route definition. The only difference is that the D
+# operator pushes a method name to the stack.
+
+# If a method name is applied multiple times, the last name takes precedence. The BAIL operator may be
+# used to bail out once a method has been applied.
+
+# Example:
+
+(METHOD_DEFINITION_A)
+	# Push two topic filters to the stack
+	T my_topic_a/+
+	T my_topic_b/+
+	# Run OR operator on the two stack values, leaves a boolean value on the stack 
+	OR
+	# Push a method name to the stack and apply the name. Bail out if a method was set.
+	M method_topic
+		APPLY
+		BAIL
+	# Check for an array value being present in the message and push a boolean to the stack.
+	H value_a
+	# Set a method on the message if the value was present
+	M method_value
+		APPLY
+	# Invert the result
+		NOT
+	# Set the method name to be method_b
+	D method_b
+		APPLY
+	# Remove the remaining value from the stack
+		POP
+
+.EE
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
 In all module parameters for array definitions, it is possible to instead specify {NAME} to reference a definition
@@ -197,12 +271,12 @@ and that the eight byte sequence with ASCII-characters is split into two values.
 enclosed by quotes "". The quotes will be removed when the value is parsed. At the second array position, there are nine
 values, and at the sixth position there are two values.
 .PP
-.nf
+.EX
 +--------+-----------------+---------------------------+----------+----------+-------------+----+
 | my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
 |   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
 +--------+-----------------+---------------------------+----------+----------+-------------+----+
-.fi
+.EE
 .PP
 An array parsing specification to produce a dataset like this (assuming the integers are 1 byte wide):
 .PP
@@ -221,7 +295,7 @@ of the sender will be contained within the message. All modules may use IP-messa
 Each instance of a source or processor module has an output buffer from which other modules read. If buffer is
 disabled, a "slot" is used instead which fits a single message.
 .PP
-.nf
+.EX
                                      3 +------------+--------+
                                      __|  INSTANCE  | Buffer |
                 Duplication off     |  |     B      | / Slot |
@@ -231,14 +305,14 @@ disabled, a "slot" is used instead which fits a single message.
             +------------+--------+ |  |  INSTANCE  | Buffer |
                                     |__|     C      | / Slot |
                                        +------------+--------+
-.fi
+.EE
 .PP
 If an instance is specified as sender in more than one other instance, these will compete about messages from it unless
 duplication is enabled. If duplication is enabled, each reader of the duplicated instance gets it's own buffer which
 is filled with copies of all messages. If the buffer is disabled, all readers must make a copy of the message in the slot
 after which it is deleted.
 .PP
-.nf
+.EX
                                        +------------+--------+
                                     4 _|  INSTANCE  | Buffer |
                 Duplication on       / |     B      | / Slot |
@@ -258,7 +332,7 @@ after which it is deleted.
             |     A      |        |----|  INSTANCE  | Buffer |
             +------------+--------+    |     C      | / Slot |
                                        +------------+--------+
-.fi
+.EE
 .PP
 If buffer is disabled, the instance will block if it has a new message to write to the output while the slot is busy,
 and it will proceed once a reader has picked up the message (or all readers if duplication is enabled).
@@ -279,7 +353,7 @@ module may be used to measure performance.
 By default, RRR has a backstop mechanism enabled which stops messages originating from an instance to be read back into the same instance.
 This allows creation of a message bus and to some extent control the direction of messages in certain situations.
 .PP
-.nf
+.EX
      BUS            NODES
 +----------+   +------------+
 |          |<--|  INSTANCE  |
@@ -295,7 +369,7 @@ This allows creation of a message bus and to some extent control the direction o
 |          |<--|  INSTANCE  |
 |          |-->|  python_2  |
 +----------+   +------------+
-.fi
+.EE
 .PP
 In the example above, the buffer instance has the other three instances set as it's senders, and the other three has the buffer
 set as their only sender. This setup allows nodes to be added and removed to the bus without the need for configuring senders on
@@ -303,7 +377,7 @@ other nodes. The Python modules may then generate HTTP requests for the httpclie
 responses. Backstopping prevents httpclient from receiving it's own responses back to itself. The Python will however receive
 HTTP requests from each other, and they must handle this in some way, possibly just ignoring them.
 .PP
-.nf
+.EX
      BAD BUS CONFIGURATION
 +------------+   +------------+
 |  INSTANCE  |<--|            |
@@ -314,7 +388,7 @@ HTTP requests from each other, and they must handle this in some way, possibly j
 |  INSTANCE  |<--|            |
 | httpclient |-->|            |
 +------------+   +------------+
-.fi
+.EE
 .PP
 Backstopping does not work through modules with internal buffers. In the example above, the python instance is supposed to receive
 requests from the mqttclient and then make HTTP requests and convert responses back to mqttclient for it to publish. When the python
@@ -322,7 +396,7 @@ instance puts the modified message in it's output buffer, both mqttclient and ht
 from mqttclient. The configuration can be modified to mitigate this problem, either ny using some clever topic filtering (which
 may or may not be difficult to maintain) or by using a circular configuration.
 .PP
-.nf
+.EX
    GOOD CIRCULAR CONFIGRATION
 +------------+     +------------+
 |  INSTANCE  |---->|            |
@@ -333,7 +407,7 @@ may or may not be difficult to maintain) or by using a circular configuration.
 |  INSTANCE  |--+  |            |
 | httpclient |<----|            |
 +------------+     +------------+
-.fi
+.EE
 .PP
 In the modified example, a circular configuration is used as opposed to a star configuration. When responses are generated in the
 httpclient, they are only received by the mqttclient. If the HTTP response still need to be modified before mqttclient receives it,
@@ -401,6 +475,9 @@ Processes and generates messages with custom Python3 scripts.
 
 .It perl5 (PAI)
 Processes and generates messages with custom Perl5 scripts.
+
+.It lua (PAI)
+Processes and generates messages with custom Lua scripts.
 
 .It js (PAI)
 Processes and generates messages with custom JavaScript scripts.
@@ -832,7 +909,10 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
 .SS modbus (PA)
-This module implements a modbus client capable of getting coil status from a remote modbus server.
+This module implements a modbus client supporting the functions
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10)
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
 .PP
@@ -862,7 +942,7 @@ is used.
 If given, any messages generated as a result of the command will have this topic set.
 .It modbus_function_code
 The modbus command to send, the commands
-.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06), Write Multiple Registers (0x10)
 are supported. If not given,
 .B 0x01
 is used.
@@ -870,7 +950,24 @@ The function code must be stored in the array field in decimal form.
 .It modbus_starting_address
 The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
 .It modbus_quantity
-The quantity (e.g. number of coils or registers) to use. Defaults to 8  and must be in the range 1 - 2000 for coil functions, and defaults to 1 and must be in the range 1 - 125 for register functions.
+For
+.B Read Coils (0x01), Read Discrete Inputs (0x02)
+quantity defaults to 8 and must be in the range 1 - 2000.
+.br
+For
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+quantity defaults to 1 and must the in the range 1 - 125.
+.br
+For
+.B Write Multiple Registers (0x10)
+quantity defaults to 1 and must the in the range 1 - 123.
+.br
+For any other function code quantity is not required and will be ignored if present.
+.It modbus_contents
+The raw data to write in
+.B Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10).
 .It modbus_interval_ms
 If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
 .El
@@ -885,23 +982,52 @@ and they correspond to fields given in the protocol standard.
 .It Error
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_exception_code
-.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
+.It Read Coils (0x01), Read Discrete Inputs (0x02)
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_status
+.It Read Holding Registers (0x03), Read Input Registers (0x04)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_contents
+.It Write Single Register (0x06)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address, modbus_contents
+.It Write Multiple Registers (0x10)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address
 .El
 .PP
 The array fields have the following contents:
 .PP
 .Bl -tag -width -indent
 .It modbus_function_code
-A one byte unsigned integer indicating a function code
+A one byte unsigned integer indicating a function code.
 .It modbus_exception_code
-A one byte unsigned integer indicating an exception code
+A one byte unsigned integer indicating an exception code.
 .It modbus_bytes
-A one byte unsigned integer indicating the size of a data field
+A one byte unsigned integer indicating the size of a data field.
 .It modbus_status
-A blob containing response data of a length indicated by
-.B modbus_bytes
+A blob containing response data from a 
+.B Read Coils (0x01) 
+or 
+.B Read Discrete Inputs (0x02) 
+response of a length indicated by
+.B modbus_bytes.
+.It modbus_starting_address
+An unsigned integer containing the starting address field returned in a response from a
+.B  Write Single Register (0x06)
+or
+.B Write Multiple Registers (0x10)
+response.
+.It modbus_contents
+For 
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+a blob containing response data from of a length indicated by
+.B modbus_bytes.
+.br
+For 
+.B Write Single Register (0x06)
+a blob containing response data of length 2.
+.B 
 .El
 .PP
 .SS python3 (PAI)
@@ -936,7 +1062,7 @@ The name of the function in the python program to which we send settings form th
 All settings defined inside the python block in the configuration file are sent in here.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the python program might be set as needed.
+Any number of custom settings for the python program may be set as needed.
 .El
 .PP
 Refer to the
@@ -957,7 +1083,7 @@ post messages. The process and source functions have their own environments, and
 share any global variables set by the config function. The config function is called first in
 the process environment, then in the source environment.
 .PP
-.nf
+.EX
 from rrr_helper import *
 import time
 
@@ -974,10 +1100,15 @@ def config(rrr_config : config):
 
 	return True
 
-def process(socket : rrr_socket, message: rrr_message):
+def process(socket : rrr_socket, message: rrr_message, method: str):
+	if (method is None):
+		print("No method given to python3 processor function\n")
+	else:
+		print("Method given to processor function is " + method + "\n")
+
 	# Return False if something is wrong
 	if my_global_variable == "":
-		print("Error: configuration failure")
+		print("Error: configuration failure\n")
 		return False
 		
 	# modify the retrieved message as needed
@@ -1009,13 +1140,13 @@ def source(socket : rrr_socket, message : rrr_message):
 
 	return True
 	
-.fi
+.EE
 More details about Python in 
 .Xr rrr_python3(5)
 .PP
 .SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
-perl script. The first and only argument to the source- and generate-functions
+perl script. The first and only argument to the source- and process-subs
 is the RRR message in the form of an object/hash reference of type
 .B rrr_message
 with different parameters which may be modified as needed. To pass the message back to RRR, the
@@ -1061,7 +1192,7 @@ settings object may also be stored in the script to be read from or modified fro
 generate-subroutines.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the Perl script might be set as needed.
+Any number of custom settings for the Perl script may be set as needed.
 .El
 .PP
 Refer to the
@@ -1187,11 +1318,11 @@ Retrieve the value at the specified position. Returns a list with one or more va
 .It $message->count_positions()
 Count the number of positions in the array.
 
-.It $message->get_tag_names(tag)
+.It $message->get_tag_names()
 Get all tag names from the array. Returns a list with zero or more values.
-Always returns the same number of element as count_positions(). An empty string is used forositions without a tag.
+Always returns the same number of element as count_positions(). An empty string is used for positions without a tag.
 
-.It $message->get_tag_counts(tag)
+.It $message->get_tag_counts()
 Get the value count at each position of the message. Returns a list with zero or more values.
 Always returns the same number of element as count_positions().
 .El
@@ -1224,7 +1355,7 @@ calls to message print functions.
 .PP
 Below follows an example perl script.
 .PP
-.nf
+.EX
 #!/usr/bin/perl -w
 
 package main;
@@ -1275,6 +1406,16 @@ sub source {
 sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
+
+	# Get any method set by method definition
+	my $method = shift;
+
+	if (defined $method) {
+		print "Method given to processor function: $method\n";
+	}
+	else {
+		print "No method given to processor function\n";
+	}
 
 	# Do some modifications to the message
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
@@ -1363,7 +1504,317 @@ sub process {
 	# Return 1 for success and 0 for error
 	return 1;
 }
-.fi
+.EE
+.SS lua (PAI)
+The Lua module makes it possible to process and generate messages in a custom 
+Lua script. The source function in the scripts receives an empty message object,
+and the process function receives populated messages from another module.
+Additional message objects may be created as well.
+
+Messages may be passed on using the
+.B send()
+method on the message object.
+
+The following configuration parameters are available in the
+.B lua
+module:
+
+.Bl -tag -width -indent
+.It lua_file=FILENAME
+The file containing the Lua script to run. The script will be run once when the program starts, and global code outside of functions will be executed.
+If multiple workers are used by setting the parameter
+.B lua_workers,
+the script will run once for each worker and global variables will not be accessible between different workers.
+
+The functions must return a boolean value where true indicates success and false indicates failure.
+
+.It lua_config_function=NAME
+The function to call before sourcing and processing starts.
+
+.It lua_source_function=NAME
+The function to call regularely.
+The source function receives an empty message object which may be populated with data.
+
+.It lua_process_function=NAME
+The function to call when a message from another module should be processed.
+The process function receives a populated message object from another module.
+If methods are used (without direct dispatch), the method name is passed as a string as the second argument.
+
+.It lua_precision_loss_warnings={yes|no}
+If set to yes or left unset, warnings will be printed if precision loss occurs when converting numbers to fixed point.
+
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the Lua script may be set as needed.
+.El
+
+Refer to the
+.B cmodule
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It lua_workers=UNSIGNED INTEGER
+.It lua_source_interval_ms=MILLISECONDS
+.It lua_log_prefix=PREFIX
+.It lua_drop_on_error={yes|no}
+.El
+.PP
+There must always be either a source- or process function specified, or both. If a process function
+is specified, there must also be at least one sender specified.
+.PP
+Logging, retrieval of configuration parameters and sending of messages is done through the
+.PP
+The Debug object, which is used to print debug and log messages, has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It debug = RRR.Debug.new()
+Create a new debug object. This is required before any messages can be printed.
+
+.It debug:msg(level, message)
+Messages to this function are always printed prefixed with the specified loglevel (a number 0, 1, 2 etc.).
+
+.It debug:dbg(level, message)
+Messages to this function are printed only if the specified loglevel (debuglevel) is active. If loglevel is 0 however, the message is always printed.
+
+.It debug:err(message)
+Messages to this function are always printed with loglevel 0 and to STDERR output. Do not overuse this as it might cause broadcast messages on the system when RRR is run for instance by systemd. Error messages should usually be printed using the msg function with loglevel 0.
+.El
+.PP
+The Message object, which is used to modify and create RRR messages, has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It message = RRR.Message.new()
+Create a new message.
+
+.It message:send()
+Pass the message to reader instances.
+
+.It message:ip_set(ip, port)
+Set IP address parameters.
+
+.It ip, port = message:ip_get()
+Get IP address parameters (returns empty string for IP if no IP is set).
+
+.It message:ip_clear()
+Clear IP address parameters (same as calling ip_set("", 0)).
+
+.It message:ip_so_type = "UDP"
+Set or get IP protocol to UDP or TCP (string). May be empty.
+
+.It message:topic = "TOPIC"
+Set or get message topic (string). May be empty or otherwise a valid MQTT topic.
+
+.It message:timestamp = 1696752424000000
+Set or get message timestamp (integer) in microseconds. Not available for manipulation if Lua was built with less than 64 bit integers.
+
+.It message:data = ""
+Set or get message data. The data field is ignored if the message has any array fields set.
+
+.It message:type = RRR.Message.MSG_TYPE_MSG
+Set or get message type, use one of the constants from the Message object:
+.sp
+
+.Bl -tag -width "aa"
+.It \(bu
+RRR.Message.MSG_TYPE_MSG
+.It \(bu
+RRR.Message.MSG_TYPE_TAG
+.It \(bu 
+RRR.Message.MSG_TYPE_GET
+.It \(bu 
+RRR.Message.MSG_TYPE_PUT
+.It \(bu
+RRR.Message.MSG_TYPE_DEL
+.El
+
+.It message:class = RRR.Message.MSG_CLASS_DATA
+Set or get message class.
+Changing this field has no effect as ARRAY or DATA is implicitly set depending on whether
+or not the message has array fields set.
+Use one of the constants from the Message object:
+.sp
+.Bl -tag -width "aa"
+.It \(bu
+RRR.Message.MSG_CLASS_DATA
+.It \(bu
+RRR.Message.MSG_CLASS_ARRAY
+.El
+
+.It message:clear_array()
+Remove any array fields, message becomes DATA type.
+
+.It message:clear_tag("my_tag")
+Clear any array fields with the given tag.
+
+.El
+.PP
+All push and set functions accept arrays as well. The first element in the array
+will determine the type of the value unless a type specific method is used.
+
+Note that if an array is passed to set_tag or push_tag in which the first value
+is a boolean, all values in the array will be converted to booleans which means
+that all values apart from 'false' and 'nil' will be converted to 'true'.
+
+Lua typically only supports 64 bit signed values, while RRR h type may hold 64 bit unsigned.
+To push a large unsigned integer which does not fit in a Lua integer, pass the number as a
+string to push_tag_h or set_tag_h.
+.PP
+.Bl -tag -width -indent
+.It message:push_tag_str("my_tag", "my_value")
+Push an array value of string type.
+
+.It message:push_tag_blob("my_tag", "my_value")
+Push an array value of blob type.
+
+.It message:push_tag_h("my_tag", 1)
+Push array value of type host (integer).
+
+.It message:push_tag_fixp("my_tag", 3.5)
+.It message:push_tag_fixp("my_tag", "3.5")
+.It message:push_tag_fixp("my_tag", "16#a.cde")
+Push array value of fixed pointer type.
+
+.It message:push_tag("my_tag", 1)
+Push a value with automatic type detection.
+Depending on the type of the value, the following will happen:
+.Bl -tag -width "aa" -indent
+.It Decimal number
+Will be converted to fixp unless precision loss occurs, in which case it will be converted to a string while also printing a warning message
+.It Number without decimals
+Will be converted to h (host endian integer signed or unsigned)
+.It String
+Will be converted to str
+.It Nil
+Will be converted to vain
+.It Boolean
+Will be converted to h (set to 1 or 0)
+.El
+
+.It set_tag_str("my_tag", "my_value")
+.It set_tag_blob("my_tag", "my_value")
+.It set_tag_h("my_tag", 1)
+.It set_tag_fixp("my_tag", 3.5)
+.It set_tag("my_tag", 1)
+Set values (same as push functions, but any matching tags are cleared first).
+
+.It message:get_position(position_number)
+Retrieve the value at the specified position. Returns a list with one or more values or nil.
+
+.It message:count_positions()
+Count the number of positions in the array.
+
+.It message:get_tag_names()
+Get all tag names from the array. Returns a list with zero or more values.
+
+.It message:get_tag_counts()
+Get the value count at each position of the message. Returns a list with zero or more values.
+.El
+.PP
+The Config object, which is used to retrieve settings from the RRR configuration file,
+may not be instantiated but is received as argument to any specified configuration method.
+It has the has the following functionallity:
+.PP
+.Bl -tag -width -indent
+.It config:get(key)
+Retrieve a setting from the configuration file. Returns a string or nil if the setting is not found.
+.It config:set(key, value)
+Set a setting in the configuration file. The setting will only be visible to the current Lua script.
+.El
+.PP
+Below follows an example Lua script.
+.PP
+.EX
+-- Create a debug object
+local debug = RRR.Debug.new()
+
+-- Create a configuration table
+local my_config = { }
+
+-- Configuration function
+function config(config)
+	-- Read configuration parameters and store them in the config table
+	for _, key in ipairs({"param_a", "param_b", "param_c"}) do
+		if not config:has(key) then
+			debug:msg(0, "Configuration parameter '" .. key .. "' was not found")
+			return false
+		end
+		my_config[key] = config:get(key)
+	end
+
+	-- Set a custom setting
+	config:set("my_custom_setting", "5")
+
+	-- Retrieve a custom setting
+	debug:msg(1, "my_custom_setting is: " .. config:get("my_custom_setting"))
+
+	return true
+end
+
+-- Process function
+function process(message, method)
+	-- Get any method set by method definition
+	if method then
+		debug:msg(1, "Method given to Lua processor function: " .. method)
+	else
+		debug:msg(1, "No method given to Lua processor function")
+	end
+
+	-- Print some information about the message
+	debug:msg(1, "Processing a message\n")
+	debug:msg(1, "- The timestamp of the message is: " .. message:timestamp .. "\n")
+	debug:msg(1, "- The topic of the message is: " .. message:topic .. "\n")
+	debug:msg(1, "- The message has " .. message:count_positions() .. " array positions\n")
+
+	-- Do some modifications
+	message:topic = message:topic .. "/" .. my_config["param_a"]
+
+	-- Remove any array values
+	message:clear_array()
+
+	-- Set data in the message
+	message:data = "Hello world"
+
+	-- Pass on the modified message
+	message:send()
+
+	return true
+end
+
+-- Source function
+function source(message)
+	-- Do some modifications
+	message.push_tag("my_param_a", my_config["param_a"])
+	message.push_tag("my_param_b", my_config["param_b"])
+	message.push_tag("my_param_c", my_config["param_c"])
+
+	-- Pass on the new message
+	message:send()
+
+	return true
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 .SS js (PAI)
 The js module makes it possible to process and generate messages in a custom  JavaScript.
 
@@ -1396,7 +1847,7 @@ The function to call regularely.
 The function to call when a message from another module should be processed.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the JavaScript script might be set as needed.
+Any number of custom settings for the JavaScript script may be set as needed.
 .El
 
 Refer to the
@@ -1414,7 +1865,7 @@ section for descriptions of the following parameters:
 
 A scripts with all three function types defined may look like this:
 
-.nf
+.EX
 let my_parameter = undefined;
 
 function config(config) {
@@ -1431,15 +1882,23 @@ function source(message) {
 	message.send();
 }
 
-function process(message) {
+function process(message, method) {
 	// Process a message from another module
 	// and add the value previously retrieved
 	// from the configuration file.
+
+	if (method !== undefined) {
+		console.log("Method given to JS processor function: " + method + "\n");
+	}
+	else {
+		console.log("No method given to JS processor function\n");
+	}
+
 	console.log("Processing a message\n");
 	message.push_tag("my_parameter", my_parameter);
 	message.send();
 }
-.fi
+.EE
 
 The
 .B config
@@ -1463,7 +1922,7 @@ operator.
 
 The Config and Message objects have the following members:
 
-.nf
+.EX
 // Data type Config
 {
   has: function(parameter){},   // Returns true if the parameter exists, and false otherwise
@@ -1508,7 +1967,7 @@ The Config and Message objects have the following members:
   get_tag_all:     function(tag=null){return [];},// Get array of values with the given tag
   send:            function(){}                   // Send the message to the output buffer for other instances to receive
 }
-.fi
+.EE
 
 When using
 .B push_tag_object
@@ -1524,12 +1983,13 @@ Modules not compatible with JSON strings will treat such values just as other st
 
 The following special global Objects are available:
 
-.nf
+.EX
 // Data type Console (accessed through global name console)
 {
-  log(message);      // Log a message using debuglevel 7
-  error(message);    // Log a message using debuglevel 0 (error)
-  critical(message); // Log a message using debuglevel 0 (error) and crash program
+  log(message);                 // Log a message using debuglevel 7
+  error(message);               // Log a message using debuglevel 0 (error)
+  assert(assertion, message);   // Log a message using debuglevel 0 if assertion is false and crash program
+  critical(message);            // Log a message using debuglevel 0 (error) and crash program
 }
 
 // Data type Timeout (run a scheduled function once). Syntax is shown. The
@@ -1550,7 +2010,7 @@ const os = new OS();
 // Retrieve the hostname of the host on which the script runs
 const hostname = os.hostname();
 
-.fi
+.EE
 
 .SS cmodule (P)
 This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
@@ -1589,7 +2049,7 @@ The function to which to call to process messages from senders. Optional, but at
 The function to call before the program shuts down. Optional.
 
 .It CUSTOM SETTING=VALUE
-Any number of custom settings for the C-module might be set as needed.
+Any number of custom settings for the C-module may be set as needed.
 .El
 .PP
 Refer to the
@@ -1678,21 +2138,35 @@ POST
 .It
 PUT
 .It
+PATCH
+.It
 HEAD
 .It
 DELETE
 .El
 
-Generated  messages will have the topic
+Any generated messages as a result of incoming requests will have a unique topic set.
+If responses are to be generated by sender instances, the same topics as the request messages ( from
+.B httpserver
+) is used in the response messages ( to
+.B httpserver
+), allowing them to be matched.
+The format of the topics is either
 .B httpserver/request/uuu
-set, where
-.B uuu
-is a unique unsigned decimal number which increase by 1 for every received request.
+or
+.B httpserver/request/uuu/mmm/aaa/eee
+depending on the current configuration.
+Refer to documentation of the parameters
+.B http_server_topic_format
+and
+.B http_server_get_response_from_senders
+for more details.
+
 Messages will not be generated for the 
 .B OPTIONS
 method, only default 204 responses will be sent to these requests.
 
-For PUT and POST request which have a body, value fields will be extracted from bodies with the following content types:
+For PUT, PATCH and POST request which have a body, value fields will be extracted from bodies with the following content types:
 
 .Bl -dash -offset indent -compact
 .It
@@ -1709,7 +2183,7 @@ can be used and the body can then be parsed by a script in the python3 or perl5 
 
 Structural fields set due to
 .B http_server_receive_full_request
-being active, fields from the URI and field from PUT/POST data will all be added to the same array in the following pre-defined order.
+being active, fields from the URI and field from PUT/PATCH/POST data will all be added to the same array in the following pre-defined order.
 Duplicate value field names are allowed.
 
 .Bl -enum -offset indent -compact
@@ -1718,7 +2192,7 @@ Structural fields
 .It
 Fields from request URI
 .It
-Fields from PUT/POST data
+Fields from PUT/PATCH/POST data
 .El
 
 When receiving JSON data, one RRR array message will be generated for every JSON object containing bare associative values regardless of nesting.
@@ -1744,14 +2218,22 @@ The following configuration parameters are available in the
 module:
 .PP
 .Bl -tag -width -indent
-.It http_server_transport_type={tls|plain|both}
-Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
+.It http_server_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain, tls
+and
+.B quic.
+If not given, 'plain' is assumed.
 
 .It http_server_port_tls=PORT
-Port to use for TLS listening, defaults to 443.
+TCP port to use for TLS listening, defaults to 443.
 
 .It http_server_port_plain=PORT
-Port to use for plaintext listening, defaults to 80.
+TCP port to use for plaintext listening, defaults to 80.
+
+.It http_server_port_quic=PORT
+TCP port to use for TLS listening, defaults to 443 (UDP).
 
 .It http_server_request_max_mb=MEGABYTES
 Maximum size in megabytes for requests. A value of 0 indicates unlimited request size. Defaults to 10.
@@ -1785,9 +2267,21 @@ The following array values will be present in generated messages:
 .It http_method
 Always present.
 .It http_protocol
-Always present with the value 1 or 2.
+Always present with the value 1, 2 or 3. Given in uppercase letters.
 .It http_endpoint
+Always present. Percent-decoding and removal of the query string will not be performed unless
+.B http_server_decode_endpoint
+is set to
+.B yes.
+.It http_query_string
+Present if
+.B http_server_decode_endpoint
+is set to
+.B yes
+and the query contained a query string (following a ?).
 Always present.
+.It http_authority
+Added if the request contained an :authority or a Host: header. The first takes precedence if both are present.
 .It http_body
 Added if a body of non-zero length is present.
 .It http_content_transfer_encoding
@@ -1810,23 +2304,49 @@ is active, no messages without body will be generated.
 
 If set to 'no' or left unset, only fields from the HTTP request will be present in generated messages.
 
+.It http_server_decode_endpoint={yes|no}
+If this option is set to 'yes', any % sequences present in the
+.B http_endpoint
+field of messages being generated when full requests are received will be decoded into respective bytes.
+
+It is not possible to accurately represent the HTTP endpoint with the query string attached,
+nor the query string by itself after any percent decoding as this might introduce one of the reserved characters
+changing the meaning of the endpoint and/or query string. Due to this, and if the query contained a query string (following a ?),
+the query string will be removed and stored into the field
+.B http_query_string.
+The query string will not be decoded, thus any + (representing spaces) and percent encoded sequences will
+be preserved.
+
+If set to no or left unset, both the endpoint and any query string will be present in
+.B http_endpoint
+without any decoding.
+
 .It http_server_get_response_from_senders={yes|no}
 If this option is set to 'yes', a sender instance of
 .B httpserver
 is expected to generate HTTP responses. Implies
 .B http_server_receive_full_request=yes.
 
+To match requests and responses, the response messages generated by sender instances should have the same topic set as the request.
+If 'request' topic format is set in
+.B http_server_topic_format,
+the topic filter
+.B httpserver/request/uuu/#
+is used to match responses. Otherwise, the topic filter
+.B httpserver/request/uuu
+is used.
+
 An instance which receives RRR messages from
 .B httpserver
 containing requests may generate responses in an RRR array message with the following fields of which all are optional:
-.sp
+
 .Bl -tag -width -indent
 .It http_response_code
 The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present
 (httpserver will implicitly force the usage of a 200 response if the status is 204 and a body is present).
 Must be a value >= 100 and <= 599.
 200 or 204 will be selected silently if the provided code is out of this range.
-.sp
+
 .It http_content_type
 The content type to use for the response. If it is defined but is an empty string, no content type header will be sent.
 If not defined, the content type sent will depend on the type of the
@@ -1838,7 +2358,7 @@ In any case, a content type header will not be sent if there is no response body
 The response body to send. The content type set in the response header, unless specified explititly in 
 .B http_content_type,
 depends on the type of this field:
-.sp
+
 .Bl -tag -width -indent
 .It blob
 application/octet-stream
@@ -1849,7 +2369,6 @@ text/plain (also used by other types convertible to strings (numbers etc.))
 .It vain
 No response body generated
 .El
-.sp
 .El
 
 Response messages from another instance may also be a plain data message in which the data of this message will be treated the same way as data from the
@@ -1868,7 +2387,7 @@ Always respond with 404 Not Found to requests with
 .B /favicon.ico
 endpoint. If set to 'no' or left unset, these requests are treated as any other.
 
-.It http_server_response_timeout=MILLISECONDS
+.It http_server_response_timeout_ms=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
 response. Defaults to 2000.
@@ -1889,6 +2408,54 @@ If defined,
 will send a
 .B Cache-Control
 header with the given string in all response headers.
+
+.It http_server_topic_format={simple|request}
+If set to 
+.B simple
+or left unset,
+the generated messages will have the topic 
+.B httpserver/request/uuu 
+set. If set to
+.B request,
+the generated messages will have the topic
+.B httpserver/request/uuu/mmm/aaa/eee set.
+
+The following substitutions are performed on the topics:
+
+.Bl -tag -width -indent
+.It uuu
+is a unique unsigned decimal number which increase by 1 for every received request
+.It mmm
+is the HTTP method for the request in capital letters (e.g. GET or POST)
+.It aaa
+is the value of the :authority (HTTP/2+) or Host: header (HTTP/1) in the request
+.It eee
+is the endpoint of the request
+.El
+
+If a value is not available for a substitution, the topic level is left empty.
+
+Example topics:
+
+.Bl -tag -width -indent
+.It httpserver/request/100
+A request where the "simple" topic format is used.
+
+.It httpserver/request/101/GET/localhost/
+A "GET" request to authority "localhost" where "request" topic format is used. The request is for the default endpoint "/".
+
+.It httpserver/request/102/GET/localhost/favicon.ico
+A "GET" request to authority "localhost" for the "/favicon.ico" endpoint.
+
+.It httpserver/request/103/GET/localhost/img/logo.png
+A "GET" request to authority "localhost" for the "/img/logo.png" endpoint.
+
+.It httpserver/request/104/POST//submit
+A "POST" request for the "/submit" endpoint without any authority set.
+
+.It httpserver/request/105/PUT//
+A "PUT" request for the default "/" endpoint without any authority set.
+.El
 
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
@@ -1941,14 +2508,21 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 .PP
 With default configuration, having no parameters specified, no RRR messages will be generated for received requests.
 .PP
-Note that all incoming request have to use
-.B HTTP/1.1
-as protocol version, any other versions will be rejected.
-
+The following protocols are supported by
+.B httpserver,
+and may be used at the clients discretion:
+.PP
+\(bu HTTP/1.0 and HTTP/1.1 where the latter implies keepalive connection
+\(bu Websocket through upgrade from HTTP/1.1
+\(bu HTTP/2 through upgrade from HTTP/1.1
+\(bu HTTP/2 plain mode using HTTP/2 magic
+\(bu HTTP/2 negotiated using TLS/ALPN
+.PP
 .SS httpclient (PAI)
-This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
-may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
-use any data sent from the server, any data received is ignored.
+This module takes RRR messages from other modules and sends them to an HTTP server.
+Array values in received messages may be sent as HTTP form fields.
+GET and POST are supported using either HTTP or HTTPS.
+This module does not, by default, use any data sent from the server, any data received is ignored.
 .PP
 The following configuration parameters are available in the
 .B httpclient
@@ -1977,12 +2551,18 @@ If GET method is used, any query values from RRR messages will be appended to th
 will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
 Defaults to
 .B /.
+Any provided endpoint by means of this parameter or otherwise must contain only characters which are valid for URIs;
+If for instance spaces are to be used in an endpoint, these must be encoded as %20.
 
-.It http_transport_type={tls|plain|both}
-If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
-.B enforced,
-which means that redirects fro the server to a different transport type than the chosen one will be rejected.
-Use 'both' or leave unspecified for automatic transport type.
+.It http_request_interval_ms=MILLISECONDS
+If set to a value greater than 0, a request will be generated at the given interval.
+The given or default parameters **http_server**, **http_port** and **http_endpoint** will be used for each request.
+Generated requests will be added to a seperate queue and are subject to configured timeouts and may fail depending on configured restrictions or requirements.
+If set to 0 or left unset, no interval requests will be made.
+
+.It http_transport_type={tls|plain|quic}
+Force a specific transport type.
+If not given, the transport type will be chosen automatically.
 
 .It http_response_max_mb=MEGABYTES
 Maximum size in megabytes for responses. A value of 0 indicates unlimited response size. Defaults to 10.
@@ -2002,7 +2582,7 @@ Which method to use when sending data to the server. Defaults to
 .B get.
 
 .It http_format={urlencoded|multipart|json|raw}
-Control which body format to use for PUT and POST requests. If the
+Control which body format to use for PUT, PATCH and POST requests. If the
 .B raw
 mode is set, messages which do not contain a body (specified in the tag named in
 .B http_body_tag
@@ -2060,7 +2640,7 @@ will only be used if the active content type is multipart/form-data.
 
 Values from the message, although they will be attempted converted, should be of the
 .B str
-type, event binary data. The
+type or binary data. The
 .Xt mangler (PA)
 module can be used to convery values if needed.
 The endpoint, method, server or port must not contain any NULL characters.
@@ -2124,6 +2704,22 @@ Ignore any meta tags when array values to the HTTP query (controlled by)
 .B http_tags.
 If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
 
+.It http_request_tags_ignore={yes|no}
+Ignore any tags possibly originating from
+.B httpserver
+when the configuration parameter
+.B http_server_receive_full_request
+is active.
+Any fields specified in the documentation for this parameter will not be added to query strings or form data body,
+but the fields will still work as expecting when controlling the behaviour of a query whenever applicable.
+If set to no or left unset, these fields may be included in requests depending on other configuration parameters.
+
+Other fields added by
+.B httpserver,
+like
+.B http_request_partials
+will also be ignored.
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If
@@ -2176,7 +2772,7 @@ is a set of fixed fields to send to the HTTP server, optionally with values. Val
 are sent regardless of the configuration of
 .B http_tags.
 
-If a message is to have it's raw body sent in a PUT or POST request, controlled by
+If a message is to have it's raw body sent in a PUT, PATCH or POST request, controlled by
 .B http_body_tag,
 fields from these parameters will not added to the query.
 
@@ -2207,10 +2803,11 @@ PUT messages which are stored in the message DB will be retried at the next mess
 Defaults to 'no' which means that connecting will be retried until a timeout is reached or indefinitely.
 
 .It http_message_timeout_ms=MILLISECONDS
-Timeout for deferred messages, defaults to 0 which means no timeout.
-Messages being defered to fhe message DB (see
+When a message has been in the send queue for more than the specified amount of milliseconds without any response from the server, it is dropped.
+Messages which has been handed over to a message DB (see
 .Xr http_msgdb_socket
-) will not get affected by this parameter, as the timer is reset every time they are read back from the DB.
+), will be added back to the queue at a later time and the timer will be reset for these.
+
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
 If the timeout is set too high or is not set, messages may accumulate in memory.
 
@@ -2278,6 +2875,20 @@ tag will not be present for JSON messages.
 Also, if the JSON data in the response contains any of the above fields, both will be present in the message
 with the HTTP-response fields being placed first.
 
+.It http_trap_headers=HEADER-NAME[,HEADER-NAME]...
+
+If given, the listed headers will be present as array values in generated structured messages.
+Implies
+.B http_receive_structured=yes.
+The received headers will be in the format
+.B http_HEADER-NAME
+all in lowercase letters. Dashes and undescores are preserved as-is.
+
+The value is stripped of leading spaces (SP only) as well as trailing spaces and line end (LF, CR, TAB or SP).
+Otherwise the value is left untouched, e.g. any encoding, quoted strings or subvalues are not handled.
+
+If a specified header is not present, this is indicated by the value being empty.
+
 .It http_receive_ignore_error_part_data={yes|no}
 If set to no, attempts will be made to create messages from the part data of any responses from the server, even
 if they are error responses (HTTP response code is less than 200 or more than 299).
@@ -2296,11 +2907,16 @@ and does not affect any other parameters.
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
-	
+
 .It http_silent_put_error_limit_s=SECONDS
 If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
 This is useful if failed PUT are stored in a message DB and an error messages need not be printed immediately as the store is attempted again later.
 Defaults to 0 which means that all errors are printed regardless of the age of the messages.
+
+.It http_response_codes_summary=code[,code...]
+If a comma separated list of error codes is specified, any error messages will not be printed for responses with a given code.
+At regular intervals, a normal log message will be printed summarizing the total count of errors per code.
+If not given, one error message for each error response is printed which also includes the request endpoint.
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
@@ -2350,7 +2966,8 @@ The directroy to store files in. Defaults to '/var/lib/rrr/msgdb'.
 Multiple instances of the Message DB should not use the same directory and the directory must not be used to store anything else.
 
 .It msgdb_socket=FILENAME
-The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
+The path to the socket to which clients connects.
+Defaults to 'msgdb.sock' in the currrent run directory from the environment (typically /run/rrr).
 
 .It msgdb_directory_levels=LEVELS
 The number of directory levels to use when storing files. Each file will be placed into a directory corresponding to the first letters of its name.
@@ -2362,8 +2979,9 @@ Must be in the range 0 to 4 inclusive, defaults to 2.
 Incrementer will append unique ID numbers to messages matching a specified topic filter.
 If wildcards are present in the filter, an separate ID counter will be used for each unique topic matching the filter.
 The ID counters may be initialized by passing in messages with a start ID value in a specific tag, or they may begin at
-the lowest allowed value. If a message DB socket is specified, the latest used ID's will be stored on disk for
-persistence across restarts.
+the lowest allowed value.
+Any initialization messages are ignored if an ID is already initialized.
+If a message DB socket is specified, the latest used ID's will be stored on disk for persistence across restarts.
 
 When messages are allocated an ID, a number following a slash / is appended to the topic before the messages
 are sent to the output buffer for other instances to pick up.
@@ -2375,13 +2993,31 @@ is given to incrementer and matches the active configuration, the topic will be 
 where UUU is the allocated numberic ID. The allocated IDs are 32-bit unsigned integers which gives a maximum value of 4.294.967.295
 which when reached wraps back to the minimum value.
 
+If unique IDs need to be generated across different hosts, there are two methods of ensuring that unique IDs are generated.
+Both methods may be used simultaneously.
+
+.B Modulus and position
+
+IDs will be generated by adding a modulus to the last used ID, and then using the position within the modulus to
+determine which ID to use.
+The modulus represent at least the number of ID generators, and the position represent one specific generator.
+
+.B Prefix
+
+A prefix may be given which is ORed with generated IDs.
+The prefix may either be specified in the configuration, or in case
+.B incrementer_id_tag
+is used, the ID being supplied must contain the prefix.
+
+The following configuration parameters are available in the incrementer module:
+
 .Bl -tag -width -indent
 .It incrementer_subject_topic_filter=MQTT TOPIC FILTER
 The topic filter for messages to process, required parameters. Wildcards # and + are allowed per MQTT standards.
 Messages received which do not match will be passed through to the output buffer unmodified.
 To prevent other messages from being received to incrementer all together, set the same filter in the general
 .B topic_filter
-parameter.
+parameter or use routing.
 
 .It incrementer_msgdb_socket=PATH
 If specified, used IDs will be stored on disk using Message DB. An instance of
@@ -2392,13 +3028,35 @@ must be running and listening on the socket.
 If specified, all topics for which to allocate IDs must be pre-initialized. This is done
 by passing a message to
 .B incrementer
-with the same topic 
+containing a start ID number in a value with the given tag.
+
+Initialization does not persist across restarts, and to retain an initialized ID, a generation must be triggered.
+Once an ID has been generated, the initializion value will no longer be used.
+If multiple initializations are sent, the last one takes precedence.
+
+If a fixed prefix is used through the parameter
+.B incrementer_id_prefix
+being non-zero, the ID given must contain this prefix.
+Otherwise, if the ID given contains a prefix, this will continue to be used for successive ID generations.
 
 .It incrementer_id_min=UNSIGNED INTEGER
 The lowest ID to allocate, defaults to 1.
 
 .It incrementer_id_max=UNSIGNED INTEGER
 The maximum ID to allocate, default to 4.294.967.295.
+
+.It incrementer_id_prefix=UNSIGNED INTEGER
+The prefix to use for generated IDs.
+Defaults to 0 which means that no prefix is used unless IDs with prefixes are supplied through initialization using the
+.B incrementer_id_tag
+parameter.
+
+Generated IDs will be prefixed with the given value so that the bits required
+to represent the maximum ID set in
+.B incrementer_id_max
+occupies the least significant bits of the ID and the prefix occupies the remaining
+bits.
+The total number of bits may not exceed 64.
 
 .It incrementer_id_modulus=UNSIGNED INTEGER
 The modulus (increment step) to use, defaults to 1 which is also the minimum value. Maximum value is 255.
@@ -2426,7 +3084,7 @@ The algorithm used for calculating ID numbers:
 .br
 \(bu p    = Position
 
-.nf
+.EX
 IDn1 = IDo - (IDo mod m) + m + p
 
 If IDn1 < IDl or IDn1 > IDh, then IDn2 = IDl - (IDl mod m) + p
@@ -2434,11 +3092,17 @@ If IDn1 < IDl or IDn1 > IDh, then IDn2 = IDl - (IDl mod m) + p
 
 If IDn2 < IDl, then IDn = IDn2 + m
                else IDn = IDn2
-.fi
+.EE
 
 \(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
 .br
 \(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
+
+After a new ID has been generated, it will be ORed with any configured prefix.
+When prefixes are in use, the algorithm expects any old stored ID, or ID used for initialization,
+to be prefixed with the same value.
+
+TODO Explain negotiation
 
 .SS cacher (PA)
 The
@@ -2548,8 +3212,13 @@ TCP port to listen on (listens on all interfaces). Defaults to 1883.
 .It mqtt_broker_port_tls=PORT
 TCP port to listen on for TLS connections (listens on all interfaces). Defaults to 8883.
 
-.It mqtt_broker_transport_type={plain|tls|both}
-The transport type to use when listening. Defaults to 'plain'.
+.It mqtt_broker_transport_type=TRANSPORT[,...]
+A comma separated list of transport types to use for listening.
+May be any combination of
+.B plain
+and
+.B tls.
+If not given, 'plain' is assumed.
 
 .It mqtt_broker_tls_*
 Refer to the
@@ -2626,7 +3295,7 @@ Comments may be placed on separate lines and begins with '#'. Spaces and tabs ar
 .PP
 Below follows some example rules:
 .PP
-.nf
+.EX
 # BEGIN ACL FILE
 # Allow access to everything from everyone
 TOPIC #
@@ -2637,7 +3306,7 @@ TOPIC $SYS/#
 	DEFAULT READ
 	USER system_user WRITE
 # END ACL FILE
-.fi
+.EE
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP
@@ -2942,7 +3611,21 @@ Any ongoing reading operation will stop, but the file may be read from at a late
 
 If writing is performed to a stream device, these will also be read from.
 
-The following array fields are used in these messages:
+Failure to open files are typically ignored silently.
+Use debuglevel 3 to print more information about failures.
+
+If the type of
+.B file_data
+is
+.B str,
+a quoted string will be output in the file.
+If this is not wanted, use the
+.B blob
+type instead, possibly by converting the value using the
+.B mangler
+module.
+
+The following array fields are used in write messages to the file module:
 .PP
 .Bl -tag -width -indent
 .It file_directory
@@ -2952,6 +3635,11 @@ is set to yes, this value may be present in the message to override the director
 .It file_name
 The name of the file to open to save the data.
 The file must be located inside the directory being used and the name may not contain directories (e.g. slashes).
+.It file_data
+The data to write to the file.
+If the configuration parameter
+.B file_write_array_values
+is used, the given array values are used instead.
 .El
 
 .PP
@@ -3132,7 +3820,7 @@ Defaults to 0 which means that TTL check is disabled.
 .It file_write_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the file.
 RRR messages which do not contain an array are dropped.
-Any integer types will have big endianess in the resulting publish message.
+Any integer types will have big endianess in the written files.
 If left unset, the field
 .B file_data
 will be used.
@@ -3159,6 +3847,13 @@ If no files are open, the message is dropped.
 If write error occurs during multicast, the file in question will be closed.
 No attempt will be made to write the data again.
 Defaults to 'no' which disables write multicast.
+
+.It file_write_mode={MODE}[,MODE]...
+If specified, and a newly created or existing file is opened for writing, the given mode will be set on the file.
+Refer to
+.Xr chmod(2)
+for a list of valid modes.
+For write to be possible, proper permissions must be given (read + write permissions for the user should always be set).
 
 .El
 .SS mysql (DAI)

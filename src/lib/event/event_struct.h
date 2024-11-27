@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,6 +54,8 @@ struct rrr_event_queue {
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
 	void *callback_arg;
 	int callback_ret;
+
+	int usercount;
 };
 
 #endif /* RRR_EVENT_STRUCT_H */

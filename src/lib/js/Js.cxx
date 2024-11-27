@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <algorithm>
 #include <set>
 #include <filesystem>
+#include <array>
 
 namespace RRR::JS {
 	ENV::ENV(const char *program_name) :
@@ -94,6 +95,11 @@ namespace RRR::JS {
 
 	Value::Value(v8::Local<v8::Value> value) :
 		v8::Local<v8::Value>(value)
+	{
+	}
+
+	Undefined::Undefined(CTX &ctx) :
+		Value(v8::Undefined(ctx))
 	{
 	}
 
@@ -243,6 +249,30 @@ namespace RRR::JS {
 			flog(0, args);
 		}
 
+		void assert_(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			// No return value event if we do not abort
+
+			auto isolate = args.GetIsolate();
+			auto ctx = args.GetIsolate()->GetCurrentContext();
+			if (args.Length() == 0) {
+				// Always trigger if there are no arguments
+				RRR_MSG_0("Assertion triggered\n");
+			}
+			else {
+				if ((args[0]->ToBoolean(isolate))->IsTrue()) {
+					return;
+				}
+
+				RRR_MSG_0("Assertion triggered\n");
+
+				for (int i = 1; i < args.Length(); i++) {
+					auto value = String(isolate, args[i]->ToString(ctx).ToLocalChecked());
+					RRR_MSG_0("- %s\n", *value);
+				}
+			}
+			abort();
+		}
+
 		void critical(const v8::FunctionCallbackInfo<v8::Value> &args) {
 			flog(0, args);
 			abort();
@@ -271,6 +301,12 @@ namespace RRR::JS {
 		}
 		{
 			auto result = console->Set(ctx, String(*this, "error"), v8::Function::New(ctx, Console::error).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to intitialize globals\n");
+			}
+		}
+		{
+			auto result = console->Set(ctx, String(*this, "assert"), v8::Function::New(ctx, Console::assert_).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
 				throw E("Failed to intitialize globals\n");
 			}
@@ -798,7 +834,6 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	Function Module::get_function(CTX &ctx, std::string name) {
-		// Force use of MaybeLocal overloads as Local overloads are deprecated
 		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
 		return Program::get_function(ctx, object, name);
 	}
@@ -864,15 +899,24 @@ v8::Local<v8::FixedArray> import_assertions,
 		// This function creates the module so that the identity
 		// hash may be found. The caller then registers the module 
 		// using this before calling compile().
-		auto export_names = std::vector<v8::Local<v8::String>>();
-		export_names.emplace_back(String(ctx, "default"));
 
+		const std::array<v8::Local<v8::String>,1> export_names = { String(ctx, "default") };
+
+#ifdef RRR_HAVE_V8_MEMORYSPAN_IN_CSM
 		mod = v8::Module::CreateSyntheticModule (
 			ctx,
 			String(ctx, get_path_()),
 			export_names,
 			evaluation_steps_callback
 		);
+#else
+		mod = v8::Module::CreateSyntheticModule (
+			ctx,
+			String(ctx, get_path_()),
+			std::vector(export_names.begin(), export_names.end()),
+			evaluation_steps_callback
+		);
+#endif
 
 		if (ctx.trycatch_ok([](auto msg){
 			throw E(std::string("Failed to create JSON module: ") + msg);

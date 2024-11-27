@@ -59,7 +59,7 @@ static int __rrr_ip_socket_client_resolve_suggestion_callback (
 	}
 
 	{
-		struct sockaddr **addresses_new = rrr_reallocate(callback_data->addresses, sizeof(void *) * callback_data->address_count, sizeof(void *) * (callback_data->address_count + 1));
+		struct sockaddr **addresses_new = rrr_reallocate(callback_data->addresses, sizeof(void *) * (callback_data->address_count + 1));
 		if (addresses_new == NULL) {
 			RRR_MSG_0("Failed to allocate memory in rrr_ip_socket_client_resolve_suggestion_callback A\n");
 			ret = 1;
@@ -69,7 +69,7 @@ static int __rrr_ip_socket_client_resolve_suggestion_callback (
 	}
 
 	{
-		socklen_t *address_lengths_new = rrr_reallocate(callback_data->address_lengths, sizeof(socklen_t) * callback_data->address_count, sizeof(socklen_t) * (callback_data->address_count + 1));
+		socklen_t *address_lengths_new = rrr_reallocate(callback_data->address_lengths, sizeof(socklen_t) * (callback_data->address_count + 1));
 		if (address_lengths_new == NULL) {
 			RRR_MSG_0("Failed to allocate memory in rrr_ip_socket_client_resolve_suggestion_callback B\n");
 			ret = 1;

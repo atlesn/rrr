@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <assert.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -32,7 +33,54 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_util.h"
 #include "../rrr_strerror.h"
 
-void rrr_ip_to_str (char *dest, rrr_biglength dest_size, const struct sockaddr *addr, socklen_t addr_len) {
+int rrr_ip_addr_is_any (
+		const struct sockaddr *addr
+) {
+	int ret = 0;
+
+	if (addr->sa_family == AF_INET6) {
+		struct sockaddr_in6 *in = (struct sockaddr_in6 *) addr;
+		struct in6_addr zero = {0};
+		ret = 0 == memcmp(&in->sin6_addr, &zero, sizeof(zero));
+	}
+	else if (addr->sa_family == AF_INET) {
+		struct sockaddr_in *in = (struct sockaddr_in *) addr;
+		struct in_addr zero = {0};
+		ret = 0 == memcmp(&in->sin_addr, &zero, sizeof(zero));
+	}
+	else {
+		RRR_BUG("Unknown address family %u to %s\n", addr->sa_family, __func__);
+	}
+
+	return ret;
+}
+
+uint16_t rrr_ip_addr_get_port (
+		const struct sockaddr *addr
+) {
+	uint16_t port = 0;
+
+	if (addr->sa_family == AF_INET6) {
+		struct sockaddr_in6 *in = (struct sockaddr_in6 *) addr;
+		port = ntohs(in->sin6_port);
+	}
+	else if (addr->sa_family == AF_INET) {
+		struct sockaddr_in *in = (struct sockaddr_in *) addr;
+		port = ntohs(in->sin_port);
+	}
+	else {
+		RRR_BUG("Unknown address family %u to %s\n", addr->sa_family, __func__);
+	}
+
+	return port;
+}
+
+void rrr_ip_to_str (
+		char *dest,
+		rrr_biglength dest_size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
 	const char *result = NULL;
 
 	*dest = '\0';
@@ -127,9 +175,13 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		const struct sockaddr *source,
 		const socklen_t source_len
 ) {
-	const struct sockaddr_in6 *source_in6 = (const struct sockaddr_in6 *) source;
-	
-//	printf("source length: %u, source family: %u\n", source_len, source->sa_family);
+	// Allow target and source to be the same
+	struct sockaddr_storage source_tmp;
+
+	assert(sizeof(source_tmp) >= source_len);
+	memcpy(&source_tmp, source, source_len);
+
+	const struct sockaddr_in6 *source_in6 = (const struct sockaddr_in6 *) &source_tmp;
 
 	if (source_len != sizeof(*source_in6) || source->sa_family != AF_INET6) {
 		goto out_copy;
@@ -159,8 +211,6 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 #	error "Neither HAVE_INET_IN6_BSD, HAVE_INET_IN6_LINUX nor HAVE_INET_IN6_MUSL was defined"
 #endif
 
-//	printf ("ipv4: %08x, ffff: %04x zeros: %u,%u,%u\n", ipv4, ffff, zero_a, zero_b, zero_c);
-
 	if (zero_a != 0 || zero_b != 0 || zero_c != 0 || ffff != 0xffff) {
 		goto out_copy;
 	}
@@ -184,7 +234,7 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		if (*target_len < source_len) {
 			RRR_BUG("BUG: Target length too small in rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed B\n");
 		}
-		memcpy(target, source, source_len);
+		memcpy(target, &source_tmp, source_len);
 		*target_len = source_len;
 	out:
 	return;
@@ -214,4 +264,16 @@ int rrr_ip_check (
 		? 1
 		: 0
 	;
+}
+
+void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed_alt (
+		struct sockaddr *addr,
+		socklen_t *addr_len
+) {
+	return rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
+			(struct sockaddr_storage *) addr,
+			addr_len,
+			addr,
+			*addr_len
+	);
 }

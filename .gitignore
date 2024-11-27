@@ -15,7 +15,9 @@
 /src/rrr_readdir
 /src/rrr_msg
 /src/rrr_sub
+/src/rrr_logd
 /src/rrr_js
+/src/rrr_lua
 /src/rrr_modbus_server
 /src/test.sh
 /src/test.sh.log
@@ -146,3 +148,9 @@ stamp-h2
 # FreeBSD
 *~
 .test_composite.sh
+
+# jemalloc
+jeprof.*
+
+# fuzz
+fuzz/

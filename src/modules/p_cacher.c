@@ -175,6 +175,8 @@ static int cacher_get_from_msgdb (
 		struct cacher_data *data,
 		const char *topic
 ) {
+	// Note: Callback is async, don't pass stack data as private argument
+
 	return rrr_msgdb_helper_get_from_msgdb (
 			&data->msgdb_conn_get,
 			data->msgdb_socket,
@@ -900,7 +902,8 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	RRR_DBG_1 ("Thread cacher %p exiting\n", thread);
-	pthread_exit(0);
+
+	return NULL;
 }
 
 static struct rrr_module_operations module_operations = {

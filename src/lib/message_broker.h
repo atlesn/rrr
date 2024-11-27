@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "fifo_protected.h"
 #include "poll_helper.h"
-#include "event.h"
 #include "util/linked_list.h"
 #include "message_holder/message_holder.h"
 
@@ -42,10 +41,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_SENDERS_MAX                64
 #define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX  RRR_MESSAGE_BROKER_SENDERS_MAX
 
+// TODO : Make macros for the other callbacks
+
+#define RRR_MESSAGE_BROKER_HOOK_MSG_ARGS            \
+	const char *costumer,                       \
+	const struct rrr_msg_holder *entry_locked,  \
+	void *arg
+
 struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
 struct rrr_message_broker_costumer;
 struct rrr_message_broker;
+struct rrr_event_queue;
+
+struct rrr_message_broker_hooks {
+	void (*pre_buffer)(RRR_MESSAGE_BROKER_HOOK_MSG_ARGS);
+	void *arg;
+};
 
 void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
@@ -58,7 +70,8 @@ void rrr_message_broker_destroy (
 		struct rrr_message_broker *broker
 );
 int rrr_message_broker_new (
-		struct rrr_message_broker **target
+		struct rrr_message_broker **target,
+		const struct rrr_message_broker_hooks *hooks
 );
 struct rrr_message_broker_costumer *rrr_message_broker_costumer_find_by_name (
 		struct rrr_message_broker *broker,
@@ -71,6 +84,17 @@ int rrr_message_broker_costumer_register (
 		int no_buffer,
 		int (*pre_buffer_hook)(struct rrr_msg_holder *entry_locked, void *arg),
 		void *callback_arg
+);
+void rrr_message_broker_costumer_event_queue_set (
+		struct rrr_message_broker *broker,
+		const char *name,
+		struct rrr_event_queue *events
+);
+int rrr_message_broker_costumer_managed_data_push (
+		struct rrr_message_broker *broker,
+		const char *name,
+		void *data,
+		void (*destroy)(void *data)
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
@@ -131,9 +155,6 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 );
 int rrr_message_broker_get_fifo_stats (
 		struct rrr_fifo_protected_stats *target,
-		struct rrr_message_broker_costumer *costumer
-);
-struct rrr_event_queue *rrr_message_broker_event_queue_get (
 		struct rrr_message_broker_costumer *costumer
 );
 int rrr_message_broker_with_ctx_and_buffer_lock_do (

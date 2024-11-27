@@ -25,11 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern "C" {
 #include <unistd.h>
-#include <limits.h>
 #include <errno.h>
 
 #include "../allocator.h"
 #include "../rrr_strerror.h"
+#include "../rrr_limits.h"
 };
 
 #include <v8.h>
@@ -38,7 +38,7 @@ namespace RRR::JS {
 	void OS::cb_hostname(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
-		char hostname[HOST_NAME_MAX + 1];
+		char hostname[RRR_HOST_NAME_MAX + 1];
 
 		if (info.Length() != 0) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "hostname() takes no arguments")));

@@ -82,6 +82,10 @@ static int __rrr_event_collection_push (
 		RRR_BUG("BUG: Collection not initialized in __rrr_event_collection_push\n");
 	}
 
+	if (target->event != NULL) {
+		RRR_BUG("BUG: Event handle was already filled in %s\n", __func__);
+	}
+
 	struct event *event;
 
 	struct timeval tv;
@@ -138,6 +142,17 @@ int rrr_event_collection_push_periodic (
 		uint64_t interval_us
 ) {
 	return __rrr_event_collection_push(target, collection, -1, EV_PERSIST, callback, arg, interval_us);
+}
+
+// TODO : Replace old function with this
+int rrr_event_collection_push_periodic_new (
+		struct rrr_event_handle *target,
+		struct rrr_event_collection *collection,
+		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void *arg,
+		rrr_time_us_t interval
+) {
+	return __rrr_event_collection_push(target, collection, -1, EV_PERSIST, callback, arg, interval.us);
 }
 
 int rrr_event_collection_push_read (

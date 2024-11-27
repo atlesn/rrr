@@ -19,8 +19,16 @@ sub send_message {
 	my $count = shift;
 
 	$message->clear_array();
+
+	# Should be filtered out by http_meta_tags_ignore=yes
 	$message->push_tag_str ("http_server", $server);
 	$message->push_tag_str ("http_port", $port);
+
+	# Should be filtered out by http_request_tags_ignore=yes
+	$message->push_tag_str ("http_authority", "authority");
+	$message->push_tag_str ("http_request_partials", "partials");
+
+	$message->push_tag_str("my_value", "my_value");
 
 	for (my $i = 0; $i < $count; $i++) {
 		$message->send();
@@ -32,14 +40,16 @@ sub source {
 
 	if ($count < 50) {
 		# Use invalid server to create HOL blocking situation
-		# in httclient.
+		# in httpclient.
 		send_message($message, "1.1.1.1", "9999", 5);
 	}
 	elsif ($count == 50) {
 		# Send message with valid destination. The invalid
 		# messages should be graylisted prior to this message
-		# getting timed out.
-		send_message($message, "localhost", "8880", 1);
+		# getting timed out, which means that these messages
+		# should be sent immediately by being bumped in the
+		# queue.
+		send_message($message, "localhost", "8884", 1);
 	}
 	else {
 		# Done

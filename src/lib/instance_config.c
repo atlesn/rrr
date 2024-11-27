@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,6 +40,83 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			
 #define RRR_INSTANCE_CONFIG_MAX_SETTINGS 32
 
+void rrr_instance_config_move_from_settings (
+		struct rrr_instance_config_data *config,
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings
+) {
+	assert(config->settings == NULL);
+
+	memcpy(&config->settings_used, settings_used, sizeof(config->settings_used));
+	memset(settings_used, '\0', sizeof(*settings_used));
+
+	config->settings = *settings;
+	*settings = NULL;
+}
+
+void rrr_instance_config_move_to_settings (
+		struct rrr_settings_used *settings_used,
+		struct rrr_settings **settings,
+		struct rrr_instance_config_data *config
+) {
+	memcpy(settings_used, &config->settings_used, sizeof(*settings_used));
+	memset(&config->settings_used, '\0', sizeof(config->settings_used));
+
+	*settings = config->settings;
+	config->settings = NULL;
+}
+
+struct rrr_instance_config_update_used_callback_data {
+	struct rrr_instance_config_data *config;
+	const char *name;
+	int was_used;
+	int did_update;
+};
+
+static int __rrr_instance_config_update_used_callback (
+		int *was_used,
+		const struct rrr_setting *setting,
+		void *callback_args
+) {
+	struct rrr_instance_config_update_used_callback_data *callback_data = callback_args;
+
+	if (strcmp (setting->name, callback_data->name) == 0) {
+		if (*was_used && !callback_data->was_used) {
+			RRR_MSG_0("Warning: Setting %s in instace %s was marked as used, but it has changed to not used during configuration\n",
+				setting->name, callback_data->config->name);
+		}
+		*was_used = callback_data->was_used;
+		callback_data->did_update = 1;
+	}
+
+	return 0;
+}
+
+void rrr_instance_config_update_used (
+		struct rrr_instance_config_data *config,
+		const char *name,
+		int was_used
+) {
+	struct rrr_instance_config_update_used_callback_data callback_data = {
+		config,
+		name,
+		was_used,
+		0
+	};
+
+	rrr_settings_iterate (
+			&config->settings_used,
+			config->settings,
+			__rrr_instance_config_update_used_callback,
+			&callback_data
+	);
+
+	if (callback_data.did_update != 1) {
+		RRR_MSG_0("Warning: Setting %s in instance %s was not originally set in configuration file, discarding it.\n",
+			name, config->name);
+	}
+}
+
 int rrr_instance_config_string_set (
 		char **target,
 		const char *prefix,
@@ -57,6 +134,7 @@ int rrr_instance_config_string_set (
 static void __rrr_instance_config_destroy (
 		struct rrr_instance_config_data *config
 ) {
+	rrr_settings_used_cleanup(&config->settings_used);
 	rrr_settings_destroy(config->settings);
 	rrr_free(config->name);
 	rrr_free(config);
@@ -67,7 +145,8 @@ static int __rrr_instance_config_new (
 		const char *name,
 		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees,
-		const struct rrr_route_collection *global_routes
+		const struct rrr_discern_stack_collection *global_routes,
+		const struct rrr_discern_stack_collection *global_methods
 ) {
 	int ret = 0;
 
@@ -93,14 +172,22 @@ static int __rrr_instance_config_new (
 		goto out_free_name;
 	}
 
+	if ((ret = rrr_settings_used_init(&instance_config->settings_used, instance_config->settings)) != 0) {
+		RRR_MSG_0("Could not initialize settings used structure in %s\n", __func__);
+		goto out_free_settings;
+	}
+
 	instance_config->global_array_trees = global_array_trees;
 	instance_config->global_routes = global_routes;
+	instance_config->global_methods = global_methods;
 
 	*result = instance_config;
 
 	goto out;
-//	out_free_settings:
-//		rrr_settings_destroy(instance_config->settings);
+//	out_cleanup_settings_used:
+//		rrr_settings_used_cleanup(&instance_config->settings_used);
+	out_free_settings:
+		rrr_settings_destroy(instance_config->settings);
 	out_free_name:
 		rrr_free(instance_config->name);
 	out_free_config:
@@ -157,13 +244,13 @@ static int __rrr_instance_config_read_port_number (
 	*target = 0;
 
 	rrr_setting_uint tmp_uint = 0;
-	ret = rrr_settings_read_unsigned_integer (&tmp_uint, source->settings, name);
+	ret = rrr_settings_read_unsigned_integer (&tmp_uint, &source->settings_used, source->settings, name);
 
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			char *tmp_string;
 
-			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
+			rrr_settings_read_string (&tmp_string, &source->settings_used, source->settings, name); // Ignore error
 			RRR_MSG_0("Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
@@ -213,14 +300,23 @@ int rrr_instance_config_read_port_number (
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config_data *config
 ) {
-	int ret = rrr_settings_check_all_used (config->settings);
+	int ret = rrr_settings_check_all_used (config->settings, &config->settings_used);
 
 	if (ret != 0) {
 		RRR_MSG_0("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
-				config->name);
+			config->name);
 	}
 
 	return ret;
+}
+
+void rrr_instance_config_verify_all_settings_used (
+		struct rrr_instance_config_data *config
+) {
+	if (rrr_settings_check_all_used (config->settings, &config->settings_used) != 0) {
+		RRR_BUG("BUG: Not all settings of instance %s were used in %s, abort.\n",
+			__func__, config->name);
+	}
 }
 
 static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
@@ -237,7 +333,7 @@ static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fai
 	char *name_tmp = NULL;
 	char *target_str_tmp = NULL;
 
-	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, config->settings, cmd_key)) != 0) {
+	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, &config->settings_used, config->settings, cmd_key)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			goto out;
 		}
@@ -421,31 +517,31 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	return ret;
 }
 
-struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data {
-	struct rrr_instance_config_data *config;
-	struct rrr_route_collection *routes;
+struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data {
+	const struct rrr_discern_stack_collection *source;
+	struct rrr_discern_stack_collection *target;
 };
 
-static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback (
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail_name_callback (
 		const char *name,
 		void *arg
 ) {
 	int ret = 0;
 	
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data *callback_data = arg;
 
-	const struct rrr_route *route = rrr_route_collection_get (
-			callback_data->config->global_routes,
+	const struct rrr_discern_stack *stack = rrr_discern_stack_collection_get (
+			callback_data->source,
 			name
 	);
 
-	if (route == NULL) {
-		RRR_MSG_0("Route with name '%s' not found, check spelling\n", name);
+	if (stack == NULL) {
+		RRR_MSG_0("Definition with name '%s' not found, check spelling\n", name);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_route_collection_add_cloned (callback_data->routes, route)) != 0) {
+	if ((ret = rrr_discern_stack_collection_add_cloned (callback_data->target, stack)) != 0) {
 		goto out;
 	}
 
@@ -453,22 +549,22 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 	return ret;
 }
 
-static int __rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback (
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail_interpret_callback (
 		const char *str,
 		void *arg
 ) {
 	int ret = 0;
 
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data *callback_data = arg;
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data *callback_data = arg;
 
-	enum rrr_route_fault fault;
+	enum rrr_discern_stack_fault fault;
 	struct rrr_parse_pos pos;
 
 	rrr_parse_pos_init(&pos, str, rrr_length_from_size_t_bug_const(strlen(str)));
 
-	assert(RRR_LL_COUNT(callback_data->routes) == 0);
+	assert(RRR_LL_COUNT(callback_data->target) == 0);
 
-	if ((ret = rrr_route_interpret (callback_data->routes, &fault, &pos, "anonymous")) != 0) {
+	if ((ret = rrr_discern_stack_interpret (callback_data->target, &fault, &pos, "anonymous")) != 0) {
 		goto out;
 	}
 
@@ -476,26 +572,29 @@ static int __rrr_instance_config_parse_route_definition_definition_from_config_s
 	return ret;
 }
 
-int rrr_instance_config_parse_route_definition_from_config_silent_fail (
-		struct rrr_route_collection *routes,
+static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
 		struct rrr_instance_config_data *config,
-		const char *cmd_key
+		const struct rrr_discern_stack_collection *source,
+		const char *cmd_key,
+		const char *tag_start,
+		const char *tag_end
 ) {
 	int ret = 0;
 
 
-	struct rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_callback_data callback_data = {
-		config,
-		routes
+	struct rrr_instance_config_parse_discern_stack_from_config_silent_fail_callback_data callback_data = {
+		source,
+		target
 	};
 
 	if ((ret = __rrr_instance_config_parse_name_or_definition_from_config_silent_fail (
 			config,
 			cmd_key,
-			"<",
-			">",
-			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_name_callback,
-			__rrr_instance_config_parse_route_definition_definition_from_config_silent_fail_interpret_callback,
+			tag_start,
+			tag_end,
+			__rrr_instance_config_parse_discern_stack_from_config_silent_fail_name_callback,
+			__rrr_instance_config_parse_discern_stack_from_config_silent_fail_interpret_callback,
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
@@ -511,6 +610,36 @@ int rrr_instance_config_parse_route_definition_from_config_silent_fail (
 
 	out:
 	return ret;
+}
+
+int rrr_instance_config_parse_route_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	return __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+			target,
+			config,
+			config->global_routes,
+			cmd_key,
+			"<",
+			">"
+	);
+}
+
+int rrr_instance_config_parse_method_definition_from_config_silent_fail (
+		struct rrr_discern_stack_collection *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	return __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
+			target,
+			config,
+			config->global_methods,
+			cmd_key,
+			"(",
+			")"
+	);
 }
 
 struct parse_associative_list_to_map_callback_data {
@@ -572,7 +701,7 @@ static int __rrr_instance_config_parse_comma_separated_to_map_check_unary_all (
 	*is_all = 0;
 
 	int result = 0;
-	if ((ret = rrr_settings_cmpto(&result, config->settings, string, "*")) != 0) {
+	if ((ret = rrr_settings_cmpto(&result, &config->settings_used, config->settings, string, "*")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			ret = 0;
 		}
@@ -621,7 +750,7 @@ int rrr_instance_config_parse_optional_write_method (
 	*method = RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE;
 
  	if ((string_write_rrr_message != NULL) &&
-	    (ret = rrr_settings_check_yesno(&yesno, config->settings, string_write_rrr_message)) != 0
+	    (ret = rrr_settings_check_yesno(&yesno, &config->settings_used, config->settings, string_write_rrr_message)) != 0
 	) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse yes/no parameter '%s' of instance %s\n",
@@ -678,7 +807,7 @@ int rrr_instance_config_parse_optional_utf8 (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_settings_get_string_noconvert_silent(target, config->settings, string)) != 0) {
+	if ((ret = rrr_settings_get_string_noconvert_silent(target, &config->settings_used, config->settings, string)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			if (def != NULL && (*target = rrr_strdup(def)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
@@ -854,7 +983,8 @@ static int __rrr_instance_config_new_block_callback (
 			name,
 			RRR_INSTANCE_CONFIG_MAX_SETTINGS,
 			rrr_config_get_array_tree_list(config),
-			rrr_config_get_routes(config)
+			rrr_config_get_routes(config),
+			rrr_config_get_methods(config)
 	)) != 0) {
 		goto out;
 	}
@@ -958,7 +1088,7 @@ static int __rrr_instance_config_friend_collection_populate_from_config_callback
 int rrr_instance_config_friend_collection_populate_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 ) {
 	int ret = 0;
@@ -969,6 +1099,7 @@ int rrr_instance_config_friend_collection_populate_from_config (
 	};
 
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
+			&config->settings_used,
 			config->settings,
 			setting,
 			&__rrr_instance_config_friend_collection_populate_from_config_callback,
@@ -985,7 +1116,7 @@ int rrr_instance_config_friend_collection_populate_receivers_from_config (
 		struct rrr_instance_friend_collection *target,
 		struct rrr_instance_collection *instances_all,
 		const struct rrr_instance *instance,
-		const struct rrr_instance_config_data *config,
+		struct rrr_instance_config_data *config,
 		const char *setting
 ) {
 	int ret = 0;
