@@ -203,13 +203,7 @@ librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrrcxx_la_SOURCES = Array.cxx ${util_cxx} ${event_cxx}
 endif
 
-<<<<<<< HEAD
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${JEMALLOC_LIBS} ${TLS_LDFLAGS} \
-                    ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld} ${zlib_extra_ld} \
-		    ${artnet_extra_ld}
-=======
-librrr_la_CFLAGS = ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
@@ -223,9 +217,9 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${http3_extra_ld} \
                     ${crypto_extra_ld} \
                     ${openssl_extra_ld} \
+		    ${artnet_extra_ld} \
                     ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
->>>>>>> development
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
                     message_broker.c map.c array.c array_tree.c discern_stack.c discern_stack_helper.c message_helper.c \
@@ -293,11 +287,8 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
-<<<<<<< HEAD
     ${libadd_artnet}                 \
-=======
     ${libadd_lua}                    \
->>>>>>> development
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \
     ${libadd_nghttp2}                \

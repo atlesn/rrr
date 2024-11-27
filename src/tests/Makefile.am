@@ -13,16 +13,10 @@ if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
 
-<<<<<<< HEAD
 if RRR_WITH_ARTNET
 test_artnet = test_artnet.c
 endif
 
-if RRR_WITH_NODE
-js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/ ${NODE_LDFLAGS}
-js_extra_ldadd = -ltestjs -lstdc++ ${NODE_LIBS} -lrrrcxx
-#$(NODE_LIBS)
-=======
 if RRR_WITH_LUA
 test_lua = test_lua.c
 endif
@@ -35,7 +29,6 @@ endif
 if RRR_WITH_HTTP3
 test_quic = test_quic.c
 test_tls_common = test_tls_common.c
->>>>>>> development
 endif
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest sha256/shatest ${python}
@@ -55,12 +48,9 @@ test_SOURCES = test.c \
 	${test_tls_common} \
 	${test_jsonc} \
 	${test_zlib} \
-<<<<<<< HEAD
 	${test_artnet} \
-=======
 	${test_lua} \
 	${test_quic} \
->>>>>>> development
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
