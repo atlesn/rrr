@@ -647,7 +647,6 @@ static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *value) {
 	if (__rrr_python3_array_append_raw(data, value) != 0) {
 		Py_RETURN_FALSE;
 	}
-	Py_INCREF(value);
 
 	Py_RETURN_TRUE;
 }
