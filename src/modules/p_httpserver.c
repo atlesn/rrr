@@ -896,6 +896,7 @@ static int httpserver_receive_get_full_request (
 		enum rrr_http_application_type next_protocol_version
 ) {
 	int ret = 0;
+	int is_octet_stream = 0;
 
 	const char * const body_ptr = RRR_HTTP_PART_BODY_PTR(data_ptr,part);
 	const rrr_biglength body_len = RRR_HTTP_PART_BODY_LENGTH(part);
@@ -976,6 +977,9 @@ static int httpserver_receive_get_full_request (
 						INSTANCE_D_NAME(httpserver_data->thread_data));
 			}
 		}
+		else if (rrr_nullsafe_str_cmpto_case(h_content_type->value, "application/octet-stream") == 0) {
+			is_octet_stream = 1;
+		}
 	}
 
 	if (h_content_transfer_encoding != NULL && rrr_nullsafe_str_isset(h_content_transfer_encoding->value)) {
@@ -999,13 +1003,25 @@ static int httpserver_receive_get_full_request (
 	}
 
 	if (body_len > 0) {
-		if ((ret = rrr_array_push_value_str_with_tag_with_size (
-				target_array,
-				http_common_request_fields.http_body,
-				body_ptr,
-				rrr_length_from_biglength_bug_const(body_len)
-		)) != 0) {
-			goto out_value_error;
+		if (is_octet_stream) {
+			if ((ret = rrr_array_push_value_blob_with_tag_with_size (
+					target_array,
+					http_common_request_fields.http_body,
+					body_ptr,
+					rrr_length_from_biglength_bug_const(body_len)
+			)) != 0) {
+				goto out_value_error;
+			}
+		}
+		else {
+			if ((ret = rrr_array_push_value_str_with_tag_with_size (
+					target_array,
+					http_common_request_fields.http_body,
+					body_ptr,
+					rrr_length_from_biglength_bug_const(body_len)
+			)) != 0) {
+				goto out_value_error;
+			}
 		}
 	}
 
