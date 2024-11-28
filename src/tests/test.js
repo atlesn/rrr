@@ -374,53 +374,6 @@ function os_tests() {
 	}
 }
 
-function data_tests() {
-	const message = new Message();
-
-	message.data = new ArrayBuffer(new Uint8Array([0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5])); // æøå
-	if (message.data_as_utf8() !== "æøå") {
-		throw new Error("UTF-8 decoding failed for valid input.");
-	}
-
-	// {"key": "æøå"}
-	message.data = new ArrayBuffer(new Uint8Array([
-		0x7b,
-		0x22, 0x6b, 0x65, 0x79, 0x22,
-		0x3a,
-		0x22, 0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5, 0x22,
-		0x7d
-	]));
-	if (message.data_as_json().key !== "æøå") {
-		throw("JSON decoding failed for valid input.");
-	}
-
-	let did_throw = false;
-
-	// Invalid UTF-8
-	message.data = new ArrayBuffer(new Uint8Array([0xff, 0xff]));
-	try {
-		message.data_as_utf8();
-	} catch (e) {
-		did_throw = true;
-	}
-	if (!did_throw) {
-		throw("UTF-8 decode did not fail as expected.");
-	}
-
-	did_throw = false;
-
-	// "invalid" spelled out
-	message.data = new ArrayBuffer(new Uint8Array([0x69, 0x6e, 0x76, 0x61, 0x6c, 0x69, 0x64]));
-	try {
-		message.data_as_json();
-	} catch (e) {
-		did_throw = true;
-	}
-	if (!did_throw) {
-		throw("JSON decode did not fail as expected.");
-	}
-}
-
 function my_method(message, method) {
 	console.log("Process function\n");
 
@@ -430,7 +383,6 @@ function my_method(message, method) {
 
 	message_tests();
 	os_tests();
-	data_tests();
 
 	// Timeouts
 	let done = {

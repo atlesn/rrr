@@ -202,6 +202,7 @@ namespace RRR::JS {
 		CTX(ENV &env, std::string script_name);
 		~CTX();
 		CTX(const CTX &) = delete;
+		CTX *fromEmbedderData(v8::Local<v8::Context> ctx);
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();

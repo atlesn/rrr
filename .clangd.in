@@ -1,5 +1,0 @@
-CompileFlags:
-  CXX:
-    Add: @AM_CXXFLAGS@
-  C:
-    Add: @AM_CFLAGS@

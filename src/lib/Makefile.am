@@ -184,7 +184,7 @@ event = event/event.c event/event_collection.c
 if RRR_WITH_CXX
 lib_cxx=librrrcxx.la
 
-util_cxx = util/Readfile.cxx
+util_cxx = util/Readfile.cxx util/UTF8.cxx
 
 event_cxx = event/Event.cxx
 

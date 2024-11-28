@@ -1615,9 +1615,18 @@ AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
 SHELL_VARS_OUTPUT
 
+CXXFLAGS_YAML=
+for arg in $AM_CXXFLAGS $JS_CXXFLAGS; do
+	if [[ "x$CXXFLAGS_YAML" != "x" ]]; then
+		CXXFLAGS_YAML=$CXXFLAGS_YAML,
+	fi
+	CXXFLAGS_YAML=$CXXFLAGS_YAML$arg
+done
+AC_SUBST([CXXFLAGS_YAML])
+
 AC_CONFIG_FILES(
 	Makefile
-	.clangd
+	src/lib/js/.clangd
 	src/Makefile
 	src/modules/Makefile
 	src/lib/Makefile
