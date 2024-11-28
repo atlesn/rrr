@@ -1940,7 +1940,7 @@ The Config and Message objects have the following members:
   ip_get: function(){ return [ip, port]; }, // Helper function to retrieve adddress of ip_addr field
 
   // Data accessors
-  data_as_utf8(),                // Decode UTF-8 from the data field and return as string. Throws SyntaxError if decoding fails.
+  data_as_utf8(),                // Decode UTF-8 from the data field and return as string. Throws TypeError if decoding fails.
   data_as_object(),              // As data_to_utf8(), but also decodes JSON and returns an object.
 
   // Constants for the type field
