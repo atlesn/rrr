@@ -20,23 +20,25 @@ dnl
 # SYSTEMD_INIT()
 # --------------
 AC_DEFUN([SYSTEMD_INIT], [[
-
-pkg-config systemd
-if [ $? -eq 0 ]; then
-	SYSTEMD_all_variables=$(pkg-config --print-variables systemd)
-	for var in $SYSTEMD_all_variables; do
-		value=$(pkg-config --variable="$var" systemd)
-		if [ $? -ne 0 ]; then
-			] AS_MESSAGE([error: Could not get systemd variable '$var' from pkg-config], [2]) [
-			exit 1
-		fi
-		declare "SYSTEMD_$var=$value"
-	done
-	SYSTEMD_init=1
+	
+if [ pkg-config libsystemd ]; then
+	SYSTEMD_systemd_pc=libsystemd
+elif [ pkg-config systemd ]; then
+	SYSTEMD_systemd_pc=systemd
 else
-	] AS_MESSAGE([error: pkg-config for systemd failed in SYSTEMD@&t@_INIT], [2]) [
-	exit 1
+	] AS_MESSAGE([error: Neither libsystemd nor systemd found using pkg-config], [2]) [
 fi
+
+SYSTEMD_all_variables=$(pkg-config --print-variables $SYSTEMD_systemd_pc)
+for var in $SYSTEMD_all_variables; do
+	value=$(pkg-config --variable="$var" $SYSTEMD_systemd_pc)
+	if [ $? -ne 0 ]; then
+		] AS_MESSAGE([error: Could not get systemd variable '$var' from pkg-config], [2]) [
+		exit 1
+	fi
+	declare "SYSTEMD_$var=$value"
+done
+SYSTEMD_init=1
 
 ]])
 

@@ -289,6 +289,7 @@ namespace RRR::JS {
 		trycatch(*this)
 	{
 		ctx->Enter();
+		ctx->SetEmbedderData(1, v8::External::New(ctx->GetIsolate(), this));
 		trycatch.SetCaptureMessage(true);
 	}
 	CTX::CTX(ENV &env, std::string script_name) :
@@ -328,11 +329,19 @@ namespace RRR::JS {
 			}
 		}
 		ctx->Enter();
+		ctx->SetEmbedderData(1, v8::External::New(ctx->GetIsolate(), this));
 		trycatch.SetCaptureMessage(true);
 	}
 
 	CTX::~CTX() {
 		ctx->Exit();
+	}
+
+	CTX *CTX::from_embedder_data(v8::Local<v8::Context> ctx) {
+		auto value = ctx->GetEmbedderData(1);
+		assert(value->IsExternal());
+		auto external = value.As<v8::External>();
+		return (CTX*) external->Value();
 	}
 
 	CTX::operator v8::Local<v8::Context> () {
