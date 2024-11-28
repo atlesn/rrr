@@ -374,15 +374,103 @@ function os_tests() {
 	}
 }
 
+function data_tests() {
+	const message = new Message();
+
+	message.data = new ArrayBufferU8("\x"); // Put valid norwegian characters here
+	if (message.dataAsUTF8() != "fdsfdsfds") {
+		// Compare against input string and throw if problems
+	}
+
+	message.data = new ArrayBufferU8("{\"key\": \"fdsfdsfds\"}"); // Put norwegian characters
+	if (message.dataAsJSON().key != "fdsfsdfds") {
+		// Compare against input string and throw if problems
+	}
+
+	let did_throw = false;
+	message.data = new ArrayBufferU8("invalid utf8");
+	try {
+		message.dataAsUTF8();
+	}
+	catch (e) {
+		did_throw = true;
+	}
+
+	if (!did_throw) {
+		throw("UTF8 decode did not fail as expected");
+	}
+
+	did_throw = false;
+	message.data = new ArrayBufferU8("invalid json");
+	try {
+		message.dataAsJSON();
+	}
+	catch (e) {
+		did_throw = true;
+	}
+
+	if (!did_throw) {
+		throw("UTF8 decode did not fail as expected");
+	}
+}
+
+function data_tests() {
+	const message = new Message();
+
+	message.data = new Uint8Array([0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5]); // æøå
+	if (message.dataAsUTF8() !== "æøå") {
+		throw new Error("UTF-8 decoding failed for valid input.");
+	}
+
+	// {"key": "æøå"}
+	message.data = new Uint8Array([
+		0x7b,
+		0x22, 0x6b, 0x65, 0x79, 0x22,
+		0x3a,
+		0x22, 0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5, 0x22,
+		0x7d
+	]);
+	if (message.dataAsJSON().key !== "æøå") {
+		throw("JSON decoding failed for valid input.");
+	}
+
+	let did_throw = false;
+
+	// Invalid UTF-8
+	message.data = new Uint8Array([0xff, 0xff]);
+	try {
+		message.dataAsUTF8();
+	} catch (e) {
+		did_throw = true;
+	}
+	if (!did_throw) {
+		throw("UTF-8 decode did not fail as expected.");
+	}
+
+	did_throw = false;
+
+	// "invalid" spelled out
+	message.data = new Uint8Array([0x69, 0x6e, 0x76, 0x61, 0x6c, 0x69, 0x64]);
+	try {
+		message.dataAsJSON();
+	} catch (e) {
+		did_throw = true;
+	}
+	if (!did_throw) {
+		throw("JSON decode did not fail as expected.");
+	}
+}
+
 function my_method(message, method) {
 	console.log("Process function\n");
 
 	if (method !== undefined) {
-		throw("Mthod to JS process function was not undefined");
+		throw("Method to JS process function was not undefined");
 	}
 
 	message_tests();
 	os_tests();
+	data_tests();
 
 	// Timeouts
 	let done = {
