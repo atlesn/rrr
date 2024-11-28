@@ -75,6 +75,8 @@ namespace RRR::JS {
 		void set_from_msg_addr(const struct rrr_msg_addr *msg_addr);
 		void send(v8::Isolate *isolate);
 
+		void data_as_string(const v8::FunctionCallbackInfo);
+
 		void push_tag_vain(std::string key);
 		void push_tag_str(std::string key, std::string value);
 		void push_tag_str_json(std::string key, std::string value);

@@ -1617,6 +1617,7 @@ SHELL_VARS_OUTPUT
 
 AC_CONFIG_FILES(
 	Makefile
+	.clangd
 	src/Makefile
 	src/modules/Makefile
 	src/lib/Makefile
