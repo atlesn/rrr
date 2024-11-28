@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.31-2])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.31-2", [Full version])
+AC_INIT([Read Route Record],[1.35-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.35-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 31, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 35, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -71,7 +71,6 @@ AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with P
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
-AC_ARG_ENABLE([central-logging], [AS_HELP_STRING([--enable-central-logging],[instead of printing logs from each fork, forward messages up to main process for printing. This prevents output from different forks being mixed up.])],[enable_central_logging=yes],[enable_central_logging=no])
 AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
@@ -1241,8 +1240,8 @@ AS_IF([test "x$enable_python3" = xno], [
 	AC_SUBST([PYTHON3_CFLAGS])
 	AC_SUBST([PYTHON3_LDFLAGS])
 
-	chmod +x test_python3.sh
-	./test_python3.sh "$CC" "$python3_config_bin"
+	chmod +x check_python3.sh
+	./check_python3.sh "$CC" "$python3_config_bin"
 	PYTHON3_TEST_RESULT="$?"
 
 	AC_MSG_CHECKING([functional python3 config])
@@ -1503,14 +1502,6 @@ AS_IF([test "x$enable_printf_logging" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
-AC_MSG_CHECKING([enabled central logging])
-AS_IF([test "x$enable_central_logging" = xyes], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_ENABLE_CENTRAL_LOGGING], [1], [Enable central logging for all log messages])
-],[
-	AC_MSG_RESULT([no])
-])
-
 AC_MSG_CHECKING([enabled log timestamps])
 AS_IF([test "x$enable_log_timestamps" = xyes], [
 	AC_MSG_RESULT([yes])
@@ -1519,7 +1510,6 @@ AS_IF([test "x$enable_log_timestamps" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
-AM_CONDITIONAL([RRR_ENABLE_CENTRAL_LOGGING], [test "x$enable_central_logging" != xno])
 AM_CONDITIONAL([RRR_ENABLE_LOG_TIMESTAMPS], [test "x$enable_log_timestamps" != xno])
 
 AC_DEFUN([REQUIRE_CONFDIR], [
@@ -1663,6 +1653,7 @@ AC_CONFIG_FILES(
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile
+	tools/Makefile
 )
 
 AC_OUTPUT

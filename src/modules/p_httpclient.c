@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "http_common.h"
 #include "../lib/log.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
@@ -57,6 +58,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/random.h"
 #include "../lib/stats/stats_instance.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/rrr_str.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
@@ -87,14 +90,20 @@ struct httpclient_transaction_data {
 	struct rrr_msg_holder *entry;
 };
 
-struct httpclient_redirect_data {
-	struct rrr_http_client_request_data request_data;
+struct httpclient_redirect_data_ {
+	int is_redirect;
 	rrr_biglength remaining_redirects;
 	enum rrr_http_version protocol_version;
 };
 
+struct httpclient_request_data {
+	struct rrr_http_client_request_data request_data;
+	struct httpclient_redirect_data_ redirect_data;
+};
+
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
+	struct rrr_msg_holder_collection redirect_queue;
 	struct rrr_msg_holder_collection from_senders_queue;
 	struct rrr_msg_holder_collection low_pri_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
@@ -126,6 +135,7 @@ struct httpclient_data {
 	int do_endpoint_from_topic_force;
 
 	int do_meta_tags_ignore;
+	int do_request_tags_ignore;
 
 	char *taint_tag;
 	char *report_tag;
@@ -155,6 +165,7 @@ struct httpclient_data {
 	int do_body_tag_force;
 
 	struct rrr_map meta_tags_all;
+	struct rrr_map request_tags_all;
 
 	char *http_header_accept;
 
@@ -232,6 +243,7 @@ static void httpclient_check_queues_and_activate_event_as_needed (
 ) {
 	if ( RRR_LL_COUNT(&data->from_msgdb_queue) > 0 ||
 	     RRR_LL_COUNT(&data->from_senders_queue) > 0 ||
+	     RRR_LL_COUNT(&data->redirect_queue) > 0 ||
 	     RRR_LL_COUNT(&data->low_pri_queue) > 0 ||
 	     RRR_LL_COUNT(&data->periodic_request_queue) > 0
 	) {
@@ -297,42 +309,48 @@ static void httpclient_transaction_destroy_void (void *target) {
 	httpclient_transaction_destroy(target);
 }
 
-static int httpclient_redirect_data_new (
-		struct httpclient_redirect_data **target,
-		rrr_biglength remaining_redirects,
-		enum rrr_http_version protocol_version
+static void httpclient_request_data_destroy (
+		struct httpclient_request_data *target
+) {
+	rrr_http_client_request_data_cleanup(&target->request_data);
+	rrr_free(target);
+}
+
+static int httpclient_request_data_new (
+		struct httpclient_request_data **target,
+		const struct rrr_http_client_request_data *tmpl,
+		rrr_biglength redirects_max
 ) {
 	int ret = 0;
 
-	struct httpclient_redirect_data *redirect_data;
+	struct httpclient_request_data *request_data;
 
-	if ((redirect_data = rrr_allocate(sizeof(*redirect_data))) == NULL) {
+	if ((request_data = rrr_allocate_zero(sizeof(*request_data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	memset(redirect_data, '\0', sizeof(*redirect_data));
+	if ((ret = rrr_http_client_request_data_reset_from_request_data (
+			&request_data->request_data,
+			tmpl
+	)) != 0) {
+		goto out_free;
+	}
 
-	redirect_data->remaining_redirects = remaining_redirects;
-	redirect_data->protocol_version = protocol_version;
+	request_data->redirect_data.remaining_redirects = redirects_max;
 
-	*target = redirect_data;
+	*target = request_data;
 
 	goto out;
-//	out_free:
-//		free(redirect_data);
+	out_free:
+		rrr_free(request_data);
 	out:
 		return ret;
 }
 
-static void httpclient_redirect_data_destroy (struct httpclient_redirect_data *redirect_data) {
-	rrr_http_client_request_data_cleanup(&redirect_data->request_data);
-	rrr_free(redirect_data);
-}
-
-static void httpclient_redirect_data_destroy_void (void *target) {
-	httpclient_redirect_data_destroy(target);
+static void httpclient_request_data_destroy_void (void *target) {
+	httpclient_request_data_destroy(target);
 }
 
 struct httpclient_create_message_from_404_callback_data {
@@ -904,6 +922,7 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	const struct rrr_http_header_field *field;
 	struct rrr_array structured_data = {0};
 	int do_print_error = 1;
 
@@ -925,8 +944,6 @@ static int httpclient_final_callback (
 			goto out;
 		}
 
-		const struct rrr_http_header_field *field;
-
 		if ((field = rrr_http_part_header_field_get (transaction->response_part, "content-type")) != NULL && field->value != NULL) {
 			if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 					&structured_data,
@@ -947,6 +964,29 @@ static int httpclient_final_callback (
 				goto out;
 			}
 		}
+
+		RRR_MAP_ITERATE_BEGIN(&httpclient_data->http_client_config.extra_parse_headers);
+			if ((field = rrr_http_part_header_field_get_raw(transaction->response_part, node_tag)) != NULL) {
+				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
+						&structured_data,
+						node_value,
+						field->value_full
+				)) != 0) {
+					RRR_MSG_0("Failed to push full header value %s to array in %s A\n", node_tag, __func__);
+					goto out;
+				}
+			}
+			else {
+				if ((ret = rrr_array_push_value_str_with_tag (
+						&structured_data,
+						node_value,
+						""
+				)) != 0) {
+					RRR_MSG_0("Failed to push header value %s to array in %s B\n", node_tag, __func__);
+					goto out;
+				}
+			}
+		RRR_MAP_ITERATE_END();
 	}
 
 	if (httpclient_data->taint_tag != NULL && *(httpclient_data->taint_tag) != '\0') {
@@ -1058,7 +1098,7 @@ static void httpclient_requeue_entry_while_locked (
 		struct rrr_msg_holder *entry
 ) {
 	rrr_msg_holder_incref_while_locked(entry);
-	RRR_LL_APPEND(&data->from_senders_queue, entry);
+	RRR_LL_APPEND(&data->redirect_queue, entry);
 	httpclient_check_queues_and_activate_event_as_needed(data);
 }
 
@@ -1356,18 +1396,19 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 		goto out;
 	}
 
-	if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
-		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
-		goto out;
-	}
+	if (MSG_TOPIC_LENGTH(message) > 1 || *MSG_TOPIC_PTR(message) != '/') {
+		if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
+			RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
+			goto out;
+		}
 
-	if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
-		RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
-		goto out;
+		if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
+			RRR_MSG_0("Failed to append to string builder in %s\n", __func__);
+			goto out;
+		}
 	}
 
 	*target = rrr_string_builder_buffer_takeover(string_builder);
-
 
 	out:
 	if (string_builder != NULL) {
@@ -1527,6 +1568,12 @@ static int httpclient_session_query_prepare_callback (
 
 	if (data->do_meta_tags_ignore) {
 		RRR_MAP_ITERATE_BEGIN(&data->meta_tags_all);
+			rrr_array_clear_by_tag(&array_to_send_tmp, node_tag);
+		RRR_MAP_ITERATE_END();
+	}
+
+	if (data->do_request_tags_ignore) {
+		RRR_MAP_ITERATE_BEGIN(&data->request_tags_all);
 			rrr_array_clear_by_tag(&array_to_send_tmp, node_tag);
 		RRR_MAP_ITERATE_END();
 	}
@@ -1697,11 +1744,23 @@ static int httpclient_request_send (
 	return ret;
 }
 
+static void httpclient_redirect_stop_callback (
+		RRR_HTTP_CLIENT_REDIRECT_STOP_CALLBACK_ARGS
+) {
+	struct httpclient_data *data = arg;
+	struct httpclient_transaction_data *transaction_data = transaction->application_data;
+	struct httpclient_request_data *request_data = transaction_data->entry->private_data;
+
+	(void)(data);
+	(void)(request_data);
+}
+
 static int httpclient_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
 	struct httpclient_data *data = arg;
 	struct httpclient_transaction_data *transaction_data = transaction->application_data;
+	struct httpclient_request_data *request_data = transaction_data->entry->private_data;
 
 	int ret = 0;
 
@@ -1710,19 +1769,6 @@ static int httpclient_redirect_callback (
 	uint16_t port_override = 0;
 
 	rrr_msg_holder_lock(transaction_data->entry);
-
-	struct httpclient_redirect_data *redirect_data = NULL;
-
-	if ((ret = httpclient_redirect_data_new (
-			&redirect_data,
-			transaction->remaining_redirects,
-			transaction->request_part->parsed_version
-	)) != 0) {
-		goto out;
-	}
-
-	// Entry takes ownership of redirect data, no cleanup at function out
-	rrr_msg_holder_private_data_set(transaction_data->entry, redirect_data, httpclient_redirect_data_destroy_void);
 
 	struct rrr_msg_msg *message = transaction_data->entry->message;
 
@@ -1742,13 +1788,16 @@ static int httpclient_redirect_callback (
 	}
 
 	// Default from config
-	if ((ret = rrr_http_client_request_data_reset_from_request_data (&redirect_data->request_data, &data->request_data)) != 0) {
+	if ((ret = rrr_http_client_request_data_reset_from_request_data (
+			&request_data->request_data,
+			&data->request_data
+	)) != 0) {
 		goto out;
 	}
 
 	// Overrides from message excluding endpoint which is part ov the redirect
 	if ((ret = rrr_http_client_request_data_reset_from_raw (
-			&redirect_data->request_data,
+			&request_data->request_data,
 			server_override,
 			port_override
 	)) != 0) {
@@ -1756,13 +1805,24 @@ static int httpclient_redirect_callback (
 	}
 
 	// Overrides from redirect URI which may be multiple parameters
-	if ((ret = rrr_http_client_request_data_reset_from_uri (&redirect_data->request_data, uri)) != 0) {
+	if ((ret = rrr_http_client_request_data_reset_from_uri (
+			&request_data->request_data,
+			uri
+	)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
-	redirect_data->request_data.protocol_version = transaction->response_part->parsed_version;
+	request_data->request_data.protocol_version = transaction->response_part->parsed_version;
+
+	if (!request_data->redirect_data.is_redirect) {
+		request_data->redirect_data.is_redirect = 1;
+		request_data->redirect_data.remaining_redirects = data->redirects_max;
+	}
+	else {
+		request_data->redirect_data.remaining_redirects = transaction->remaining_redirects;
+	}
 
 	httpclient_requeue_entry_while_locked(data, transaction_data->entry);
 
@@ -1770,7 +1830,6 @@ static int httpclient_redirect_callback (
 	rrr_msg_holder_unlock(transaction_data->entry);
 	rrr_array_clear(&array_from_msg_tmp);
 	RRR_FREE_IF_NOT_NULL(server_override);
-	// No cleanup of redirect data, ownership taken by enty
 
 	// Don't let soft error propagate (would cause the whole thread to shut down)
 	return (ret & ~(RRR_HTTP_SOFT_ERROR));
@@ -1954,6 +2013,8 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
+	char *value_tmp = NULL;
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_response_max_mb", response_max_mb, RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB);
 	data->response_max_size = data->response_max_mb;
 	if (((ret = rrr_biglength_mul_err(&data->response_max_size, 1024 * 1024))) != 0) {
@@ -2024,6 +2085,17 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_request_tags_ignore", do_request_tags_ignore, 1); // Default YES
+
+	if (data->do_request_tags_ignore) {
+		HTTP_COMMON_REQUEST_FIELDS_FOREACH(field) {
+			if ((ret = rrr_map_item_add_new(&data->request_tags_all, field, NULL)) != 0) {
+				RRR_MSG_0("Failed to add request tag in %s\n", __func__);
+				ret = 1;
+				goto out;
+			}
+		}
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_taint_tag", taint_tag);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_report_tag",
@@ -2106,6 +2178,19 @@ static int httpclient_parse_config (
 		}
 	}
 
+	if (RRR_LL_COUNT(&data->http_client_config.extra_parse_headers) > 0) {
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_receive_structured") &&
+		    !data->do_receive_structured
+		) {
+			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_trap_headers' was 'yes' in httpclient instance %s, " \
+				  "this is a configuration error.", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		data->do_receive_structured = 1;
+	}
+
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type_boundary);
@@ -2138,6 +2223,7 @@ static int httpclient_parse_config (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(value_tmp);
 	return ret;
 }
 
@@ -2210,35 +2296,36 @@ static void httpclient_queue_process (
 		rrr_msg_holder_lock(node);
 		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
 
-		struct rrr_http_client_request_data *request_data_to_use = &data->request_data;
-		int no_destination_override = 0;
-		rrr_biglength remaining_redirects = data->redirects_max;
+		struct httpclient_request_data *request_data;
 
-		if (node->private_data) {
-			struct httpclient_redirect_data *redirect_data = node->private_data;
-			request_data_to_use = &redirect_data->request_data;
-			remaining_redirects = redirect_data->remaining_redirects;
-			no_destination_override = 1;
+		if (!node->private_data) {
+			if (httpclient_request_data_new(&request_data, &data->request_data, data->redirects_max) != 0) {
+				RRR_MSG_0("Hard error while creating request data while iterating queue in httpclient instance %s, deleting message\n",
+						INSTANCE_D_NAME(data->thread_data));
+				RRR_LL_ITERATE_SET_DESTROY();
+				goto unlock;
+			}
+			rrr_msg_holder_private_data_set(node, request_data, httpclient_request_data_destroy_void);
 		}
 		else {
-			request_data_to_use->protocol_version = data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11;
+			request_data = node->private_data;
 		}
 
 		// Always set this, also upon redirects
 #ifdef RRR_WITH_NGHTTP2
-		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 || data->http_client_config.do_no_http2_upgrade
+		request_data->request_data.upgrade_mode = data->http_client_config.do_http_10 || data->http_client_config.do_no_http2_upgrade
 			? RRR_HTTP_UPGRADE_MODE_NONE
 			: RRR_HTTP_UPGRADE_MODE_HTTP2;
 #else
-		request_data_to_use->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+		request_data->request_data.upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 #endif
 
 		if ((ret_tmp = httpclient_request_send (
 				data,
-				request_data_to_use,
+				&request_data->request_data,
 				node,
-				remaining_redirects,
-				no_destination_override
+				request_data->redirect_data.remaining_redirects,
+				request_data->redirect_data.is_redirect /* No destination override */
 		)) != RRR_HTTP_OK) {
 			if (ret_tmp == RRR_HTTP_BUSY) {
 				send_busy_count++;
@@ -2270,6 +2357,7 @@ static void httpclient_queue_process (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
+		unlock:
 		pthread_cleanup_pop(1); // Unlock
 
 		count++;
@@ -2318,6 +2406,7 @@ static void httpclient_update_stats(struct httpclient_data *data) {
 	rrr_stats_instance_post_unsigned_base10_text(stats, "periodic_request_queue_count", 0, RRR_LL_COUNT(&data->periodic_request_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "from_senders_queue_count", 0, RRR_LL_COUNT(&data->from_senders_queue));
+	rrr_stats_instance_post_unsigned_base10_text(stats, "redirect_queue_count", 0, RRR_LL_COUNT(&data->redirect_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "low_pri_queue_count", 0, RRR_LL_COUNT(&data->low_pri_queue));
 }
 
@@ -2326,11 +2415,12 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	RRR_DBG_1("httpclient instance %s queues: periodic %i from msgdb %i senders %i low pri %i\n",
+	RRR_DBG_1("httpclient instance %s queues: periodic %i from msgdb %i senders %i redirect %i low pri %i\n",
 		INSTANCE_D_NAME(thread_data),
 		RRR_LL_COUNT(&data->periodic_request_queue),
 		RRR_LL_COUNT(&data->from_msgdb_queue),
 		RRR_LL_COUNT(&data->from_senders_queue),
+		RRR_LL_COUNT(&data->redirect_queue),
 		RRR_LL_COUNT(&data->low_pri_queue)
 	);
 
@@ -2361,6 +2451,7 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->periodic_request_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_senders_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->redirect_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
 
 	httpclient_update_stats(data);
@@ -2411,6 +2502,7 @@ static void httpclient_event_msgdb_poll (
 	     RRR_LL_COUNT(&data->periodic_request_queue) == 0 &&
 	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
+	     RRR_LL_COUNT(&data->redirect_queue) == 0 &&
 	     RRR_LL_COUNT(&data->low_pri_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
@@ -2458,6 +2550,9 @@ static void httpclient_event_queue_process (
 	// elements checked every time creating permanent HOL blocking if
 	// stores fail. To mitigate this, rotate the lists at a random point
 	// before processing.
+
+	// Redirects processed first
+	httpclient_queue_process(&data->redirect_queue, data);
 
 	// Priority to the msgdb queue, runs first. Needs rotating.
 	httpclient_event_queue_process_check_rotate(data, &data->from_msgdb_queue_need_rotate, &data->from_msgdb_queue);
@@ -2555,6 +2650,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
+	rrr_msg_holder_collection_clear(&data->redirect_queue);
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
 	rrr_msg_holder_collection_clear(&data->periodic_request_queue);
@@ -2569,6 +2665,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
 	RRR_FREE_IF_NOT_NULL(data->body_tag);
 	rrr_map_clear(&data->meta_tags_all);
+	rrr_map_clear(&data->request_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
 	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
@@ -2682,6 +2779,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		httpclient_final_callback,
 		httpclient_failure_callback,
 		httpclient_redirect_callback,
+		httpclient_redirect_stop_callback,
 		NULL,
 		NULL,
 		httpclient_unique_id_generator,

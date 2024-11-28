@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -234,18 +234,21 @@ int rrr_socket_sendto_blocking (
 		rrr_biglength size,
 		struct sockaddr *addr,
 		socklen_t addr_len,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 );
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
 		rrr_biglength send_size,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 );
 int rrr_socket_check_alive (
-		int fd
+		int fd,
+		int silent
 );
 void rrr_socket_datagram_init (
 		struct rrr_socket_datagram *datagram,
@@ -256,5 +259,6 @@ int rrr_socket_recvmsg (
 		struct rrr_socket_datagram *datagram,
 		int fd
 );
+int rrr_socket_is_locked(void);
 
 #endif /* RRR_SOCKET_H */

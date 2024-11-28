@@ -52,7 +52,7 @@ static int __rrr_http_part_multipart_process_part_find_end_callback (
 	const rrr_nullsafe_len part_length = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_at_needle);
 
 	if (part_length > RRR_LENGTH_MAX) {
-		RRR_MSG_0("HTTP part too long while processing multipart (%" PRIrrr_nullsafe_len ">%llu)\n",
+		RRR_DBG_3("HTTP part too long while processing multipart (%" PRIrrr_nullsafe_len ">%llu)\n",
 			part_length, (long long unsigned) RRR_LENGTH_MAX);
 		return 1;
 	}
@@ -85,13 +85,13 @@ static int __rrr_http_part_multipart_process_part_callback (
 	int end_boundary_found = 0;
 
 	if ((rrr_biglength) RRR_LL_COUNT(callback_data->parent) >= callback_data->max_parts) {
-		RRR_MSG_0("Too many parts in HTTP multipart, max is %i\n", callback_data->max_parts);
+		RRR_DBG_3("Too many parts in HTTP multipart, max is %i\n", callback_data->max_parts);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
 	if (rrr_nullsafe_str_len(pos_after_needle) < 2) {
-		RRR_MSG_0("Not enough data after boundary while parsing HTTP multipart request\n");
+		RRR_DBG_3("Not enough data after boundary while parsing HTTP multipart request\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -120,7 +120,7 @@ static int __rrr_http_part_multipart_process_part_callback (
 				__rrr_http_part_multipart_process_part_find_end_callback,
 				&find_end_callback_data
 		) != RRR_HTTP_PARSE_EOF) {
-			RRR_MSG_0("Could not find boundary while looking for part end in HTTP multipart request\n");
+			RRR_DBG_3("Could not find boundary while looking for part end in HTTP multipart request\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
@@ -133,7 +133,7 @@ static int __rrr_http_part_multipart_process_part_callback (
 	}
 
 	if (rrr_http_part_new(&new_part) != 0) {
-		RRR_MSG_0("Could not allocate new part in __rrr_http_part_process_multipart_part\n");
+		RRR_DBG_3("Could not allocate new part in __rrr_http_part_process_multipart_part\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -156,7 +156,7 @@ static int __rrr_http_part_multipart_process_part_callback (
 			// Incomplete return is normal, the parser does not know about boundaries
 			ret &= ~(RRR_HTTP_PARSE_INCOMPLETE);
 			if (ret != 0) {
-				RRR_MSG_0("Failed to parse part from HTTP multipart request return was %i\n", ret);
+				RRR_DBG_3("Failed to parse part from HTTP multipart request return was %i\n", ret);
 				goto out;
 			}
 		}
@@ -166,8 +166,8 @@ static int __rrr_http_part_multipart_process_part_callback (
 		RRR_BUG("BUG: Request or response not 0 in __rrr_http_part_process_multipart_part\n");
 	}
 
-	if (new_part->header_complete != 1) {
-		RRR_DBG("Warning: Invalid header specification in HTTP multipart request part header\n");
+	if (new_part->header_complete != 1 && RRR_DEBUGLEVEL_3) {
+		RRR_DBG_3("Invalid header specification in HTTP multipart request part header\n");
 	}
 
 	new_part->headroom_length = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_after_needle);
@@ -178,7 +178,12 @@ static int __rrr_http_part_multipart_process_part_callback (
 	}
 
 	if ((ret = rrr_http_part_multipart_process(new_part, callback_data->data_ptr)) != 0) {
-		RRR_MSG_0("Error while processing sub-multipart in HTTP multipart request\n");
+		if (ret == RRR_HTTP_PARSE_HARD_ERR) {
+			RRR_MSG_0("Error while processing sub-multipart in HTTP multipart request\n");
+		}
+		else {
+			RRR_DBG_3("Error while processing sub-multipart in HTTP multipart request\n");
+		}
 		goto out;
 	}
 
@@ -213,7 +218,7 @@ static int __rrr_http_part_multipart_process_parts (
 
 #if UINTPTR_MAX > RRR_LENGTH_MAX
 	if (end - start > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Part was too long while parsing HTTP multipart (%llu>%llu)\n",
+		RRR_DBG_3("Part was too long while parsing HTTP multipart (%llu>%llu)\n",
 			(unsigned long long) (end - start),
 			(unsigned long long) RRR_LENGTH_MAX
 		);
@@ -284,14 +289,14 @@ int rrr_http_part_multipart_process (
 	}
 
 	if (part->request_method == RRR_HTTP_METHOD_GET) {
-		RRR_MSG_0("Received multipart message in GET request which is not a valid combination\n");
+		RRR_DBG_3("Received multipart message in GET request which is not a valid combination\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 
 	const struct rrr_http_field *boundary = __rrr_http_part_header_field_subvalue_get(part, "content-type", "boundary");
 	if (boundary == NULL || !rrr_nullsafe_str_isset(boundary->value)) {
-		RRR_MSG_0("No multipart boundary found in content-type of HTTP header\n");
+		RRR_DBG_3("No multipart boundary found in content-type of HTTP header\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -319,7 +324,7 @@ int rrr_http_part_multipart_process (
 			RRR_MSG_0("Hard error while parsing rrr_http_part_process_multipart\n");
 		}
 		else {
-			RRR_MSG_0("HTTP Multipart parsing failed, possible invalid data from client. Return was %i.\n", ret);
+			RRR_DBG_3("HTTP Multipart parsing failed, possible invalid data from client. Return was %i.\n", ret);
 		}
 		ret = RRR_HTTP_PARSE_SOFT_ERR; // Only return soft error
 		goto out;

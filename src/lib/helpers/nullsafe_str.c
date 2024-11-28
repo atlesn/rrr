@@ -2,11 +2,7 @@
 
 Read Route Record
 
-<<<<<<< HEAD
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
-=======
 Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
->>>>>>> httpserver_topic_option
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1014,5 +1010,30 @@ void rrr_nullsafe_str_trim (
 		else {
 			break;
 		}
+	}
+}
+
+void rrr_nullsafe_str_trim_set (
+		struct rrr_nullsafe_str *nullsafe,
+		const char *set,
+		rrr_length set_size
+) {
+	if (nullsafe->len == 0) {
+		return;
+	}
+
+	char *str = nullsafe->str;
+
+	// Note : loop wraps from 0 to max then exits
+	for (rrr_nullsafe_len i = nullsafe->len - 1; i < nullsafe->len; i--) {
+		for (rrr_length j = 0; j < set_size; j++) {
+			if (str[i] == set[j])
+				goto found;
+		}
+		break;
+
+		found:
+		str[i] = '\0';
+		nullsafe->len--;
 	}
 }

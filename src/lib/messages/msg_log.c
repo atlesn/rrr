@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../util/rrr_endian.h"
 #include "msg_log.h"
 #include "msg.h"
 

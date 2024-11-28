@@ -73,7 +73,7 @@ ldflags = -L../lib/.libs ${JEMALLOC_LIBS} -lrrr
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
-make_test_data_LDFLAGS = ${ldflags} -pie
+make_test_data_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fpie
@@ -106,8 +106,10 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_http.sh             \
 	test_http2.sh            \
 	test_http3.sh            \
+	test_http_tag_ignore.sh  \
 	test_http_graylist.sh    \
 	test_http_report_tag.sh  \
+	test_http_headers_trap.sh\
 	test_incrementer.sh      \
 	test_ip.sh               \
 	test_ipclient.sh         \
@@ -121,4 +123,5 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_perl5.sh            \
 	test_python3.sh          \
 	test_socket.sh           \
-	test_websocket.sh
+	test_websocket.sh        \
+	test_log_daemon.sh

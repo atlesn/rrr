@@ -52,6 +52,8 @@ struct rrr_http_client_config {
 	struct rrr_map fixed_tags;
 	struct rrr_map fields;
 	struct rrr_map fixed_fields;
+
+	struct rrr_map extra_parse_headers;
 };
 
 void rrr_http_client_config_cleanup (

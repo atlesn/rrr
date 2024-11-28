@@ -1466,8 +1466,9 @@ int rrr_socket_sendto_blocking (
 		rrr_biglength size,
 		struct sockaddr *addr,
 		socklen_t addr_len,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 ) {
 	int ret = 0;
 
@@ -1475,7 +1476,8 @@ int rrr_socket_sendto_blocking (
 	rrr_biglength written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("fd %i blocking send loop writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete)\n",
+		if (!silent)
+			RRR_DBG_7("fd %i blocking send loop writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete)\n",
 				fd, size, written_bytes_total);
 
 		if ((ret = rrr_socket_sendto_nonblock_check_retry (
@@ -1485,10 +1487,11 @@ int rrr_socket_sendto_blocking (
 				rrr_biglength_sub_bug_const(size, written_bytes_total),
 				addr,
 				addr_len,
-				0 /* Not silent */
+				silent
 		)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
+				if (!silent)
+					RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
 				goto out;
 			}
 			ret = 0;
@@ -1496,11 +1499,12 @@ int rrr_socket_sendto_blocking (
 
 		written_bytes_total += written_bytes;
 
-		RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",
+		if (!silent)
+			RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",
 				fd, written_bytes_total, written_bytes);
 
 		if (wait_callback) {
-			if ((ret = wait_callback(wait_callback_arg)) != 0) {
+			if ((ret = wait_callback(silent, wait_callback_arg)) != 0) {
 				goto out;
 			}
 		}
@@ -1514,14 +1518,16 @@ int rrr_socket_send_blocking (
 		int fd,
 		void *data,
 		rrr_biglength size,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 ) {
-	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0, wait_callback, wait_callback_arg);
+	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0, wait_callback, wait_callback_arg, silent);
 }
 
 int rrr_socket_check_alive (
-		int fd
+		int fd,
+		int silent
 ) {
 	struct pollfd pollfd = {0};
 
@@ -1531,20 +1537,23 @@ int rrr_socket_check_alive (
 	ssize_t ret_tmp = poll(&pollfd, 1, 10);
 
 	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n",
-			fd, ret_tmp == -1 ? rrr_strerror(errno) : "POLLHUP/POLLERR/POLLNVAL", pollfd.revents
-		);
+		if (!silent)
+			RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n",
+				fd, ret_tmp == -1 ? rrr_strerror(errno) : "POLLHUP/POLLERR/POLLNVAL", pollfd.revents
+			);
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 	else if (ret_tmp > 0) {
 		char buf[1];
 		ret_tmp = recv(fd, buf, sizeof(buf), MSG_PEEK|MSG_DONTWAIT);
 		if (ret_tmp < 0) {
-			RRR_DBG_7("fd %i recv peek error in check alive: %s\n", fd, rrr_strerror(errno));
+			if (!silent)
+				RRR_DBG_7("fd %i recv peek error in check alive: %s\n", fd, rrr_strerror(errno));
 			return RRR_SOCKET_SOFT_ERROR;
 		}
 		else if (ret_tmp == 0) {
-			RRR_DBG_7("fd %i recv EOF in check alive, connection closed\n", fd);
+			if (!silent)
+				RRR_DBG_7("fd %i recv EOF in check alive, connection closed\n", fd);
 			return RRR_READ_EOF;
 		}
 	}
@@ -1612,4 +1621,11 @@ int rrr_socket_recvmsg (
 
 	out:
 	return ret;
+}
+
+int rrr_socket_is_locked(void) {
+	if (pthread_mutex_trylock(&socket_lock) != 0)
+		return 1;
+	pthread_mutex_unlock(&socket_lock);
+	return 0;
 }

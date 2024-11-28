@@ -31,13 +31,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "discern_stack.h"
 #include "discern_stack_helper.h"
 #include "instance_config.h"
-#include "log_socket.h"
 #include "message_broker.h"
 #include "message_helper.h"
 #include "message_holder/message_holder_struct.h"
 #include "poll_helper.h"
 #include "allocator.h"
 #include "event/event_functions.h"
+#include "event/event_collection.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 #include "util/gnu.h"
@@ -624,6 +624,7 @@ int rrr_instance_collection_count (
 static void __rrr_instance_runtime_data_destroy (
 		struct rrr_instance_runtime_data *data
 ) {
+	rrr_event_collection_clear(&data->events);
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
 	free(data);
 }
@@ -663,6 +664,20 @@ static int __rrr_instance_iterate_route_instances_callback (
 	return ret;
 }
 
+static void __rrr_instance_periodic_callback (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+	(void)(thread_data);
+
+	rrr_log_socket_ping_or_flush();
+}
+
 static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		struct rrr_instance *instance,
 		struct rrr_instance_config_collection *config,
@@ -674,7 +689,8 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		volatile const int *main_running
 ) {
 	struct rrr_instance_runtime_data *data;
-      
+	rrr_event_handle event_log_ping = {0};
+
 	if ((data = rrr_allocate_zero(sizeof(*data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		goto out;
@@ -721,6 +737,19 @@ static struct rrr_instance_runtime_data *__rrr_instance_runtime_data_new (
 		RRR_MSG_0("Could not register with message broker in %s\n", __func__);
 		goto out_free;
 	}
+
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(data));
+
+	if (rrr_event_collection_push_periodic (
+			&event_log_ping,
+			&data->events,
+			__rrr_instance_periodic_callback,
+			data,
+			500 * 1000 // 500 ms
+	) != 0) {
+		goto out_free;
+	}
+	EVENT_ADD(event_log_ping);
 	
 	goto out;
 	out_free:
@@ -1006,19 +1035,11 @@ static int __rrr_instance_thread_early_init (
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	int ret = 0;
-
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if ((ret = rrr_log_socket_thread_start_say(INSTANCE_D_EVENTS(thread_data))) != 0) {
-		goto out;
-	}
-
-	out:
-#else
 	(void)(thread_data);
-#endif
 
-	return ret;
+	rrr_log_socket_after_thread();
+
+	return 0;
 }
 
 static void __rrr_instance_thread_late_deinit (
@@ -1028,9 +1049,7 @@ static void __rrr_instance_thread_late_deinit (
 
 	(void)(thread_data);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	rrr_log_socket_cleanup_sayer();
-#endif
+	rrr_log_socket_flush_and_close();
 }
 
 struct rrr_instance_collection_start_threads_check_wait_for_callback_data {

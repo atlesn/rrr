@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "poll_helper.h"
 #include "event/event.h"
+#include "event/event_collection_struct.h"
 #include "util/linked_list.h"
 
 #define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER           (1<<0)
@@ -146,6 +147,9 @@ struct rrr_instance_runtime_data {
 	// * Cleanup in ghost handler
 	struct rrr_cmodule *cmodule;
 	struct rrr_stats_instance *stats;
+
+	// Events used by instances framework
+	struct rrr_event_collection events;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler

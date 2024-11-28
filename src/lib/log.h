@@ -212,6 +212,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	endif
 #endif
 
+// XXX : MSG_0 and DBG_9 should use correct prefix 
+
 #define RRR_MSG_0_PRINTF(...) \
 	do { printf ("<" __RRR_LOG_PREFIX_0_Q "> <rrr> " __VA_ARGS__); } while(0)
 
@@ -294,18 +296,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             const char *message,                               \
             void *private_arg
 
-#define RRR_LOG_PRINTF_INTERCEPT_ARGS                          \
-            RRR_LOG_HOOK_ARGS
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
+) {
+	uint8_t result = 0;
+
+	switch (loglevel) {
+		case __RRR_LOG_PREFIX_0:
+			result = RRR_RFC5424_LOGLEVEL_ERROR;
+			break;
+		case __RRR_LOG_PREFIX_1:
+		case __RRR_LOG_PREFIX_2:
+		case __RRR_LOG_PREFIX_3:
+		case __RRR_LOG_PREFIX_4:
+		case __RRR_LOG_PREFIX_5:
+		case __RRR_LOG_PREFIX_6:
+		case __RRR_LOG_PREFIX_7:
+		default:
+			result = RRR_RFC5424_LOGLEVEL_DEBUG;
+			break;
+	};
+
+	return result;
+}
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
+) {
+	(void)(loglevel);
+	return RRR_RFC5424_LOGLEVEL_ERROR;
+}
 
 struct rrr_event_queue;
 
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
 void rrr_log_cleanup(void);
-void rrr_log_printf_thread_local_intercept_set (
-		void (*log)(RRR_LOG_PRINTF_INTERCEPT_ARGS),
-		void *private_arg
-);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(RRR_LOG_HOOK_ARGS),
@@ -333,6 +359,14 @@ void rrr_log_print_no_hooks (
 		const char *message
 );
 void rrr_log_printf_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
+void rrr_log_printf_nolock_loglevel_translated (
 		const char *file,
 		int line,
 		uint8_t loglevel,
@@ -372,6 +406,24 @@ void rrr_log_fprintf (
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+int rrr_log_socket_connect (
+		const char *log_socket
+);
+int rrr_log_socket_fd_get (
+		void
+);
+void rrr_log_socket_flush_and_close (
+		void
+);
+void rrr_log_socket_after_fork (
+		void
+);
+void rrr_log_socket_after_thread (
+		void
+);
+void rrr_log_socket_ping_or_flush (
+		void
 );
 
 #endif /* RRR_LOG_H */

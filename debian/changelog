@@ -1,30 +1,52 @@
-rrr (1.32-12) bookworm; urgency=medium
+rrr (1.36-1) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 28 Nov 2024 09:42:41 +0100
+
+rrr (1.35-1) bookworm; urgency=medium
+
   * Features:
-    * Compilation option (for now) to enable central printf logging so that
-      each thread sends log output over a socket to the main process. This
-      ensures that printf outputs are not mixed up from different threads
-      and processes.
-    * Compilation option to enable timestamps in messages printed to standard
-      output
+    * Configuration option in http client to trap any header field
+
+  * Fixes:
+    * Crashes in MQTT for malformed packets with tailing payload
+    * Bad MQTT CONNECT packet assembling for V5 when will flag was not set
+    * Log messages to stats engine  getting lost due to events delivered to
+      incorrect event queue
+    * Memory leak in Python3 where values added to array had incorrect
+      reference count causing memory leaks
+    * Broken parsing of leading spaces in istr and ustr types in arrays
+    * Crash in array tree import for division overflow in conditions,
+      emit soft error instead.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 27 Nov 2024 18:32:12 +0100
+
+rrr (1.33-1) bookworm; urgency=medium
+
+  * Features:
+    * Log socket daemon with ability to collect logs from multiple RRR
+      processes
 
   * Improvements:
     * Remove all references to http2 when RRR is built without nghttp2, in
       particular avoid noisy notification caused by inconsistencies in the
       code
     * Speed up tests by running them in parallel
+    * In httpclient, by default ignore all meta fields from httpserver which
+      should usually not be added as request fields.
+    * In httpclient, prevent using // endpoint when using endpoint from topic
+      and url is /
 
   * Fixes:
     * Remove stale python directory from source causing build to fail in some
       cases
-    * Fix misc. hangs and crashes when parsing invalid configuration files
-    * Fix misc. crashes in HTTP handling
+    * Misc. hangs and crashes when parsing invalid configuration files
+    * Misc. crashes in HTTP handling
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 04 Sep 2024 08:54:05 +0000
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 01 Nov 2024 07:02:09 +0100
 
-rrr (1.31-4) bookworm; urgency=medium
+rrr (1.31-5) bookworm; urgency=medium
 
   * Fixes:
     * Preflight headers not sendt for OPTIONS request

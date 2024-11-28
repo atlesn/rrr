@@ -69,6 +69,12 @@ struct rrr_array_tree_list {
 	RRR_LL_HEAD(struct rrr_array_tree);
 };
 
+static inline int rrr_array_tree_is_empty (
+		const struct rrr_array_tree *tree
+) {
+	return RRR_LL_COUNT(tree) == 0;
+}
+
 void rrr_array_tree_clear (
 		struct rrr_array_tree *tree
 );

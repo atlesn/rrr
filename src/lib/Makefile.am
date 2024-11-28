@@ -12,10 +12,6 @@ if RRR_WITH_FREEBSD_INPUT
 input_system = input/linux.c
 endif
 
-if RRR_ENABLE_CENTRAL_LOGGING
-central_logging = log_socket.c
-endif
-
 if RRR_WITH_MYSQL
 lib_mysql = librrrmysql.la
 librrrmysql_la_SOURCES = mysql.c
@@ -167,7 +163,8 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c util/arguments.c util/fs.c
+       util/increment.c util/sha256.c util/arguments.c util/fs.c \
+       util/rrr_str.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_helper.c
 
@@ -178,7 +175,7 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
-helpers = helpers/nullsafe_str.c helpers/string_builder.c
+helpers = helpers/nullsafe_str.c helpers/string_builder.c helpers/log_helper.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
@@ -223,7 +220,6 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
-		    ${central_logging} \
                     ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022w0234 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -45,7 +45,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages/msg_msg.h"
 #include "../../lib/rrr_strerror.h"
-#include "../../lib/message_broker.h"
 #include "../../lib/ip/ip.h"
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
@@ -61,6 +60,11 @@ struct rrr_test_result {
 struct rrr_test_callback_data {
 	struct rrr_test_result *test_result;
 	void *private_data;
+};
+
+struct rrr_test_anything_callback_data {
+	const struct rrr_map *check_values;
+	const struct rrr_map *fail_values;
 };
 
 /* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
@@ -114,16 +118,24 @@ struct test_final_data {
 int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
-	const struct rrr_map *array_check_values = callback_data->private_data;
+	struct rrr_test_anything_callback_data *anything_callback_data = callback_data->private_data;
+	const struct rrr_map *array_check_values = anything_callback_data->check_values;
+	const struct rrr_map *array_fail_values = anything_callback_data->fail_values;
 
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
+	uint16_t version_dummy;
 
 	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
-	if (array_check_values != NULL && RRR_LL_COUNT(array_check_values) > 0) {
-		uint16_t version_dummy;
+	if (RRR_LL_COUNT(array_check_values) > 0 || RRR_LL_COUNT(array_fail_values) > 0) {
+		if (!MSG_IS_ARRAY(message)) {
+			RRR_MSG_0("Message was not an array message while check or fail value parameters were set in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+
 		if ((ret = rrr_array_message_append_to_array (&version_dummy, &array_tmp, message)) != 0) {
 			RRR_MSG_0("Failed to extract array values in %s return was %i\n", __func__, ret);
 			goto out;
@@ -132,6 +144,14 @@ int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 		RRR_MAP_ITERATE_BEGIN(array_check_values);
 			if (!rrr_array_has_tag (&array_tmp, node_tag)) {
 				RRR_MSG_0("Array value with tag %s missing in message in %s\n", node_tag, __func__);
+				ret = 1;
+				goto out;
+			}
+		RRR_MAP_ITERATE_END();
+
+		RRR_MAP_ITERATE_BEGIN(array_fail_values);
+			if (rrr_array_has_tag (&array_tmp, node_tag)) {
+				RRR_MSG_0("Array value with tag %s present when it should not in message in %s\n", node_tag, __func__);
 				ret = 1;
 				goto out;
 			}
@@ -698,7 +718,8 @@ int test_array (
 
 int test_anything (
 		RRR_TEST_FUNCTION_ARGS,
-		const struct rrr_map *array_check_values
+		const struct rrr_map *array_check_values,
+		const struct rrr_map *array_fail_values
 ) {
 	(void)(test_function_data);
 	(void)(instances);
@@ -707,9 +728,14 @@ int test_anything (
 
 	struct rrr_test_result test_result_1 = {1};
 
+	struct rrr_test_anything_callback_data anything_callback_data = {
+		array_check_values,
+		array_fail_values
+	};
+
 	struct rrr_test_callback_data callback_data = {
 		&test_result_1,
-		(void *) array_check_values // Cast away const OK
+		&anything_callback_data
 	};
 
 	// Poll from first output

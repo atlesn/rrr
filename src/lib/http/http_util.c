@@ -262,7 +262,7 @@ static int __rrr_http_util_decode_urlencoded_string (
 
 		if (c == '%') {
 			if (start + 3 > end) {
-				RRR_MSG_0("Not enough characters after %% in urlencoded string\n");
+				RRR_DBG_3("Not enough characters after %% in urlencoded string\n");
 				ret = 1;
 				goto out;
 			}
@@ -271,8 +271,10 @@ static int __rrr_http_util_decode_urlencoded_string (
 
 			rrr_length result_len = 0;
 			if (rrr_http_util_strtoull_raw (&result, &result_len, (const char *) start + 1, (const char *) start + 3, 16) != 0) {
-				RRR_MSG_0("Invalid %%-sequence in urlencoded string\n");
-				rrr_http_util_print_where_message((const char *) start, (const char *) end);
+				if (RRR_DEBUGLEVEL_3) {
+					RRR_MSG_3("Invalid %%-sequence in urlencoded string\n");
+					rrr_http_util_print_where_message((const char *) start, (const char *) end);
+				}
 				ret = 1;
 				goto out;
 			}
@@ -648,7 +650,7 @@ int rrr_http_util_strtoull_raw (
 	}
 
 	if (numbers_end - start > 63) {
-		RRR_MSG_0("Number was too long in %s\n", __func__);
+		RRR_DBG_3("Number was too long in %s\n", __func__);
 		return 1;
 	}
 
@@ -1278,15 +1280,19 @@ static int __rrr_http_util_uri_host_parse_callback (
 
 	// Port is required by RFC7838, and hostname is not required
 	if (uri_new->port == 0) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-		RRR_MSG_0("Port number was zero in host:port URI '%s'\n", name);
+		if (RRR_DEBUGLEVEL_3) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
+			RRR_MSG_3("Port number was zero in host:port URI '%s'\n", name);
+		}
 		ret = 1;
 		goto out;
 	}
 
 	if (end != pos) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
-		RRR_MSG_0("Invalid characters at end of host:port URI '%s'\n", name);
+		if (RRR_DEBUGLEVEL_3) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
+			RRR_MSG_3("Invalid characters at end of host:port URI '%s'\n", name);
+		}
 		ret = 1;
 		goto out;
 	}
@@ -1309,9 +1315,11 @@ static int __rrr_http_util_uri_parse_final (
 	}
 
 	if (__rrr_http_util_uri_validate_characters(&invalid, str) != 0) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str);
-		RRR_MSG_0("Invalid characters in URI '%s' (first invalid character is 0x%02x)\n",
-			name, invalid);
+		if (RRR_DEBUGLEVEL_3) {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str);
+			RRR_MSG_3("Invalid characters in URI '%s' (first invalid character is 0x%02x)\n",
+				name, invalid);
+		}
 		ret = 1;
 		goto out;
 	}
@@ -1775,8 +1783,10 @@ int rrr_http_util_decode (
 	}
 #endif
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(encoding_str,encoding);
-	RRR_MSG_0("Unsupported HTTP encoding '%s'\n", encoding_str);
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(encoding_str,encoding);
+		RRR_MSG_3("Unsupported HTTP encoding '%s'\n", encoding_str);
+	}
 
 	out:
 	return ret;

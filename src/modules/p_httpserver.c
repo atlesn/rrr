@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <assert.h>
 
+#include "http_common.h"
 #include "../lib/log.h"
 #include "../lib/banner.h"
 #include "../lib/allocator.h"
@@ -868,7 +869,7 @@ static int httpserver_receive_callback_uri_endpoint_and_query_string_split_callb
 
 	ret |= rrr_array_push_value_str_with_tag_with_size (
 			target_array,
-			"http_endpoint",
+			http_common_request_fields.http_endpoint,
 			endpoint_decoded,
 			rrr_length_from_biglength_bug_const(endpoint_decoded_length)
 	);
@@ -876,7 +877,7 @@ static int httpserver_receive_callback_uri_endpoint_and_query_string_split_callb
 	if (query_string_raw_length > 0) {
 		ret |= rrr_array_push_value_str_with_tag_with_size (
 				target_array,
-				"http_query_string",
+				http_common_request_fields.http_query_string,
 				query_string_raw,
 				rrr_length_from_biglength_bug_const(query_string_raw_length)
 		);
@@ -913,8 +914,8 @@ static int httpserver_receive_get_full_request (
 
 	// http_method, http_endpoint, http_body, http_content_transfer_encoding, http_content_type, http_content_type_boundary
 
-	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
-	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
+	ret |= rrr_array_push_value_u64_with_tag(target_array, http_common_request_fields.http_protocol, next_protocol_version);
+	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, http_common_request_fields.http_method, part->request_method_str_nullsafe);
 
 	if (httpserver_data->do_decode_endpoint) {
 		ret |= rrr_http_util_uri_endpoint_and_query_string_split (
@@ -924,7 +925,7 @@ static int httpserver_receive_get_full_request (
 		);
 	}
 	else {
-		ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+		ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, http_common_request_fields.http_endpoint, part->request_uri_nullsafe);
 	}
 
 	if (ret != 0) {
@@ -937,7 +938,7 @@ static int httpserver_receive_get_full_request (
 	if (h_content_type != NULL && rrr_nullsafe_str_isset(h_content_type->value)) {
 		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
-				"http_content_type",
+				http_common_request_fields.http_content_type,
 				h_content_type->value
 		)) != 0) {
 			goto out_value_error;
@@ -962,7 +963,7 @@ static int httpserver_receive_get_full_request (
 
 				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 						target_array,
-						"http_content_type_boundary",
+						http_common_request_fields.http_content_type_boundary,
 						callback_data.result
 				)) != 0) {
 					RRR_MSG_0("Failed to push content-type boundary value to array in httpserver instance %s\n",
@@ -980,7 +981,7 @@ static int httpserver_receive_get_full_request (
 	if (h_content_transfer_encoding != NULL && rrr_nullsafe_str_isset(h_content_transfer_encoding->value)) {
 		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
-				"http_content_transfer_encoding",
+				http_common_request_fields.http_content_transfer_encoding,
 				h_content_transfer_encoding->value
 		)) != 0) {
 			goto out_value_error;
@@ -990,7 +991,7 @@ static int httpserver_receive_get_full_request (
 	if (h_authority != NULL && rrr_nullsafe_str_isset(h_authority->value)) {
 		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 				target_array,
-				"http_authority",
+				http_common_request_fields.http_authority,
 				h_authority->value
 		)) != 0) {
 			goto out_value_error;
@@ -1000,7 +1001,7 @@ static int httpserver_receive_get_full_request (
 	if (body_len > 0) {
 		if ((ret = rrr_array_push_value_str_with_tag_with_size (
 				target_array,
-				"http_body",
+				http_common_request_fields.http_body,
 				body_ptr,
 				rrr_length_from_biglength_bug_const(body_len)
 		)) != 0) {
@@ -1095,7 +1096,7 @@ static int httpserver_async_response_get_extract_data (
 		}
 	}
 	else if (MSG_IS_DATA(msg)) {
-		if ((ret = rrr_array_push_value_str_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
+		if ((ret = rrr_array_push_value_str_with_tag_with_size(target, http_common_request_fields.http_body, MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
 			goto out;
 		}
 	}
@@ -1152,9 +1153,9 @@ static int httpserver_async_response_process (
 ) {
 	struct rrr_http_part *part = transaction->response_part;
 
-	const struct rrr_type_value *value_response_code = rrr_array_value_get_by_tag_const(target_array, "http_response_code");
-	const struct rrr_type_value *value_content_type = rrr_array_value_get_by_tag_const(target_array, "http_content_type");
-	const struct rrr_type_value *value_body = rrr_array_value_get_by_tag_const(target_array, "http_body");
+	const struct rrr_type_value *value_response_code = rrr_array_value_get_by_tag_const(target_array, http_common_response_fields.http_response_code);
+	const struct rrr_type_value *value_content_type = rrr_array_value_get_by_tag_const(target_array, http_common_response_fields.http_content_type);
+	const struct rrr_type_value *value_body = rrr_array_value_get_by_tag_const(target_array, http_common_response_fields.http_body);
 
 	int ret = 0;
 
@@ -1558,7 +1559,7 @@ static int httpserver_receive_callback (
 	if (RRR_LL_COUNT(&transaction->request_part->arrays) > 0) {
 		if ((ret = rrr_array_push_value_u64_with_tag (
 				&target_array,
-				"http_request_partials",
+				http_common_request_fields.http_request_partials,
 				rrr_length_from_slength_bug_const (RRR_LL_COUNT(&transaction->request_part->arrays))
 		)) != 0) {
 			RRR_MSG_0("Failed to push array message count to array while processing HTTP request part\n");

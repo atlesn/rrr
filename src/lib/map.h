@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -103,6 +103,10 @@ static inline struct rrr_map_item *rrr_map_iterator_next (
 
 void rrr_map_item_destroy (
 		struct rrr_map_item *item
+);
+int rrr_map_item_value_set (
+		struct rrr_map_item *item,
+		const char *value
 );
 void rrr_map_clear (
 		struct rrr_map *map

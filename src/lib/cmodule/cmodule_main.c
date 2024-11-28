@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../log.h"
-#include "../log_socket.h"
 #include "../allocator.h"
 
 #include "cmodule_main.h"
@@ -188,22 +187,12 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent;
 	}
 
-	// CHILD PROCESS CODE
+	// START CHILD PROCESS CODE
 	// Use of global locks OK beyond this point
 
 	rrr_setproctitle("[worker %s]", worker->name);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	if (rrr_log_socket_after_fork() != 0) {
-		ret = EXIT_FAILURE;
-		goto out_child_exit;
-	}
-
-	if (rrr_log_socket_thread_start_say(worker_queue) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_child_exit;
-	}
-#endif
+	rrr_log_socket_after_fork();
 
 	ret = rrr_cmodule_worker_main (
 			worker,
@@ -213,16 +202,12 @@ int rrr_cmodule_main_worker_fork_start (
 			callbacks
 	);
 
-#ifdef RRR_ENABLE_CENTRAL_LOGGING
-	out_child_exit:
-	rrr_log_socket_cleanup_sayer();
-	rrr_log_socket_cleanup_listener();
-#endif
-
 	// Clean up any events created after forking
 	rrr_event_queue_destroy(worker_queue);
-
+	rrr_log_cleanup();
 	exit(ret);
+
+	// END CHILD PROCESS CODE
 
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);

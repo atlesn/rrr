@@ -566,7 +566,8 @@ struct rrr_condition_running_result {
 };
 
 #define EVALUATION 						\
-	do {if (op == operator_lteq) {		\
+	do {*fpe = 0; \
+	if (op == operator_lteq) {		\
 		return (a <= b);				\
 	}									\
 	else if (op == operator_gteq) {		\
@@ -622,10 +623,16 @@ struct rrr_condition_running_result {
 	}} while(0)
 
 static uint64_t __rrr_condition_evaluate_operator (
+		int *fpe,
 		uint64_t a,
 		uint64_t b,
 		const struct rrr_condition_op *op
 ) {
+	if (op == operator_div && b == 0) {
+		*fpe = 1;
+		return 0;
+	}
+
 	EVALUATION;
 
 	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
@@ -634,10 +641,16 @@ static uint64_t __rrr_condition_evaluate_operator (
 }
 
 static int64_t __rrr_condition_evaluate_operator_signed (
+		int *fpe,
 		int64_t a,
 		int64_t b,
 		const struct rrr_condition_op *op
 ) {
+	if (op == operator_div && (b == 0 || (a == INT64_MIN && b == -1))) {
+		*fpe = 1;
+		return 0;
+	}
+
 	EVALUATION;
 
 	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
@@ -645,14 +658,19 @@ static int64_t __rrr_condition_evaluate_operator_signed (
 	return 0;
 }
 
-static int64_t __rrr_condition_evalute_ensure_signed (
+static int64_t __rrr_condition_evaluate_ensure_signed (
+		int *fpe,
 		struct rrr_condition_running_result *result
 ) {
 	int64_t signed_result = 0;
 
+	*fpe = 0;
+
 	if (!result->is_signed && result->result > INT64_MAX) {
-		RRR_MSG_0("Warning: Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
+		RRR_DBG_3("Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
 			result->result);
+		*fpe = 1;
+		return 0;
 	}
 
 	if (result->is_signed) {
@@ -665,15 +683,18 @@ static int64_t __rrr_condition_evalute_ensure_signed (
 	return signed_result;
 }
 
-static void __rrr_condition_evaluate_op (
+static int __rrr_condition_evaluate_op (
 		uint64_t *result,
 		const struct rrr_condition_op *op,
 		struct rrr_condition_running_result *position,
 		struct rrr_condition_running_result *results,
 		rrr_length results_pos
 ) {
+	int ret = 0;
+
 	struct rrr_condition_running_result *result_a = NULL;
 	struct rrr_condition_running_result *result_b = NULL;
+	int fpe;
 
 	for (rrr_slength j = results_pos - 1; j >= 0; j--) {
 		struct rrr_condition_running_result *result_find = &results[j];
@@ -699,16 +720,32 @@ static void __rrr_condition_evaluate_op (
 		int64_t signed_b = 0;
 
 		if (result_a != NULL) {
-			signed_a = __rrr_condition_evalute_ensure_signed(result_a);
+			signed_a = __rrr_condition_evaluate_ensure_signed(&fpe, result_a);
+			if (fpe) {
+				ret = RRR_CONDITION_SOFT_ERROR;
+				goto out;
+			}
 		}
 
-		signed_b = __rrr_condition_evalute_ensure_signed(result_b);
+		signed_b = __rrr_condition_evaluate_ensure_signed(&fpe, result_b);
+		if (fpe) {
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
 
 		int64_t result_tmp = __rrr_condition_evaluate_operator_signed (
+				&fpe,
 				signed_a,
 				signed_b,
 				op
 		);
+
+		if (fpe) {
+			RRR_DBG_3("Array tree division overflow in condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
+					signed_a, op->op, signed_b, position->result);
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
 
 		position->result = *((uint64_t *) &result_tmp);
 		position->is_signed = 1;
@@ -721,10 +758,18 @@ static void __rrr_condition_evaluate_op (
 		uint64_t unsigned_b = result_b->result;
 
 		position->result = __rrr_condition_evaluate_operator (
+				&fpe,
 				unsigned_a,
 				unsigned_b,
 				op
 		);
+
+		if (fpe) {
+			RRR_DBG_3("Array tree condition division by zero in unsigned evaluation %" PRIu64 " %s %" PRIu64 " = %" PRIu64 "\n",
+					unsigned_a, op->op, unsigned_b, position->result);
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
 
 		RRR_DBG_3("Array tree condition unsigned evaluation %" PRIu64 " %s %" PRIu64 " = %" PRIu64 "\n",
 				unsigned_a, op->op, unsigned_b, position->result);
@@ -741,9 +786,12 @@ static void __rrr_condition_evaluate_op (
 	}
 
 	result_b->is_evaluated = 0;
+
+	out:
+	return ret;
 }
 
-static int __rrr_condition_evalute_value (
+static int __rrr_condition_evaluate_value (
 		struct rrr_condition_running_result *position,
 		int (*name_evaluate_callback)(RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS),
 		void *name_evaluate_callback_arg
@@ -840,16 +888,18 @@ int rrr_condition_evaluate (
 		const struct rrr_condition_op *op = position->carrier->op;
 
 		if (op != NULL) {
-			__rrr_condition_evaluate_op (
+			if ((ret = __rrr_condition_evaluate_op (
 					result, // Last result stands
 					op,
 					position,
 					results,
 					i
-			);
+			)) != 0) {
+				goto out;
+			}
 		}
 		else {
-			if ((ret = __rrr_condition_evalute_value (
+			if ((ret = __rrr_condition_evaluate_value (
 					position,
 					name_evaluate_callback,
 					name_evaluate_callback_arg
