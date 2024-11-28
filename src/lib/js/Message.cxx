@@ -405,6 +405,11 @@ namespace RRR::JS {
 		ip_addr_len = 0;
 	}
 
+	void Message::cb_throw(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+		auto isolate = info.GetIsolate();
+		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
+	}
+
 	void Message::cb_ip_addr_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
 		auto message = self(info);
 		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
@@ -992,7 +997,7 @@ namespace RRR::JS {
 		tmpl->SetNativeDataProperty(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);
 		tmpl->SetNativeDataProperty(String(ctx, "data"), Message::cb_data_get, Message::cb_data_set);
 		tmpl->SetNativeDataProperty(String(ctx, "type"), Message::cb_type_get, Message::cb_type_set);
-		tmpl->SetNativeDataProperty(String(ctx, "class"), Message::cb_class_get, Message::cb_class_set);
+		tmpl->SetNativeDataProperty(String(ctx, "class"), Message::cb_class_get, Message::cb_throw);
 #if 1
 	/*
 	 *
