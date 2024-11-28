@@ -406,11 +406,13 @@ namespace RRR::JS {
 	}
 
 	void Message::cb_throw(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	printf("IN THROW\n");
 		auto isolate = info.GetIsolate();
 		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
 	}
 
 	void Message::cb_ip_addr_get(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	printf("IN GET for %s\n", String(info.GetIsolate(), property.As<v8::Value>()->ToString(info.GetIsolate()->GetCurrentContext()).ToLocalChecked()).operator*());
 		auto message = self(info);
 		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
 		info.GetReturnValue().Set(buffer);
@@ -502,6 +504,8 @@ namespace RRR::JS {
 		auto ip = v8::Local<v8::String>();
 		auto port = v8::Local<v8::Uint32>();
 
+printf("SET IP INGRESS\n");
+
 		if ((info.Length() >= 1 ? info[0] : String(isolate, "0.0.0.0"))->ToString(ctx).ToLocal(&ip) != true) {
 			auto ip_str = String(isolate, ip);
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "IP not a valid string")));
@@ -514,6 +518,8 @@ namespace RRR::JS {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Port out of range")));
 			return;
 		}
+
+printf("SET IP %s\n", String(isolate, ip).operator*());
 
 		auto ip_str = String(isolate, ip);
 		int af_protocol;
@@ -991,7 +997,7 @@ namespace RRR::JS {
 		tmpl->Set(ctx, "MSG_CLASS_DATA", v8::Uint32::New(ctx, MSG_CLASS_DATA), v8::PropertyAttribute::ReadOnly);
 		tmpl->Set(ctx, "MSG_CLASS_ARRAY", v8::Uint32::New(ctx, MSG_CLASS_ARRAY), v8::PropertyAttribute::ReadOnly);
 
-		tmpl->SetNativeDataProperty(String(ctx, "ip_addr"), Message::cb_ip_addr_get);
+		tmpl->SetNativeDataProperty(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
 		tmpl->SetNativeDataProperty(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
 		tmpl->SetNativeDataProperty(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);
 		tmpl->SetNativeDataProperty(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);

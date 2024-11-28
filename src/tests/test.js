@@ -76,6 +76,7 @@ function message_tests() {
 
 	catched = false;
 	try {
+		console.log("SET TO ZERO\n");
 		message.ip_addr = 0;
 	}
 	catch (e) {
