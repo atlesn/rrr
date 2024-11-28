@@ -2,6 +2,7 @@ extern "C" {
 	#include "lib/allocator.h"
 	#include "lib/log.h"
 	#include "lib/rrr_strerror.h"
+	#include "lib/rrr_config.h"
 	RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_js");
 };
 
@@ -38,6 +39,18 @@ int main(int argc, const char **argv) {
 			ret = EXIT_FAILURE;
 			goto usage;
 	};
+
+	rrr_config_init (
+		0, // Debuglevel
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		"."
+	);
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
