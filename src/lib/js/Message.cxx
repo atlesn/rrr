@@ -447,7 +447,6 @@ namespace RRR::JS {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		auto string = String(isolate, message->data.data(), message->data.size());
-		auto ctx = CTX::fromEmbedderData(isolate->GetCurrentContext());
 		v8::MaybeLocal<v8::Value> obj = v8::JSON::Parse(isolate->GetCurrentContext(), string);
 
 		if (obj.IsEmpty())

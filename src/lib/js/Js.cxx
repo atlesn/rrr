@@ -333,7 +333,7 @@ namespace RRR::JS {
 		ctx->Exit();
 	}
 
-	CTX *CTX::fromEmbedderData(v8::Local<v8::Context> ctx) {
+	CTX *CTX::from_embedder_data(v8::Local<v8::Context> ctx) {
 		auto value = ctx->GetEmbedderData(1);
 		assert(value->IsExternal());
 		auto external = value.As<v8::External>();
