@@ -107,7 +107,7 @@ struct modbus_command_node {
 	RRR_LL_NODE(struct modbus_command_node);
 	struct modbus_data *data;
 	uint64_t last_seen_time;
-	uint64_t send_time;
+	uint64_t send_attempt_time;
 	uint64_t interval_ms;
 	uint64_t oneshot_timeout_ms;
 	char *response_topic;
@@ -128,7 +128,7 @@ struct modbus_data {
 	struct modbus_command_collection commands;
 	struct modbus_command_collection oneshot_commands;
 	struct rrr_event_collection events;
-	rrr_event_handle event_process;
+	rrr_event_handle event_maintain;
 };
 
 struct modbus_client_data {
@@ -1070,8 +1070,8 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		sizeof(buf)
 	};
 
-	if (node->send_time == 0) {
-		node->send_time = rrr_time_get_64();
+	if (node->send_attempt_time == 0) {
+		node->send_attempt_time = rrr_time_get_64();
 	}
 
 	rrr_length send_chunk_count;
@@ -1105,7 +1105,7 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		}
 	}
 	else {
-		node->send_time = 0;
+		node->send_attempt_time = 0;
 		if (node->interval_ms == 0) {
 			EVENT_REMOVE(node->event);
 		}
@@ -1120,7 +1120,7 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 }
 
-static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
+static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 	struct modbus_data *data = arg;
 
 	(void)(fd);
@@ -1147,7 +1147,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 			);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (node->send_time > 0 && node->send_time < send_time_limit) {
+		else if (node->send_attempt_time > 0 && node->send_attempt_time < send_time_limit) {
 			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ", server is not reachable.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
@@ -1165,7 +1165,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	uint64_t oneshot_timeout_us;
 	RRR_LL_ITERATE_BEGIN(&data->oneshot_commands, struct modbus_command_node);
 		oneshot_timeout_us = node->oneshot_timeout_ms * 1000;
-		if (node->send_time > 0 && curr_time_us > (node->send_time + oneshot_timeout_us)) {
+		if (node->send_attempt_time > 0 && curr_time_us > (node->send_attempt_time + oneshot_timeout_us)) {
 			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", server is not reachable.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
@@ -1579,17 +1579,17 @@ static void *thread_entry_modbus (struct rrr_thread *thread) {
 	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(data->thread_data));
 
 	if (rrr_event_collection_push_periodic (
-			&data->event_process,
+			&data->event_maintain,
 			&data->events,
-			modbus_event_process,
+			modbus_event_maintain,
 			data,
-			50000 // 50 ms
+			50 * 1000 // 50 ms
 	) != 0) {
 		RRR_MSG_0("Failed to create event in %s\n", __func__);
 		goto out_message;
 	}
 
-	EVENT_ADD(data->event_process);
+	EVENT_ADD(data->event_maintain);
 
 	rrr_socket_client_collection_event_setup_raw (
 			data->collection_tcp,
