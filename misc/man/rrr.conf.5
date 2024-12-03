@@ -918,9 +918,6 @@ and
 .B modbus_interval_ms
 controls wether or not a command is to be repeated or sent only once.
 .PP
-The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
-After a command has been received, it is repeated for at most two seconds at the given interval.
-.PP
 If different commands are used on the same server, they will share connection.
 .PP
 Please refer to the
@@ -973,12 +970,24 @@ If given, the command is repeated at the given interval for two seconds. Default
 be given if
 .B modbus_oneshot_timeout_ms
 is given.
+The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+After a command has been received, it is repeated for at most two seconds at the given interval.
+
+For continuous operation, a new message with the same interval must be sent before the timeout is encountered.
+Sending multiple (equal) command messages repeatedly does not cause extra commands being passed to the modbus device,
+commands are only sent at the given intervals.
+
+Whenever a new interval is set or and old interval is changed, no command will be sent to the modbus device before this interval has passed.
 .It modbus_oneshot_timeout_ms
 If given, the command will only be sent once with the specified timeout. If the timeout occurs a response will be generated with the array field
 .B modbus_error
 present. Must be equal or greater than 0. May not be given if
 .B modbus_interval_ms
 is given.
+
+When using this parameter, it is guaranteed that exactly one command is sent to the modbus device (or attempt is made)
+for each received command message and that one response message is generated either with and error message set or
+containing modbus response data.
 .El
 .PP
 The following response messages and array fields are generated as a result of the modbus server
