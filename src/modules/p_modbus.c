@@ -1126,6 +1126,7 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	(void)(fd);
 	(void)(flags);
 
+	int ret_tmp;
 	uint64_t curr_time_us = rrr_time_get_64();
 	uint64_t command_time_limit = curr_time_us - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
 	uint64_t send_time_limit = curr_time_us - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
@@ -1173,10 +1174,16 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 			node->command.quantity,
 			node->oneshot_timeout_ms
 		);
-		modbus_output_onsehot_timeout(node);
+			if ((ret_tmp = modbus_output_oneshot_timeout(node)) != 0) {
+				goto fail;
+			}
 		RRR_LL_ITERATE_SET_DESTROY();
 	}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->oneshot_commands, 0; modbus_command_node_destroy(node));
+
+	return;
+	fail:
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 }
 
 #define GET_VALUE(name,type)                                                                                     \
