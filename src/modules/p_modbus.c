@@ -1293,6 +1293,12 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto drop;
 		}
 	}
+	else {
+		/*
+		 * As no one was present both interval_ms and oneshot_timeout_ms are now set to 0.
+		 * When oneshout_timeout_ms is 0 the request will be treated as an interval request.
+		 */
+	}
 
 	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER ||
 		modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
