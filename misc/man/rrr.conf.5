@@ -979,11 +979,21 @@ commands are only sent at the given intervals.
 
 Whenever a new interval is set or and old interval is changed, no command will be sent to the modbus device before this interval has passed.
 .It modbus_oneshot_timeout_ms
-If given, the command will only be sent once with the specified timeout. If the timeout occurs a response will be generated with the array field
-.B modbus_error
-present. Must be equal or greater than 0. May not be given if
+If given, the command will only be sent once with the specified timeout.
+Must be than 0. May not be given if
 .B modbus_interval_ms
 is given.
+.PP
+When the message has been queued for sending after a connection is established, or when a send timeout occurs, a status message is generated
+containing the following fields:
+.Bl -tag -width -indent
+.It modbus_oneshot_status
+Set to either
+.B timeout
+or
+.B queued
+indicating that the given command has been queued for sending to the modbus device or that the given timeout was exceeded.
+.El
 
 When using this parameter, it is guaranteed that exactly one command is sent to the modbus device (or attempt is made)
 for each received command message and that one response message is generated either with and error message set or

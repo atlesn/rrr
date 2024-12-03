@@ -87,8 +87,9 @@ static const char *modbus_field_interval_ms       		= "modbus_interval_ms";
 static const char *modbus_field_oneshot_timeout_ms 		= "modbus_oneshot_timeout_ms";
 static const char *modbus_field_response_topic    		= "modbus_response_topic";
 
-static const char *modbus_field_error                	= "modbus_error";
-static const char *modbus_field_error_oneshot_timeout	= "oneshot_timeout";
+static const char *modbus_field_oneshot_status                	= "modbus_oneshot_status";
+static const char *modbus_field_oneshot_status_value_timeout	= "timeout";
+static const char *modbus_field_oneshot_status_value_queued	= "queued";
 
 struct modbus_data;
 
@@ -584,26 +585,18 @@ static int modbus_output (
 	return ret;
 }
 
-static int modbus_output_oneshot_timeout (
-		struct modbus_command_node *node
+static int modbus_output_oneshot_status (
+		struct modbus_command_node *node,
+		int is_error
 ) {
 	int ret = 0;
 
 	struct rrr_array array = {0};
+	const char *msg = is_error
+		? modbus_field_oneshot_status_value_timeout
+		: modbus_field_oneshot_status_value_queued;
 
-	if ((ret = rrr_array_push_value_str_with_tag (&array, modbus_field_error, modbus_field_error_oneshot_timeout)) != 0) {
-		RRR_MSG_0("Failed to push value in %s\n", __func__);
-		goto out;
-	}
-	if ((ret = rrr_array_push_value_str_with_tag (&array, modbus_field_server, node->command.server)) != 0) {
-		RRR_MSG_0("Failed to push value in %s\n", __func__);
-		goto out;
-	}
-	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_port, node->command.port)) != 0) {
-		RRR_MSG_0("Failed to push value in %s\n", __func__);
-		goto out;
-	}
-	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_function, node->command.function)) != 0) {
+	if ((ret = rrr_array_push_value_str_with_tag (&array, modbus_field_oneshot_status, msg)) != 0) {
 		RRR_MSG_0("Failed to push value in %s\n", __func__);
 		goto out;
 	}
@@ -1109,6 +1102,12 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		if (node->interval_ms == 0) {
 			EVENT_REMOVE(node->event);
 		}
+
+		if (node->oneshot_timeout_ms > 0) {
+			if ((ret_tmp = modbus_output_oneshot_status(node, 0 /* Not error */)) != 0) {
+				goto fail;
+			}
+		}
 	}
 
 	return;
@@ -1185,7 +1184,7 @@ static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 				node->command.quantity,
 				node->oneshot_timeout_ms
 			);
-			if ((ret_tmp = modbus_output_oneshot_timeout(node)) != 0) {
+			if ((ret_tmp = modbus_output_oneshot_status(node, 1 /* Is error */)) != 0) {
 				goto fail;
 			}
 			RRR_LL_ITERATE_SET_DESTROY();
