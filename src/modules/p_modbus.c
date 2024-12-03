@@ -108,6 +108,7 @@ struct modbus_command_node {
 	struct modbus_data *data;
 	uint64_t last_seen_time;
 	uint64_t send_attempt_time;
+	uint64_t send_success_time;
 	uint64_t interval_ms;
 	uint64_t oneshot_timeout_ms;
 	char *response_topic;
@@ -1033,9 +1034,6 @@ static int modbus_callback_data_prepare (
 	}
 
 	out:
-	if (node->oneshot_timeout_ms > 0) {
-		RRR_LL_REMOVE_NODE_IF_EXISTS(&data->oneshot_commands, struct modbus_command_node, node,  modbus_command_node_destroy(node));
-	}
 	return ret;
 
 }
@@ -1106,6 +1104,8 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 	}
 	else {
 		node->send_attempt_time = 0;
+		node->send_success_time = rrr_time_get_64();
+
 		if (node->interval_ms == 0) {
 			EVENT_REMOVE(node->event);
 		}
@@ -1136,26 +1136,32 @@ static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 	uint64_t send_time_limit = curr_time_us - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
 		if (node->last_seen_time < command_time_limit) {
-			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
+			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ". " \
+			          "Previous successful send for this command was %" PRIu64 "ms ago%s.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
 				node->command.port,
 				node->command.function,
 				node->command.starting_address,
 				node->command.quantity,
-				node->interval_ms
+				node->interval_ms,
+				node->send_success_time > 0 ? curr_time_us - node->send_success_time : 0,
+				node->send_success_time == 0 ? " (e.g. never)" : ""
 			);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (node->send_attempt_time > 0 && node->send_attempt_time < send_time_limit) {
-			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ", server is not reachable.\n",
+			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 ", " \
+			          "server is not reachable. Previous successful send for this command was %" PRIu64 "ms ago%s.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
 				node->command.port,
 				node->command.function,
 				node->command.starting_address,
 				node->command.quantity,
-				node->interval_ms
+				node->interval_ms,
+				node->send_success_time > 0 ? curr_time_us - node->send_success_time : 0,
+				node->send_success_time == 0 ? " (e.g. never)" : ""
 			);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
@@ -1165,8 +1171,12 @@ static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 	uint64_t oneshot_timeout_us;
 	RRR_LL_ITERATE_BEGIN(&data->oneshot_commands, struct modbus_command_node);
 		oneshot_timeout_us = node->oneshot_timeout_ms * 1000;
-		if (node->send_attempt_time > 0 && curr_time_us > (node->send_attempt_time + oneshot_timeout_us)) {
-			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", server is not reachable.\n",
+		if (node->send_success_time > 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->send_attempt_time > 0 && curr_time_us > (node->send_attempt_time + oneshot_timeout_us)) {
+			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", " \
+			          "server is not reachable.\n",
 				INSTANCE_D_NAME(data->thread_data),
 				node->command.server,
 				node->command.port,
