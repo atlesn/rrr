@@ -912,11 +912,14 @@ and
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
 .PP
-When a command is received, a connection is established with the specified modbus server and the request is sent. If
+When a command is received, a connection is established with the specified modbus server and the request is sent. The configuration parameters
 .B modbus_oneshot_timeout_ms
-is not present the command may be repeated at a specified interval, and stops when an equal command has not been received for two seconds.
+and
+.B modbus_interval_ms
+controls wether or not a command is to be repeated or sent only once.
 .PP
 The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+After a command has been received, it is repeated for at most two seconds at the given interval.
 .PP
 If different commands are used on the same server, they will share connection.
 .PP
@@ -966,19 +969,16 @@ The raw data to write in
 and
 .B Write Multiple Registers (0x10).
 .It modbus_interval_ms
-If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed. Only one of
-.B modbus_interval_ms
-or
+If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed. May not
+be given if
 .B modbus_oneshot_timeout_ms
-may be present in a request.
+is given.
 .It modbus_oneshot_timeout_ms
 If given, the command will only be sent once with the specified timeout. If the timeout occurs a response will be generated with the array field
 .B modbus_error
-present. Must be equal or greater than 0. Only one of
+present. Must be equal or greater than 0. May not be given if
 .B modbus_interval_ms
-or
-.B modbus_oneshot_timeout_ms
-may be present in a request.
+is given.
 .El
 .PP
 The following response messages and array fields are generated as a result of the modbus server
@@ -1038,9 +1038,12 @@ For
 a blob containing response data of length 2.
 .B
 .It modbus_error
-A string containing the reason for an internal RRR modbus error, as of now only
-.B oneshot_timeout
-supported.
+A string containing the reason for an internal RRR modbus error. Is either not set or has one of the following values:
+.Bl -tag -width -indent
+.It oneshot_timeout
+Indicates that the timeout for a one-shot request set in
+.B modbus_oneshot_timeout_ms
+was reached and that no response was received.
 .El
 .PP
 .SS python3 (PAI)
