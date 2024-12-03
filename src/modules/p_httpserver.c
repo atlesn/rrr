@@ -896,10 +896,10 @@ static int httpserver_receive_get_full_request (
 		enum rrr_http_application_type next_protocol_version
 ) {
 	int ret = 0;
-	int is_octet_stream = 0;
 
 	const char * const body_ptr = RRR_HTTP_PART_BODY_PTR(data_ptr,part);
 	const rrr_biglength body_len = RRR_HTTP_PART_BODY_LENGTH(part);
+	int body_binary_content = 0;
 
 	if (body_len == 0 && !httpserver_data->do_allow_empty_messages) {
 		RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
@@ -978,7 +978,7 @@ static int httpserver_receive_get_full_request (
 			}
 		}
 		else if (rrr_nullsafe_str_cmpto_case(h_content_type->value, "application/octet-stream") == 0) {
-			is_octet_stream = 1;
+			body_binary_content = 1;
 		}
 	}
 
@@ -1003,7 +1003,7 @@ static int httpserver_receive_get_full_request (
 	}
 
 	if (body_len > 0) {
-		if (is_octet_stream) {
+		if (body_binary_content) {
 			if ((ret = rrr_array_push_value_blob_with_tag_with_size (
 					target_array,
 					http_common_request_fields.http_body,
