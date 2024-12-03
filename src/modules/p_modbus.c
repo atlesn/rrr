@@ -242,10 +242,10 @@ static void modbus_command_node_update (
 }
 
 static int modbus_command_collection_push_or_replace_polling_command (
-	struct modbus_data *data,
-	struct modbus_command *command,
-	uint64_t interval_ms,
-	char **response_topic
+		struct modbus_data *data,
+		struct modbus_command *command,
+		uint64_t interval_ms,
+		char **response_topic
 ) {
 	int ret = 0;
 	struct modbus_command_node *node;
@@ -301,10 +301,10 @@ static int modbus_command_collection_push_or_replace_polling_command (
 }
 
 static int modbus_command_collection_push_oneshot_command (
-	struct modbus_data *data,
-	struct modbus_command *command,
-	char **response_topic,
-	uint64_t oneshot_timeout_ms
+		struct modbus_data *data,
+		struct modbus_command *command,
+		char **response_topic,
+		uint64_t oneshot_timeout_ms
 ) {
 	int ret = 0;
 	struct modbus_command_node *node;
@@ -583,7 +583,7 @@ static int modbus_output (
 	return ret;
 }
 
-static int modbus_output_onsehot_timeout (
+static int modbus_output_oneshot_timeout (
 		struct modbus_command_node *node
 ) {
 	int ret = 0;
@@ -1126,14 +1126,14 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	(void)(fd);
 	(void)(flags);
 
-	int ret_tmp;
-	uint64_t curr_time_us = rrr_time_get_64();
-	uint64_t command_time_limit = curr_time_us - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
-	uint64_t send_time_limit = curr_time_us - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
-
 	RRR_EVENT_HOOK();
 
+	int ret_tmp;
+	uint64_t curr_time_us = rrr_time_get_64();
+
 	/* Polling commands */
+	uint64_t command_time_limit = curr_time_us - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
+	uint64_t send_time_limit = curr_time_us - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
 		if (node->last_seen_time < command_time_limit) {
 			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
@@ -1162,23 +1162,24 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->commands, 0; modbus_command_node_destroy(node));
 
 	/* Oneshot commands */
+	uint64_t oneshot_timeout_us;
 	RRR_LL_ITERATE_BEGIN(&data->oneshot_commands, struct modbus_command_node);
-	uint64_t timeout_us = node->oneshot_timeout_ms * 1000;
-	if (node->send_time > 0 && curr_time_us > (node->send_time + timeout_us)) {
-		RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", server is not reachable.\n",
-			INSTANCE_D_NAME(data->thread_data),
-			node->command.server,
-			node->command.port,
-			node->command.function,
-			node->command.starting_address,
-			node->command.quantity,
-			node->oneshot_timeout_ms
-		);
+		oneshot_timeout_us = node->oneshot_timeout_ms * 1000;
+		if (node->send_time > 0 && curr_time_us > (node->send_time + oneshot_timeout_us)) {
+			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", server is not reachable.\n",
+				INSTANCE_D_NAME(data->thread_data),
+				node->command.server,
+				node->command.port,
+				node->command.function,
+				node->command.starting_address,
+				node->command.quantity,
+				node->oneshot_timeout_ms
+			);
 			if ((ret_tmp = modbus_output_oneshot_timeout(node)) != 0) {
 				goto fail;
 			}
-		RRR_LL_ITERATE_SET_DESTROY();
-	}
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->oneshot_commands, 0; modbus_command_node_destroy(node));
 
 	return;
@@ -1252,15 +1253,16 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Default value of quantity depend on function
 	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_01_READ_COILS ||
-	    modbus_function == RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS) {
+	    modbus_function == RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS
+	) {
 		modbus_quantity = MODBUS_DEFAULT_QUANTITY_READ_COIL;
 	}
 	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS ||
-	         modbus_function == RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS)	{
+	         modbus_function == RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS
+	) {
 		modbus_quantity = MODBUS_DEFAULT_QUANTITY_READ_REGISTER;
 	}
-	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS)
-	{
+	else if (modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
 		if (!rrr_array_has_tag(&array, modbus_field_quantity)) {
 			RRR_MSG_0("Warning: Failed to get value of field 'modbus_quantity' of command message to modbus instance %s\n",
 				modbus_field_quantity, INSTANCE_D_NAME(data->thread_data));
