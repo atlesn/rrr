@@ -974,7 +974,7 @@ may be present in a request.
 .It modbus_oneshot_timeout_ms
 If given, the command will only be sent once with the specified timeout. If the timeout occurs a response will be generated with the array field
 .B modbus_error
-present. Only one of
+present. Must be equal or greater than 0. Only one of
 .B modbus_interval_ms
 or
 .B modbus_oneshot_timeout_ms
