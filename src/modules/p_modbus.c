@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_DEFAULT_QUANTITY_WRITE_SINGLE_REGISTER 1
 
 #define MODBUS_DEFAULT_INTERVAL_MS 0
+#define MODBUS_DEFAULT_ONESHOT_TIMEOUT_MS 0
 #define MODBUS_DEFAULT_RESPONSE_TOPIC NULL
 
 #define MODBUS_COMMAND_TIMEOUT_S 2 /* Update man pages if this changes */
@@ -72,18 +73,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MODBUS_QUANTITY_WRITE_REGISTER_MAX 123
 #define MODBUS_CONTENTS_MAX (MODBUS_QUANTITY_WRITE_REGISTER_MAX * 2)
 
-static const char *modbus_field_server            = "modbus_server";
-static const char *modbus_field_port              = "modbus_port";
-static const char *modbus_field_function          = "modbus_function_code";
-static const char *modbus_field_exception_code    = "modbus_exception_code";
-static const char *modbus_field_starting_address  = "modbus_starting_address";
-static const char *modbus_field_quantity          = "modbus_quantity";
-static const char *modbus_field_bytes             = "modbus_bytes";
-static const char *modbus_field_status            = "modbus_status";
-static const char *modbus_field_contents          = "modbus_contents";
+static const char *modbus_field_server            		= "modbus_server";
+static const char *modbus_field_port              		= "modbus_port";
+static const char *modbus_field_function          		= "modbus_function_code";
+static const char *modbus_field_exception_code    		= "modbus_exception_code";
+static const char *modbus_field_starting_address  		= "modbus_starting_address";
+static const char *modbus_field_quantity          		= "modbus_quantity";
+static const char *modbus_field_bytes             		= "modbus_bytes";
+static const char *modbus_field_status            		= "modbus_status";
+static const char *modbus_field_contents          		= "modbus_contents";
 
-static const char *modbus_field_interval_ms       = "modbus_interval_ms";
-static const char *modbus_field_response_topic    = "modbus_response_topic";
+static const char *modbus_field_interval_ms       		= "modbus_interval_ms";
+static const char *modbus_field_oneshot_timeout_ms 		= "modbus_oneshot_timeout_ms";
+static const char *modbus_field_response_topic    		= "modbus_response_topic";
+
+static const char *modbus_field_error                	= "modbus_error";
+static const char *modbus_field_error_oneshot_timeout	= "oneshot_timeout";
 
 struct modbus_data;
 
@@ -104,6 +109,7 @@ struct modbus_command_node {
 	uint64_t last_seen_time;
 	uint64_t send_time;
 	uint64_t interval_ms;
+	uint64_t oneshot_timeout_ms;
 	char *response_topic;
 	rrr_u16 response_topic_length;
 	struct modbus_command command;
@@ -120,6 +126,7 @@ struct modbus_data {
 	struct rrr_socket_client_collection *collection_tcp;
 	struct rrr_modbus_client_callbacks modbus_client_callbacks;
 	struct modbus_command_collection commands;
+	struct modbus_command_collection oneshot_commands;
 	struct rrr_event_collection events;
 	rrr_event_handle event_process;
 };
@@ -151,7 +158,8 @@ static void modbus_command_collection_destroy (struct modbus_command_collection 
 static int modbus_command_node_new (
 		struct modbus_command_node **target,
 		struct modbus_data *data,
-		struct modbus_command *command
+		struct modbus_command *command,
+		uint64_t oneshot_timeout_ms
 ) {
 	int ret = 0;
 
@@ -178,6 +186,7 @@ static int modbus_command_node_new (
 
 	node->data = data;
 	node->command = *command;
+	node->oneshot_timeout_ms = oneshot_timeout_ms;
 
 	*target = node;
 
@@ -232,6 +241,91 @@ static void modbus_command_node_update (
 	node->interval_ms = interval_ms;
 }
 
+static int modbus_command_collection_push_or_replace_polling_command (
+	struct modbus_data *data,
+	struct modbus_command *command,
+	uint64_t interval_ms,
+	char **response_topic
+) {
+	int ret = 0;
+	struct modbus_command_node *node;
+
+	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
+		if (memcmp(&node->command, command, sizeof(*command)) != 0) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		RRR_DBG_2("Modbus instance %s updating command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "->%" PRIu64 " response topic '%s'\n",
+			INSTANCE_D_NAME(data->thread_data),
+			command->server,
+			command->port,
+			command->function,
+			command->starting_address,
+			command->quantity,
+			node->interval_ms,
+			interval_ms,
+			*response_topic
+		);
+
+		modbus_command_node_update(node, interval_ms, response_topic, 0 /* Not first */);
+
+		goto out;
+	RRR_LL_ITERATE_END();
+
+	RRR_DBG_2("Modbus instance %s new command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 " response topic '%s'\n",
+		INSTANCE_D_NAME(data->thread_data),
+		command->server,
+		command->port,
+		command->function,
+		command->starting_address,
+		command->quantity,
+		interval_ms,
+		*response_topic
+	);
+
+	if ((ret = modbus_command_node_new (
+			&node,
+			data,
+			command,
+			0 /* Oneshot timeout */
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_PUSH(&data->commands, node);
+
+	modbus_command_node_update(node, interval_ms, response_topic, 1 /* First */);
+
+	out:
+	return ret;
+}
+
+static int modbus_command_collection_push_oneshot_command (
+	struct modbus_data *data,
+	struct modbus_command *command,
+	char **response_topic,
+	uint64_t oneshot_timeout_ms
+) {
+	int ret = 0;
+	struct modbus_command_node *node;
+
+	if ((ret = modbus_command_node_new (
+			&node,
+			data,
+			command,
+			oneshot_timeout_ms
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_PUSH(&data->oneshot_commands, node);
+
+	modbus_command_node_update(node, 0, response_topic, 1 /* First */);
+
+	out:
+	return ret;
+}
+
 static int modbus_command_collection_push_or_replace (
 		struct modbus_data *data,
 		const char *server,
@@ -242,11 +336,11 @@ static int modbus_command_collection_push_or_replace (
 		uint8_t *contents,
 		uint32_t contents_length,
 		uint64_t interval_ms,
+		uint64_t oneshot_timeout_ms,
 		char **response_topic
 ) {
 	int ret = 0;
 
-	struct modbus_command_node *node;
 	struct modbus_command command = {0};
 
 	assert(server != NULL && *server != '\0');
@@ -276,51 +370,12 @@ static int modbus_command_collection_push_or_replace (
 	if (contents != NULL && contents_length > 0) {
 		memcpy(command.contents, contents, contents_length);
 	}
-
-	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
-		if (memcmp(&node->command, &command, sizeof(command)) != 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		RRR_DBG_2("Modbus instance %s updating command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "->%" PRIu64 " response topic '%s'\n",
-			INSTANCE_D_NAME(data->thread_data),
-			server,
-			port,
-			function,
-			starting_address,
-			quantity,
-			node->interval_ms,
-			interval_ms,
-			*response_topic
-		);
-
-		modbus_command_node_update(node, interval_ms, response_topic, 0 /* Not first */);
-
-		goto out;
-	RRR_LL_ITERATE_END();
-
-	RRR_DBG_2("Modbus instance %s new command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 " response topic '%s'\n",
-		INSTANCE_D_NAME(data->thread_data),
-		server,
-		port,
-		function,
-		starting_address,
-		quantity,
-		interval_ms,
-		*response_topic
-	);
-
-	if ((ret = modbus_command_node_new (
-			&node,
-			data,
-			&command
-	)) != 0) {
-		goto out;
+	if (oneshot_timeout_ms == 0) {
+		modbus_command_collection_push_or_replace_polling_command(data, &command, interval_ms, response_topic);
 	}
-
-	RRR_LL_PUSH(&data->commands, node);
-
-	modbus_command_node_update(node, interval_ms, response_topic, 1 /* First */);
+	else {
+		modbus_command_collection_push_oneshot_command(data, &command, response_topic, oneshot_timeout_ms);
+	}
 
 	out:
 	return ret;
@@ -337,6 +392,7 @@ static void modbus_data_cleanup(struct modbus_data *data) {
 		rrr_socket_client_collection_destroy(data->collection_tcp);
 	}
 	modbus_command_collection_destroy(&data->commands);
+	modbus_command_collection_destroy(&data->oneshot_commands);
 }
 
 static int modbus_client_data_new (
@@ -524,6 +580,54 @@ static int modbus_output (
 	}
 
 	out:
+	return ret;
+}
+
+static int modbus_output_onsehot_timeout (
+		struct modbus_command_node *node
+) {
+	int ret = 0;
+
+	struct rrr_array array = {0};
+
+	if ((ret = rrr_array_push_value_str_with_tag (&array, modbus_field_error, modbus_field_error_oneshot_timeout)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+	if ((ret = rrr_array_push_value_str_with_tag (&array, modbus_field_server, node->command.server)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_port, node->command.port)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+	if ((ret = rrr_array_push_value_u64_with_tag (&array, modbus_field_function, node->command.function)) != 0) {
+		RRR_MSG_0("Failed to push value in %s\n", __func__);
+		goto out;
+	}
+
+	struct modbus_output_callback_data callback_data = {
+		&array,
+		node->response_topic,
+		node->response_topic_length
+	};
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(node->data->thread_data),
+			NULL,
+			0,
+			0,
+			NULL,
+			modbus_output_callback,
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(node->data->thread_data)
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_array_clear(&array);
 	return ret;
 }
 
@@ -929,6 +1033,9 @@ static int modbus_callback_data_prepare (
 	}
 
 	out:
+	if (node->oneshot_timeout_ms > 0) {
+		RRR_LL_REMOVE_NODE_IF_EXISTS(&data->oneshot_commands, struct modbus_command_node, node,  modbus_command_node_destroy(node));
+	}
 	return ret;
 
 }
@@ -1019,11 +1126,13 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 	(void)(fd);
 	(void)(flags);
 
-	uint64_t command_time_limit = rrr_time_get_64() - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
-	uint64_t send_time_limit = rrr_time_get_64() - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
+	uint64_t curr_time_us = rrr_time_get_64();
+	uint64_t command_time_limit = curr_time_us - MODBUS_COMMAND_TIMEOUT_S * 1000 * 1000;
+	uint64_t send_time_limit = curr_time_us - MODBUS_COMMAND_SEND_TIMEOUT_S * 1000 * 1000;
 
 	RRR_EVENT_HOOK();
 
+	/* Polling commands */
 	RRR_LL_ITERATE_BEGIN(&data->commands, struct modbus_command_node);
 		if (node->last_seen_time < command_time_limit) {
 			RRR_DBG_2("Modbus instance %s timeout for command server %s:%u function 0x%02x starting address %u quantity %u interval %" PRIu64 "\n",
@@ -1050,6 +1159,24 @@ static void modbus_event_process (evutil_socket_t fd, short flags, void *arg) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->commands, 0; modbus_command_node_destroy(node));
+
+	/* Oneshot commands */
+	RRR_LL_ITERATE_BEGIN(&data->oneshot_commands, struct modbus_command_node);
+	uint64_t timeout_us = node->oneshot_timeout_ms * 1000;
+	if (node->send_time > 0 && curr_time_us > (node->send_time + timeout_us)) {
+		RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", server is not reachable.\n",
+			INSTANCE_D_NAME(data->thread_data),
+			node->command.server,
+			node->command.port,
+			node->command.function,
+			node->command.starting_address,
+			node->command.quantity,
+			node->oneshot_timeout_ms
+		);
+		modbus_output_onsehot_timeout(node);
+		RRR_LL_ITERATE_SET_DESTROY();
+	}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->oneshot_commands, 0; modbus_command_node_destroy(node));
 }
 
 #define GET_VALUE(name,type)                                                                                     \
@@ -1089,6 +1216,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	uint8_t *modbus_contents = NULL;
 	uint32_t modbus_contents_length = 0;
 	unsigned long long modbus_interval_ms = MODBUS_DEFAULT_INTERVAL_MS;
+	unsigned long long modbus_oneshot_timeout_ms = MODBUS_DEFAULT_ONESHOT_TIMEOUT_MS;
 	char *modbus_response_topic = MODBUS_DEFAULT_RESPONSE_TOPIC;
 
 	RRR_DBG_2("modbus instance %s received a message with timestamp %llu\n",
@@ -1142,8 +1270,29 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	GET_VALUE_ULL(starting_address);
 	GET_VALUE_ULL(quantity);
-	GET_VALUE_ULL(interval_ms);
 	GET_VALUE_STR(response_topic);
+
+	int interval_ms_present = rrr_array_has_tag(&array, modbus_field_interval_ms);
+	int oneshot_timeout_ms_present =  rrr_array_has_tag(&array, modbus_field_oneshot_timeout_ms);
+
+	if (interval_ms_present && oneshot_timeout_ms_present) {
+		RRR_MSG_0("Both modbus_interval_ms and modbus_oneshot_timeout_ms present in command message to modbus instance %s, dropping it.\n",
+			INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
+		goto drop;
+	}
+	else if (interval_ms_present) {
+		GET_VALUE_ULL(interval_ms);
+	}
+	else if (oneshot_timeout_ms_present) {
+		GET_VALUE_ULL(oneshot_timeout_ms);
+		if (modbus_oneshot_timeout_ms == 0) {
+			RRR_MSG_0("Invalid value for field 'modbus_oneshot_timeout_ms' %llu to modbus instance %s, value has to be 1 or greater. Dropping it.\n",
+				modbus_oneshot_timeout_ms, INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+			goto drop;
+		}
+	}
 
 	if (modbus_function == RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER ||
 		modbus_function == RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
@@ -1173,14 +1322,14 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (modbus_port < 1 || modbus_port > 65535) {
-		RRR_MSG_0("Field 'modbus_port' out of range in command message to modbus instance %s. Range is %u-%u while %" PRIu64 " was given, dropping it.\n",
+		RRR_MSG_0("Field 'modbus_port' out of range in command message to modbus instance %s. Range is %d-%d while %llu was given, dropping it.\n",
 			INSTANCE_D_NAME(data->thread_data), 1, 65535, modbus_port);
 		goto drop;
 	}
 
 	if (modbus_response_topic != NULL && *modbus_response_topic != '\0') {
 		if (strlen(modbus_response_topic) > RRR_MSG_TOPIC_MAX) {
-			RRR_MSG_0("Field 'modbus_response_topic' exceeds maximum length of %u in command message to modbus instance %s, dropping it.\n",
+			RRR_MSG_0("Field 'modbus_response_topic' exceeds maximum length of %d in command message to modbus instance %s, dropping it.\n",
 				RRR_MSG_TOPIC_MAX, INSTANCE_D_NAME(data->thread_data));
 			goto drop;
 		}
@@ -1192,13 +1341,13 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS &&
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_06_WRITE_SINGLE_REGISTER &&
 	    modbus_function != RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS) {
-		RRR_MSG_0("Invalid value for field 'modbus_function' %" PRIu64 " to modbus instance %s, only a value between 1 and 3 is allowed. Dropping it.\n",
+		RRR_MSG_0("Invalid value for field 'modbus_function' %llu to modbus instance %s, only a values 1, 2, 3, 4, 6 and 16 is allowed. Dropping it.\n",
 			modbus_function, INSTANCE_D_NAME(data->thread_data));
 		goto drop;
 	}
 
 	if (modbus_starting_address > MODBUS_STARTING_ADDRESS_MAX) {
-		RRR_MSG_0("Invalid value for field 'modbus_starting_address' %" PRIu64 " to modbus instance %s, maximum value is %u. Dropping it.\n",
+		RRR_MSG_0("Invalid value for field 'modbus_starting_address' %llu to modbus instance %s, maximum value is %d. Dropping it.\n",
 			modbus_starting_address, INSTANCE_D_NAME(data->thread_data), MODBUS_STARTING_ADDRESS_MAX);
 		goto drop;
 	}
@@ -1207,7 +1356,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		case RRR_MODBUS_FUNCTION_CODE_01_READ_COILS:
 		case RRR_MODBUS_FUNCTION_CODE_02_READ_DISCRETE_INPUTS:
 			if (modbus_quantity < MODBUS_QUANTITY_COIL_MIN || modbus_quantity > MODBUS_QUANTITY_COIL_MAX) {
-				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
+				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %d-%d for this function (%llu) while %llu was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_COIL_MIN, MODBUS_QUANTITY_COIL_MAX, modbus_function, modbus_quantity);
 				goto drop;
 			}
@@ -1215,7 +1364,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		case RRR_MODBUS_FUNCTION_CODE_03_READ_HOLDING_REGISTERS:
 		case RRR_MODBUS_FUNCTION_CODE_04_READ_INPUT_REGISTERS:
 			if (modbus_quantity < MODBUS_QUANTITY_READ_REGISTER_MIN || modbus_quantity > MODBUS_QUANTITY_READ_REGISTER_MAX) {
-				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
+				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %d-%d for this function (%llu) while %llu was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_READ_REGISTER_MIN, MODBUS_QUANTITY_READ_REGISTER_MAX, modbus_function, modbus_quantity);
 				goto drop;
 			}
@@ -1229,13 +1378,13 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			break;
 		case RRR_MODBUS_FUNCTION_CODE_16_WRITE_MULTIPLE_REGISTERS:
 			if (modbus_quantity < MODBUS_QUANTITY_WRITE_REGISTER_MIN || modbus_quantity > MODBUS_QUANTITY_WRITE_REGISTER_MAX) {
-				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %u-%u for this function (%u) while %" PRIu64 " was given, dropping it.\n",
+				RRR_MSG_0("Field 'modbus_quantity' out of range in command message to modbus instance %s. Range is %d-%d for this function (%llu) while %llu was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), MODBUS_QUANTITY_WRITE_REGISTER_MIN, MODBUS_QUANTITY_WRITE_REGISTER_MAX, modbus_function, modbus_quantity);
 				goto drop;
 			}
 
 			if (modbus_contents_length != modbus_quantity * 2) {
-				RRR_MSG_0("Invalid size for field 'modbus_content' to modbus instance %s for function code 0x10. Size should be 'modbus_quantity'*2 (%u) while %" PRIu32 " was given, dropping it.\n",
+				RRR_MSG_0("Invalid size for field 'modbus_content' to modbus instance %s for function code 0x10. Size should be 'modbus_quantity'*2 (%llu) while %" PRIu32 " was given, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data), modbus_quantity*2u, modbus_contents_length);
 				goto drop;
 			}
@@ -1256,6 +1405,7 @@ static int modbus_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			modbus_contents,
 			modbus_contents_length,
 			(uint64_t) modbus_interval_ms,
+			(uint64_t) modbus_oneshot_timeout_ms,
 			&modbus_response_topic /* Memory is consumed upon success */
 	)) != 0) {
 		goto drop;
