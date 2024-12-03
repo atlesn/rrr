@@ -108,6 +108,7 @@ struct modbus_command_node {
 	RRR_LL_NODE(struct modbus_command_node);
 	struct modbus_data *data;
 	uint64_t last_seen_time;
+	uint64_t send_first_attempt_time;
 	uint64_t send_attempt_time;
 	uint64_t send_success_time;
 	uint64_t interval_ms;
@@ -1065,6 +1066,10 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 		node->send_attempt_time = rrr_time_get_64();
 	}
 
+	if (node->send_first_attempt_time == 0) {
+		node->send_first_attempt_time = rrr_time_get_64();
+	}
+
 	rrr_length send_chunk_count;
 	if ((ret_tmp = rrr_ip_socket_client_collection_send_push_const_by_host_and_port_connect_as_needed (
 			&send_chunk_count,
@@ -1085,14 +1090,13 @@ static void modbus_event_command (evutil_socket_t fd, short flags, void *arg) {
 			RRR_DBG_2("Modbus instance %s connection to %s:%u not yet ready\n",
 				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
 		}
+		else if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
+			RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
+				INSTANCE_D_NAME(data->thread_data), command->server, command->port);
+		}
 		else {
-			if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
-				RRR_MSG_0("Modbus instance %s connection to %s:%u soft error\n",
-					INSTANCE_D_NAME(data->thread_data), command->server, command->port);
-			}
-			else {
-				goto fail_send;
-			}
+			/* Hard error */
+			goto fail_send;
 		}
 	}
 	else {
@@ -1173,7 +1177,7 @@ static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 		if (node->send_success_time > 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (node->send_attempt_time > 0 && curr_time_us > (node->send_attempt_time + oneshot_timeout_us)) {
+		else if (node->send_first_attempt_time > 0 && curr_time_us > (node->send_first_attempt_time + oneshot_timeout_us)) {
 			RRR_MSG_0("Modbus instance %s send timeout for command server %s:%u function 0x%02x starting address %u quantity %u oneshot timeout %" PRIu64 ", " \
 			          "server is not reachable.\n",
 				INSTANCE_D_NAME(data->thread_data),
@@ -1188,6 +1192,9 @@ static void modbus_event_maintain (evutil_socket_t fd, short flags, void *arg) {
 				goto fail;
 			}
 			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->send_first_attempt_time > 0) {
+			EVENT_ACTIVATE(node->event);
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->oneshot_commands, 0; modbus_command_node_destroy(node));
 
