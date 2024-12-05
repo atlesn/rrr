@@ -979,11 +979,10 @@ commands are only sent at the given intervals.
 
 Whenever a new interval is set or and old interval is changed, no command will be sent to the modbus device before this interval has passed.
 .It modbus_oneshot_timeout_ms
-If given, the command will only be sent once with the specified timeout.
-Must be than 0. May not be given if
+If given, the command will only be sent once with the specified timeout. Must be greater than 0. May not be given if
 .B modbus_interval_ms
 is given.
-.PP
+
 When the message has been queued for sending after a connection is established, or when a send timeout occurs, a status message is generated
 containing the following fields:
 .Bl -tag -width -indent
@@ -1056,14 +1055,6 @@ For
 .B Write Single Register (0x06)
 a blob containing response data of length 2.
 .B
-.It modbus_error
-A string containing the reason for an internal RRR modbus error. Is either not set or has one of the following values:
-.Bl -tag -width -indent
-.It oneshot_timeout
-Indicates that the timeout for a one-shot request set in
-.B modbus_oneshot_timeout_ms
-was reached and that no response was received.
-.El
 .PP
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
