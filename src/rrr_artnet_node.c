@@ -189,11 +189,11 @@ int main(int argc, const char **argv, const char **env) {
 
 	RRR_DBG_1("Starting ArtNet node\n");
 
-	if (main_loop() != 0)
-		ret = EXIT_FAILURE;
-
 	rrr_signal_default_signal_actions_register();
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
+	if (main_loop() != 0)
+		ret = EXIT_FAILURE;
 
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

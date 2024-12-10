@@ -199,7 +199,7 @@ int rrr_artnet_node_new (
 		goto out_free;
 	}
 
-	switch (node_type) {
+	switch (node->node_type = node_type) {
 		case RRR_ARTNET_NODE_TYPE_CONTROLLER:
 			artnet_set_node_type(node->node, ARTNET_RAW);
 			break;
@@ -394,6 +394,9 @@ static void __rrr_artnet_event_periodic_poll (
 
 	(void)(fd);
 	(void)(flags);
+
+	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
+		return;
 
 	if (artnet_send_poll(node->node, NULL, ARTNET_TTM_DEFAULT) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to send artnet poll in %s\n", __func__);
