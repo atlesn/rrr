@@ -19,6 +19,15 @@ sub source {
 #	$message->{'topic'} = $TOPIC_RESULT;
 #	$message->send();
 
+	$dbg->msg(1, "Send ArtNet fade command\n");
+
+	$message->{'topic'} = $TOPIC_ARTNET_CMD;
+	$message->push_tag("artnet_cmd", "fade");
+	$message->push_tag("artnet_universe", 4);
+	$message->push_tag("artnet_dmx_channel", 4);
+	$message->push_tag("artnet_dmx_data", "aaaa");
+	$message->send();
+
 	return 1;
 }
 

@@ -398,6 +398,8 @@ static void __rrr_artnet_event_periodic_poll (
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
 		return;
 
+	printf("Artnet polling\n");
+
 	if (artnet_send_poll(node->node, NULL, ARTNET_TTM_DEFAULT) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to send artnet poll in %s\n", __func__);
 		FAIL();
@@ -467,6 +469,27 @@ static void __rrr_artnet_event_read (
 	}
 }
 
+static int __rrr_artnet_handler_poll (
+		artnet_node n,
+		void *pp,
+		void *d
+) {
+	struct rrr_artnet_node *node = d;
+
+	(void)(node);
+	(void)(n);
+	(void)(pp);
+
+	// Poll
+
+	if (node->node_type != RRR_ARTNET_NODE_TYPE_DEVICE)
+		return ARTNET_EOK;
+
+	printf("Received POLL\n");
+
+	return ARTNET_EOK;
+}
+
 static int __rrr_artnet_handler_reply (
 		artnet_node n,
 		void *pp,
@@ -474,7 +497,16 @@ static int __rrr_artnet_handler_reply (
 ) {
 	struct rrr_artnet_node *node = d;
 
+	(void)(node);
+	(void)(n);
+	(void)(pp);
+
 	// Poll reply
+
+	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
+		return ARTNET_EOK;
+
+	printf("Artnet poll reply\n");
 
 	return ARTNET_EOK;
 }
@@ -487,6 +519,9 @@ static int __rrr_artnet_hook_reply_node (
 	struct rrr_artnet_node *node = data;
 
 	// Node entry found in poll reply
+
+	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
+		return ARTNET_EOK;
 
 	__rrr_artnet_process_node_entry(node, ne, page_index);
 
@@ -613,9 +648,10 @@ int rrr_artnet_events_register (
 
 	EVENT_ADD(node->event_read);
 
+	assert(artnet_set_handler(node->node, ARTNET_POLL_HANDLER, __rrr_artnet_handler_poll, node) == ARTNET_EOK);
 	assert(artnet_set_reply_node_hook (node->node, __rrr_artnet_hook_reply_node, node) == ARTNET_EOK);
-	assert (artnet_set_handler(node->node, ARTNET_REPLY_HANDLER, __rrr_artnet_handler_reply, node) == ARTNET_EOK);
-	assert (artnet_set_bcast_limit(node->node, RRR_ARTNET_BCAST_LIMIT) == ARTNET_EOK);
+	assert(artnet_set_handler(node->node, ARTNET_REPLY_HANDLER, __rrr_artnet_handler_reply, node) == ARTNET_EOK);
+	assert(artnet_set_bcast_limit(node->node, RRR_ARTNET_BCAST_LIMIT) == ARTNET_EOK);
 
 	node->failure_callback = failure_callback;
 	node->incorrect_mode_callback = incorrect_mode_callback;
