@@ -29,7 +29,7 @@ int rrr_test_artnet (void) {
 
 	struct rrr_artnet_node *node;
 
-	if ((ret = rrr_artnet_node_new(&node)) != 0) {
+	if ((ret = rrr_artnet_node_new(&node, RRR_ARTNET_NODE_TYPE_CONTROLLER)) != 0) {
 		RRR_MSG_0("Failed to create artnet node in %s\n", __func__);
 		goto out;
 	}

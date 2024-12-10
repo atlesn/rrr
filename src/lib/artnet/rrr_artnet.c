@@ -73,6 +73,8 @@ struct rrr_artnet_node {
 	artnet_node node;
 	artnet_socket_t fd;
 
+	enum rrr_artnet_node_type node_type;
+
 	struct rrr_artnet_universe universes[RRR_ARTNET_UNIVERSE_MAX];
 
 	struct rrr_event_queue *event_queue;
@@ -173,7 +175,8 @@ static void __rrr_artnet_universe_port_set (
 }
 
 int rrr_artnet_node_new (
-		struct rrr_artnet_node **result
+		struct rrr_artnet_node **result,
+		enum rrr_artnet_node_type node_type
 ) {
 	int ret = 0;
 
@@ -196,7 +199,16 @@ int rrr_artnet_node_new (
 		goto out_free;
 	}
 
-	artnet_set_node_type(node->node, ARTNET_RAW);
+	switch (node_type) {
+		case RRR_ARTNET_NODE_TYPE_CONTROLLER:
+			artnet_set_node_type(node->node, ARTNET_RAW);
+			break;
+		case RRR_ARTNET_NODE_TYPE_DEVICE:
+			artnet_set_node_type(node->node, ARTNET_NODE);
+			break;
+		default:
+			RRR_BUG("BUG: Unknown node type %i in %s\n", node_type, __func__);
+	};
 
 	if (artnet_start(node->node) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to start artnet in %s: %s\n", __func__, artnet_strerror());

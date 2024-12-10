@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_ARTNET_H
 #define RRR_ARTNET_H
 
+#include <stdint.h>
+
 struct rrr_artnet_node;
 struct rrr_event_queue;
 
@@ -34,8 +36,14 @@ enum rrr_artnet_mode {
 	RRR_ARTNET_MODE_MANAGED    // Fading and setting is being controlled
 };
 
+enum rrr_artnet_node_type {
+	RRR_ARTNET_NODE_TYPE_CONTROLLER,
+	RRR_ARTNET_NODE_TYPE_DEVICE
+};
+
 int rrr_artnet_node_new (
-		struct rrr_artnet_node **result
+		struct rrr_artnet_node **result,
+		enum rrr_artnet_node_type node_type
 );
 void rrr_artnet_node_destroy (
 		struct rrr_artnet_node *node
