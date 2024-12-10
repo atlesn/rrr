@@ -35,7 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "lib/artnet/rrr_artnet.h"
 
-static volatile int artnet_error = 0;
 static volatile int main_running = 1;
 static volatile int sigusr2 = 0;
 
@@ -55,17 +54,15 @@ static const struct cmd_arg_rule cmd_rules[] = {
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_artnet_node");
 
 struct artnet_callback_data {
-	int i;
+	struct rrr_event_queue *queue;
 };
 
 static void artnet_failure_callback (void *arg) {
 	struct artnet_callback_data *callback_data = arg;
 
-	(void)(callback_data);
-
 	RRR_MSG_0("Error received from ArtNet framework\n");
 
-	artnet_error = 1;
+	rrr_event_dispatch_break(callback_data->queue);
 }
 
 static void artnet_incorrect_mode_callback (
@@ -89,8 +86,6 @@ static int main_periodic(RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	RRR_DBG_1("Main periodic\n");
 
-	if (artnet_error)
-		return RRR_EVENT_ERR;
 	if (!main_running)
 		return RRR_EVENT_EXIT;
 
@@ -103,7 +98,6 @@ static int main_loop(void) {
 	struct rrr_event_queue *queue;
 	struct rrr_event_collection events = {0};
 	struct rrr_artnet_node *node;
-	struct artnet_callback_data callback_data = {0};
 
 	if ((ret = rrr_event_queue_new(&queue)) != 0) {
 		RRR_MSG_0("Failed to create event queue in %s\n", __func__);
@@ -119,6 +113,10 @@ static int main_loop(void) {
 		RRR_MSG_0("Failed to create ArtNet node in %s\n", __func__);
 		goto out_destroy_events;
 	}
+
+	struct artnet_callback_data callback_data = {
+		queue
+	};
 
 	if ((ret = rrr_artnet_events_register (
 			node,

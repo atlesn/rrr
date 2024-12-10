@@ -92,7 +92,7 @@ struct rrr_artnet_node {
 
 #define RRR_ARTNET_UNIVERSE_ITERATE_BEGIN()                      \
   do { for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {   \
-    struct rrr_artnet_universe *universe = &(node->universes[i])
+    struct rrr_artnet_universe *universe = &(node->universes[i]); (void)(universe)
 
 #define RRR_ARTNET_UNIVERSE_ITERATE_END()                        \
   }} while(0)
@@ -181,7 +181,7 @@ int rrr_artnet_node_new (
 	int ret = 0;
 
 	struct rrr_artnet_node *node;
-	int domain, type, protocol;
+	int domain, type, protocol, ret_tmp;
 
 	const int verbose = 0;
 
@@ -240,9 +240,46 @@ int rrr_artnet_node_new (
 	}
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		if ((ret = __rrr_artnet_universe_init (universe, i, RRR_ARTNET_CHANNEL_MAX, 1 /* Default fade speed */)) != 0) {
+		if ((ret = __rrr_artnet_universe_init (
+				universe, 
+				i,
+				RRR_ARTNET_CHANNEL_MAX,
+				1 /* Default fade speed */
+		)) != 0) {
 			RRR_MSG_0("Failed to init universe in %s\n", __func__);
 			goto out_cleanup_universes;
+		}
+
+		if (node->node_type == RRR_ARTNET_NODE_TYPE_DEVICE) {
+			int port_index = i % 4;
+			int bind_index = i / 4;
+
+			printf("bind index: %i port index: %i\n", bind_index, port_index);
+
+			if ((ret_tmp = artnet_set_port_type (
+					node->node,
+					bind_index,
+					port_index,
+					ARTNET_ENABLE_OUTPUT,
+					ARTNET_PORT_DMX
+			)) != ARTNET_EOK) {
+				RRR_MSG_0("Failed to set ArtNet port type in %s: %s\n", __func__, artnet_strerror());
+				ret = 1;
+				goto out_cleanup_universes;
+			}
+
+			if ((ret_tmp = artnet_set_port_addr (
+					node->node,
+					bind_index,
+					port_index,
+					ARTNET_OUTPUT_PORT,
+					i, /* Universe / address */
+					0  /* No subnet */
+			)) != ARTNET_EOK) {
+				RRR_MSG_0("Failed to set ArtNet port address in %s: %s\n", __func__, artnet_strerror());
+				ret = 1;
+				goto out_cleanup_universes;
+			}
 		}
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 
@@ -480,12 +517,24 @@ static int __rrr_artnet_handler_poll (
 	(void)(n);
 	(void)(pp);
 
+	int ret_tmp;
+
 	// Poll
 
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_DEVICE)
 		return ARTNET_EOK;
 
 	printf("Received POLL\n");
+
+	RRR_ASSERT(RRR_ARTNET_UNIVERSE_MAX % 4 == 0,universe_max_must_be_divisible_by_four);
+	for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX / 4; i++) {
+		printf("Poll reply bind index %i\n", i);
+		if ((ret_tmp = artnet_send_poll_reply(node->node, i)) != ARTNET_EOK) {
+			RRR_MSG_0("Failed to send poll reply in %s: %s\n", artnet_strerror());
+			FAIL();
+			return ret_tmp;
+		}
+	}
 
 	return ARTNET_EOK;
 }
