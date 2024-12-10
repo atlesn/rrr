@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "BackingStore.hxx"
 #include "../Array.hxx"
 #include "Js.hxx"
+#include "../util/UTF8.hxx"
 
 extern "C" {
 #include <netinet/in.h>
@@ -442,6 +443,34 @@ namespace RRR::JS {
 		message->ip_so_type = *string_;
 	}
 
+	void Message::cb_data_as_object(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		auto string = String(isolate, message->data.data(), message->data.size());
+		v8::MaybeLocal<v8::Value> obj = v8::JSON::Parse(isolate->GetCurrentContext(), string);
+
+		if (obj.IsEmpty())
+			return;
+
+		info.GetReturnValue().Set(obj.ToLocalChecked());
+	}
+
+	void Message::cb_data_as_utf8(const v8::FunctionCallbackInfo<v8::Value> &info) {
+		auto isolate = info.GetIsolate();
+		auto message = self(info);
+		try {
+			RRR::util::UTF8::validate(message->data);
+		}
+		catch (RRR::util::E e) {
+			std::string msg = std::string("Message data was not valid UTF-8 in Message::data_as_utf8: ") + (std::string) e;
+			isolate->ThrowException(v8::Exception::TypeError(String(isolate, msg)));
+			return;
+		}
+		
+		auto string = String(isolate, message->data.data(), message->data.size());
+		info.GetReturnValue().Set((v8::Local<v8::String>) string);
+	}
+
 	void Message::cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
@@ -652,11 +681,6 @@ namespace RRR::JS {
 
 		std::vector<v8::Local<v8::Value>> result;
 
-		class ValueError : public E {
-			public:
-			ValueError(std::string str) : E(str) {}
-		};
-
 		try {
 		// TODO move iteration
 
@@ -726,6 +750,7 @@ namespace RRR::JS {
 					v8::MaybeLocal<v8::Value> obj = v8::JSON::Parse(isolate->GetCurrentContext(), String(isolate, data, size_int));
 					if (trycatch.HasCaught()) {
 						throw ValueError(std::string("Failed to parse supposed JSON: ") + ctx.make_location_message(trycatch.Message()));
+						return;
 					}
 					if (obj.IsEmpty()) {
 						throw ValueError(std::string("JSON was empty while parsing array value"));
@@ -913,6 +938,8 @@ namespace RRR::JS {
 	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage &persistent_storage, MessageDrop &message_drop) :
 		message_drop(message_drop),
 		Factory("Message", ctx, persistent_storage),
+		tmpl_data_as_object(v8::FunctionTemplate::New(ctx, Message::cb_data_as_object)),
+		tmpl_data_as_utf8(v8::FunctionTemplate::New(ctx, Message::cb_data_as_utf8)),
 		tmpl_ip_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_get)),
 		tmpl_ip_set(v8::FunctionTemplate::New(ctx, Message::cb_ip_set)),
 		tmpl_clear_array(v8::FunctionTemplate::New(ctx, Message::cb_clear_array)),
@@ -928,6 +955,8 @@ namespace RRR::JS {
 		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
 	{
 		auto tmpl = get_object_template();
+		tmpl->Set(ctx, "data_as_object", tmpl_data_as_object);
+		tmpl->Set(ctx, "data_as_utf8", tmpl_data_as_utf8);
 		tmpl->Set(ctx, "ip_get", tmpl_ip_get);
 		tmpl->Set(ctx, "ip_set", tmpl_ip_set);
 		tmpl->Set(ctx, "clear_array", tmpl_clear_array);

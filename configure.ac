@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.33-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.33-1", [Full version])
+AC_INIT([Read Route Record],[1.36-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.36-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 33, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 36, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -1652,8 +1652,18 @@ AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
 SHELL_VARS_OUTPUT
 
+CXXFLAGS_YAML=
+for arg in $AM_CXXFLAGS $JS_CXXFLAGS; do
+	if [[ "x$CXXFLAGS_YAML" != "x" ]]; then
+		CXXFLAGS_YAML=$CXXFLAGS_YAML,
+	fi
+	CXXFLAGS_YAML=$CXXFLAGS_YAML$arg
+done
+AC_SUBST([CXXFLAGS_YAML])
+
 AC_CONFIG_FILES(
 	Makefile
+	src/lib/js/.clangd
 	src/Makefile
 	src/modules/Makefile
 	src/lib/Makefile

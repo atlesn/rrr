@@ -90,6 +90,11 @@ namespace RRR::JS {
 		void push_tag_object(v8::Isolate *isolate, std::string key, v8::Local<v8::Value> object);
 		void push_tag(v8::Isolate *isolate, std::string key_string, v8::Local<v8::Value> value);
 
+		class ValueError : public E {
+			public:
+			ValueError(std::string str) : E(str) {}
+		};
+
 		protected:
 
 		Message(v8::Isolate *isolate, MessageDrop &MessageDrop);
@@ -108,6 +113,8 @@ namespace RRR::JS {
 		static void cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
 		static void cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
 		static void cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_data_as_object(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_data_as_utf8(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info);
@@ -131,6 +138,8 @@ namespace RRR::JS {
 
 	class MessageFactory : public Factory<Message> {
 		private:
+		v8::Local<v8::FunctionTemplate> tmpl_data_as_object;
+		v8::Local<v8::FunctionTemplate> tmpl_data_as_utf8;
 		v8::Local<v8::FunctionTemplate> tmpl_ip_get;
 		v8::Local<v8::FunctionTemplate> tmpl_ip_set;
 		v8::Local<v8::FunctionTemplate> tmpl_clear_array;
