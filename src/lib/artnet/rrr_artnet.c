@@ -414,6 +414,9 @@ static void __rrr_artnet_event_periodic_update (
 	(void)(fd);
 	(void)(flags);
 
+	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
+		return;
+
 	const uint64_t port_time_limit = rrr_time_get_64() - RRR_ARTNET_PORT_TIMEOUT_S * 1000 * 1000;
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
@@ -529,6 +532,7 @@ void rrr_artnet_set_fade_speed (
 		uint8_t fade_speed
 ) {
 	assert(fade_speed > 0);
+	assert(node->node_type == RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	RRR_DBG_3("artnet set fade speed %u all universes\n", fade_speed);
 
@@ -629,6 +633,9 @@ int rrr_artnet_events_register (
     assert(dmx_count <= universe->dmx_size);             \
     assert(dmx_pos + dmx_count <= universe->dmx_size);
 
+#define CHECK_NODE_TYPE(type)                                                    \
+    assert(node->node_type == type)
+
 #define CHECK_MODE(_mode)                                                        \
     do { if (universe->mode != _mode) {                                          \
         node->incorrect_mode_callback(node, universe_i, universe->mode, _mode);  \
@@ -653,6 +660,7 @@ void rrr_artnet_universe_set_dmx_abs (
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	RRR_DBG_3("artnet universe %u set absolute value for channel %u through %u to %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, value);
@@ -672,6 +680,7 @@ void rrr_artnet_universe_set_dmx_fade (
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	RRR_DBG_3("artnet universe %u set fade target for channel %u through %u to %u speed %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, value, fade_speed);
@@ -690,6 +699,7 @@ void rrr_artnet_universe_set_dmx_abs_raw (
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	RRR_DBG_3("artnet universe %u set absolute value for channel %u through %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos);
@@ -709,6 +719,7 @@ void rrr_artnet_universe_set_dmx_fade_raw (
 	SET_UNIVERSE();
 	CHECK_DMX_POS();
 	CHECK_MODE(RRR_ARTNET_MODE_MANAGED);
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	RRR_DBG_3("artnet universe %u set fade value for channel %u through %u speed %u\n",
 			universe_i, dmx_pos, dmx_count + dmx_pos, fade_speed);
@@ -724,6 +735,8 @@ void rrr_artnet_universe_get_dmx (
 		uint8_t universe_i
 ) {
 	SET_UNIVERSE();
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
+
 	*dmx = universe->dmx;
 	*dmx_count = universe->dmx_count;
 }
@@ -733,6 +746,8 @@ void rrr_artnet_universe_update (
 		uint8_t universe_i
 ) {
 	SET_UNIVERSE();
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
+
 	__rrr_artnet_universe_update(universe);
 }
 
@@ -745,6 +760,7 @@ int rrr_artnet_universe_check_range (
 	int ret = 0;
 
 	SET_UNIVERSE();
+	CHECK_NODE_TYPE(RRR_ARTNET_NODE_TYPE_CONTROLLER);
 
 	if (!(dmx_pos < universe->dmx_size)) {
 		RRR_MSG_0("artnet universe %u DMX position %" PRIu64 " exceeds maximum of %u\n",
