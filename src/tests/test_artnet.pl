@@ -13,6 +13,8 @@ bless $dbg, rrr::rrr_helper::rrr_debug;
 my $TOPIC_RESULT = "test-result";
 my $TOPIC_ARTNET_CMD = "artnet-command";
 
+my $i = 0;
+
 sub source {
 	my $message = shift;
 
@@ -22,10 +24,18 @@ sub source {
 	$dbg->msg(1, "Send ArtNet fade command\n");
 
 	$message->{'topic'} = $TOPIC_ARTNET_CMD;
-	$message->push_tag("artnet_cmd", "fade");
-	$message->push_tag("artnet_universe", 4);
-	$message->push_tag("artnet_dmx_channel", 4);
-	$message->push_tag("artnet_dmx_data", "aaaa");
+
+	if ($i++ == 0) {
+		$message->push_tag("artnet_cmd", "start");
+		$message->push_tag("artnet_universe", 6);
+	}
+	else {
+		$message->push_tag("artnet_cmd", "fade");
+		$message->push_tag("artnet_universe", 6);
+		$message->push_tag("artnet_dmx_channel", 4);
+		$message->push_tag("artnet_dmx_data", "aaaa");
+	}
+
 	$message->send();
 
 	return 1;

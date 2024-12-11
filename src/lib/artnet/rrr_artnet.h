@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -46,6 +46,9 @@ int rrr_artnet_node_new (
 		enum rrr_artnet_node_type node_type
 );
 void rrr_artnet_node_destroy (
+		struct rrr_artnet_node *node
+);
+void rrr_artnet_node_dump (
 		struct rrr_artnet_node *node
 );
 void rrr_artnet_universe_set_mode (

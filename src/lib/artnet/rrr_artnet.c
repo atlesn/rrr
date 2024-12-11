@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../event/event_handle_struct.h"
 #include "../lib/util/rrr_time.h"
 
+#include <artnet/common.h>
 #include <assert.h>
 #include <artnet/artnet.h>
 
@@ -42,12 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     assert(universe_i < RRR_ARTNET_UNIVERSE_MAX);                        \
     struct rrr_artnet_universe *universe = &node->universes[universe_i]
 
-struct rrr_artnet_target {
-	uint8_t bindindex;
-	uint8_t port;
-	uint64_t last_seen;
-};
-
 struct rrr_artnet_universe {
 	uint8_t net;
 	uint8_t subnet;
@@ -56,8 +51,6 @@ struct rrr_artnet_universe {
 	rrr_artnet_dmx_t *dmx;
 	rrr_artnet_dmx_t *dmx_fade_target;
 	rrr_artnet_dmx_t *dmx_fade_speed;
-
-	struct rrr_artnet_target target;
 
 	uint16_t dmx_count;
 	size_t dmx_size;
@@ -88,11 +81,13 @@ struct rrr_artnet_node {
 	void (*failure_callback)(void *arg);
 	void (*incorrect_mode_callback)(struct rrr_artnet_node *node, uint8_t universe_i, enum rrr_artnet_mode active_mode, enum rrr_artnet_mode required_mode);
 	void *callback_arg;
+
+	char problem[128];
 };
 
-#define RRR_ARTNET_UNIVERSE_ITERATE_BEGIN()                      \
-  do { for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX; i++) {   \
-    struct rrr_artnet_universe *universe = &(node->universes[i]); (void)(universe)
+#define RRR_ARTNET_UNIVERSE_ITERATE_BEGIN()                         \
+  do { for (uint8_t i_ = 0; i_ < RRR_ARTNET_UNIVERSE_MAX; i_++) {   \
+    struct rrr_artnet_universe *universe = &(node->universes[i_]); (void)(universe)
 
 #define RRR_ARTNET_UNIVERSE_ITERATE_END()                        \
   }} while(0)
@@ -164,16 +159,6 @@ static void __rrr_artnet_universe_cleanup (
 	memset(universe, '\0', sizeof(*universe));
 }
 
-static void __rrr_artnet_universe_port_set (
-		struct rrr_artnet_universe *universe,
-		uint8_t bindindex,
-		uint8_t port
-) {
-	universe->target.bindindex = bindindex;
-	universe->target.port = port;
-	universe->target.last_seen = rrr_time_get_64();
-}
-
 int rrr_artnet_node_new (
 		struct rrr_artnet_node **result,
 		enum rrr_artnet_node_type node_type
@@ -183,8 +168,6 @@ int rrr_artnet_node_new (
 	struct rrr_artnet_node *node;
 	int domain, type, protocol, ret_tmp;
 
-	const int verbose = 0;
-
 	*result = NULL;
 
 	if ((node = rrr_allocate_zero(sizeof(*node))) == NULL) {
@@ -193,7 +176,7 @@ int rrr_artnet_node_new (
 		goto out;
 	}
 
-	if ((node->node = artnet_new(NULL, verbose)) == NULL) {
+	if ((node->node = artnet_new(NULL)) == NULL) {
 		RRR_MSG_0("Failed to create artnet node in %s\n", __func__);
 		ret = 1;
 		goto out_free;
@@ -242,7 +225,7 @@ int rrr_artnet_node_new (
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
 		if ((ret = __rrr_artnet_universe_init (
 				universe, 
-				i,
+				i_,
 				RRR_ARTNET_CHANNEL_MAX,
 				1 /* Default fade speed */
 		)) != 0) {
@@ -251,10 +234,8 @@ int rrr_artnet_node_new (
 		}
 
 		if (node->node_type == RRR_ARTNET_NODE_TYPE_DEVICE) {
-			int port_index = i % 4;
-			int bind_index = i / 4;
-
-			printf("bind index: %i port index: %i\n", bind_index, port_index);
+			int port_index = universe->index % 4;
+			int bind_index = universe->index / 4;
 
 			if ((ret_tmp = artnet_set_port_type (
 					node->node,
@@ -273,7 +254,7 @@ int rrr_artnet_node_new (
 					bind_index,
 					port_index,
 					ARTNET_OUTPUT_PORT,
-					i, /* Universe / address */
+					universe->index, /* Universe / address */
 					0  /* No subnet */
 			)) != ARTNET_EOK) {
 				RRR_MSG_0("Failed to set ArtNet port address in %s: %s\n", __func__, artnet_strerror());
@@ -288,7 +269,7 @@ int rrr_artnet_node_new (
 	goto out;
 	out_cleanup_universes:
 		RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-			__rrr_artnet_universe_cleanup (&node->universes[i]);
+			__rrr_artnet_universe_cleanup(universe);
 		RRR_ARTNET_UNIVERSE_ITERATE_END();
 	//out_remove_socket:
 		rrr_socket_remove(node->fd);
@@ -317,6 +298,12 @@ void rrr_artnet_node_destroy (
 	rrr_free(node);
 }
 
+void rrr_artnet_node_dump (
+		struct rrr_artnet_node *node
+) {
+	artnet_dump_config(node->node);
+}
+
 static uint16_t __rrr_artnet_make_addr (
 		uint8_t net, uint8_t sub, uint8_t addr
 ) {
@@ -331,25 +318,19 @@ static void __rrr_artnet_process_node_entry (
 	uint8_t bind_index = ne->page_bindindexes[page_index];
 	artnet_node_data_t *d = &ne->pages[page_index];
 
-	for (int j = 0; j < RRR_ARTNET_PORT_MAX && j < d->numbports; j++) {
-		// For now, we only support up to 16 universes
-		// uint16_t index = __rrr_artnet_make_addr(d->net_switch, d->sub_switch, d->swout[j]);
-		uint16_t index = d->swout[j];
+	if (d->net_switch != 0 || d->sub_switch != 0) {
+		RRR_DBG_3("Ignoring node entry with non-zero net switch %i and/or sub switch %i\n",
+			d->net_switch, d->sub_switch);
+		return;
+	}
 
-		int was_set;
-		RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-			if (universe->index != index) {
-				RRR_LL_ITERATE_NEXT();
-			}
-			was_set = 1;
-			__rrr_artnet_universe_port_set (universe, bind_index, j);
-			RRR_DBG_3("Set universe %d to bindindex %i port %i\n", index, bind_index, j);
-		RRR_ARTNET_UNIVERSE_ITERATE_END();
-
-		if (!was_set) {
-			RRR_DBG_3("No universe for bindindex %i port %i\n", bind_index, j);
+	// Ignore NumPorts parameter, just check if whether or not type
+	// is set to DMX for each port.
+	for (int j = 0; j < ARTNET_MAX_PORTS; j++) {
+		if (d->porttypes[j] != 0x80) {
+			// Ignore non-DMX or unused ports
+			continue;
 		}
-
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
@@ -435,7 +416,10 @@ static void __rrr_artnet_event_periodic_poll (
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
 		return;
 
-	printf("Artnet polling\n");
+	if (*node->problem != '\0') {
+		RRR_MSG_0("Warning: %s\n", node->problem);
+		*node->problem = '\0';
+	}
 
 	if (artnet_send_poll(node->node, NULL, ARTNET_TTM_DEFAULT) != ARTNET_EOK) {
 		RRR_MSG_0("Failed to send artnet poll in %s\n", __func__);
@@ -453,39 +437,33 @@ static void __rrr_artnet_event_periodic_update (
 	(void)(fd);
 	(void)(flags);
 
+	int ret_tmp;
+
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
 		return;
-
-	const uint64_t port_time_limit = rrr_time_get_64() - RRR_ARTNET_PORT_TIMEOUT_S * 1000 * 1000;
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
 		__rrr_artnet_universe_update(universe);
 
 		if (universe->mode == RRR_ARTNET_MODE_IDLE || universe->mode == RRR_ARTNET_MODE_STOPPED) {
-			RRR_LL_ITERATE_NEXT();
+			continue;
 		}
 
 		assert(universe->dmx_count <= 512);
 
-		if (universe->target.last_seen > 0 && universe->target.last_seen < port_time_limit) {
-			RRR_MSG_0("Warning: No status update for %i seconds from any artnet node accepting universe %u. Starting multicast.\n", RRR_ARTNET_PORT_TIMEOUT_S, universe->index);
-			universe->target.last_seen = 0;
+		RRR_DBG_7("artnet dmx unicast to subscribers of universe %u\n", universe->index);
+
+		if ((ret_tmp = artnet_send_dmx_remote(node->node, universe->index, (uint16_t) universe->dmx_count, universe->dmx)) < 0) {
+			RRR_MSG_0("Failed to send unicast DMX data in %s: %s\n", __func__, artnet_strerror());
+			FAIL();
+			return;
 		}
 
-		if (universe->target.last_seen > 0) {
-			RRR_DBG_7("artnet dmx unicast bindindex %u port %u\n", universe->target.bindindex, universe->target.port);
-			if (artnet_send_dmx(node->node, universe->target.bindindex, universe->target.port, (uint16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
-				RRR_MSG_0("Warning: Failed to send unicast DMX data in %s: %s\n", __func__, artnet_strerror());
-				universe->target.last_seen = 0;
-				// Try again with multicast
-			}
+		if (ret_tmp == 0) {
+			sprintf(node->problem, "No subscribers for universe %u", universe->index);
 		}
 		else {
-			RRR_DBG_7("artnet dmx multicast universe %u\n", universe->index);
-			if (artnet_raw_send_dmx(node->node, universe->index, (int16_t) universe->dmx_count, universe->dmx) != ARTNET_EOK) {
-				RRR_MSG_0("Failed to send multicast DMX data in %s: %s\n", __func__, artnet_strerror());
-				FAIL();
-			}
+			RRR_DBG_7("artnet universe %u had %i subscribers while sending\n", universe->index, ret_tmp);
 		}
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
 }
@@ -500,8 +478,16 @@ static void __rrr_artnet_event_read (
 	(void)(fd);
 	(void)(flags);
 
-	if (artnet_read(node->node, 0) != ARTNET_EOK) {
-		RRR_MSG_0("Failed to read artnet data in %s\n", __func__);
+	int ret_tmp;
+
+	if ((ret_tmp = artnet_read(node->node, 0)) != ARTNET_EOK) {
+		if (ret_tmp == ARTNET_EREMOTE) {
+			RRR_MSG_0("Warning: Failed to process artnet data from remote: %s\n",
+				artnet_strerror());
+		}
+		else {
+			RRR_MSG_0("Failed to read artnet data in %s\n", __func__);
+		}
 		FAIL();
 	}
 }
@@ -524,11 +510,8 @@ static int __rrr_artnet_handler_poll (
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_DEVICE)
 		return ARTNET_EOK;
 
-	printf("Received POLL\n");
-
 	RRR_ASSERT(RRR_ARTNET_UNIVERSE_MAX % 4 == 0,universe_max_must_be_divisible_by_four);
 	for (uint8_t i = 0; i < RRR_ARTNET_UNIVERSE_MAX / 4; i++) {
-		printf("Poll reply bind index %i\n", i);
 		if ((ret_tmp = artnet_send_poll_reply(node->node, i)) != ARTNET_EOK) {
 			RRR_MSG_0("Failed to send poll reply in %s: %s\n", artnet_strerror());
 			FAIL();
@@ -554,8 +537,6 @@ static int __rrr_artnet_handler_reply (
 
 	if (node->node_type != RRR_ARTNET_NODE_TYPE_CONTROLLER)
 		return ARTNET_EOK;
-
-	printf("Artnet poll reply\n");
 
 	return ARTNET_EOK;
 }
@@ -633,7 +614,7 @@ int rrr_artnet_universe_iterate (
 	int ret = 0;
 
 	RRR_ARTNET_UNIVERSE_ITERATE_BEGIN();
-		if ((ret = cb (i, universe->mode, universe->private_data, private_arg)) != 0) {
+		if ((ret = cb (i_, universe->mode, universe->private_data, private_arg)) != 0) {
 			goto out;
 		}
 	RRR_ARTNET_UNIVERSE_ITERATE_END();
