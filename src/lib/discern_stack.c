@@ -705,7 +705,7 @@ static int __rrr_discern_stack_execute (
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack_e[wpos++].value = 1;
+						stack_e[wpos++].value = node->value.value;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
 						stack_e[wpos++] = node->value;
