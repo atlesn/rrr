@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util/linked_list.h"
 #include "rrr_types.h"
+#include "read_constants.h"
+
+#define RRR_DISCERN_STACK_OK     RRR_READ_OK
+#define RRR_DISCERN_STACK_BAIL   RRR_READ_EOF
 
 struct rrr_mqtt_topic_linear;
 struct rrr_discern_stack;
