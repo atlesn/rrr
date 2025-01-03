@@ -1,9 +1,15 @@
-rrr (1.36-1) bookworm; urgency=medium
+rrr (1.36-2) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
   * Features:
     * New methods on JS Message object: data_as_object and data_as_utf8
+
+  * Fixes:
+    * BAIL in method and route definitions not working correctly, caused
+      program exit when triggered
+    * FALSE value in method and route definitions not working, TRUE was pushed
+      instead
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 28 Nov 2024 09:42:41 +0100
 
