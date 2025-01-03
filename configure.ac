@@ -1294,7 +1294,7 @@ AS_IF([test "x$enable_artnet" = xno], [
 			
 			int main (int argc, char *argv[]) {
 				artnet_node node;
-				node = artnet_new("0.0.0.0", 0);
+				node = artnet_new("0.0.0.0");
 				artnet_destroy(node);
 				return 0;
 			}
