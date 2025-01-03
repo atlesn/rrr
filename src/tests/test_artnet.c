@@ -29,7 +29,7 @@ int rrr_test_artnet (void) {
 
 	struct rrr_artnet_node *node;
 
-	if ((ret = rrr_artnet_node_new(&node)) != 0) {
+	if ((ret = rrr_artnet_node_new(&node, RRR_ARTNET_NODE_TYPE_CONTROLLER)) != 0) {
 		RRR_MSG_0("Failed to create artnet node in %s\n", __func__);
 		goto out;
 	}
@@ -57,7 +57,8 @@ int rrr_test_artnet (void) {
 		assert(*(dmx + i) == 0);
 	}
 
-	// Run one animation step incrementing first 16 channels by 1
+	// Run one animation step at a time
+
 	TEST_MSG("Check artnet fade up by 1...\n");
 	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
 	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 1, 255);
@@ -80,12 +81,48 @@ int rrr_test_artnet (void) {
 		assert(*(dmx + i) == 0);
 	}
 
-	TEST_MSG("Check artnet fade down by 10 (underflow)...\n");
+	TEST_MSG("Check artnet fade up (to above target)...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 2, 6);
+	rrr_artnet_universe_update(node, 0);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 6);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	TEST_MSG("Check artnet fade down (to below target)...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 6, 2);
+	rrr_artnet_universe_update(node, 0);
+	for (uint16_t i = 0; i < 16; i++) {
+		assert(*(dmx + i) == 2);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	TEST_MSG("Check artnet fade down (underflow)...\n");
 	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
 	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 10, 0);
 	rrr_artnet_universe_update(node, 0);
 	for (uint16_t i = 0; i < 16; i++) {
 		assert(*(dmx + i) == 0);
+	}
+	for (uint16_t i = 16; i < dmx_count; i++) {
+		assert(*(dmx + i) == 0);
+	}
+
+	TEST_MSG("Check artnet fade up (overflow)...\n");
+	rrr_artnet_universe_set_mode(node, 0, RRR_ARTNET_MODE_MANAGED);
+	rrr_artnet_universe_set_dmx_fade(node, 0, 0, 16, 10, 255);
+	for (uint16_t i = 0; i < 26; i++) {
+		rrr_artnet_universe_update(node, 0);
+		uint16_t exp = i == 25 ? 255 : (i + 1) * 10;
+		for (uint16_t j = 0; j < 16; j++) {
+			assert(*(dmx + j) == exp);
+		}
 	}
 	for (uint16_t i = 16; i < dmx_count; i++) {
 		assert(*(dmx + i) == 0);

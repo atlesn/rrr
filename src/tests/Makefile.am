@@ -102,6 +102,7 @@ sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
 TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test.sh                  \
+	test_artnet.sh           \
 	test_averager.sh         \
 	test_cacher.sh           \
 	test_cmodule.sh          \
