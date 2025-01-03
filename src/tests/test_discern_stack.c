@@ -105,8 +105,18 @@ static const char *valids[] = {
 	"H a T b\tAND\tPOP",
 	"H a T b\tOR\tPOP",
 	"H a D c\tAPPLY\tPOP # Comment",
-	"H a\tH b D c\tAPPLY\tAND D d\tAPPLY\tPOP",
-	"TRUE FALSE POP BAIL"
+	"H a\tH b D c\tAPPLY\tAND D d\tAPPLY\tPOP"
+};
+
+// Test should confirm that
+//   - Bail clears stacks and returns
+//   - Odd indexed defs bail, even do not
+
+static const char *bails[] = {
+	"FALSE BAIL",
+	"TRUE FALSE POP BAIL",
+	"TRUE FALSE BAIL POP",
+	"TRUE TRUE BAIL POP"
 };
 
 // Test should confirm that
@@ -230,9 +240,8 @@ int rrr_test_discern_stack(void) {
 		enum rrr_discern_stack_fault fault = 0;
 		int ret_tmp = 0;
 		if ((ret_tmp = rrr_discern_stack_interpret (&routes, &fault, &pos, valid)) != 0) {
-			printf("fault %i ret %i\n", fault, ret_tmp);
 			assert(fault != 0);
-			TEST_MSG(" -> NOT OK - Test did not succeed as expected, result was %i fault was %i\n",
+			TEST_MSG(" NOT OK - Test did not succeed as expected, result was %i fault was %i\n",
 					ret_tmp, fault);
 			ret = 1;
 		}
@@ -246,6 +255,53 @@ int rrr_test_discern_stack(void) {
 		assert(RRR_LL_COUNT(&routes) == sizeof(valids)/sizeof(*valids));
 	}
 
+	for (unsigned int i = 0; i < sizeof(bails)/sizeof(*bails); i++) {
+		const char *bail = bails[i];
+		enum rrr_discern_stack_fault fault = 0;
+		struct rrr_discern_stack_callbacks callbacks = {0};
+		int ret_tmp = 0;
+		int ret_exp = (i % 2) * RRR_DISCERN_STACK_BAIL;
+
+		rrr_discern_stack_collection_clear(&routes);
+
+		TEST_MSG("%s\n", bail);
+		TEST_MSG("    (interpret) -> ");
+
+		struct rrr_parse_pos pos;
+
+		rrr_parse_pos_init(&pos, bail, rrr_length_from_biglength_bug_const(strlen(bail)));
+
+		if ((ret_tmp = rrr_discern_stack_interpret (
+				&routes,
+				&fault,
+				&pos,
+				bail
+		)) == 0) {
+			assert(fault == 0);
+			TEST_MSG(" OK\n");
+		}
+		else {
+			assert(fault != 0);
+			TEST_MSG(" NOT OK - Test did not succeed as expected, result was %i fault was %i\n", ret_tmp, fault);
+			ret = 1;
+		}
+
+		TEST_MSG("    (execute) -> ");
+
+		if ((ret_tmp = rrr_discern_stack_collection_execute (
+				&fault,
+				&routes,
+				&callbacks
+		)) == ret_exp) {
+			assert(fault == 0);
+			TEST_MSG(" OK\n");
+		}
+		else {
+			RRR_MSG_0(" -> NOT OK - Execution of bail route failed result was %i fault was %i\n", ret_tmp, fault);
+			ret = 1;
+		}
+	}
+
 	rrr_discern_stack_collection_clear(&routes);
 
 	{
@@ -257,7 +313,6 @@ int rrr_test_discern_stack(void) {
 		TEST_MSG("%s\n -> ", bigtest);
 
 		if ((ret_tmp = rrr_discern_stack_interpret (&routes, &fault, &pos, bigtest)) != 0) {
-			printf("fault %i ret %i\n", fault, ret_tmp);
 			assert(fault != 0);
 			TEST_MSG(" -> NOT OK - Bigtest did not succeed as expected, result was %i fault was %i\n",
 					ret_tmp, fault);
@@ -286,7 +341,6 @@ int rrr_test_discern_stack(void) {
 					&routes,
 					&callbacks
 			)) != 0) {
-				printf("fault %i ret %i\n", fault, ret_tmp);
 				assert(fault != 0);
 				TEST_MSG(" -> NOT OK - Bigtest did not succeed as expected, result was %i fault was %i\n",
 						ret_tmp, fault);
