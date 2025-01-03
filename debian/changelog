@@ -1,4 +1,4 @@
-rrr (1.36-2) bookworm; urgency=medium
+rrr (1.36-3) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -10,6 +10,7 @@ rrr (1.36-2) bookworm; urgency=medium
       program exit when triggered
     * FALSE value in method and route definitions not working, TRUE was pushed
       instead
+    * Missing check for overshoot and undershoot while fading in ArtNet
 
  -- Atle Solbakken <atle@goliathdns.no>  Thu, 28 Nov 2024 09:42:41 +0100
 

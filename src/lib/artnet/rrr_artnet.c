@@ -371,13 +371,13 @@ static void __rrr_artnet_universe_fade_interpolate (
 
 		if (universe->dmx[i] < dmx_target) {
 			rrr_artnet_dmx_t dmx_new = dmx_orig + dmx_fade_speed;
-			if (dmx_new < dmx_orig)
+			if (dmx_new < dmx_orig || dmx_new > dmx_target)
 				dmx_new = dmx_target;
 			universe->dmx[i] = dmx_new;
 		}
 		else if (universe->dmx[i] > dmx_target) {
 			rrr_artnet_dmx_t dmx_new = dmx_orig - dmx_fade_speed;
-			if (dmx_new > dmx_orig)
+			if (dmx_new > dmx_orig || dmx_new < dmx_target)
 				dmx_new = dmx_target;
 			universe->dmx[i] = dmx_new;
 		}
