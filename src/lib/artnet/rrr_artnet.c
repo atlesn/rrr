@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARTNET_PORT_MAX 4
 #define RRR_ARTNET_PORT_TIMEOUT_S 5
 #define RRR_ARTNET_BCAST_LIMIT 8
+
+// Note : This parameter affects documented fade speed, do not change
+#define RRR_ARTNET_UPDATE_INTERVAL_MS 20
 
 #define SET_UNIVERSE()                                                   \
     assert(universe_i < RRR_ARTNET_UNIVERSE_MAX);                        \
@@ -655,7 +658,7 @@ int rrr_artnet_events_register (
 			&node->events,
 			__rrr_artnet_event_periodic_update,
 			node,
-			20 * 1000 // 20ms
+			RRR_ARTNET_UPDATE_INTERVAL_MS * 1000
 	)) != 0) {
 		RRR_MSG_0("Failed to create periodic update event in %s\n", __func__);
 		goto out_cleanup;

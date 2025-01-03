@@ -1,4 +1,4 @@
-.Dd 2024-11-05
+.Dd 2025-01-03
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -4089,6 +4089,7 @@ A number in the range 1 through 10 controlling how fast to fade where 1 is slowe
 If not given, the value set in the
 .B artnet_fade_speed
 configuration parameter is used.
+Also refer to this parameter for details about the fade speed.
 
 .El
 .PP
@@ -4110,6 +4111,16 @@ Defaults to 'yes'.
 .It artnet_fade_speed=UNSIGNED INTEGER
 A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
 If not given, a value of 5 is used.
+
+The value for each DMX channels is gradually incremented or decremented by the set fade speed
+until the specified target is reached (given by a fade command). The update occurs every 20 milliseconds.
+
+The approximate time T it takes to fade from a current value Vc to a target value Vt with fade speed S can
+be calculated using the following formula:
+
+.B T[ms] =~ 20 * (abs(Vc - Vt) / S)
+
+As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
 
 .El
 
