@@ -4,13 +4,13 @@ if (console.critical === undefined) {
 }
 
 console.log("==================================\n");
-import("./test_module_process.mjs", { with: {type: "json"} }).then((mod) => {
+import("./test_module_process.mjs", { assert: {type: "json"}, with: {type: "json"} }).then((mod) => {
 	console.critical("Script was loaded despite JSON assertion being set\n");
 }).catch((msg) => {
 	console.log("Script loaded as JSON failed as expected: " + msg + "\n");
 });
 
-import("./test.json", { with: {type: "json"} }).then((mod) => {
+import("./test.json", { assert: {type: "json"}, with: {type: "json"} }).then((mod) => {
 	if (mod.default.foo !== "bar") {
 		console.log("" + mod.default.foo + "\n");
 		console.critical("Mismatch in variable from JSON file. Value was '" + mod.foo + "'.\n");
