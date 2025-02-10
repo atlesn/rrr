@@ -4,14 +4,18 @@ rrr (1.36-3) bookworm; urgency=medium
 
   * Features:
     * New methods on JS Message object: data_as_object and data_as_utf8
+    * Support for Node 23
+    * Support for Debian Trixie
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
       program exit when triggered
     * FALSE value in method and route definitions not working, TRUE was pushed
       instead
-    * Support for Node 23
-    * Support for Debian Trixie
+    * Incorrect counting of FIFO buffer entries in certain situations, could
+      possibly result in buffers over time being reported as full when they
+      were not. The problem only affected counting of retained messages in MQTT
+      broker.
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 10 Feb 2025 11:43:22 +0100
 
