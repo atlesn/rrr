@@ -2284,6 +2284,9 @@ Always present.
 Added if the request contained an :authority or a Host: header. The first takes precedence if both are present.
 .It http_body
 Added if a body of non-zero length is present.
+The field will have a blob type if a content type header is found and it is set to
+.B application/octet-stream,
+otherwise it will be of string type.
 .It http_content_transfer_encoding
 Added if the header value
 .B content-transfer-encoding

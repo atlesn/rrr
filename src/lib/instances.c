@@ -137,7 +137,14 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 			INSTANCE_D_ROUTES(data),
 			&callbacks
 	)) != 0) {
-		goto out;
+		if (ret == RRR_DISCERN_STACK_BAIL) {
+			RRR_DBG_3("= Bailed out of discern stack (intentional BAIL) in instance %s\n",
+				INSTANCE_D_NAME(data));
+			ret = 0;
+		}
+		else {
+			goto out;
+		}
 	}
 
 	RRR_DBG_3("= %i receiver instances set in message from instance %s\n",
