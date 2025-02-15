@@ -1,4 +1,4 @@
-.Dd 2024-10-14
+.Dd 2025-02-15
 .TH RRR_LOGD 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -14,7 +14,7 @@ and the log messages are printed to standard output.
 .PP
 The log daemon may help in situations where standard output from multiple processes gets interleaved. 
 .SH SYNOPSIS
-.B rrr_logd
+.B rrr_logd [OPTIONS] [WRAPPER AND ARGS]
 .Dl [-s|--socket[=]SOCKET]
 .Dl [-f|--file-descriptor[=]FILE DESCRIPTOR]
 .Dl [-p|--persist]
@@ -32,6 +32,9 @@ The log daemon may help in situations where standard output from multiple proces
 The log daemon may receive both native RRR log messages and RRR array messages with specific fields set.
 
 If array messages are used, the following fields are expected to be present of which most are optional:
+
+If a wrapper process is specified, each line will be written to this process, and output is read back.
+This allows for modifying logs before printed out.
 
 .Bl -tag -width -indent
 

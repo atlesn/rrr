@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2024-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -68,6 +68,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'h',    "help",                  "[-h|--help]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'v',    "version",               "[-v|--version]"},
+	{CMD_ARG_FLAG_NO_FLAG_MULTI,  '\0',   "wrapper-and-args",      "[WRAPPER AND ARGS]"},
         {0,                           '\0',    NULL,                   NULL}
 };
 
@@ -79,7 +80,19 @@ struct rrr_logd_data {
 	int quiet;
 	int add_newline;
 	int message_only;
+	char **wrapper;
 };
+
+static void rrr_logd_cleanup_config (struct rrr_logd_data *data) {
+	char *p;
+	int i;
+	if (data->wrapper != NULL) {
+		for (i = 0, p = data->wrapper[0]; p != NULL; i++, p = data->wrapper[i]) {
+			rrr_free(p);
+		}
+		rrr_free(data->wrapper);
+	}
+}
 
 static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *cmd) {
 	const char *receive_socket;
@@ -141,6 +154,29 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 	if (cmd_exists(cmd, "message-only", 0)) {
 		data->message_only = 1;
 	}
+
+	const char *wrapper_string;
+	cmd_arg_count wrapper_count = 0;
+	while ((wrapper_string = cmd_get_value(cmd, "wrapper-and-args", wrapper_count)) != NULL) {
+		wrapper_count++;
+	}
+
+	if (wrapper_count > 0) {
+		if ((data->wrapper = rrr_allocate_zero(sizeof(*data->wrapper) * (wrapper_count + 1))) == NULL) {
+			RRR_MSG_0("Failed to allocate memory for arguments in %s\n", __func__);
+			return 1;
+		}
+
+		for (cmd_arg_count i = 0; i < wrapper_count; i++) {
+			const char *str = cmd_get_value(cmd, "wrapper-and-args", i);
+			if ((data->wrapper[i] = rrr_strdup(str)) == NULL) {
+				RRR_MSG_0("Failed to allocate memory for wrapper argument in %s\n");
+				return 1;
+			}
+		}
+	}
+
+	/* Caller must call cleanup function upon fail */
 
 	return 0;
 }
@@ -407,14 +443,14 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_logd_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_cmd;
+		goto out_cleanup_config;
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	if (rrr_logd_socket_setup(&data) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_socket;
+		goto out_cleanup_config;
 	}
 
 	if (rrr_event_queue_new(&events) != 0) {
@@ -476,6 +512,11 @@ int main (int argc, const char **argv, const char **env) {
 		}
 	}
 
+	if (data.wrapper) {
+		RRR_DBG_1("Starting wrapper process '%s'\n", *data.wrapper);
+		rrr_fork();
+	}
+
 	RRR_DBG_1("RRR log deamon starting dispatch\n");
 
 	if (rrr_event_dispatch (
@@ -495,6 +536,8 @@ int main (int argc, const char **argv, const char **env) {
 		data.receive_socket_fd = 0;
 	out_cleanup_events:
 		rrr_event_queue_destroy(events);
+	out_cleanup_config:
+		rrr_logd_cleanup_config(&data);
 	out_cleanup_socket:
 		if (data.receive_socket_fd > 0)
 			rrr_socket_close(data.receive_socket_fd);
@@ -502,7 +545,7 @@ int main (int argc, const char **argv, const char **env) {
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_signal_handler_remove(signal_handler);
-	out_cleanup_cmd:
+//	out_cleanup_cmd:
 		cmd_destroy(&cmd);
 		rrr_log_cleanup();
 
