@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -30,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages/msg_msg_struct.h"
 #include "lib/rrr_types.h"
 #include "lib/socket/rrr_socket_constants.h"
-#include "lib/type.h"
 #include "lib/util/macro_utils.h"
 #include "main.h"
 #include "../build_timestamp.h"
@@ -40,14 +40,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/common.h"
 #include "lib/version.h"
 #include "lib/array.h"
+#include "lib/fork.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_client.h"
 #include "lib/event/event.h"
-#include "lib/messages/msg_msg.h"
 #include "lib/helpers/log_helper.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_logd");
 
+static volatile int some_fork_has_stopped = 0;
 static volatile int main_running = 1;
 static volatile int sigusr2 = 0;
 
@@ -200,13 +201,37 @@ static int rrr_logd_socket_setup(struct rrr_logd_data *data) {
 	return 0;
 }
 
-static int rrr_logd_periodic (void *arg) {
-	struct rrr_logd_data *data = arg;
+struct rrr_logd_callback_data {
+	struct rrr_logd_data *data;
+	struct rrr_fork_handler *fork_handler;
+	int fd_stdout_orig;
+};
 
-	(void)(data);
+static void rrr_logd_stdout_restore (int fd_stdout_orig) {
+	if (fd_stdout_orig) {
+		if (dup2(fd_stdout_orig, STDOUT_FILENO) < 0) {
+			// Further messages will not be printed, just crash to avoid confusion
+			RRR_BUG("Failed to redirect output back to standard output, cannot handle this situation");
+		}
+		RRR_DBG_1("Redirected output back to standard output\n");
+	}
+}
+
+static int rrr_logd_periodic (void *arg) {
+	struct rrr_logd_callback_data *callback_data = arg;
+
+	RRR_DBG_1("RRR log deamon periodic\n");
 
 	if (!main_running)
 		return RRR_EVENT_EXIT;
+
+	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
+
+	if (some_fork_has_stopped) {
+		rrr_logd_stdout_restore(callback_data->fd_stdout_orig);
+		RRR_MSG_0("One or more forks has exited\n");
+		return RRR_EVENT_EXIT;
+	}
 
 	return RRR_EVENT_OK;
 }
@@ -269,7 +294,7 @@ static int rrr_logd_read_msg_callback (
 		void *arg2
 ) {
 	struct rrr_msg_msg *msg = *message;
-	struct rrr_logd_data *data = arg2;
+	struct rrr_logd_callback_data *callback_data = arg2;
 
 	(void)(arg1);
 
@@ -282,7 +307,7 @@ static int rrr_logd_read_msg_callback (
 	uint8_t log_level_translated = 7;
 	int log_line = 0;
 
-	if (data->quiet)
+	if (callback_data->data->quiet)
 		goto out;
 
 	if (!MSG_IS_ARRAY(msg)) {
@@ -310,7 +335,7 @@ static int rrr_logd_read_msg_callback (
 	}
 
 	rrr_logd_print (
-			data,
+			callback_data->data,
 			log_file,
 			log_line,
 			log_level_translated,
@@ -332,7 +357,7 @@ static int rrr_logd_read_log_callback (
 		void *arg1,
 		void *arg2
 ) {
-	struct rrr_logd_data *data = arg2;
+	struct rrr_logd_callback_data *callback_data = arg2;
 
 	(void)(arg1);
 
@@ -341,7 +366,7 @@ static int rrr_logd_read_log_callback (
 	char *log_prefix = NULL;
 	char *log_message = NULL;
 
-	if (data->quiet)
+	if (callback_data->data->quiet)
 		goto out;
 
 	if ((ret = rrr_msg_msg_log_to_str(&log_prefix, &log_message, message)) != 0) {
@@ -349,7 +374,7 @@ static int rrr_logd_read_log_callback (
 	}
 
 	rrr_logd_print (
-			data,
+			callback_data->data,
 			message->file,
 			message->line > INT_MAX
 				? INT_MAX
@@ -409,11 +434,19 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
+	int is_child = 0;
+
 	struct rrr_signal_handler *signal_handler = NULL;
+	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct cmd_data cmd = {0};
 	struct rrr_logd_data data = {0};
 	struct rrr_event_queue *events;
 	struct rrr_socket_client_collection *clients;
+	struct rrr_fork_handler *fork_handler;
+	struct rrr_fork_default_exit_notification_data exit_notification_data = {
+		&some_fork_has_stopped
+	};
+	int fd_to_wrapper[2] = {0, 0};
 
 	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
@@ -429,6 +462,12 @@ int main (int argc, const char **argv, const char **env) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
+	if (rrr_fork_handler_new (&fork_handler) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_cmd;
+	}
+
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 	rrr_signal_default_signal_actions_register();
 
@@ -463,6 +502,12 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_events;
 	}
 
+	struct rrr_logd_callback_data callback_data = {
+		&data,
+		fork_handler,
+		0
+	};
+
 	rrr_socket_client_collection_event_setup (
 			clients,
 			NULL,
@@ -477,7 +522,7 @@ int main (int argc, const char **argv, const char **env) {
 			rrr_logd_read_log_callback,
 			rrr_logd_read_ctrl_callback,
 			NULL,
-			&data
+			&callback_data
 	);
 
 	rrr_socket_client_collection_fd_close_notify_setup (
@@ -514,7 +559,64 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (data.wrapper) {
 		RRR_DBG_1("Starting wrapper process '%s'\n", *data.wrapper);
-		rrr_fork();
+
+		for (char **arg = data.wrapper + 1; *arg; arg++) {
+			RRR_DBG_1(" - arg: '%s'\n", *arg);
+		}
+
+		if (rrr_socket_pipe_blocking(fd_to_wrapper, "logd wrapper") != 0) {
+			RRR_MSG_0("Failed to create pipe to wrapper\n");
+			goto out_cleanup_clients;
+		}
+
+		pid_t pid = rrr_fork (
+				fork_handler,
+				rrr_fork_default_exit_notification,
+				&exit_notification_data
+		);
+		if (pid < 0) {
+			RRR_MSG_0("Could not fork child process: %s\n", rrr_strerror(errno));
+			ret = EXIT_FAILURE;
+			goto out_cleanup_pipe;
+		}
+		else if (pid == 0) {
+			// CHILD CODE
+			is_child = 1;
+
+			RRR_DBG_1("In child wrapper\n");
+
+			rrr_socket_close_if_set(&fd_to_wrapper[1]);
+
+			if (rrr_socket_dup2(fd_to_wrapper[0], STDIN_FILENO) != 0) {
+				RRR_MSG_0("dup2 failed in child wrapper\n");
+				ret = EXIT_FAILURE;
+				goto out_cleanup_pipe;
+			}
+
+			execve(data.wrapper[0], data.wrapper, (char * const *) env);
+
+			RRR_MSG_0("Failed to execute wrapper '%s': %s\n", data.wrapper[0], rrr_strerror(errno));
+
+			goto out_cleanup_pipe;
+		}
+
+		rrr_socket_close_if_set(&fd_to_wrapper[0]);
+
+		RRR_DBG_1("Child wrapper started pid %i, redirecting output\n", pid);
+
+		if ((callback_data.fd_stdout_orig = dup(STDOUT_FILENO)) < 0) {
+			RRR_MSG_0("dup failed int main process\n");
+			ret = EXIT_FAILURE;
+			goto out_cleanup_pipe;
+		}
+
+		if (rrr_socket_dup2(fd_to_wrapper[1], STDOUT_FILENO) != 0) {
+			RRR_MSG_0("dup2 failed int main process\n");
+			ret = EXIT_FAILURE;
+			goto out_cleanup_pipe;
+		}
+
+		RRR_DBG_1("Output now redirected\n", pid);
 	}
 
 	RRR_DBG_1("RRR log deamon starting dispatch\n");
@@ -523,14 +625,19 @@ int main (int argc, const char **argv, const char **env) {
 			events,
 			100 * 1000, /* 100 ms */
 			rrr_logd_periodic,
-			&data
+			&callback_data
 	) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_clients;
+		goto out_cleanup_pipe;
 	}
+
+	rrr_logd_stdout_restore(callback_data.fd_stdout_orig);
 
 	RRR_DBG_1("RRR log deamon dispatch ended\n");
 
+	out_cleanup_pipe:
+		rrr_socket_close_if_set(&fd_to_wrapper[0]);
+		rrr_socket_close_if_set(&fd_to_wrapper[1]);
 	out_cleanup_clients:
 		rrr_socket_client_collection_destroy(clients);
 		data.receive_socket_fd = 0;
@@ -542,10 +649,26 @@ int main (int argc, const char **argv, const char **env) {
 		if (data.receive_socket_fd > 0)
 			rrr_socket_close(data.receive_socket_fd);
 		rrr_socket_close_all();
+
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+
 		rrr_signal_handler_remove(signal_handler);
-//	out_cleanup_cmd:
+		rrr_signal_handler_remove(signal_handler_fork);
+
+		if (is_child) {
+			// Child forks must skip *ALL* the fork-cleanup stuff. It's possible that a
+			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
+			// will hande a SIGCHLD before we send signals to all forks, in which case
+			// it will clean up properly anyway.
+			goto out_cleanup_cmd;
+		}
+
+		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
+		rrr_fork_handler_destroy (fork_handler);
+
+	out_cleanup_cmd:
 		cmd_destroy(&cmd);
 		rrr_log_cleanup();
 

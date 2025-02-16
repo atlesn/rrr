@@ -1,4 +1,4 @@
-rrr (1.36-3) bookworm; urgency=medium
+rrr (1.36-4) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -6,6 +6,8 @@ rrr (1.36-3) bookworm; urgency=medium
     * New methods on JS Message object: data_as_object and data_as_utf8
     * Support for Node 23
     * Support for Debian Trixie
+    * Log daemon may start a wrapper process for further processing of
+      messages prior to them being printed.
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
