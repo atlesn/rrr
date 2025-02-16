@@ -63,6 +63,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-a|--add-newline]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'm',    "message-only",          "[-m|--message-only]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'u',    "unbuffered",            "[-u|--unbuffered]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -81,6 +82,7 @@ struct rrr_logd_data {
 	int quiet;
 	int add_newline;
 	int message_only;
+	int unbuffered;
 	char **wrapper;
 };
 
@@ -154,6 +156,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 
 	if (cmd_exists(cmd, "message-only", 0)) {
 		data->message_only = 1;
+	}
+
+	if (cmd_exists(cmd, "unbuffered", 0)) {
+		data->unbuffered = 1;
 	}
 
 	const char *wrapper_string;
@@ -484,6 +490,11 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
+	if (data.unbuffered) {
+		RRR_DBG_1("Setting unbuffered output\n");
+		setbuf(stdout, NULL);
+	}
 
 	if (rrr_logd_socket_setup(&data) != 0) {
 		ret = EXIT_FAILURE;

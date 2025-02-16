@@ -21,6 +21,7 @@ The log daemon may help in situations where standard output from multiple proces
 .Dl [-q|--quiet]
 .Dl [-a|--add-newline]
 .Dl [-m|--message-only]
+.Dl [-u|--unbuffered]
 .Dl [-l|--loglevel-translation]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]DEBUG FLAGS]
@@ -78,6 +79,9 @@ Add a newline (ASCII decimal 10) to any message received not already ending with
 
 .IP -m|--message-only
 Print only the message text and not log level and prefix.
+
+.IP -u|--unbuffered
+Make standard output unbuffered.
 
 .IP -l|--loglevel-translation
 Translate any RRR native log level in received messages to RFC 5424 format.
