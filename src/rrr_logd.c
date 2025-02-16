@@ -220,8 +220,6 @@ static void rrr_logd_stdout_restore (int fd_stdout_orig) {
 static int rrr_logd_periodic (void *arg) {
 	struct rrr_logd_callback_data *callback_data = arg;
 
-	RRR_DBG_1("RRR log deamon periodic\n");
-
 	if (!main_running)
 		return RRR_EVENT_EXIT;
 
