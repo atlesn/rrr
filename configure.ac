@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.33-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.33-1", [Full version])
+AC_INIT([Read Route Record],[1.36-6])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.36-6", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 33, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 36, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 6, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -136,8 +136,8 @@ if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX 
 	AC_LANG_POP([C++])
 	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK"
 	CLANG_CXXFLAGS="-Wno-unused-parameter"
-	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
-	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++20 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
+	TEST_CXXFLAGS="-std=c++20 $CFLAGS_COMMON -O3"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])
 	CXXFLAGS=""
@@ -711,6 +711,34 @@ AC_DEFUN([V8TESTS],[
 	])
 	V8COMPILE([
 		AC_DEFINE([RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN], [1], [Have primitive arguments to ScriptOrigin])
+	],[
+		# Not found, no action required
+	])
+
+	AC_MSG_CHECKING([V8 has primitive arguments to ScriptOrigin without isolate])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-message.h>
+			int main (int argc, char **argv) {
+				auto dummy = v8::ScriptOrigin(
+						v8::Local<v8::Value>(),
+						0,
+						0,
+						false,
+						-1,
+						v8::Local<v8::Value>(),
+						false,
+						false,
+						false,
+						v8::Local<v8::Data>()
+				);
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE], [1], [Have primitive arguments to ScriptOrigin without isolate])
 	],[
 		# Not found, no action required
 	])
@@ -1624,8 +1652,18 @@ AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
 SHELL_VARS_OUTPUT
 
+CXXFLAGS_YAML=
+for arg in $AM_CXXFLAGS $JS_CXXFLAGS; do
+	if [[ "x$CXXFLAGS_YAML" != "x" ]]; then
+		CXXFLAGS_YAML=$CXXFLAGS_YAML,
+	fi
+	CXXFLAGS_YAML=$CXXFLAGS_YAML$arg
+done
+AC_SUBST([CXXFLAGS_YAML])
+
 AC_CONFIG_FILES(
 	Makefile
+	src/lib/js/.clangd
 	src/Makefile
 	src/modules/Makefile
 	src/lib/Makefile

@@ -58,6 +58,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/random.h"
 #include "../lib/stats/stats_instance.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/rrr_str.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
@@ -920,6 +922,7 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	const struct rrr_http_header_field *field;
 	struct rrr_array structured_data = {0};
 	int do_print_error = 1;
 
@@ -941,8 +944,6 @@ static int httpclient_final_callback (
 			goto out;
 		}
 
-		const struct rrr_http_header_field *field;
-
 		if ((field = rrr_http_part_header_field_get (transaction->response_part, "content-type")) != NULL && field->value != NULL) {
 			if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
 					&structured_data,
@@ -963,6 +964,29 @@ static int httpclient_final_callback (
 				goto out;
 			}
 		}
+
+		RRR_MAP_ITERATE_BEGIN(&httpclient_data->http_client_config.extra_parse_headers);
+			if ((field = rrr_http_part_header_field_get_raw(transaction->response_part, node_tag)) != NULL) {
+				if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
+						&structured_data,
+						node_value,
+						field->value_full
+				)) != 0) {
+					RRR_MSG_0("Failed to push full header value %s to array in %s A\n", node_tag, __func__);
+					goto out;
+				}
+			}
+			else {
+				if ((ret = rrr_array_push_value_str_with_tag (
+						&structured_data,
+						node_value,
+						""
+				)) != 0) {
+					RRR_MSG_0("Failed to push header value %s to array in %s B\n", node_tag, __func__);
+					goto out;
+				}
+			}
+		RRR_MAP_ITERATE_END();
 	}
 
 	if (httpclient_data->taint_tag != NULL && *(httpclient_data->taint_tag) != '\0') {
@@ -1989,6 +2013,8 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
+	char *value_tmp = NULL;
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_response_max_mb", response_max_mb, RRR_HTTPCLIENT_DEFAULT_RESPONSE_MAX_MB);
 	data->response_max_size = data->response_max_mb;
 	if (((ret = rrr_biglength_mul_err(&data->response_max_size, 1024 * 1024))) != 0) {
@@ -2152,6 +2178,19 @@ static int httpclient_parse_config (
 		}
 	}
 
+	if (RRR_LL_COUNT(&data->http_client_config.extra_parse_headers) > 0) {
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_receive_structured") &&
+		    !data->do_receive_structured
+		) {
+			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_trap_headers' was 'yes' in httpclient instance %s, " \
+				  "this is a configuration error.", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		data->do_receive_structured = 1;
+	}
+
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(content_type_boundary);
@@ -2184,6 +2223,7 @@ static int httpclient_parse_config (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(value_tmp);
 	return ret;
 }
 

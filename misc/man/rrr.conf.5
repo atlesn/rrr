@@ -1,4 +1,4 @@
-.Dd 2024-02-13
+.Dd 2024-11-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1939,6 +1939,10 @@ The Config and Message objects have the following members:
   ip_set: function(ip, port){},             // Helper function to set adddress of ip_addr field
   ip_get: function(){ return [ip, port]; }, // Helper function to retrieve adddress of ip_addr field
 
+  // Data accessors
+  data_as_utf8(),                // Decode UTF-8 from the data field and return as string. Throws TypeError if decoding fails.
+  data_as_object(),              // As data_to_utf8(), but also decodes JSON and returns an object.
+
   // Constants for the type field
   MSG_TYPE_MSG: 1,
   MSG_TYPE_TAG: 2,
@@ -2280,6 +2284,9 @@ Always present.
 Added if the request contained an :authority or a Host: header. The first takes precedence if both are present.
 .It http_body
 Added if a body of non-zero length is present.
+The field will have a blob type if a content type header is found and it is set to
+.B application/octet-stream,
+otherwise it will be of string type.
 .It http_content_transfer_encoding
 Added if the header value
 .B content-transfer-encoding
@@ -2870,6 +2877,20 @@ The
 tag will not be present for JSON messages.
 Also, if the JSON data in the response contains any of the above fields, both will be present in the message
 with the HTTP-response fields being placed first.
+
+.It http_trap_headers=HEADER-NAME[,HEADER-NAME]...
+
+If given, the listed headers will be present as array values in generated structured messages.
+Implies
+.B http_receive_structured=yes.
+The received headers will be in the format
+.B http_HEADER-NAME
+all in lowercase letters. Dashes and undescores are preserved as-is.
+
+The value is stripped of leading spaces (SP only) as well as trailing spaces and line end (LF, CR, TAB or SP).
+Otherwise the value is left untouched, e.g. any encoding, quoted strings or subvalues are not handled.
+
+If a specified header is not present, this is indicated by the value being empty.
 
 .It http_receive_ignore_error_part_data={yes|no}
 If set to no, attempts will be made to create messages from the part data of any responses from the server, even

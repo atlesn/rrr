@@ -1,21 +1,43 @@
-rrr (1.34-1) bookworm; urgency=medium
+rrr (1.36-6) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * New methods on JS Message object: data_as_object and data_as_utf8
+    * Support for Node 23
+    * Support for Debian Trixie
+    * Log daemon may start a wrapper process for further processing of
+      messages prior to them being printed.
+
+  * Fixes:
+    * BAIL in method and route definitions not working correctly, caused
+      program exit when triggered
+    * FALSE value in method and route definitions not working, TRUE was pushed
+      instead
+    * Incorrect counting of FIFO buffer entries in certain situations, could
+      possibly result in buffers over time being reported as full when they
+      were not. The problem only affected counting of retained messages in MQTT
+      broker.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 10 Feb 2025 11:43:22 +0100
+
+rrr (1.35-1) bookworm; urgency=medium
+
+  * Features:
+    * Configuration option in http client to trap any header field
 
   * Fixes:
     * Crashes in MQTT for malformed packets with tailing payload
     * Bad MQTT CONNECT packet assembling for V5 when will flag was not set
-
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 02 Nov 2024 12:44:42 +0000
-
-rrr (1.33-2) bookworm; urgency=medium
-
-  * Fixes:
+    * Log messages to stats engine  getting lost due to events delivered to
+      incorrect event queue
+    * Memory leak in Python3 where values added to array had incorrect
+      reference count causing memory leaks
     * Broken parsing of leading spaces in istr and ustr types in arrays
     * Crash in array tree import for division overflow in conditions,
       emit soft error instead.
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 02 Nov 2024 12:39:23 +0000
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 27 Nov 2024 18:32:12 +0100
 
 rrr (1.33-1) bookworm; urgency=medium
 

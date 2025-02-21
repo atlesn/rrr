@@ -157,3 +157,6 @@ jeprof.*
 
 # fuzz
 fuzz/
+
+# LSP
+.clangd

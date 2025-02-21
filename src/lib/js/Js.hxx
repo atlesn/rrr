@@ -116,6 +116,7 @@ namespace RRR::JS {
 
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
+		operator v8::Local<v8::Name>();
 		operator std::string();
 		const char * operator *();
 		operator Value();
@@ -202,6 +203,7 @@ namespace RRR::JS {
 		CTX(ENV &env, std::string script_name);
 		~CTX();
 		CTX(const CTX &) = delete;
+		static CTX *from_embedder_data(v8::Local<v8::Context> ctx);
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();

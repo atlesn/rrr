@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -46,12 +46,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_send_chunk.h"
 
-#include "../rrr_strerror.h"
 #include "../log.h"
+#include "../rrr_strerror.h"
 #include "../rrr_umask.h"
-#include "../util/crc32.h"
 #include "../util/rrr_time.h"
-#include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
@@ -671,9 +669,10 @@ int rrr_socket_eventfd (
 }
 #endif /* RRR_HAVE_EVENTFD */
 
-int rrr_socket_pipe (
+static int __rrr_socket_pipe (
 		int result[2],
-		const char *creator
+		const char *creator,
+		int nonblock
 ) {
 	int ret = 0;
 
@@ -685,11 +684,13 @@ int rrr_socket_pipe (
 		goto out;
 	}
 
-	for (int i = 0; i < 2; i++) {
-		if (fcntl (fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK) != 0) {
-			RRR_MSG_0("fcntl() failed in rrr_socket_pipe: %s\n", rrr_strerror(errno));
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out_close;
+	if (nonblock) {
+		for (int i = 0; i < 2; i++) {
+			if (fcntl (fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK) != 0) {
+				RRR_MSG_0("fcntl() failed in rrr_socket_pipe: %s\n", rrr_strerror(errno));
+				ret = RRR_SOCKET_HARD_ERROR;
+				goto out_close;
+			}
 		}
 	}
 
@@ -718,6 +719,20 @@ int rrr_socket_pipe (
 		goto out;
 	out:
 		return ret;
+}
+
+int rrr_socket_pipe (
+		int result[2],
+		const char *creator
+) {
+	return __rrr_socket_pipe(result, creator, 1 /* Non-block */);
+}
+
+int rrr_socket_pipe_blocking (
+		int result[2],
+		const char *creator
+) {
+	return __rrr_socket_pipe(result, creator, 0 /* Blocking */);
 }
 
 int rrr_socket (
@@ -781,6 +796,19 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 
 int rrr_socket_close (int fd) {
 	return __rrr_socket_close (fd, 0, 0);
+}
+
+int rrr_socket_close_if_set (int *fd) {
+	int ret = 0;
+
+	if (!*fd)
+		goto out;
+	
+	ret = __rrr_socket_close (*fd, 0, 0);
+	*fd = 0;
+
+	out:
+	return ret;
 }
 
 int rrr_socket_close_no_unlink (int fd) {
@@ -894,6 +922,49 @@ int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *a
 
 int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg) {
 	return __rrr_socket_close_all_except_cb (1, except_cb, arg);
+}
+
+int rrr_socket_dup2 (int oldfd, int newfd) {
+	int ret = 0;
+
+	RRR_DBG_7("rrr_socket_dup2 %i %i pid %i\n",
+			oldfd, newfd, getpid());
+
+	if (oldfd == newfd)
+		goto out;
+
+	if (dup2(oldfd, newfd) < 0) {
+		RRR_MSG_0("dup2 failed in %s: %s\n", __func__, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int did_destroy = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+		if (node->options.fd == newfd) {
+			did_destroy = 1;
+			node->options.fd = 0;
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, 0));
+
+	pthread_mutex_unlock(&socket_lock);
+
+	if (did_destroy) {
+		RRR_DBG_7("rrr_socket_dup2 closed %i pid %i\n",
+			newfd, getpid());
+	}
+	else {
+		RRR_DBG_7("rrr_socket_dup2 %i was not registered in socket framework pid %i\n",
+			newfd, getpid());
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_socket_fifo_create (

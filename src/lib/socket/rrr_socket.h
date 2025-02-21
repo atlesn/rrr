@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -137,6 +137,11 @@ int rrr_socket_pipe (
 		int result[2],
 		const char *creator
 );
+
+int rrr_socket_pipe_blocking (
+		int result[2],
+		const char *creator
+);
 int rrr_socket (
 		int domain,
 		int type,
@@ -146,6 +151,7 @@ int rrr_socket (
 		int register_for_unlink
 );
 int rrr_socket_close (int fd);
+int rrr_socket_close_if_set (int *fd);
 int rrr_socket_close_no_unlink (int fd);
 int rrr_socket_close_ignore_unregistered (int fd);
 int rrr_socket_close_all_except (int fd);
@@ -156,6 +162,7 @@ int rrr_socket_close_all_except_array (int *fds, size_t fd_count);
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count);
 int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg);
 int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg);
+int rrr_socket_dup2 (int oldfd, int newfd);
 int rrr_socket_fifo_create (
 		int *fd_result,
 		const char *filename,

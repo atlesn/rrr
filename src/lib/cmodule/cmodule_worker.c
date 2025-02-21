@@ -488,8 +488,15 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 					worker->methods,
 					&callbacks
 			)) != 0) {
-				RRR_MSG_0("Fault code from discern stack: %u\n", fault);
-				goto report;
+				if (ret == RRR_DISCERN_STACK_BAIL) {
+					RRR_DBG_3("= Bailed out of discern stack (intentional BAIL) in worker %s\n",
+						worker->name);
+					ret = 0;
+				}
+				else {
+					RRR_MSG_0("Fault code from discern stack: %u\n", fault);
+					goto report;
+				}
 			}
 			
 			RRR_DBG_3("= %i methods were executed in worker %s\n", apply_callback_data.run_count, worker->name);

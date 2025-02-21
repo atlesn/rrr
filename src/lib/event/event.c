@@ -259,7 +259,8 @@ static void __rrr_event_signal_event (
 	}
 
 	if (function->function == NULL) {
-		RRR_DBG_9_PRINTF("EQ DISP %p function not registered\n", queue);
+		RRR_DBG_9_PRINTF("EQ DISP %p function %u not registered fd %i pid %llu tid %llu\n",
+			queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 		goto out;
 	}
 
@@ -410,8 +411,8 @@ int rrr_event_pass (
 		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
 	}
 
-	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
-		queue, function, amount);
+	RRR_DBG_9_PRINTF("EQ PASS %p function %u pid %llu tid %llu amount %u\n",
+		queue, function, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), amount);
 
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {

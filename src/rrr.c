@@ -1062,6 +1062,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_cleanup_signal;
 		}
 		if (rrr_log_socket_connect(log_socket) != 0) {
+			RRR_MSG_0("Connection to log socket '%s' failed\n", log_socket);
 			ret = EXIT_FAILURE;
 			goto out_cleanup_signal;
 		}
@@ -1089,11 +1090,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
-	if (rrr_event_queue_new(&queue) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
-	}
-
 	// Call setproctitle() after argv and envp has been
 	// checked as the call may zero out these arrays.
 	rrr_setproctitle_init(argc, argv, env);
@@ -1110,6 +1106,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 		const char *config_string = node->tag;
 
 		rrr_setproctitle("[%s]", config_string);
+
+		if (rrr_event_queue_new(&queue) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_cleanup_signal;
+		}
 
 		if (main_loop (
 				&cmd,
@@ -1170,6 +1171,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			is_child = 1;
 
+			if (rrr_event_queue_new(&queue) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_cleanup_signal;
+			}
+
 			rrr_log_socket_after_fork();
 
 			if (main_loop (
@@ -1182,11 +1188,17 @@ int main (int argc, const char *argv[], const char *env[]) {
 				ret = EXIT_FAILURE;
 			}
 
-			goto out_cleanup_signal;
+			goto out_destroy_events;
 
 			increment:
 			config_i++;
 		RRR_MAP_ITERATE_END();
+
+		// Create queue after forking to prevent it and it's FDs from existing in the forks
+		if (rrr_event_queue_new(&queue) != 0) {
+			ret = EXIT_FAILURE;
+			goto out_cleanup_signal;
+		}
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
@@ -1202,6 +1214,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 			&callback_data
 	);
 
+	out_destroy_events:
+		rrr_event_queue_destroy(queue);
+
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
@@ -1213,17 +1228,12 @@ int main (int argc, const char *argv[], const char *env[]) {
 			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
 			// will hande a SIGCHLD before we send signals to all forks, in which case
 			// it will clean up properly anyway.
-			goto out_cleanup_log_socket_and_events;
+			goto out_run_cleanup_methods;
 		}
 
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
-
-	out_cleanup_log_socket_and_events:
-		if (queue != NULL) {
-			rrr_event_queue_destroy(queue);
-		}
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
