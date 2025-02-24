@@ -80,6 +80,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
 #include "test_linked_list.h"
+#include "test_fifo.h"
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
@@ -291,6 +292,12 @@ int rrr_test_library_functions (
 
 	TEST_BEGIN("linked list") {
 		ret_tmp = rrr_test_linked_list();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("fifo") {
+		ret_tmp = rrr_test_fifo();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

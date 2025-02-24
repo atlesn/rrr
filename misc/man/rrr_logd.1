@@ -1,4 +1,4 @@
-.Dd 2024-10-14
+.Dd 2025-02-15
 .TH RRR_LOGD 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -14,13 +14,14 @@ and the log messages are printed to standard output.
 .PP
 The log daemon may help in situations where standard output from multiple processes gets interleaved. 
 .SH SYNOPSIS
-.B rrr_logd
+.B rrr_logd [OPTIONS] [WRAPPER AND ARGS]
 .Dl [-s|--socket[=]SOCKET]
 .Dl [-f|--file-descriptor[=]FILE DESCRIPTOR]
 .Dl [-p|--persist]
 .Dl [-q|--quiet]
 .Dl [-a|--add-newline]
 .Dl [-m|--message-only]
+.Dl [-u|--unbuffered]
 .Dl [-l|--loglevel-translation]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]DEBUG FLAGS]
@@ -32,6 +33,9 @@ The log daemon may help in situations where standard output from multiple proces
 The log daemon may receive both native RRR log messages and RRR array messages with specific fields set.
 
 If array messages are used, the following fields are expected to be present of which most are optional:
+
+If a wrapper process is specified, each line will be written to this process, and output is read back.
+This allows for modifying logs before printed out.
 
 .Bl -tag -width -indent
 
@@ -75,6 +79,9 @@ Add a newline (ASCII decimal 10) to any message received not already ending with
 
 .IP -m|--message-only
 Print only the message text and not log level and prefix.
+
+.IP -u|--unbuffered
+Make standard output unbuffered.
 
 .IP -l|--loglevel-translation
 Translate any RRR native log level in received messages to RFC 5424 format.

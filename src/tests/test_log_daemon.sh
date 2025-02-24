@@ -27,7 +27,7 @@ LOG_DEF="ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,se
 if [ "x$VALGRIND" != "x" ]; then
 	SLEEP=2
 else
-	SLEEP=0.2
+	SLEEP=0.5
 fi
 
 rm -f $SOCKET || exit 1

@@ -99,22 +99,22 @@ namespace RRR::JS {
 
 		Message(v8::Isolate *isolate, MessageDrop &MessageDrop);
 
-		static void cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_ip_so_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_topic_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info);
-		static void cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
-		static void cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info);
+		static void cb_throw(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_ip_addr_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_ip_so_type_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_ip_so_type_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_topic_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_topic_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_timestamp_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_timestamp_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_data_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_data_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_type_get(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_type_set(const v8::FunctionCallbackInfo<v8::Value> &info);
+		static void cb_class_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_data_as_object(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_data_as_utf8(const v8::FunctionCallbackInfo<v8::Value> &info);
+
 		static void cb_ip_get(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_ip_set(const v8::FunctionCallbackInfo<v8::Value> &info);
 		static void cb_clear_array(const v8::FunctionCallbackInfo<v8::Value> &info);
@@ -153,6 +153,22 @@ namespace RRR::JS {
 		v8::Local<v8::FunctionTemplate> tmpl_clear_tag;
 		v8::Local<v8::FunctionTemplate> tmpl_get_tag_all;
 		v8::Local<v8::FunctionTemplate> tmpl_send;
+
+		v8::Local<v8::FunctionTemplate> tmpl_throw;
+		v8::Local<v8::FunctionTemplate> tmpl_ip_addr_get;
+		v8::Local<v8::FunctionTemplate> tmpl_ip_so_type_get;
+		v8::Local<v8::FunctionTemplate> tmpl_ip_so_type_set;
+		v8::Local<v8::FunctionTemplate> tmpl_topic_get;
+		v8::Local<v8::FunctionTemplate> tmpl_topic_set;
+		v8::Local<v8::FunctionTemplate> tmpl_timestamp_get;
+		v8::Local<v8::FunctionTemplate> tmpl_timestamp_set;
+		v8::Local<v8::FunctionTemplate> tmpl_data_get;
+		v8::Local<v8::FunctionTemplate> tmpl_data_set;
+		v8::Local<v8::FunctionTemplate> tmpl_type_get;
+		v8::Local<v8::FunctionTemplate> tmpl_type_set;
+		v8::Local<v8::FunctionTemplate> tmpl_class_get;
+		v8::Local<v8::FunctionTemplate> tmpl_class_set;
+		v8::Local<v8::FunctionTemplate> tmpl_constant_get;
 
 		MessageDrop &message_drop;
 

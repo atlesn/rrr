@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../Array.hxx"
 #include "Js.hxx"
 #include "../util/UTF8.hxx"
+#include <v8-primitive.h>
 
 extern "C" {
 #include <netinet/in.h>
@@ -405,31 +406,31 @@ namespace RRR::JS {
 		ip_addr_len = 0;
 	}
 
-	void Message::cb_throw(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_throw(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Cannot change the value of this field")));
 	}
 
-	void Message::cb_ip_addr_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_ip_addr_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto message = self(info);
 		auto buffer = v8::ArrayBuffer::New(info.GetIsolate(), message->ip_addr_len);
 		info.GetReturnValue().Set(buffer);
 	}
 
-	void Message::cb_ip_so_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_ip_so_type_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		auto result = String(isolate, message->ip_so_type.c_str());
 		info.GetReturnValue().Set((v8::Local<v8::String>) result);
 	}
 
-	void Message::cb_ip_so_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_ip_so_type_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 
 		auto string = v8::Local<v8::String>();
-		if (!value->ToString(ctx).ToLocal(&string)) {
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&string) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a string")));
 			return;
 		}
@@ -798,22 +799,24 @@ namespace RRR::JS {
 		message->send(info.GetIsolate());
 	}
 
-	void Message::cb_topic_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_topic_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set((v8::Local<v8::Value>) String(isolate, message->topic));
 	}
 
-	void Message::cb_topic_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_topic_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto topic = v8::Local<v8::Value>();
-		if (!value->ToString(ctx).ToLocal(&topic)) {
+
+		auto topic = v8::Local<v8::String>();
+		if ((info.Length() >= 1 ? info[0] : String(isolate, ""))->ToString(ctx).ToLocal(&topic) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a string")));
 			return;
 		}
-		auto topic_ = String(isolate, topic->ToString(ctx).ToLocalChecked());
+
+		auto topic_ = String(isolate, topic);
 		if (topic_.length() == 0) {
 			// OK, no topic
 		}
@@ -825,21 +828,23 @@ namespace RRR::JS {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for topic exceeds maximum length")));
 			return;
 		}
+
 		message->topic = topic_;
 	}
 
-	void Message::cb_timestamp_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_timestamp_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::BigInt::NewFromUnsigned(isolate, message->timestamp));
 	}
 
-	void Message::cb_timestamp_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_timestamp_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
+
 		auto timestamp = v8::Local<v8::BigInt>();
-		if (!value->ToBigInt(ctx).ToLocal(&timestamp)) {
+		if ((info.Length() >= 1 ? info[0] : String(isolate, "0"))->ToBigInt(ctx).ToLocal(&timestamp) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value was not a valid timestamp")));
 			return;
 		}
@@ -859,18 +864,19 @@ namespace RRR::JS {
 		message->timestamp = (uint64_t) timestamp_;
 	}
 
-	void Message::cb_data_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_data_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		auto store = BackingStore::create(isolate, message->data.data(), message->data.size());
 		info.GetReturnValue().Set(store.second());
 	}
 
-	void Message::cb_data_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_data_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
 
+		auto value = info.Length() >= 1 ? info[0] : v8::Local<v8::Value>();
 		if (value->IsNullOrUndefined()) {
 			message->data.clear();
 		}
@@ -895,21 +901,23 @@ namespace RRR::JS {
 		}
 	}
 
-	void Message::cb_type_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_type_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->type));
 	}
 
-	void Message::cb_type_set(v8::Local<v8::String> property, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void> &info) {
+	void Message::cb_type_set(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto ctx = info.GetIsolate()->GetCurrentContext();
 		auto message = self(info);
-		auto type = v8::Int32::New(isolate, 0);
-		if (!value->ToUint32(ctx).ToLocal(&type)) {
+
+		auto type = v8::Uint32::New(isolate, 0);
+		if ((info.Length() >= 1 ? info[0] : String(isolate, "0"))->ToUint32(ctx).ToLocal(&type) != true) {
 			isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Value for type was not a number")));
 			return;
 		}
+
 		uint32_t type_ = type->Uint32Value(ctx).ToChecked();
 		switch (type_) {
 			case MSG_TYPE_MSG:
@@ -925,14 +933,10 @@ namespace RRR::JS {
 		message->type = (rrr_msg_msg_type) type_;
 	}
 
-	void Message::cb_class_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
+	void Message::cb_class_get(const v8::FunctionCallbackInfo<v8::Value> &info) {
 		auto isolate = info.GetIsolate();
 		auto message = self(info);
 		info.GetReturnValue().Set(v8::Uint32::New(isolate, message->get_class()));
-	}
-
-	void Message::cb_constant_get(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value> &info) {
-		info.GetReturnValue().Set(info.Data());
 	}
 
 	MessageFactory::MessageFactory(CTX &ctx, PersistentStorage &persistent_storage, MessageDrop &message_drop) :
@@ -952,7 +956,21 @@ namespace RRR::JS {
 		tmpl_set_tag(v8::FunctionTemplate::New(ctx, Message::cb_set_tag)),
 		tmpl_clear_tag(v8::FunctionTemplate::New(ctx, Message::cb_clear_tag)),
 		tmpl_get_tag_all(v8::FunctionTemplate::New(ctx, Message::cb_get_tag_all)),
-		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send))
+		tmpl_send(v8::FunctionTemplate::New(ctx, Message::cb_send)),
+
+		tmpl_throw(v8::FunctionTemplate::New(ctx, Message::cb_throw)),
+		tmpl_ip_addr_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_addr_get)),
+		tmpl_class_get(v8::FunctionTemplate::New(ctx, Message::cb_class_get)),
+		tmpl_ip_so_type_get(v8::FunctionTemplate::New(ctx, Message::cb_ip_so_type_get)),
+		tmpl_ip_so_type_set(v8::FunctionTemplate::New(ctx, Message::cb_ip_so_type_set)),
+		tmpl_topic_get(v8::FunctionTemplate::New(ctx, Message::cb_topic_get)),
+		tmpl_topic_set(v8::FunctionTemplate::New(ctx, Message::cb_topic_set)),
+		tmpl_timestamp_get(v8::FunctionTemplate::New(ctx, Message::cb_timestamp_get)),
+		tmpl_timestamp_set(v8::FunctionTemplate::New(ctx, Message::cb_timestamp_set)),
+		tmpl_data_get(v8::FunctionTemplate::New(ctx, Message::cb_data_get)),
+		tmpl_data_set(v8::FunctionTemplate::New(ctx, Message::cb_data_set)),
+		tmpl_type_get(v8::FunctionTemplate::New(ctx, Message::cb_type_get)),
+		tmpl_type_set(v8::FunctionTemplate::New(ctx, Message::cb_type_set))
 	{
 		auto tmpl = get_object_template();
 		tmpl->Set(ctx, "data_as_object", tmpl_data_as_object);
@@ -970,20 +988,22 @@ namespace RRR::JS {
 		tmpl->Set(ctx, "set_tag", tmpl_set_tag);
 		tmpl->Set(ctx, "get_tag_all", tmpl_get_tag_all);
 		tmpl->Set(ctx, "send", tmpl_send);
-		tmpl->SetAccessor(String(ctx, "ip_addr"), Message::cb_ip_addr_get, Message::cb_throw);
-		tmpl->SetAccessor(String(ctx, "ip_so_type"), Message::cb_ip_so_type_get, Message::cb_ip_so_type_set);
-		tmpl->SetAccessor(String(ctx, "topic"), Message::cb_topic_get, Message::cb_topic_set);
-		tmpl->SetAccessor(String(ctx, "timestamp"), Message::cb_timestamp_get, Message::cb_timestamp_set);
-		tmpl->SetAccessor(String(ctx, "data"), Message::cb_data_get, Message::cb_data_set);
-		tmpl->SetAccessor(String(ctx, "type"), Message::cb_type_get, Message::cb_type_set);
-		tmpl->SetAccessor(String(ctx, "class"), Message::cb_class_get, Message::cb_throw);
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_MSG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_MSG));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_TAG"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_TAG));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_GET"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_GET));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_PUT"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_PUT));
-		tmpl->SetAccessor(String(ctx, "MSG_TYPE_DEL"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_TYPE_DEL));
-		tmpl->SetAccessor(String(ctx, "MSG_CLASS_DATA"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_DATA));
-		tmpl->SetAccessor(String(ctx, "MSG_CLASS_ARRAY"), Message::cb_constant_get, Message::cb_throw, v8::Uint32::New(ctx, MSG_CLASS_ARRAY));
+
+		tmpl->Set(ctx, "MSG_TYPE_MSG", v8::Uint32::New(ctx, MSG_TYPE_MSG), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_TYPE_TAG", v8::Uint32::New(ctx, MSG_TYPE_TAG), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_TYPE_GET", v8::Uint32::New(ctx, MSG_TYPE_GET), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_TYPE_PUT", v8::Uint32::New(ctx, MSG_TYPE_PUT), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_TYPE_DEL", v8::Uint32::New(ctx, MSG_TYPE_DEL), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_CLASS_DATA", v8::Uint32::New(ctx, MSG_CLASS_DATA), v8::PropertyAttribute::ReadOnly);
+		tmpl->Set(ctx, "MSG_CLASS_ARRAY", v8::Uint32::New(ctx, MSG_CLASS_ARRAY), v8::PropertyAttribute::ReadOnly);
+
+		tmpl->SetAccessorProperty(String(ctx, "ip_addr"), tmpl_ip_addr_get, tmpl_throw);
+		tmpl->SetAccessorProperty(String(ctx, "ip_so_type"), tmpl_ip_so_type_get, tmpl_ip_so_type_set);
+		tmpl->SetAccessorProperty(String(ctx, "topic"), tmpl_topic_get, tmpl_topic_set);
+		tmpl->SetAccessorProperty(String(ctx, "timestamp"), tmpl_timestamp_get, tmpl_timestamp_set);
+		tmpl->SetAccessorProperty(String(ctx, "data"), tmpl_data_get, tmpl_data_set);
+		tmpl->SetAccessorProperty(String(ctx, "type"), tmpl_type_get, tmpl_type_set);
+		tmpl->SetAccessorProperty(String(ctx, "class"), tmpl_class_get, tmpl_throw);
 	}
 
 	Message *MessageFactory::new_native(v8::Isolate *isolate) {

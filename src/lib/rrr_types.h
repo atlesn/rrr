@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -392,6 +392,7 @@ static inline void rrr_length_dec_bug (rrr_length *a) {
 	if ((*a) == 0) {
 		RRR_BUG("Bug: Underflow in rrr_length_dec_bug\n");
 	}
+	(*a)--;
 }
 
 static inline rrr_length rrr_length_dec_bug_const (const rrr_length a) {

@@ -171,8 +171,6 @@ class js_run_data {
 
 		// Calls to make the GCing a little more aggressive
 		isolate->LowMemoryNotification();
-		while (!isolate->IdleNotificationDeadline(1)) {
-		}
 	}
 	bool hasConfig() const {
 		return !config.empty();

@@ -59,6 +59,7 @@ test_SOURCES = test.c \
 	test_increment.c \
 	test_discern_stack.c \
 	test_linked_list.c \
+	test_fifo.c \
 	test_hdlc.c \
 	test_readdir.c \
 	test_send_loop.c

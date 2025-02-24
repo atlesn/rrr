@@ -116,6 +116,7 @@ namespace RRR::JS {
 
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
+		operator v8::Local<v8::Name>();
 		operator std::string();
 		const char * operator *();
 		operator Value();

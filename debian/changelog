@@ -1,9 +1,13 @@
-rrr (1.36-3) bookworm; urgency=medium
+rrr (1.36-6) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
   * Features:
     * New methods on JS Message object: data_as_object and data_as_utf8
+    * Support for Node 23
+    * Support for Debian Trixie
+    * Log daemon may start a wrapper process for further processing of
+      messages prior to them being printed.
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
@@ -11,8 +15,12 @@ rrr (1.36-3) bookworm; urgency=medium
     * FALSE value in method and route definitions not working, TRUE was pushed
       instead
     * Missing check for overshoot and undershoot while fading in ArtNet
+    * Incorrect counting of FIFO buffer entries in certain situations, could
+      possibly result in buffers over time being reported as full when they
+      were not. The problem only affected counting of retained messages in MQTT
+      broker.
 
- -- Atle Solbakken <atle@goliathdns.no>  Thu, 28 Nov 2024 09:42:41 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 10 Feb 2025 11:43:22 +0100
 
 rrr (1.35-1) bookworm; urgency=medium
 
