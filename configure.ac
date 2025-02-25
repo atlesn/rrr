@@ -124,8 +124,22 @@ CFLAGS=""
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
 
+AC_CANONICAL_HOST
+
+AC_MSG_CHECKING([for FreeBSD])
+is_freebsd=no
+case "$host_os" in
+	freebsd*)
+		AC_MSG_RESULT([yes])
+		is_freebsd=yes
+	;;
+	*)
+		AC_MSG_RESULT([no])
+	;;
+esac
+
 AC_MSG_CHECKING([for V8 C++ on FreeBSD (which requires using libc++)])
-AS_IF([test "x$enable_js" != "xno" -a "x$with_v8" != "xno"],[
+AS_IF([test "x$enable_js" != "xno" -a "x$with_v8" != "xno" -a "x$is_freebsd" != "xno"],[
 	FREEBSD_V8_CXXFLAGS="-stdlib=libc++ -DRRR_INTERCEPT_ALLOW_STRERROR"
 	FREEBSD_V8_LIBS="-lc++"
 	AC_MSG_RESULT([$FREEBSD_V8_CXXFLAGS])
