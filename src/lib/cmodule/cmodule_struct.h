@@ -70,6 +70,10 @@ struct rrr_cmodule_worker {
 	struct rrr_settings *settings;
 	struct rrr_settings_used settings_used;
 
+	struct rrr_mqtt_topic_token *topic_filter;
+	char *topic_filter_str;
+	int topic_filter_invert;
+
 	// Used by fork only
 	int ping_received;
 	// Used by parent reader thread only. Unprotected, only access from reader thread.

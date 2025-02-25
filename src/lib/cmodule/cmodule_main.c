@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_struct.h"
 #include "cmodule_config_data.h"
 #include "../event/event.h"
+#include "../instance_config.h"
 #include "../fork.h"
 #include "../mmap_channel.h"
 #include "../discern_stack.h"
@@ -121,7 +122,7 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
-		const char *name,
+		struct rrr_instance_config_data *config,
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -148,7 +149,7 @@ int rrr_cmodule_main_worker_fork_start (
 
 	if ((ret = rrr_cmodule_worker_init (
 			worker,
-			name,
+			config,
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,

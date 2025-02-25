@@ -36,9 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../discern_stack.h"
 #include "../discern_stack_helper.h"
 #include "../common.h"
-#include "../read_constants.h"
 #include "../rrr_shm.h"
 #include "../profiling.h"
+#include "../instance_config.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
 #include "../messages/msg_msg.h"
+#include "../mqtt/mqtt_topic.h"
 #include "../util/gnu.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
@@ -1087,9 +1088,38 @@ struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
 	return &worker->settings_used;
 }
 
+static int __rrr_cmodule_worker_settings_parse (
+		struct rrr_cmodule_worker *data,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	if (config->parent == NULL)
+		goto out;
+
+	if ((ret = rrr_instance_config_parse_optional_topic_filter (
+			&data->topic_filter,
+			&data->topic_filter_str,
+			config,
+			"worker_topic_filter"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse worker_topic_filter parameter of sub instance %s\n", config->name_debug);
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("worker_topic_filter_invert", topic_filter_invert, 0);
+
+	goto out;
+//	out_destroy_topic_filter:
+//		rrr_mqtt_topic_token_destroy(data->topic_filter);
+//		rrr_free(data->topic_filter_str);
+	out:
+		return ret;
+}
+
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
-		const char *name,
+		struct rrr_instance_config_data *config,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
@@ -1106,8 +1136,8 @@ int rrr_cmodule_worker_init (
 	char *to_fork_name = NULL;
 	char *to_parent_name = NULL;
 
-	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
-	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
+	ALLOCATE_TMP_NAME(to_fork_name, config->name_debug, "ch-to-fork");
+	ALLOCATE_TMP_NAME(to_parent_name, config->name_debug, "ch-to-parent");
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
@@ -1119,7 +1149,7 @@ int rrr_cmodule_worker_init (
 		goto out_destroy_channel_to_fork;
 	}
 
-	if ((worker->name = rrr_strdup(name)) == NULL) {
+	if ((worker->name = rrr_strdup(config->name_debug)) == NULL) {
 		RRR_MSG_0("Could not allocate name in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_channel_to_parent;
@@ -1133,6 +1163,10 @@ int rrr_cmodule_worker_init (
 
 	if ((ret = settings_init_callback(&worker->settings, &worker->settings_used, settings_init_callback_arg)) != 0) {
 		goto out_destroy_pid_lock;
+	}
+
+	if ((ret = __rrr_cmodule_worker_settings_parse(worker, config)) != 0) {
+		goto out_destroy_settings;
 	}
 
 	rrr_event_function_set (
@@ -1158,8 +1192,9 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-//	out_destroy_settings:
-//		rrr_settings_destroy(worker->settings);
+	out_destroy_settings:
+		rrr_settings_destroy(worker->settings);
+		rrr_settings_used_cleanup(&worker->settings_used);
 	out_destroy_pid_lock:
 		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
@@ -1182,6 +1217,9 @@ void rrr_cmodule_worker_cleanup (
 ) {
 	rrr_settings_used_cleanup(&worker->settings_used);
 	rrr_settings_destroy(worker->settings);
+
+	rrr_mqtt_topic_token_destroy(worker->topic_filter);
+	RRR_FREE_IF_NOT_NULL(worker->topic_filter_str);
 
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);

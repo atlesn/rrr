@@ -33,8 +33,13 @@ sub config {
 	return 1;
 }
 
+my $did = 0;
+
 sub source {
 	my $msg = shift;
+
+	return 1 if $did;
+	$did = 1;
 
 	if ($CONFIG{"role"} eq "first") {
 		print "WE ARE FIRST\n";
@@ -52,7 +57,9 @@ sub process {
 		die "first role got the message!";
 	}
 
-	die "second role not implemented";
+	print "WE ARE SECOND\n";
+	$msg->{"topic"} = $CONFIG{"generate_topic"};
+	$msg->send();
 
 	return 1;
 }
