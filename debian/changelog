@@ -1,4 +1,4 @@
-rrr (1.36-6) bookworm; urgency=medium
+rrr (1.36-7) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -8,6 +8,7 @@ rrr (1.36-6) bookworm; urgency=medium
     * Support for Debian Trixie
     * Log daemon may start a wrapper process for further processing of
       messages prior to them being printed.
+    * Configurable sub instances in cmodules
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
