@@ -1762,7 +1762,7 @@ static int __rrr_net_transport_quic_bind_and_listen (
 		goto out;
 	}
 
-	if ((ret = rrr_ip_setsockopts (&ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO)) != 0) {
+	if ((ret = rrr_ip_setsockopts (&ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO_OR_DSTADDR)) != 0) {
 		goto out;
 	}
 
@@ -2165,7 +2165,7 @@ static int __rrr_net_transport_quic_connect_or_modify_resolve_callback (
 		RRR_BUG("Unknown address family %u in %s\n", addr->sa_family, __func__);
 	}
 
-	if ((ret = rrr_ip_setsockopts (ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO)) != 0) {
+	if ((ret = rrr_ip_setsockopts (ip_data, RRR_IP_SOCKOPT_RECV_TOS|RRR_IP_SOCKOPT_RECV_PKTINFO_OR_DSTADDR)) != 0) {
 		goto out;
 	}
 
