@@ -1045,6 +1045,17 @@ int rrr_instance_config_dump (struct rrr_instance_config_collection *collection)
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
 		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", node->name_debug);
 
+		if (node->name_sub == NULL && node->next_sub != NULL) {
+			RRR_MSG_PLAIN(" = SUB INSTANCES");
+			for (struct rrr_instance_config_data *sub = node->next_sub; sub; sub = sub->next_sub) {
+				RRR_MSG_PLAIN(" =>%s", sub->name_sub);
+			}
+			RRR_MSG_PLAIN("\n");
+		}
+		else if (node->name_sub != NULL) {
+			RRR_MSG_PLAIN(" = MAIN INSTANCE =>%s\n", node->parent->name_main);
+		}
+
 		// Continue despite error
 		ret |= rrr_settings_dump (node->settings);
 
@@ -1063,6 +1074,8 @@ static int __rrr_instance_config_collection_generate_tree (
 ) {
 	int ret = 0;
 
+	// Step 1 : Link to main instance from children
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
 		if (node->name_sub != NULL) {
 			if ((node->parent = __rrr_instance_config_find_instance (
@@ -1074,6 +1087,21 @@ static int __rrr_instance_config_collection_generate_tree (
 				ret = 1;
 				goto out;
 			}
+		}
+	RRR_LL_ITERATE_END();
+
+	// Step 2 : Link to subs from main
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
+		if (node->name_sub == NULL) {
+			struct rrr_instance_config_data *main = node;
+			struct rrr_instance_config_data *prev_sub = main;
+			RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
+				if (node->name_sub != NULL && strcmp(node->name_main, main->name_main) == 0) {
+					prev_sub->next_sub = node;
+					prev_sub = node;
+				}
+			RRR_LL_ITERATE_END();
 		}
 	RRR_LL_ITERATE_END();
 

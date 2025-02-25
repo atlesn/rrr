@@ -564,7 +564,6 @@ static int __rrr_parse_str_extract_name_with_subscript (
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 	const char cur_char = *(pos->data + pos->pos);
-	printf("cur char %c\n", cur_char);
 	if (RRR_PARSE_CHECK_EOF(pos) || (cur_char != end_char && cur_char != subscript_char)) {
 		goto out_missing_end_char;
 	}

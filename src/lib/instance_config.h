@@ -144,6 +144,7 @@ struct rrr_instance_config_data {
 	char *name_sub;
 	char *name_debug;
 	struct rrr_instance_config_data *parent;
+	struct rrr_instance_config_data *next_sub;
 	struct rrr_settings *settings;
 	struct rrr_settings_used settings_used;
 	const struct rrr_array_tree_list *global_array_trees;
