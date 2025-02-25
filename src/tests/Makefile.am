@@ -19,7 +19,7 @@ endif
 
 if RRR_WITH_JS
 js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/
-js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx -lstdc++
+js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
 if RRR_WITH_HTTP3

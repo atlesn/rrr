@@ -18,6 +18,8 @@ rrr (1.36-6) bookworm; urgency=medium
       possibly result in buffers over time being reported as full when they
       were not. The problem only affected counting of retained messages in MQTT
       broker.
+    * Misc. compilation problems using libc++ on FreeBSD, which is required
+      then V8 is used on this platform
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 10 Feb 2025 11:43:22 +0100
 
