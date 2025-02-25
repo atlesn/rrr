@@ -1102,8 +1102,6 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_instance_config_data *config,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
-		void *settings_init_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	rrr_event_function_set (
@@ -1120,61 +1118,8 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
-			settings_init_callback,
-			settings_init_callback_arg,
 			callbacks
 	);
-}
-
-struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data {
-	const struct rrr_settings *settings_main;
-	const struct rrr_settings_used *settings_used_main;
-	const struct rrr_settings *settings_sub;
-};
-
-static int __rrr_cmodule_helper_worker_forks_start_init_settings_callback (RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS) {
-	struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_settings *settings_new;
-
-	if (callback_data->settings_sub) {
-		RRR_MSG_0("WARNING: NOT COPYING USED SETTINGS\n");
-
-		if ((ret = rrr_settings_merge (
-				&settings_new,
-				settings_used,
-				callback_data->settings_sub,
-				callback_data->settings_main
-		)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		if ((settings_new = rrr_settings_copy (callback_data->settings_main)) == NULL) {
-			RRR_MSG_0("Could not copy settings in %s\n", __func__);
-			ret = 1;
-			goto out;
-		}
-
-		if ((ret = rrr_settings_used_copy (
-				settings_used,
-				callback_data->settings_used_main,
-				settings_new
-		)) != 0) {
-			RRR_MSG_0("Could not copy settings used in %s\n", __func__);
-			goto out_destroy_settings;
-		}
-	}
-
-	*settings = settings_new;
-
-	goto out;
-	out_destroy_settings:
-		rrr_settings_destroy(settings_new);
-	out:
-		return ret;
 }
 
 static int __rrr_cmodule_helper_worker_forks_start (
@@ -1186,28 +1131,17 @@ static int __rrr_cmodule_helper_worker_forks_start (
 	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
 	struct rrr_cmodule_config_data *cmodule_config = &INSTANCE_D_CMODULE(thread_data)->config_data;
 
-	struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data callback_data = {
-		INSTANCE_D_SETTINGS(thread_data),
-		INSTANCE_D_SETTINGS_USED(thread_data),
-		NULL
-	};
-
 	if (config->ptr_next) {
 		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
-			callback_data.settings_sub = cur->settings;
-
 			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
 					cur,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
-					__rrr_cmodule_helper_worker_forks_start_init_settings_callback,
-					&callback_data,
 					callbacks
 			) != 0) {
 				return 1;
 			}
-
 			cmodule_config->started_worker_count++;
 		}
 	}
@@ -1218,8 +1152,6 @@ static int __rrr_cmodule_helper_worker_forks_start (
 					config,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
-					__rrr_cmodule_helper_worker_forks_start_init_settings_callback,
-					&callback_data,
 					callbacks
 			) != 0) {
 				return 1;

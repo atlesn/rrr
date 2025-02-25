@@ -136,26 +136,20 @@ static int lua_ping_callback (RRR_CMODULE_PING_CALLBACK_ARGS) {
 	return 0;
 }
 
-static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
-	struct lua_child_data *data = private_arg;
-	struct lua_data *parent_data = data->parent_data;
-	const char *function = data->cmodule_config_data->config_method;
-
+static int lua_configuration_run (
+		struct lua_child_data *data,
+		struct lua_data *parent_data,
+		const char *function,
+		struct rrr_instance_config_data *instance_config
+) {
 	int ret = 0;
 
 	int ret_tmp;
-	struct rrr_instance_config_data instance_config = {0};
-
-	rrr_instance_config_move_from_settings (
-			&instance_config,
-			&worker->settings_used,
-			&worker->settings
-	);
 
 	if (function == NULL || *function == '\0')
 		goto out;
 
-	if ((ret = rrr_lua_config_push_new (data->lua, &instance_config)) != 0) {
+	if ((ret = rrr_lua_config_push_new (data->lua, instance_config)) != 0) {
 		RRR_MSG_0("Error pushing config in %s in Lua instance %s\n",
 			__func__, INSTANCE_D_NAME(parent_data->thread_data));
 		goto out;
@@ -167,13 +161,42 @@ static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 		ret = 1;
 		goto out;
 	}
-	
+
 	out:
-	rrr_instance_config_move_to_settings (
-			&worker->settings_used,
-			&worker->settings,
-			&instance_config
-	);
+	return ret;
+}
+
+static int lua_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
+	struct lua_child_data *data = private_arg;
+	struct lua_data *parent_data = data->parent_data;
+	const char *function = data->cmodule_config_data->config_method;
+
+	int ret = 0;
+
+	struct rrr_instance_config_data instance_config = {0};
+
+	if (worker->settings_sub) {
+		rrr_instance_config_move_from_settings (
+				&instance_config,
+				&worker->settings_used_sub,
+				&worker->settings_sub
+		);
+		ret = lua_configuration_run(data, parent_data, function, &instance_config);
+	}
+	else {
+		rrr_instance_config_move_from_settings (
+				&instance_config,
+				&worker->settings_used_parent,
+				&worker->settings_parent
+		);
+		ret = lua_configuration_run(data, parent_data, function, &instance_config);
+		rrr_instance_config_move_to_settings (
+				&worker->settings_used_parent,
+				&worker->settings_parent,
+				&instance_config
+		);
+	}
+
 	return ret;
 }
 

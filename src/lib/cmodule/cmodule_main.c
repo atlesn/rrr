@@ -127,8 +127,6 @@ int rrr_cmodule_main_worker_fork_start (
 		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
-		void *settings_init_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -157,9 +155,7 @@ int rrr_cmodule_main_worker_fork_start (
 			cmodule->config_data.worker_spawn_interval,
 			cmodule->config_data.process_mode,
 			cmodule->config_data.do_spawning,
-			cmodule->config_data.do_drop_on_error,
-			settings_init_callback,
-			settings_init_callback_arg
+			cmodule->config_data.do_drop_on_error
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
 		goto out_parent_destroy_event_queue;

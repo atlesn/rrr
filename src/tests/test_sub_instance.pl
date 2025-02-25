@@ -24,7 +24,6 @@ sub config {
 	}
 	elsif ($CONFIG{"role"} eq "second") {
 		die "Param mismatch" unless $CONFIG{"param"} eq "b";
-		$CONFIG{"read_topic"} = $settings->get("read_topic");
 	}
 	else {
 		die "Role error";
@@ -42,7 +41,6 @@ sub source {
 	$did = 1;
 
 	if ($CONFIG{"role"} eq "first") {
-		print "WE ARE FIRST\n";
 		$msg->{"topic"} = $CONFIG{"generate_topic"};
 		$msg->send();
 	}	
@@ -57,7 +55,6 @@ sub process {
 		die "first role got the message!";
 	}
 
-	print "WE ARE SECOND\n";
 	$msg->{"topic"} = $CONFIG{"generate_topic"};
 	$msg->send();
 

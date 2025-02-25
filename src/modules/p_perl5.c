@@ -116,8 +116,8 @@ static int xsub_send_message (
 
 static char *xsub_get_setting(const char *key, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
-	struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_settings_used(perl5_child_data->worker);
+	struct rrr_settings *settings = rrr_cmodule_worker_get_active_settings(perl5_child_data->worker);
+	struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_active_settings_used(perl5_child_data->worker);
 
 	char *value = NULL;
 	if (rrr_settings_get_string_noconvert_silent(&value, settings_used, settings, key)) {
@@ -131,7 +131,7 @@ static char *xsub_get_setting(const char *key, void *private_data) {
 
 static int xsub_set_setting(const char *key, const char *value, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
+	struct rrr_settings *settings = rrr_cmodule_worker_get_active_settings(perl5_child_data->worker);
 
 	int ret = rrr_settings_replace_string(settings, key, value);
 	if (ret != 0) {

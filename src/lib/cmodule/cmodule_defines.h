@@ -80,11 +80,6 @@ static const rrr_time_us_t rrr_cmodule_channel_wait_time = RRR_US(100);
 	struct rrr_cmodule_worker_callbacks *callbacks,                                \
         void *private_arg
 
-#define RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS                                        \
-        struct rrr_settings **settings,                                                \
-        struct rrr_settings_used *settings_used,                                       \
-        void *arg                                                                      \
-
 #define RRR_CMODULE_PERIODIC_CALLBACK_ARGS                                             \
         struct rrr_cmodule_worker *worker,                                             \
         void *private_arg

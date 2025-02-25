@@ -67,8 +67,11 @@ struct rrr_cmodule_worker {
 
 	uint64_t total_msg_processed;
 
-	struct rrr_settings *settings;
-	struct rrr_settings_used settings_used;
+	struct rrr_settings *settings_parent;
+	struct rrr_settings_used settings_used_parent;
+
+	struct rrr_settings *settings_sub;
+	struct rrr_settings_used settings_used_sub;
 
 	struct rrr_mqtt_topic_token *topic_filter;
 	char *topic_filter_str;

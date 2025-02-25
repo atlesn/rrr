@@ -88,10 +88,10 @@ int rrr_cmodule_worker_main (
 struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 		struct rrr_cmodule_worker *worker
 );
-struct rrr_settings *rrr_cmodule_worker_get_settings (
+struct rrr_settings *rrr_cmodule_worker_get_active_settings (
 		struct rrr_cmodule_worker *worker
 );
-struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
+struct rrr_settings_used *rrr_cmodule_worker_get_active_settings_used (
 		struct rrr_cmodule_worker *worker
 );
 int rrr_cmodule_worker_init (
@@ -104,9 +104,7 @@ int rrr_cmodule_worker_init (
 		rrr_time_us_t spawn_interval,
 		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
-		int do_drop_on_error,
-		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
-		void *settings_init_callback_arg
+		int do_drop_on_error
 );
 void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker

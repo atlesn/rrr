@@ -56,8 +56,6 @@ int rrr_cmodule_main_worker_fork_start (
 		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
-		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
-		void *settings_init_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
 );
 void rrr_cmodule_destroy (
