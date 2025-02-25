@@ -158,81 +158,6 @@ static const struct rrr_setting *__rrr_settings_find_setting_const (
 	return NULL;
 }
 
-static int __rrr_settings_append_from (
-		struct rrr_settings *settings_new,
-		const struct rrr_settings *settings_a
-) {
-	for (rrr_length i = 0; i < settings_a->settings_count; i++) {
-		const struct rrr_setting *setting_source = &settings_a->settings[i];
-		struct rrr_setting *setting_target;
-		void *data;
-
-		if (__rrr_settings_find_setting (settings_new, setting_source->name) != NULL) {
-			continue;
-		}
-
-		setting_target = &settings_new->settings[settings_new->settings_count++];
-
-		assert(settings_new->settings_count <= settings_new->settings_max);
-
-		if ((data = rrr_allocate_zero(setting_source->data_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory in %s\n", __func__);
-			return 1;
-		}
-
-		memcpy(data, setting_source->data, setting_source->data_size);
-		memcpy(setting_target, setting_source, sizeof(*setting_target));
-
-		setting_target->data = data;
-	}
-
-	return 0;
-}
-
-int rrr_settings_merge (
-		struct rrr_settings **target,
-		struct rrr_settings_used *target_used,
-		const struct rrr_settings *settings_a,
-		const struct rrr_settings *settings_b
-) {
-	int ret = 0;
-
-	struct rrr_settings *settings_new;
-
-	rrr_length settings_max = rrr_length_add_bug_const(settings_a->settings_max, settings_b->settings_max);
-
-	if ((settings_new = rrr_settings_new(settings_max)) == NULL) {
-		ret = 1;
-		goto out;
-	}
-
-	assert(target_used->was_used == NULL && "Settings used must not already be initialized");
-
-	if ((ret = rrr_settings_used_init(target_used, settings_new)) != 0) {
-		goto out_destroy_settings_new;
-	}
-
-	if ((ret = __rrr_settings_append_from (settings_new, settings_a)) != 0) {
-		goto out_cleanup_settings_used;
-	}
-
-	if ((ret = __rrr_settings_append_from (settings_new, settings_b)) != 0) {
-		goto out_cleanup_settings_used;
-	}
-
-	// TODO : Copy settings used somehow
-
-	*target = settings_new;
-
-	goto out;
-	out_cleanup_settings_used:
-		rrr_settings_used_cleanup(target_used);
-	out_destroy_settings_new:
-		rrr_settings_destroy(settings_new);
-	out:
-		return ret;
-}
-
 int rrr_settings_used_init (
 		struct rrr_settings_used *used,
 		const struct rrr_settings *settings
@@ -383,45 +308,6 @@ static int __rrr_settings_add_raw (
 		rrr_free(new_data);
 	out:
 		return ret;
-}
-
-int rrr_settings_append_from (
-		struct rrr_settings *target,
-		const struct rrr_settings *source
-) {
-	int ret = 0;
-
-	rrr_length settings_max = rrr_length_add_bug_const(target->settings_max, source->settings_max);
-	struct rrr_setting *settings_new;
-
-	if ((settings_new = rrr_reallocate(target->settings, sizeof(*target->settings) * settings_max)) == NULL) {
-		RRR_MSG_0("Failed to allocate settings in %s\n", __func__);
-		ret = 1;
-		goto out;
-	}
-
-	target->settings = settings_new;
-	target->settings_max = settings_max;
-
-	struct rrr_setting *setting;
-	for (unsigned int i = 0; i < source->settings_count; i++) {
-		setting = &target->settings[target->settings_count++];
-	
-		void *data;
-		if ((data = rrr_allocate(source->settings[i].data_size)) == NULL) {
-			RRR_MSG_0("Failed to allocate data memory in %s\n", __func__);
-			ret = 1;
-			goto out;
-		}
-
-		memcpy(data, source->settings[i].data, source->settings[i].data_size);
-		memcpy(setting, &source->settings[i], sizeof(*setting));
-
-		setting->data = data;
-	}
-
-	out:
-	return ret;
 }
 
 static int __rrr_settings_get_string_noconvert (

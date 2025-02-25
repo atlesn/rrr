@@ -858,6 +858,19 @@ int rrr_cmodule_worker_loop_start (
 			goto out;
 		}
 
+		RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
+				worker->name);
+
+		if (worker->settings_sub) {
+			if (rrr_settings_check_all_used (
+					worker->settings_sub,
+					&worker->settings_used_sub
+			) != 0) {
+				RRR_MSG_0("Warning: Not all settings of sub instance %s were used, possible typo in configuration file\n",
+					worker->name);
+			}
+		}
+
 		if ((ret = rrr_settings_iterate_packed (
 				worker->settings_parent,
 				&worker->settings_used_parent,
@@ -866,9 +879,6 @@ int rrr_cmodule_worker_loop_start (
 		)) != 0) {
 			goto out;
 		}
-
-		RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
-				worker->name);
 	}
 	else {
 		RRR_DBG_5("cmodule worker %s no configuration callback set, notification to parent\n",
@@ -1242,11 +1252,19 @@ int rrr_cmodule_worker_init (
 		goto out_destroy_pid_lock;
 	}
 
-	if (config->parent != NULL && (ret = __rrr_cmodule_worker_sub_settings_parse (
-			worker,
-			config
-	)) != 0) {
-		goto out_destroy_settings;
+	if (config->parent != NULL) {
+		struct rrr_instance_config_data config_tmp = {0};
+
+		rrr_instance_config_move_from_settings(&config_tmp, &worker->settings_used_sub, &worker->settings_sub);
+		ret = __rrr_cmodule_worker_sub_settings_parse (
+				worker,
+				&config_tmp
+		);
+		rrr_instance_config_move_to_settings(&worker->settings_used_sub, &worker->settings_sub, &config_tmp);
+
+		if (ret != 0) {
+			goto out_destroy_settings;
+		}
 	}
 
 	rrr_event_function_set (

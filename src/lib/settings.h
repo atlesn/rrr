@@ -91,12 +91,6 @@ struct rrr_settings *rrr_settings_new (
 struct rrr_settings *rrr_settings_copy (
 		const struct rrr_settings *source
 );
-int rrr_settings_merge (
-		struct rrr_settings **target,
-		struct rrr_settings_used *target_used,
-		const struct rrr_settings *settings_a,
-		const struct rrr_settings *settings_b
-);
 int rrr_settings_used_init (
 		struct rrr_settings_used *used,
 		const struct rrr_settings *settings
@@ -111,10 +105,6 @@ void rrr_settings_used_cleanup (
 );
 void rrr_settings_destroy (
 		struct rrr_settings *target
-);
-int rrr_settings_append_from (
-		struct rrr_settings *target,
-		const struct rrr_settings *source
 );
 int rrr_settings_traverse_split_commas (
 		struct rrr_settings_used *used,
