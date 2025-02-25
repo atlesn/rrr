@@ -46,6 +46,20 @@ echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
+AC_CANONICAL_HOST
+
+AC_MSG_CHECKING([for FreeBSD])
+is_freebsd=no
+case "$host_os" in
+	freebsd*)
+		AC_MSG_RESULT([yes])
+		is_freebsd=yes
+	;;
+	*)
+		AC_MSG_RESULT([no])
+	;;
+esac
+
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--without-libressl], [Force disable LibreSSL support])], [enable_libressl=no], [enable_libressl=yes])
 AC_ARG_WITH([openssl], [AS_HELP_STRING([--without-openssl], [Force disable OpenSSL support])], [enable_openssl=no], [enable_openssl=yes])
@@ -63,9 +77,15 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
-AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
-AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
-AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
+AS_IF([test "$is_freebsd" != xno], [
+	AC_ARG_WITH([node],[AS_HELP_STRING([--with-node],[build with the NodeJS JavaScript bindings])],[enable_node=yes],[enable_node=no])
+	AC_ARG_WITH([v8],[AS_HELP_STRING([--without-v8],[build without the V8 JavaScript bindings])],[enable_v8=no],[enable_v8=yes])
+	enable_jemalloc=no
+], [
+	AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
+	AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
+	AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
+])
 AC_ARG_ENABLE([tls],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
@@ -116,6 +136,17 @@ CFLAGS=""
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
 
+AC_MSG_CHECKING([for V8 C++ on FreeBSD (which requires using libc++)])
+AS_IF([test "x$enable_js" != "xno" -a "x$with_v8" != "xno" -a "x$is_freebsd" != "xno"],[
+	FREEBSD_V8_CXXFLAGS="-stdlib=libc++ -DRRR_INTERCEPT_ALLOW_STRERROR"
+	FREEBSD_V8_LIBS="-lc++"
+	AC_MSG_RESULT([$FREEBSD_V8_CXXFLAGS])
+],[
+	FREEBSD_V8_CXXFLAGS=""
+	FREEBSD_V8_LIBS="-lstdc++"
+	AC_MSG_RESULT([no])
+])
+
 AC_MSG_CHECKING([for C++ usage])
 if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
 	AC_MSG_RESULT([yes])
@@ -126,10 +157,11 @@ if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX 
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK"
+	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK $FREEBSD_V8_CXXFLAGS"
 	CLANG_CXXFLAGS="-Wno-unused-parameter"
 	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++20 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
-	TEST_CXXFLAGS="-std=c++20 $CFLAGS_COMMON -O3"
+	TEST_CXXFLAGS="-std=c++20 $CFLAGS_COMMON -O3 $FREEBSD_V8_CXXFLAGS"
+	CXXLIBS="$FREEBSD_V8_LIBS"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])
 	CXXFLAGS=""
@@ -832,7 +864,7 @@ AS_IF([test "x$enable_v8" != xno],[
 
 	JS_CXXFLAGS="$v8_cflags -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
 	JS_LDFLAGS="$v8_ldflags"
-	JS_LIBS="$v8_libs"
+	JS_LIBS="$v8_libs $CXXLIBS"
 
 	V8TESTS
 
