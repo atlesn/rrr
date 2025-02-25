@@ -106,6 +106,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_fifo.sh             \
 	test_file.sh             \
 	test_http.sh             \
+	test_sub_instance.sh     \
 	test_http2.sh            \
 	test_http3.sh            \
 	test_http_tag_ignore.sh  \

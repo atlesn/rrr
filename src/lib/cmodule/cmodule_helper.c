@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 
 #include "cmodule_helper.h"
+#include "cmodule_defines.h"
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
@@ -997,13 +998,34 @@ int rrr_cmodule_helper_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(config_string, worker_spawn_interval, rrr_cmodule_worker_default_spawn_interval);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, config_worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
 
-	if (data->worker_count < 1 || data->worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+	if (data->config_worker_count < 1 || data->config_worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
 		RRR_MSG_0("Invalid value %llu for parameter %s of instance %s, must be >= 1 and <= %i\n",
-				(long long unsigned) data->worker_count, config_string, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+				(long long unsigned) data->config_worker_count, config_string, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
 		ret = 1;
 		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(config_string, if (config->next_sub) {
+		RRR_MSG_0("Cannot have parameter %s set while sub instances are defined for instance %s.\n",
+			config_string, config->name_debug);
+		ret = 1;
+		goto out;
+	});
+
+	{
+		int sub_count = 0;
+		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
+			sub_count++;
+		}
+		if (sub_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+			RRR_MSG_0("Too many sub instances (%i) defined for instance %s, maximum is %i\n",
+				sub_count, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_drop_on_error");
@@ -1025,6 +1047,8 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
+		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
+		void *settings_init_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	rrr_event_function_set (
@@ -1037,14 +1061,117 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 	return rrr_cmodule_main_worker_fork_start (
 			INSTANCE_D_CMODULE(thread_data),
 			INSTANCE_D_NAME(thread_data),
-			INSTANCE_D_SETTINGS(thread_data),
-			INSTANCE_D_SETTINGS_USED(thread_data),
 			INSTANCE_D_EVENTS(thread_data),
 			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
+			settings_init_callback,
+			settings_init_callback_arg,
 			callbacks
 	);
+}
+
+struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data {
+	const struct rrr_settings *settings_main;
+	const struct rrr_settings_used *settings_used_main;
+	const struct rrr_settings *settings_sub;
+};
+
+static int __rrr_cmodule_helper_worker_forks_start_init_settings_callback (RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS) {
+	struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_settings *settings_new;
+
+	if (callback_data->settings_sub) {
+		RRR_MSG_0("WARNING: NOT COPYING USED SETTINGS\n");
+
+		if ((ret = rrr_settings_merge (
+				&settings_new,
+				settings_used,
+				callback_data->settings_sub,
+				callback_data->settings_main
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		if ((settings_new = rrr_settings_copy (callback_data->settings_main)) == NULL) {
+			RRR_MSG_0("Could not copy settings in %s\n", __func__);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_settings_used_copy (
+				settings_used,
+				callback_data->settings_used_main,
+				settings_new
+		)) != 0) {
+			RRR_MSG_0("Could not copy settings used in %s\n", __func__);
+			goto out_destroy_settings;
+		}
+	}
+
+	*settings = settings_new;
+
+	goto out;
+	out_destroy_settings:
+		rrr_settings_destroy(settings_new);
+	out:
+		return ret;
+}
+
+static int __rrr_cmodule_helper_worker_forks_start (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		struct rrr_cmodule_worker_callbacks *callbacks
+) {
+	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
+	struct rrr_cmodule_config_data *cmodule_config = &INSTANCE_D_CMODULE(thread_data)->config_data;
+
+	struct rrr_cmodule_helper_worker_forks_start_init_settings_callback_data callback_data = {
+		INSTANCE_D_SETTINGS(thread_data),
+		INSTANCE_D_SETTINGS_USED(thread_data),
+		NULL
+	};
+
+	if (config->ptr_next) {
+		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
+			callback_data.settings_sub = cur->settings;
+
+			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
+					thread_data,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					__rrr_cmodule_helper_worker_forks_start_init_settings_callback,
+					&callback_data,
+					callbacks
+			) != 0) {
+				return 1;
+			}
+
+			cmodule_config->started_worker_count++;
+		}
+	}
+	else {
+		for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.config_worker_count; i++) {
+			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
+					thread_data,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					__rrr_cmodule_helper_worker_forks_start_init_settings_callback,
+					&callback_data,
+					callbacks
+			) != 0) {
+				return 1;
+			}
+			cmodule_config->started_worker_count++;
+		}
+	}
+
+	return 0;
 }
 
 int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
@@ -1065,18 +1192,12 @@ int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
 		NULL
 	};
 
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					&callbacks
-		) != 0) {
-			return 1;
-		}
-	}
-
-	return 0;
+	return __rrr_cmodule_helper_worker_forks_start (
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			&callbacks
+	);
 }
 
 int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
@@ -1103,18 +1224,12 @@ int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 		NULL
 	};
 
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					&callbacks
-		) != 0) {
-			return 1;
-		}
-	}
-
-	return 0;
+	return __rrr_cmodule_helper_worker_forks_start (
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			&callbacks
+	);
 }
 
 int rrr_cmodule_helper_worker_forks_start (
@@ -1162,7 +1277,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		NULL
 	};
 
-	return __rrr_cmodule_helper_worker_fork_start_intermediate (
+	return __rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,

@@ -1090,8 +1090,6 @@ struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
 		const char *name,
-		const struct rrr_settings *settings,
-		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
@@ -1099,7 +1097,9 @@ int rrr_cmodule_worker_init (
 		rrr_time_us_t spawn_interval,
 		enum rrr_cmodule_process_mode process_mode,
 		int do_spawning,
-		int do_drop_on_error
+		int do_drop_on_error,
+		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
+		void *settings_init_callback_arg
 ) {
 	int ret = 0;
 
@@ -1131,19 +1131,8 @@ int rrr_cmodule_worker_init (
 		goto out_free_name;
 	}
 
-	if ((worker->settings = rrr_settings_copy (settings)) == NULL) {
-		RRR_MSG_0("Could not copy settings in %s\n", __func__);
-		ret = 1;
+	if ((ret = settings_init_callback(&worker->settings, &worker->settings_used, settings_init_callback_arg)) != 0) {
 		goto out_destroy_pid_lock;
-	}
-
-	if ((ret = rrr_settings_used_copy (
-			&worker->settings_used,
-			settings_used,
-			settings
-	)) != 0) {
-		RRR_MSG_0("Could not copy settings used in %s\n", __func__);
-		goto out_destroy_settings;
 	}
 
 	rrr_event_function_set (
@@ -1152,7 +1141,6 @@ int rrr_cmodule_worker_init (
 			__rrr_cmodule_worker_event_mmap_channel_data_available,
 			"mmap channel data available (worker)"
 	);
-
 
 	worker->event_queue_worker = event_queue_worker;
 	worker->event_queue_parent = event_queue_parent;
@@ -1170,10 +1158,8 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-//	out_cleanup_settings_used:
-//		rrr_settings_used_cleanup(&worker->settings_used);
-	out_destroy_settings:
-		rrr_settings_destroy(worker->settings);
+//	out_destroy_settings:
+//		rrr_settings_destroy(worker->settings);
 	out_destroy_pid_lock:
 		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:

@@ -1405,6 +1405,10 @@ int rrr_instances_create_from_config (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
+		if (node->name_sub != NULL) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
 		ret = rrr_instance_load_and_save(instances, node, library_paths);
 		if (ret != 0) {
 			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",

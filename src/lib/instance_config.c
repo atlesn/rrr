@@ -1090,7 +1090,7 @@ static int __rrr_instance_config_collection_generate_tree (
 		}
 	RRR_LL_ITERATE_END();
 
-	// Step 2 : Link to subs from main
+	// Step 2 : Link to subs from main and copy settings
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
 		if (node->name_sub == NULL) {
@@ -1100,6 +1100,10 @@ static int __rrr_instance_config_collection_generate_tree (
 				if (node->name_sub != NULL && strcmp(node->name_main, main->name_main) == 0) {
 					prev_sub->next_sub = node;
 					prev_sub = node;
+
+					if ((ret = rrr_settings_append_from(node->settings, main->settings)) != 0) {
+						goto out;
+					}
 				}
 			RRR_LL_ITERATE_END();
 		}

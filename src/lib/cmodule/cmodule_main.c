@@ -122,12 +122,12 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
-		const struct rrr_settings *settings,
-		const struct rrr_settings_used *settings_used,
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_discern_stack_collection *methods,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
+		int (*settings_init_callback)(RRR_CMODULE_INIT_SETTINGS_CALLBACK_ARGS),
+		void *settings_init_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -149,8 +149,6 @@ int rrr_cmodule_main_worker_fork_start (
 	if ((ret = rrr_cmodule_worker_init (
 			worker,
 			name,
-			settings,
-			settings_used,
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
@@ -158,7 +156,9 @@ int rrr_cmodule_main_worker_fork_start (
 			cmodule->config_data.worker_spawn_interval,
 			cmodule->config_data.process_mode,
 			cmodule->config_data.do_spawning,
-			cmodule->config_data.do_drop_on_error
+			cmodule->config_data.do_drop_on_error,
+			settings_init_callback,
+			settings_init_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
 		goto out_parent_destroy_event_queue;
@@ -279,7 +279,7 @@ int rrr_cmodule_new (
 
 	// Default settings for modules which do not parse config
 	cmodule->config_data.worker_spawn_interval = rrr_time_us_from_ms(rrr_cmodule_worker_default_spawn_interval);
-	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
+	cmodule->config_data.config_worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	// Memory map not allocated until needed
 
