@@ -99,7 +99,7 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
 
 	if (data->cmodule_name == NULL || *(data->cmodule_name) == '\0') {
-		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name);
+		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}

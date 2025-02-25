@@ -1997,12 +1997,12 @@ static int httpclient_parse_config_response_codes_summary_callback (
     do {if (data->RRR_PASTE_3(do_,parameter,_tag_force) != 0) {                                                                   \
         if (data->RRR_PASTE(parameter,_tag) == NULL) {                                                                            \
             RRR_MSG_0("http_" RRR_QUOTE(parameter) " was 'yes' in httpclient instance %s but no tag was specified in http_" RRR_QUOTE(parameter) "_tag\n", \
-                    config->name);                                                                                                \
+                    config->name_debug);                                                                                                \
             ret = 1;                                                                                                              \
         }                                                                                                                         \
         if (RRR_INSTANCE_CONFIG_EXISTS("http_" RRR_QUOTE(parameter))) {                                                           \
             RRR_MSG_0("http_" RRR_QUOTE(parameter) "_tag_force was 'yes' in httpclient instance %s while http_" RRR_QUOTE(parameter) " was also set, this is a configuration error\n", \
-                    config->name);                                                                                                \
+                    config->name_debug);                                                                                                \
             ret = 1;                                                                                                              \
         }                                                                                                                         \
         if (ret != 0) { goto out; }}} while(0)
@@ -2019,7 +2019,7 @@ static int httpclient_parse_config (
 	data->response_max_size = data->response_max_mb;
 	if (((ret = rrr_biglength_mul_err(&data->response_max_size, 1024 * 1024))) != 0) {
 		RRR_MSG_0("Overflow in parameter 'http_response_max_mb' of httpclient instance %s, value too large\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 
@@ -2032,7 +2032,7 @@ static int httpclient_parse_config (
 #else
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_receive_json_data",
 		RRR_MSG_0("Parameter 'http_receive_json_data' is set in httpclient instance %s but RRR is not compiled with JSON support.\n",
-			config->name);
+			config->name_debug);
 		ret = 1;
 		goto out;
 	);
@@ -2060,14 +2060,14 @@ static int httpclient_parse_config (
 			data
 	)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'http_response_codes_summary' in httpclient instance %s\n",
-			config->name);
+			config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->message_low_pri_timeout_factor * data->message_queue_timeout_us < data->message_queue_timeout_us) {
 		RRR_MSG_0("Overflow while multiplying parameters http_message_timeout_ms and http_low_priority_message_timeout_factor in httpclient instance %s. Please reduce the values.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -2119,14 +2119,14 @@ static int httpclient_parse_config (
 
 	if (data->content_type_boundary_tag != NULL && data->content_type_tag == NULL) {
 		RRR_MSG_0("Setting http_content_type_boundary_tag was set for instance %s while http_content_type_tag was not. This is an error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
-				config->name, RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX);
+				config->name_debug, RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX);
 		ret = 1;
 		goto out;
 	}
@@ -2134,12 +2134,12 @@ static int httpclient_parse_config (
 	if (data->do_no_data) {
 		if (RRR_MAP_COUNT(&data->http_client_config.tags) > 0) {
 			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_tags was also set. This is an error.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 		}
 		if (data->do_rrr_msg_to_array) {
 			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_rrr_msg_to_array was also 'yes'. This is an error.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 		}
 		if (ret != 0) {
@@ -2165,12 +2165,12 @@ static int httpclient_parse_config (
 	{
 		if (data->do_endpoint_from_topic_force && !data->do_endpoint_from_topic) {
 			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_from_topic was not in httpclient instance %s, this is an invalid configuration.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 		}
 		if (data->do_endpoint_from_topic && RRR_INSTANCE_CONFIG_EXISTS("http_endpoint_tag")) {
 			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_tag was set in httpclient instance %s, this is an invalid configuration.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 		}
 		if (ret != 0) {
@@ -2183,7 +2183,7 @@ static int httpclient_parse_config (
 		    !data->do_receive_structured
 		) {
 			RRR_MSG_0("Parameter 'http_receive_structured' was explicitly set to 'no' while 'http_trap_headers' was 'yes' in httpclient instance %s, " \
-				  "this is a configuration error.", config->name);
+				  "this is a configuration error.", config->name_debug);
 			ret = 1;
 			goto out;
 		}

@@ -406,7 +406,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_directory", directory);
 	if (data->directory == NULL) {
-		RRR_MSG_0("Required parameter 'file_directory' missing for instance %s\n", config->name);
+		RRR_MSG_0("Required parameter 'file_directory' missing for instance %s\n", config->name_debug);
 		ret_keep = 1;
 	}
 
@@ -414,7 +414,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	if ((ret_tmp = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "file_input_types")) != 0) {
 		if (ret_tmp != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Failed to parse array definition in file_input_types in instance %s\n", config->name);
+			RRR_MSG_0("Failed to parse array definition in file_input_types in instance %s\n", config->name_debug);
 			ret_keep = 1;
 			goto out;
 		}
@@ -448,7 +448,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_ttl_seconds", ttl_s, RRR_FILE_DEFAULT_TTL);
 
 	if (data->timeout_s != 0 && data->timeout_s * 1000 < data->write_timeout_ms) {
-		RRR_MSG_0("Value for parameter file_timeout_s was less than file_write_timeout_ms in file instance %s, this is an invalid configuration.\n", config->name);
+		RRR_MSG_0("Value for parameter file_timeout_s was less than file_write_timeout_ms in file instance %s, this is an invalid configuration.\n", config->name_debug);
 		ret_keep = 1;
 	}
 
@@ -470,7 +470,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 		else {
 			RRR_MSG_0("Invalid value '%s' for file_serial_parity in file instance %s, possible values are even, odd, none\n",
-					data->serial_parity, config->name);
+					data->serial_parity, config->name_debug);
 			ret_keep = 1;
 		}
 	}
@@ -482,20 +482,20 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 		if (rrr_serial_speed_check(data->serial_bps) != 0) {
 			RRR_MSG_0("Invalid value '%llu' for file_serial_bps in file instance %s, possible values are 19200, 38400 etc.\n",
-					(unsigned long long) data->serial_bps, config->name);
+					(unsigned long long) data->serial_bps, config->name_debug);
 			ret_keep = 1;
 		}
 	}
 
 	if (data->do_strip_array_separators && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
 		RRR_MSG_0("file_strip_array_separators was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
-				config->name);
+				config->name_debug);
 		ret_keep = 1;
 	}
 
 	if (data->do_add_metadata && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
 		RRR_MSG_0("file_add_metadata was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
-				config->name);
+				config->name_debug);
 		ret_keep = 1;
 	}
 
@@ -506,7 +506,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if (RRR_INSTANCE_CONFIG_EXISTS("file_read_all_method")) {
 		if (!data->do_read_all_to_message_) {
 			RRR_MSG_0("Parameter file_read_all_method was set while file_read_all_to_message was not 'yes' in file instance %s, this is a configuration error.\n",
-					config->name);
+					config->name_debug);
 			ret_keep = 1;
 		}
 
@@ -521,38 +521,38 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 		else {
 			RRR_MSG_0("Unknown value '%s' for file_read_all_method in file instance %s, valid options are 'simple', 'structured' and 'file'.\n",
-					data->read_all_method, config->name);
+					data->read_all_method, config->name_debug);
 			ret_keep = 1;
 		}
 	}
 
 	if (data->max_open > RRR_FILE_MAX_MAX_OPEN) {
 		RRR_MSG_0("Parameter file_max_open out of range for file instance %s (%" PRIrrrbl ">%i).\n",
-				config->name, data->max_open, RRR_FILE_MAX_MAX_OPEN);
+				config->name_debug, data->max_open, RRR_FILE_MAX_MAX_OPEN);
 		ret_keep = 1;
 	}
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("file_input_types") &&
 			data->do_read_all_to_message_ != 0
 	) {
-		RRR_MSG_0("Both file_input_types and file_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("Both file_input_types and file_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name_debug);
 		ret_keep = 1;
 	}
 
 	if (data->do_read_all_to_message_ && data->max_messages_per_file != 0) {
-		RRR_MSG_0("Both file_do_read_all_to_message and file_max_messages_per_file was set in file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("Both file_do_read_all_to_message and file_max_messages_per_file was set in file instance %s, this is a configuration error.\n", config->name_debug);
 		ret_keep = 1;
 	}
 
 	if (data->max_read_step_size == 0) {
-		RRR_MSG_0("file_max_read_step_size was zero in file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("file_max_read_step_size was zero in file instance %s, this is a configuration error.\n", config->name_debug);
 		ret_keep = 1;
 	}
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("file_max_read_step_size") &&
 			data->do_read_all_to_message_ != 0
 	) {
-		RRR_MSG_0("Both file_max_read_step_size and file_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("Both file_max_read_step_size and file_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name_debug);
 		ret_keep = 1;
 	}
 
@@ -567,7 +567,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 				file_parse_write_mode_callback,
 				data
 		) != 0) {
-			RRR_MSG_0("Failed to parse configuration parameter file_write_mode in file instance %s\n", config->name);
+			RRR_MSG_0("Failed to parse configuration parameter file_write_mode in file instance %s\n", config->name_debug);
 			ret_keep = 1;
 		}
 	}
@@ -589,13 +589,13 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 				data->write_method = RRR_INSTANCE_CONFIG_WRITE_METHOD_ARRAY_VALUES;
 			}
 			else if (data->do_no_probing) {
-				RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name);
+				RRR_MSG_0("Parameter file_no_probing was set to yes while also no write method was specified, hence no reading nor writing is possible in file instance %s. This is an invalid configuration.\n", config->name_debug);
 				ret_keep = 1;
 				goto out;
 			}
 		}
 		else if (!RRR_INSTANCE_CONFIG_EXISTS("senders")) {
-			RRR_MSG_0("A write method was set in the configuration for file instance %s, but no senders were set. This is an invalid configuration.\n", config->name);
+			RRR_MSG_0("A write method was set in the configuration for file instance %s, but no senders were set. This is an invalid configuration.\n", config->name_debug);
 			ret_keep = 1;
 			goto out;
 		}
@@ -607,7 +607,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	if ( data->read_method == FILE_READ_METHOD_NONE &&
 	     data->write_method == RRR_INSTANCE_CONFIG_WRITE_METHOD_NONE
 	) {
-		RRR_MSG_0("No read nor write action defined in configuration for file instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("No read nor write action defined in configuration for file instance %s, this is a configuration error.\n", config->name_debug);
 		ret_keep = 1;
 	}
 

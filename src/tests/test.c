@@ -82,6 +82,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_readdir.h"
 #include "test_send_loop.h"
 #include "test_http.h"
+#include "test_worker_config.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -144,7 +145,7 @@ int rrr_test_library_functions (
 ) {
 	int ret = 0;
 	int ret_tmp = 0;
-
+goto worker_config;
 	// OR all the return values, don't stop if a test fails
 
 	TEST_BEGIN("rrr_allocator") {
@@ -317,6 +318,13 @@ int rrr_test_library_functions (
 
 	TEST_BEGIN("http functions") {
 		ret_tmp = rrr_test_http();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+	worker_config:
+
+	TEST_BEGIN("worker configuration") {
+		ret_tmp = rrr_test_worker_config();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

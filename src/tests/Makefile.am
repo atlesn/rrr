@@ -39,6 +39,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_modbus.c \
 	test_http.c \
+	test_worker_config.c \
 	test_condition.c \
 	${test_tls} \
 	${test_tls_common} \

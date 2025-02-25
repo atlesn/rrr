@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <fcntl.h>
 
 #include "log.h"
 #include "settings.h"
@@ -37,7 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/gnu.h"
 #include "util/linked_list.h"
 #include "mqtt/mqtt_topic.h"
-			
+#include "socket/rrr_socket.h"
+
 #define RRR_INSTANCE_CONFIG_MAX_SETTINGS 32
 
 void rrr_instance_config_move_from_settings (
@@ -83,7 +85,7 @@ static int __rrr_instance_config_update_used_callback (
 	if (strcmp (setting->name, callback_data->name) == 0) {
 		if (*was_used && !callback_data->was_used) {
 			RRR_MSG_0("Warning: Setting %s in instace %s was marked as used, but it has changed to not used during configuration\n",
-				setting->name, callback_data->config->name);
+				setting->name, callback_data->config->name_debug);
 		}
 		*was_used = callback_data->was_used;
 		callback_data->did_update = 1;
@@ -113,7 +115,7 @@ void rrr_instance_config_update_used (
 
 	if (callback_data.did_update != 1) {
 		RRR_MSG_0("Warning: Setting %s in instance %s was not originally set in configuration file, discarding it.\n",
-			name, config->name);
+			name, config->name_debug);
 	}
 }
 
@@ -136,13 +138,16 @@ static void __rrr_instance_config_destroy (
 ) {
 	rrr_settings_used_cleanup(&config->settings_used);
 	rrr_settings_destroy(config->settings);
-	rrr_free(config->name);
+	rrr_free(config->name_main);
+	rrr_free(config->name_debug);
+	RRR_FREE_IF_NOT_NULL(config->name_sub);
 	rrr_free(config);
 }
 
 static int __rrr_instance_config_new (
 		struct rrr_instance_config_data **result,
-		const char *name,
+		const char *name_main,
+		const char *name_sub,
 		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees,
 		const struct rrr_discern_stack_collection *global_routes,
@@ -160,16 +165,33 @@ static int __rrr_instance_config_new (
 		goto out;
 	}
 
-	if ((instance_config->name = rrr_strdup(name)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for name in %s\b", __func__);
+	if ((instance_config->name_main = rrr_strdup(name_main)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for name_main in %s\n", __func__);
 		ret = 1;
 		goto out_free_config;
+	}
+
+	if (name_sub != NULL && (instance_config->name_sub = rrr_strdup(name_sub)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for sub name in %s\n", __func__);
+		ret = 1;
+		goto out_free_name_main;
+	}
+
+	if (rrr_asprintf(&instance_config->name_debug, "%s%s%s%s",
+			name_main,
+			name_sub ? "[" : "",
+			name_sub ? name_sub : "",
+			name_sub ? "]" :""
+	) <= 0) {
+		RRR_MSG_0("Could not allocate debug name in %s\n", __func__);
+		ret = 1;
+		goto out_free_name_sub;
 	}
 
 	if ((instance_config->settings = rrr_settings_new(max_settings)) == NULL) {
 		RRR_MSG_0("Could not create settings structure in %s\n", __func__);
 		ret = 1;
-		goto out_free_name;
+		goto out_free_name_debug;
 	}
 
 	if ((ret = rrr_settings_used_init(&instance_config->settings_used, instance_config->settings)) != 0) {
@@ -188,8 +210,12 @@ static int __rrr_instance_config_new (
 //		rrr_settings_used_cleanup(&instance_config->settings_used);
 	out_free_settings:
 		rrr_settings_destroy(instance_config->settings);
-	out_free_name:
-		rrr_free(instance_config->name);
+	out_free_name_debug:
+		rrr_free(instance_config->name_debug);
+	out_free_name_sub:
+		RRR_FREE_IF_NOT_NULL(instance_config->name_sub);
+	out_free_name_main:
+		rrr_free(instance_config->name_main);
 	out_free_config:
 		rrr_free(instance_config);
 	out:
@@ -214,7 +240,7 @@ static int __rrr_instance_config_collection_new (
 	*result = NULL;
 
 	if ((collection = rrr_allocate_zero(sizeof(*collection))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_instance_config_new\n");
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
 		ret = 1;
 		goto out;
 	}
@@ -304,7 +330,7 @@ int rrr_instance_config_check_all_settings_used (
 
 	if (ret != 0) {
 		RRR_MSG_0("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
-			config->name);
+			config->name_debug);
 	}
 
 	return ret;
@@ -315,7 +341,7 @@ void rrr_instance_config_verify_all_settings_used (
 ) {
 	if (rrr_settings_check_all_used (config->settings, &config->settings_used) != 0) {
 		RRR_BUG("BUG: Not all settings of instance %s were used in %s, abort.\n",
-			__func__, config->name);
+			__func__, config->name_debug);
 	}
 }
 
@@ -338,7 +364,7 @@ static int __rrr_instance_config_parse_name_or_definition_from_config_silent_fai
 			goto out;
 		}
 		else {
-			RRR_MSG_0("Error while parsing setting %s in instance %s\n", cmd_key, config->name);
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", cmd_key, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -504,7 +530,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		else {
 			RRR_MSG_0("Failed while interpreting parameter %s of instance %s\n",
 					cmd_key,
-					config->name);
+					config->name_debug);
 		}
 		goto out;
 	}
@@ -603,7 +629,7 @@ static int __rrr_instance_config_parse_discern_stack_from_config_silent_fail (
 		else {
 			RRR_MSG_0("Failed while interpreting parameter %s of instance %s\n",
 					cmd_key,
-					config->name);
+					config->name_debug);
 		}
 		goto out;
 	}
@@ -755,7 +781,7 @@ int rrr_instance_config_parse_optional_write_method (
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse yes/no parameter '%s' of instance %s\n",
 					string_write_rrr_message,
-					config->name);
+					config->name_debug);
 			goto out;
 		}
 		ret = 0;
@@ -774,7 +800,7 @@ int rrr_instance_config_parse_optional_write_method (
 				string_array_values
 		)) != 0) {
 			RRR_MSG_0("Error while parsing parameter '%s' of instance %s\n",
-					string_array_values, config->name);
+					string_array_values, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -784,7 +810,7 @@ int rrr_instance_config_parse_optional_write_method (
 				RRR_MSG_0("Cannot have '%s' set while '%s' is 'yes' in instance %s\n",
 						string_write_rrr_message,
 						string_array_values,
-						config->name);
+						config->name_debug);
 				ret = 1;
 				goto out;
 			}
@@ -811,13 +837,13 @@ int rrr_instance_config_parse_optional_utf8 (
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			if (def != NULL && (*target = rrr_strdup(def)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
-					string, config->name);
+					string, config->name_debug);
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
-			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -825,7 +851,7 @@ int rrr_instance_config_parse_optional_utf8 (
 	}
 	else {
 		if (rrr_utf8_validate(*target, rrr_length_from_size_t_bug_const(strlen(*target))) != 0) {
-			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);
+			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -857,7 +883,7 @@ int rrr_instance_config_parse_optional_topic_and_length (
 				string,
 				(unsigned long long int) topic_length,
 				0xffff,
-				config->name
+				config->name_debug
 			);
 			ret = 1;
 			goto out;
@@ -866,7 +892,7 @@ int rrr_instance_config_parse_optional_topic_and_length (
 			RRR_MSG_0("Validation of MQTT topic parameter %s with value '%s' failed in instance %s\n",
 				string,
 				topic,
-				config->name
+				config->name_debug
 			);
 			ret = 1;
 			goto out;
@@ -904,7 +930,7 @@ int rrr_instance_config_parse_optional_topic_filter (
 	}
 
 	if (rrr_mqtt_topic_filter_validate_name(filter) != 0) {
-		RRR_MSG_0("Invalid parameter %s in instance %s\n", string, config->name);
+		RRR_MSG_0("Invalid parameter %s in instance %s\n", string, config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -929,10 +955,20 @@ int rrr_instance_config_parse_optional_topic_filter (
 
 static struct rrr_instance_config_data *__rrr_instance_config_find_instance (
 		struct rrr_instance_config_collection *source,
-		const char *name
+		const char *name_main,
+		const char *name_sub
 ) {
 	RRR_LL_ITERATE_BEGIN(source, struct rrr_instance_config_data);
-		if (strcmp(node->name, name) == 0) {
+		if (strcmp(node->name_main, name_main) != 0) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if (name_sub == NULL && node->name_sub == NULL) {
+			return node;
+		}
+		if (name_sub == NULL || node->name_sub == NULL) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if (strcmp(node->name_sub, name_sub) == 0) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
@@ -944,8 +980,8 @@ static int __rrr_instance_config_push (
 		struct rrr_instance_config_collection *target,
 		struct rrr_instance_config_data *instance_config
 ) {
-	if (__rrr_instance_config_find_instance (target, instance_config->name) != NULL) {
-		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
+	if (__rrr_instance_config_find_instance (target, instance_config->name_main, instance_config->name_sub) != NULL) {
+		RRR_MSG_0("Two instances was named %s\n", instance_config->name_debug);
 		return 1;
 	}
 
@@ -980,7 +1016,8 @@ static int __rrr_instance_config_new_block_callback (
 
 	if ((ret = __rrr_instance_config_new (
 			&instance_config,
-			name,
+			name_main,
+			name_sub,
 			RRR_INSTANCE_CONFIG_MAX_SETTINGS,
 			rrr_config_get_array_tree_list(config),
 			rrr_config_get_routes(config),
@@ -1006,12 +1043,12 @@ int rrr_instance_config_dump (struct rrr_instance_config_collection *collection)
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
-		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", node->name);
+		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", node->name_debug);
 
 		// Continue despite error
 		ret |= rrr_settings_dump (node->settings);
 
-		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", node->name);
+		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", node->name_debug);
 	RRR_LL_ITERATE_END();
 
 	if (ret != 0) {
@@ -1021,9 +1058,33 @@ int rrr_instance_config_dump (struct rrr_instance_config_collection *collection)
 	return ret;
 }
 
-int rrr_instance_config_parse_file (
+static int __rrr_instance_config_collection_generate_tree (
+		struct rrr_instance_config_collection *collection
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
+		if (node->name_sub != NULL) {
+			if ((node->parent = __rrr_instance_config_find_instance (
+					collection,
+					node->name_main,
+					NULL
+			)) == NULL) {
+				RRR_MSG_0("Could not find main instance for sub instance %s\n", node->name_debug);
+				ret = 1;
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+int rrr_instance_config_parse_string (
 		struct rrr_instance_config_collection **result,
-		const char *filename
+		const char *file_data,
+		rrr_length file_size
 ) {
 	int ret = 0;
 
@@ -1035,13 +1096,18 @@ int rrr_instance_config_parse_file (
 		goto out;
 	}
 
-	if ((ret = rrr_config_parse_file (
+	if ((ret = rrr_config_parse_string (
 			collection->config,
-			filename,
+			file_data,
+			file_size,
 			__rrr_instance_config_new_block_callback,
 			__rrr_instance_config_new_setting_callback,
 			collection
 	)) != 0) {
+		goto out_destroy_collection;
+	}
+
+	if ((ret = __rrr_instance_config_collection_generate_tree(collection)) != 0) {
 		goto out_destroy_collection;
 	}
 
@@ -1051,6 +1117,46 @@ int rrr_instance_config_parse_file (
 	out_destroy_collection:
 		rrr_instance_config_collection_destroy(collection);
 	out:
+		return ret;
+}
+
+int rrr_instance_config_parse_file (
+		struct rrr_instance_config_collection **result,
+		const char *filename
+) {
+	int ret = 0;
+
+	char *file_data = NULL;
+
+	rrr_biglength file_size = 0;
+	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, filename, O_RDONLY, 0)) != 0) {
+		RRR_MSG_0("Error while reading configuration file '%s'\n", filename);
+		goto out;
+	}
+
+	if (file_data == NULL) {
+		RRR_DBG_1("Configuration file '%s' was empty\n", filename);
+	}
+	else if (file_size > RRR_LENGTH_MAX) {
+		RRR_DBG_1("Configuration file '%s' was too big (%llu>%llu)\n",
+			filename, (long long unsigned) file_size, (long long unsigned) RRR_LENGTH_MAX);
+		ret = 1;
+		goto out;
+	}
+	else {
+		RRR_DBG_1("Read %" PRIrrrbl " bytes from configuration file '%s'\n", file_size, filename);
+		if ((ret = rrr_instance_config_parse_string (
+				result,
+				file_data,
+				rrr_length_from_biglength_bug_const(file_size)
+		)) != 0) {
+			RRR_MSG_0("Error while parsing configuration file '%s'\n", filename);
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(file_data);
 	return ret;
 }
 

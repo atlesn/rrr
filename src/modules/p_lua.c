@@ -85,7 +85,7 @@ int parse_config(struct lua_data *data, struct rrr_instance_config_data *config)
 	int ret = 0;
 
 	if (rrr_instance_config_get_string_noconvert_silent (&data->lua_file, config, "lua_file") != 0) {
-		RRR_MSG_0("No lua_file specified for Lua instance %s\n", config->name);
+		RRR_MSG_0("No lua_file specified for Lua instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}

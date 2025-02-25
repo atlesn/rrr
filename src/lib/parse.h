@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -191,6 +191,13 @@ int rrr_parse_str_extract_name (
 		char **name,
 		struct rrr_parse_pos *pos,
 		char end_char
+);
+int rrr_parse_str_extract_name_with_subscript (
+		struct rrr_parse_pos *pos,
+		char subscript_char,
+		char end_char,
+		int (*name_callback)(int level, char **name, rrr_length name_length, void *arg),
+		void *callback_arg
 );
 void rrr_parse_str_strip_newlines (
 		char *str

@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name_,suffix)                                            \
     do {if (rrr_instance_config_string_set(&config_string, __prefix, name_, suffix) != 0) {                 \
-        RRR_MSG_0("Could not generate config string from prefix in instance %s\n", config->name);           \
+        RRR_MSG_0("Could not generate config string from prefix in instance %s\n", config->name_debug);     \
         ret = 1; goto out;                                                                                  \
     }} while(0)
 
@@ -61,8 +61,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 do {int yesno = default_yesno;                                                                              \
     if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {                             \
         if (ret != RRR_SETTING_NOT_FOUND) {                                                                 \
-            RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",                      \
-                string, config->name);                                                                      \
+            RRR_MSG_0("Error while parsing %s in instance %s[%s], please use yes or no\n",                  \
+                string, config->name_main, config->name_sub);                                               \
             ret = 1; goto out;                                                                              \
         }                                                                                                   \
         ret = 0;                                                                                            \
@@ -93,7 +93,7 @@ do {rrr_setting_uint tmp_uint = (default_uint);                                 
             tmp_uint = default_uint;                                                                        \
             ret = 0;                                                                                        \
         } else {                                                                                            \
-            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);                 \
+            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name_debug);           \
             ret = 1; goto out;                                                                              \
         }                                                                                                   \
     } target = tmp_uint; } while(0)
@@ -115,7 +115,7 @@ do {rrr_setting_double tmp_double = (default_double);                           
             tmp_double = default_double;                                                                    \
             ret = 0;                                                                                        \
         } else {                                                                                            \
-            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);                 \
+            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name_debug);           \
             ret = 1; goto out;                                                                              \
         }                                                                                                   \
     } target = tmp_double; } while(0)
@@ -140,7 +140,10 @@ struct rrr_mqtt_topic_token;
 
 struct rrr_instance_config_data {
 	RRR_LL_NODE(struct rrr_instance_config_data);
-	char *name;
+	char *name_main;
+	char *name_sub;
+	char *name_debug;
+	struct rrr_instance_config_data *parent;
 	struct rrr_settings *settings;
 	struct rrr_settings_used settings_used;
 	const struct rrr_array_tree_list *global_array_trees;
@@ -338,6 +341,11 @@ int rrr_instance_config_parse_optional_topic_filter (
 );
 int rrr_instance_config_dump (
 		struct rrr_instance_config_collection *collection
+);
+int rrr_instance_config_parse_string (
+		struct rrr_instance_config_collection **result,
+		const char *file_data,
+		rrr_length file_size
 );
 int rrr_instance_config_parse_file (
 		struct rrr_instance_config_collection **result,

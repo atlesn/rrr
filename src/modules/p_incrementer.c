@@ -620,14 +620,14 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 
 	if (data->subject_topic_filter == NULL || *(data->subject_topic_filter) == '\0') {
 		RRR_MSG_0("Required parameter 'incrementer_subject_topic_filter' missing in incrementer instance %s\n",
-			config->name);
+			config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_topic_tokenize (&data->subject_topic_filter_token, data->subject_topic_filter)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'incrementer_subject_topic_filter' in incrementer instance %s\n",
-			config->name);
+			config->name_debug);
 		goto out;
 		
 	}
@@ -646,7 +646,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 			data->id_prefix
 	)) != 0) {
 		RRR_MSG_0("Invalid ID parameters in incrementer instance %s\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,17 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <fcntl.h>
 
 #include "parse.h"
 #include "log.h"
 #include "configuration.h"
-#include "rrr_strerror.h"
 #include "array_tree.h"
 #include "allocator.h"
-#include "socket/rrr_socket.h"
 #include "discern_stack.h"
 
 int rrr_config_new (struct rrr_config **result) {
@@ -140,6 +137,44 @@ static int __rrr_config_parse_setting (
 	return ret;
 }
 
+struct rrr_config_parse_block_name_callback_data {
+	char *name_main;
+	char *name_subscript;
+};
+
+static int __rrr_config_parse_block_name_callback (
+		int level,
+		char **name,
+		rrr_length name_length,
+		void *arg
+) {
+	struct rrr_config_parse_block_name_callback_data *callback_data = arg;
+
+	(void)(name_length);
+
+	assert(level >= 0);
+
+	if (level == 0) {
+		assert(callback_data->name_main == NULL && "Main was set for first level");
+		assert(callback_data->name_subscript == NULL && "Subscript was set for first level");
+		callback_data->name_main = *name;
+		*name = NULL;
+	}
+	else if (level == 1) {
+		assert(callback_data->name_main != NULL && "Main level was not set for second callback");
+		assert(callback_data->name_subscript == NULL && "Callback called a second time for sub level");
+		callback_data->name_subscript = *name;
+		*name = NULL;
+	}
+	else {
+		RRR_MSG_0("Too many subscript levels inside %s->%s, only one level is supported\n",
+			callback_data->name_main, callback_data->name_subscript);
+		return 1;
+	}
+
+	return 0;
+}
+
 static int __rrr_config_parse_block (
 		struct rrr_config *config,
 		struct rrr_parse_pos *pos,
@@ -150,16 +185,22 @@ static int __rrr_config_parse_block (
 ) {
 	int ret = 0;
 
-	char *name = NULL;
-
 	*did_parse = 0;
 
-	if ((ret = rrr_parse_str_extract_name (&name, pos, ']')) != 0) {
+	struct rrr_config_parse_block_name_callback_data callback_data = {0};
+
+	if ((ret = rrr_parse_str_extract_name_with_subscript (
+			pos,
+			'[',
+			']',
+			__rrr_config_parse_block_name_callback,
+			&callback_data
+	)) != 0) {
 		RRR_MSG_0("Failed to parse block name\n");
 		goto out;
 	}
 
-	if (name == NULL) {
+	if (callback_data.name_main == NULL) {
 		RRR_MSG_0("Block name missing after [\n");
 		goto out;
 	}
@@ -171,7 +212,7 @@ static int __rrr_config_parse_block (
 	}
 
 	void *block = NULL;
-	if ((ret = new_block_callback (&block, config, name, callback_arg)) != 0) {
+	if ((ret = new_block_callback (&block, config, callback_data.name_main, callback_data.name_subscript, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -201,7 +242,8 @@ static int __rrr_config_parse_block (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(name);
+	RRR_FREE_IF_NOT_NULL(callback_data.name_main);
+	RRR_FREE_IF_NOT_NULL(callback_data.name_subscript);
 	return ret;
 }
 
@@ -375,9 +417,9 @@ static int __rrr_config_parse_any (
 	return ret;
 }
 
-static int __rrr_config_parse_file (
+int rrr_config_parse_string (
 		struct rrr_config *config,
-		const void *data,
+		const char *data,
 		const rrr_length size,
 		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
 		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
@@ -419,53 +461,6 @@ void rrr_config_destroy (
 	rrr_discern_stack_collection_clear(&target->routes);
 	rrr_discern_stack_collection_clear(&target->methods);
 	rrr_free(target);
-}
-
-int rrr_config_parse_file (
-		struct rrr_config *config,
-		const char *filename,
-		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
-		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	char *file_data = NULL;
-
-	rrr_biglength file_size = 0;
-	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, filename, O_RDONLY, 0)) != 0) {
-		RRR_MSG_0("Error while reading configuration file '%s'\n", filename);
-		goto out;
-	}
-
-	if (file_data == NULL) {
-		RRR_DBG_1("Configuration file '%s' was empty\n", filename);
-	}
-	else if (file_size > RRR_LENGTH_MAX) {
-		RRR_DBG_1("Configuration file '%s' was too big (%llu>%llu)\n",
-			filename, (long long unsigned) file_size, (long long unsigned) RRR_LENGTH_MAX);
-		ret = 1;
-		goto out;
-	}
-	else {
-		RRR_DBG_1("Read %" PRIrrrbl " bytes from configuration file '%s'\n", file_size, filename);
-
-		if ((ret = __rrr_config_parse_file (
-				config,
-				file_data,
-				rrr_length_from_biglength_bug_const(file_size),
-				new_block_callback,
-				new_setting_callback,
-				callback_arg
-		)) != 0) {
-			RRR_MSG_0("Error while parsing configuration file '%s'\n", filename);
-			goto out;
-		}
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(file_data);
-	return ret;
 }
 
 const struct rrr_array_tree_list *rrr_config_get_array_tree_list (

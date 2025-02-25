@@ -550,12 +550,12 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 	rrr_instance_config_get_string_noconvert_silent (&data->table, config, "influxdb_table");
 
 	if (data->database == NULL) {
-		RRR_MSG_0("No influxdb_database specified for instance %s\n", config->name);
+		RRR_MSG_0("No influxdb_database specified for instance %s\n", config->name_debug);
 		ret = 1;
 	}
 
 	if (data->table == NULL) {
-		RRR_MSG_0("No influxdb_table specified for instance %s\n", config->name);
+		RRR_MSG_0("No influxdb_table specified for instance %s\n", config->name_debug);
 		ret = 1;
 	}
 
@@ -574,7 +574,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 	}
 
 	if (RRR_LL_COUNT(&data->http_client_config.fields) == 0 && RRR_LL_COUNT(&data->http_client_config.fixed_fields) == 0) {
-		RRR_MSG_0("No fields specified in config for influxdb instance %s, this an error\n", config->name);
+		RRR_MSG_0("No fields specified in config for influxdb instance %s, this an error\n", config->name_debug);
 		ret = 1;
 	}
 

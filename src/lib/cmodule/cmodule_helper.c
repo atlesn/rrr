@@ -988,7 +988,7 @@ int rrr_cmodule_helper_parse_config (
 
 	if (data->do_spawning == 0 && data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE) {
 		RRR_MSG_0("No process or source %s defined in configuration for instance %s and direct method dispatch is not active\n",
-				config_suffix, config->name);
+				config_suffix, config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -1001,7 +1001,7 @@ int rrr_cmodule_helper_parse_config (
 
 	if (data->worker_count < 1 || data->worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
 		RRR_MSG_0("Invalid value %llu for parameter %s of instance %s, must be >= 1 and <= %i\n",
-				(long long unsigned) data->worker_count, config_string, config->name, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+				(long long unsigned) data->worker_count, config_string, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
 		ret = 1;
 		goto out;
 	}
