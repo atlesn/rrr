@@ -1168,12 +1168,12 @@ static int __rrr_cmodule_worker_init_settings (
 ) {
 	int ret = 0;
 
-	if (config->parent != NULL) {
+	if (INSTANCE_C_SUB_PARENT(config) != NULL) {
 		if ((ret = __rrr_cmodule_worker_init_settings_copy (
 				&worker->settings_parent,
 				&worker->settings_used_parent,
-				config->parent->settings,
-				&config->parent->settings_used
+				INSTANCE_C_SUB_PARENT(config)->settings,
+				&INSTANCE_C_SUB_PARENT(config)->settings_used
 		)) != 0) {
 			goto out;
 		}
@@ -1252,7 +1252,7 @@ int rrr_cmodule_worker_init (
 		goto out_destroy_pid_lock;
 	}
 
-	if (config->parent != NULL) {
+	if (INSTANCE_C_SUB_PARENT(config) != NULL) {
 		struct rrr_instance_config_data config_tmp = {0};
 
 		rrr_instance_config_move_from_settings(&config_tmp, &worker->settings_used_sub, &worker->settings_sub);

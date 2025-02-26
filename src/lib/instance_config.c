@@ -140,7 +140,7 @@ static void __rrr_instance_config_destroy (
 	rrr_settings_destroy(config->settings);
 	rrr_free(config->name_main);
 	rrr_free(config->name_debug);
-	RRR_FREE_IF_NOT_NULL(config->name_sub);
+	RRR_FREE_IF_NOT_NULL(config->sub_name);
 	rrr_free(config);
 }
 
@@ -171,7 +171,7 @@ static int __rrr_instance_config_new (
 		goto out_free_config;
 	}
 
-	if (name_sub != NULL && (instance_config->name_sub = rrr_strdup(name_sub)) == NULL) {
+	if (name_sub != NULL && (INSTANCE_C_SUB_NAME(instance_config) = rrr_strdup(name_sub)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for sub name in %s\n", __func__);
 		ret = 1;
 		goto out_free_name_main;
@@ -213,7 +213,7 @@ static int __rrr_instance_config_new (
 	out_free_name_debug:
 		rrr_free(instance_config->name_debug);
 	out_free_name_sub:
-		RRR_FREE_IF_NOT_NULL(instance_config->name_sub);
+		RRR_FREE_IF_NOT_NULL(instance_config->sub_name);
 	out_free_name_main:
 		rrr_free(instance_config->name_main);
 	out_free_config:
@@ -962,13 +962,13 @@ static struct rrr_instance_config_data *__rrr_instance_config_find_instance (
 		if (strcmp(node->name_main, name_main) != 0) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		if (name_sub == NULL && node->name_sub == NULL) {
+		if (name_sub == NULL && INSTANCE_C_SUB_NAME(node) == NULL) {
 			return node;
 		}
-		if (name_sub == NULL || node->name_sub == NULL) {
+		if (name_sub == NULL || INSTANCE_C_SUB_NAME(node) == NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		if (strcmp(node->name_sub, name_sub) == 0) {
+		if (strcmp(INSTANCE_C_SUB_NAME(node), name_sub) == 0) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
@@ -980,7 +980,7 @@ static int __rrr_instance_config_push (
 		struct rrr_instance_config_collection *target,
 		struct rrr_instance_config_data *instance_config
 ) {
-	if (__rrr_instance_config_find_instance (target, instance_config->name_main, instance_config->name_sub) != NULL) {
+	if (__rrr_instance_config_find_instance (target, instance_config->name_main, INSTANCE_C_SUB_NAME(instance_config)) != NULL) {
 		RRR_MSG_0("Two instances was named %s\n", instance_config->name_debug);
 		return 1;
 	}
@@ -1043,23 +1043,23 @@ int rrr_instance_config_dump (struct rrr_instance_config_collection *collection)
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
-		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", node->name_debug);
+		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", INSTANCE_C_DBG_NAME(node));
 
-		if (node->name_sub == NULL && node->next_sub != NULL) {
+		if (INSTANCE_C_SUB_PARENT(node) == NULL && INSTANCE_C_SUB_NEXT(node) != NULL) {
 			RRR_MSG_PLAIN(" = SUB INSTANCES");
-			for (struct rrr_instance_config_data *sub = node->next_sub; sub; sub = sub->next_sub) {
-				RRR_MSG_PLAIN(" =>%s", sub->name_sub);
-			}
+			INSTANCE_C_SUB_ITERATE_BEGIN(node);
+				RRR_MSG_PLAIN(" =>%s", INSTANCE_C_SUB_NAME(sub));
+			INSTANCE_C_SUB_ITERATE_END();
 			RRR_MSG_PLAIN("\n");
 		}
-		else if (node->name_sub != NULL) {
-			RRR_MSG_PLAIN(" = MAIN INSTANCE =>%s\n", node->parent->name_main);
+		else if (INSTANCE_C_SUB_NAME(node) != NULL) {
+			RRR_MSG_PLAIN(" = MAIN INSTANCE =>%s\n", INSTANCE_C_MAIN_NAME(INSTANCE_C_SUB_PARENT(node)));
 		}
 
 		// Continue despite error
 		ret |= rrr_settings_dump (node->settings);
 
-		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", node->name_debug);
+		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", INSTANCE_C_DBG_NAME(node));
 	RRR_LL_ITERATE_END();
 
 	if (ret != 0) {
@@ -1077,8 +1077,8 @@ static int __rrr_instance_config_collection_generate_tree (
 	// Step 1 : Link to main instance from children
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
-		if (node->name_sub != NULL) {
-			if ((node->parent = __rrr_instance_config_find_instance (
+		if (INSTANCE_C_SUB_NAME(node) != NULL) {
+			if ((INSTANCE_C_SUB_PARENT(node) = __rrr_instance_config_find_instance (
 					collection,
 					node->name_main,
 					NULL
@@ -1093,12 +1093,12 @@ static int __rrr_instance_config_collection_generate_tree (
 	// Step 2 : Link to subs from main and copy settings
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
-		if (node->name_sub == NULL) {
+		if (INSTANCE_C_SUB_NAME(node) == NULL) {
 			struct rrr_instance_config_data *main = node;
 			struct rrr_instance_config_data *prev_sub = main;
 			RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_config_data);
-				if (node->name_sub != NULL && strcmp(node->name_main, main->name_main) == 0) {
-					prev_sub->next_sub = node;
+				if (INSTANCE_C_SUB_NAME(node) != NULL && strcmp(node->name_main, main->name_main) == 0) {
+					INSTANCE_C_SUB_NEXT(prev_sub) = node;
 					prev_sub = node;
 				}
 			RRR_LL_ITERATE_END();

@@ -1062,7 +1062,7 @@ int rrr_cmodule_helper_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(config_string, if (config->next_sub) {
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(config_string, if (INSTANCE_C_SUB_NEXT(config)) {
 		RRR_MSG_0("Cannot have parameter %s set while sub instances are defined for instance %s.\n",
 			config_string, config->name_debug);
 		ret = 1;
@@ -1071,9 +1071,9 @@ int rrr_cmodule_helper_parse_config (
 
 	{
 		int sub_count = 0;
-		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
+		INSTANCE_C_SUB_ITERATE_BEGIN(config);
 			sub_count++;
-		}
+		INSTANCE_C_SUB_ITERATE_END();
 		if (sub_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
 			RRR_MSG_0("Too many sub instances (%i) defined for instance %s, maximum is %i\n",
 				sub_count, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
@@ -1131,11 +1131,11 @@ static int __rrr_cmodule_helper_worker_forks_start (
 	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
 	struct rrr_cmodule_config_data *cmodule_config = &INSTANCE_D_CMODULE(thread_data)->config_data;
 
-	if (config->next_sub) {
-		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
+	if (INSTANCE_C_SUB_NEXT(config)) {
+		INSTANCE_C_SUB_ITERATE_BEGIN(config);
 			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
-					cur,
+					sub,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
 					callbacks
@@ -1143,7 +1143,7 @@ static int __rrr_cmodule_helper_worker_forks_start (
 				return 1;
 			}
 			cmodule_config->started_worker_count++;
-		}
+		INSTANCE_C_SUB_ITERATE_END();
 	}
 	else {
 		for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.config_worker_count; i++) {

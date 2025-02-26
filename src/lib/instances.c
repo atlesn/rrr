@@ -1405,7 +1405,7 @@ int rrr_instances_create_from_config (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
-		if (node->name_sub != NULL) {
+		if (INSTANCE_C_SUB_NAME(node) != NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
 

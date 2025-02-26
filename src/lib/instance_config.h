@@ -61,8 +61,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 do {int yesno = default_yesno;                                                                              \
     if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {                             \
         if (ret != RRR_SETTING_NOT_FOUND) {                                                                 \
-            RRR_MSG_0("Error while parsing %s in instance %s[%s], please use yes or no\n",                  \
-                string, config->name_main, config->name_sub);                                               \
+            RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",                      \
+                string, config->name_debug);                                                                \
             ret = 1; goto out;                                                                              \
         }                                                                                                   \
         ret = 0;                                                                                            \
@@ -141,16 +141,30 @@ struct rrr_mqtt_topic_token;
 struct rrr_instance_config_data {
 	RRR_LL_NODE(struct rrr_instance_config_data);
 	char *name_main;
-	char *name_sub;
+	char *sub_name;
 	char *name_debug;
-	struct rrr_instance_config_data *parent;
-	struct rrr_instance_config_data *next_sub;
+	struct rrr_instance_config_data *sub_parent;
+	struct rrr_instance_config_data *sub_next;
 	struct rrr_settings *settings;
 	struct rrr_settings_used settings_used;
 	const struct rrr_array_tree_list *global_array_trees;
 	const struct rrr_discern_stack_collection *global_routes;
 	const struct rrr_discern_stack_collection *global_methods;
 };
+
+#define INSTANCE_C_DBG_NAME(x)   ((x)->name_debug)
+#define INSTANCE_C_MAIN_NAME(x)  ((x)->name_main)
+#define INSTANCE_C_SUB_PARENT(x) ((x)->sub_parent)
+#define INSTANCE_C_SUB_NEXT(x)   ((x)->sub_next)
+#define INSTANCE_C_SUB_NAME(x)   ((x)->sub_name)
+
+#define INSTANCE_C_SUB_ITERATE_BEGIN(parent)                                                       \
+    do { assert((parent)->sub_parent == NULL && "must begin sub iteration at parent");             \
+        for (struct rrr_instance_config_data *sub = (parent)->sub_next; sub; sub = sub->sub_next) {
+
+#define INSTANCE_C_SUB_ITERATE_END(); \
+        }                             \
+    } while(0)                        \
 
 struct rrr_instance_config_collection {
 	RRR_LL_HEAD(struct rrr_instance_config_data);
