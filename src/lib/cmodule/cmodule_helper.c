@@ -1131,7 +1131,7 @@ static int __rrr_cmodule_helper_worker_forks_start (
 	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
 	struct rrr_cmodule_config_data *cmodule_config = &INSTANCE_D_CMODULE(thread_data)->config_data;
 
-	if (config->ptr_next) {
+	if (config->next_sub) {
 		for (struct rrr_instance_config_data *cur = config->next_sub; cur; cur = cur->next_sub) {
 			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
 					thread_data,
