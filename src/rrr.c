@@ -1122,7 +1122,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			ret = EXIT_FAILURE;
 		}
 
-		goto out_cleanup_signal;
+		goto out_destroy_events;
 	}
 	else {
 		// Load configuration and fork

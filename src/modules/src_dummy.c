@@ -126,7 +126,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
 		RRR_MSG_0("Parameter 'dummy_random_payload_max_size' exceeds maximum of %" PRIu32 "in dummy instance %s\n",
 			(uint32_t) UINT32_MAX,
-			config->name
+			config->name_debug
 		);
 		ret = 1;
 		goto out;
@@ -135,7 +135,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	if ((rrr_biglength) data->sleep_interval_us > INT_MAX) {
 		RRR_MSG_0("Parameter 'dummy_sleep_interval_us' exceeds maximum of %i in dummy instance %s\n",
 			INT_MAX,
-			config->name
+			config->name_debug
 		);
 		ret = 1;
 		goto out;
@@ -143,21 +143,21 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 
 	if (data->sleep_interval_us == 0) {
 		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_no_sleeping") && RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us")) {
 		RRR_MSG_0("Parameters dummy_sleep_interval_us and dummy_no_sleeping was both set in dummy instance %s, this is an invalid confiuguration.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_random_payload_size_max") && RRR_INSTANCE_CONFIG_EXISTS("dummy_array_tag")) {
 		RRR_MSG_0("Parameters dummy_random_payload_size_max and dummy_array_tag was both set in dummy instance %s, this is an invalid confiuguration.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}

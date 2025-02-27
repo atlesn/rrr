@@ -37,6 +37,7 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_event_queue;
 struct rrr_discern_stack_collection;
+struct rrr_instance_config_data;
 
 struct rrr_cmodule_worker_callbacks {
 	int (*ping_callback)(RRR_CMODULE_PING_CALLBACK_ARGS);
@@ -87,17 +88,15 @@ int rrr_cmodule_worker_main (
 struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 		struct rrr_cmodule_worker *worker
 );
-struct rrr_settings *rrr_cmodule_worker_get_settings (
+struct rrr_settings *rrr_cmodule_worker_get_active_settings (
 		struct rrr_cmodule_worker *worker
 );
-struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
+struct rrr_settings_used *rrr_cmodule_worker_get_active_settings_used (
 		struct rrr_cmodule_worker *worker
 );
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
-		const char *name,
-		const struct rrr_settings *settings,
-		const struct rrr_settings_used *settings_used,
+		struct rrr_instance_config_data *config,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,

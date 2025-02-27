@@ -43,6 +43,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_modbus.c \
 	test_http.c \
+	test_worker_config.c \
 	test_condition.c \
 	${test_tls} \
 	${test_tls_common} \
@@ -111,6 +112,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_fifo.sh             \
 	test_file.sh             \
 	test_http.sh             \
+	test_sub_instance.sh     \
 	test_http2.sh            \
 	test_http3.sh            \
 	test_http_tag_ignore.sh  \

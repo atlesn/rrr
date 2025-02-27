@@ -329,7 +329,7 @@ static int parse_config(struct voltmonitor_data *data, struct rrr_instance_confi
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("vm_channel", usb_channel, 1);
 
 	if (data->usb_channel != 1 && data->usb_channel != 2) {
-		RRR_MSG_0 ("Parameter vm_channel must be 1 or 2 in in voltmonitor instance %s\n", config->name);
+		RRR_MSG_0 ("Parameter vm_channel must be 1 or 2 in in voltmonitor instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}

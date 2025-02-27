@@ -125,7 +125,7 @@ static int ipclient_parse_config (struct ipclient_data *data, struct rrr_instanc
 	rrr_setting_uint client_number;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW("ipclient_client_number", client_number, 0);
 	if (client_number == 0 || client_number > 0xffffffff) {
-		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
+		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -142,12 +142,12 @@ static int ipclient_parse_config (struct ipclient_data *data, struct rrr_instanc
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote_port, config, "ipclient_default_remote_port")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing ipclient_default_remote_port settings of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ipclient_default_remote_port settings of instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
 		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_DEFAULT_PORT) <= 0) {
-			RRR_MSG_0("Could not allocate string for port number in ipclient instance %s\n", config->name);
+			RRR_MSG_0("Could not allocate string for port number in ipclient instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}

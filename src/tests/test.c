@@ -85,6 +85,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_readdir.h"
 #include "test_send_loop.h"
 #include "test_http.h"
+#include "test_worker_config.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -328,6 +329,12 @@ int rrr_test_library_functions (
 
 	TEST_BEGIN("http functions") {
 		ret_tmp = rrr_test_http();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("worker configuration") {
+		ret_tmp = rrr_test_worker_config();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

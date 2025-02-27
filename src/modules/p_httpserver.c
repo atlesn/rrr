@@ -201,7 +201,7 @@ static int httpserver_parse_config (
 		}
 		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_TLS)) {
 			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -220,7 +220,7 @@ static int httpserver_parse_config (
 		}
 		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_QUIC)) {
 			RRR_MSG_0("Setting http_server_port_quic is set for httpserver instance %s but QUIC transport is not configured.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -239,7 +239,7 @@ static int httpserver_parse_config (
 
 		if (!(data->net_transport_config.transport_type_f & RRR_NET_TRANSPORT_F_PLAIN)) {
 			RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -277,13 +277,13 @@ static int httpserver_parse_config (
 	data->request_max_size = data->request_max_mb;
 	if (((ret = rrr_biglength_mul_err(&data->request_max_size, 1024 * 1024))) != 0) {
 		RRR_MSG_0("Overflow in parameter 'http_request_max_mb' of httpserver instance %s, value too large\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_fields_accept for instance %s\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 
@@ -293,7 +293,7 @@ static int httpserver_parse_config (
 
 	if (RRR_MAP_COUNT(&data->http_fields_accept) > 0 && data->do_http_fields_accept_any != 0) {
 		RRR_MSG_0("Setting http_server_fields_accept in instance %s was set while http_server_fields_accept_any was 'yes', this is an invalid configuration.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -307,7 +307,7 @@ static int httpserver_parse_config (
 
 	if (data->do_decode_endpoint && !data->do_receive_full_request) {
 		RRR_MSG_0("http_server_decode_endpoint was 'yes' while http_server_receive_full_request was 'no' in httpserver instance %s, this is an invalid configuration.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -315,7 +315,7 @@ static int httpserver_parse_config (
 	if (data->do_get_response_from_senders) {
 		if (RRR_INSTANCE_CONFIG_EXISTS("http_server_receive_full_request") && !data->do_receive_full_request) {
 			RRR_MSG_0("http_server_get_response_from_senders was 'yes' while http_server_receive_full_request was explicitly set to 'no' in httpserver instance %s, this is an invalid configuration.\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -326,12 +326,12 @@ static int httpserver_parse_config (
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("http_server_worker_threads")) {
 		RRR_MSG_0("Warning: Deprecated option 'http_server_worker_threads' specified in httpserver instance %s, this parameter has no effect and should be removed from the configuration.\n",
-				config->name);
+				config->name_debug);
 	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->websocket_topic_filters, config, "http_server_websocket_topic_filters")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_websocket_topic_filters for instance %s\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 
@@ -340,7 +340,7 @@ static int httpserver_parse_config (
 
 	if (data->do_accept_websocket_binary && RRR_LL_COUNT(&data->websocket_topic_filters) == 0) {
 		RRR_MSG_0("http_server_accept_websocket_binary was set in httpserver instance %s, but no websocket topics are defined in http_server_websocket_topic_filters. This is a configuration error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -349,7 +349,7 @@ static int httpserver_parse_config (
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_accept_websocket_binary",
 			if (data->do_accept_websocket_binary == 0) {
 				RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
-						config->name);
+						config->name_debug);
 				ret = 1;
 				goto out;
 			}
@@ -370,7 +370,7 @@ static int httpserver_parse_config (
 		}
 		else {
 			RRR_MSG_0("Unknown value '%s' for http_server_topic_format in file instance %s, valid options are 'simple' and 'request'.\n",
-					data->topic_format, config->name);
+					data->topic_format, config->name_debug);
 			ret = 1;
 			goto out;
 		}

@@ -1,4 +1,4 @@
-.Dd 2025-01-03
+.Dd 2025-02-25
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -4136,6 +4136,9 @@ How many worker fork copies to spawn. If multiple forks are used, incoming messa
 the fork having the least amount of messages waiting to be processed. Note that if sourcing is used,
 each for will source messages according to given parameters. Defaults to 1, maximum is 16.
 
+If configuration for sub instances is used, this parameter may not be set, as the number of worker forks
+is then controlled by how many sub instances is defined. See next section for details about sub instances.
+
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 
@@ -4147,6 +4150,51 @@ macros to print messages like the reset of RRR does.
 If there is an error during processing of a message, just drop it instead of restarting the program.
 Defaults to no.
 .El
+.SS cmodule sub instances
+Multiple forks of the same script, but with different configuration, may be spawned by using sub instances.
+When this is used, the parameter
+.B X_workers
+may not be specified.
+
+A sub instance is defined by appending square brackets to the parent name in a separate block section. In the
+following example, the parent cmodule
+.B parent
+has two sub instances defined
+.B sub_a
+and
+.B sub_b
+.
+
+.EX
+[parent]
+module=perl5
+
+[parent[sub_a]]
+parameter=value for a
+
+[parent[sub_b]]
+parameter=value for b
+.EE
+
+Sub instances, having their own configuration, cannot access any configuration parameters from their parent.
+Warnings will be given if any configuration parameter is left unused, either in the parent or a sub.
+Any number of costum configuration parameters may be set in each sub instance.
+
+Messages to sub instances are, as when plain multiple forks are used using
+.B X_workers,
+delivered to at most one sub instance. There is however possible to set a topic filter for each fork allowing
+routing of messages between different forks. Should no filter match a particular message, the message is dropped silently.
+
+The following configuration parameters are available in sub instances:
+
+.Bl -tag -width -indent
+.It worker_topic_filter=TOPIC_FILTER
+Apply a topic filter on messages coming in to the sub instance. If not given, any message may be delivered.
+
+.It topic_filter_invert={yes|no}
+Invert the topic filter so that the sub instance only receives messages which do not match the filter.
+.El
+
 .SS TLS parameters
 .Bl -tag -width -indent
 .It X_tls_certificate_file=FILENAME

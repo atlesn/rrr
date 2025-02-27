@@ -87,7 +87,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 	// Socket path
 	if (rrr_instance_config_get_string_noconvert(&data->socket_path, config, "socket_path") != 0) {
-		RRR_MSG_0("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -95,7 +95,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	struct sockaddr_un addr;
 	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
 		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %llu bytes\n",
-				config->name, (long long unsigned) sizeof(addr.sun_path) - 1);
+				config->name_debug, (long long unsigned) sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}
@@ -107,7 +107,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	int yesno = 0;
 	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
 		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -117,7 +117,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
 		if (rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "socket_input_types") != 0) {
 			RRR_MSG_0("Could not parse configuration parameter socket_input_types in socket instance %s\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -128,7 +128,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "socket_sync_byte_by_byte")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n",
-					config->name);
+					config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -137,13 +137,13 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 	if (data->receive_rrr_message != 0 && data->tree != NULL) {
 		RRR_MSG_0("Array definition cannot be specified with socket_input_types whith socket_receive_rrr_message being 'yes' in instance %s\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
 	else if (data->receive_rrr_message == 0 && data->tree == NULL) {
 		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
