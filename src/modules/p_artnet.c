@@ -336,7 +336,7 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_universes", universes, ARTNET_DEFAULT_UNIVERSES);
 
 	if (data->universes > ARTNET_MAX_UNIVERSES) {
-		RRR_MSG_0("Setting artnet_universes out of range in artnet instance %s. Valid range is 0-16.\n", config->name);
+		RRR_MSG_0("Setting artnet_universes out of range in artnet instance %s. Valid range is 0-16.\n", INSTANCE_C_DBG_NAME(config));
 		ret = 1;
 		goto out;
 	}
@@ -344,7 +344,7 @@ static int artnet_parse_config (struct artnet_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("artnet_fade_speed", fade_speed, ARTNET_DEFAULT_FADE_SPEED);
 
 	if (data->fade_speed < ARTNET_MIN_FADE_SPEED || data->fade_speed > ARTNET_MAX_FADE_SPEED) {
-		RRR_MSG_0("Setting artnet_fade_speed out of range in artnet instance %s. Valid range is 5-1000.\n", config->name);
+		RRR_MSG_0("Setting artnet_fade_speed out of range in artnet instance %s. Valid range is 5-1000.\n", INSTANCE_C_DBG_NAME(config));
 		ret = 1;
 		goto out;
 	}
