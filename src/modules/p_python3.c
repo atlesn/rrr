@@ -146,7 +146,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config_data *con
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_module, config, "python3_module");
 
 	if (ret != 0) {
-		RRR_MSG_0("No python3_module specified for Python3 instance %s\n", config->name);
+		RRR_MSG_0("No python3_module specified for Python3 instance %s\n", INSTANCE_C_DBG_NAME(config));
 		ret = 1;
 		goto out;
 	}
@@ -214,8 +214,8 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 
 	// NOTE : The python config object operates on the original settings structure
 	config = rrr_python3_config_new (
-		rrr_cmodule_worker_get_settings(worker),
-		rrr_cmodule_worker_get_settings_used(worker)
+		rrr_cmodule_worker_get_active_settings(worker),
+		rrr_cmodule_worker_get_active_settings_used(worker)
 	);
 
 	if (config == NULL) {
