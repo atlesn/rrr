@@ -76,7 +76,7 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
-AS_IF([test "$is_freebsd" != xno], [
+AS_IF([test "x$is_freebsd" != xno], [
 	AC_ARG_WITH([node],[AS_HELP_STRING([--with-node],[build with the NodeJS JavaScript bindings])],[enable_node=yes],[enable_node=no])
 	AC_ARG_WITH([v8],[AS_HELP_STRING([--without-v8],[build without the V8 JavaScript bindings])],[enable_v8=no],[enable_v8=yes])
 	enable_jemalloc=no
