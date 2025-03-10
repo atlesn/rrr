@@ -47,7 +47,7 @@ Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends},
-         libssl1.1,
+         libssl1.1 | libssl3,
          python3 (>= 3.11),
          libjemalloc2,
          libjson-c5,
