@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -138,70 +138,70 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 	// MSG 0 is for errors
 #	define RRR_MSG_0(...) \
-	do {RRR_MSG_LOC (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
+	do {RRR_MSG_LOC (__RRR_LOG_PREFIX_0, 0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
 #	define RRR_MSG_1(...) \
-	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_1, 0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #	define RRR_MSG_2(...) \
-	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_2, 0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #	define RRR_MSG_3(...) \
-	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_3, 0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #	define RRR_MSG_4(...) \
-	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_4, 0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 	// This should only be used in main()
 #	define RRR_MSG_ERR(...) \
-	do {rrr_log_fprintf (stderr, __FILE__, __LINE__, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
+	do {rrr_log_fprintf (stderr, __FILE__, __LINE__, 0, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
 	// Debug without holding the lock, by default disabled as printf is not async-safe
 #	ifdef RRR_WITH_SIGNAL_PRINTF
 #		define RRR_DBG_SIGNAL(...) \
-		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__FILE__, __LINE__, __RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__FILE__, __LINE__, 0, __RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 #	endif
 
 // Zero may be passed to X functions
 #    define RRR_MSG_X(debuglevel_num, ...)                                                                                     \
     do {                                                                                                                       \
-        rrr_log_printf (__FILE__, __LINE__, debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);                        \
+        rrr_log_printf (__FILE__, __LINE__, debuglevel_num, 0, rrr_config_global.log_prefix, __VA_ARGS__);                        \
     } while (0)                                                                                                                \
 
 #	define RRR_MSG_0_V(fmt, ap) \
-	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, fmt, ap);}while(0)
+	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, 0, rrr_config_global.log_prefix, fmt, ap);}while(0)
 
 #	define RRR_DBG_X(debuglevel_num, ...)																										\
 	do { if ((rrr_config_global.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
-		RRR_MSG_LOC (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);															\
+		RRR_MSG_LOC (debuglevel_num, 0, rrr_config_global.log_prefix, __VA_ARGS__);															\
 	}} while(0)
 
 #	define RRR_DBG_1(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_1, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_2(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_2) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_2) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_2, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_3(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_3) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_3) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_3, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_4(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_4) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_4) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_4, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_5(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_5) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_5, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_5) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_5, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_6(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_6) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_6, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_6) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_6, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_7(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_7) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_7, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_7) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_7, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG_8(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_8, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0) { RRR_MSG_LOC (__RRR_LOG_PREFIX_8, 0, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #	define RRR_DBG(...) \
-	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+	do { RRR_MSG_LOC (__RRR_LOG_PREFIX_0, 0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 	// While writing code, use this macro to detect for instance invalid arguments to a function
 	// which caller should have checked as opposed to letting the program crash ungracefully
@@ -292,6 +292,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	    int line,                                          \
             uint8_t loglevel_translated,                       \
             uint8_t loglevel_orig,                             \
+            uint32_t flags,                                    \
             const char *prefix,                                \
             const char *message,                               \
             void *private_arg
@@ -347,14 +348,7 @@ void rrr_log_hooks_call_raw (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
-		const char *prefix,
-		const char *message
-);
-void rrr_log_print_no_hooks (
-		const char *file,
-		int line,
-		uint8_t loglevel_translated,
-		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 );
@@ -362,6 +356,7 @@ void rrr_log_printf_nolock (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -370,6 +365,7 @@ void rrr_log_printf_nolock_loglevel_translated (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -386,6 +382,7 @@ void rrr_log_printf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -394,6 +391,7 @@ void rrr_log_vprintf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list ap
@@ -403,6 +401,7 @@ void rrr_log_fprintf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...

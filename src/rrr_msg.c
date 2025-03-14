@@ -241,7 +241,7 @@ static int __rrr_msg_selftest (
 	{
 		RRR_MSG_1("Test RRR Log Message\n");
 
-		if ((ret = rrr_msg_msg_log_new(&msg_log, __FILE__, __LINE__, 7, 3, "prefix", "This is the log message")) != 0) {
+		if ((ret = rrr_msg_msg_log_new(&msg_log, __FILE__, __LINE__, 7, 3, 0, "prefix", "This is the log message")) != 0) {
 			goto out;
 		}
 

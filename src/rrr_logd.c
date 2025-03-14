@@ -61,8 +61,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "file-descriptor",       "[-f|--file-descriptor[=]FILE DESCRIPTOR]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
-	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-a|--add-newline]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-n|--add-newline]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'm',    "message-only",          "[-m|--message-only]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'j',    "json",                  "[-j|--json]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'u',    "unbuffered",            "[-u|--unbuffered]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -82,6 +83,7 @@ struct rrr_logd_data {
 	int quiet;
 	int add_newline;
 	int message_only;
+	int json;
 	int unbuffered;
 	char **wrapper;
 };
@@ -156,6 +158,10 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 
 	if (cmd_exists(cmd, "message-only", 0)) {
 		data->message_only = 1;
+	}
+
+	if (cmd_exists(cmd, "json", 0)) {
+		data->json = 1;
 	}
 
 	if (cmd_exists(cmd, "unbuffered", 0)) {
@@ -246,6 +252,7 @@ static void rrr_logd_print (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 ) {
@@ -255,6 +262,8 @@ static void rrr_logd_print (
 
 	if (data->add_newline && message[strlen(message) - 1] != '\n')
 		add_newline = 1;
+
+	assert(0 && "JSON NOT IMPLEMENTED");
 
 	if (data->message_only) {
 		printf(add_newline ? "%s\n" : "%s", message);
@@ -275,6 +284,7 @@ static void rrr_logd_print (
 				file,
 				line,
 				loglevel_translated,
+				flags,
 				prefix,
 				add_newline ? "%s\n" : "%s",
 				message
@@ -285,6 +295,7 @@ static void rrr_logd_print (
 				file,
 				line,
 				loglevel_orig,
+				flags,
 				prefix,
 				add_newline ? "%s\n" : "%s",
 				message
@@ -310,6 +321,7 @@ static int rrr_logd_read_msg_callback (
 	char *log_file = NULL;
 	uint8_t log_level_translated = 7;
 	int log_line = 0;
+	uint32_t log_flags = 0;
 
 	if (callback_data->data->quiet)
 		goto out;
@@ -329,6 +341,7 @@ static int rrr_logd_read_msg_callback (
 			&log_file,
 			&log_line,
 			&log_level_translated,
+			&log_flags,
 			&log_prefix,
 			&log_message,
 			&array
@@ -344,6 +357,7 @@ static int rrr_logd_read_msg_callback (
 			log_line,
 			log_level_translated,
 			RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN,
+			log_flags,
 			log_prefix,
 			log_message
 	);
@@ -385,6 +399,7 @@ static int rrr_logd_read_log_callback (
 				: rrr_int_from_biglength_bug_const(message->line),
 			message->loglevel_translated,
 			message->loglevel_orig,
+			message->msg_flags,
 			log_prefix,
 			log_message
 	);

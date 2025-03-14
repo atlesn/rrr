@@ -337,6 +337,7 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 	(void)(line);
 	(void)(loglevel_orig);
 	(void)(loglevel_translated);
+	(void)(flags);
 	(void)(prefix);
 
 	if (rrr_stats_engine_push_log_message (

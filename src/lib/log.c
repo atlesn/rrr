@@ -271,6 +271,7 @@ void rrr_log_hooks_call_raw (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 ) {
@@ -284,6 +285,7 @@ void rrr_log_hooks_call_raw (
 				line,
 				loglevel_translated,
 				loglevel_orig,
+				flags,
 				prefix,
 				message,
 				hook->private_arg
@@ -298,6 +300,7 @@ static void __rrr_log_hooks_call (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -331,6 +334,7 @@ static void __rrr_log_hooks_call (
 			line,
 			loglevel_translated,
 			loglevel_orig,
+			flags,
 			prefix,
 			tmp
 	);
@@ -409,6 +413,7 @@ static void __rrr_log_vprintf_intercept (
 		int line,
 		unsigned short loglevel_translated,
 		unsigned short loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -425,6 +430,7 @@ static void __rrr_log_vprintf_intercept (
 			line,
 			loglevel_translated,
 			loglevel,
+			flags,
 			prefix,
 			message,
 			rrr_log_printf_intercept_callback_arg
@@ -434,51 +440,18 @@ static void __rrr_log_vprintf_intercept (
 	RRR_FREE_IF_NOT_NULL(message);
 }
 
-void rrr_log_print_no_hooks (
-		const char *file,
-		int line,
-		uint8_t loglevel_translated,
-		uint8_t loglevel_orig,
-		const char *prefix,
-		const char *message
-) {
-	(void)(file);
-	(void)(line);
-
-#ifndef RRR_LOG_DISABLE_PRINT
-	char ts[32];
-
-	__rrr_log_make_timestamp(ts);
-
-	LOCK_BEGIN;
-	printf(RRR_LOG_HEADER_FORMAT_WITH_TS "%s",
-			RRR_LOG_HEADER_ARGS(
-				ts,
-				rrr_config_global.rfc5424_loglevel_output
-					? loglevel_translated
-					: loglevel_orig,
-				prefix
-			),
-			message
-	);
-	LOCK_END;
-#else
-	(void)(loglevel_translated);
-	(void)(loglevel_orig);
-	(void)(prefix);
-	(void)(message);
-#endif
-}
-
 static void __rrr_log_printf_nolock_va (
 		const char *file,
 		int line,
 		uint8_t loglevel,
 		int is_translated,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
 ) {
+	(void)(flags);
+
 	char ts[32];
 	uint8_t loglevel_translated;
 
@@ -527,6 +500,7 @@ void rrr_log_printf_nolock (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -539,6 +513,7 @@ void rrr_log_printf_nolock (
 			line,
 			loglevel,
 			0, /* Is not translated */
+			flags,
 			prefix,
 			__format,
 			args
@@ -551,6 +526,7 @@ void rrr_log_printf_nolock_loglevel_translated (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -563,6 +539,7 @@ void rrr_log_printf_nolock_loglevel_translated (
 			line,
 			loglevel,
 			1, /* Is already translated */
+			flags,
 			prefix,
 			__format,
 			args
@@ -634,6 +611,7 @@ static void __rrr_log_printf_va (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -659,6 +637,7 @@ static void __rrr_log_printf_va (
 				line,
 				loglevel_translated,
 				loglevel,
+				flags,
 				prefix,
 				__format,
 				args
@@ -694,6 +673,7 @@ static void __rrr_log_printf_va (
 		line,
 		loglevel_translated,
 		loglevel,
+		flags,
 		prefix,
 		__format,
 		args_copy
@@ -706,6 +686,7 @@ void rrr_log_printf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -714,7 +695,7 @@ void rrr_log_printf (
 
 	va_start(args, __format);
 
-	__rrr_log_printf_va(file, line, loglevel, prefix, __format, args);
+	__rrr_log_printf_va(file, line, loglevel, flags, prefix, __format, args);
 
 	va_end(args);
 }
@@ -723,6 +704,7 @@ void rrr_log_vprintf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list ap
@@ -731,6 +713,7 @@ void rrr_log_vprintf (
 			file,
 			line,
 			loglevel,
+			flags,
 			prefix,
 			__format,
 			ap
@@ -742,6 +725,7 @@ void rrr_log_fprintf (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		uint32_t flags,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -789,6 +773,7 @@ void rrr_log_fprintf (
 		line,
 		loglevel_translated,
 		loglevel,
+		flags,
 		prefix,
 		__format,
 		args_copy
@@ -837,6 +822,7 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 			line,
 			loglevel_translated,
 			loglevel_orig,
+			flags,
 			prefix,
 			message
 	) != 0) {

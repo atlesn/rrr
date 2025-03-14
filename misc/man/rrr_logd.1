@@ -21,6 +21,7 @@ The log daemon may help in situations where standard output from multiple proces
 .Dl [-q|--quiet]
 .Dl [-a|--add-newline]
 .Dl [-m|--message-only]
+.Dl [-j|--json]
 .Dl [-u|--unbuffered]
 .Dl [-l|--loglevel-translation]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -41,6 +42,9 @@ This allows for modifying logs before printed out.
 
 .It log_level_translated
 RFC 5424 loglevel, small integer. If not given, 7 is used.
+
+.It log_flags
+If given and set to 1, this indicates that the log message is in JSON format.
 
 .It log_prefix
 The log prefix. If not given, "rrr_logd" will be used.
@@ -74,11 +78,30 @@ If not set, the process will terminate once the last user has disconnected.
 .IP -q|--quiet
 Don't print any messages received from other processes. Used for debugging.
 
-.IP -a|--add-newline
+.IP -n|--add-newline
 Add a newline (ASCII decimal 10) to any message received not already ending with one.
 
 .IP -m|--message-only
 Print only the message text and not log level and prefix.
+
+.IP -j|--json
+If given, all data will be printed in JSON format.
+The fields present in the JSON output correspond to the fields of array log messages (see above).
+
+If the JSON flag is set in
+.B log_flags
+or in the flags of native RRR log messages, the JSON in those log messages will be merged with these fields.
+If any field names collide, existing fields from the JSON will be overwritten silently.
+
+If
+.B --message-only
+is set, ony the field
+.B log_message
+will be present in the JSON.
+
+JSON data will be printed with one log object per line, with lines separated by newline, regardless of the
+.B --add-newline
+parameter.
 
 .IP -u|--unbuffered
 Make standard output unbuffered.
