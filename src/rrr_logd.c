@@ -83,7 +83,6 @@ struct rrr_logd_data {
 	int quiet;
 	int add_newline;
 	int message_only;
-	int json;
 	int unbuffered;
 	char **wrapper;
 };
@@ -158,10 +157,6 @@ static int rrr_logd_parse_config (struct rrr_logd_data *data, struct cmd_data *c
 
 	if (cmd_exists(cmd, "message-only", 0)) {
 		data->message_only = 1;
-	}
-
-	if (cmd_exists(cmd, "json", 0)) {
-		data->json = 1;
 	}
 
 	if (cmd_exists(cmd, "unbuffered", 0)) {
@@ -262,8 +257,6 @@ static void rrr_logd_print (
 
 	if (data->add_newline && message[strlen(message) - 1] != '\n')
 		add_newline = 1;
-
-	assert(0 && "JSON NOT IMPLEMENTED");
 
 	if (data->message_only) {
 		printf(add_newline ? "%s\n" : "%s", message);

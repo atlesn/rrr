@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 #include "json.h"
 #include "../array.h"
+#include "../map.h"
 #include "../fixed_point.h"
 
 static int __rrr_json_to_array_recurse (
@@ -485,4 +486,33 @@ int rrr_json_from_array (
 		json_object_put(base);
 	}
 	return ret;
+}
+
+void rrr_json_from_map_nolog (
+		char **target,
+		const struct rrr_map *map
+) {
+	json_object *base;
+	json_object *obj;
+
+	if ((base = json_object_new_object()) == NULL) {
+		RRR_ABORT("Failed to allocate JSON object in %s\n", __func__);
+	}
+
+	RRR_MAP_ITERATE_BEGIN(map);
+		if ((obj = json_object_new_string(node_value)) == NULL) {
+			RRR_ABORT("Failed to allocate JSON object in %s\n", __func__);
+		}
+		if (__rrr_json_object_add(base, node_tag, &obj) != 0) {
+			RRR_ABORT("Failed to add JSON object in %s\n", __func__);
+		}
+	RRR_MAP_ITERATE_END();
+
+	const char *json_str = json_object_to_json_string_ext(base, JSON_C_TO_STRING_PLAIN);
+
+	if ((*target = rrr_strdup(json_str)) == NULL) {
+		RRR_ABORT("Could not allocate memory in %s\n", __func__);
+	}
+
+	json_object_put(base);
 }

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "map.h"
 #include "allocator.h"
 #include "rrr_strerror.h"
 #include "event/event.h"
@@ -46,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
+#include "json/json.h"
 #include "socket/rrr_socket.h"
 
 // Uncomment for debug purposes, logs are only delivered to hooks
@@ -362,6 +364,8 @@ static void __rrr_log_sd_journal_sendv (
 	char *buf_prefix = NULL;
 	char *buf_message = NULL;
 
+	assert (rrr_config_global.do_json_output == 0 && "Cannot use JSON format with SystemD output");
+
 	if (rrr_asprintf(&buf_file, "CODE_FILE=%s", file) < 0) {
 		goto out;
 	}
@@ -481,14 +485,19 @@ static void __rrr_log_printf_nolock_va (
 #endif
 
 #ifndef RRR_LOG_DISABLE_PRINT
-		printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
-			RRR_LOG_HEADER_ARGS(
-				ts,
-				loglevel_translated,
-				prefix
-			)
-		);
-		vprintf(__format, args);
+		if (rrr_config_global.do_json_output) {
+			assert(0 && "JSON output not implemented");
+		}
+		else {
+			printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
+				RRR_LOG_HEADER_ARGS(
+					ts,
+					loglevel_translated,
+					prefix
+				)
+			);
+			vprintf(__format, args);
+		}
 #endif
 
 #ifdef HAVE_JOURNALD
@@ -548,13 +557,22 @@ void rrr_log_printf_nolock_loglevel_translated (
 	va_end(args);
 }
 
+static void __rrr_log_printf_json (
+	const struct rrr_map *fields
+) {
+	char *buf;
+	rrr_json_from_map_nolog(&buf, fields);
+	printf("%s\n", buf);
+	rrr_free(buf);
+}
+
 void rrr_log_printf_plain (
 		const char *__restrict __format,
 		...
 ) {
 	va_list args;
 	va_start(args, __format);
-
+	struct rrr_map fields = {0};
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
@@ -562,6 +580,14 @@ void rrr_log_printf_plain (
 		if (ret < 0) {
 			fprintf(stderr, "Warning: Syslog call sd_journal_printv failed with %i\n", ret);
 		}
+	}
+	else if (rrr_config_global.do_json_output) {
+
+#ifndef RRR_LOG_DISABLE_PRINT
+		rrr_map_item_replace_new_va_nolog(&fields, "log_message", __format, args);
+		__rrr_log_printf_json(&fields);
+#endif
+
 	}
 	else {
 #endif
@@ -576,6 +602,7 @@ void rrr_log_printf_plain (
 	}
 #endif
 
+	RRR_MAP_CLEAR(&fields);
 	va_end(args);
 }
 

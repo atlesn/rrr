@@ -210,6 +210,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	else
 #	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); assert(0); } while (0)
 #	endif
+
+#	define RRR_ABORT(...) do { fprintf(stderr, __VA_ARGS__); abort(); } while (0)
 #endif
 
 // XXX : MSG_0 and DBG_9 should use correct prefix 

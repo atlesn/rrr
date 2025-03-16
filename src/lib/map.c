@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "log.h"
 #include "map.h"
@@ -28,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_types.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
+#include "util/gnu.h"
 
 void rrr_map_item_destroy (
 		struct rrr_map_item *item
@@ -234,12 +236,53 @@ static int __rrr_map_item_add_new (
 	return ret;
 }
 
+static int __rrr_map_item_add_new_consume (
+		struct rrr_map *map,
+		const char *tag,
+		char **value,
+		int do_prepend,
+		int do_unique
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, NULL)) != 0) {
+		goto out;
+	}
+
+	item_new->value = *value;
+	*value = NULL;
+
+	__rrr_map_item_add(map, item_new, do_prepend, do_unique);
+
+	out:
+	return ret;
+}
+
 int rrr_map_item_replace_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
 ) {
 	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
+void rrr_map_item_replace_new_va_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *__restrict __format,
+		va_list args
+) {
+	char *buf = NULL;
+
+	if (rrr_vasprintf(&buf, __format, args) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
 }
 
 int rrr_map_item_replace_new_with_callback (

@@ -124,6 +124,12 @@ int rrr_map_item_replace_new (
 		const char *tag,
 		const char *value
 );
+void rrr_map_item_replace_new_va_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *__restrict __format,
+		va_list args
+);
 int rrr_map_item_replace_new_with_callback (
 		struct rrr_map *map,
 		const char *tag,

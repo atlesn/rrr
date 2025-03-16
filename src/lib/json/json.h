@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -45,6 +45,10 @@ int rrr_json_from_array (
 		int *found_tags,
 		const struct rrr_array *source,
 		const struct rrr_map *tags
+);
+void rrr_json_from_map_nolog (
+		char **target,
+		const struct rrr_map *map
 );
 
 #endif /* RRR_JSON_H */

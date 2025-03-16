@@ -114,6 +114,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
+	unsigned int do_json_output = 0;
 	unsigned long int output_buffer_warn_limit = RRR_MAIN_DEFAULT_OUTPUT_BUFFER_WARN_LIMIT;
 	const char *run_directory = NULL;
 
@@ -262,6 +263,10 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		goto out;
 	}
 
+	if (cmd_exists(cmd, "json", 0)) {
+		do_json_output = 1;
+	}
+
 	SETENV(RRR_ENV_DEBUGLEVEL,               "%u",    (unsigned int) debuglevel);
 	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,       "%u",    (unsigned int) debuglevel_on_exit);
 	SETENV(RRR_ENV_START_INTERVAL,           "%u",    (unsigned int) start_interval);
@@ -287,11 +292,12 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			rfc5424_loglevel_output,
 			(unsigned int) output_buffer_warn_limit,
 			do_journald_output,
+			do_json_output,
 			run_directory
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, obwl:%ld\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, json:%s, obwl:%ld\n",
 			debuglevel,
 			debuglevel_on_exit,
 			start_interval,
@@ -299,6 +305,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_thread_restart,
 			rfc5424_loglevel_output,
 			do_journald_output,
+			do_json_output,
 			output_buffer_warn_limit
 	);
 

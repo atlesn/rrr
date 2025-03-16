@@ -208,3 +208,9 @@ log_delivery_from_rrr -v "<0> <rrr> Read Route Record"
 
 log_delivery_from_rrr -v "<3> <rrr> Read Route Record" -l
 
+####################################################
+# Verify JSON output
+####################################################
+
+log_delivery_from_rrr -v "{\"log_level\": 0, \"message\": \"Read Route Record\"}" -j
+
