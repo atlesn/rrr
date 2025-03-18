@@ -208,7 +208,7 @@ int cmd_convert_float(const char *value, float *result) {
 
 void cmd_print_usage(struct cmd_data *data) {
 	const char *usage_format = "Usage: %s ";
-	printf(usage_format, data->program);
+	RRR_MSG_PLAIN(usage_format, data->program);
 
 	size_t spaces_length = strlen(usage_format) + strlen(data->program) - 1;
 	char spaces[spaces_length];

@@ -345,6 +345,7 @@ static void __rrr_log_hooks_call (
 #define RRR_LOG_TRANSLATE_LOGLEVEL(translate) \
 	(rrr_config_global.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
 
+
 static void __rrr_log_printf_json (
 		const struct rrr_map *fields
 ) {
@@ -352,6 +353,78 @@ static void __rrr_log_printf_json (
 	rrr_json_from_map_nolog(&buf, fields);
 	printf("%s\n", buf);
 	rrr_free(buf);
+}
+
+static void __rrr_log_json_make_common (
+		struct rrr_map *target,
+		const char *file,
+		int line,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *timestamp
+) {
+	unsigned short loglevel_translated = rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+
+	rrr_map_item_replace_new_nolog(target, "log_file", file);
+	rrr_map_item_replace_new_f_nolog(target, "log_line", "%i", line);
+	rrr_map_item_replace_new_f_nolog(target, "log_level_translated", "%u", loglevel_translated);
+	rrr_map_item_replace_new_nolog(target, "log_prefix", prefix);
+	if (*timestamp != '\0')
+		rrr_map_item_replace_new_nolog(target, "log_timestamp", timestamp);
+}
+
+static void __rrr_log_json_print_va (
+		const char *file,
+		int line,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *timestamp,
+		const char *__restrict __format,
+		va_list args
+) {
+	struct rrr_map fields = {0};
+
+	__rrr_log_json_make_common (
+			&fields,
+			file,
+			line,
+			loglevel,
+			prefix,
+			timestamp
+	);
+
+	rrr_map_item_replace_new_va_nolog(&fields, "log_message", __format, args);
+
+	__rrr_log_printf_json(&fields);
+
+	rrr_map_clear(&fields);
+}
+
+static void __rrr_log_json_print_n (
+		const char *file,
+		int line,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *timestamp,
+		const char *value,
+		int value_size
+) {
+	struct rrr_map fields = {0};
+
+	__rrr_log_json_make_common (
+			&fields,
+			file,
+			line,
+			loglevel,
+			prefix,
+			timestamp
+	);
+
+	rrr_map_item_replace_new_n_nolog(&fields, "log_message", value, value_size);
+
+	__rrr_log_printf_json(&fields);
+
+	rrr_map_clear(&fields);
 }
 
 #ifdef HAVE_JOURNALD
@@ -417,6 +490,7 @@ static void __rrr_log_sd_journal_send_va (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf_message);
+	rrr_map_clear(&fields);
 }
 #endif
 
@@ -462,7 +536,6 @@ static void __rrr_log_printf_nolock_va (
 ) {
 	char ts[32];
 	uint8_t loglevel_translated;
-	struct rrr_map fields = {0};
 
 	__rrr_log_make_timestamp(ts);
 
@@ -491,8 +564,15 @@ static void __rrr_log_printf_nolock_va (
 
 #ifndef RRR_LOG_DISABLE_PRINT
 		if (rrr_config_global.do_json_output) {
-			rrr_map_item_replace_new_va_nolog(&fields, "log_message", __format, args);
-			__rrr_log_printf_json(&fields);
+			__rrr_log_json_print_va (
+					file,
+					line,
+					loglevel,
+					prefix,
+					ts,
+					__format,
+					args
+			);
 		}
 		else {
 			printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
@@ -509,8 +589,6 @@ static void __rrr_log_printf_nolock_va (
 #ifdef HAVE_JOURNALD
 	}
 #endif
-
-	rrr_map_clear(&fields);
 }
 
 void rrr_log_printf_nolock (
@@ -567,7 +645,9 @@ void rrr_log_printf_plain (
 ) {
 	va_list args;
 	va_start(args, __format);
-	struct rrr_map fields = {0};
+	char ts[32];
+
+	__rrr_log_make_timestamp(ts);
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
@@ -581,8 +661,15 @@ void rrr_log_printf_plain (
 #ifndef RRR_LOG_DISABLE_PRINT
 		LOCK_BEGIN;
 		if (rrr_config_global.do_json_output) {
-			rrr_map_item_replace_new_va_nolog(&fields, "log_message", __format, args);
-			__rrr_log_printf_json(&fields);
+			__rrr_log_json_print_va (
+					__FILE__,
+					__LINE__,
+					1,
+					"rrr",
+					ts,
+					__format,
+					args
+			);
 		}
 		else {
 			vprintf(__format, args);
@@ -593,7 +680,6 @@ void rrr_log_printf_plain (
 	}
 #endif
 
-	rrr_map_clear(&fields);
 	va_end(args);
 }
 
@@ -601,7 +687,9 @@ void rrr_log_printn_plain (
 		const char *value,
 		unsigned long long value_size
 ) {
-	struct rrr_map fields = {0};
+	char ts[32];
+
+	__rrr_log_make_timestamp(ts);
 
 	if (value_size > INT_MAX) {
 		value_size = INT_MAX;
@@ -619,8 +707,15 @@ void rrr_log_printn_plain (
 #ifndef RRR_LOG_DISABLE_PRINT
 		LOCK_BEGIN;
 		if (rrr_config_global.do_json_output) {
-			rrr_map_item_replace_new_n_nolog(&fields, "log_message", value, value_size);
-			__rrr_log_printf_json(&fields);
+			__rrr_log_json_print_n (
+					__FILE__,
+					__LINE__,
+					1,
+					"rrr",
+					ts,
+					value,
+					(int) value_size
+			);
 		}
 		else {
 			printf("%.*s", (int) value_size, value);
@@ -630,31 +725,6 @@ void rrr_log_printn_plain (
 #ifdef HAVE_JOURNALD
 	}
 #endif
-
-	rrr_map_clear(&fields);
-}
-
-static void __rrr_log_json_make_va (
-		struct rrr_map *target,
-		const char *file,
-		int line,
-		unsigned short loglevel_translated,
-		unsigned short loglevel,
-		const char *prefix,
-		const char *__restrict __format,
-		va_list args
-) {
-	(void)(loglevel);
-
-	char ts[32];
-	__rrr_log_make_timestamp(ts);
-
-	rrr_map_item_replace_new_nolog(target, "log_timestamp", ts);
-	rrr_map_item_replace_new_nolog(target, "log_file", file);
-	rrr_map_item_replace_new_f_nolog(target, "log_line", "%i", line);
-	rrr_map_item_replace_new_f_nolog(target, "log_level_translated", "%u", loglevel_translated);
-	rrr_map_item_replace_new(target, "log_prefix", prefix);
-	rrr_map_item_replace_new_va_nolog(target, "log_message", __format, args);
 }
 
 static void __rrr_log_printf_va (
@@ -669,10 +739,10 @@ static void __rrr_log_printf_va (
 
 	va_copy(args_copy, args);
 
+	char ts[32];
 	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(rrr_log_translate_loglevel_rfc5424_stdout);
-	struct rrr_map fields = {0};
 
-#ifndef RRR_LOG_DISABLE_PRINT
+	__rrr_log_make_timestamp(ts);
 
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
@@ -681,23 +751,8 @@ static void __rrr_log_printf_va (
 	else {
 #endif
 
-	if (rrr_log_printf_intercept_callback != NULL) {
-		__rrr_log_vprintf_intercept (
-				file,
-				line,
-				loglevel_translated,
-				loglevel,
-				prefix,
-				__format,
-				args
-		);
-	}
-	else {
-#ifndef RRR_LOG_DISABLE_PRINT
-		LOCK_BEGIN;
-		if (rrr_config_global.do_json_output) {
-			__rrr_log_json_make_va (
-					&fields,
+		if (rrr_log_printf_intercept_callback != NULL) {
+			__rrr_log_vprintf_intercept (
 					file,
 					line,
 					loglevel_translated,
@@ -706,28 +761,37 @@ static void __rrr_log_printf_va (
 					__format,
 					args
 			);
-			__rrr_log_printf_json(&fields);
 		}
 		else {
-			char ts[32];
-			__rrr_log_make_timestamp(ts);
-			printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
-				RRR_LOG_HEADER_ARGS(
-					ts,
-					loglevel_translated,
-					prefix
-				)
-			);
-			vprintf(__format, args);
-		}
-		LOCK_END;
+#ifndef RRR_LOG_DISABLE_PRINT
+			LOCK_BEGIN;
+			if (rrr_config_global.do_json_output) {
+				__rrr_log_json_print_va (
+						file,
+						line,
+						loglevel,
+						prefix,
+						ts,
+						__format,
+						args
+				);
+			}
+			else {
+				printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
+					RRR_LOG_HEADER_ARGS(
+						ts,
+						loglevel_translated,
+						prefix
+					)
+				);
+				vprintf(__format, args);
+			}
+			LOCK_END;
 #endif
-	}
+		}
 
 #ifdef HAVE_JOURNALD
 	}
-#endif
-
 #endif
 
 	__rrr_log_hooks_call (
@@ -740,7 +804,6 @@ static void __rrr_log_printf_va (
 		args_copy
 	);
 
-	rrr_map_clear(&fields);
 	va_end(args_copy);
 }
 
