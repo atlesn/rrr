@@ -111,6 +111,15 @@ static int __rrr_map_item_value_allocate (
 	return ret;
 }
 
+static void __rrr_map_item_value_consume (
+		struct rrr_map_item *item,
+		char **value
+) {
+	RRR_FREE_IF_NOT_NULL(item->value);
+	item->value = *value;
+	*value = NULL;
+}
+
 int rrr_map_item_value_set (
 		struct rrr_map_item *item,
 		const char *value
@@ -251,9 +260,7 @@ static int __rrr_map_item_add_new_consume (
 		goto out;
 	}
 
-	item_new->value = *value;
-	*value = NULL;
-
+	__rrr_map_item_value_consume(item_new, value);
 	__rrr_map_item_add(map, item_new, do_prepend, do_unique);
 
 	out:
@@ -266,6 +273,15 @@ int rrr_map_item_replace_new (
 		const char *value
 ) {
 	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
+void rrr_map_item_replace_new_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	if (__rrr_map_item_add_new(map, tag, value, 0, 1) != 0)
+		RRR_ABORT("Failed to make/add item in %s\n", __func__);
 }
 
 void rrr_map_item_replace_new_va_nolog (
@@ -283,6 +299,46 @@ void rrr_map_item_replace_new_va_nolog (
 		RRR_ABORT("Failed to add item in %s\n", __func__);
 
 	assert(buf == NULL);
+}
+
+void rrr_map_item_replace_new_n_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int value_size
+) {
+	char *buf = NULL;
+
+	if (rrr_asprintf(&buf, "%.*s", value_size, value) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
+}
+
+void rrr_map_item_replace_new_f_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *__restrict __format,
+		...
+) {
+	va_list args;
+
+	va_start(args, __format);
+
+	char *buf = NULL;
+
+	if (rrr_vasprintf(&buf, __format, args) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
+
+	va_end(args);
 }
 
 int rrr_map_item_replace_new_with_callback (

@@ -297,7 +297,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, json:%s, obwl:%ld\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, json:%u, obwl:%ld\n",
 			debuglevel,
 			debuglevel_on_exit,
 			start_interval,
