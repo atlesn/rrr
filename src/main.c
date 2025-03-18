@@ -339,7 +339,10 @@ int rrr_main_print_banner_help_and_version (
 		help_or_version_printed = 1;
 	}
 
-	if ((cmd->argc < argc_minimum || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
+	if (((cmd->argc < argc_minimum && !help_or_version_printed) ||
+	    strcmp(cmd->command, "help") == 0) ||
+	    cmd_exists(cmd, "help", 0)
+	) {
 		cmd_print_usage(cmd);
 		help_or_version_printed = 1;
 	}
