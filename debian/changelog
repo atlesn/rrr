@@ -1,4 +1,4 @@
-rrr (1.36-8) bookworm; urgency=medium
+rrr (1.36-9) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -9,6 +9,7 @@ rrr (1.36-8) bookworm; urgency=medium
     * Log daemon may start a wrapper process for further processing of
       messages prior to them being printed.
     * Configurable sub instances in cmodules
+    * Native JSON logging from log daemon
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
