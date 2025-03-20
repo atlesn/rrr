@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../config.h"
 #include "helpers/log_helper.h"
+#include "messages/msg_log.h"
 #include "messages/msg.h"
 #include "messages/msg_head.h"
 #include "messages/msg_msg_struct.h"
@@ -346,7 +347,7 @@ static void __rrr_log_hooks_call (
 	(rrr_config_global.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
 
 
-static void __rrr_log_printf_json (
+static void __rrr_log_print_json_map (
 		const struct rrr_map *fields
 ) {
 	char *buf;
@@ -355,7 +356,13 @@ static void __rrr_log_printf_json (
 	rrr_free(buf);
 }
 
-static void __rrr_log_json_make_common (
+static void __rrr_log_print_json_object (
+		const struct rrr_json_object *object
+) {
+	rrr_json_from_object_nolog(STDOUT_FILENO, object);
+}
+
+static void __rrr_log_json_make_common_map (
 		struct rrr_map *target,
 		const char *file,
 		int line,
@@ -373,6 +380,37 @@ static void __rrr_log_json_make_common (
 		rrr_map_item_replace_new_nolog(target, "log_timestamp", timestamp);
 }
 
+static void __rrr_log_json_make_common_json (
+		struct rrr_json_object *target,
+		const char *file,
+		int line,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *timestamp
+) {
+	unsigned short loglevel_translated = rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+
+	rrr_json_object_set_nolog(target, "log_file", file);
+	rrr_json_object_set_f_nolog(target, "log_line", "%i", line);
+	rrr_json_object_set_f_nolog(target, "log_level_translated", "%u", loglevel_translated);
+	rrr_json_object_set_nolog(target, "log_prefix", prefix);
+	if (*timestamp != '\0')
+		rrr_json_object_set_nolog(target, "log_timestamp", timestamp);
+}
+
+static void __rrr_log_map_item_trim (
+		struct rrr_map_item *item
+) {
+	for (size_t pos = strlen(item->value); pos > 0; pos--) {
+		if (item->value[pos - 1] != '\r' &&
+		    item->value[pos - 1] != '\n'
+		) {
+			break;
+		}
+		item->value[pos - 1] = '\0';
+	}
+}
+
 static void __rrr_log_json_print_va (
 		const char *file,
 		int line,
@@ -384,7 +422,7 @@ static void __rrr_log_json_print_va (
 ) {
 	struct rrr_map fields = {0};
 
-	__rrr_log_json_make_common (
+	__rrr_log_json_make_common_map (
 			&fields,
 			file,
 			line,
@@ -394,8 +432,8 @@ static void __rrr_log_json_print_va (
 	);
 
 	rrr_map_item_replace_new_va_nolog(&fields, "log_message", __format, args);
-
-	__rrr_log_printf_json(&fields);
+	__rrr_log_map_item_trim(RRR_LL_LAST(&fields));
+	__rrr_log_print_json_map(&fields);
 
 	rrr_map_clear(&fields);
 }
@@ -411,7 +449,7 @@ static void __rrr_log_json_print_n (
 ) {
 	struct rrr_map fields = {0};
 
-	__rrr_log_json_make_common (
+	__rrr_log_json_make_common_map (
 			&fields,
 			file,
 			line,
@@ -421,8 +459,8 @@ static void __rrr_log_json_print_n (
 	);
 
 	rrr_map_item_replace_new_n_nolog(&fields, "log_message", value, value_size);
-
-	__rrr_log_printf_json(&fields);
+	__rrr_log_map_item_trim(RRR_LL_LAST(&fields));
+	__rrr_log_print_json_map (&fields);
 
 	rrr_map_clear(&fields);
 }
@@ -481,6 +519,32 @@ static void __rrr_log_sd_journal_send_va (
 		char message_format[strlen("MESSAGE=") + strlen(__format) + 1];
 		sprintf(message_format, "MESSAGE=%s", __format);
 		if (rrr_vasprintf(&buf_message, message_format, args) < 0) {
+			goto out;
+		}
+		rrr_map_item_replace_new_nolog(&fields, "MESSAGE", buf_message);
+	}
+
+	__rrr_log_sd_journal_send_iovec(file, line, loglevel, prefix, &fields);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf_message);
+	rrr_map_clear(&fields);
+}
+
+static void __rrr_log_sd_journal_send (
+		const char *file,
+		int line,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *message
+) {
+	char *buf_message = NULL;
+	struct rrr_map fields = {0};
+
+	assert (rrr_config_global.do_json_output == 0 && "Cannot use JSON format with SystemD output");
+
+	{
+		if (rrr_asprintf(&buf_message, "MESSAGE=%s", message) < 0) {
 			goto out;
 		}
 		rrr_map_item_replace_new_nolog(&fields, "MESSAGE", buf_message);
@@ -591,10 +655,122 @@ static void __rrr_log_printf_nolock_va (
 #endif
 }
 
-void rrr_log_printf_nolock (
+static int __rrr_log_print_json_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		const char *prefix,
+		const char *message,
+		const char *json
+) {
+	char ts[32];
+	struct rrr_json_object *object;
+
+	__rrr_log_make_timestamp(ts);
+
+	if (rrr_json_object_parse_nolog(&object, json, rrr_int_from_biglength_abort_const(strlen(json))) != 0)
+		return 1;
+
+	__rrr_log_json_make_common_json (
+			object,
+			file,
+			line,
+			loglevel_translated,
+			prefix,
+			ts
+	);
+
+	if (message != NULL)
+		rrr_json_object_set_nolog_trim(object, "log_message", message);
+
+	__rrr_log_print_json_object(object);
+
+	rrr_json_object_destroy(object);
+
+	return 0;
+}
+
+static void __rrr_log_print_nolock (
 		const char *file,
 		int line,
 		uint8_t loglevel,
+		int is_translated,
+		const char *prefix,
+		const char *message,
+		int is_json
+) {
+	char ts[32];
+	uint8_t loglevel_translated;
+
+	__rrr_log_make_timestamp(ts);
+
+	loglevel_translated = is_translated
+		? loglevel
+		: RRR_LOG_TRANSLATE_LOGLEVEL(rrr_log_translate_loglevel_rfc5424_stdout);
+
+	// Don't call the hooks here due to potential lock problems
+
+#ifdef HAVE_JOURNALD
+	if (rrr_config_global.do_journald_output) {
+		__rrr_log_sd_journal_send (
+				file,
+				line,
+				loglevel_translated,
+				prefix,
+				message
+		);
+	}
+	else {
+#else
+	(void)(file);
+	(void)(line);
+#endif
+
+#ifndef RRR_LOG_DISABLE_PRINT
+		if (rrr_config_global.do_json_output) {
+			if (is_json) {
+				__rrr_log_print_json_nolock (
+					file,
+					line,
+					loglevel_translated,
+					prefix,
+					NULL,
+					message
+				);
+			}
+			else {
+				__rrr_log_print_json_nolock (
+					file,
+					line,
+					loglevel_translated,
+					prefix,
+					message,
+					"{}"
+				);
+			}
+		}
+		else {
+			printf(RRR_LOG_HEADER_FORMAT_WITH_TS,
+				RRR_LOG_HEADER_ARGS(
+					ts,
+					loglevel_translated,
+					prefix
+				)
+			);
+			printf("%s", message);
+		}
+#endif
+
+#ifdef HAVE_JOURNALD
+	}
+#endif
+}
+
+void rrr_log_printf_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -602,11 +778,19 @@ void rrr_log_printf_nolock (
 	va_list(args);
 	va_start(args, __format);
 
+	uint8_t loglevel_use = loglevel_orig;
+	int is_translated = 0;
+
+	if (loglevel_orig == RRR_LOG_LEVEL_NOT_GIVEN) {
+		loglevel_use = loglevel_translated;
+		is_translated = 1;
+	}
+
 	__rrr_log_printf_nolock_va (
 			file,
 			line,
-			loglevel,
-			0, /* Is not translated */
+			loglevel_use,
+			is_translated,
 			prefix,
 			__format,
 			args
@@ -615,28 +799,32 @@ void rrr_log_printf_nolock (
 	va_end(args);
 }
 
-void rrr_log_printf_nolock_loglevel_translated (
+void rrr_log_print_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
-		const char *__restrict __format,
-		...
+		const char *message,
+		int is_json
 ) {
-	va_list(args);
-	va_start(args, __format);
+	uint8_t loglevel_use = loglevel_orig;
+	int is_translated = 0;
 
-	__rrr_log_printf_nolock_va (
+	if (loglevel_orig == RRR_LOG_LEVEL_NOT_GIVEN) {
+		loglevel_use = loglevel_translated;
+		is_translated = 1;
+	}
+
+	__rrr_log_print_nolock (
 			file,
 			line,
-			loglevel,
-			1, /* Is already translated */
+			loglevel_use,
+			is_translated,
 			prefix,
-			__format,
-			args
+			message,
+			is_json
 	);
-
-	va_end(args);
 }
 
 void rrr_log_printf_plain (
@@ -910,15 +1098,21 @@ void rrr_log_fprintf (
 	va_end(args_copy);
 }
 
-void rrr_log_print_json (
-		FILE *file_target,
+void rrr_log_print_json_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
 		const char *prefix,
+		const char *message,
 		const char *json
 ) {
-	RRR_ABORT("NOT IMPLEMENTED");
+	if (__rrr_log_print_json_nolock(file, line, loglevel_translated, prefix, message, json) == 0)
+		return;
+
+	if (__rrr_log_print_json_nolock(file, line, loglevel_translated, prefix, message, "{}") == 0)
+		return;
+
+	RRR_ABORT("Failed in %s\n", __func__);
 }
 
 static void __rrr_log_socket_send (

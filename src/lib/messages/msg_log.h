@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_LOG_H
 
 #include "msg.h"
+#include "../log.h"
 
 #define RRR_MSG_LOG_PREFIX_SIZE(msg)										\
 	((msg)->prefix_size)
@@ -36,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_LOG_SIZE_OK(msg)											\
 	((msg)->prefix_size > (msg)->msg_size - sizeof(*(msg)) - 1 ? 0 : 1)
 
-#define RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN 0xff
+#define RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN RRR_LOG_LEVEL_NOT_GIVEN
 
 #define RRR_MSG_LOG_F_JSON        (1<<0)  // Indicates that the message contains JSON data
 #define RRR_MSG_LOG_F_ALL         (RRR_MSG_LOG_F_JSON)

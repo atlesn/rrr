@@ -28,12 +28,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <string.h>
 
+#include "json.h"
 #include "../log.h"
 #include "../allocator.h"
-#include "json.h"
 #include "../array.h"
 #include "../map.h"
 #include "../fixed_point.h"
+#include "../util/gnu.h"
+
+struct rrr_json_object {
+	json_tokener *tokener;
+	json_object *object;
+};
 
 static int __rrr_json_to_array_recurse (
 		struct json_object *object,
@@ -326,9 +332,9 @@ static int __rrr_json_type_to_object (
 }
 
 static int __rrr_json_object_add (
-	json_object *target,
-	const char *key,
-	json_object **value
+		json_object *target,
+		const char *key,
+		json_object **value
 ) {
 	int ret = 0;
 
@@ -354,6 +360,23 @@ static int __rrr_json_object_add (
 	out:
 #endif
 	return ret;
+}
+
+static void __rrr_json_object_add_nolog (
+		json_object *target,
+		const char *key,
+		json_object **value
+) {
+	int ret_tmp;
+
+#ifdef RRR_HAVE_JSONC_OBJECT_ADD_VOID
+	json_object_object_add(target, key, *value);
+#else
+	if ((ret_tmp = json_object_object_add(target, key, *value)) != 0)
+		RRR_ABORT("Failed to add value to JSON object in %s: %s\n",
+			__func__, json_tokener_error_desc((enum json_tokener_error) ret_tmp));
+#endif
+	*value = NULL;
 }
 
 static int __rrr_json_array_add (
@@ -515,4 +538,152 @@ void rrr_json_from_map_nolog (
 	}
 
 	json_object_put(base);
+}
+
+void rrr_json_from_object_nolog (
+		int fd,
+		const struct rrr_json_object *object
+) {
+	if (json_object_to_fd(fd, object->object, 0) != 0)
+		RRR_ABORT("Failed to output JSON in %s\n", __func__);
+	printf("\n");
+}
+
+int rrr_json_object_parse_nolog (
+		struct rrr_json_object **result,
+		const char *data,
+		int data_size
+) {
+	int ret = 0;
+
+	json_tokener *tokener = NULL;
+	json_object *object = NULL;
+
+	*result = NULL;
+
+	if (sizeof(rrr_length) >= sizeof(int) && data_size > INT_MAX) {
+		ret = 1;
+		goto out;
+	}
+
+	if ((tokener = json_tokener_new()) == NULL)
+		RRR_ABORT("Could not allocate tokener in %s\n", __func__);
+
+	if ((object = json_tokener_parse_ex(tokener, data, data_size)) == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	const enum json_type type = json_object_get_type(object);
+	if (type != json_type_object) {
+		ret = 1;
+		goto out;
+	}
+
+	if ((*result = rrr_allocate_zero(sizeof(**result))) == NULL)
+		RRR_ABORT("Failed to allocate memory for result in %s\n", __func__);
+
+	(*result)->tokener = tokener;
+	tokener = NULL;
+
+	(*result)->object = object;
+	object = NULL;
+
+	out:
+	if (tokener != NULL) {
+		json_tokener_free(tokener);
+	}
+	if (object != NULL) {
+		json_object_put(object);
+	}
+	return ret;
+}
+
+static void __rrr_json_object_set_nolog (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *value,
+		size_t value_length
+) {
+	json_object *object_new;
+	size_t key_length = strlen(key);
+
+	if (key_length > INT_MAX || value_length > INT_MAX)
+		RRR_ABORT("Key or value too long in %s\n", __func__);
+
+	if ((object_new = json_object_new_string_len(value, (int) value_length)) == NULL)
+		RRR_ABORT("Failed to allocate JSON object in %s\n", __func__);
+
+	__rrr_json_object_add_nolog(object->object, key, &object_new);
+
+	assert(object_new == NULL);
+}
+
+void rrr_json_object_set_nolog (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *value
+) {
+	__rrr_json_object_set_nolog(object, key, value, strlen(value));
+}
+
+void rrr_json_object_set_nolog_trim (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *value
+) {
+	size_t value_length = strlen(value);
+
+	for (; value_length > 0; value_length--) {
+		if (value[value_length - 1] != '\r' &&
+		    value[value_length - 1] != '\n'
+		) {
+			break;
+		}
+	}
+
+	__rrr_json_object_set_nolog(object, key, value, value_length);
+}
+
+void rrr_json_object_set_f_nolog (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *__restrict __format,
+		...
+) {
+	va_list args;
+
+	va_start(args, __format);
+
+	char *buf;
+	json_object *object_new;
+	size_t key_length = strlen(key);
+	size_t value_length;
+
+	if (rrr_vasprintf(&buf, __format, args) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	value_length = strlen(buf);
+
+	if (key_length > INT_MAX || value_length > INT_MAX)
+		RRR_ABORT("Key or value too long in %s\n", __func__);
+
+	if ((object_new = json_object_new_string_len(buf, (int) value_length)) == NULL)
+		RRR_ABORT("Failed to allocate JSON object in %s\n", __func__);
+
+	__rrr_json_object_add_nolog(object->object, key, &object_new);
+
+	assert(object_new == NULL);
+
+	rrr_free(buf);
+
+	va_end(args);
+}
+
+void rrr_json_object_destroy (
+		struct rrr_json_object *object
+) {
+	json_tokener_free(object->tokener);
+	json_object_put(object->object);
+	rrr_free(object);
 }

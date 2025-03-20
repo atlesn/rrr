@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_map;
 struct rrr_array;
+struct rrr_json_object;
 
 int rrr_json_to_arrays (
 		const char *data,
@@ -49,6 +50,34 @@ int rrr_json_from_array (
 void rrr_json_from_map_nolog (
 		char **target,
 		const struct rrr_map *map
+);
+void rrr_json_from_object_nolog (
+		int fd,
+		const struct rrr_json_object *object
+);
+int rrr_json_object_parse_nolog (
+		struct rrr_json_object **result,
+		const char *data,
+		int data_size
+);
+void rrr_json_object_set_nolog (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *value
+);
+void rrr_json_object_set_nolog_trim (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *value
+);
+void rrr_json_object_set_f_nolog (
+		struct rrr_json_object *object,
+		const char *key,
+		const char *__restrict __format,
+		...
+);
+void rrr_json_object_destroy (
+	struct rrr_json_object *object
 );
 
 #endif /* RRR_JSON_H */

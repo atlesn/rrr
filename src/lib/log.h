@@ -261,6 +261,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
 
+#define RRR_LOG_LEVEL_NOT_GIVEN 0xff
+
 #define RRR_LOG_HEADER_FORMAT_WHAT "<%s> "
 #define RRR_LOG_HEADER_FORMAT_LEVEL "<%u> "
 #define RRR_LOG_HEADER_FORMAT_TIMESTAMP "<%s> "
@@ -357,18 +359,20 @@ void rrr_log_hooks_call_raw (
 void rrr_log_printf_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		...
 );
-void rrr_log_printf_nolock_loglevel_translated (
+void rrr_log_print_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
-		const char *__restrict __format,
-		...
+		const char *message,
+		int is_json
 );
 void rrr_log_printf_plain (
 		const char *__restrict __format,
@@ -403,12 +407,12 @@ void rrr_log_fprintf (
 		const char *__restrict __format,
 		...
 );
-void rrr_log_print_json (
-		FILE *file_target,
+void rrr_log_print_json_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
 		const char *prefix,
+		const char *message,
 		const char *json
 );
 int rrr_log_socket_connect (

@@ -247,7 +247,7 @@ static void rrr_logd_print (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
-		uint32_t flags,
+		uint32_t log_flags,
 		const char *prefix,
 		const char *message
 ) {
@@ -272,28 +272,15 @@ static void rrr_logd_print (
 		prefix = "rrr_logd";
 	}
 
-	if (loglevel_orig == RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN) {
-		rrr_log_printf_nolock_loglevel_translated (
-				file,
-				line,
-				loglevel_translated,
-				flags,
-				prefix,
-				add_newline ? "%s\n" : "%s",
-				message
-		);
-	}
-	else {
-		rrr_log_printf_nolock (
-				file,
-				line,
-				loglevel_orig,
-				flags,
-				prefix,
-				add_newline ? "%s\n" : "%s",
-				message
-		);
-	}
+	rrr_log_print_nolock (
+			file,
+			line,
+			loglevel_translated,
+			loglevel_orig,
+			prefix,
+			message,
+			(log_flags & RRR_MSG_LOG_F_JSON) != 0
+	);
 }
 
 static int rrr_logd_read_msg_callback (

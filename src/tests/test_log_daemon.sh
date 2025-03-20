@@ -17,12 +17,18 @@ PID=
 SOCKET=/tmp/rrr-logd-socket.sock
 TMP=/tmp/rrr-logd-output
 LOG_MSG="DEADBEEF"
+LOG_STR_JSON="{\"log_message\": \"DEADBEEF\", \"custom\": \"CUSTOM\"}"
 LOG_PREFIX="test"
+LOG_FLAGS="0"
+LOG_FLAGS_JSON="1"
 LOG_LEVEL="4"
 LOG_OUT_4="<4> <$LOG_PREFIX> $LOG_MSG"
 LOG_OUT_7="<7> <rrr_post> $LOG_MSG"
-LOG_IN="$LOG_LEVEL	$LOG_PREFIX	$LOG_MSG	"
-LOG_DEF="ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
+LOG_OUT_JSON_RRR="\"log_level_translated\":\"7\",\"log_prefix\":\"rrr\",\"log_message\":\"Exiting program without errors\"";
+LOG_OUT_JSON_ARRAY="\"log_message\":\"DEADBEEF\",\"custom\":\"CUSTOM\""
+LOG_IN="$LOG_FLAGS	$LOG_LEVEL	$LOG_PREFIX	$LOG_MSG	"
+LOG_IN_JSON="$LOG_FLAGS_JSON	$LOG_LEVEL	$LOG_PREFIX	$LOG_STR_JSON"
+LOG_DEF="ustr#log_flags,sep1,ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
 
 if [ "x$VALGRIND" != "x" ]; then
 	SLEEP=2
@@ -129,8 +135,7 @@ function log_delivery() {
 	logd_stop 0
 
 	OUTPUT=`logd_output`
-
-	if [ "x$OUTPUT" != "x$OUT" ]; then
+	if ! echo "$OUTPUT" | grep "$OUT" > /dev/null; then
 		echo "Unexpected output '$OUTPUT' expected '$OUT'"
 		rm -f $TMP
 		exit 1
@@ -162,7 +167,7 @@ function log_delivery_from_rrr() {
 
 	OUTPUT=`logd_output`
 	if ! echo "$OUTPUT" | grep "$RRR_OUTPUT" > /dev/null; then
-		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon"
+		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon, output was '$OUTPUT'"
 	fi
 }
 
@@ -209,8 +214,19 @@ log_delivery_from_rrr -v "<0> <rrr> Read Route Record"
 log_delivery_from_rrr -v "<3> <rrr> Read Route Record" -l
 
 ####################################################
-# Verify JSON output
+# Verify JSON output from main process
 ####################################################
 
-log_delivery_from_rrr -v "{\"log_level\": 0, \"message\": \"Read Route Record\"}" -j
+log_delivery_from_rrr -v "$LOG_OUT_JSON_RRR" -j
 
+####################################################
+# Verify JSON log message delivery on socket
+####################################################
+
+log_delivery "$LOG_IN_JSON" "-a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
+
+####################################################
+# Native JSON log message delivery on socket
+####################################################
+
+log_delivery "$LOG_IN_JSON" "-L -a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"

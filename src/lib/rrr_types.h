@@ -155,6 +155,13 @@ static inline int rrr_int_from_biglength_bug_const (rrr_biglength operand) {
 	return (int) operand;
 }
 
+static inline int rrr_int_from_biglength_abort_const (rrr_biglength operand) {
+	if (operand > INT_MAX) {
+		RRR_ABORT("BUG: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
+	}
+	return (int) operand;
+}
+
 static inline int rrr_int_from_length_err (int *target, rrr_length operand) {
 	return rrr_int_from_biglength_err(target, operand);
 }
