@@ -89,7 +89,7 @@ rrr_lua_LDFLAGS = ${ldflags} ${LUA_LDFLAGS} ${LUA_LIBS} -pie
 endif
 
 if RRR_WITH_JS
-rrr_js_SOURCES = rrr_js.cxx
+rrr_js_SOURCES = rrr_js.cxx main.c
 rrr_js_CXXFLAGS = ${AM_CXXFLAGS} ${JS_CXXFLAGS} -fpie
 rrr_js_LDFLAGS = ${ldflags} -lrrrcxx ${JS_LDFLAGS} ${JS_LIBS} -pie
 endif

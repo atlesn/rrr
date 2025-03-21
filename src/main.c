@@ -126,6 +126,20 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		goto out;
 	}
 
+	if (cmd_exists(cmd, "log-socket", 0)) {
+		const char *log_socket = cmd_get_value(cmd, "log-socket", 0);
+		if (cmd_get_value(cmd, "log-socket", 1) != NULL) {
+			RRR_MSG_0("Multiple log-socket arguments were specified\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (rrr_log_socket_connect(log_socket) != 0) {
+			RRR_MSG_0("Connection to log socket '%s' failed\n", log_socket);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+
 	const char *environment_file = cmd_get_value(cmd, "environment-file", 0);
 	if (environment_file != NULL) {
 		if (rrr_environment_file_parse(&environment_map, environment_file) != 0) {

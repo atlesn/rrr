@@ -7,11 +7,13 @@ set +e
 # LOGD=../.libs/rrr_logd
 # POST=../.libs/rrr_post
 # RRR=../.libs/rrr
+# RRR=../.libs/rrr_js
 
 VALGRIND=
 LOGD=../rrr_logd
 POST=../rrr_post
 RRR=../rrr
+RRR_JS=../rrr_js
 
 PID=
 SOCKET=/tmp/rrr-logd-socket.sock
@@ -171,6 +173,35 @@ function log_delivery_from_rrr() {
 	fi
 }
 
+function log_delivery_from_rrr_js() {
+	RRR_ARGS=$1
+	JS_FILE=$2
+	RRR_OUTPUT=$3
+	LOGD_ARGS=$4
+
+	logd_start "$LOGD_ARGS"
+	verify_socket_exists
+
+	echo "$VALGRIND $RRR_JS $RRR_ARGS -L $SOCKET script < $JS_FILE"
+	RRR_OUT=`$VALGRIND $RRR_JS $RRR_ARGS -L $SOCKET script < $JS_FILE`
+	RET=$?
+
+	if [ $RET -ne 0 ]; then
+		sigkill_and_bail "Unexpected return $RET from rrr_js"
+	fi
+
+	if [ "x$RRR_OUT" != "x" ]; then
+		sigkill_and_bail "Unexpected output '$RRR_OUT' from rrr_js, should be delivered to socket only"
+	fi
+
+	logd_stop 0
+
+	OUTPUT=`logd_output`
+	if ! echo "$OUTPUT" | grep "$RRR_OUTPUT" > /dev/null; then
+		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon, output was '$OUTPUT'"
+	fi
+}
+
 ####################################################
 # Verify that logd terminates neatly
 ####################################################
@@ -230,3 +261,9 @@ log_delivery "$LOG_IN_JSON" "-a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
 ####################################################
 
 log_delivery "$LOG_IN_JSON" "-L -a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
+
+####################################################
+# Native JSON log message delivery from JS
+####################################################
+
+log_delivery_from_rrr_js "" test_log.mjs "\"MY MESSAGE\"" "-j"
