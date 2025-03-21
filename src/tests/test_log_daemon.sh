@@ -266,4 +266,4 @@ log_delivery "$LOG_IN_JSON" "-L -a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
 # Native JSON log message delivery from JS
 ####################################################
 
-log_delivery_from_rrr_js "" test_log.mjs "\"MY MESSAGE\"" "-j"
+log_delivery_from_rrr_js "" test_log.mjs "\"log_message\":\"MY MESSAGE\"" "-j"

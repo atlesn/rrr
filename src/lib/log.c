@@ -82,7 +82,8 @@ static _Thread_local pthread_mutex_t rrr_log_socket_lock = PTHREAD_MUTEX_INITIAL
 
 
 static void (*rrr_log_printf_intercept_callback)(RRR_LOG_HOOK_ARGS) = NULL;
-static void *rrr_log_printf_intercept_callback_arg = NULL;
+static void (*rrr_log_json_intercept_callback)(RRR_LOG_HOOK_JSON_ARGS) = NULL;
+static void *rrr_log_intercept_callback_arg = NULL;
 
 static void __rrr_log_free_dbl_ptr(void *arg) {
 	void **dbl_ptr = (void **) arg;
@@ -101,10 +102,12 @@ static void __rrr_log_socket_send_queue_reset(void) {
 
 static void __rrr_log_printf_intercept_set (
 		void (*log)(RRR_LOG_HOOK_ARGS),
+		void (*log_json)(RRR_LOG_HOOK_JSON_ARGS),
 		void *private_arg
 ) {
 	rrr_log_printf_intercept_callback = log;
-	rrr_log_printf_intercept_callback_arg = private_arg;
+	rrr_log_json_intercept_callback = log_json;
+	rrr_log_intercept_callback_arg = private_arg;
 }
 
 int rrr_log_init(void) {
@@ -357,9 +360,17 @@ static void __rrr_log_print_json_map (
 }
 
 static void __rrr_log_print_json_object (
-		const struct rrr_json_object *object
+		struct rrr_json_object *object,
+		int do_lock
 ) {
-	rrr_json_from_object_nolog(STDOUT_FILENO, object);
+	if (do_lock) {
+		LOCK_BEGIN;
+		rrr_json_from_object_print_nolog(STDOUT_FILENO, object);
+		LOCK_END;
+	}
+	else {
+		rrr_json_from_object_print_nolog(STDOUT_FILENO, object);
+	}
 }
 
 static void __rrr_log_json_make_common_map (
@@ -582,7 +593,7 @@ static void __rrr_log_vprintf_intercept (
 			0,
 			prefix,
 			message,
-			rrr_log_printf_intercept_callback_arg
+			rrr_log_intercept_callback_arg
 	);
 
 	out:
@@ -655,21 +666,26 @@ static void __rrr_log_printf_nolock_va (
 #endif
 }
 
-static int __rrr_log_print_json_nolock (
+static int __rrr_log_print_json (
 		const char *file,
 		int line,
 		uint8_t loglevel_translated,
 		const char *prefix,
 		const char *message,
-		const char *json
+		const char *json,
+		int do_lock
 ) {
 	char ts[32];
-	struct rrr_json_object *object;
-
-	__rrr_log_make_timestamp(ts);
+	struct rrr_json_object *object = NULL;
+	char *buf = NULL;
 
 	if (rrr_json_object_parse_nolog(&object, json, rrr_int_from_biglength_abort_const(strlen(json))) != 0)
 		return 1;
+
+	if (message != NULL)
+		rrr_json_object_set_nolog_trim(object, "log_message", message);
+
+	__rrr_log_make_timestamp(ts);
 
 	__rrr_log_json_make_common_json (
 			object,
@@ -680,12 +696,28 @@ static int __rrr_log_print_json_nolock (
 			ts
 	);
 
-	if (message != NULL)
-		rrr_json_object_set_nolog_trim(object, "log_message", message);
+	if (rrr_log_json_intercept_callback != NULL) {
+		rrr_json_from_object_nolog(&buf, object);
 
-	__rrr_log_print_json_object(object);
+		rrr_log_json_intercept_callback (
+				file,
+				line,
+				loglevel_translated,
+				prefix,
+				buf,
+				rrr_log_intercept_callback_arg
+		);
+	}
+	else {
+#ifndef RRR_LOG_DISABLE_PRINT
+		__rrr_log_print_json_object(object, do_lock);
+#endif
+	}
 
-	rrr_json_object_destroy(object);
+	if (object != NULL)
+		rrr_json_object_destroy(object);
+	if (buf != NULL)
+		rrr_free(buf);
 
 	return 0;
 }
@@ -697,7 +729,8 @@ static void __rrr_log_print_nolock (
 		int is_translated,
 		const char *prefix,
 		const char *message,
-		int is_json
+		int is_json,
+		int add_newline
 ) {
 	char ts[32];
 	uint8_t loglevel_translated;
@@ -729,23 +762,25 @@ static void __rrr_log_print_nolock (
 #ifndef RRR_LOG_DISABLE_PRINT
 		if (rrr_config_global.do_json_output) {
 			if (is_json) {
-				__rrr_log_print_json_nolock (
+				__rrr_log_print_json (
 					file,
 					line,
 					loglevel_translated,
 					prefix,
 					NULL,
-					message
+					message,
+					0 /* No locking */
 				);
 			}
 			else {
-				__rrr_log_print_json_nolock (
+				__rrr_log_print_json (
 					file,
 					line,
 					loglevel_translated,
 					prefix,
 					message,
-					"{}"
+					"{}",
+					0 /* No locking */
 				);
 			}
 		}
@@ -757,7 +792,7 @@ static void __rrr_log_print_nolock (
 					prefix
 				)
 			);
-			printf("%s", message);
+			printf("%s%s", message, add_newline || is_json ? "\n" : "");
 		}
 #endif
 
@@ -806,7 +841,8 @@ void rrr_log_print_nolock (
 		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
-		int is_json
+		int is_json,
+		int add_newline
 ) {
 	uint8_t loglevel_use = loglevel_orig;
 	int is_translated = 0;
@@ -823,7 +859,8 @@ void rrr_log_print_nolock (
 			is_translated,
 			prefix,
 			message,
-			is_json
+			is_json,
+			add_newline
 	);
 }
 
@@ -1098,7 +1135,7 @@ void rrr_log_fprintf (
 	va_end(args_copy);
 }
 
-void rrr_log_print_json_nolock (
+void rrr_log_print_json (
 		const char *file,
 		int line,
 		uint8_t loglevel_translated,
@@ -1106,10 +1143,10 @@ void rrr_log_print_json_nolock (
 		const char *message,
 		const char *json
 ) {
-	if (__rrr_log_print_json_nolock(file, line, loglevel_translated, prefix, message, json) == 0)
+	if (__rrr_log_print_json(file, line, loglevel_translated, prefix, message, json, 1 /* With locking */) == 0)
 		return;
 
-	if (__rrr_log_print_json_nolock(file, line, loglevel_translated, prefix, message, "{}") == 0)
+	if (__rrr_log_print_json(file, line, loglevel_translated, prefix, message, "{}", 1 /* With locking */) == 0)
 		return;
 
 	RRR_ABORT("Failed in %s\n", __func__);
@@ -1139,29 +1176,10 @@ static void __rrr_log_socket_send_from_queue (void) {
 	rrr_log_socket_send_queue_pos = 0;
 }
 
-static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
-	(void)(private_arg);
-
-	struct rrr_msg_log *msg_log = NULL;
-	rrr_length msg_size;
-
-	assert(rrr_log_is_initialized);
-
-	if (rrr_log_helper_log_msg_make (
-			&msg_log,
-			&msg_size,
-			file,
-			line,
-			loglevel_translated,
-			loglevel_orig,
-			flags,
-			prefix,
-			message
-	) != 0) {
-		fprintf(stderr, "Failed to make log message in %s, cannot continue.\n", __func__);
-		abort();
-	}
-
+static void __rrr_log_socket_intercept_send (
+		struct rrr_msg_log *msg_log,
+		rrr_length msg_size
+) {
 	const int try_lock_result = pthread_mutex_trylock(&rrr_log_socket_lock);
 
 	// Must always append to send queue if:
@@ -1226,6 +1244,58 @@ static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
 	pthread_cleanup_pop(1);
 }
 
+static void __rrr_log_socket_printf_intercept_callback (RRR_LOG_HOOK_ARGS) {
+	(void)(private_arg);
+
+	struct rrr_msg_log *msg_log = NULL;
+	rrr_length msg_size;
+
+	assert(rrr_log_is_initialized);
+
+	if (rrr_log_helper_log_msg_make (
+			&msg_log,
+			&msg_size,
+			file,
+			line,
+			loglevel_translated,
+			loglevel_orig,
+			flags,
+			prefix,
+			message
+	) != 0) {
+		fprintf(stderr, "Failed to make log message in %s, cannot continue.\n", __func__);
+		abort();
+	}
+
+	__rrr_log_socket_intercept_send(msg_log, msg_size);
+}
+
+static void __rrr_log_socket_json_intercept_callback (RRR_LOG_HOOK_JSON_ARGS) {
+	(void)(private_arg);
+
+	struct rrr_msg_log *msg_log = NULL;
+	rrr_length msg_size;
+
+	assert(rrr_log_is_initialized);
+
+	if (rrr_log_helper_log_msg_make (
+			&msg_log,
+			&msg_size,
+			file,
+			line,
+			loglevel_translated,
+			RRR_LOG_LEVEL_NOT_GIVEN,
+			RRR_MSG_LOG_F_JSON,
+			prefix,
+			json
+	) != 0) {
+		fprintf(stderr, "Failed to make log message in %s, cannot continue.\n", __func__);
+		abort();
+	}
+
+	__rrr_log_socket_intercept_send(msg_log, msg_size);
+}
+
 int rrr_log_socket_connect (
 		const char *log_socket
 ) {
@@ -1240,12 +1310,16 @@ int rrr_log_socket_connect (
 	else {
 		assert(rrr_log_socket_file == NULL);
 		rrr_log_socket_file = log_socket;
-		__rrr_log_printf_intercept_set (__rrr_log_socket_printf_intercept_callback, NULL);
+		__rrr_log_printf_intercept_set (
+				__rrr_log_socket_printf_intercept_callback,
+				__rrr_log_socket_json_intercept_callback,
+				NULL
+		);
 	}
 
 	if (rrr_socket_unix_connect(&rrr_log_socket_fd, "log", log_socket, 0 /* Not nonblock */) != 0) {
 		// Make sure error messages are printed
-		__rrr_log_printf_intercept_set (NULL, NULL);
+		__rrr_log_printf_intercept_set (NULL, NULL, NULL);
 
 		RRR_MSG_0("Failed to connect to log socket '%s'\n", log_socket);
 

@@ -247,7 +247,7 @@ namespace RRR::JS {
 		const std::string &get_name() const {
 			return name;
 		}
-		std::string get_path_() const {
+		std::string get_path() const {
 			return cwd + "/" + name;
 		}
 

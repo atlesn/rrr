@@ -105,6 +105,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
 #	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
+#       define RRR_MSG_JSON(file, line, loglevel_translated, message, json) printf("%s%s", json != NULL ? json : "", message != NULL ? message : "")
 #	define RRR_MSG_0_V(fmt, ap) vprintf(fmt, ap)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
@@ -167,6 +168,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     do {                                                                                                                       \
         rrr_log_printf (__FILE__, __LINE__, debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);                        \
     } while (0)                                                                                                                \
+
+#    define RRR_MSG_JSON(file, line, loglevel_translated, message, json)                                                       \
+    do {                                                                                                                       \
+        rrr_log_print_json(file, line, loglevel_translated, rrr_config_global.log_prefix, message, json);                      \
+    } while (0)
 
 #	define RRR_MSG_0_V(fmt, ap) \
 	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, fmt, ap);}while(0)
@@ -301,6 +307,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             const char *message,                               \
             void *private_arg
 
+#define RRR_LOG_HOOK_JSON_ARGS                                 \
+	    const char *file,                                  \
+	    int line,                                          \
+            uint8_t loglevel_translated,                       \
+            const char *prefix,                                \
+            const char *json,                                  \
+            void *private_arg
+
 static inline uint8_t rrr_log_translate_loglevel_rfc5424_stdout (
 		uint8_t loglevel
 ) {
@@ -372,7 +386,8 @@ void rrr_log_print_nolock (
 		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
-		int is_json
+		int is_json,
+		int add_newline
 );
 void rrr_log_printf_plain (
 		const char *__restrict __format,
@@ -407,7 +422,7 @@ void rrr_log_fprintf (
 		const char *__restrict __format,
 		...
 );
-void rrr_log_print_json_nolock (
+void rrr_log_print_json (
 		const char *file,
 		int line,
 		uint8_t loglevel_translated,

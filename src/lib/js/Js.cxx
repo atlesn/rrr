@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -245,6 +245,67 @@ namespace RRR::JS {
 			args.GetReturnValue().Set(true);
 		}
 
+		void json(const v8::FunctionCallbackInfo<v8::Value> &args) {
+			auto isolate = args.GetIsolate();
+			auto ctx = args.GetIsolate()->GetCurrentContext();
+			v8::HandleScope handle_scope(isolate);
+
+			if (args.Length() != 3) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "json() requires three arguments")));
+				return;
+			}
+
+			auto loglevel = args[0]->ToUint32(ctx);
+			if (loglevel.IsEmpty()) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could not convert loglevel to number")));
+				return;
+			}
+
+			auto message = args[1]->ToString(ctx);
+			if (message.IsEmpty()) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could not convert message to string")));
+				return;
+			}
+
+			auto object = args[2]->ToObject(ctx);
+			if (object.IsEmpty()) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Could get object")));
+				return;
+			}
+
+			auto json = v8::JSON::Stringify(ctx, object.ToLocalChecked());
+			if (json.IsEmpty()) {
+				isolate->ThrowException(v8::Exception::TypeError(String(isolate, "Failed to stringify object")));
+				return;
+			}
+
+			String message_str(isolate, message.ToLocalChecked());
+			String json_str(isolate, json.ToLocalChecked());
+
+			auto stack = v8::StackTrace::CurrentStackTrace(isolate, 1);
+			if (stack->GetFrameCount() > 0) {
+				v8::Local<v8::StackFrame> frame = stack->GetFrame(isolate, 0);
+				String script_name(isolate, frame->GetScriptName());
+				int line_number = frame->GetLineNumber();
+				RRR_MSG_JSON(
+					*script_name,
+					line_number,
+					loglevel.ToLocalChecked()->Value(),
+					*message_str,
+					*json_str
+				);
+			}
+			else {
+				RRR_MSG_JSON(
+					__FILE__,
+					__LINE__,
+					loglevel.ToLocalChecked()->Value(),
+					*message_str,
+					*json_str
+				);
+			}
+		}
+
 		void log(const v8::FunctionCallbackInfo<v8::Value> &args) {
 			flog(7, args);
 		}
@@ -298,6 +359,12 @@ namespace RRR::JS {
 		trycatch(*this)
 	{
 		v8::Local<v8::Object> console = (v8::ObjectTemplate::New(env))->NewInstance(ctx).ToLocalChecked();
+		{
+			auto result = console->Set(ctx, String(*this, "json"), v8::Function::New(ctx, Console::json).ToLocalChecked());
+			if (!result.FromMaybe(false)) {
+				throw E("Failed to intitialize globals\n");
+			}
+		}
 		{
 			auto result = console->Set(ctx, String(*this, "log"), v8::Function::New(ctx, Console::log).ToLocalChecked());
 			if (!result.FromMaybe(false)) {
@@ -441,7 +508,7 @@ namespace RRR::JS {
 		if (program_source.length() > v8::String::kMaxLength) {
 			throw E("Script or module data too long");
 		}
-		l(String(ctx, program_source));
+		l(String(ctx, program_source), String(ctx, get_path()));
 		set_compiled();
 	}
 
@@ -523,8 +590,10 @@ namespace RRR::JS {
 	}
 
 	void Script::compile(CTX &ctx) {
-		compile_str_wrap(ctx, [&ctx,this](auto str){
-			auto script_maybe = v8::Script::Compile (ctx, str);
+		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
+		printf("PATH: %s\n", *path);
+			auto origin = v8::ScriptOrigin(path);
+			auto script_maybe = v8::Script::Compile (ctx, str, &origin);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to compile script: ") + msg);
 			})) {
@@ -771,12 +840,12 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	void Module::compile(CTX &ctx) {
-		compile_str_wrap(ctx, [&ctx,this](auto str){
+		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
 			auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
 
 #if defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE)
 			auto origin = v8::ScriptOrigin (
-					(v8::Local<v8::String>) String(ctx, get_path_()),
+					(v8::Local<v8::String>) path,
 					0,
 					0,
 					false,
@@ -790,7 +859,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #elif defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN)
 			auto origin = v8::ScriptOrigin (
 					ctx,
-					(v8::Local<v8::String>) String(ctx, get_path_()),
+					(v8::Local<v8::String>) path,
 					0,
 					0,
 					false,
@@ -804,7 +873,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #else
 			// Element 0 is set after mod is created below
 			auto origin = v8::ScriptOrigin (
-					(v8::Local<v8::String>) String(ctx, get_path_()),
+					(v8::Local<v8::String>) path,
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Integer>(),
 					v8::Local<v8::Boolean>(),
@@ -844,7 +913,7 @@ v8::Local<v8::FixedArray> import_assertions,
 
 	void Module::_run(CTX &ctx) {
 		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
-			throw E(std::string("Instantiation of module ") + get_path_() + (" failed"));
+			throw E(std::string("Instantiation of module ") + get_path() + (" failed"));
 		}
 		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
 
@@ -932,14 +1001,14 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_MEMORYSPAN_IN_CSM
 		mod = v8::Module::CreateSyntheticModule (
 			ctx,
-			String(ctx, get_path_()),
+			String(ctx, get_path()),
 			export_names,
 			evaluation_steps_callback
 		);
 #else
 		mod = v8::Module::CreateSyntheticModule (
 			ctx,
-			String(ctx, get_path_()),
+			String(ctx, get_path()),
 			std::vector(export_names.begin(), export_names.end()),
 			evaluation_steps_callback
 		);
@@ -958,7 +1027,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		// The evaluation steps callback will be invoked here. The
 		// caller must have registered the module using the identity
 		// hash prior to this step.
-		compile_str_wrap(ctx, [&ctx,this](auto str){
+		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
 			auto json_maybe = v8::JSON::Parse(ctx, str);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to parse JSON module: ") + msg);
@@ -968,7 +1037,7 @@ v8::Local<v8::FixedArray> import_assertions,
 			json = json_maybe.ToLocalChecked();
 
 			if (mod->InstantiateModule(ctx, static_resolve_callback_unexpected).IsNothing()) {
-				throw E(std::string("Instantiation of module ") + get_path_() + (" failed"));
+				throw E(std::string("Instantiation of module ") + (std::string) path + (" failed"));
 			}
 			assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
 

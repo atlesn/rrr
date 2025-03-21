@@ -51,9 +51,13 @@ void rrr_json_from_map_nolog (
 		char **target,
 		const struct rrr_map *map
 );
-void rrr_json_from_object_nolog (
+void rrr_json_from_object_print_nolog (
 		int fd,
-		const struct rrr_json_object *object
+		struct rrr_json_object *object
+);
+void rrr_json_from_object_nolog (
+		char **target,
+		struct rrr_json_object *object
 );
 int rrr_json_object_parse_nolog (
 		struct rrr_json_object **result,

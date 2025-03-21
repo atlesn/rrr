@@ -279,7 +279,8 @@ static void rrr_logd_print (
 			loglevel_orig,
 			prefix,
 			message,
-			(log_flags & RRR_MSG_LOG_F_JSON) != 0
+			(log_flags & RRR_MSG_LOG_F_JSON) != 0,
+			add_newline
 	);
 }
 

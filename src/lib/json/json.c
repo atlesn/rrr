@@ -540,13 +540,22 @@ void rrr_json_from_map_nolog (
 	json_object_put(base);
 }
 
-void rrr_json_from_object_nolog (
+void rrr_json_from_object_print_nolog (
 		int fd,
-		const struct rrr_json_object *object
+		struct rrr_json_object *object
 ) {
 	if (json_object_to_fd(fd, object->object, 0) != 0)
 		RRR_ABORT("Failed to output JSON in %s\n", __func__);
 	printf("\n");
+}
+
+void rrr_json_from_object_nolog (
+		char **target,
+		struct rrr_json_object *object
+) {
+	const char *json = json_object_to_json_string(object->object);
+	if ((*target = rrr_strdup(json)) == NULL)
+		RRR_ABORT("Failed to allocate memory in %s\n", __func__);
 }
 
 int rrr_json_object_parse_nolog (
