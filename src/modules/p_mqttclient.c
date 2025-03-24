@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
-#include <errno.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -614,10 +613,9 @@ static int mqttclient_publish (
 			publish->message_expiry_interval
 	);
 
-	if (rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish) != 0) {
-		RRR_MSG_0("Could not publish message in MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
+	if ((ret = rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish)) != 0) {
+		RRR_MSG_0("Could not publish message in MQTT client instance %s: %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -707,7 +705,7 @@ static int mqttclient_process_command_subscribe (
 		goto out;
 	}
 
-	if ((ret = mqttclient_do_subscribe (data)) != 0) {
+	if ((ret = mqttclient_do_subscribe(data)) != 0) {
 		goto out;
 	}
 
@@ -877,7 +875,7 @@ static int mqttclient_process (
 	}
 
 	if (is_command) {
-		if ((ret = mqttclient_process_command (data, reading)) != 0) {
+		if ((ret = mqttclient_process_command(data, reading)) != 0) {
 			goto out;
 		}
 	}
@@ -2068,7 +2066,7 @@ static void mqttclient_update_stats (
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 }
 
-static int __mqttclient_input_queue_process (
+static int mqttclient_input_queue_process (
 		struct mqtt_client_data *data
 ) {
 	int ret = 0;
@@ -2095,7 +2093,7 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mqtt_client_data *data = thread_data->private_data;
 
-	int ret = 0;
+	int ret_tmp;
 
 	RRR_LL_PUSH(&data->input_queue, entry);
 	rrr_msg_holder_incref_while_locked(entry);
@@ -2116,12 +2114,17 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		rrr_msg_holder_unlock(entry);
 	}
 
-	if (!data->send_disabled && __mqttclient_input_queue_process (data) != 0) {
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	if (!data->send_disabled && (ret_tmp = mqttclient_input_queue_process(data)) != 0) {
+		if (ret_tmp == RRR_MQTT_SESSION_DELETED) {
+			rrr_event_dispatch_exit(INSTANCE_D_EVENTS(data->thread_data));
+		}
+		else {
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		}
 	}
 
 	out:
-	return ret;
+	return 0;
 }
 
 static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -2318,7 +2321,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			thread
 	);
 
-	if (__mqttclient_input_queue_process (data) != 0) {
+	if (mqttclient_input_queue_process(data) != 0) {
+		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+			goto out_destroy_client;
+		}
 		goto reconnect;
 	}
 
