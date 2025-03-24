@@ -105,6 +105,7 @@ namespace RRR::JS {
 		public:
 		String(v8::Isolate *isolate, const char *str);
 		String(v8::Isolate *isolate, const char *data, int size);
+		String(v8::Isolate *isolate, const String &str);
 		String(v8::Isolate *isolate, v8::Local<v8::String> str);
 		String(v8::Isolate *isolate, std::string str);
 
@@ -239,7 +240,7 @@ namespace RRR::JS {
 		static Duple<std::string, std::string> split_path(const std::string &path);
 
 		protected:
-		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+		template <typename L> void compile_wrap(CTX &ctx, bool is_module, L l);
 		virtual bool is_type(const std::type_info &type) const = 0;
 		const std::string &get_cwd() const {
 			return cwd;

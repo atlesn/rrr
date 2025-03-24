@@ -143,6 +143,12 @@ namespace RRR::JS {
 	{
 	}
 
+	String::String(v8::Isolate *isolate, const String &string) :
+		str(string.str),
+		utf8(isolate, this->str)
+	{
+	}
+
 	String::String(v8::Isolate *isolate, v8::Local<v8::String> str) :
 		str(str.IsEmpty() ? ((v8::MaybeLocal<v8::String>) v8::String::NewFromUtf8(isolate, "")).ToLocalChecked() : str),
 		utf8(isolate, this->str)
@@ -504,11 +510,60 @@ namespace RRR::JS {
 		return Duple<std::string, std::string>(dir, name);
 	}
 
-	template <typename L> void Source::compile_str_wrap(CTX &ctx, L l) {
+	template <typename L> void Source::compile_wrap(CTX &ctx, bool is_module, L l) {
 		if (program_source.length() > v8::String::kMaxLength) {
 			throw E("Script or module data too long");
 		}
-		l(String(ctx, program_source), String(ctx, get_path()));
+
+		auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
+		auto src = String(ctx, program_source);
+		auto path = String(ctx, get_path());
+
+#if defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE)
+		auto origin = v8::ScriptOrigin (
+				(v8::Local<v8::String>) path,
+				0,
+				0,
+				false,
+				-1,
+				v8::Local<v8::Value>(),
+				false,
+				false,
+				is_module,
+				host_defined_options
+		);
+#elif defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN)
+		auto origin = v8::ScriptOrigin (
+				ctx,
+				(v8::Local<v8::String>) path,
+				0,
+				0,
+				false,
+				-1,
+				v8::Local<v8::Value>(),
+				false,
+				false,
+				is_module,
+				host_defined_options
+		);
+#else
+		// Element 0 is set after mod is created below
+		auto origin = v8::ScriptOrigin (
+				(v8::Local<v8::String>) path,
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Boolean>(),
+				v8::Local<v8::Integer>(),
+				v8::Local<v8::Value>(),
+				v8::Local<v8::Boolean>(),
+				v8::Local<v8::Boolean>(),
+				v8::Boolean::New(ctx, is_modules),
+				host_defined_options
+		);
+#endif
+
+		l((v8::Local<v8::String>) String(ctx, src), String(ctx, path), origin, host_defined_options);
+
 		set_compiled();
 	}
 
@@ -590,9 +645,7 @@ namespace RRR::JS {
 	}
 
 	void Script::compile(CTX &ctx) {
-		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
-		printf("PATH: %s\n", *path);
-			auto origin = v8::ScriptOrigin(path);
+		compile_wrap(ctx, false, [&ctx,this](auto str, auto path, auto origin, auto host_defined_options){
 			auto script_maybe = v8::Script::Compile (ctx, str, &origin);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to compile script: ") + msg);
@@ -840,51 +893,7 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	void Module::compile(CTX &ctx) {
-		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
-			auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
-
-#if defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE)
-			auto origin = v8::ScriptOrigin (
-					(v8::Local<v8::String>) path,
-					0,
-					0,
-					false,
-					-1,
-					v8::Local<v8::Value>(),
-					false,
-					false,
-					true, // is_module
-					host_defined_options
-			);
-#elif defined(RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN)
-			auto origin = v8::ScriptOrigin (
-					ctx,
-					(v8::Local<v8::String>) path,
-					0,
-					0,
-					false,
-					-1,
-					v8::Local<v8::Value>(),
-					false,
-					false,
-					true, // is_module
-					host_defined_options
-			);
-#else
-			// Element 0 is set after mod is created below
-			auto origin = v8::ScriptOrigin (
-					(v8::Local<v8::String>) path,
-					v8::Local<v8::Integer>(),
-					v8::Local<v8::Integer>(),
-					v8::Local<v8::Boolean>(),
-					v8::Local<v8::Integer>(),
-					v8::Local<v8::Value>(),
-					v8::Local<v8::Boolean>(),
-					v8::Local<v8::Boolean>(),
-					v8::Boolean::New(ctx, true), // is_module
-					host_defined_options
-			);
-#endif
+		compile_wrap(ctx, true, [&ctx,this](auto str, auto path, auto origin, auto host_defined_options){
 			auto source = v8::ScriptCompiler::Source(str, origin);
 			auto module_maybe = v8::ScriptCompiler::CompileModule(ctx, &source);
 			if (ctx.trycatch_ok([](auto msg){
@@ -1027,7 +1036,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		// The evaluation steps callback will be invoked here. The
 		// caller must have registered the module using the identity
 		// hash prior to this step.
-		compile_str_wrap(ctx, [&ctx,this](auto str, auto path){
+		compile_wrap(ctx, true, [&ctx,this](auto str, auto path, auto origin, auto host_defined_options){
 			auto json_maybe = v8::JSON::Parse(ctx, str);
 			if (ctx.trycatch_ok([](auto msg){
 				throw E(std::string("Failed to parse JSON module: ") + msg);
