@@ -93,6 +93,40 @@ namespace RRR::JS {
 		return (Isolate *) ((v8::Isolate *) ctx)->GetData(0);
 	}
 
+	template <typename T> void Isolate::register_module(int hash, std::shared_ptr<T> mod) {
+		if (module_map.contains(hash))
+			throw E(std::string("Module with hash ") + std::to_string(hash) + " already registered");
+		module_map[hash] = mod;
+	}
+
+	template <typename T> std::shared_ptr<T> Isolate::compile_and_register_module(CTX &ctx, std::shared_ptr<T> mod) {
+		// Prepare phase may or may not create the module, difference
+		// being availibility of the identity hash after the call.
+		mod->compile_prepare(ctx);
+
+		if (mod->is_created()) {
+			const int hash = mod->get_identity_hash();
+			register_module(hash, mod);
+			mod->compile(ctx);
+			if (!mod->is_compiled()) {
+				module_map.erase(hash);
+			}
+		}
+		else {
+			mod->compile(ctx);
+			if (mod->is_compiled()) {
+				const int hash = mod->get_identity_hash();
+				register_module(hash, mod);
+			}
+		}
+
+		v8::MaybeLocal<v8::Module> modx = *mod;
+
+		printf("Registered module status %i\n", modx.ToLocalChecked()->GetStatus());
+
+		return mod;
+	}
+
 	std::string Isolate::resolve_path(const std::string &referrer_cwd, const std::string &relative_path) {
 		if (relative_path.find("/") != 0 && relative_path.find("./") != 0 && relative_path.find("../") != 0) {
 			throw E(std::string("Bare import statements are not supported. Specifier must be a path beginning with / or ./ ('") + relative_path + "' was provided and referrer cwd was '" + referrer_cwd + "')");
@@ -108,22 +142,18 @@ namespace RRR::JS {
 		}
 	}
 
-	v8::MaybeLocal<v8::Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
+	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
 		try {
 			auto resolved_path = resolve_path(referrer_cwd, relative_path);
 
 			for (const auto &pair : module_map) {
 				if (pair.second->absolute_path_equals(resolved_path)) {
-					printf("Mod was old\n");
-					auto mod = pair.second;
-					return *mod;
+					return pair.second;
 				}
 			}
 
 			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
-			printf("Mod was new\n");
-			mod->run(ctx);
-			return *mod;
+			return mod;
 		}
 		catch (RRR::util::Readfile::E e) {
 			throw E(std::string("Failed to read from module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
@@ -133,12 +163,21 @@ namespace RRR::JS {
 		}
 	}
 
+	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source) {
+		try {
+			auto mod = compile_and_register_module(ctx, Module::make_shared(referrer_cwd, name, source));
+			return mod;
+		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load module source '") + name + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
+		}
+	}
+
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 	v8::MaybeLocal<v8::Module> Isolate::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
 		try {
 			auto resolved_path = resolve_path(referrer_cwd, relative_path);
 			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
-			printf("Mod JSON was new (always)\n");
 			return *mod;
 		}
 		catch (RRR::util::Readfile::E e) {
@@ -513,6 +552,8 @@ namespace RRR::JS {
 		}
 		if (!column.IsNothing()) {
 			col = column.ToChecked();
+			if (col < 0)
+				col = 0;
 		}
 
 		str += "In " + script_name + "\n";
@@ -681,8 +722,14 @@ namespace RRR::JS {
 	{
 	}
 
+	bool Program::is_run() const {
+		return did_run;
+	}
+
 	void Program::run(CTX &ctx) {
+		assert(did_run == false);
 		_run(ctx);
+		did_run = true;
 	}
 
 	Script::Script(const std::string &cwd, const std::string &name, const std::string &script_source) :
@@ -721,6 +768,11 @@ namespace RRR::JS {
 
 	void Script::_run(CTX &ctx) {
 		auto result = script->Run(ctx).FromMaybe((v8::Local<v8::Value>) String(ctx, ""));
+		if (ctx.trycatch_ok([](auto msg){
+			throw E(std::string("Failed to evaluate script: ") + msg);
+		})) {
+			// OK
+		}
 		RRR_UNUSED(result);
 	}
 
@@ -804,7 +856,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		auto mod = v8::MaybeLocal<v8::Module>();
 		import_assertions_diverge<>(ctx, import_assertions, [&](){
-			mod = isolate->load_module(ctx, referrer_cwd, name);
+			mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name);
 		}, [&](){
 			mod = isolate->load_json(ctx, referrer_cwd, name);
 		});
@@ -871,7 +923,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			import_assertions_diverge(ctx, import_assertions, [&](){
 #endif
-				auto mod = isolate->load_module(ctx, referrer_cwd, name);
+				auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			}, [&](){
@@ -908,12 +960,10 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	std::shared_ptr<Module> Module::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
-		printf("CWD %s name %s with source\n", cwd.c_str(), name.c_str());
 		return std::shared_ptr<Module>(new Module(cwd, name, module_source));
 	}
 
 	std::shared_ptr<Module> Module::make_shared (const std::string &absolute_path) {
-		printf("Absolute path %s\n", absolute_path.c_str());
 		return std::shared_ptr<Module>(new Module(absolute_path));
 	}
 
@@ -957,16 +1007,38 @@ v8::Local<v8::FixedArray> import_assertions,
 		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
 			throw E(std::string("Instantiation of module ") + get_path() + (" failed"));
 		}
-		assert (mod->GetStatus() == v8::Module::Status::kInstantiated);
+		if (mod->GetStatus() == v8::Module::Status::kEvaluated) {
+			RRR_BUG("Module already evaluated\n");
+		}
+		if (mod->GetStatus() != v8::Module::Status::kInstantiated) {
+			RRR_BUG("Module not instantiated\n");
+		}
 
 		auto result = mod->Evaluate(ctx);
 		RRR_UNUSED(result);
-		if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
-			if (ctx.trycatch_ok([](auto msg){
-				throw E(std::string("Failed to evaluate module: ") + msg);
-			})) {
-				// OK
+
+		auto to_print = std::string();
+
+		if (mod->GetStatus() == v8::Module::Status::kErrored) {
+			auto exception = mod->GetException();
+			if (!exception.IsEmpty()) {
+				auto msg = v8::Exception::CreateMessage(ctx, exception);
+				to_print += ctx.make_location_message(msg).c_str();
+				if (exception->IsObject()) {
+					auto exception_obj = exception->ToObject(ctx).ToLocalChecked();
+					auto stack = v8::Local<v8::Value>();
+					if (exception_obj->Get(ctx, String(ctx, "stack")).ToLocal(&stack)) {
+						to_print += String(ctx, stack->ToString(ctx).ToLocalChecked());
+					}
+				}
+				auto exception_str = String(ctx, exception->ToString(ctx).ToLocalChecked());
+				throw E(String(ctx, std::string("Failed to evaluate module: ") + *exception_str + "\n" + to_print));
 			}
+			else {
+				throw E(std::string("Failed to evaluate module, unknown exception."));
+			}
+		}
+		else if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
 			throw E(std::string("Failed to evaluate module, unknown reason."));
 		}
 	}

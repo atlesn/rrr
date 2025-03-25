@@ -73,7 +73,8 @@ namespace RRR::JS {
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> std::shared_ptr<T> get_module(int identity);
 		v8::Isolate *operator-> ();
 		static Isolate *get_from_context(CTX &ctx);
-		v8::MaybeLocal<v8::Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &relative_path);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &relative_path);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source);
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		v8::MaybeLocal<v8::Module> load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 #endif
@@ -182,6 +183,7 @@ namespace RRR::JS {
 		std::string make_location_message(v8::Local<v8::Message> msg);
 		template <class A> bool trycatch_ok(A err) {
 			auto msg = trycatch.Message();
+			auto exception = trycatch.Exception();
 			auto str = std::string("");
 
 			if (trycatch.HasTerminated()) {
@@ -199,6 +201,16 @@ namespace RRR::JS {
 			}
 			else {
 				str += "\n";
+			}
+
+			if (!exception.IsEmpty()) {
+				if (exception->IsObject()) {
+					auto exception_obj = exception->ToObject(ctx).ToLocalChecked();
+					auto stack = v8::Local<v8::Value>();
+					if (exception_obj->Get(*this, String(*this, "stack")).ToLocal(&stack)) {
+						str += std::string("\n") + *String(*this, stack->ToString(ctx).ToLocalChecked());
+					}
+				}
 			}
 
 			err(str.c_str());
@@ -270,12 +282,16 @@ namespace RRR::JS {
 	};
 
 	class Program : public Source {
+		private:
+		bool did_run = false;
+
 		protected:
 		Program(const std::string &cwd, const std::string &name, const std::string &program_source);
 		Program(const std::string &absolute_path);
 		Function get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name);
 
 		public:
+		bool is_run() const;
 		virtual ~Program() = default;
 		void run(CTX &ctx);
 		virtual void _run(CTX &ctx) = 0;
@@ -406,39 +422,6 @@ namespace RRR::JS {
 		operator v8::MaybeLocal<v8::Module>();
 	};
 #endif
-
-	template <typename T> void Isolate::register_module(int hash, std::shared_ptr<T> mod) {
-		printf("Register module %s hash %i\n", mod->get_name().c_str(), hash);
-		if (module_map.contains(hash))
-			throw E(std::string("Module with hash ") + std::to_string(hash) + " already registered");
-		module_map[hash] = mod;
-	}
-
-	template <typename T> std::shared_ptr<T> Isolate::compile_and_register_module(CTX &ctx, std::shared_ptr<T> mod) {
-		// Prepare phase may or may not create the module, difference
-		// being availibility of the identity hash after the call.
-		mod->compile_prepare(ctx);
-
-		if (mod->is_created()) {
-			const int hash = mod->get_identity_hash();
-			printf("Compile module A %s hash %i\n", mod->get_name().c_str(), hash);
-			register_module(hash, mod);
-			mod->compile(ctx);
-			if (!mod->is_compiled()) {
-				module_map.erase(hash);
-			}
-		}
-		else {
-			mod->compile(ctx);
-			if (mod->is_compiled()) {
-				const int hash = mod->get_identity_hash();
-				printf("Compiled module B %s hash %i\n", mod->get_name().c_str(), hash);
-				register_module(hash, mod);
-			}
-		}
-
-		return mod;
-	}
 
 	template <typename T, typename> T *ImportCallbackData::get_module() const {
 		return Source::cast<T>(mod);
