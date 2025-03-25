@@ -93,6 +93,63 @@ namespace RRR::JS {
 		return (Isolate *) ((v8::Isolate *) ctx)->GetData(0);
 	}
 
+	std::string Isolate::resolve_path(const std::string &referrer_cwd, const std::string &relative_path) {
+		if (relative_path.find("/") != 0 && relative_path.find("./") != 0 && relative_path.find("../") != 0) {
+			throw E(std::string("Bare import statements are not supported. Specifier must be a path beginning with / or ./ ('") + relative_path + "' was provided and referrer cwd was '" + referrer_cwd + "')");
+		}
+
+		auto path = (std::filesystem::path(referrer_cwd) / relative_path).lexically_normal();
+
+		try {
+			return std::filesystem::canonical(path).string();
+		}
+		catch (const std::exception &ex) {
+			throw E(std::string("Failed to resolve path ") + relative_path + " cwd " + referrer_cwd + " normalized " + path.string() + ": " + ex.what());
+		}
+	}
+
+	v8::MaybeLocal<v8::Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
+		try {
+			auto resolved_path = resolve_path(referrer_cwd, relative_path);
+
+			for (const auto &pair : module_map) {
+				if (pair.second->absolute_path_equals(resolved_path)) {
+					printf("Mod was old\n");
+					auto mod = pair.second;
+					return *mod;
+				}
+			}
+
+			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
+			printf("Mod was new\n");
+			mod->run(ctx);
+			return *mod;
+		}
+		catch (RRR::util::Readfile::E e) {
+			throw E(std::string("Failed to read from module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
+		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
+		}
+	}
+
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+	v8::MaybeLocal<v8::Module> Isolate::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
+		try {
+			auto resolved_path = resolve_path(referrer_cwd, relative_path);
+			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
+			printf("Mod JSON was new (always)\n");
+			return *mod;
+		}
+		catch (RRR::util::Readfile::E e) {
+			throw E(std::string("Failed to read from JSON module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
+		}
+		catch (RRR::util::E e) {
+			throw E(std::string("Failed to load JSON module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
+		}
+	}
+#endif
+
 	Value::Value(v8::Local<v8::Value> value) :
 		v8::Local<v8::Value>(value)
 	{
@@ -570,24 +627,30 @@ namespace RRR::JS {
 	Source::Source(const std::string &cwd, const std::string &name, const std::string &program_source) :
 		cwd(verify_cwd(cwd)),
 		name(verify_name(name)),
+		absolute_path(""),
 		program_source(program_source)
 	{
 	}
 
-	Source::Source(const Duple<std::string,std::string> &cwd_and_name, const std::string &program_source) :
+	Source::Source(const Duple<std::string,std::string> &cwd_and_name, const std::string &absolute_path, const std::string &program_source) :
 		cwd(cwd_and_name.first()),
 		name(cwd_and_name.second()),
+		absolute_path(absolute_path),
 		program_source(program_source)
 	{
 	}
 
 	Source::Source(const std::string &absolute_path) :
-		Source (split_path(absolute_path), (std::string) RRR::util::Readfile(absolute_path, 0, 0))
+		Source (split_path(absolute_path), absolute_path, (std::string) RRR::util::Readfile(absolute_path, 0, 0))
 	{
 	}
 
 	bool Source::is_compiled() const {
 		return compiled;
+	}
+
+	bool Source::absolute_path_equals(const std::string &str) const {
+		return absolute_path.compare(str) == 0;
 	}
 
 	Function Program::get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name) {
@@ -665,41 +728,7 @@ namespace RRR::JS {
 		return Program::get_function(ctx, ((v8::Local<v8::Context>) ctx)->Global(), name);
 	}
 
-	std::string Module::load_resolve_path(const std::string &referrer_cwd, const std::string &name) {
-		if (name.find("/") != 0 && name.find("./") != 0 && name.find("../") != 0) {
-			throw E(std::string("Bare import statements are not supported. Specifier must be a path beginning with / or ./ ('" + name + "' was provided and referrer cwd was '" + referrer_cwd + "')"));
-		}
-		return (std::filesystem::path(referrer_cwd) / name).lexically_normal().string();
-	}
-
-	template<typename L> v8::MaybeLocal<v8::Module> Module::load_wrap(const std::string &referrer_cwd, const std::string &relative_path, L l) {
-		try {
-			return *l(load_resolve_path(referrer_cwd, relative_path));
-		}
-		catch (RRR::util::Readfile::E e) {
-			throw E(std::string("Failed to read from module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
-		}
-		catch (RRR::util::E e) {
-			throw E(std::string("Failed to load module file '") + relative_path + "' cwd '" + referrer_cwd + "': " + ((std::string) e));
-		}
-	}
-
-	v8::MaybeLocal<v8::Module> Module::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
-		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &absolute_path){
-			auto mod = std::shared_ptr<Module>(Isolate::get_from_context(ctx)->make_module<Module>(ctx, absolute_path));
-			mod->run(ctx);
-			return mod;
-		});
-	}
-
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-	v8::MaybeLocal<v8::Module> Module::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
-		return load_wrap(referrer_cwd, relative_path, [&ctx](const std::string &absolute_path){
-			auto mod = std::shared_ptr<JSONModule>(Isolate::get_from_context(ctx)->make_module<JSONModule>(ctx, absolute_path));
-			return mod;
-		});
-	}
-
 	template <class T, class U> void Module::import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t, U u) {
 		assert(import_assertions->Length() % 2 == 0);
 
@@ -765,6 +794,7 @@ v8::Local<v8::FixedArray> import_assertions,
 	) {
 		auto name = std::string(String(context->GetIsolate(), specifier));
 		auto ctx = CTX(context, name);
+		Isolate *isolate = Isolate::get_from_context(ctx);
 		auto referrer_cwd = Isolate::get_from_context(ctx)
 			->get_module<Module>(referrer->GetIdentityHash())
 			->get_cwd();
@@ -773,10 +803,10 @@ v8::Local<v8::FixedArray> import_assertions,
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		auto mod = v8::MaybeLocal<v8::Module>();
-		import_assertions_diverge<>(ctx, import_assertions, [&ctx,referrer_cwd,name,&mod](){
-			mod = load_module(ctx, referrer_cwd, name);
-		}, [&ctx,referrer_cwd,name,&mod](){
-			mod = load_json(ctx, referrer_cwd, name);
+		import_assertions_diverge<>(ctx, import_assertions, [&](){
+			mod = isolate->load_module(ctx, referrer_cwd, name);
+		}, [&](){
+			mod = isolate->load_json(ctx, referrer_cwd, name);
 		});
 		return mod;
 #else
@@ -794,6 +824,7 @@ v8::Local<v8::FixedArray> import_assertions,
 	) {
 		auto name = std::string(String(context->GetIsolate(), specifier));
 		auto ctx = CTX(context, name);
+		auto isolate = Isolate::get_from_context(ctx);
 		auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
 
 		try {
@@ -838,13 +869,13 @@ v8::Local<v8::FixedArray> import_assertions,
 			RRR_DBG_1("V8 dynamic import %s referrer cwd %s\n", name.c_str(), referrer_cwd.c_str());
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-			import_assertions_diverge(ctx, import_assertions, [&ctx,name,resolver,referrer_cwd](){
+			import_assertions_diverge(ctx, import_assertions, [&](){
 #endif
-				auto mod = load_module(ctx, referrer_cwd, name);
+				auto mod = isolate->load_module(ctx, referrer_cwd, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-			}, [&ctx,name,resolver,referrer_cwd](){
-				auto mod = load_json(ctx, referrer_cwd, name);
+			}, [&](){
+				auto mod = isolate->load_json(ctx, referrer_cwd, name);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 			});
 #endif
@@ -877,10 +908,12 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	std::shared_ptr<Module> Module::make_shared (const std::string &cwd, const std::string &name, const std::string &module_source) {
+		printf("CWD %s name %s with source\n", cwd.c_str(), name.c_str());
 		return std::shared_ptr<Module>(new Module(cwd, name, module_source));
 	}
 
 	std::shared_ptr<Module> Module::make_shared (const std::string &absolute_path) {
+		printf("Absolute path %s\n", absolute_path.c_str());
 		return std::shared_ptr<Module>(new Module(absolute_path));
 	}
 
