@@ -99,24 +99,23 @@ namespace RRR::JS {
 		module_map[hash] = mod;
 	}
 
-	template <typename T> std::shared_ptr<T> Isolate::compile_and_register_module(CTX &ctx, std::shared_ptr<T> mod) {
+	template <typename T, typename L> std::shared_ptr<T> Isolate::compile_module(CTX &ctx, std::shared_ptr<T> mod, L postcompile) {
 		// Prepare phase may or may not create the module, difference
 		// being availibility of the identity hash after the call.
 		mod->compile_prepare(ctx);
 
 		if (mod->is_created()) {
 			const int hash = mod->get_identity_hash();
-			register_module(hash, mod);
 			mod->compile(ctx);
-			if (!mod->is_compiled()) {
-				module_map.erase(hash);
+			if (mod->is_compiled()) {
+				postcompile(hash, mod);
 			}
 		}
 		else {
 			mod->compile(ctx);
 			if (mod->is_compiled()) {
 				const int hash = mod->get_identity_hash();
-				register_module(hash, mod);
+				postcompile(hash, mod);
 			}
 		}
 
@@ -148,11 +147,17 @@ namespace RRR::JS {
 
 			for (const auto &pair : module_map) {
 				if (pair.second->absolute_path_equals(resolved_path)) {
-					return pair.second;
+					return dynamic_pointer_cast<Module>(pair.second);
 				}
 			}
 
-			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
+			printf("Compile module\n");
+			auto mod = compile_module(ctx, Module::make_shared(resolved_path), [&](auto hash, auto mod){
+				register_module(hash, mod);
+			});
+			printf("Run module A\n");
+			mod->run(ctx);
+			printf("Ran module, is run %i\n", mod->is_run());
 			return mod;
 		}
 		catch (RRR::util::Readfile::E e) {
@@ -165,7 +170,11 @@ namespace RRR::JS {
 
 	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source) {
 		try {
-			auto mod = compile_and_register_module(ctx, Module::make_shared(referrer_cwd, name, source));
+			auto mod = compile_module(ctx, Module::make_shared(referrer_cwd, name, source), [&](auto hash, auto mod) {
+				register_module(hash, mod);
+			});
+			printf("Run module A\n");
+			mod->run(ctx);
 			return mod;
 		}
 		catch (RRR::util::E e) {
@@ -177,7 +186,9 @@ namespace RRR::JS {
 	v8::MaybeLocal<v8::Module> Isolate::load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
 		try {
 			auto resolved_path = resolve_path(referrer_cwd, relative_path);
-			auto mod = compile_and_register_module(ctx, Module::make_shared(resolved_path));
+			auto mod = compile_module(ctx, JSONModule::make_shared(resolved_path), [&](auto hash, auto mod){
+				register_module(hash, mod);
+			});
 			return *mod;
 		}
 		catch (RRR::util::Readfile::E e) {
@@ -613,7 +624,7 @@ namespace RRR::JS {
 			throw E("Script or module data too long");
 		}
 
-		auto host_defined_options = v8::PrimitiveArray::New(ctx, 1);
+		auto host_defined_options = v8::PrimitiveArray::New(ctx, is_module ? 1 : 0);
 		auto src = String(ctx, program_source);
 		auto path = String(ctx, get_path());
 
@@ -881,6 +892,7 @@ v8::Local<v8::FixedArray> import_assertions,
 
 		try {
 			auto host_defined_options_array = v8::Local<v8::PrimitiveArray>::Cast(host_defined_options);
+			printf("Host defined options length: %i\n", host_defined_options_array->Length());
 			if (host_defined_options_array->Length() == 0) {
 				throw E("Cannot import dynamically from this context");
 			}
@@ -924,6 +936,7 @@ v8::Local<v8::FixedArray> import_assertions,
 			import_assertions_diverge(ctx, import_assertions, [&](){
 #endif
 				auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name);
+				assert(mod.ToLocalChecked()->GetStatus() >= v8::Module::kEvaluated);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			}, [&](){
@@ -1044,6 +1057,7 @@ v8::Local<v8::FixedArray> import_assertions,
 	}
 
 	Function Module::get_function(CTX &ctx, std::string name) {
+				assert(mod->GetStatus() >= v8::Module::kEvaluated);
 		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
 		return Program::get_function(ctx, object, name);
 	}

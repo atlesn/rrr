@@ -61,10 +61,10 @@ namespace RRR::JS {
 		v8::Isolate *isolate;
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
-		std::map<int,std::shared_ptr<Module>> module_map;
+		std::map<int,std::shared_ptr<Source>> module_map;
 		std::string load_resolve_path(const std::string &referrer_cwd, const std::string &name);
 		template <typename T> void register_module(int hash, std::shared_ptr<T> mod);
-		template <typename T> std::shared_ptr<T> compile_and_register_module(CTX &ctx, std::shared_ptr<T> mod);
+		template <typename T, typename L> std::shared_ptr<T> compile_module(CTX &ctx, std::shared_ptr<T> mod, L postcompile);
 		std::string resolve_path(const std::string &referrer_cwd, const std::string &relative_path);
 
 		public:
