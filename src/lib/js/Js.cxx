@@ -81,8 +81,9 @@ namespace RRR::JS {
 	}
 
 	template <typename T, typename> std::shared_ptr<T> Isolate::get_module(int identity) {
-		RRR_DBG_1("V8 isolate %p get module with id %i type %s\n", this, identity, typeid(T).name());
-		return Source::cast<T>(module_map.at(identity));
+		auto mod = Source::cast<T>(module_map.at(identity));
+		RRR_DBG_1("V8 isolate %p get module with id %i type %s name %s\n", this, identity, typeid(T).name(), mod->get_name().c_str());
+		return mod;
 	}
 
 	v8::Isolate *Isolate::operator-> () {
@@ -94,6 +95,7 @@ namespace RRR::JS {
 	}
 
 	template <typename T> void Isolate::register_module(int hash, std::shared_ptr<T> mod) {
+		RRR_DBG_1("V8 register module with id %i type %s name %s\n", hash, typeid(T).name(), mod->get_name().c_str());
 		if (module_map.contains(hash))
 			throw E(std::string("Module with hash ") + std::to_string(hash) + " already registered");
 		module_map[hash] = mod;
@@ -105,14 +107,14 @@ namespace RRR::JS {
 		mod->compile_prepare(ctx);
 
 		if (mod->is_created()) {
-			const int hash = mod->get_identity_hash();
+			const int hash = mod->get_identity_hash(ctx);
 			register_module(hash, mod);
 			mod->compile(ctx);
 		}
 		else {
 			mod->compile(ctx);
 			if (mod->is_compiled()) {
-				const int hash = mod->get_identity_hash();
+				const int hash = mod->get_identity_hash(ctx);
 				register_module(hash, mod);
 			}
 		}
@@ -141,10 +143,15 @@ namespace RRR::JS {
 
 			for (const auto &pair : module_map) {
 				if (pair.second->absolute_path_equals(resolved_path)) {
-					return dynamic_pointer_cast<Module>(pair.second);
+					auto x = pair.second;
+					auto mod = dynamic_pointer_cast<Module>(pair.second);
+					auto mod_local = mod->get(ctx);
+					RRR_DBG_1("V8 load existing module %s %i\n", resolved_path.c_str(), mod->get_identity_hash(ctx));
+					return mod;
 				}
 			}
 
+			RRR_DBG_1("V8 load new module %s\n", resolved_path.c_str());
 			auto mod = compile_module(ctx, Module::make_shared(resolved_path));
 			if (do_run) {
 				mod->run(ctx);
@@ -855,14 +862,14 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		auto mod = v8::MaybeLocal<v8::Module>();
 		import_assertions_diverge<>(ctx, import_assertions, [&](){
-			mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name, true);
+			mod = isolate->load_module(ctx, referrer_cwd, name, true)->get(ctx);
 		}, [&](){
 			mod = isolate->load_json(ctx, referrer_cwd, name);
 		});
-		return mod;
 #else
-		return load_module(ctx, referrer_cwd, name);
+		auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name, true);
 #endif
+		return mod;
 	}
 
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
@@ -922,7 +929,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			import_assertions_diverge(ctx, import_assertions, [&](){
 #endif
-				auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name, true);
+				auto mod = isolate->load_module(ctx, referrer_cwd, name, true)->get(ctx);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			}, [&](){
@@ -966,9 +973,9 @@ v8::Local<v8::FixedArray> import_assertions,
 		return std::shared_ptr<Module>(new Module(absolute_path));
 	}
 
-	Module::operator v8::MaybeLocal<v8::Module>() {
+	v8::MaybeLocal<v8::Module> Module::get(CTX &ctx) {
 		assert(is_compiled());
-		return mod;
+		return v8::MaybeLocal<v8::Module>(mod.Get(ctx));
 	}
 
 	void Module::compile_prepare(CTX &ctx) {
@@ -983,8 +990,9 @@ v8::Local<v8::FixedArray> import_assertions,
 			})) {
 				// OK
 			}
-			mod = module_maybe.ToLocalChecked();
-			host_defined_options->Set(ctx, 0, v8::Int32::New(ctx, mod->GetIdentityHash()));
+			auto mod_local = module_maybe.ToLocalChecked();
+			host_defined_options->Set(ctx, 0, v8::Int32::New(ctx, mod_local->GetIdentityHash()));
+			mod.Reset(ctx, mod_local);
 		});
 
 		if (ctx.trycatch_ok([](auto msg){
@@ -998,53 +1006,74 @@ v8::Local<v8::FixedArray> import_assertions,
 		return !mod.IsEmpty();
 	}
 
-	int Module::get_identity_hash() const {
-		return mod->GetIdentityHash();
+	int Module::get_identity_hash(CTX &ctx) const {
+		return mod.Get(ctx)->GetIdentityHash();
+	}
+
+	void Module::print_exception(CTX &ctx, std::string what) {
+		auto mod_local = mod.Get(ctx);
+		if (mod_local->GetStatus() != v8::Module::Status::kErrored) {
+			RRR_BUG("Module not errored\n");
+		}
+		auto to_print = std::string();
+		auto exception = mod_local->GetException();
+		if (!exception.IsEmpty()) {
+			auto msg = v8::Exception::CreateMessage(ctx, exception);
+			to_print += ctx.make_location_message(msg).c_str();
+			if (exception->IsObject()) {
+				auto exception_obj = exception->ToObject(ctx).ToLocalChecked();
+				auto stack = v8::Local<v8::Value>();
+				if (exception_obj->Get(ctx, String(ctx, "stack")).ToLocal(&stack)) {
+					to_print += String(ctx, stack->ToString(ctx).ToLocalChecked());
+				}
+			}
+			auto exception_str = String(ctx, exception->ToString(ctx).ToLocalChecked());
+			throw E(String(ctx, std::string("Failed to " + what + " module: ") + *exception_str + "\n" + to_print));
+		}
+		else {
+			throw E(std::string("Failed to " + what + " module, unknown exception."));
+		}
 	}
 
 	void Module::_run(CTX &ctx) {
-		if (mod->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
+		auto mod_local = mod.Get(ctx);
+
+		RRR_DBG_1("V8 instantiate module %s\n", get_path().c_str());
+
+		if (mod_local->InstantiateModule(ctx, static_resolve_callback).IsNothing()) {
+			if (ctx.trycatch_ok([&](auto msg){
+				throw E(std::string("Instantiation of module ") + get_path() + (" failed: ") + msg);
+			})) {
+				// OK
+			}
 			throw E(std::string("Instantiation of module ") + get_path() + (" failed"));
 		}
-		if (mod->GetStatus() == v8::Module::Status::kEvaluated) {
+		if (mod_local->GetStatus() == v8::Module::Status::kEvaluated) {
 			RRR_BUG("Module already evaluated\n");
 		}
-		if (mod->GetStatus() != v8::Module::Status::kInstantiated) {
+		if (mod_local->GetStatus() != v8::Module::Status::kInstantiated) {
 			RRR_BUG("Module not instantiated\n");
 		}
 
-		auto result = mod->Evaluate(ctx);
+		RRR_DBG_1("V8 run module %s\n", get_path().c_str());
+
+		auto result = mod_local->Evaluate(ctx);
 		RRR_UNUSED(result);
 
-		auto to_print = std::string();
-
-		if (mod->GetStatus() == v8::Module::Status::kErrored) {
-			auto exception = mod->GetException();
-			if (!exception.IsEmpty()) {
-				auto msg = v8::Exception::CreateMessage(ctx, exception);
-				to_print += ctx.make_location_message(msg).c_str();
-				if (exception->IsObject()) {
-					auto exception_obj = exception->ToObject(ctx).ToLocalChecked();
-					auto stack = v8::Local<v8::Value>();
-					if (exception_obj->Get(ctx, String(ctx, "stack")).ToLocal(&stack)) {
-						to_print += String(ctx, stack->ToString(ctx).ToLocalChecked());
-					}
-				}
-				auto exception_str = String(ctx, exception->ToString(ctx).ToLocalChecked());
-				throw E(String(ctx, std::string("Failed to evaluate module: ") + *exception_str + "\n" + to_print));
-			}
-			else {
-				throw E(std::string("Failed to evaluate module, unknown exception."));
-			}
+		if (mod_local->GetStatus() == v8::Module::Status::kErrored) {
+			print_exception(ctx, "evaluate");
 		}
-		else if (mod->GetStatus() != v8::Module::Status::kEvaluated) {
+		else if (mod_local->GetStatus() != v8::Module::Status::kEvaluated) {
 			throw E(std::string("Failed to evaluate module, unknown reason."));
 		}
+
+		RRR_DBG_1("V8 run module %s complete\n", get_path().c_str());
 	}
 
 	Function Module::get_function(CTX &ctx, std::string name) {
-				assert(mod->GetStatus() >= v8::Module::kEvaluated);
-		v8::Local<v8::Object> object = mod->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
+		auto mod_local = mod.Get(ctx);
+		assert(mod_local->GetStatus() >= v8::Module::kEvaluated);
+		v8::Local<v8::Object> object = mod_local->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked();
 		return Program::get_function(ctx, object, name);
 	}
 
@@ -1169,7 +1198,7 @@ v8::Local<v8::FixedArray> import_assertions,
 		return !mod.IsEmpty();
 	}
 
-	int JSONModule::get_identity_hash() const {
+	int JSONModule::get_identity_hash(CTX &ctx) const {
 		return mod->GetIdentityHash();
 	}
 #endif

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -245,6 +245,8 @@ namespace RRR::JS {
 	};
 
 	class Source {
+		friend class Isolate;
+
 		private:
 		bool compiled = false;
 		const std::string cwd;
@@ -338,7 +340,7 @@ namespace RRR::JS {
 			tModule,
 			tJSON
 		};
-		v8::Local<v8::Module> mod;
+		v8::Global<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
 		ImportCallbackData import_callback_data;
 		static std::string load_resolve_path(const std::string &specifier, const std::string &referrer);
@@ -354,11 +356,12 @@ namespace RRR::JS {
 #endif
 				v8::Local<v8::Module> referrer
 		);
+		void print_exception(CTX &ctx, std::string what);
 		void _run(CTX &ctx) final;
 		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
 		bool is_created() const;
-		int get_identity_hash() const;
+		int get_identity_hash(CTX &ctx) const;
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
 				v8::Local<v8::Context> context,
@@ -383,7 +386,7 @@ namespace RRR::JS {
 		public:
 		static std::shared_ptr<Module> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
 		static std::shared_ptr<Module> make_shared (const std::string &absolute_path);
-		operator v8::MaybeLocal<v8::Module>();
+		v8::MaybeLocal<v8::Module> get(CTX &ctx);
 		Function get_function(CTX &ctx, std::string name) final;
 	};
 
@@ -409,7 +412,7 @@ namespace RRR::JS {
 		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
 		bool is_created() const;
-		int get_identity_hash() const;
+		int get_identity_hash(CTX &ctx) const;
 
 		protected:
 		bool is_type(const std::type_info &type) const override {

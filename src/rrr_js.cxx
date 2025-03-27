@@ -66,6 +66,11 @@ int main(int argc, const char **argv, const char **env) {
 	}
 
 	type = cmd_get_value(&cmd, "type", 0);
+	if (!type) {
+		cmd_print_usage(&cmd);
+		ret = EXIT_FAILURE;
+		goto out_cleanup_cmd;
+	}
 	if (strcmp(type, "script") == 0) {
 		// OK
 	}

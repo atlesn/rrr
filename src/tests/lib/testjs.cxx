@@ -45,9 +45,10 @@ template<typename T> static void run(RRR::JS::Isolate &isolate, RRR::JS::CTX &ct
 	using namespace RRR::JS;
 
 	auto cwd = std::filesystem::current_path().string();
-	auto program = std::function<std::shared_ptr<Program>()>([&](){
-		return std::dynamic_pointer_cast<Program>(isolate.make_module<Module>(ctx, cwd, "-", in));
-	})();
+//	auto program = std::function<std::shared_ptr<Program>()>([&](){
+//		return std::dynamic_pointer_cast<Program>(isolate.load_module<Module>(ctx, cwd, "-", in));
+//	})();
+	auto program = std::dynamic_pointer_cast<Program>(isolate.load_module(ctx, cwd, "-", in, false));
 
 	if (program->is_compiled()) {
 		program->run(ctx);

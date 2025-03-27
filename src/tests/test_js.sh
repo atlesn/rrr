@@ -12,6 +12,7 @@ if test "x$RRR_WITH_JS" != 'xno'; then
 	PWD=`pwd`
 	SCRIPT_SUCCESS=test_import_success.js
 	SCRIPT_ONCE=test_import_once.mjs
+	SCRIPT_SAME_MODULE=test_a.mjs
 	SCRIPT_FAIL=test_import_fail.js
 	JS="../rrr_js -d 1"
 	TAIL=".then(() => {console.log('- OK')}).catch((msg) => {console.critical('- Loading failed: ' + msg)})";
@@ -19,35 +20,30 @@ if test "x$RRR_WITH_JS" != 'xno'; then
 	# Failing imports test
 	echo "Test failing import"
 	if ! $JS module < $SCRIPT_FAIL; then
-		# Import test failed
 		exit 1
 	fi
 
 	# Load module
 	echo "Test successful import"
 	if ! $JS module < $SCRIPT_SUCCESS; then
-		# Import test failed
 		exit 1
 	fi
 
 	# Load same module only once
 	echo "Test successful import, same module only once"
 	if ! $JS module < $SCRIPT_ONCE; then
-		# Import test failed
 		exit 1
 	fi
 
 	# Load module with import statement as script (should fail)
 	echo "Test import statement in script"
 	if $JS script < $SCRIPT_SUCCESS; then
-		# Import test failed
 		exit 1
 	fi
 
 	# Load with absolute path
 	echo "Test absolute path"
 	if ! echo "import('$PWD/$SCRIPT_SUCCESS')$TAIL;" | $JS module; then
-		# Import test failed
 		exit 1
 	fi
 	echo
@@ -55,10 +51,15 @@ if test "x$RRR_WITH_JS" != 'xno'; then
 	# Load with relative path
 	echo "Test relative path"
 	if ! echo "import('../tests/$SCRIPT_SUCCESS')$TAIL;" | $JS module; then
-		# Import test failed
 		exit 1
 	fi
 	echo
+
+	# Load same module from parent and child
+	echo "Test load same module from parent and child"
+	if ! $JS module < $SCRIPT_SAME_MODULE; then
+		exit 1
+	fi
 
 	./test_js_import_support.sh
 	case $? in
