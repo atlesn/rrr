@@ -64,7 +64,7 @@ namespace RRR::JS {
 		std::map<int,std::shared_ptr<Source>> module_map;
 		std::string load_resolve_path(const std::string &referrer_cwd, const std::string &name);
 		template <typename T> void register_module(int hash, std::shared_ptr<T> mod);
-		template <typename T, typename L> std::shared_ptr<T> compile_module(CTX &ctx, std::shared_ptr<T> mod, L postcompile);
+		template <typename T> std::shared_ptr<T> compile_module(CTX &ctx, std::shared_ptr<T> mod);
 		std::string resolve_path(const std::string &referrer_cwd, const std::string &relative_path);
 
 		public:
