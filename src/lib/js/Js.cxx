@@ -135,7 +135,7 @@ namespace RRR::JS {
 		}
 	}
 
-	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path) {
+	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path, bool do_run) {
 		try {
 			auto resolved_path = resolve_path(referrer_cwd, relative_path);
 
@@ -146,7 +146,9 @@ namespace RRR::JS {
 			}
 
 			auto mod = compile_module(ctx, Module::make_shared(resolved_path));
-			mod->run(ctx);
+			if (do_run) {
+				mod->run(ctx);
+			}
 			return mod;
 		}
 		catch (RRR::util::Readfile::E e) {
@@ -157,10 +159,12 @@ namespace RRR::JS {
 		}
 	}
 
-	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source) {
+	std::shared_ptr<Module> Isolate::load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source, bool do_run) {
 		try {
 			auto mod = compile_module(ctx, Module::make_shared(referrer_cwd, name, source));
-			mod->run(ctx);
+			if (do_run) {
+				mod->run(ctx);
+			}
 			return mod;
 		}
 		catch (RRR::util::E e) {
@@ -851,7 +855,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		auto mod = v8::MaybeLocal<v8::Module>();
 		import_assertions_diverge<>(ctx, import_assertions, [&](){
-			mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name);
+			mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name, true);
 		}, [&](){
 			mod = isolate->load_json(ctx, referrer_cwd, name);
 		});
@@ -918,8 +922,7 @@ v8::Local<v8::FixedArray> import_assertions,
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			import_assertions_diverge(ctx, import_assertions, [&](){
 #endif
-				auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name);
-				assert(mod.ToLocalChecked()->GetStatus() >= v8::Module::kEvaluated);
+				auto mod = (v8::MaybeLocal<v8::Module>) *isolate->load_module(ctx, referrer_cwd, name, true);
 				resolver->Resolve(ctx, mod.ToLocalChecked()->GetModuleNamespace()->ToObject((v8::Local<v8::Context>) ctx).ToLocalChecked()).Check();
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 			}, [&](){

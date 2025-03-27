@@ -113,7 +113,7 @@ int main(int argc, const char **argv, const char **env) {
 
 		auto program = (is_module
 			? std::function<std::shared_ptr<Program>()>([&](){
-				return std::dynamic_pointer_cast<Program>(isolate.load_module(ctx, cwd, "-", std::string(in)));
+				return std::dynamic_pointer_cast<Program>(isolate.load_module(ctx, cwd, "-", std::string(in), false));
 			})
 			: std::function<std::shared_ptr<Program>()>([&](){
 				auto script = Script::make_shared(cwd, "-", std::string(in));

@@ -455,7 +455,16 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				persistent_storage,
 				[&](){
 					if (data->js_module_name != NULL) {
-						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.load_module(ctx, std::filesystem::current_path().string(), std::string(data->js_file)));
+						auto mod_name = std::string(data->js_file);
+						if (!mod_name.starts_with('.') && !mod_name.starts_with('/')) {
+							mod_name = std::string("./") + mod_name;
+						}
+						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.load_module(
+								ctx,
+								std::filesystem::current_path().string(),
+								mod_name,
+								false
+						));
 					}
 
 					auto script = RRR::JS::Script::make_shared(std::filesystem::absolute(std::string(data->js_file)).string());

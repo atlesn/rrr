@@ -73,8 +73,8 @@ namespace RRR::JS {
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> std::shared_ptr<T> get_module(int identity);
 		v8::Isolate *operator-> ();
 		static Isolate *get_from_context(CTX &ctx);
-		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &relative_path);
-		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &relative_path, bool do_run);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source, bool do_run);
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		v8::MaybeLocal<v8::Module> load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 #endif
