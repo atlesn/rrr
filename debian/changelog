@@ -1,4 +1,4 @@
-rrr (1.36-14) bookworm; urgency=medium
+rrr (1.36-15) bookworm; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -22,7 +22,9 @@ rrr (1.36-14) bookworm; urgency=medium
       broker.
     * Misc. compilation problems using libc++ on FreeBSD, which is required
       then V8 is used on this platform
-    * MQTT client not always reconnecting as configured but restarted 
+    * MQTT client not always reconnecting as configured but restarted
+    * JS incorrectly loading the same module multiple times if included
+      from different scripts
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 24 Mar 2025 12:04:31 +0100
 
