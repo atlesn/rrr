@@ -719,7 +719,7 @@ static int cacher_parse_receivers (
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("route") && RRR_INSTANCE_CONFIG_EXISTS(setting)) {
 		RRR_MSG_0("Both route and %s were set for cacher instance %s, this is an invalid configuration.\n",
-				setting, config->name);
+				setting, config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -767,7 +767,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter message_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
-			config->name,
+			config->name_debug,
 			(unsigned long long int) data->message_ttl_seconds,
 			(unsigned long long int) UINT32_MAX
 		);
@@ -777,7 +777,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	if (data->message_memory_ttl_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter message_memory_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
-			config->name,
+			config->name_debug,
 			(unsigned long long int) data->message_memory_ttl_seconds,
 			(unsigned long long int) UINT32_MAX
 		);
@@ -787,7 +787,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	if (data->revive_age_seconds > UINT32_MAX) {
 		RRR_MSG_0("Parameter revive_age_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
-			config->name,
+			config->name_debug,
 			(unsigned long long int) data->revive_age_seconds,
 			(unsigned long long int) UINT32_MAX
 		);
@@ -797,7 +797,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	if (data->revive_interval_seconds > UINT32_MAX || data->revive_interval_seconds < 1) {
 		RRR_MSG_0("Parameter revive_interval_seconds in cacher instance %s out of range (%llu>%llu or %llu<1)\n",
-			config->name,
+			config->name_debug,
 			(unsigned long long int) data->revive_interval_seconds,
 			(unsigned long long int) UINT32_MAX,
 			(unsigned long long int) data->revive_interval_seconds
@@ -808,7 +808,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	if (data->tidy_interval_seconds > UINT32_MAX || data->tidy_interval_seconds < 1) {
 		RRR_MSG_0("Parameter tidy_interval_seconds in cacher instance %s out of range (%llu>%llu or %llu<1)\n",
-			config->name,
+			config->name_debug,
 			(unsigned long long int) data->tidy_interval_seconds,
 			(unsigned long long int) UINT32_MAX,
 			(unsigned long long int) data->tidy_interval_seconds

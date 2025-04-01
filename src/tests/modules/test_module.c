@@ -52,6 +52,7 @@ struct test_module_data {
 
 	char *test_method;
 	struct rrr_map array_check_values;
+	struct rrr_map array_fail_values;
 
 	struct rrr_test_function_data test_function_data;
 };
@@ -66,6 +67,8 @@ void data_cleanup(void *_data) {
 	struct test_module_data *data = _data;
 	data->dummy = 0;
 	RRR_FREE_IF_NOT_NULL(data->test_method);
+	RRR_MAP_CLEAR(&data->array_check_values);
+	RRR_MAP_CLEAR(&data->array_fail_values);
 }
 
 int parse_config (struct test_module_data *data, struct rrr_instance_config_data *config) {
@@ -73,7 +76,7 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
-		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
+		RRR_MSG_0("test_method not set for test module instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -89,16 +92,27 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 				config,
 				"test_anything_check_values"
 		)) != 0) {
-			if (ret == RRR_SETTING_NOT_FOUND) {
-				ret = 0;
-			}
-			else {
-				RRR_MSG_0("Failed to parse parameter test_anything_check_values\n");
+			if (ret != RRR_SETTING_NOT_FOUND) {
+				RRR_MSG_0("Failed to parse parameter 'test_check_values' of test module instance %s\n",
+						config->name_debug);
 				goto out;
 			}
+			ret = 0;
+		}
+
+		if  ((ret = rrr_instance_config_parse_comma_separated_to_map (
+				&data->array_fail_values,
+				config,
+				"test_anything_fail_values"
+		)) != 0) {
+			if (ret != RRR_SETTING_NOT_FOUND) {
+				RRR_MSG_0("Failed to parse parameter 'test_fail_values' of test module instance %s\n",
+						config->name_debug);
+				goto out;
+			}
+			ret = 0;
 		}
 	}
-
 
 	out:
 	return ret;
@@ -158,7 +172,8 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
 				thread_data,
-				&data->array_check_values
+				&data->array_check_values,
+				&data->array_fail_values
 		);
 		TEST_MSG("Result from anything test: %i\n", ret);
 	}

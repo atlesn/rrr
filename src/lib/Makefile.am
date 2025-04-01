@@ -100,7 +100,7 @@ libadd_js = librrrjs.la
 librrrjs_la_SOURCES = js/Js.cxx js/Message.cxx js/Config.cxx js/Timeout.cxx js/OS.cxx js/EventQueue.cxx js/Persistent.cxx
 librrrjs_la_CXXFLAGS = ${JS_CXXFLAGS} ${AM_CXXFLAGS}
 librrrjs_la_LDFLAGS = ${JS_LDFLAGS} ${JS_LIBS}
-js_extra_ldflags = ${JS_LDFLAGS}
+js_extra_ld = ${JS_LDFLAGS}
 js_extra_libadd = $(JS_LIBS)
 endif
 
@@ -117,26 +117,29 @@ librrrcrypto_la_SOURCES = rrr_openssl.c
 librrrcrypto_la_CFLAGS = ${CRYPTO_CFLAGS} ${AM_CFLAGS}
 librrrcrypto_la_LDFLAGS = ${CRYPTO_LDFLAGS}
 librrrcrypto_la_LIBADD = ${CRYPTO_LIBADD}
+crypto_extra_ld = ${CRYPTO_LDFLAGS}
+crypto_extra_libadd = ${CRYPTO_LIBADD}
 endif
 
 if RRR_WITH_OPENSSL
-lib_openssl = librrropenssl.la
+libadd_rrropenssl = librrropenssl.la
 librrropenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_transport/net_transport_openssl.c
 librrropenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
 librrropenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
 librrropenssl_la_LIBADD = ${OPENSSL_LIBADD}
-openssl_extra_libadd = -lrrropenssl
-openssl_extra_ld = -L./.libs/
+
+openssl_extra_ld = ${OPENSSL_LDFLAGS}
+openssl_extra_libadd = ${OPENSSL_LIBADD}
 endif
 
 if RRR_WITH_LIBRESSL
-lib_libressl = librrrlibressl.la
+libadd_rrrlibressl = librrrlibressl.la
 librrrlibressl_la_SOURCES = net_transport/net_transport_libressl.c
 librrrlibressl_la_CFLAGS = ${LIBRESSL_CFLAGS} ${AM_CFLAGS}
 librrrlibressl_la_LDFLAGS = ${LIBRESSL_LDFLAGS}
 librrrlibressl_la_LIBADD = ${LIBRESSL_LIBADD}
-libressl_extra_libadd = -lrrrlibressl
-libressl_extra_ld = -L./.libs/
+libressl_extra_ld = ${LIBRESSL_LDFLAGS}
+libressl_extra_libadd = ${LIBRESSL_LIBADD}
 endif
 
 mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
@@ -170,7 +173,8 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c util/sha256.c util/arguments.c util/fs.c
+       util/increment.c util/sha256.c util/arguments.c util/fs.c \
+       util/rrr_str.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_helper.c
 
@@ -181,7 +185,7 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c messages/msg_dump.c
 
-helpers = helpers/nullsafe_str.c helpers/string_builder.c
+helpers = helpers/nullsafe_str.c helpers/string_builder.c helpers/log_helper.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
@@ -190,16 +194,17 @@ event = event/event.c event/event_collection.c
 if RRR_WITH_CXX
 lib_cxx=librrrcxx.la
 
-util_cxx = util/Readfile.cxx
+util_cxx = util/Readfile.cxx util/UTF8.cxx
 
 event_cxx = event/Event.cxx
 
-librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs ${js_extra_ldflags}
+librrrcxx_la_LDFLAGS = ${librrr_la_LDFLAGS} -L${top_srcdir}/src/lib/.libs \
+		       ${js_extra_ld}
 librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrrcxx_la_SOURCES = Array.cxx ${util_cxx} ${event_cxx}
 endif
 
-librrr_la_CFLAGS = ${AM_CFLAGS}
+librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
@@ -211,9 +216,10 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${zlib_extra_ld} \
 		    ${quic_extra_ld} \
 		    ${http3_extra_ld} \
+                    ${crypto_extra_ld} \
+                    ${openssl_extra_ld} \
 		    ${artnet_extra_ld} \
-		    ${openssl_extra_ld} \
-		    ${libressl_extra_ld}
+                    ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c banner.c \
@@ -226,7 +232,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
                     serial/serial.c hdlc/hdlc.c \
 		    rrr_mmap.c send_loop.c \
                     ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-                    ${net_transport} ${net_transport_openssl} ${net_transport_libressl} ${net_transport_quic} ${net_transport_tls} \
+                    ${net_transport} ${net_transport_quic} ${net_transport_tls} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} ${modbus} \
 		    ${msgdb} ${event}
@@ -234,9 +240,7 @@ librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rr
 lib_LTLIBRARIES =           \
         librrr.la           \
 	${lib_mysql}        \
-	${lib_cxx}          \
-	${lib_libressl}     \
-	${lib_openssl}
+	${lib_cxx}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -300,7 +304,9 @@ libadd_all =                         \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}	             \
-    ${libadd_rrrcrypto}
+    ${libadd_rrrcrypto}              \
+    ${libadd_rrropenssl}             \
+    ${libadd_rrrlibressl}
 
 if RRR_WITH_CXX
 libadd_all_cxx =                     \
@@ -312,6 +318,7 @@ librrr_la_LIBADD =                   \
     ${libadd_all}                    \
     ${JOURNALD_LIBS}                 \
     ${LIBRT_LIBADD}                  \
+    ${crypto_extra_libadd}           \
     ${openssl_extra_libadd}          \
     ${libressl_extra_libadd}         \
     -lpthread                        \

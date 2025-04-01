@@ -114,6 +114,8 @@ struct rrr_http_client_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_stdin;
 	rrr_event_handle event_redirect;
+
+	rrr_biglength remaining_redirects;
 };
 
 static volatile int main_running = 1;
@@ -454,7 +456,7 @@ static int __rrr_http_client_request_send_loop (
 				&http_client_data->request_data,
 				http_client_data->http_client,
 				&http_client_data->net_transport_config,
-				5, // Max redirects
+				http_client_data->remaining_redirects,
 				NULL,
 				NULL,
 				NULL,
@@ -482,6 +484,15 @@ static int __rrr_http_client_request_send_loop (
 	return ret;
 }
 
+static void __rrr_http_client_redirect_stop_callback (
+		RRR_HTTP_CLIENT_REDIRECT_STOP_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(transaction);
+	(void)(http_client_data);
+}
+
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -507,6 +518,8 @@ static int __rrr_http_client_redirect_callback (
 //	else {
 		http_client_data->transport_force = transaction->transport_code;
 //	}
+
+	http_client_data->remaining_redirects = transaction->remaining_redirects;
 
 	EVENT_ACTIVATE(http_client_data->event_redirect);
 
@@ -780,7 +793,9 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
 			data.request_data.protocol_version,
+#ifdef RRR_WITH_NGHTTP2
 			0, // No plain HTTP2
+#endif
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
 		ret = EXIT_FAILURE;
@@ -800,6 +815,7 @@ int main (int argc, const char **argv, const char **env) {
 			__rrr_http_client_final_callback,
 			__rrr_http_client_failure_callback,
 			__rrr_http_client_redirect_callback,
+			__rrr_http_client_redirect_stop_callback,
 			__rrr_http_client_send_websocket_frame_callback,
 			__rrr_http_client_receive_websocket_frame_callback,
 			__rrr_http_client_unique_id_generator_callback,
@@ -860,7 +876,14 @@ int main (int argc, const char **argv, const char **env) {
 	// Disables no transaction detection in periodic callback
 	data.request_pending = 1;
 
+	data.remaining_redirects = 5;
+
 	redirect:
+
+	if (data.remaining_redirects == 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	if (__rrr_http_client_request_send_loop (
 			&data

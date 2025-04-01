@@ -305,7 +305,9 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		enum rrr_http_version protocol_version,
+#ifdef RRR_WITH_NGHTTP2
 		int do_plain_http2,
+#endif
 		const char *user_agent
 ) {
 	int ret = 0;
@@ -319,7 +321,9 @@ int rrr_http_client_request_data_reset (
 	data->upgrade_mode = upgrade_mode;
 	data->protocol_version = protocol_version;
 	data->transport_force = transport_force;
+#ifdef RRR_WITH_NGHTTP2
 	data->do_plain_http2 = do_plain_http2;
+#endif
 
 	if (data->concurrent_connections == 0) {
 		data->concurrent_connections = 1;
@@ -361,7 +365,14 @@ int rrr_http_client_request_data_reset_from_uri (
 
 	if (uri_flags.is_http || uri_flags.is_websocket) {
 		data->transport_force = (uri_flags.is_tls ? RRR_HTTP_TRANSPORT_HTTPS : RRR_HTTP_TRANSPORT_HTTP);
-		data->upgrade_mode = (uri_flags.is_websocket ? RRR_HTTP_UPGRADE_MODE_WEBSOCKET : RRR_HTTP_UPGRADE_MODE_HTTP2);
+		data->upgrade_mode = (uri_flags.is_websocket
+			? RRR_HTTP_UPGRADE_MODE_WEBSOCKET
+#ifdef RRR_WITH_NGHTTP2
+			: RRR_HTTP_UPGRADE_MODE_HTTP2
+#else
+			: RRR_HTTP_UPGRADE_MODE_NONE
+#endif
+		);
 	}
 
 	if ((ret = __rrr_http_client_request_data_strings_reset(data, uri->host, uri->endpoint, NULL)) != 0) {
@@ -496,6 +507,27 @@ static int __rrr_http_client_receive_alt_svc_get (
 	);
 }
 
+static int __rrr_http_client_redirect_data_push (
+		struct rrr_http_client *http_client,
+		struct rrr_http_transaction *transaction,
+		const struct rrr_nullsafe_str *uri
+) {
+	int ret = 0;
+
+	if ((ret = rrr_http_redirect_collection_push (
+			&http_client->redirects,
+			transaction,
+			uri
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_http_transaction_incref(transaction);
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_client_receive_http_part_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
@@ -516,6 +548,15 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data_decoded, NULL, 0)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_client_receive_alt_svc_get (
+			&http_client->alt_svc,
+			handle,
+			transaction
+	)) != 0) {
+		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
 		goto out;
 	}
 
@@ -543,16 +584,13 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
-assert(0 && "wrap with handle match data");
-
-		if ((ret = rrr_http_redirect_collection_push (
-				&http_client->redirects,
+		if ((ret = __rrr_http_client_redirect_data_push (
+				http_client,
 				transaction,
 				location->value
 		)) != 0) {
 			goto out;
 		}
-		rrr_http_transaction_incref(transaction);
 
 		goto out;
 	}
@@ -582,15 +620,6 @@ assert(0 && "wrap with handle match data");
 		data_use = data_decoded;
 	}
 #endif
-
-	if ((ret = __rrr_http_client_receive_alt_svc_get (
-			&http_client->alt_svc,
-			handle,
-			transaction
-	)) != 0) {
-		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
-		goto out;
-	}
 
 	ret = http_client->callbacks.final_callback (
 			transaction,
@@ -682,15 +711,12 @@ static int __rrr_http_client_websocket_handshake_callback (
 }
 
 struct rrr_http_client_redirect_callback_data {
-	int (*callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
+	int (*callback_ok)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
+	void (*callback_stop)(RRR_HTTP_CLIENT_REDIRECT_STOP_CALLBACK_ARGS);
 	void *callback_arg;
 };
 
-static int __rrr_http_client_redirect_callback (
-		struct rrr_http_transaction *transaction,
-		const struct rrr_nullsafe_str *uri_nullsafe,
-		void *arg
-) {
+static int __rrr_http_client_redirect_callback (RRR_HTTP_REDIRECT_COLLECTION_ITERATE_CALLBACK_ARGS) {
 	struct rrr_http_client_redirect_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -703,13 +729,13 @@ static int __rrr_http_client_redirect_callback (
 	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
 	pthread_cleanup_push(__rrr_http_client_alt_svc_clear, &alt_svc);
 
-	if (callback_data->callback == NULL) {
+	if (callback_data->callback_ok == NULL) {
 		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
-	if (rrr_http_util_uri_parse(&uri, uri_nullsafe) != 0) {
+	if (rrr_http_util_uri_parse(&uri, redirect_uri) != 0) {
 		RRR_MSG_0("Could not parse Location from redirect response header\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -724,19 +750,29 @@ static int __rrr_http_client_redirect_callback (
 		}
 	}
 
-	assert(0 && "Get alt svc");
-/*
-	if ((ret = __rrr_http_client_receive_alt_svc_get (
-			&alt_svc,
-			handle,
-			transaction
-	)) != 0) {
-		RRR_MSG_0("Error while getting alt-svc headers in %s\n", __func__);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, redirect_uri);
+
+	if (transaction->remaining_redirects == 0) {
+		RRR_MSG_0("HTTP too many redirects to '%s' (%s, %s, %s, %u) original endpoint was '%s' transport '%s'\n",
+				response_arg,
+				(uri->protocol != NULL ? uri->protocol : "-"),
+				(uri->host != NULL ? uri->host : "-"),
+				(uri->endpoint != NULL ? uri->endpoint : "-"),
+				uri->port,
+				transaction->endpoint_str,
+				RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
+		);
+
+		if (callback_data->callback_stop) {
+			callback_data->callback_stop (
+					transaction,
+					callback_data->callback_arg
+			);
+		}
+
 		goto out;
 	}
-*/
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
 	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s' transport '%s'\n",
 			response_arg,
 			(uri->protocol != NULL ? uri->protocol : "-"),
@@ -747,7 +783,11 @@ static int __rrr_http_client_redirect_callback (
 			RRR_HTTP_TRANSPORT_TO_STR(transaction->transport_code)
 	);
 
-	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
+	ret = callback_data->callback_ok (
+			transaction,
+			uri,
+			callback_data->callback_arg
+	);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -783,6 +823,7 @@ static int __rrr_http_client_read_callback (
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
 		http_client->callbacks.redirect_callback,
+		http_client->callbacks.redirect_stop_callback,
 		http_client->callbacks.callback_arg
 	};
 
@@ -837,6 +878,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	struct rrr_http_application *upgraded_app = NULL;
 	enum rrr_http_tick_speed tick_speed = RRR_HTTP_TICK_SPEED_NO_TICK;
 
+#ifdef RRR_WITH_NGHTTP2
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if ( upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 &&
 	     callback_data->data->method != RRR_HTTP_METHOD_GET &&
@@ -844,6 +886,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
+#endif
 
 	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
 	// protocol version is ignored when HTTP/2 is used.

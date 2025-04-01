@@ -80,10 +80,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
 #include "test_linked_list.h"
+#include "test_fifo.h"
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
 #include "test_http.h"
+#include "test_worker_config.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -129,6 +131,7 @@ int rrr_signal_handler(int s, void *arg) {
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'j',    "json",                  "[-j|--json]"},
         {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
@@ -295,6 +298,12 @@ int rrr_test_library_functions (
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("fifo") {
+		ret_tmp = rrr_test_fifo();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("HDLC frames") {
 		ret_tmp = rrr_test_hdlc();
 	} TEST_RESULT(ret_tmp == 0);
@@ -325,6 +334,12 @@ int rrr_test_library_functions (
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("worker configuration") {
+		ret_tmp = rrr_test_worker_config();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
 }
 
@@ -335,6 +350,22 @@ int rrr_test_fork_executable (const char *fork_executable) {
 		TEST_MSG("Failed to execute %s: %s\n", fork_executable, rrr_strerror(errno));
 	}
 	return 1;
+}
+
+struct rrr_test_periodic_callback_data {
+	struct rrr_instance_collection *instances;
+};
+
+static int rrr_test_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_test_periodic_callback_data *callback_data = arg;
+
+	if (!main_running ||
+	     some_fork_has_stopped ||
+	    (!rrr_config_global.no_thread_restart && rrr_instance_check_threads_stopped(callback_data->instances) != 0)
+	) {
+		return RRR_EVENT_EXIT;
+	}
+	return RRR_EVENT_OK;
 }
 
 int main (int argc, const char *argv[], const char *env[]) {
@@ -357,8 +388,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_allocator;
 	}
 
-	rrr_setproctitle_init(argc, argv, env);
-	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	struct rrr_stats_engine stats_engine = {0};
@@ -427,6 +456,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
+	// Call setproctitle() after argv and envp has been
+	// checked as the call may zero out these arrays.
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
+
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
 		ret = rrr_test_library_functions(&main_running, fork_handler, event_queue);
@@ -486,17 +520,20 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_cleanup_instances;
 		}
 
-		while (  main_running &&
-		        !some_fork_has_stopped &&
-		       (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)
-		) {
-			rrr_posix_usleep(100000);
-			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
-			if (sigusr2) {
-				RRR_MSG_0("Received SIGUSR2, but this is not implemented in test suite\n");
-				sigusr2 = 0;
-			}
-		}
+		struct rrr_test_periodic_callback_data callback_data = {
+			&instances
+		};
+
+		RRR_DBG_1("Dispatching\n");
+
+		ret = rrr_event_dispatch (
+				event_queue,
+				100 * 1000, // 100ms
+				rrr_test_periodic,
+				&callback_data
+		);
+
+		RRR_DBG_1("Return from dispatch: %i\n", ret);
 
 		ret = main_get_test_result(&instances);
 

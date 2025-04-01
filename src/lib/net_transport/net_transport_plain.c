@@ -266,7 +266,7 @@ static int __rrr_net_transport_plain_send (
 	const size_t size_truncated = (size_t) size;
 
 	rrr_biglength bytes_written_tmp = 0;
-	ret = rrr_socket_send_nonblock_check_retry(&bytes_written_tmp, handle->submodule_fd, data, size_truncated);
+	ret = rrr_socket_send_nonblock_check_retry(&bytes_written_tmp, handle->submodule_fd, data, size_truncated, 0 /* Not silent */);
 
 	*bytes_written += (bytes_written_tmp > 0 ? bytes_written_tmp : 0);
 
@@ -392,7 +392,7 @@ int __rrr_net_transport_plain_accept (
 static int __rrr_net_transport_plain_poll (
 		RRR_NET_TRANSPORT_POLL_ARGS
 ) {
-	return rrr_socket_check_alive (handle->submodule_fd);
+	return rrr_socket_check_alive (handle->submodule_fd, 0 /* Not silent */);
 }
 
 static int __rrr_net_transport_plain_handshake (

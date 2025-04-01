@@ -52,6 +52,9 @@ struct rrr_http_header_field {
 	long long unsigned int value_unsigned;
 	struct rrr_nullsafe_str *binary_value_nullsafe;
 	struct rrr_nullsafe_str *value;
+
+	// Filled for the first field parsed and contains the full header
+	struct rrr_nullsafe_str *value_full;
 };
 
 struct rrr_http_header_field_collection {

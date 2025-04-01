@@ -47,6 +47,7 @@ struct rrr_socket_send_chunk_collection_list {
 
 struct rrr_socket_send_chunk_collection {
 	struct rrr_socket_send_chunk_collection_list chunk_lists[RRR_SOCKET_SEND_CHUNK_PRIORITY_COUNT];
+	int silent;
 };
 
 struct rrr_socket_send_chunk_send_callbacks {
@@ -57,6 +58,9 @@ struct rrr_socket_send_chunk_send_callbacks {
 	void *success_arg;
 };
 
+void rrr_socket_send_chunk_collection_set_silent (
+		struct rrr_socket_send_chunk_collection *chunks
+);
 void rrr_socket_send_chunk_collection_clear (
 		struct rrr_socket_send_chunk_collection *chunks
 );

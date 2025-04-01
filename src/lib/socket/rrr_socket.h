@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -137,6 +137,11 @@ int rrr_socket_pipe (
 		int result[2],
 		const char *creator
 );
+
+int rrr_socket_pipe_blocking (
+		int result[2],
+		const char *creator
+);
 int rrr_socket (
 		int domain,
 		int type,
@@ -146,6 +151,7 @@ int rrr_socket (
 		int register_for_unlink
 );
 int rrr_socket_close (int fd);
+int rrr_socket_close_if_set (int *fd);
 int rrr_socket_close_no_unlink (int fd);
 int rrr_socket_close_ignore_unregistered (int fd);
 int rrr_socket_close_all_except (int fd);
@@ -164,6 +170,9 @@ int rrr_socket_add (
 int rrr_socket_remove (
 		int fd
 );
+int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg);
+int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg);
+int rrr_socket_dup2 (int oldfd, int newfd);
 int rrr_socket_fifo_create (
 		int *fd_result,
 		const char *filename,
@@ -199,6 +208,17 @@ int rrr_socket_unix_connect (
 		const char *filename,
 		int nonblock
 );
+int rrr_socket_sendto_nonblock_with_options (
+		int *err,
+		rrr_biglength *written_bytes,
+		int fd,
+		const struct rrr_socket_options *options,
+		const void *data,
+		const rrr_biglength size,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int silent
+);
 int rrr_socket_sendto_nonblock (
 		int *err,
 		rrr_biglength *written_bytes,
@@ -206,7 +226,8 @@ int rrr_socket_sendto_nonblock (
 		const void *data,
 		const rrr_biglength size_big,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_sendto_nonblock_check_retry (
 		rrr_biglength *written_bytes,
@@ -214,13 +235,15 @@ int rrr_socket_sendto_nonblock_check_retry (
 		const void *data,
 		rrr_biglength send_size,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int silent
 );
 int rrr_socket_send_nonblock_check_retry (
 		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		rrr_biglength send_size
+		rrr_biglength send_size,
+		int silent
 );
 int rrr_socket_sendto_blocking (
 		int fd,
@@ -228,18 +251,21 @@ int rrr_socket_sendto_blocking (
 		rrr_biglength size,
 		struct sockaddr *addr,
 		socklen_t addr_len,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 );
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
 		rrr_biglength send_size,
-		int (*wait_callback)(void *arg),
-		void *wait_callback_arg
+		int (*wait_callback)(int silent, void *arg),
+		void *wait_callback_arg,
+		int silent
 );
 int rrr_socket_check_alive (
-		int fd
+		int fd,
+		int silent
 );
 void rrr_socket_datagram_init (
 		struct rrr_socket_datagram *datagram,
@@ -250,5 +276,6 @@ int rrr_socket_recvmsg (
 		struct rrr_socket_datagram *datagram,
 		int fd
 );
+int rrr_socket_is_locked(void);
 
 #endif /* RRR_SOCKET_H */

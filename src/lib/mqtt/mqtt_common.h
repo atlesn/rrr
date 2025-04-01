@@ -90,8 +90,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             msg_on_err,                                                                                                        \
             goto_or_break_soft,                                                                                                \
             goto_or_break_hard,                                                                                                \
-            RRR_MQTT_SESSION_DELETED,                                                                                          \
             RRR_MQTT_SESSION_ERROR,                                                                                            \
+            RRR_MQTT_SESSION_DELETED,                                                                                          \
             RRR_MQTT_SESSION_INTERNAL_ERROR                                                                                    \
         );                                                                                                                     \
     } while(0)

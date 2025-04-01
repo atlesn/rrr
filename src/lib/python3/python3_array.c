@@ -647,7 +647,6 @@ static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *value) {
 	if (__rrr_python3_array_append_raw(data, value) != 0) {
 		Py_RETURN_FALSE;
 	}
-	Py_INCREF(value);
 
 	Py_RETURN_TRUE;
 }
@@ -684,6 +683,34 @@ static PyObject *rrr_python3_array_f_get_by_tag_or_index (PyObject *self, PyObje
 	return value;
 }
 
+static PyObject *rrr_python3_array_f_has_tag_or_index (PyObject *self, PyObject *tag) {
+  struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
+
+  if (PyUnicode_Check(tag)) {
+    if (__rrr_python3_array_get_node_by_tag(data, tag) != NULL) {
+      Py_RETURN_TRUE;
+    }
+  }
+  else if (PyLong_Check(tag)) {
+    long index = PyLong_AsLong(tag);
+    if (index < 0) {
+      RRR_MSG_0("Negative index given to rrr_array.has()\n");
+      Py_RETURN_FALSE;
+    }
+    if (index >= rrr_python3_array_count(data)) {
+      Py_RETURN_FALSE;
+    }
+    if (__rrr_python3_array_get_node_by_index(data, index) != NULL) {
+      Py_RETURN_TRUE;
+    }
+  }
+  else {
+    RRR_MSG_0("Tag argument to rrr_array.has() was not a string or integer\n");
+    Py_RETURN_FALSE;
+  }
+
+  Py_RETURN_FALSE;
+}
 
 static PyObject *rrr_python3_array_f_remove (PyObject *self, PyObject *tag) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
@@ -763,6 +790,12 @@ static PyMethodDef array_methods[] = {
 				.ml_meth	= (void *) rrr_python3_array_f_count,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the number of items in the array"
+		},
+		{
+		    .ml_name  = "has",
+		    .ml_meth  = (void *) rrr_python3_array_f_has_tag_or_index,
+		    .ml_flags = METH_O,
+		    .ml_doc   = "Checks if a tag or index exists in the array"
 		},
 		{ NULL, NULL, 0, NULL }
 };

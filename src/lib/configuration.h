@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CONFIGURATION_H
 #define RRR_CONFIGURATION_H
 
-#include "settings.h"
 #include "array_tree.h"
 #include "discern_stack.h"
 
@@ -32,7 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		
 #define RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS     void **block, \
                                                struct rrr_config *config, \
-                                               const char *name, \
+                                               const char *name_main, \
+                                               const char *name_sub, \
 					       void *callback_arg
 #define RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS   void *block, const char *name, const char *value, void *callback_arg
 
@@ -45,15 +45,16 @@ struct rrr_config {
 int rrr_config_new (
 		struct rrr_config **result
 );
-void rrr_config_destroy (
-		struct rrr_config *target
-);
-int rrr_config_parse_file (
+int rrr_config_parse_string (
 		struct rrr_config *config,
-		const char *filename,
+		const char *data,
+		const rrr_length size,
 		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
 		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
 		void *callback_arg
+);
+void rrr_config_destroy (
+		struct rrr_config *target
 );
 const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config

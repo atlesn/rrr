@@ -18,6 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <netinet/in.h>
+
 #include "test.h"
 #include "test_tls_common.h"
 #include "../lib/allocator.h"

@@ -183,7 +183,7 @@ static int __rrr_msgdb_client_send_callback (
 		void *arg
 ) {
 	(void)(arg);
-	return rrr_socket_send_blocking (fd, *data, data_size, NULL, NULL);
+	return rrr_socket_send_blocking (fd, *data, data_size, NULL, NULL, 0 /* Not silent */);
 }
 
 int rrr_msgdb_client_send (

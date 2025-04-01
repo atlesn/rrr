@@ -143,7 +143,7 @@ namespace RRR::JS {
 
 		protected:
 		template <class T> static N *self(const T &info) {
-			auto self = info.Holder();
+			auto self = info.This();
 			auto wrap = v8::Local<v8::External>::Cast(self->GetInternalField(Factory<N>::INTERNAL_INDEX_THIS));
 			return (N *) wrap->Value();
 		}

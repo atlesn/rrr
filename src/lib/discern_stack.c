@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 
 #include "discern_stack.h"
-#include "read_constants.h"
 
 #include "parse.h"
 #include "allocator.h"
@@ -30,9 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt/mqtt_topic.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
-
-#define RRR_DISCERN_STACK_OK     RRR_READ_OK
-#define RRR_DISCERN_STACK_BAIL   RRR_READ_EOF
 
 #define RRR_DISCERN_STACK_MAX 64
 
@@ -709,7 +705,7 @@ static int __rrr_discern_stack_execute (
 						}
 						break;
 					case RRR_DISCERN_STACK_E_BOOL:
-						stack_e[wpos++].value = 1;
+						stack_e[wpos++].value = node->value.value;
 						break;
 					case RRR_DISCERN_STACK_E_DESTINATION:
 						stack_e[wpos++] = node->value;
@@ -748,6 +744,7 @@ static int __rrr_discern_stack_execute (
 					ret = RRR_DISCERN_STACK_BAIL;
 					goto out;
 				}
+				wpos--;
 				break;
 			default:
 				assert(0);

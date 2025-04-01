@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,12 +21,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "log.h"
 #include "map.h"
 #include "allocator.h"
+#include "rrr_types.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
+#include "util/gnu.h"
 
 void rrr_map_item_destroy (
 		struct rrr_map_item *item
@@ -57,8 +60,8 @@ static int __rrr_map_item_new (
 	}
 	memset (item, '\0', sizeof(*item));
 
-	item->tag = rrr_allocate_zero(tag_size + 1);
-	item->value = rrr_allocate_zero(value_length + 1);
+	item->tag = rrr_allocate_zero((rrr_biglength) tag_size + 1);
+	item->value = rrr_allocate_zero((rrr_biglength) value_length + 1);
 	item->value_length = value_length;
 
 	if (item->tag == NULL || item->value == NULL) {
@@ -82,6 +85,63 @@ int rrr_map_item_new (
 		rrr_length field_size
 ) {
 	return __rrr_map_item_new(target, field_size, field_size);
+}
+
+static int __rrr_map_item_value_allocate (
+		struct rrr_map_item *item,
+		rrr_length value_length
+) {
+	int ret = 0;
+
+	char *value_new = NULL;
+
+	if ((value_new = rrr_allocate_zero((rrr_biglength) value_length + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_FREE_IF_NOT_NULL(item->value);
+	item->value = value_new;
+	item->value_length = value_length;
+	value_new = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(value_new);
+	return ret;
+}
+
+static void __rrr_map_item_value_consume (
+		struct rrr_map_item *item,
+		char **value
+) {
+	RRR_FREE_IF_NOT_NULL(item->value);
+	item->value = *value;
+	*value = NULL;
+}
+
+int rrr_map_item_value_set (
+		struct rrr_map_item *item,
+		const char *value
+) {
+	int ret = 0;
+
+	rrr_length length_checked;
+
+	if (rrr_length_from_size_t_err(&length_checked, strlen(value)) != 0) {
+		RRR_MSG_0("Value too long in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = __rrr_map_item_value_allocate(item, length_checked)) != 0) {
+		goto out;
+	}
+
+	memcpy(item->value, value, length_checked);
+
+	out:
+	return ret;
 }
 
 static void __rrr_map_item_remove_by_tag (
@@ -185,12 +245,100 @@ static int __rrr_map_item_add_new (
 	return ret;
 }
 
+static int __rrr_map_item_add_new_consume (
+		struct rrr_map *map,
+		const char *tag,
+		char **value,
+		int do_prepend,
+		int do_unique
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, NULL)) != 0) {
+		goto out;
+	}
+
+	__rrr_map_item_value_consume(item_new, value);
+	__rrr_map_item_add(map, item_new, do_prepend, do_unique);
+
+	out:
+	return ret;
+}
+
 int rrr_map_item_replace_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
 ) {
 	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
+void rrr_map_item_replace_new_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	if (__rrr_map_item_add_new(map, tag, value, 0, 1) != 0)
+		RRR_ABORT("Failed to make/add item in %s\n", __func__);
+}
+
+void rrr_map_item_replace_new_va_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *__restrict __format,
+		va_list args
+) {
+	char *buf = NULL;
+
+	if (rrr_vasprintf(&buf, __format, args) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
+}
+
+void rrr_map_item_replace_new_n_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int value_size
+) {
+	char *buf = NULL;
+
+	if (rrr_asprintf(&buf, "%.*s", value_size, value) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
+}
+
+void rrr_map_item_replace_new_f_nolog (
+		struct rrr_map *map,
+		const char *tag,
+		const char *__restrict __format,
+		...
+) {
+	va_list args;
+
+	va_start(args, __format);
+
+	char *buf = NULL;
+
+	if (rrr_vasprintf(&buf, __format, args) < 0)
+		RRR_ABORT("Failed to make string in %s\n", __func__);
+
+	if (__rrr_map_item_add_new_consume(map, tag, &buf, 0, 1) != 0)
+		RRR_ABORT("Failed to add item in %s\n", __func__);
+
+	assert(buf == NULL);
+
+	va_end(args);
 }
 
 int rrr_map_item_replace_new_with_callback (

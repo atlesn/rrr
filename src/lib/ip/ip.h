@@ -31,11 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 #define RRR_IP_SOCKOPT_RECV_TOS            (1<<0)
-#ifdef RRR_HAVE_IP_PKTINFO
-#    define RRR_IP_SOCKOPT_RECV_PKTINFO    (1<<1)
-#else
-#    define RRR_IP_SOCKOPT_RECV_DSTADDR    (1<<1)
-#endif
+#define RRR_IP_SOCKOPT_RECV_PKTINFO_OR_DSTADDR    (1<<1)
 
 struct rrr_msg_msg;
 struct rrr_array;

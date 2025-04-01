@@ -15,9 +15,11 @@
 /src/rrr_readdir
 /src/rrr_msg
 /src/rrr_sub
+/src/rrr_logd
 /src/rrr_js
 /src/rrr_lua
 /src/rrr_modbus_server
+/src/rrr_artnet_node
 /src/test.sh
 /src/test.sh.log
 /src/test-suite.log
@@ -150,3 +152,9 @@ stamp-h2
 
 # jemalloc
 jeprof.*
+
+# fuzz
+fuzz/
+
+# LSP
+.clangd

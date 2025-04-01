@@ -161,7 +161,7 @@ void rrr_fifo_clear_with_callback (
 		void *callback_data
 ) {
 	struct rrr_fifo_entry *entry = buffer->gptr_first;
-	int freed_counter = 0;
+	rrr_length freed_counter = 0;
 	while (entry != NULL) {
 		struct rrr_fifo_entry *next = entry->next;
 		RRR_DBG_4 ("buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
@@ -176,6 +176,8 @@ void rrr_fifo_clear_with_callback (
 		freed_counter++;
 		entry = next;
 	}
+
+	assert(buffer->entry_count == freed_counter && "Buffer entry count mismatch");
 
 	RRR_DBG_4 ("buffer %p freed %i entries\n", buffer, freed_counter);
 

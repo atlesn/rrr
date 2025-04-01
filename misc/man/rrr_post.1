@@ -13,6 +13,8 @@ program to post data to its modules.
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
 .Dl [-a|--array-definition[=]ARRAY DEFINITION]
+.Dl [-L|--log-delivery]
+.Dl [-j|--json]
 .Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
@@ -51,6 +53,52 @@ reading messages are generated before any reading of a file or standard input be
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
+.IP -L|--log-delivery
+If given, log messages are expected to be read  which are then delivered as native
+RRR log messages to the specified socket.
+A socket set up by the log daemon
+.B rrr_logd(1)
+may be used to receive these log messages.
+
+A given array definition in
+.B -a|--array-definition
+must provide values with the following fields of which some are optional.
+
+.Bl -tag -width -indent
+
+.It log_level_translated
+RFC 5424 loglevel, small integer. If not given, 7 is used.
+
+.It log_flags
+If given and set to 1, this indicates that the log message is in JSON format.
+
+.It log_prefix
+The log prefix. If not given, "rrr_post" will be used.
+
+.It log_message
+The actual log message. This value is mandatory.
+
+.It log_file
+.It log_line
+The file name and line from where the log message originates, string and integer.
+If either is not given, values from the
+.B rrr_post
+code will be used.
+
+The
+.B rrr_logd
+daemon is also capable of recieving array messages with the fields above, but the native log messages are more efficient.
+
+.El
+
+If no array definition is specified, the following simple definition expecting
+one message per line is used.
+
+.B nsep#log_message,sep1
+
+.IP -j|--json
+If given, a flag indicating that the message data is in JSON format is set on any generated log messages.
+
 .IP -m|--max-message-size[=]BYTES
 Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
 A value of 0 means unlimited message size.
@@ -339,4 +387,5 @@ for possible debug flags.
 
 .SH SEE ALSO
 .Xr rrr(1),
-.Xr rrr.conf(5)
+.Xr rrr.conf(5),
+.Xr rrr_logd(1)

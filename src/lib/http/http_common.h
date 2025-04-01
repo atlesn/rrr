@@ -104,8 +104,10 @@ enum rrr_http_body_format {
 
 enum rrr_http_upgrade_mode {
 	RRR_HTTP_UPGRADE_MODE_NONE,
-	RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
-	RRR_HTTP_UPGRADE_MODE_HTTP2
+	RRR_HTTP_UPGRADE_MODE_WEBSOCKET
+#ifdef RRR_WITH_NGHTTP2
+	, RRR_HTTP_UPGRADE_MODE_HTTP2
+#endif
 };
 
 enum rrr_http_application_type {
@@ -203,11 +205,18 @@ extern const char *rrr_http_upgrade_mode_str_none;
 extern const char *rrr_http_upgrade_mode_str_websocket;
 extern const char *rrr_http_upgrade_mode_str_http2;
 
+#ifdef RRR_WITH_NGHTTP2
 #define RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)                                                                             \
     (upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE ? rrr_http_upgrade_mode_str_none :                                             \
     (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket :                                   \
     (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 ? rrr_http_upgrade_mode_str_http2 : ("unknown")                               \
     )))
+#else
+#define RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)                                                                             \
+    (upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE ? rrr_http_upgrade_mode_str_none :                                             \
+    (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket : ("unknown")                       \
+    ))
+#endif
 
 extern const char *rrr_http_application_str_http1;
 extern const char *rrr_http_application_str_http2;

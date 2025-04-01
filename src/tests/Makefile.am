@@ -23,7 +23,7 @@ endif
 
 if RRR_WITH_JS
 js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/
-js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx -lstdc++
+js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
 if RRR_WITH_HTTP3
@@ -43,6 +43,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_modbus.c \
 	test_http.c \
+	test_worker_config.c \
 	test_condition.c \
 	${test_tls} \
 	${test_tls_common} \
@@ -59,6 +60,7 @@ test_SOURCES = test.c \
 	test_increment.c \
 	test_discern_stack.c \
 	test_linked_list.c \
+	test_fifo.c \
 	test_hdlc.c \
 	test_readdir.c \
 	test_send_loop.c
@@ -66,7 +68,7 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fpie \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
-test_LDFLAGS = ${JEMALLOC_LIBS} ${js_extra_ldflags} ${JS_LDFLAGS} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie -L../lib/.libs
+test_LDFLAGS = -L../lib/.libs ${JEMALLOC_LIBS} ${js_extra_ldflags} ${JS_LDFLAGS} ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS} -pie
 test_LDADD =                          \
     -levent                           \
     -ldl                              \
@@ -78,7 +80,7 @@ ldflags = -L../lib/.libs ${JEMALLOC_LIBS} -lrrr
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = -fpie
-make_test_data_LDFLAGS = ${ldflags} -pie
+make_test_data_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fpie
@@ -100,4 +102,35 @@ sha256_shatest_SOURCES = sha256/shatest.c
 sha256_shatest_CFLAGS = -fpie
 sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
-TESTS = test.sh test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test}
+TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
+	test.sh                  \
+	test_artnet.sh           \
+	test_averager.sh         \
+	test_cacher.sh           \
+	test_cmodule.sh          \
+	test_dummy.sh            \
+	test_fifo.sh             \
+	test_file.sh             \
+	test_http.sh             \
+	test_sub_instance.sh     \
+	test_http2.sh            \
+	test_http3.sh            \
+	test_http_tag_ignore.sh  \
+	test_http_graylist.sh    \
+	test_http_report_tag.sh  \
+	test_http_headers_trap.sh\
+	test_incrementer.sh      \
+	test_ip.sh               \
+	test_ipclient.sh         \
+	test_journal.sh          \
+	test_js.sh               \
+	test_lua.sh              \
+	test_mqtt.sh             \
+	test_mqtt_commands.sh    \
+	test_mysql.sh            \
+	test_passwd.sh           \
+	test_perl5.sh            \
+	test_python3.sh          \
+	test_socket.sh           \
+	test_websocket.sh        \
+	test_log_daemon.sh

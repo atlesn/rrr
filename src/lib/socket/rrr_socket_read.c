@@ -115,8 +115,9 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 
 	struct rrr_read_session *read_session = rrr_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
 
-	if (read_session != NULL) {
-		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes remaining\n", callback_data->fd, read_session->rx_overshoot_size);
+	if (read_session != NULL && !(callback_data->socket_read_flags & RRR_SOCKET_READ_SILENT)) {
+		RRR_DBG_7("fd %i overshoot processing %" PRIrrrbl " bytes remaining\n",
+			callback_data->fd, read_session->rx_overshoot_size);
 	}
 
 	return read_session;
@@ -217,7 +218,8 @@ int rrr_socket_read (
 		pollfd.fd = fd;
 
 		int frames = poll(&pollfd, 1, 0);
-		RRR_DBG_7("fd %i poll result: %i\n", fd, frames);
+		if (!(flags & RRR_SOCKET_READ_SILENT))
+			RRR_DBG_7("fd %i poll result: %i\n", fd, frames);
 		if (frames < 0) {
 			if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
 				goto out;
@@ -264,7 +266,7 @@ int rrr_socket_read (
 		RRR_BUG("Unknown read method %i in rrr_socket_read\n", flags);
 	}
 
-	if (bytes > 0) {
+	if (bytes > 0 && !(flags & RRR_SOCKET_READ_SILENT)) {
 		RRR_DBG_7("fd %i recvfrom/recv/read %lli bytes time %" PRIu64 "\n", fd, (long long int) bytes, rrr_time_get_64());
 	}
 

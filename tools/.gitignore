@@ -1,1 +1,7 @@
 generate_udpdata
+mqtt_parse
+mqtt_assemble
+array_parse
+msg_make
+fuzz*.log
+fuzz*.tmp

@@ -113,7 +113,7 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("buffer_ttl_seconds", message_ttl_seconds, 0);
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
-		RRR_MSG_0("buffer_ttl_seconds too large in instance %s, maximum is %u\n", config->name, UINT32_MAX);
+		RRR_MSG_0("buffer_ttl_seconds too large in instance %s, maximum is %u\n", config->name_debug, UINT32_MAX);
 		ret = 1;
 		goto out;
 	}

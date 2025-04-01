@@ -62,6 +62,61 @@ function equals(a, b) {
 	return true;
 }
 
+function data_tests() {
+	const message = new Message();
+
+	message.data = new Uint8Array([0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5]).buffer; // æøå
+	try {
+		if (message.data_as_utf8() !== "æøå") {
+			throw new Error("UTF-8 decoding failed for valid input, result was '" + message.data_as_utf8() + "'.");
+		}
+	} catch (e) {
+		throw("UTF-8 decode failed unexpectedly: " + e);
+	}
+
+	// {"key": "æøå"}
+	message.data = new Uint8Array([
+		0x7b,
+		0x22, 0x6b, 0x65, 0x79, 0x22,
+		0x3a,
+		0x22, 0xc3, 0xa6, 0xc3, 0xb8, 0xc3, 0xa5, 0x22,
+		0x7d
+	]).buffer;
+	try {
+		if (message.data_as_object().key !== "æøå") {
+			throw("JSON decoding failed for valid input.");
+		}
+	} catch (e) { 
+		throw("JSON decode failed unexpectedly: " + e);
+	}
+
+	let did_throw = false;
+
+	// Invalid UTF-8
+	message.data = new Uint8Array([0x80]).buffer;
+	try {
+		message.data_as_utf8();
+	} catch (e) {
+		did_throw = true;
+	}
+	if (!did_throw) {
+		throw("UTF-8 decode did not fail as expected.");
+	}
+
+	did_throw = false;
+
+	// "invalid" spelled out
+	message.data = new ArrayBuffer(new Uint8Array([0x69, 0x6e, 0x76, 0x61, 0x6c, 0x69, 0x64]));
+	try {
+		message.data_as_object();
+	} catch (e) {
+		did_throw = true;
+	}
+	if (!did_throw) {
+		throw("JSON decode did not fail as expected.");
+	}
+}
+
 export function source(message) {
 	if (pos++ > 0)
 		return;
@@ -124,6 +179,8 @@ export function source(message) {
 		console.error("Invalid objects were allowed to be pushed using push_tag_object\n");
 		return;
 	}
+
+	data_tests();
 
 	message.send();
 }

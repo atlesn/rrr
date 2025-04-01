@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.30-5])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.30-5", [Full version])
+AC_INIT([Read Route Record],[1.36-15])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.36-15", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 30, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 5, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 36, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 15, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -46,6 +46,20 @@ echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
+AC_CANONICAL_HOST
+
+AC_MSG_CHECKING([for FreeBSD])
+is_freebsd=no
+case "$host_os" in
+	freebsd*)
+		AC_MSG_RESULT([yes])
+		is_freebsd=yes
+	;;
+	*)
+		AC_MSG_RESULT([no])
+	;;
+esac
+
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--without-libressl], [Force disable LibreSSL support])], [enable_libressl=no], [enable_libressl=yes])
 AC_ARG_WITH([openssl], [AS_HELP_STRING([--without-openssl], [Force disable OpenSSL support])], [enable_openssl=no], [enable_openssl=yes])
@@ -63,15 +77,16 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
-AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
 AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
+AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_ENABLE([tls],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
+AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
@@ -115,6 +130,17 @@ CFLAGS=""
 AC_SUBST(AM_CFLAGS)
 AC_SUBST(AM_LDFLAGS)
 
+AC_MSG_CHECKING([for V8 C++ on FreeBSD (which requires using libc++)])
+AS_IF([test "x$enable_js" != "xno" -a "x$with_v8" != "xno" -a "x$is_freebsd" != "xno"],[
+	FREEBSD_V8_CXXFLAGS="-stdlib=libc++ -DRRR_INTERCEPT_ALLOW_STRERROR"
+	FREEBSD_V8_LIBS="-lc++"
+	AC_MSG_RESULT([$FREEBSD_V8_CXXFLAGS])
+],[
+	FREEBSD_V8_CXXFLAGS=""
+	FREEBSD_V8_LIBS="-lstdc++"
+	AC_MSG_RESULT([no])
+])
+
 AC_MSG_CHECKING([for C++ usage])
 if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX inside AS_IF
 	AC_MSG_RESULT([yes])
@@ -125,10 +151,11 @@ if test "x$enable_js" != xno; then # autotools complains when using AC_PROG_CXX 
 	AC_LANG_PUSH([C++])
 	AC_CHECK_HEADERS([iostream], [], AC_MSG_ERROR([Standard C++ library headers not found]))
 	AC_LANG_POP([C++])
-	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK"
+	FREEBSD_CXXFLAGS="-DRRR_INTERCEPT_ALLOW_FORK $FREEBSD_V8_CXXFLAGS"
 	CLANG_CXXFLAGS="-Wno-unused-parameter"
-	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++17 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
-	TEST_CXXFLAGS="-std=c++17 $CFLAGS_COMMON -O3"
+	AM_CXXFLAGS="$AM_CXXFLAGS -std=c++20 $CFLAGS_CONFIG $CFLAGS_COMMON -O3 $CXXFLAGS $FREEBSD_CXXFLAGS $CLANG_CXXFLAGS"
+	TEST_CXXFLAGS="-std=c++20 $CFLAGS_COMMON -O3 $FREEBSD_V8_CXXFLAGS"
+	CXXLIBS="$FREEBSD_V8_LIBS"
 	AC_MSG_CHECKING([for AM_CXXFLAGS])
 	AC_MSG_RESULT([$AM_CXXFLAGS])
 	CXXFLAGS=""
@@ -199,6 +226,14 @@ AC_MSG_CHECKING([for libbsd])
 
 have_setproctitle=no
 LIBBSD_LIBS=""
+
+AC_MSG_CHECKING("for bash shell")
+if bash --version > /dev/null; then
+	AC_MSG_RESULT([yes])
+else
+	AC_MSG_RESULT([no])
+	AC_MSG_ERROR([Could not run bash which is needed for the test suite]);
+fi
 
 # Check for setproctitle. Should be in unistd.h on both BSD and Linux,
 # but on linux it's in the libbsd library while on BSD it's in libc.
@@ -295,56 +330,6 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
-], [
-	AC_MSG_RESULT([no])
-])
-
-AC_MSG_CHECKING([for 128 bit SIMD])
-AC_RUN_IFELSE([
-	AC_LANG_SOURCE([[
-		#include <immintrin.h>
-		int main(int argc, char *argv[]) {
-			unsigned char data[16];
-			__m128i a;
-			_mm_loadu_si128(data);
-			_mm_cmplt_epi8(a, a);
-			_mm_cmpgt_epi8(a, a);
-			_mm_set1_epi8(1);
-			_mm_and_si128(a, a);
-			_mm_add_epi8(a, a);
-			_mm_sub_epi8(a, a);
-			_mm_storeu_si128(data, a);
-			return 0;
-		}
-	]])
-], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_HAVE_SIMD_128], [1], [128 bit SIMD instructions are available])
-], [
-	AC_MSG_RESULT([no])
-])
-
-AC_MSG_CHECKING([for 512 bit SIMD])
-AC_RUN_IFELSE([
-	AC_LANG_SOURCE([[
-		#include <immintrin.h>
-		int main(int argc, char *argv[]) {
-			unsigned char data[64];
-			__m512i a;
-			__mmask64 m;
-			_mm512_loadu_si512(data);
-			_mm512_cmplt_epu8_mask(a, a);
-			_mm512_cmpgt_epu8_mask(a, a);
-			_mm512_add_epi8(a, a);
-			_mm512_sub_epi8(a, a);
-			_mm512_and_si512(a, a);
-			_mm512_storeu_si512(data, a);
-			return 0;
-		}
-	]])
-], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([RRR_HAVE_SIMD_512], [1], [512 bit SIMD instructions are available])
 ], [
 	AC_MSG_RESULT([no])
 ])
@@ -749,6 +734,34 @@ AC_DEFUN([V8TESTS],[
 	],[
 		# Not found, no action required
 	])
+
+	AC_MSG_CHECKING([V8 has primitive arguments to ScriptOrigin without isolate])
+	AC_LANG_CONFTEST([
+		AC_LANG_SOURCE([[
+			#include <v8.h>
+			#include <v8-message.h>
+			int main (int argc, char **argv) {
+				auto dummy = v8::ScriptOrigin(
+						v8::Local<v8::Value>(),
+						0,
+						0,
+						false,
+						-1,
+						v8::Local<v8::Value>(),
+						false,
+						false,
+						false,
+						v8::Local<v8::Data>()
+				);
+				return 0;
+			}
+		]])
+	])
+	V8COMPILE([
+		AC_DEFINE([RRR_HAVE_V8_PRIMITIVE_ARGS_TO_SCRIPTORIGIN_WITHOUT_ISOLATE], [1], [Have primitive arguments to ScriptOrigin without isolate])
+	],[
+		# Not found, no action required
+	])
 ])
 
 AC_LANG_PUSH([C++])
@@ -845,7 +858,7 @@ AS_IF([test "x$enable_v8" != xno],[
 
 	JS_CXXFLAGS="$v8_cflags -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT -DV8_DEPRECATION_WARNINGS"
 	JS_LDFLAGS="$v8_ldflags"
-	JS_LIBS="$v8_libs"
+	JS_LIBS="$v8_libs $CXXLIBS"
 
 	V8TESTS
 
@@ -1256,8 +1269,8 @@ AS_IF([test "x$enable_python3" = xno], [
 	AC_SUBST([PYTHON3_CFLAGS])
 	AC_SUBST([PYTHON3_LDFLAGS])
 
-	chmod +x test_python3.sh
-	./test_python3.sh "$CC" "$python3_config_bin"
+	chmod +x check_python3.sh
+	./check_python3.sh "$CC" "$python3_config_bin"
 	PYTHON3_TEST_RESULT="$?"
 
 	AC_MSG_CHECKING([functional python3 config])
@@ -1335,7 +1348,7 @@ AS_IF([test "x$enable_artnet" = xno], [
 			
 			int main (int argc, char *argv[]) {
 				artnet_node node;
-				node = artnet_new("0.0.0.0", 0);
+				node = artnet_new("0.0.0.0");
 				artnet_destroy(node);
 				return 0;
 			}
@@ -1552,6 +1565,16 @@ AS_IF([test "x$enable_printf_logging" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([enabled log timestamps])
+AS_IF([test "x$enable_log_timestamps" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_LOG_TIMESTAMPS], [1], [Enable timestamps in log messages printed to standard output])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AM_CONDITIONAL([RRR_ENABLE_LOG_TIMESTAMPS], [test "x$enable_log_timestamps" != xno])
+
 AC_DEFUN([REQUIRE_CONFDIR], [
 	if [test "x$enable_confdir" != "xyes"]; then
 		AC_MSG_ERROR([confdir was not enabled, but is required])
@@ -1677,15 +1700,24 @@ AC_SUBST([CMODULE_DIR])
 LIBS=""
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
-AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
 SHELL_VARS_OUTPUT
 
+CXXFLAGS_YAML=
+for arg in $AM_CXXFLAGS $JS_CXXFLAGS; do
+	if [[ "x$CXXFLAGS_YAML" != "x" ]]; then
+		CXXFLAGS_YAML=$CXXFLAGS_YAML,
+	fi
+	CXXFLAGS_YAML=$CXXFLAGS_YAML$arg
+done
+AC_SUBST([CXXFLAGS_YAML])
+
 AC_CONFIG_FILES(
 	Makefile
+	src/lib/js/.clangd
 	src/Makefile
 	src/modules/Makefile
 	src/lib/Makefile
@@ -1694,6 +1726,7 @@ AC_CONFIG_FILES(
 	src/tests/modules/Makefile
 	misc/Makefile
 	src/cmodules/Makefile
+	tools/Makefile
 )
 
 AC_OUTPUT

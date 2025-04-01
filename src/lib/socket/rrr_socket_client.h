@@ -121,6 +121,14 @@ int rrr_socket_client_collection_new (
 		struct rrr_event_queue *queue,
 		const char *creator
 );
+void rrr_socket_client_collection_set_silent (
+		struct rrr_socket_client_collection *target,
+		int silent
+);
+void rrr_socket_client_collection_set_no_unlink (
+		struct rrr_socket_client_collection *target,
+		int no_unlink
+);
 void rrr_socket_client_collection_set_connect_timeout (
 		struct rrr_socket_client_collection *collection,
 		uint64_t connect_timeout_us
@@ -195,6 +203,11 @@ int rrr_socket_client_collection_migrate_by_fd (
 void rrr_socket_client_collection_close_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
+);
+int rrr_socket_client_collection_get_fds (
+		int **target,
+		size_t *target_count,
+		const struct rrr_socket_client_collection *collection
 );
 int rrr_socket_client_collection_has_fd (
 		struct rrr_socket_client_collection *collection,

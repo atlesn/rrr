@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -67,6 +67,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((c) <= 0x1f)
 #define RRR_PARSE_MATCH_C_TAG(c)	\
 	(RRR_PARSE_MATCH_C_LETTER(c) || RRR_PARSE_MATCH_C_NUMBER(c))
+
+#define RRR_PARSE_ROUND_IN(pos_ptr)                                  \
+    do { struct rrr_parse_pos *parse_pos_round_orig = pos_ptr;       \
+        while(!RRR_PARSE_CHECK_EOF(pos_ptr)) {                       \
+            struct rrr_parse_pos parse_pos_round_begin = *(pos_ptr)  \
+
+#define RRR_PARSE_ROUND_OUT_VERIFY_PROGRESS(err)                     \
+        if (parse_pos_round_begin.pos == (parse_pos_round_orig)->pos) { err } } } while(0)
 
 struct rrr_parse_pos {
 	const char *data;
@@ -183,6 +191,13 @@ int rrr_parse_str_extract_name (
 		char **name,
 		struct rrr_parse_pos *pos,
 		char end_char
+);
+int rrr_parse_str_extract_name_with_subscript (
+		struct rrr_parse_pos *pos,
+		char subscript_char,
+		char end_char,
+		int (*name_callback)(int level, char **name, rrr_length name_length, void *arg),
+		void *callback_arg
 );
 void rrr_parse_str_strip_newlines (
 		char *str

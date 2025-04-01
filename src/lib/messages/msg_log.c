@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../util/rrr_endian.h"
 #include "msg_log.h"
 #include "msg.h"
 
@@ -56,12 +57,19 @@ int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg) {
 	return 0;
 }
 
-void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size) {
+static void __rrr_msg_msg_log_init_head (
+		struct rrr_msg_log *target,
+		uint16_t prefix_size,
+		uint32_t data_size,
+		uint32_t flags
+) {
+	RRR_ASSERT(sizeof(flags) == sizeof(target->msg_value),size_of_flags_must_match_msg_value_field);
+
 	rrr_msg_populate_head (
 			(struct rrr_msg *) target,
 			RRR_MSG_TYPE_MESSAGE_LOG,
 			(uint32_t) sizeof(*target) - 1 + prefix_size + data_size,
-			0
+			flags
 	);
 
 	target->prefix_size = prefix_size;
@@ -73,6 +81,7 @@ int rrr_msg_msg_log_new (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 ) {
@@ -99,7 +108,12 @@ int rrr_msg_msg_log_new (
 
 	memset(result, '\0', allocation_size);
 
-	rrr_msg_msg_log_init_head (result, (uint16_t) prefix_size, (uint32_t) message_size);
+	__rrr_msg_msg_log_init_head (
+			result,
+			(uint16_t) prefix_size,
+			(uint32_t) message_size,
+			flags
+	);
 /*
 	printf("init message ppos %p mpos %p\n", result->prefix_and_message, RRR_MSG_LOG_MSG_POS(result));
 

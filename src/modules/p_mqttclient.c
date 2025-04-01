@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
-#include <errno.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -614,10 +613,9 @@ static int mqttclient_publish (
 			publish->message_expiry_interval
 	);
 
-	if (rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish) != 0) {
-		RRR_MSG_0("Could not publish message in MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
+	if ((ret = rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish)) != 0) {
+		RRR_MSG_0("Could not publish message in MQTT client instance %s: %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -707,7 +705,7 @@ static int mqttclient_process_command_subscribe (
 		goto out;
 	}
 
-	if ((ret = mqttclient_do_subscribe (data)) != 0) {
+	if ((ret = mqttclient_do_subscribe(data)) != 0) {
 		goto out;
 	}
 
@@ -877,7 +875,7 @@ static int mqttclient_process (
 	}
 
 	if (is_command) {
-		if ((ret = mqttclient_process_command (data, reading)) != 0) {
+		if ((ret = mqttclient_process_command(data, reading)) != 0) {
 			goto out;
 		}
 	}
@@ -928,14 +926,14 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_connect_attempts", connect_attempts, RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS);
 	if (data->connect_attempts < 1) {
 		RRR_MSG_0("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %" PRIrrrbl " was given.",
-				config->name, data->connect_attempts);
+				config->name_debug, data->connect_attempts);
 		ret = 1;
 		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_qos", qos, RRR_MQTT_DEFAULT_QOS);
 	if (data->qos > 2) {
-		RRR_MSG_0("Setting mqtt_qos was >2 in config of instance %s\n", config->name);
+		RRR_MSG_0("Setting mqtt_qos was >2 in config of instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -945,7 +943,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_qos2_fail_once", do_qos2_fail_once, 0);
 
 	if (data->do_qos2_fail_once && data->qos != 2) {
-		RRR_MSG_0("mqtt_qos2_fail_once was set to yes but mqtt_qos was not 2 in mqttclient instance %s, this is a configuration error.\n", config->name);
+		RRR_MSG_0("mqtt_qos2_fail_once was set to yes but mqtt_qos was not 2 in mqttclient instance %s, this is a configuration error.\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -959,7 +957,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_will_message", will_message_str);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_will_qos", will_qos, RRR_MQTT_DEFAULT_QOS);
 	if (data->will_qos > 2) {
-		RRR_MSG_0("Setting mqtt_will_qos was >2 in config of instance %s\n", config->name);
+		RRR_MSG_0("Setting mqtt_will_qos was >2 in config of instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -967,7 +965,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	if (data->will_message_str != NULL) {
 		if ((ret = rrr_nullsafe_str_new_or_replace_raw(&data->will_message, data->will_message_str, strlen(data->will_message_str))) != 0) {
-			RRR_MSG_0("Failed to store will message in %s of %s\n", __func__, config->name);
+			RRR_MSG_0("Failed to store will message in %s of %s\n", __func__, config->name_debug);
 			goto out;
 		}
 	}
@@ -975,22 +973,22 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	if (data->will_topic == NULL) {
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
 			"mqtt_will_message",
-			RRR_MSG_0("mqtt_will_message was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+			RRR_MSG_0("mqtt_will_message was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name_debug); ret = 1; goto out;
 		);
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
 			"mqtt_will_qos",
-			RRR_MSG_0("mqtt_will_qos was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+			RRR_MSG_0("mqtt_will_qos was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name_debug); ret = 1; goto out;
 		);
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN (
 			"mqtt_will_retain",
-			RRR_MSG_0("mqtt_will_retain was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name); ret = 1; goto out;
+			RRR_MSG_0("mqtt_will_retain was set but mqtt_will_topic was not in mqtt client instance %s, this is a configuration error.\n", config->name_debug); ret = 1; goto out;
 		);
 	}
 
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Could not parse configuration parameter 'mqtt_version' of MQTT client instance %s\n", config->name);
+			RRR_MSG_0("Could not parse configuration parameter 'mqtt_version' of MQTT client instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -1005,7 +1003,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 		else {
 			RRR_MSG_0("Unknown protocol version '%s' in setting mqtt_version of instance %s. " \
-					"Supported values are 3.1.1 and 5\n", data->version_str, config->name);
+					"Supported values are 3.1.1 and 5\n", data->version_str, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -1013,7 +1011,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->server, config, "mqtt_server")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing mqtt_server setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing mqtt_server setting of instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -1032,7 +1030,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			"mqtt_receive_array"
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -1045,7 +1043,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
 
 	if (data->do_force_publish_topic != 0 && data->do_prepend_publish_topic != 0) {
-		RRR_MSG_0("Both mqtt_publish_topic_force and mqtt_publish_topic_prepend was yes for instance %s, this is an invalid configuration.\n", config->name);
+		RRR_MSG_0("Both mqtt_publish_topic_force and mqtt_publish_topic_prepend was yes for instance %s, this is an invalid configuration.\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -1053,25 +1051,25 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_publish_topic", publish_topic);
 
 	if (data->publish_topic != NULL && rrr_mqtt_topic_validate_name(data->publish_topic) != 0) {
-		RRR_MSG_0("Topic name in mqtt_publish_topic was invalid for instance %s\n", config->name);
+		RRR_MSG_0("Topic name in mqtt_publish_topic was invalid for instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->publish_topic == NULL && data->do_force_publish_topic != 0) {
-		RRR_MSG_0("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
+		RRR_MSG_0("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->publish_topic == NULL && data->do_prepend_publish_topic != 0) {
-		RRR_MSG_0("mqtt_prepend_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
+		RRR_MSG_0("mqtt_prepend_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", mqttclient_parse_sub_topic, data) != 0) {
-		RRR_MSG_0("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -1095,7 +1093,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 		else {
 			RRR_MSG_0("Unknown value for mqtt_connect_error_action (̈́'%s') in MQTT client instance %s, please refer to documentation\n",
-					data->connect_error_action, config->name);
+					data->connect_error_action, config->name_debug);
 		}
 	}
 	else {
@@ -1117,7 +1115,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	if (data->do_discard_on_connect_retry != 0 && strcasecmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) != 0) {
 		RRR_MSG_0("mqtt_do_discard_on_connect_retry was 'yes' in mqttclient instance %s but mqtt_connect_error_action was not 'retry', this is an error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -1127,7 +1125,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	if (data->password != NULL && data->username == NULL) {
 		RRR_MSG_0("mqtt_password set without mqtt_username being so in mqttclient instance %s, this in an error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -2068,7 +2066,7 @@ static void mqttclient_update_stats (
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 }
 
-static int __mqttclient_input_queue_process (
+static int mqttclient_input_queue_process (
 		struct mqtt_client_data *data
 ) {
 	int ret = 0;
@@ -2095,7 +2093,7 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mqtt_client_data *data = thread_data->private_data;
 
-	int ret = 0;
+	int ret_tmp;
 
 	RRR_LL_PUSH(&data->input_queue, entry);
 	rrr_msg_holder_incref_while_locked(entry);
@@ -2116,12 +2114,17 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		rrr_msg_holder_unlock(entry);
 	}
 
-	if (!data->send_disabled && __mqttclient_input_queue_process (data) != 0) {
-		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	if (!data->send_disabled && (ret_tmp = mqttclient_input_queue_process(data)) != 0) {
+		if (ret_tmp == RRR_MQTT_SESSION_DELETED) {
+			rrr_event_dispatch_exit(INSTANCE_D_EVENTS(data->thread_data));
+		}
+		else {
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		}
 	}
 
 	out:
-	return ret;
+	return 0;
 }
 
 static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
@@ -2318,7 +2321,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			thread
 	);
 
-	if (__mqttclient_input_queue_process (data) != 0) {
+	if (mqttclient_input_queue_process(data) != 0) {
+		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+			goto out_destroy_client;
+		}
 		goto reconnect;
 	}
 

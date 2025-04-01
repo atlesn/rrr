@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "lib/cmdlineparser/cmdline_defines.h"
 #include "lib/util/bsd.h"
 #include "lib/util/gnu.h"
 #include "lib/util/posix.h"
@@ -40,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "lib/rrr_config.h"
 #include "lib/log.h"
+#include "lib/helpers/log_helper.h"
 #include "lib/allocator.h"
 #include "lib/rrr_shm.h"
 #include "lib/profiling.h"
@@ -124,6 +126,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'M',    "message-hooks",         "[-M|--message-hooks]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'L',    "log-socket",            "[-L|--log-socket[=]LOG SOCKET]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'o',    "output-buffer-warn-limit", "[-o|--output-buffer-warn-limit[=]LIMIT]"},
 		{0,                            'b',    "banner",                "[-b|--banner]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -334,6 +337,7 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 	(void)(line);
 	(void)(loglevel_orig);
 	(void)(loglevel_translated);
+	(void)(flags);
 	(void)(prefix);
 
 	if (rrr_stats_engine_push_log_message (
@@ -360,17 +364,61 @@ struct main_loop_event_callback_data {
 	struct rrr_event_queue *queue;
 };
 
+struct main_loop_sockets_close_all_callback_data {
+	int *fds_a;
+	size_t fds_a_len;
+	int *fds_b;
+	size_t fds_b_len;
+	int *fds_c;
+	size_t fds_c_len;
+};
+
+static int main_loop_sockets_close_all_except_cb (int fd, void *arg) {
+	struct main_loop_sockets_close_all_callback_data *callback_data = arg;
+
+	for (size_t i = 0; i < callback_data->fds_a_len; i++) {
+		if (callback_data->fds_a[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_b_len; i++) {
+		if (callback_data->fds_b[i] == fd)
+			return 1;
+	}
+
+	for (size_t i = 0; i < callback_data->fds_c_len; i++) {
+		if (callback_data->fds_c[i] == fd)
+			return 1;
+	}
+
+	return 0;
+}
+
 static void main_loop_close_sockets_except (
-		int stats_socket,
-		struct rrr_event_queue *queue
+		struct main_loop_event_callback_data *data
 ) {
-	int fds[RRR_EVENT_QUEUE_FD_MAX + 1];
-	size_t fds_count;
-	rrr_event_queue_fds_get (fds, &fds_count, queue);
+	int event_fds[RRR_EVENT_QUEUE_FD_MAX];
+	size_t event_fds_count;
+	int log_fds[] = {0};
+	size_t log_fds_count = 0;
+	int single_fds[] = {data->stats_data->engine.socket};
+	size_t single_fds_count = sizeof(single_fds) / sizeof(single_fds[0]);
 
-	fds[fds_count++] = stats_socket;
+	rrr_event_queue_fds_get (event_fds, &event_fds_count, data->queue);
 
-	rrr_socket_close_all_except_array_no_unlink (fds, fds_count);
+	if ((log_fds[0] = rrr_log_socket_fd_get()) > 0)
+		log_fds_count++;
+
+	struct main_loop_sockets_close_all_callback_data callback_data = {
+		event_fds,
+		event_fds_count,
+		log_fds,
+		log_fds_count,
+		single_fds,
+		single_fds_count
+	};
+
+	rrr_socket_close_all_except_cb_no_unlink (main_loop_sockets_close_all_except_cb, &callback_data);
 }
 
 static int main_mmap_periodic (struct stats_data *stats_data) {
@@ -489,6 +537,8 @@ static int main_loop_periodic_maintenance (
 		goto out;
 	}
 
+	rrr_log_socket_ping_or_flush();
+
 	if (sigusr2) {
 		rrr_profiling_dump();
 		sigusr2 = 0;
@@ -515,6 +565,8 @@ static void main_loop_periodic_single (evutil_socket_t fd, short flags, void *ar
 		rrr_event_dispatch_break(callback_data->queue);
 		return;
 	}
+
+	rrr_log_socket_ping_or_flush();
 }
 
 static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
@@ -538,7 +590,9 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 	//        bugtrap.
 
 	if (*(callback_data->collection) == NULL) {
-		main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
+		main_loop_close_sockets_except (
+				callback_data
+		);
 
 		if (rrr_instances_create_and_start_threads (
 				callback_data->collection,
@@ -585,6 +639,8 @@ static void main_loop_periodic (evutil_socket_t fd, short flags, void *arg) {
 	if (main_loop_periodic_maintenance (callback_data) != 0) {
 		goto out_destroy_thread_collection;
 	}
+
+	rrr_log_socket_ping_or_flush();
 
 	return;
 
@@ -939,6 +995,8 @@ static int main_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
+	rrr_log_socket_ping_or_flush();
+
 	return RRR_EVENT_OK;
 }
 
@@ -959,8 +1017,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_allocator;
 	}
 
-	rrr_setproctitle_init(argc, argv, env);
-	rrr_setproctitle("[main]");
 	rrr_strerror_init();
 
 	int is_child = 0;
@@ -1020,6 +1076,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+	// Call setproctitle() after argv and envp has been
+	// checked as the call may zero out these arrays.
+	rrr_setproctitle_init(argc, argv, env);
+	rrr_setproctitle("[main]");
 
 	if (cmd_exists(&cmd, "single-thread", 0)) {
 		if (RRR_MAP_COUNT(&config_file_map) > 1) {
@@ -1099,8 +1160,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			if (rrr_event_queue_new(&queue) != 0) {
 				ret = EXIT_FAILURE;
-				goto out_destroy_events;
+				goto out_cleanup_signal;
 			}
+
+			rrr_log_socket_after_fork();
 
 			if (main_loop (
 					&cmd,
@@ -1140,6 +1203,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
+
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
@@ -1160,7 +1224,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
-		rrr_socket_close_all();
+		rrr_socket_close_all_except(rrr_log_socket_fd_get());
 		if (ret == EXIT_SUCCESS) {
 			RRR_MSG_1("Exiting program without errors\n");
 		}
@@ -1169,6 +1233,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		}
 		cmd_destroy(&cmd);
 		rrr_map_clear(&config_file_map);
+		rrr_config_reset_log_prefix();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out_cleanup_allocator:

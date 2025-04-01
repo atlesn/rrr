@@ -11,5 +11,4 @@ send_fifo
 .test_data.tmp
 .rrr_test.sock
 test.sh
-.test_composite.sh
 .rrr_test.passwd

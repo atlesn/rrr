@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "parse.h"
 #include "allocator.h"
+#include "rrr_types.h"
 #include "util/macro_utils.h"
 #include "helpers/string_builder.h"
 
@@ -536,6 +537,100 @@ int rrr_parse_str_extract_name (
 		return ret;
 }
 
+static int __rrr_parse_str_extract_name_with_subscript (
+		int level,
+		struct rrr_parse_pos *pos,
+		char subscript_char,
+		char end_char,
+		int (*name_callback)(int level, char **name, rrr_length name_length, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	char *name = NULL;
+
+	level++;
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos)) {
+		goto out;
+	}
+
+	rrr_length start;
+	rrr_slength end;
+
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NAME);
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+
+	const char cur_char = *(pos->data + pos->pos);
+	if (RRR_PARSE_CHECK_EOF(pos) || (cur_char != end_char && cur_char != subscript_char)) {
+		goto out_missing_end_char;
+	}
+	rrr_length_inc_bug(&pos->pos);
+
+	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
+	if ((name = rrr_allocate(name_length + 1)) == NULL) {
+		goto out_failed_alloc;
+	}
+
+	memcpy(name, pos->data + start, name_length);
+	name[name_length] = '\0';
+
+	if ((ret = name_callback(level, &name, name_length, callback_arg)) != 0) {
+		goto out;
+	}
+
+	if (cur_char == subscript_char) {
+		if ((ret = __rrr_parse_str_extract_name_with_subscript (
+				level,
+				pos,
+				subscript_char,
+				end_char,
+				name_callback,
+				callback_arg
+		)) != 0) {
+			goto out;
+		}
+
+		rrr_parse_ignore_spaces_and_increment_line(pos);
+		if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != end_char) {
+			goto out_missing_end_char;
+		}
+		rrr_length_inc_bug(&pos->pos);
+	}
+
+	goto out;
+	out_failed_alloc:
+		RRR_MSG_0("Could not allocate memory for name in %s\n", __func__);
+		ret = 1;
+		goto out;
+	out_missing_end_char:
+		RRR_MSG_0("End character %c or subscription %c missing after name\n", end_char, subscript_char);
+		ret = 1;
+		goto out;
+	out:
+		RRR_FREE_IF_NOT_NULL(name);
+		return ret;
+}
+
+int rrr_parse_str_extract_name_with_subscript (
+		struct rrr_parse_pos *pos,
+		char subscript_char,
+		char end_char,
+		int (*name_callback)(int level, char **name, rrr_length name_length, void *arg),
+		void *callback_arg
+) {
+	return __rrr_parse_str_extract_name_with_subscript (
+			-1,
+			pos,
+			subscript_char,
+			end_char,
+			name_callback,
+			callback_arg
+	);
+}
+
 void rrr_parse_str_strip_newlines (
 		char *str
 ) {
@@ -606,7 +701,7 @@ void rrr_parse_make_location_message (
 
 		if (line_length > 128) {
 			line_length = 128;
-			str_tmp[start + line_length] = '\0';
+			str_tmp[line_length] = '\0';
 		}
 	}
 	else {

@@ -157,6 +157,9 @@ static int __rrr_http_server_websocket_handshake_callback (
 static int __rrr_http_server_receive_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 );
+static int __rrr_http_server_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+);
 static int __rrr_http_server_websocket_get_response_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 );
@@ -200,7 +203,7 @@ static int __rrr_http_server_transport_ctx_application_ensure (
 		__rrr_http_server_websocket_get_response_callback,
 		__rrr_http_server_websocket_frame_callback,
 		__rrr_http_server_receive_callback,
-		NULL,
+		__rrr_http_server_failure_callback,
 		__rrr_http_server_async_response_get_callback,
 		__rrr_http_server_response_postprocess_callback,
 		http_server
@@ -459,6 +462,16 @@ static int __rrr_http_server_receive_callback (
 
 	out:
 	return ret;
+}
+
+static int __rrr_http_server_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+) {
+	(void)(handle);
+	(void)(transaction);
+	(void)(error_msg);
+	(void)(arg);
+	return 0;
 }
 
 static int __rrr_http_server_websocket_get_response_callback (

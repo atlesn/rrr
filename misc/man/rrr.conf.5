@@ -1,4 +1,4 @@
-.Dd 2024-02-13
+.Dd 2025-02-25
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -909,7 +909,10 @@ If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the o
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
 .SS modbus (PA)
-This module implements a modbus client capable of getting coil status from a remote modbus server.
+This module implements a modbus client supporting the functions
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10)
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
 .PP
@@ -939,7 +942,7 @@ is used.
 If given, any messages generated as a result of the command will have this topic set.
 .It modbus_function_code
 The modbus command to send, the commands
-.B 0x01 Read Coils, 0x02 Read Discrete Inputs, 0x03 Read Holding Registers
+.B Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03), Read Input Registers (0x04), Write Single Register (0x06), Write Multiple Registers (0x10)
 are supported. If not given,
 .B 0x01
 is used.
@@ -947,7 +950,24 @@ The function code must be stored in the array field in decimal form.
 .It modbus_starting_address
 The starting address for applicable commands. Defaults to 0, and must be in the range 0 - 65535.
 .It modbus_quantity
-The quantity (e.g. number of coils or registers) to use. Defaults to 8  and must be in the range 1 - 2000 for coil functions, and defaults to 1 and must be in the range 1 - 125 for register functions.
+For
+.B Read Coils (0x01), Read Discrete Inputs (0x02)
+quantity defaults to 8 and must be in the range 1 - 2000.
+.br
+For
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+quantity defaults to 1 and must the in the range 1 - 125.
+.br
+For
+.B Write Multiple Registers (0x10)
+quantity defaults to 1 and must the in the range 1 - 123.
+.br
+For any other function code quantity is not required and will be ignored if present.
+.It modbus_contents
+The raw data to write in
+.B Write Single Register (0x06)
+and
+.B Write Multiple Registers (0x10).
 .It modbus_interval_ms
 If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
 .El
@@ -962,23 +982,52 @@ and they correspond to fields given in the protocol standard.
 .It Error
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_exception_code
-.It Read Coils (0x01), Read Discrete Inputs (0x02), Read Holding Registers (0x03)
+.It Read Coils (0x01), Read Discrete Inputs (0x02)
 .LI
 .B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_status
+.It Read Holding Registers (0x03), Read Input Registers (0x04)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_bytes, modbus_contents
+.It Write Single Register (0x06)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address, modbus_contents
+.It Write Multiple Registers (0x10)
+.LI
+.B modbus_server, modbus_port, modbus_function_code, modbus_starting_address
 .El
 .PP
 The array fields have the following contents:
 .PP
 .Bl -tag -width -indent
 .It modbus_function_code
-A one byte unsigned integer indicating a function code
+A one byte unsigned integer indicating a function code.
 .It modbus_exception_code
-A one byte unsigned integer indicating an exception code
+A one byte unsigned integer indicating an exception code.
 .It modbus_bytes
-A one byte unsigned integer indicating the size of a data field
+A one byte unsigned integer indicating the size of a data field.
 .It modbus_status
-A blob containing response data of a length indicated by
-.B modbus_bytes
+A blob containing response data from a 
+.B Read Coils (0x01) 
+or 
+.B Read Discrete Inputs (0x02) 
+response of a length indicated by
+.B modbus_bytes.
+.It modbus_starting_address
+An unsigned integer containing the starting address field returned in a response from a
+.B  Write Single Register (0x06)
+or
+.B Write Multiple Registers (0x10)
+response.
+.It modbus_contents
+For 
+.B Read Holding Registers (0x03), Read Input Registers (0x04)
+a blob containing response data from of a length indicated by
+.B modbus_bytes.
+.br
+For 
+.B Write Single Register (0x06)
+a blob containing response data of length 2.
+.B 
 .El
 .PP
 .SS python3 (PAI)
@@ -1894,6 +1943,10 @@ The Config and Message objects have the following members:
   ip_set: function(ip, port){},             // Helper function to set adddress of ip_addr field
   ip_get: function(){ return [ip, port]; }, // Helper function to retrieve adddress of ip_addr field
 
+  // Data accessors
+  data_as_utf8(),                // Decode UTF-8 from the data field and return as string. Throws TypeError if decoding fails.
+  data_as_object(),              // As data_to_utf8(), but also decodes JSON and returns an object.
+
   // Constants for the type field
   MSG_TYPE_MSG: 1,
   MSG_TYPE_TAG: 2,
@@ -2096,11 +2149,23 @@ HEAD
 DELETE
 .El
 
-Generated  messages will have the topic
+Any generated messages as a result of incoming requests will have a unique topic set.
+If responses are to be generated by sender instances, the same topics as the request messages ( from
+.B httpserver
+) is used in the response messages ( to
+.B httpserver
+), allowing them to be matched.
+The format of the topics is either
 .B httpserver/request/uuu
-set, where
-.B uuu
-is a unique unsigned decimal number which increase by 1 for every received request.
+or
+.B httpserver/request/uuu/mmm/aaa/eee
+depending on the current configuration.
+Refer to documentation of the parameters
+.B http_server_topic_format
+and
+.B http_server_get_response_from_senders
+for more details.
+
 Messages will not be generated for the 
 .B OPTIONS
 method, only default 204 responses will be sent to these requests.
@@ -2209,17 +2274,23 @@ Always present.
 Always present with the value 1, 2 or 3. Given in uppercase letters.
 .It http_endpoint
 Always present. Percent-decoding and removal of the query string will not be performed unless
-.B http_endpoint_decode
+.B http_server_decode_endpoint
 is set to
 .B yes.
 .It http_query_string
 Present if
-.B http_endpoint_decode
+.B http_server_decode_endpoint
 is set to
 .B yes
 and the query contained a query string (following a ?).
+Always present.
+.It http_authority
+Added if the request contained an :authority or a Host: header. The first takes precedence if both are present.
 .It http_body
 Added if a body of non-zero length is present.
+The field will have a blob type if a content type header is found and it is set to
+.B application/octet-stream,
+otherwise it will be of string type.
 .It http_content_transfer_encoding
 Added if the header value
 .B content-transfer-encoding
@@ -2240,7 +2311,7 @@ is active, no messages without body will be generated.
 
 If set to 'no' or left unset, only fields from the HTTP request will be present in generated messages.
 
-.It http_endpoint_decode={yes|no}
+.It http_server_decode_endpoint={yes|no}
 If this option is set to 'yes', any % sequences present in the
 .B http_endpoint
 field of messages being generated when full requests are received will be decoded into respective bytes.
@@ -2263,17 +2334,26 @@ If this option is set to 'yes', a sender instance of
 is expected to generate HTTP responses. Implies
 .B http_server_receive_full_request=yes.
 
+To match requests and responses, the response messages generated by sender instances should have the same topic set as the request.
+If 'request' topic format is set in
+.B http_server_topic_format,
+the topic filter
+.B httpserver/request/uuu/#
+is used to match responses. Otherwise, the topic filter
+.B httpserver/request/uuu
+is used.
+
 An instance which receives RRR messages from
 .B httpserver
 containing requests may generate responses in an RRR array message with the following fields of which all are optional:
-.sp
+
 .Bl -tag -width -indent
 .It http_response_code
 The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present
 (httpserver will implicitly force the usage of a 200 response if the status is 204 and a body is present).
 Must be a value >= 100 and <= 599.
 200 or 204 will be selected silently if the provided code is out of this range.
-.sp
+
 .It http_content_type
 The content type to use for the response. If it is defined but is an empty string, no content type header will be sent.
 If not defined, the content type sent will depend on the type of the
@@ -2285,7 +2365,7 @@ In any case, a content type header will not be sent if there is no response body
 The response body to send. The content type set in the response header, unless specified explititly in 
 .B http_content_type,
 depends on the type of this field:
-.sp
+
 .Bl -tag -width -indent
 .It blob
 application/octet-stream
@@ -2296,7 +2376,6 @@ text/plain (also used by other types convertible to strings (numbers etc.))
 .It vain
 No response body generated
 .El
-.sp
 .El
 
 Response messages from another instance may also be a plain data message in which the data of this message will be treated the same way as data from the
@@ -2315,7 +2394,7 @@ Always respond with 404 Not Found to requests with
 .B /favicon.ico
 endpoint. If set to 'no' or left unset, these requests are treated as any other.
 
-.It http_server_response_timeout=MILLISECONDS
+.It http_server_response_timeout_ms=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
 response. Defaults to 2000.
@@ -2336,6 +2415,54 @@ If defined,
 will send a
 .B Cache-Control
 header with the given string in all response headers.
+
+.It http_server_topic_format={simple|request}
+If set to 
+.B simple
+or left unset,
+the generated messages will have the topic 
+.B httpserver/request/uuu 
+set. If set to
+.B request,
+the generated messages will have the topic
+.B httpserver/request/uuu/mmm/aaa/eee set.
+
+The following substitutions are performed on the topics:
+
+.Bl -tag -width -indent
+.It uuu
+is a unique unsigned decimal number which increase by 1 for every received request
+.It mmm
+is the HTTP method for the request in capital letters (e.g. GET or POST)
+.It aaa
+is the value of the :authority (HTTP/2+) or Host: header (HTTP/1) in the request
+.It eee
+is the endpoint of the request
+.El
+
+If a value is not available for a substitution, the topic level is left empty.
+
+Example topics:
+
+.Bl -tag -width -indent
+.It httpserver/request/100
+A request where the "simple" topic format is used.
+
+.It httpserver/request/101/GET/localhost/
+A "GET" request to authority "localhost" where "request" topic format is used. The request is for the default endpoint "/".
+
+.It httpserver/request/102/GET/localhost/favicon.ico
+A "GET" request to authority "localhost" for the "/favicon.ico" endpoint.
+
+.It httpserver/request/103/GET/localhost/img/logo.png
+A "GET" request to authority "localhost" for the "/img/logo.png" endpoint.
+
+.It httpserver/request/104/POST//submit
+A "POST" request for the "/submit" endpoint without any authority set.
+
+.It httpserver/request/105/PUT//
+A "PUT" request for the default "/" endpoint without any authority set.
+.El
 
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
@@ -2584,6 +2711,22 @@ Ignore any meta tags when array values to the HTTP query (controlled by)
 .B http_tags.
 If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
 
+.It http_request_tags_ignore={yes|no}
+Ignore any tags possibly originating from
+.B httpserver
+when the configuration parameter
+.B http_server_receive_full_request
+is active.
+Any fields specified in the documentation for this parameter will not be added to query strings or form data body,
+but the fields will still work as expecting when controlling the behaviour of a query whenever applicable.
+If set to no or left unset, these fields may be included in requests depending on other configuration parameters.
+
+Other fields added by
+.B httpserver,
+like
+.B http_request_partials
+will also be ignored.
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If
@@ -2738,6 +2881,20 @@ The
 tag will not be present for JSON messages.
 Also, if the JSON data in the response contains any of the above fields, both will be present in the message
 with the HTTP-response fields being placed first.
+
+.It http_trap_headers=HEADER-NAME[,HEADER-NAME]...
+
+If given, the listed headers will be present as array values in generated structured messages.
+Implies
+.B http_receive_structured=yes.
+The received headers will be in the format
+.B http_HEADER-NAME
+all in lowercase letters. Dashes and undescores are preserved as-is.
+
+The value is stripped of leading spaces (SP only) as well as trailing spaces and line end (LF, CR, TAB or SP).
+Otherwise the value is left untouched, e.g. any encoding, quoted strings or subvalues are not handled.
+
+If a specified header is not present, this is indicated by the value being empty.
 
 .It http_receive_ignore_error_part_data={yes|no}
 If set to no, attempts will be made to create messages from the part data of any responses from the server, even
@@ -3386,6 +3543,8 @@ The following array tags can be retrieved from messages generated by
 .Bl -tag -width -indent
 .It log_level_translated
 RFC 5424 loglevel, small integer.
+.It log_flags
+If set to 1, this indicates that the log message is in JSON format.
 .It log_prefix
 The log prefix, usually path to the current RRR configuration file.
 .It log_message
@@ -3945,6 +4104,7 @@ A number in the range 1 through 10 controlling how fast to fade where 1 is slowe
 If not given, the value set in the
 .B artnet_fade_speed
 configuration parameter is used.
+Also refer to this parameter for details about the fade speed.
 
 .El
 .PP
@@ -3967,6 +4127,16 @@ Defaults to 'yes'.
 A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
 If not given, a value of 5 is used.
 
+The value for each DMX channels is gradually incremented or decremented by the set fade speed
+until the specified target is reached (given by a fade command). The update occurs every 20 milliseconds.
+
+The approximate time T it takes to fade from a current value Vc to a target value Vt with fade speed S can
+be calculated using the following formula:
+
+.B T[ms] =~ 20 * (abs(Vc - Vt) / S)
+
+As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
+
 .El
 
 .SH COMMON CONFIGURATION PARAMETERS
@@ -3981,6 +4151,9 @@ How many worker fork copies to spawn. If multiple forks are used, incoming messa
 the fork having the least amount of messages waiting to be processed. Note that if sourcing is used,
 each for will source messages according to given parameters. Defaults to 1, maximum is 16.
 
+If configuration for sub instances is used, this parameter may not be set, as the number of worker forks
+is then controlled by how many sub instances is defined. See next section for details about sub instances.
+
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 
@@ -3992,6 +4165,51 @@ macros to print messages like the reset of RRR does.
 If there is an error during processing of a message, just drop it instead of restarting the program.
 Defaults to no.
 .El
+.SS cmodule sub instances
+Multiple forks of the same script, but with different configuration, may be spawned by using sub instances.
+When this is used, the parameter
+.B X_workers
+may not be specified.
+
+A sub instance is defined by appending square brackets to the parent name in a separate block section. In the
+following example, the parent cmodule
+.B parent
+has two sub instances defined
+.B sub_a
+and
+.B sub_b
+.
+
+.EX
+[parent]
+module=perl5
+
+[parent[sub_a]]
+parameter=value for a
+
+[parent[sub_b]]
+parameter=value for b
+.EE
+
+Sub instances, having their own configuration, cannot access any configuration parameters from their parent.
+Warnings will be given if any configuration parameter is left unused, either in the parent or a sub.
+Any number of costum configuration parameters may be set in each sub instance.
+
+Messages to sub instances are, as when plain multiple forks are used using
+.B X_workers,
+delivered to at most one sub instance. There is however possible to set a topic filter for each fork allowing
+routing of messages between different forks. Should no filter match a particular message, the message is dropped silently.
+
+The following configuration parameters are available in sub instances:
+
+.Bl -tag -width -indent
+.It worker_topic_filter=TOPIC_FILTER
+Apply a topic filter on messages coming in to the sub instance. If not given, any message may be delivered.
+
+.It topic_filter_invert={yes|no}
+Invert the topic filter so that the sub instance only receives messages which do not match the filter.
+.El
+
 .SS TLS parameters
 .Bl -tag -width -indent
 .It X_tls_certificate_file=FILENAME

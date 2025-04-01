@@ -705,6 +705,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 		return ret;
 }
 
+#ifdef RRR_WITH_NGHTTP2
 static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		struct rrr_http_application **upgraded_application,
 		struct rrr_http_application_http1_receive_data *receive_data,
@@ -743,7 +744,11 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 	if (receive_data->http1->callbacks.upgrade_verify_callback && (ret = receive_data->http1->callbacks.upgrade_verify_callback (
 			&upgrade_ok,
 			RRR_HTTP_APPLICATION_HTTP1,
+#ifdef RRR_WITH_NGHTTP2
 			RRR_HTTP_UPGRADE_MODE_HTTP2,
+#else
+			RRR_HTTP_UPGRADE_MODE_NONE,
+#endif
 			receive_data->http1->callbacks.callback_arg
 	) != 0)) {
 		goto out;
@@ -804,6 +809,7 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		rrr_http_application_destroy_if_not_null(&http2);
 		return ret;
 }
+#endif /* RRR_WITH_NGHTTP2 */
 
 static int __rrr_http_application_http1_request_upgrade_try (
 		enum rrr_http_upgrade_mode *upgrade_mode,
@@ -840,6 +846,7 @@ static int __rrr_http_application_http1_request_upgrade_try (
 			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
 	}
+#ifdef RRR_WITH_NGHTTP2
 	else if (upgrade_h2c != NULL) {
 		if ((ret = __rrr_http_application_http1_request_upgrade_try_http2 (
 				receive_data->upgraded_application,
@@ -850,6 +857,7 @@ static int __rrr_http_application_http1_request_upgrade_try (
 			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 		}
 	}
+#endif
 
 	goto out;
 	out_bad_request:
@@ -1424,8 +1432,8 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 
 		rrr_websocket_state_set_client_mode(&callback_data->http1->ws_state);
 	}
-	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 #ifdef RRR_WITH_NGHTTP2
+	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 		if (method != RRR_HTTP_METHOD_GET && method != RRR_HTTP_METHOD_HEAD) {
 			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
 		}
@@ -1444,10 +1452,8 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 				goto out;
 			}
 		}
-#else
-		RRR_MSG_3("Note: HTTP client attempted to send request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
-#endif /* RRR_WITH_NGHTTP2 */
 	}
+#endif /* RRR_WITH_NGHTTP2 */
 	else {
 		if ((ret = rrr_http_part_header_field_push (
 				request_part,

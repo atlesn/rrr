@@ -34,6 +34,11 @@ sub push_blob {
 	$message->push_tag_blob($tag, $value, length $value);
 }
 
+sub source {
+	my $message = shift;
+	return 1;
+}
+
 sub process {
 	my $message = shift;
 

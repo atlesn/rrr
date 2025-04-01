@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_common.h"
 
+#include "../util/linked_list.h"
+
 struct rrr_http_service {
 	RRR_LL_NODE(struct rrr_http_service);
 	char *match_string;

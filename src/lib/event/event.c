@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021-2024 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -259,7 +259,8 @@ static void __rrr_event_signal_event (
 	}
 
 	if (function->function == NULL) {
-		RRR_DBG_9_PRINTF("EQ DISP %p function not registered\n", queue);
+		RRR_DBG_9_PRINTF("EQ DISP %p function %u not registered fd %i pid %llu tid %llu\n",
+			queue, function->index, (int) fd, (unsigned long long) getpid(), (unsigned long long) rrr_gettid());
 		goto out;
 	}
 
@@ -410,8 +411,8 @@ int rrr_event_pass (
 		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
 	}
 
-	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
-		queue, function, amount);
+	RRR_DBG_9_PRINTF("EQ PASS %p function %u pid %llu tid %llu amount %u\n",
+		queue, function, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), amount);
 
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
@@ -450,7 +451,12 @@ void rrr_event_count (
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
-	RRR_DBG_9_PRINTF("EQ DSTY %p\n", queue);
+	RRR_DBG_9_PRINTF("EQ DSTY %p CNT %i\n", queue, queue->usercount);
+
+	assert(queue->usercount > 0);
+
+	if (queue->usercount-- > 1)
+		return;
 
 	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		rrr_socket_eventfd_cleanup(&queue->functions[i].eventfd);
@@ -468,6 +474,7 @@ void rrr_event_queue_destroy (
 	rrr_free(queue);
 }
 
+
 void rrr_event_queue_destroy_void (
 		void *queue
 ) {
@@ -477,6 +484,14 @@ void rrr_event_queue_destroy_void (
 #ifdef RRR_WITH_LIBEVENT_DEBUG
 static int debug_active = 0;
 #endif
+
+void rrr_event_queue_incref (
+		struct rrr_event_queue *queue
+) {
+	RRR_DBG_9_PRINTF("EQ INC %p CNT %i\n", queue, queue->usercount);
+
+	queue->usercount++;
+}
 
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
@@ -517,6 +532,8 @@ int rrr_event_queue_new (
 	}
 
 	memset(queue, '\0', sizeof(*queue));
+
+	queue->usercount = 1;
 
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2023 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_H
 
 #include "rrr_config.h"
+#include "../../config.h"
 
 #ifdef __cplusplus
 #	include <cstdio>
@@ -104,6 +105,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
 #	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
+#       define RRR_MSG_JSON(file, line, loglevel_translated, message, json) printf("%s%s", json != NULL ? json : "", message != NULL ? message : "")
 #	define RRR_MSG_0_V(fmt, ap) vprintf(fmt, ap)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
@@ -167,6 +169,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         rrr_log_printf (__FILE__, __LINE__, debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);                        \
     } while (0)                                                                                                                \
 
+#    define RRR_MSG_JSON(file, line, loglevel_translated, message, json)                                                       \
+    do {                                                                                                                       \
+        rrr_log_print_json(file, line, loglevel_translated, rrr_config_global.log_prefix, message, json);                      \
+    } while (0)
+
 #	define RRR_MSG_0_V(fmt, ap) \
 	do {RRR_MSG_LOC_V (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, fmt, ap);}while(0)
 
@@ -209,7 +216,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	else
 #	define RRR_BUG(...) do { RRR_MSG_ERR(__VA_ARGS__); assert(0); } while (0)
 #	endif
+
+#	define RRR_ABORT(...) do { fprintf(stderr, __VA_ARGS__); abort(); } while (0)
 #endif
+
+// XXX : MSG_0 and DBG_9 should use correct prefix 
 
 #define RRR_MSG_0_PRINTF(...) \
 	do { printf ("<" __RRR_LOG_PREFIX_0_Q "> <rrr> " __VA_ARGS__); } while(0)
@@ -256,8 +267,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
 
-#define RRR_LOG_HEADER_FORMAT_NO_LEVEL "<%s> "
-#define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
+#define RRR_LOG_LEVEL_NOT_GIVEN 0xff
+
+#define RRR_LOG_HEADER_FORMAT_WHAT "<%s> "
+#define RRR_LOG_HEADER_FORMAT_LEVEL "<%u> "
+#define RRR_LOG_HEADER_FORMAT_TIMESTAMP "<%s> "
+#define RRR_LOG_HEADER_FORMAT_NO_TS      \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+
+#ifdef RRR_ENABLE_LOG_TIMESTAMPS
+
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_TIMESTAMP  \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	ts, loglevel, prefix
+
+#else
+
+#define RRR_LOG_HEADER_FORMAT_WITH_TS    \
+	RRR_LOG_HEADER_FORMAT_LEVEL      \
+	RRR_LOG_HEADER_FORMAT_WHAT
+#define RRR_LOG_HEADER_ARGS(ts, loglevel, prefix) \
+	loglevel, prefix
+
+#endif /* RRR_ENABLE_LOG_TIMESTAMPS */
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 
@@ -266,9 +302,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	    int line,                                          \
             uint8_t loglevel_translated,                       \
             uint8_t loglevel_orig,                             \
+            uint32_t flags,                                    \
             const char *prefix,                                \
             const char *message,                               \
             void *private_arg
+
+#define RRR_LOG_HOOK_JSON_ARGS                                 \
+	    const char *file,                                  \
+	    int line,                                          \
+            uint8_t loglevel_translated,                       \
+            const char *prefix,                                \
+            const char *json,                                  \
+            void *private_arg
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
+) {
+	uint8_t result = 0;
+
+	switch (loglevel) {
+		case __RRR_LOG_PREFIX_0:
+			result = RRR_RFC5424_LOGLEVEL_ERROR;
+			break;
+		case __RRR_LOG_PREFIX_1:
+		case __RRR_LOG_PREFIX_2:
+		case __RRR_LOG_PREFIX_3:
+		case __RRR_LOG_PREFIX_4:
+		case __RRR_LOG_PREFIX_5:
+		case __RRR_LOG_PREFIX_6:
+		case __RRR_LOG_PREFIX_7:
+		default:
+			result = RRR_RFC5424_LOGLEVEL_DEBUG;
+			break;
+	};
+
+	return result;
+}
+
+static inline uint8_t rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
+) {
+	(void)(loglevel);
+	return RRR_RFC5424_LOGLEVEL_ERROR;
+}
 
 struct rrr_event_queue;
 
@@ -290,16 +366,28 @@ void rrr_log_hooks_call_raw (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 );
 void rrr_log_printf_nolock (
 		const char *file,
 		int line,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+void rrr_log_print_nolock (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
+		const char *prefix,
+		const char *message,
+		int is_json,
+		int add_newline
 );
 void rrr_log_printf_plain (
 		const char *__restrict __format,
@@ -333,6 +421,32 @@ void rrr_log_fprintf (
 		const char *prefix,
 		const char *__restrict __format,
 		...
+);
+void rrr_log_print_json (
+		const char *file,
+		int line,
+		uint8_t loglevel_translated,
+		const char *prefix,
+		const char *message,
+		const char *json
+);
+int rrr_log_socket_connect (
+		const char *log_socket
+);
+int rrr_log_socket_fd_get (
+		void
+);
+void rrr_log_socket_flush_and_close (
+		void
+);
+void rrr_log_socket_after_fork (
+		void
+);
+void rrr_log_socket_after_thread (
+		void
+);
+void rrr_log_socket_ping_or_flush (
+		void
 );
 
 #endif /* RRR_LOG_H */

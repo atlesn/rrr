@@ -1,7 +1,7 @@
 pkgbase = rrr
 	pkgdesc = Read Route Record is a messaging daemon supporting HTTP, MQTT, TCP, UDP +++
-	pkgver = 1.28.14
-	pkgrel = 1
+	pkgver = 1.36.1
+	pkgrel = 0
 	url = https://www.github.com/atlesn/rrr
 	arch = i686
 	arch = arm64
@@ -13,13 +13,18 @@ pkgbase = rrr
 	depends = perl
 	depends = mariadb-clients
 	depends = libnghttp2
+	depends = ngtcp2-git
+	depends = libnghttp3
 	depends = json-c
 	depends = libevent
 	depends = jemalloc
-	depends = libartnet
+	depends = lua
+	depends = v8-r
+	depends = libartnet>=1.2.1
 	optdepends = systemd: systemd daemon support
+	optdepends = libbsd: set process titles
 	provides = rrr
-	source = git+https://github.com/atlesn/rrr.git#tag=v1.28-14
+	source = git+https://github.com/atlesn/rrr.git#branch=artnet
 	md5sums = SKIP
 
 pkgname = rrr

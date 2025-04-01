@@ -200,6 +200,13 @@ int rrr_nullsafe_str_extract_append_null (
 		char **result,
 		const struct rrr_nullsafe_str *nullsafe
 );
+int rrr_nullsafe_str_has_null_raw (
+		const void *str,
+		rrr_biglength len
+);
+int rrr_nullsafe_str_has_null (
+		const struct rrr_nullsafe_str *nullsafe
+);
 void rrr_nullsafe_str_copyto (
 		rrr_nullsafe_len *written_size,
 		void *target,
@@ -272,6 +279,11 @@ int rrr_nullsafe_str_foreach_byte_do (
 );
 void rrr_nullsafe_str_trim (
 		struct rrr_nullsafe_str *nullsafe
+);
+void rrr_nullsafe_str_trim_set (
+		struct rrr_nullsafe_str *nullsafe,
+		const char *set,
+		rrr_length set_size
 );
 
 #endif /* RRR_NULLSAFE_STR_H */
