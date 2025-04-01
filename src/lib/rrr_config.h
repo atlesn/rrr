@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@ struct rrr_global_config {
 	unsigned int rfc5424_loglevel_output;
 	unsigned int output_buffer_warn_limit;
 	unsigned int do_journald_output;
+	unsigned int do_json_output;
 	const char *log_prefix;
 	const char *run_directory;
 };
@@ -61,6 +62,7 @@ void rrr_config_init (
 		unsigned int rfc5424_loglevel_output,
 		unsigned int output_buffer_warn_limit,
 		unsigned int do_journald_output,
+		unsigned int do_json_output,
 		const char *run_directory
 );
 void rrr_config_set_log_prefix (

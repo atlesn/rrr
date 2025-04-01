@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -228,6 +228,7 @@ static void journal_log_hook (RRR_LOG_HOOK_ARGS) {
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_file", file);
 	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_line", line < 0 ? 0 : (uint64_t) line);
 	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
+	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_flags", flags);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_prefix", prefix);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_message", message);
 

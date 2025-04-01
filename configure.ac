@@ -1,9 +1,9 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.36-8])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.36-8", [Full version])
+AC_INIT([Read Route Record],[1.36-15])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.36-15", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 36, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 8, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 15, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -77,15 +77,9 @@ AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sys
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
-AS_IF([test "x$is_freebsd" != xno], [
-	AC_ARG_WITH([node],[AS_HELP_STRING([--with-node],[build with the NodeJS JavaScript bindings])],[enable_node=yes],[enable_node=no])
-	AC_ARG_WITH([v8],[AS_HELP_STRING([--without-v8],[build without the V8 JavaScript bindings])],[enable_v8=no],[enable_v8=yes])
-	enable_jemalloc=no
-], [
-	AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
-	AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
-	AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
-])
+AC_ARG_WITH([node],[AS_HELP_STRING([--without-node],[build without the NodeJS JavaScript bindings])],[enable_node=no],[enable_node=yes])
+AC_ARG_WITH([v8],[AS_HELP_STRING([--with-v8],[build with the V8 JavaScript bindings])],[enable_v8=yes],[enable_v8=no])
+AC_ARG_WITH([jemalloc],[AS_HELP_STRING([--without-jemalloc],[build without jemalloc support])],[enable_jemalloc=no],[enable_jemalloc=yes])
 AC_ARG_ENABLE([tls],[AS_HELP_STRING([--disable-tls],[disable TLS support])],[enable_tls=no],[enable_tls=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])

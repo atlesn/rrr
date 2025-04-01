@@ -61,8 +61,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'f',    "file-descriptor",       "[-f|--file-descriptor[=]FILE DESCRIPTOR]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'p',    "persist",               "[-p|--persist]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'q',    "quiet",                 "[-q|--quiet]"},
-	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-a|--add-newline]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'n',    "add-newline",           "[-n|--add-newline]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'm',    "message-only",          "[-m|--message-only]"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'j',    "json",                  "[-j|--json]"},
 	{CMD_ARG_FLAG_NO_ARGUMENT,    'u',    "unbuffered",            "[-u|--unbuffered]"},
         {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -246,6 +247,7 @@ static void rrr_logd_print (
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t log_flags,
 		const char *prefix,
 		const char *message
 ) {
@@ -270,26 +272,16 @@ static void rrr_logd_print (
 		prefix = "rrr_logd";
 	}
 
-	if (loglevel_orig == RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN) {
-		rrr_log_printf_nolock_loglevel_translated (
-				file,
-				line,
-				loglevel_translated,
-				prefix,
-				add_newline ? "%s\n" : "%s",
-				message
-		);
-	}
-	else {
-		rrr_log_printf_nolock (
-				file,
-				line,
-				loglevel_orig,
-				prefix,
-				add_newline ? "%s\n" : "%s",
-				message
-		);
-	}
+	rrr_log_print_nolock (
+			file,
+			line,
+			loglevel_translated,
+			loglevel_orig,
+			prefix,
+			message,
+			(log_flags & RRR_MSG_LOG_F_JSON) != 0,
+			add_newline
+	);
 }
 
 static int rrr_logd_read_msg_callback (
@@ -310,6 +302,7 @@ static int rrr_logd_read_msg_callback (
 	char *log_file = NULL;
 	uint8_t log_level_translated = 7;
 	int log_line = 0;
+	uint32_t log_flags = 0;
 
 	if (callback_data->data->quiet)
 		goto out;
@@ -329,6 +322,7 @@ static int rrr_logd_read_msg_callback (
 			&log_file,
 			&log_line,
 			&log_level_translated,
+			&log_flags,
 			&log_prefix,
 			&log_message,
 			&array
@@ -344,6 +338,7 @@ static int rrr_logd_read_msg_callback (
 			log_line,
 			log_level_translated,
 			RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN,
+			log_flags,
 			log_prefix,
 			log_message
 	);
@@ -385,6 +380,7 @@ static int rrr_logd_read_log_callback (
 				: rrr_int_from_biglength_bug_const(message->line),
 			message->loglevel_translated,
 			message->loglevel_orig,
+			message->msg_flags,
 			log_prefix,
 			log_message
 	);

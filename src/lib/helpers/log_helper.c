@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2024-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -114,6 +114,7 @@ int rrr_log_helper_extract_log_fields_from_array (
 		char **log_file,
 		int *log_line,
 		uint8_t *log_level_translated,
+		uint32_t *log_flags,
 		char **log_prefix,
 		char **log_message,
 		struct rrr_array *array
@@ -125,6 +126,7 @@ int rrr_log_helper_extract_log_fields_from_array (
 	char *log_prefix_tmp = NULL;
 	uint64_t log_level_translated_tmp = 7;
 	uint64_t log_line_tmp = 0;
+	uint64_t log_flags_tmp = 0;
 
 	if ((ret = __rrr_log_helper_extract_string_field(&log_file_tmp, array, "log_file", 0)) != 0) {
 		goto out;
@@ -150,6 +152,16 @@ int rrr_log_helper_extract_log_fields_from_array (
 		goto out;
 	}
 
+	if ((ret = __rrr_log_helper_extract_uint_field(&log_flags_tmp, array, "log_flags", 0)) != 0) {
+		goto out;
+	}
+
+	if ((log_flags_tmp & ~(RRR_MSG_LOG_F_ALL)) != 0) {
+		RRR_MSG_0("Invalid flags %" PRIx64 " in log flags\n");
+		ret = RRR_LOG_HELPER_SOFT_ERROR;
+		goto out;
+	}
+
 	if ((ret = __rrr_log_helper_extract_string_field(&log_prefix_tmp, array, "log_prefix", 0)) != 0) {
 		goto out;
 	}
@@ -158,6 +170,7 @@ int rrr_log_helper_extract_log_fields_from_array (
 		goto out;
 	}
 
+	*log_flags = log_flags_tmp;
 	*log_message = log_message_tmp;
 	*log_prefix = log_prefix_tmp;
 	*log_file = log_file_tmp;
@@ -180,6 +193,7 @@ int rrr_log_helper_log_msg_make (
 		int log_line,
 		uint8_t log_level_translated,
 		uint8_t log_level_orig,
+		uint32_t log_flags,
 		const char *log_prefix,
 		const char *log_message
 ) {
@@ -191,6 +205,7 @@ int rrr_log_helper_log_msg_make (
 			log_line,
 			log_level_translated,
 			log_level_orig,
+			log_flags,
 			log_prefix,
 			log_message
 	)) != 0) {

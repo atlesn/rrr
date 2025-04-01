@@ -299,6 +299,7 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			line,
 			loglevel_translated,
 			loglevel_orig,
+			flags,
 			prefix,
 			message
 	) != 0) {

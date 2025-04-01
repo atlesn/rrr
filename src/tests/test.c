@@ -131,6 +131,7 @@ int rrr_signal_handler(int s, void *arg) {
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'j',    "json",                  "[-j|--json]"},
         {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},

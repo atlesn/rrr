@@ -38,6 +38,7 @@ int rrr_log_helper_extract_log_fields_from_array (
 		char **log_file,
 		int *log_line,
 		uint8_t *log_level_translated,
+		uint32_t *log_flags,
 		char **log_prefix,
 		char **log_message,
 		struct rrr_array *array
@@ -49,6 +50,7 @@ int rrr_log_helper_log_msg_make (
 		int log_line,
 		uint8_t log_level_translated,
 		uint8_t log_level_orig,
+		uint32_t log_flags,
 		const char *log_prefix,
 		const char *log_message
 );
