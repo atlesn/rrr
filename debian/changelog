@@ -1,6 +1,8 @@
-rrr (1.36-15) bookworm; urgency=medium
+rrr (1.37-1) trixie; urgency=medium
 
-  * RUNNING DEVELOPMENT RELEASE
+  * Changes:
+    * New version will be built against Debian Trixie only except in case of
+      critical bugfixes
 
   * Features:
     * New methods on JS Message object: data_as_object and data_as_utf8
@@ -10,6 +12,10 @@ rrr (1.36-15) bookworm; urgency=medium
       messages prior to them being printed.
     * Configurable sub instances in cmodules
     * Native JSON logging from log daemon
+
+  * Improvements:
+    * In httpserver, use blob array types when receiving
+      application/octet-stream type
 
   * Fixes:
     * BAIL in method and route definitions not working correctly, caused
@@ -26,7 +32,7 @@ rrr (1.36-15) bookworm; urgency=medium
     * JS incorrectly loading the same module multiple times if included
       from different scripts
 
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 24 Mar 2025 12:04:31 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 29 Aug 2025 14:02:39 +0200
 
 rrr (1.35-1) bookworm; urgency=medium
 
