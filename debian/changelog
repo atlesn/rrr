@@ -1,3 +1,40 @@
+rrr (1.37-1) trixie; urgency=medium
+
+  * Changes:
+    * New version will be built against Debian Trixie only except in case of
+      critical bugfixes
+
+  * Features:
+    * New methods on JS Message object: data_as_object and data_as_utf8
+    * Support for Node 23
+    * Support for Debian Trixie
+    * Log daemon may start a wrapper process for further processing of
+      messages prior to them being printed.
+    * Configurable sub instances in cmodules
+    * Native JSON logging from log daemon
+    * Ability to send single ModBus commands (oneshot commands)
+
+  * Improvements:
+    * In httpserver, use blob array types when receiving
+      application/octet-stream type
+
+  * Fixes:
+    * BAIL in method and route definitions not working correctly, caused
+      program exit when triggered
+    * FALSE value in method and route definitions not working, TRUE was pushed
+      instead
+    * Incorrect counting of FIFO buffer entries in certain situations, could
+      possibly result in buffers over time being reported as full when they
+      were not. The problem only affected counting of retained messages in MQTT
+      broker.
+    * Misc. compilation problems using libc++ on FreeBSD, which is required
+      then V8 is used on this platform
+    * MQTT client not always reconnecting as configured but restarted
+    * JS incorrectly loading the same module multiple times if included
+      from different scripts
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 29 Aug 2025 14:02:39 +0200
+
 rrr (1.35-1) bookworm; urgency=medium
 
   * Features:

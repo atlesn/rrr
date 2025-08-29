@@ -110,6 +110,7 @@ static int msg_make_log(void) {
 			__LINE__,
 			7,
 			1,
+			0,
 			"prefix",
 			"message"
 	)) != 0) {

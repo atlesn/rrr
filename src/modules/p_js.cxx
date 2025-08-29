@@ -91,7 +91,7 @@ static int js_parse_config (struct js_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("js_file", js_file);
 
 	if (data->js_file == NULL || *(data->js_file) == '\0') {
-		RRR_MSG_0("js_file configuration parameter missing for js instance %s\n", config->name);
+		RRR_MSG_0("js_file configuration parameter missing for js instance %s\n", INSTANCE_C_DBG_NAME(config));
 		ret = 1;
 		goto out;
 	}
@@ -171,8 +171,6 @@ class js_run_data {
 
 		// Calls to make the GCing a little more aggressive
 		isolate->LowMemoryNotification();
-		while (!isolate->IdleNotificationDeadline(1)) {
-		}
 	}
 	bool hasConfig() const {
 		return !config.empty();
@@ -326,8 +324,8 @@ static int js_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	try {
-		struct rrr_settings *settings = rrr_cmodule_worker_get_settings(run_data->worker);
-		struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_settings_used(run_data->worker);
+		struct rrr_settings *settings = rrr_cmodule_worker_get_active_settings(run_data->worker);
+		struct rrr_settings_used *settings_used = rrr_cmodule_worker_get_active_settings_used(run_data->worker);
 
 		run_data->runConfig(settings, settings_used);
 	}
@@ -456,13 +454,20 @@ static int js_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 				ctx,
 				persistent_storage,
 				[&](){
-					const auto absolute_path = std::filesystem::absolute(std::string(data->js_file)).string();
-
 					if (data->js_module_name != NULL) {
-						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.make_module<Module>(ctx, absolute_path));
+						auto mod_name = std::string(data->js_file);
+						if (!mod_name.starts_with('.') && !mod_name.starts_with('/')) {
+							mod_name = std::string("./") + mod_name;
+						}
+						return std::dynamic_pointer_cast<RRR::JS::Program>(isolate.load_module(
+								ctx,
+								std::filesystem::current_path().string(),
+								mod_name,
+								false
+						));
 					}
 
-					auto script = RRR::JS::Script::make_shared(absolute_path);
+					auto script = RRR::JS::Script::make_shared(std::filesystem::absolute(std::string(data->js_file)).string());
 					script->compile(ctx);
 					return std::dynamic_pointer_cast<RRR::JS::Program>(script);
 				}

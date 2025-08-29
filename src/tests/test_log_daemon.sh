@@ -7,27 +7,35 @@ set +e
 # LOGD=../.libs/rrr_logd
 # POST=../.libs/rrr_post
 # RRR=../.libs/rrr
+# RRR=../.libs/rrr_js
 
 VALGRIND=
 LOGD=../rrr_logd
 POST=../rrr_post
 RRR=../rrr
+RRR_JS=../rrr_js
 
 PID=
 SOCKET=/tmp/rrr-logd-socket.sock
 TMP=/tmp/rrr-logd-output
 LOG_MSG="DEADBEEF"
+LOG_STR_JSON="{\"log_message\": \"DEADBEEF\", \"custom\": \"CUSTOM\"}"
 LOG_PREFIX="test"
+LOG_FLAGS="0"
+LOG_FLAGS_JSON="1"
 LOG_LEVEL="4"
 LOG_OUT_4="<4> <$LOG_PREFIX> $LOG_MSG"
 LOG_OUT_7="<7> <rrr_post> $LOG_MSG"
-LOG_IN="$LOG_LEVEL	$LOG_PREFIX	$LOG_MSG	"
-LOG_DEF="ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
+LOG_OUT_JSON_RRR="\"log_message\":\"Exiting program without errors\"";
+LOG_OUT_JSON_ARRAY="\"log_message\":\"DEADBEEF\",\"custom\":\"CUSTOM\""
+LOG_IN="$LOG_FLAGS	$LOG_LEVEL	$LOG_PREFIX	$LOG_MSG	"
+LOG_IN_JSON="$LOG_FLAGS_JSON	$LOG_LEVEL	$LOG_PREFIX	$LOG_STR_JSON"
+LOG_DEF="ustr#log_flags,sep1,ustr#log_level_translated,sep1,nsep#log_prefix,sep1,nsep#log_message,sep1"
 
 if [ "x$VALGRIND" != "x" ]; then
 	SLEEP=2
 else
-	SLEEP=0.2
+	SLEEP=0.5
 fi
 
 rm -f $SOCKET || exit 1
@@ -129,8 +137,7 @@ function log_delivery() {
 	logd_stop 0
 
 	OUTPUT=`logd_output`
-
-	if [ "x$OUTPUT" != "x$OUT" ]; then
+	if ! echo "$OUTPUT" | grep "$OUT" > /dev/null; then
 		echo "Unexpected output '$OUTPUT' expected '$OUT'"
 		rm -f $TMP
 		exit 1
@@ -162,7 +169,36 @@ function log_delivery_from_rrr() {
 
 	OUTPUT=`logd_output`
 	if ! echo "$OUTPUT" | grep "$RRR_OUTPUT" > /dev/null; then
-		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon"
+		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon, output was '$OUTPUT'"
+	fi
+}
+
+function log_delivery_from_rrr_js() {
+	RRR_ARGS=$1
+	JS_FILE=$2
+	RRR_OUTPUT=$3
+	LOGD_ARGS=$4
+
+	logd_start "$LOGD_ARGS"
+	verify_socket_exists
+
+	echo "$VALGRIND $RRR_JS $RRR_ARGS -L $SOCKET script < $JS_FILE"
+	RRR_OUT=`$VALGRIND $RRR_JS $RRR_ARGS -L $SOCKET script < $JS_FILE`
+	RET=$?
+
+	if [ $RET -ne 0 ]; then
+		sigkill_and_bail "Unexpected return $RET from rrr_js"
+	fi
+
+	if [ "x$RRR_OUT" != "x" ]; then
+		sigkill_and_bail "Unexpected output '$RRR_OUT' from rrr_js, should be delivered to socket only"
+	fi
+
+	logd_stop 0
+
+	OUTPUT=`logd_output`
+	if ! echo "$OUTPUT" | grep "$RRR_OUTPUT" > /dev/null; then
+		bail "Expected string '$RRR_OUTPUT' not found in output from log daemon, output was '$OUTPUT'"
 	fi
 }
 
@@ -208,3 +244,26 @@ log_delivery_from_rrr -v "<0> <rrr> Read Route Record"
 
 log_delivery_from_rrr -v "<3> <rrr> Read Route Record" -l
 
+####################################################
+# Verify JSON output from main process
+####################################################
+
+log_delivery_from_rrr -v "$LOG_OUT_JSON_RRR" -j
+
+####################################################
+# Verify JSON log message delivery on socket
+####################################################
+
+log_delivery "$LOG_IN_JSON" "-a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
+
+####################################################
+# Native JSON log message delivery on socket
+####################################################
+
+log_delivery "$LOG_IN_JSON" "-L -a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
+
+####################################################
+# Native JSON log message delivery from JS
+####################################################
+
+log_delivery_from_rrr_js "" test_log.mjs "\"log_message\":\"MY MESSAGE\"" "-j"

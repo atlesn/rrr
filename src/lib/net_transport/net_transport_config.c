@@ -67,7 +67,7 @@ static int __rrr_net_transport_config_parse_transport_type_callback (
 	struct rrr_net_transport_config *data = callback_data->data;
 	struct rrr_instance_config_data *config = callback_data->config;
 	const char *prefix = callback_data->prefix;
-	const char *name = config->name;
+	const char *name = config->name_debug;
 
 	int ret = 0;
 
@@ -160,7 +160,7 @@ int rrr_net_transport_config_parse (
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Error parsing %s_transport_type in instance %s\n",
-			prefix, config->name);
+			prefix, config->name_debug);
 		goto out;
 	}
 
@@ -213,7 +213,7 @@ int rrr_net_transport_config_parse (
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
 	) {
 		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s\n",
-				prefix, prefix, config->name);
+				prefix, prefix, config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -228,7 +228,7 @@ int rrr_net_transport_config_parse (
 	     !allow_tls_parameters_without_tls
 	) {
 		RRR_MSG_0("TLS certificate specified in %s_tls_certificate_file but %s_transport_type did not contain a TLS capable transport in instance %s\n",
-				prefix, prefix, config->name);
+				prefix, prefix, config->name_debug);
 		ret = 1;
 		goto out;
 	}

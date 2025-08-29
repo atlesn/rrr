@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,19 +23,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
-#include "../allocator.h"
 
 #include "cmodule_helper.h"
+#include "cmodule_defines.h"
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
 #include "cmodule_struct.h"
 
+#include "../allocator.h"
 #include "../fifo_protected.h"
 #include "../modules.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
 #include "../messages/msg_msg.h"
+#include "../message_helper.h"
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
@@ -227,6 +229,43 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	return ret;
 }
 
+static int __rrr_cmodule_helper_send_message_to_fork_topic_filter_check  (
+		const struct rrr_cmodule_worker *worker,
+		int *does_match,
+		const struct rrr_msg_holder *entry_locked
+) {
+	int ret = 0;
+
+	if (worker->topic_filter == NULL) {
+		*does_match = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_message_helper_entry_topic_match(does_match, entry_locked, worker->topic_filter)) != 0) {
+		goto out;
+	}
+
+	if (worker->topic_filter_invert) {
+		*does_match = !*does_match;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		char *topic_tmp = NULL;
+		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry_locked->message);
+		RRR_DBG_3("Result of topic match while transmitting to sub instance %s with topic filter '%s' topic is '%s': %s%s\n",
+				worker->name,
+				worker->topic_filter_str,
+				topic_tmp,
+				(*does_match ? "MATCH" : "MISMATCH"),
+				worker->topic_filter_invert ? " (filter inverted)" : ""
+		);
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_cmodule_helper_send_message_to_forks (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_msg_holder *entry_locked
@@ -236,28 +275,44 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 	// Balanced algorithm
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
-	struct rrr_cmodule_worker *preferred = &cmodule->workers[0];
-	int preferred_count = 0;
-
-	if ((ret = rrr_cmodule_channel_count(&preferred_count, preferred->channel_to_fork)) != 0) {
-		goto out;
-	}
+	struct rrr_cmodule_worker *preferred = NULL;
+	int preferred_count = -1;
 
  	WORKER_LOOP_BEGIN();
-		int count = 0;
-		if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+		int does_match = 0;
+
+		if ((ret = __rrr_cmodule_helper_send_message_to_fork_topic_filter_check (
+				worker,
+				&does_match,
+				entry_locked
+		)) != 0) {
 			goto out;
 		}
-		if (count < preferred_count) {
-			preferred = worker;
-			preferred_count = count;
+
+		if (does_match) {
+			int count = 0;
+			if ((ret = rrr_cmodule_channel_count(&count, worker->channel_to_fork)) != 0) {
+				goto out;
+			}
+			if (preferred_count == -1 || count < preferred_count) {
+				preferred = worker;
+				preferred_count = count;
+			}
 		}
  	WORKER_LOOP_END();
 
- 	// TODO : Upon retry, send to other worker
-
-	if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
-		goto out;
+	if (preferred == NULL) {
+		char *topic_tmp = NULL;
+		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry_locked->message);
+		RRR_DBG_2("Dropping message with topic '%s' in instance '%s', no sub instance accepts it\n",
+			topic_tmp, INSTANCE_D_NAME(thread_data));
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
+	}
+	else {
+		// TODO : Upon retry, send to other worker
+		if ((ret = __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked)) != 0) {
+			goto out;
+		}
 	}
 
 	out:
@@ -454,6 +509,7 @@ static int __rrr_cmodule_helper_read_from_fork_log_callback (
 			msg_log->line > INT_MAX ? 0 : (int) msg_log->line,
 			msg_log->loglevel_translated,
 			msg_log->loglevel_orig,
+			msg_log->msg_value,
 			msg_log->prefix_and_message,
 			RRR_MSG_LOG_MSG_POS(msg_log)
 	);
@@ -988,7 +1044,7 @@ int rrr_cmodule_helper_parse_config (
 
 	if (data->do_spawning == 0 && data->process_mode == RRR_CMODULE_PROCESS_MODE_NONE) {
 		RRR_MSG_0("No process or source %s defined in configuration for instance %s and direct method dispatch is not active\n",
-				config_suffix, config->name);
+				config_suffix, config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -997,13 +1053,34 @@ int rrr_cmodule_helper_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_MS(config_string, worker_spawn_interval, rrr_cmodule_worker_default_spawn_interval);
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, config_worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
 
-	if (data->worker_count < 1 || data->worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+	if (data->config_worker_count < 1 || data->config_worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
 		RRR_MSG_0("Invalid value %llu for parameter %s of instance %s, must be >= 1 and <= %i\n",
-				(long long unsigned) data->worker_count, config_string, config->name, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+				(long long unsigned) data->config_worker_count, config_string, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
 		ret = 1;
 		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(config_string, if (INSTANCE_C_SUB_NEXT(config)) {
+		RRR_MSG_0("Cannot have parameter %s set while sub instances are defined for instance %s.\n",
+			config_string, config->name_debug);
+		ret = 1;
+		goto out;
+	});
+
+	{
+		int sub_count = 0;
+		INSTANCE_C_SUB_ITERATE_BEGIN(config);
+			sub_count++;
+		INSTANCE_C_SUB_ITERATE_END();
+		if (sub_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+			RRR_MSG_0("Too many sub instances (%i) defined for instance %s, maximum is %i\n",
+				sub_count, config->name_debug, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_drop_on_error");
@@ -1023,6 +1100,7 @@ int rrr_cmodule_helper_parse_config (
 
 static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_instance_config_data *config,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		struct rrr_cmodule_worker_callbacks *callbacks
@@ -1036,15 +1114,54 @@ static int __rrr_cmodule_helper_worker_fork_start_intermediate (
 
 	return rrr_cmodule_main_worker_fork_start (
 			INSTANCE_D_CMODULE(thread_data),
-			INSTANCE_D_NAME(thread_data),
-			INSTANCE_D_SETTINGS(thread_data),
-			INSTANCE_D_SETTINGS_USED(thread_data),
+			config,
 			INSTANCE_D_EVENTS(thread_data),
 			INSTANCE_D_METHODS(thread_data),
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
 			callbacks
 	);
+}
+
+static int __rrr_cmodule_helper_worker_forks_start (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		struct rrr_cmodule_worker_callbacks *callbacks
+) {
+	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
+	struct rrr_cmodule_config_data *cmodule_config = &INSTANCE_D_CMODULE(thread_data)->config_data;
+
+	if (INSTANCE_C_SUB_NEXT(config)) {
+		INSTANCE_C_SUB_ITERATE_BEGIN(config);
+			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
+					thread_data,
+					sub,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					callbacks
+			) != 0) {
+				return 1;
+			}
+			cmodule_config->started_worker_count++;
+		INSTANCE_C_SUB_ITERATE_END();
+	}
+	else {
+		for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.config_worker_count; i++) {
+			if (__rrr_cmodule_helper_worker_fork_start_intermediate (
+					thread_data,
+					config,
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					callbacks
+			) != 0) {
+				return 1;
+			}
+			cmodule_config->started_worker_count++;
+		}
+	}
+
+	return 0;
 }
 
 int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
@@ -1065,18 +1182,12 @@ int rrr_cmodule_helper_worker_forks_start_deferred_callback_set (
 		NULL
 	};
 
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					&callbacks
-		) != 0) {
-			return 1;
-		}
-	}
-
-	return 0;
+	return __rrr_cmodule_helper_worker_forks_start (
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			&callbacks
+	);
 }
 
 int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
@@ -1103,18 +1214,12 @@ int rrr_cmodule_helper_worker_forks_start_with_ping_callback (
 		NULL
 	};
 
-	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (__rrr_cmodule_helper_worker_fork_start_intermediate (
-					thread_data,
-					init_wrapper_callback,
-					init_wrapper_callback_arg,
-					&callbacks
-		) != 0) {
-			return 1;
-		}
-	}
-
-	return 0;
+	return __rrr_cmodule_helper_worker_forks_start (
+			thread_data,
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			&callbacks
+	);
 }
 
 int rrr_cmodule_helper_worker_forks_start (
@@ -1162,7 +1267,7 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		NULL
 	};
 
-	return __rrr_cmodule_helper_worker_fork_start_intermediate (
+	return __rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,

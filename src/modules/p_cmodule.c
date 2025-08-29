@@ -99,7 +99,7 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
 
 	if (data->cmodule_name == NULL || *(data->cmodule_name) == '\0') {
-		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name);
+		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -268,18 +268,11 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 	return ret;
 }
 
-static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
-	struct cmodule_run_data *run_data = private_arg;
-
+static int cmodule_configuration_run (
+		struct cmodule_run_data *run_data,
+		struct rrr_instance_config_data *instance_config
+) {
 	int ret = 0;
-
-	struct rrr_instance_config_data instance_config = {0};
-
-	rrr_instance_config_move_from_settings (
-			&instance_config,
-			&worker->settings_used,
-			&worker->settings
-	);
 
 	if (run_data->config_method == NULL) {
 		RRR_DBG_1("Note: No configuration function set for cmodule instance %s\n",
@@ -287,18 +280,48 @@ static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_AR
 		goto out;
 	}
 
-	if ((ret = run_data->config_method(&run_data->ctx, &instance_config)) != 0) {
+	if ((ret = run_data->config_method(&run_data->ctx, instance_config)) != 0) {
 		RRR_MSG_0("Error %i from configuration function in cmodule instance %s\n",
 				ret, INSTANCE_D_NAME(run_data->data->thread_data));
 		goto out;
 	}
 
 	out:
-	rrr_instance_config_move_to_settings (
-			&worker->settings_used,
-			&worker->settings,
-			&instance_config
-	);
+	return ret;
+}
+
+static int cmodule_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
+	struct cmodule_run_data *run_data = private_arg;
+
+	int ret = 0;
+
+	struct rrr_instance_config_data instance_config = {0};
+
+	if (worker->settings_sub) {
+		rrr_instance_config_move_from_settings (
+				&instance_config,
+				&worker->settings_used_sub,
+				&worker->settings_sub
+		);
+
+		ret = cmodule_configuration_run(run_data, &instance_config);
+	}
+	else {
+		rrr_instance_config_move_from_settings (
+				&instance_config,
+				&worker->settings_used_parent,
+				&worker->settings_parent
+		);
+
+		ret = cmodule_configuration_run(run_data, &instance_config);
+
+		rrr_instance_config_move_to_settings (
+				&worker->settings_used_parent,
+				&worker->settings_parent,
+				&instance_config
+		);
+	}
+
 	return ret;
 }
 

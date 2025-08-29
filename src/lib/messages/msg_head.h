@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -92,7 +92,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     rrr_u32 header_crc32;              \
     rrr_u32 msg_size;                  \
     rrr_u16 msg_type;                  \
-    rrr_u32 msg_value;                 \
+    union { rrr_u32 msg_value;         \
+            rrr_u32 msg_flags; };      \
     rrr_u32 data_crc32;
 
 struct rrr_msg {

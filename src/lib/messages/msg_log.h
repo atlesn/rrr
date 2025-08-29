@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_LOG_H
 
 #include "msg.h"
+#include "../log.h"
 
 #define RRR_MSG_LOG_PREFIX_SIZE(msg)										\
 	((msg)->prefix_size)
@@ -36,7 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_LOG_SIZE_OK(msg)											\
 	((msg)->prefix_size > (msg)->msg_size - sizeof(*(msg)) - 1 ? 0 : 1)
 
-#define RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN 0xff
+#define RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN RRR_LOG_LEVEL_NOT_GIVEN
+
+#define RRR_MSG_LOG_F_JSON        (1<<0)  // Indicates that the message contains JSON data
+#define RRR_MSG_LOG_F_ALL         (RRR_MSG_LOG_F_JSON)
 
 struct rrr_msg_log {
 	RRR_MSG_HEAD;
@@ -51,20 +55,20 @@ struct rrr_msg_log {
 
 void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_log *msg);
 int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg);
-void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size);
 int rrr_msg_msg_log_new (
 		struct rrr_msg_log **target,
 		const char *file,
 		int line,
 		uint8_t loglevel_translated,
 		uint8_t loglevel_orig,
+		uint32_t flags,
 		const char *prefix,
 		const char *message
 );
 int rrr_msg_msg_log_to_str (
-	char **target_prefix,
-	char **target_message,
-	const struct rrr_msg_log *msg
+		char **target_prefix,
+		char **target_message,
+		const struct rrr_msg_log *msg
 );
 
 #endif /* RRR_MESSAGE_LOG_H */

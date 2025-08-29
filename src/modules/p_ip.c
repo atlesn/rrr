@@ -196,7 +196,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 	ret = rrr_instance_config_read_port_number (&data->source_udp_port, config, "ip_udp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_0("Could not parse ip_udp_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_udp_port for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -204,7 +204,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			// Listening not being done
 		}
 		else {
-			RRR_MSG_0("Error while parsing ip_udp_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_udp_port setting for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -213,7 +213,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 	ret = rrr_instance_config_read_port_number (&data->source_tcp_port, config, "ip_tcp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_0("Could not parse ip_tcp_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_tcp_port for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -221,7 +221,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			// Listening not being done
 		}
 		else {
-			RRR_MSG_0("Error while parsing ip_tcp_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_tcp_port setting for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -230,7 +230,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 	ret = rrr_instance_config_read_port_number (&data->target_port, config, "ip_target_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_0("Could not parse ip_remote_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_remote_port for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -238,7 +238,7 @@ static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_confi
 			// No remote port specified
 		}
 		else {
-			RRR_MSG_0("Error while parsing ip_remote_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_remote_port setting for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -263,7 +263,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	// Default target protocol
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&protocol, config, "ip_target_protocol")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -278,7 +278,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 		else {
 			RRR_MSG_0("Unknown protocol '%s' specified in ip_target_protocol in ip instance %s. Must be tcp or udp.\n",
-					protocol, config->name);
+					protocol, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -287,20 +287,20 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_target_host", target_host);
 
 	if (data->target_port != 0 && (data->target_host == NULL || *(data->target_host) == '\0')) {
-		RRR_MSG_0("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->target_port == 0 && (data->target_host != NULL && *(data->target_host) != '\0')) {
-		RRR_MSG_0("ip_target_host was set but ip_target_port was not, both of them must be either set or left unset in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_target_host was set but ip_target_port was not, both of them must be either set or left unset in ip instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->target_port > 0) {
 		if (rrr_asprintf(&data->target_host_and_port, "%s:%u", data->target_host, data->target_port) <= 0) {
-			RRR_MSG_0("Failed to allocate target:port string in ip instance %s\n", config->name);
+			RRR_MSG_0("Failed to allocate target:port string in ip instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -329,7 +329,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 
 	if (data->do_force_target == 1 && data->target_port == 0) {
 		RRR_MSG_0("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -343,17 +343,17 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 
 	if (data->do_preserve_order && data->persistent_timeout_ms == 0) {
 		RRR_DBG_1("Note: ip_preserve_order is set while ip_persistent_timeout_ms is zero in ip instance %s, send order may not be guaranteed in all situations.\n",
-				config->name);
+				config->name_debug);
 	}
 
 	if (data->do_preserve_order && data->do_multiple_per_connection == 0) {
 		RRR_DBG_1("Note: ip_preserve_order is set while do_multiple_per_connection is 'no' in ip instance %s, send order may not be guaranteed in all situations.\n",
-				config->name);
+				config->name_debug);
 	}
 
 	if (data->do_strip_array_separators && data->definitions == NULL) {
 		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -361,10 +361,10 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing ip_array_send_tags of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing ip_array_send_tags of instance %s\n", config->name_debug);
 		goto out;
 	}
-	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
+	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name_debug);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_timeout_action", timeout_action_str);
@@ -378,7 +378,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	if (data->timeout_action_str != NULL) {
 		if (rrr_send_loop_action_from_str(&data->timeout_action, data->timeout_action_str) != 0) {
 			RRR_MSG_0("Invalid value '%s' for parameter ip_timeout_action in instance %s, must be retry, drop or return\n",
-					data->timeout_action_str, config->name);
+					data->timeout_action_str, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -386,14 +386,14 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 
 	if (data->message_send_timeout_s != 0 && data->timeout_action == RRR_SEND_LOOP_ACTION_RETRY) {
 		RRR_MSG_0("Parameter ip_send_timeout in instance %s was >0 while ip_timeout_action was 'retry'. This does not make sense and is a configuration error.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->message_send_timeout_s == 0 && data->timeout_action != RRR_SEND_LOOP_ACTION_RETRY) {
 		RRR_MSG_0("Parameter ip_send_timeout in instance %s was 0 while ip_timeout_action was 'drop' or 'return'. This does not make sense, a timeout must be set.\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -1836,7 +1836,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	pthread_cleanup_pop(1);
 
-	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name);
+	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name_debug);
 
 	return NULL;
 }

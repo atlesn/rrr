@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2023-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2023-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ namespace RRR::JS {
 	class Scope;
 	class Isolate;
 	class Source;
+	class Module;
 
 	class ENV {
 		private:
@@ -61,17 +62,22 @@ namespace RRR::JS {
 		v8::Isolate::Scope isolate_scope;
 		v8::HandleScope handle_scope;
 		std::map<int,std::shared_ptr<Source>> module_map;
-		template <typename T> void register_module(int identity, std::shared_ptr<T> mod);
+		std::string load_resolve_path(const std::string &referrer_cwd, const std::string &name);
+		template <typename T> void register_module(int hash, std::shared_ptr<T> mod);
 		template <typename T> std::shared_ptr<T> compile_module(CTX &ctx, std::shared_ptr<T> mod);
+		std::string resolve_path(const std::string &referrer_cwd, const std::string &relative_path);
 
 		public:
 		Isolate(ENV &env);
 		~Isolate();
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> std::shared_ptr<T> get_module(int identity);
-		template <typename T> std::shared_ptr<T> make_module(CTX &ctx, const std::string &cwd, const std::string &path, const std::string &program_source);
-		template <typename T> std::shared_ptr<T> make_module(CTX &ctx, const std::string &absolute_path);
 		v8::Isolate *operator-> ();
 		static Isolate *get_from_context(CTX &ctx);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &relative_path, bool do_run);
+		std::shared_ptr<Module> load_module(CTX & ctx, const std::string &referrer_cwd, const std::string &name, const std::string &source, bool do_run);
+#ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
+		v8::MaybeLocal<v8::Module> load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
+#endif
 	};
 
 	class Value : public v8::Local<v8::Value> {
@@ -105,6 +111,7 @@ namespace RRR::JS {
 		public:
 		String(v8::Isolate *isolate, const char *str);
 		String(v8::Isolate *isolate, const char *data, int size);
+		String(v8::Isolate *isolate, const String &str);
 		String(v8::Isolate *isolate, v8::Local<v8::String> str);
 		String(v8::Isolate *isolate, std::string str);
 
@@ -116,6 +123,7 @@ namespace RRR::JS {
 
 		operator v8::Local<v8::String>();
 		operator v8::Local<v8::Value>();
+		operator v8::Local<v8::Name>();
 		operator std::string();
 		const char * operator *();
 		operator Value();
@@ -175,6 +183,7 @@ namespace RRR::JS {
 		std::string make_location_message(v8::Local<v8::Message> msg);
 		template <class A> bool trycatch_ok(A err) {
 			auto msg = trycatch.Message();
+			auto exception = trycatch.Exception();
 			auto str = std::string("");
 
 			if (trycatch.HasTerminated()) {
@@ -194,6 +203,16 @@ namespace RRR::JS {
 				str += "\n";
 			}
 
+			if (!exception.IsEmpty()) {
+				if (exception->IsObject()) {
+					auto exception_obj = exception->ToObject(ctx).ToLocalChecked();
+					auto stack = v8::Local<v8::Value>();
+					if (exception_obj->Get(*this, String(*this, "stack")).ToLocal(&stack)) {
+						str += std::string("\n") + *String(*this, stack->ToString(ctx).ToLocalChecked());
+					}
+				}
+			}
+
 			err(str.c_str());
 
 			return trycatch.CanContinue();
@@ -202,6 +221,7 @@ namespace RRR::JS {
 		CTX(ENV &env, std::string script_name);
 		~CTX();
 		CTX(const CTX &) = delete;
+		static CTX *from_embedder_data(v8::Local<v8::Context> ctx);
 		operator v8::Local<v8::Context>();
 		operator v8::Local<v8::Value>();
 		operator v8::Isolate *();
@@ -225,10 +245,13 @@ namespace RRR::JS {
 	};
 
 	class Source {
+		friend class Isolate;
+
 		private:
 		bool compiled = false;
 		const std::string cwd;
 		const std::string name;
+		const std::string absolute_path;
 		const std::string program_source;
 
 		void set_compiled();
@@ -237,7 +260,7 @@ namespace RRR::JS {
 		static Duple<std::string, std::string> split_path(const std::string &path);
 
 		protected:
-		template <typename L> void compile_str_wrap(CTX &ctx, L l);
+		template <typename L> void compile_wrap(CTX &ctx, bool is_module, L l);
 		virtual bool is_type(const std::type_info &type) const = 0;
 		const std::string &get_cwd() const {
 			return cwd;
@@ -245,27 +268,32 @@ namespace RRR::JS {
 		const std::string &get_name() const {
 			return name;
 		}
-		std::string get_path_() const {
+		std::string get_path() const {
 			return cwd + "/" + name;
 		}
 
 		public:
 		Source(const std::string &cwd, const std::string &name, const std::string &program_source);
-		Source(const Duple<std::string,std::string> &cwd_and_name, const std::string &program_source);
+		Source(const Duple<std::string,std::string> &cwd_and_name, const std::string &absolute_path, const std::string &program_source);
 		Source(const std::string &absolute_path);
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> static std::shared_ptr<T> cast(std::shared_ptr<Source> ptr);
 		template <typename T, typename = std::enable_if_t<std::is_base_of_v<Source, T>>> static T *cast(Source *ptr);
 		bool is_compiled() const;
+		bool absolute_path_equals(const std::string &str) const;
 		virtual ~Source() = default;
 	};
 
 	class Program : public Source {
+		private:
+		bool did_run = false;
+
 		protected:
 		Program(const std::string &cwd, const std::string &name, const std::string &program_source);
 		Program(const std::string &absolute_path);
 		Function get_function(CTX &ctx, v8::Local<v8::Object> object, std::string name);
 
 		public:
+		bool is_run() const;
 		virtual ~Program() = default;
 		void run(CTX &ctx);
 		virtual void _run(CTX &ctx) = 0;
@@ -308,20 +336,16 @@ namespace RRR::JS {
 		private:
 		Module(const std::string &cwd, const std::string &name, const std::string &module_source);
 		Module(const std::string &absolute_path);
-		static std::shared_ptr<Module> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
-		static std::shared_ptr<Module> make_shared (const std::string &absolute_path);
 		enum ImportType {
 			tModule,
 			tJSON
 		};
-		v8::Local<v8::Module> mod;
+		v8::Global<v8::Module> mod;
 		std::forward_list<std::shared_ptr<v8::Local<v8::Module>>> submodules;
 		ImportCallbackData import_callback_data;
 		static std::string load_resolve_path(const std::string &specifier, const std::string &referrer);
 		template<typename L> static v8::MaybeLocal<v8::Module> load_wrap(const std::string &referrer_cwd, const std::string &relative_path, L l);
-		static v8::MaybeLocal<v8::Module> load_module(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
-		static v8::MaybeLocal<v8::Module> load_json(CTX &ctx, const std::string &referrer_cwd, const std::string &relative_path);
 		template <class T, class U> static void import_assertions_diverge(CTX &ctx, v8::Local<v8::FixedArray> import_assertions, T t, U u);
 #endif
 		static v8::MaybeLocal<v8::Module> static_resolve_callback(
@@ -332,11 +356,12 @@ namespace RRR::JS {
 #endif
 				v8::Local<v8::Module> referrer
 		);
+		void print_exception(CTX &ctx, std::string what);
 		void _run(CTX &ctx) final;
 		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
 		bool is_created() const;
-		int get_identity_hash() const;
+		int get_identity_hash(CTX &ctx) const;
 #ifdef RRR_HAVE_V8_FIXEDARRAY_IN_RESOLVEMODULECALLBACK
 		static v8::MaybeLocal<v8::Promise> dynamic_resolve_callback(
 				v8::Local<v8::Context> context,
@@ -359,7 +384,9 @@ namespace RRR::JS {
 		};
 
 		public:
-		operator v8::MaybeLocal<v8::Module>();
+		static std::shared_ptr<Module> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
+		static std::shared_ptr<Module> make_shared (const std::string &absolute_path);
+		v8::MaybeLocal<v8::Module> get(CTX &ctx);
 		Function get_function(CTX &ctx, std::string name) final;
 	};
 
@@ -370,8 +397,6 @@ namespace RRR::JS {
 		private:
 		JSONModule(const std::string &cwd, const std::string &name, const std::string &program_source);
 		JSONModule(const std::string &absolute_path);
-		static std::shared_ptr<JSONModule> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
-		static std::shared_ptr<JSONModule> make_shared (const std::string &absolute_path);
 		v8::Local<v8::Module> mod;
 		v8::Local<v8::Value> json;
 		static v8::MaybeLocal<v8::Value> evaluation_steps_callback (
@@ -387,7 +412,7 @@ namespace RRR::JS {
 		void compile_prepare(CTX &ctx);
 		void compile(CTX &ctx);
 		bool is_created() const;
-		int get_identity_hash() const;
+		int get_identity_hash(CTX &ctx) const;
 
 		protected:
 		bool is_type(const std::type_info &type) const override {
@@ -395,45 +420,11 @@ namespace RRR::JS {
 		};
 
 		public:
+		static std::shared_ptr<JSONModule> make_shared (const std::string &cwd, const std::string &name, const std::string &module_source);
+		static std::shared_ptr<JSONModule> make_shared (const std::string &absolute_path);
 		operator v8::MaybeLocal<v8::Module>();
 	};
 #endif
-
-	template <typename T> void Isolate::register_module(int identity, std::shared_ptr<T> mod) {
-		module_map[mod->get_identity_hash()] = mod;
-	}
-
-	template <typename T> std::shared_ptr<T> Isolate::compile_module(CTX &ctx, std::shared_ptr<T> mod) {
-		// Prepare phase may or may not create the module, difference
-		// being availibility of the identity hash after the call.
-		mod->compile_prepare(ctx);
-
-		if (mod->is_created()) {
-			const int hash = mod->get_identity_hash();
-			module_map[hash] = mod;
-			mod->compile(ctx);
-			if (!mod->is_compiled()) {
-				module_map.erase(hash);
-			}
-		}
-		else {
-			mod->compile(ctx);
-			if (mod->is_compiled()) {
-				const int hash = mod->get_identity_hash();
-				module_map[hash] = mod;
-			}
-		}
-
-		return mod;
-	}
-
-	template <typename T> std::shared_ptr<T> Isolate::make_module(CTX &ctx, const std::string &cwd, const std::string &path, const std::string &program_source) {
-		return compile_module(ctx, T::make_shared(cwd, path, program_source));
-	}
-
-	template <typename T> std::shared_ptr<T> Isolate::make_module(CTX &ctx, const std::string &absolute_path) {
-		return compile_module(ctx, T::make_shared(absolute_path));
-	}
 
 	template <typename T, typename> T *ImportCallbackData::get_module() const {
 		return Source::cast<T>(mod);

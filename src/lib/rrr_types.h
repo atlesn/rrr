@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -151,6 +151,13 @@ static inline int rrr_int_from_biglength_err (int *target, rrr_biglength operand
 static inline int rrr_int_from_biglength_bug_const (rrr_biglength operand) {
 	if (operand > INT_MAX) {
 		RRR_BUG("BUG: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
+	}
+	return (int) operand;
+}
+
+static inline int rrr_int_from_biglength_abort_const (rrr_biglength operand) {
+	if (operand > INT_MAX) {
+		RRR_ABORT("BUG: Overflow in %s, input was %" PRIrrrbl "\n", __func__, operand);
 	}
 	return (int) operand;
 }
@@ -392,6 +399,7 @@ static inline void rrr_length_dec_bug (rrr_length *a) {
 	if ((*a) == 0) {
 		RRR_BUG("Bug: Underflow in rrr_length_dec_bug\n");
 	}
+	(*a)--;
 }
 
 static inline rrr_length rrr_length_dec_bug_const (const rrr_length a) {

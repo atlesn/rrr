@@ -19,7 +19,7 @@ endif
 
 if RRR_WITH_JS
 js_extra_ldflags = -L$(abs_top_builddir)/src/tests/lib/
-js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx -lstdc++
+js_extra_ldadd = -ltestjs ${JS_LIBS} -lrrrcxx
 endif
 
 if RRR_WITH_HTTP3
@@ -39,6 +39,7 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_modbus.c \
 	test_http.c \
+	test_worker_config.c \
 	test_condition.c \
 	${test_tls} \
 	${test_tls_common} \
@@ -54,6 +55,7 @@ test_SOURCES = test.c \
 	test_increment.c \
 	test_discern_stack.c \
 	test_linked_list.c \
+	test_fifo.c \
 	test_hdlc.c \
 	test_readdir.c \
 	test_send_loop.c
@@ -104,6 +106,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_fifo.sh             \
 	test_file.sh             \
 	test_http.sh             \
+	test_sub_instance.sh     \
 	test_http2.sh            \
 	test_http3.sh            \
 	test_http_tag_ignore.sh  \

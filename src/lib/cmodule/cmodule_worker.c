@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,9 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../discern_stack.h"
 #include "../discern_stack_helper.h"
 #include "../common.h"
-#include "../read_constants.h"
 #include "../rrr_shm.h"
 #include "../profiling.h"
+#include "../instance_config.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_collection_struct.h"
@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
 #include "../messages/msg_msg.h"
+#include "../mqtt/mqtt_topic.h"
 #include "../util/gnu.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
@@ -298,6 +299,7 @@ static void __rrr_cmodule_worker_log_hook (RRR_LOG_HOOK_ARGS) {
 			line,
 			loglevel_translated,
 			loglevel_orig,
+			flags,
 			prefix,
 			message
 	) != 0) {
@@ -488,8 +490,15 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 					worker->methods,
 					&callbacks
 			)) != 0) {
-				RRR_MSG_0("Fault code from discern stack: %u\n", fault);
-				goto report;
+				if (ret == RRR_DISCERN_STACK_BAIL) {
+					RRR_DBG_3("= Bailed out of discern stack (intentional BAIL) in worker %s\n",
+						worker->name);
+					ret = 0;
+				}
+				else {
+					RRR_MSG_0("Fault code from discern stack: %u\n", fault);
+					goto report;
+				}
 			}
 			
 			RRR_DBG_3("= %i methods were executed in worker %s\n", apply_callback_data.run_count, worker->name);
@@ -850,17 +859,27 @@ int rrr_cmodule_worker_loop_start (
 			goto out;
 		}
 
+		RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
+				worker->name);
+
+		if (worker->settings_sub) {
+			if (rrr_settings_check_all_used (
+					worker->settings_sub,
+					&worker->settings_used_sub
+			) != 0) {
+				RRR_MSG_0("Warning: Not all settings of sub instance %s were used, possible typo in configuration file\n",
+					worker->name);
+			}
+		}
+
 		if ((ret = rrr_settings_iterate_packed (
-				worker->settings,
-				&worker->settings_used,
+				worker->settings_parent,
+				&worker->settings_used_parent,
 				__rrr_cmodule_worker_send_setting_to_parent,
 				worker
 		)) != 0) {
 			goto out;
 		}
-
-		RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
-				worker->name);
 	}
 	else {
 		RRR_DBG_5("cmodule worker %s no configuration callback set, notification to parent\n",
@@ -1068,23 +1087,129 @@ struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 	return worker->event_queue_worker;
 }
 
-struct rrr_settings *rrr_cmodule_worker_get_settings (
+struct rrr_settings *rrr_cmodule_worker_get_active_settings (
 		struct rrr_cmodule_worker *worker
 ) {
-	return worker->settings;
+	return worker->settings_sub
+		? worker->settings_sub
+		: worker->settings_parent;
 }
 
-struct rrr_settings_used *rrr_cmodule_worker_get_settings_used (
+struct rrr_settings_used *rrr_cmodule_worker_get_active_settings_used (
 		struct rrr_cmodule_worker *worker
 ) {
-	return &worker->settings_used;
+	return worker->settings_sub
+		? &worker->settings_used_sub
+		: &worker->settings_used_parent;
+}
+
+static int __rrr_cmodule_worker_sub_settings_parse (
+		struct rrr_cmodule_worker *data,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	if ((ret = rrr_instance_config_parse_optional_topic_filter (
+			&data->topic_filter,
+			&data->topic_filter_str,
+			config,
+			"worker_topic_filter"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse worker_topic_filter parameter of sub instance %s\n", config->name_debug);
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("worker_topic_filter_invert", topic_filter_invert, 0);
+
+	goto out;
+//	out_destroy_topic_filter:
+//		rrr_mqtt_topic_token_destroy(data->topic_filter);
+//		rrr_free(data->topic_filter_str);
+	out:
+		return ret;
+}
+
+static int __rrr_cmodule_worker_init_settings_copy (
+		struct rrr_settings **settings,
+		struct rrr_settings_used *settings_used,
+		const struct rrr_settings *settings_source,
+		const struct rrr_settings_used *settings_used_source
+) {
+	int ret = 0;
+
+	struct rrr_settings *settings_new;
+
+	if ((settings_new = rrr_settings_copy (settings_source)) == NULL) {
+		RRR_MSG_0("Could not copy settings in %s\n", __func__);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_settings_used_copy (
+			settings_used,
+			settings_used_source,
+			settings_new
+	)) != 0) {
+		RRR_MSG_0("Could not copy settings used in %s\n", __func__);
+		goto out_destroy_settings;
+	}
+
+	*settings = settings_new;
+
+	goto out;
+	out_destroy_settings:
+		rrr_settings_destroy(settings_new);
+	out:
+		return ret;
+}
+
+static int __rrr_cmodule_worker_init_settings (
+		struct rrr_cmodule_worker *worker,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	if (INSTANCE_C_SUB_PARENT(config) != NULL) {
+		if ((ret = __rrr_cmodule_worker_init_settings_copy (
+				&worker->settings_parent,
+				&worker->settings_used_parent,
+				INSTANCE_C_SUB_PARENT(config)->settings,
+				&INSTANCE_C_SUB_PARENT(config)->settings_used
+		)) != 0) {
+			goto out;
+		}
+
+		if ((ret = __rrr_cmodule_worker_init_settings_copy (
+				&worker->settings_sub,
+				&worker->settings_used_sub,
+				config->settings,
+				&config->settings_used
+		)) != 0) {
+			goto out_cleanup_settings_parent;
+		}
+	}
+	else {
+		if ((ret = __rrr_cmodule_worker_init_settings_copy (
+				&worker->settings_parent,
+				&worker->settings_used_parent,
+				config->settings,
+				&config->settings_used
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	goto out;
+	out_cleanup_settings_parent:
+		rrr_settings_destroy(worker->settings_parent);
+		rrr_settings_used_cleanup(&worker->settings_used_parent);
+	out:
+		return ret;
 }
 
 int rrr_cmodule_worker_init (
 		struct rrr_cmodule_worker *worker,
-		const char *name,
-		const struct rrr_settings *settings,
-		const struct rrr_settings_used *settings_used,
+		struct rrr_instance_config_data *config,
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
@@ -1099,8 +1224,8 @@ int rrr_cmodule_worker_init (
 	char *to_fork_name = NULL;
 	char *to_parent_name = NULL;
 
-	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
-	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
+	ALLOCATE_TMP_NAME(to_fork_name, config->name_debug, "ch-to-fork");
+	ALLOCATE_TMP_NAME(to_parent_name, config->name_debug, "ch-to-parent");
 
 	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in %s\n", __func__);
@@ -1112,7 +1237,7 @@ int rrr_cmodule_worker_init (
 		goto out_destroy_channel_to_fork;
 	}
 
-	if ((worker->name = rrr_strdup(name)) == NULL) {
+	if ((worker->name = rrr_strdup(config->name_debug)) == NULL) {
 		RRR_MSG_0("Could not allocate name in %s\n", __func__);
 		ret = 1;
 		goto out_destroy_channel_to_parent;
@@ -1124,19 +1249,23 @@ int rrr_cmodule_worker_init (
 		goto out_free_name;
 	}
 
-	if ((worker->settings = rrr_settings_copy (settings)) == NULL) {
-		RRR_MSG_0("Could not copy settings in %s\n", __func__);
-		ret = 1;
+	if ((ret = __rrr_cmodule_worker_init_settings (worker, config)) != 0) {
 		goto out_destroy_pid_lock;
 	}
 
-	if ((ret = rrr_settings_used_copy (
-			&worker->settings_used,
-			settings_used,
-			settings
-	)) != 0) {
-		RRR_MSG_0("Could not copy settings used in %s\n", __func__);
-		goto out_destroy_settings;
+	if (INSTANCE_C_SUB_PARENT(config) != NULL) {
+		struct rrr_instance_config_data config_tmp = {0};
+
+		rrr_instance_config_move_from_settings(&config_tmp, &worker->settings_used_sub, &worker->settings_sub);
+		ret = __rrr_cmodule_worker_sub_settings_parse (
+				worker,
+				&config_tmp
+		);
+		rrr_instance_config_move_to_settings(&worker->settings_used_sub, &worker->settings_sub, &config_tmp);
+
+		if (ret != 0) {
+			goto out_destroy_settings;
+		}
 	}
 
 	rrr_event_function_set (
@@ -1145,7 +1274,6 @@ int rrr_cmodule_worker_init (
 			__rrr_cmodule_worker_event_mmap_channel_data_available,
 			"mmap channel data available (worker)"
 	);
-
 
 	worker->event_queue_worker = event_queue_worker;
 	worker->event_queue_parent = event_queue_parent;
@@ -1163,10 +1291,13 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-//	out_cleanup_settings_used:
-//		rrr_settings_used_cleanup(&worker->settings_used);
 	out_destroy_settings:
-		rrr_settings_destroy(worker->settings);
+		rrr_settings_destroy(worker->settings_parent);
+		rrr_settings_used_cleanup(&worker->settings_used_parent);
+		if (worker->settings_sub) {
+			rrr_settings_destroy(worker->settings_sub);
+			rrr_settings_used_cleanup(&worker->settings_used_sub);
+		}
 	out_destroy_pid_lock:
 		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
@@ -1187,8 +1318,16 @@ int rrr_cmodule_worker_init (
 void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker
 ) {
-	rrr_settings_used_cleanup(&worker->settings_used);
-	rrr_settings_destroy(worker->settings);
+	rrr_settings_used_cleanup(&worker->settings_used_parent);
+	rrr_settings_destroy(worker->settings_parent);
+
+	if (worker->settings_sub) {
+		rrr_settings_used_cleanup(&worker->settings_used_sub);
+		rrr_settings_destroy(worker->settings_sub);
+	}
+
+	rrr_mqtt_topic_token_destroy(worker->topic_filter);
+	RRR_FREE_IF_NOT_NULL(worker->topic_filter_str);
 
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);

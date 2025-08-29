@@ -54,6 +54,7 @@ int main(int argc, const char **argv) {
 			0,   /* rfc5424_loglevel_output */
 			0,   /* output_buffer_warn_limit */
 			0,   /* do_journald_output */
+			0,   /* do_json_output */
 			"./" /* run_directory */
 	);
 	rrr_log_init();

@@ -77,10 +77,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_allocator.h"
 #include "test_mmap_channel.h"
 #include "test_linked_list.h"
+#include "test_fifo.h"
 #include "test_hdlc.h"
 #include "test_readdir.h"
 #include "test_send_loop.h"
 #include "test_http.h"
+#include "test_worker_config.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -126,6 +128,7 @@ int rrr_signal_handler(int s, void *arg) {
 
 static const struct cmd_arg_rule cmd_rules[] = {
         {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
+	{CMD_ARG_FLAG_NO_ARGUMENT,    'j',    "json",                  "[-j|--json]"},
         {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
         {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 	{CMD_ARG_FLAG_HAS_ARGUMENT,   'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
@@ -284,6 +287,12 @@ int rrr_test_library_functions (
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("fifo") {
+		ret_tmp = rrr_test_fifo();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("HDLC frames") {
 		ret_tmp = rrr_test_hdlc();
 	} TEST_RESULT(ret_tmp == 0);
@@ -310,6 +319,12 @@ int rrr_test_library_functions (
 
 	TEST_BEGIN("http functions") {
 		ret_tmp = rrr_test_http();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("worker configuration") {
+		ret_tmp = rrr_test_worker_config();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2024 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2025 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -67,6 +67,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
          CMD_ARG_FLAG_SPLIT_COMMA,     'r',    "readings",             "[-r|--readings[=]reading1,reading2,...]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
 	{0,                            'L',    "log-delivery",         "[-L|--log-delivery]"},
+        {0,                            'j',    "json",                 "[-j|--json]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'm',    "max-message-size",     "[-m|--max-message-size]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "count",                "[-c|--count[=]MAX FILE ELEMENTS]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "topic",                "[-t|--topic[=]MQTT TOPIC]"},
@@ -105,6 +106,7 @@ struct rrr_post_data {
 	int sync_byte_by_byte;
 	int quiet;
 	int log_delivery;
+	int log_json;
 
 	int input_fd;
 	int output_fd;
@@ -282,6 +284,11 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Log delivery
 	if (cmd_exists(cmd, "log-delivery", 0)) {
 		data->log_delivery = 1;
+	}
+
+	// JSON format
+	if (cmd_exists(cmd, "json", 0)) {
+		data->log_json = 1;
 	}
 
 	// Array definition
@@ -475,11 +482,13 @@ static int __rrr_post_read_log_delivery_callback (
 	char *log_file = NULL;
 	uint8_t log_level_translated = 7;
 	int log_line = 0;
+	uint32_t log_flags;
 
 	if ((ret = rrr_log_helper_extract_log_fields_from_array (
 			&log_file,
 			&log_line,
 			&log_level_translated,
+			&log_flags,
 			&log_prefix,
 			&log_message,
 			array_final
@@ -497,6 +506,7 @@ static int __rrr_post_read_log_delivery_callback (
 			no_file_or_line ? __LINE__ : log_line,
 			log_level_translated,
 			RRR_MSG_LOG_LEVEL_ORIG_NOT_GIVEN,
+			log_flags,
 			no_prefix ? "rrr_post" : log_prefix,
 			log_message
 	)) != 0) {

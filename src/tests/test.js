@@ -76,6 +76,7 @@ function message_tests() {
 
 	catched = false;
 	try {
+		console.log("SET TO ZERO\n");
 		message.ip_addr = 0;
 	}
 	catch (e) {
@@ -378,7 +379,7 @@ function my_method(message, method) {
 	console.log("Process function\n");
 
 	if (method !== undefined) {
-		throw("Mthod to JS process function was not undefined");
+		throw("Method to JS process function was not undefined");
 	}
 
 	message_tests();

@@ -78,7 +78,7 @@ int rrr_http_client_config_parse (
 	data->server_port = default_port;
 	RRR_INSTANCE_CONFIG_STRING_SET("_port");
 	if ((ret = rrr_instance_config_read_optional_port_number (&data->server_port, config, config_string)) != 0) {
-		RRR_MSG_0("Error while parsing %s setting for instance %s\n", config_string, config->name);
+		RRR_MSG_0("Error while parsing %s setting for instance %s\n", config_string, config->name_debug);
 		goto out;
 	}
 
@@ -116,7 +116,7 @@ int rrr_http_client_config_parse (
 			&data->tags
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
+			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -134,7 +134,7 @@ int rrr_http_client_config_parse (
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
 		ret &= ~(RRR_SETTING_NOT_FOUND);
 		if (ret != 0) {
-			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
+			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -151,7 +151,7 @@ int rrr_http_client_config_parse (
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
 			ret &= ~(RRR_SETTING_NOT_FOUND);
 			if (ret != 0) {
-				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
+				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name_debug);
 				ret = 1;
 				goto out;
 			}
@@ -161,7 +161,7 @@ int rrr_http_client_config_parse (
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(&config->settings_used, config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
 			ret &= ~(RRR_SETTING_NOT_FOUND);
 			if (ret != 0) {
-				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
+				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name_debug);
 				ret = 1;
 				goto out;
 			}
@@ -176,7 +176,7 @@ int rrr_http_client_config_parse (
 				config_string
 		)) != 0) {
 			RRR_MSG_0("Failed to parse parameter '%s' of instance %s\n",
-				config_string, config->name);
+				config_string, config->name_debug);
 			goto out;
 		}
 

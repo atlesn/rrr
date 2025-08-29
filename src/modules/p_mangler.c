@@ -249,7 +249,7 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->conversions_map, config, "mangler_conversions")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
-					config->name);
+					config->name_debug);
 			goto out;
 		}
 	}
@@ -257,14 +257,14 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->clear_tags_map, config, "mangler_clear_tags")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse parameter 'mangler_clear_tags' of mangler instance %s\n",
-					config->name);
+					config->name_debug);
 			goto out;
 		}
 	}
 
 	if ((ret = rrr_type_conversion_collection_new_from_map(&data->conversions, &data->conversions_map)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
-				config->name);
+				config->name_debug);
 		goto out;
 	}
 

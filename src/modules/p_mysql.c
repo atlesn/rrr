@@ -777,23 +777,23 @@ static int mysql_parse_column_plan (
 	// BLOB WRITE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_blob_write_columns of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mysql_blob_write_columns of instance %s\n", config->name_debug);
 		goto out;
 	}
-	RRR_DBG_1("%i blob write columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->blob_write_columns), config->name);
+	RRR_DBG_1("%i blob write columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->blob_write_columns), config->name_debug);
 
 	// SPECIAL COLUMNS AND THEIR VALUES
 	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->special_columns, config, "mysql_special_columns", "=");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_special_columns of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mysql_special_columns of instance %s\n", config->name_debug);
 		goto out;
 	}
-	RRR_DBG_1("%i special columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->special_columns), config->name);
+	RRR_DBG_1("%i special columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->special_columns), config->name_debug);
 
 	// STRIP OUT SEPARATORS
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name);
+			RRR_MSG_0("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
@@ -805,13 +805,13 @@ static int mysql_parse_column_plan (
 	// TABLE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->columns, config, "mysql_columns");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_columns of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mysql_columns of instance %s\n", config->name_debug);
 		goto out;
 	}
 
 	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->column_tags, config, "mysql_column_tags", "->");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_column_tags of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mysql_column_tags of instance %s\n", config->name_debug);
 		goto out;
 	}
 
@@ -819,28 +819,28 @@ static int mysql_parse_column_plan (
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
 
 		if (RRR_MAP_COUNT(&data->columns) != 0 && RRR_MAP_COUNT(&data->column_tags) != 0) {
-			RRR_MSG_0("mysql_column_tags and mysql_columns cannot be specified simultaneously in instance %s\n", config->name);
+			RRR_MSG_0("mysql_column_tags and mysql_columns cannot be specified simultaneously in instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
 
 		RRR_DBG_1("%i ordinary columns specified for mysql instance %s\n",
-				RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags), config->name);
+				RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags), config->name_debug);
 
 		if (RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags) == 0) {
-			RRR_MSG_0("No columns specified in mysql_columns or mysql_column_tags; needed when using array column plan for instance %s\n", config->name);
+			RRR_MSG_0("No columns specified in mysql_columns or mysql_column_tags; needed when using array column plan for instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
 
 		if (mysql_verify_blob_write_colums (data) != 0) {
-			RRR_MSG_0("Error in blob write column list for mysql instance %s\n", config->name);
+			RRR_MSG_0("Error in blob write column list for mysql instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
-		RRR_MSG_0("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
+		RRR_MSG_0("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name_debug);
 		exit(EXIT_FAILURE);
 	}
 
@@ -862,7 +862,7 @@ static int mysql_parse_port (
 
 	if ((ret = rrr_instance_config_read_port_number (&data->mysql_port, config, "mysql_port")) != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name_debug);
 			ret = 1;
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
@@ -887,22 +887,22 @@ static int parse_config (
 	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,    config, "mysql_table");
 
 	if (data->mysql_user == NULL || data->mysql_password == NULL) {
-		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
+		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name_debug);
 		ret = 1;
 	}
 
 	if (data->mysql_table == NULL) {
-		RRR_MSG_0 ("mysql_table not correctly set for instance %s.\n", config->name);
+		RRR_MSG_0 ("mysql_table not correctly set for instance %s.\n", config->name_debug);
 		ret = 1;
 	}
 
 	if (data->mysql_server == NULL) {
-		RRR_MSG_0 ("mysql_server not correctly set for instance %s.\n", config->name);
+		RRR_MSG_0 ("mysql_server not correctly set for instance %s.\n", config->name_debug);
 		ret = 1;
 	}
 
 	if (data->mysql_db == NULL) {
-		RRR_MSG_0 ("mysql_db not correctly set for instance %s.\n", config->name);
+		RRR_MSG_0 ("mysql_db not correctly set for instance %s.\n", config->name_debug);
 		ret = 1;
 	}
 
@@ -910,7 +910,7 @@ static int parse_config (
 	int yesno = 0;
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_generate_tag_messages") == RRR_SETTING_PARSE_ERROR) {
 		RRR_MSG_0 ("mysql: Could not understand argument mysql_generate_tag_messages of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
+				config->name_debug
 		);
 		ret = 1;
 	}
@@ -919,7 +919,7 @@ static int parse_config (
 	// DROP UNKNOWN MESSAGES
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_drop_unknown_messages") == RRR_SETTING_PARSE_ERROR) {
 		RRR_MSG_0 ("mysql: Could not understand argument mysql_drop_unknown_messages of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
+				config->name_debug
 		);
 		ret = 1;
 	}
@@ -928,7 +928,7 @@ static int parse_config (
 	// ADD TIMESTAMP COL
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col") == RRR_SETTING_PARSE_ERROR) {
 		RRR_MSG_0 ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
+				config->name_debug
 		);
 		ret = 1;
 	}
@@ -936,13 +936,13 @@ static int parse_config (
 
 	// MYSQL PORT
 	if (mysql_parse_port(data, config) != 0) {
-		RRR_MSG_0("Error while parsing mysql port for instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mysql port for instance %s\n", config->name_debug);
 		ret = 1;
 	}
 
 	// COLUMN PLAN AND COLUMN LISTS
 	if (mysql_parse_column_plan(data, config) != 0) {
-		RRR_MSG_0("Error in mysql column plan for instance %s\n", config->name);
+		RRR_MSG_0("Error in mysql column plan for instance %s\n", config->name_debug);
 		ret = 1;
 	}
 

@@ -149,7 +149,7 @@ int parse_config (struct raw_data *data, struct rrr_instance_config_data *config
 			ret = 0;
 		}
 		else {
-			RRR_MSG_0("Error while parsing raw_print_data setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing raw_print_data setting of instance %s\n", config->name_debug);
 			ret = 1;
 			goto out;
 		}

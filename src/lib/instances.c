@@ -137,7 +137,14 @@ static int __rrr_instance_message_broker_entry_postprocess_callback (
 			INSTANCE_D_ROUTES(data),
 			&callbacks
 	)) != 0) {
-		goto out;
+		if (ret == RRR_DISCERN_STACK_BAIL) {
+			RRR_DBG_3("= Bailed out of discern stack (intentional BAIL) in instance %s\n",
+				INSTANCE_D_NAME(data));
+			ret = 0;
+		}
+		else {
+			goto out;
+		}
 	}
 
 	RRR_DBG_3("= %i receiver instances set in message from instance %s\n",
@@ -279,7 +286,7 @@ static struct rrr_instance *__rrr_instance_load_module_new_and_save (
 
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance_module_data *module = node->module_data;
-		if (module != NULL && strcmp(module->instance_name, instance_config->name) == 0) {
+		if (module != NULL && strcmp(module->instance_name, instance_config->name_debug) == 0) {
 			RRR_MSG_0("Instance '%s' can't be defined more than once\n", module->instance_name);
 			ret = NULL;
 			goto out;
@@ -287,18 +294,18 @@ static struct rrr_instance *__rrr_instance_load_module_new_and_save (
 	RRR_LL_ITERATE_END();
 
 	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
-		RRR_MSG_0("Could not find module= setting for instance %s\n", instance_config->name);
+		RRR_MSG_0("Could not find module= setting for instance %s\n", instance_config->name_debug);
 		ret = NULL;
 		goto out;
 	}
 
 	RRR_DBG_1("Creating dynamic_data for module '%s' instance '%s'\n",
-		module_name, instance_config->name);
+		module_name, instance_config->name_debug);
 
 	struct rrr_module_load_data module_init_data;
 	if (rrr_module_load(&module_init_data, module_name, library_paths) != 0) {
 		RRR_MSG_0 ("Module '%s' could not be loaded in %s for instance '%s'\n",
-				module_name, __func__, instance_config->name);
+				module_name, __func__, instance_config->name_debug);
 		ret = NULL;
 		goto out;
 	}
@@ -308,7 +315,7 @@ static struct rrr_instance *__rrr_instance_load_module_new_and_save (
 
 	module_init_data.init(module_data);
 	module_data->dl_ptr = module_init_data.dl_ptr;
-	module_data->instance_name = instance_config->name;
+	module_data->instance_name = instance_config->name_debug;
 	module_data->unload = module_init_data.unload;
 	module_data->all_instances = instances;
 
@@ -340,7 +347,7 @@ int rrr_instance_load_and_save (
 ) {
 	struct rrr_instance *instance = __rrr_instance_load_module_new_and_save(instances, instance_config, library_paths);
 	if (instance == NULL || instance->module_data == NULL) {
-		RRR_MSG_0("Instance '%s' could not be loaded\n", instance_config->name);
+		RRR_MSG_0("Instance '%s' could not be loaded\n", instance_config->name_debug);
 		return 1;
 	}
 
@@ -1398,10 +1405,14 @@ int rrr_instances_create_from_config (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
+		if (INSTANCE_C_SUB_NAME(node) != NULL) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
 		ret = rrr_instance_load_and_save(instances, node, library_paths);
 		if (ret != 0) {
 			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",
-				node->name);
+				node->name_debug);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {
 				RRR_MSG_0("-> %s\n", library_paths[j]);
 			}

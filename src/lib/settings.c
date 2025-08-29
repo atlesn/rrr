@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "allocator.h"
 
+#include "rrr_types.h"
 #include "socket/rrr_socket.h"
 #include "settings.h"
 #include "util/rrr_endian.h"
@@ -124,6 +125,39 @@ struct rrr_settings *rrr_settings_copy (
 		return settings;
 }
 
+static struct rrr_setting *__rrr_settings_find_setting (
+		struct rrr_settings *source,
+		const char *name
+) {
+	for (unsigned int i = 0; i < source->settings_count; i++) {
+		struct rrr_setting *test = &source->settings[i];
+
+		if (strcmp(test->name, name) == 0) {
+			return test;
+		}
+	}
+
+	return NULL;
+}
+
+static const struct rrr_setting *__rrr_settings_find_setting_const (
+		struct rrr_settings_used *used,
+		const struct rrr_settings *source,
+		const char *name
+) {
+	for (unsigned int i = 0; i < source->settings_count; i++) {
+		struct rrr_setting *test = &source->settings[i];
+
+		if (strcmp(test->name, name) == 0) {
+			if (used != NULL)
+				used->was_used[i] = 1;
+			return test;
+		}
+	}
+
+	return NULL;
+}
+
 int rrr_settings_used_init (
 		struct rrr_settings_used *used,
 		const struct rrr_settings *settings
@@ -185,39 +219,6 @@ void rrr_settings_destroy (
 
 	rrr_free(target->settings);
 	rrr_free(target);
-}
-
-static struct rrr_setting *__rrr_settings_find_setting (
-		struct rrr_settings *source,
-		const char *name
-) {
-	for (unsigned int i = 0; i < source->settings_count; i++) {
-		struct rrr_setting *test = &source->settings[i];
-
-		if (strcmp(test->name, name) == 0) {
-			return test;
-		}
-	}
-
-	return NULL;
-}
-
-static const struct rrr_setting *__rrr_settings_find_setting_const (
-		struct rrr_settings_used *used,
-		const struct rrr_settings *source,
-		const char *name
-) {
-	for (unsigned int i = 0; i < source->settings_count; i++) {
-		struct rrr_setting *test = &source->settings[i];
-
-		if (strcmp(test->name, name) == 0) {
-			if (used != NULL)
-				used->was_used[i] = 1;
-			return test;
-		}
-	}
-
-	return NULL;
 }
 
 static struct rrr_setting *__rrr_settings_reserve (

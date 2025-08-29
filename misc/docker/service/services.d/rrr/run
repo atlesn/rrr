@@ -1,0 +1,15 @@
+#!/bin/sh -e
+
+echo "Waiting 5 seconds for log daemon to start..."
+
+# Make sure log daemon starts first
+sleep 5
+
+if ! [ -e $LOG_SOCKET ]; then
+	echo "Could not find log socket on $LOG_SOCKET" 1>&2
+	exit 1
+fi
+
+cd /opt/app
+
+rrr -r /var/run/rrr -l conf.d/ -L $LOG_SOCKET

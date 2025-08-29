@@ -114,6 +114,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
+	unsigned int do_json_output = 0;
 	unsigned long int output_buffer_warn_limit = RRR_MAIN_DEFAULT_OUTPUT_BUFFER_WARN_LIMIT;
 	const char *run_directory = NULL;
 
@@ -123,6 +124,20 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		RRR_MSG_0("Error while parsing command line\n");
 		ret = EXIT_FAILURE;
 		goto out;
+	}
+
+	if (cmd_exists(cmd, "log-socket", 0)) {
+		const char *log_socket = cmd_get_value(cmd, "log-socket", 0);
+		if (cmd_get_value(cmd, "log-socket", 1) != NULL) {
+			RRR_MSG_0("Multiple log-socket arguments were specified\n");
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (rrr_log_socket_connect(log_socket) != 0) {
+			RRR_MSG_0("Connection to log socket '%s' failed\n", log_socket);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 	}
 
 	const char *environment_file = cmd_get_value(cmd, "environment-file", 0);
@@ -262,6 +277,10 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		goto out;
 	}
 
+	if (cmd_exists(cmd, "json", 0)) {
+		do_json_output = 1;
+	}
+
 	SETENV(RRR_ENV_DEBUGLEVEL,               "%u",    (unsigned int) debuglevel);
 	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,       "%u",    (unsigned int) debuglevel_on_exit);
 	SETENV(RRR_ENV_START_INTERVAL,           "%u",    (unsigned int) start_interval);
@@ -287,11 +306,12 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			rfc5424_loglevel_output,
 			(unsigned int) output_buffer_warn_limit,
 			do_journald_output,
+			do_json_output,
 			run_directory
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, obwl:%ld\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, si:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u, json:%u, obwl:%ld\n",
 			debuglevel,
 			debuglevel_on_exit,
 			start_interval,
@@ -299,6 +319,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_thread_restart,
 			rfc5424_loglevel_output,
 			do_journald_output,
+			do_json_output,
 			output_buffer_warn_limit
 	);
 
@@ -332,7 +353,10 @@ int rrr_main_print_banner_help_and_version (
 		help_or_version_printed = 1;
 	}
 
-	if ((cmd->argc < argc_minimum || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
+	if (((cmd->argc < argc_minimum && !help_or_version_printed) ||
+	    strcmp(cmd->command, "help") == 0) ||
+	    cmd_exists(cmd, "help", 0)
+	) {
 		cmd_print_usage(cmd);
 		help_or_version_printed = 1;
 	}

@@ -106,7 +106,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 			config,
 			"mqtt_broker_port"
 	)) != 0) {
-		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name_debug);
 		goto out;
 	}
 	if ((ret = rrr_instance_config_read_optional_port_number (
@@ -114,7 +114,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 			config,
 			"mqtt_broker_port_tls"
 	)) != 0) {
-		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name_debug);
 		goto out;
 	}
 
@@ -127,36 +127,36 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
 	if (data->max_keep_alive > 0xffff) {
-		RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
+		RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 	if (data->max_keep_alive < 1) {
-		RRR_MSG_0("mqtt_broker_max_keep_alive was too small for instance %s, min is 1\n", config->name);
+		RRR_MSG_0("mqtt_broker_max_keep_alive was too small for instance %s, min is 1\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_retry_interval", retry_interval, 1);
 	if (data->retry_interval > 0xffff) {
-		RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name);
+		RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 	if (data->retry_interval < 1) {
-		RRR_MSG_0("mqtt_broker_retry_interval was too small for instance %s, min is 1\n", config->name);
+		RRR_MSG_0("mqtt_broker_retry_interval was too small for instance %s, min is 1\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_close_wait_time", close_wait_time, 1);
 	if (data->close_wait_time > 0xffff) {
-		RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name);
+		RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 	if (data->close_wait_time < 1) {
-		RRR_MSG_0("mqtt_broker_close_wait_time was too small for instance %s, min is 1\n", config->name);
+		RRR_MSG_0("mqtt_broker_close_wait_time was too small for instance %s, min is 1\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -211,13 +211,13 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 #endif
 
 	if (rrr_instance_config_setting_exists(config, "mqtt_broker_port") && !data->do_transport_plain) {
-		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name);
+		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_instance_config_setting_exists(config, "mqtt_broker_port_tls") && !data->do_transport_tls) {
-		RRR_MSG_0("mqtt_broker_port_tls was set but TLS transport method was not enabled in mqtt broker instance %s\n", config->name);
+		RRR_MSG_0("mqtt_broker_port_tls was set but TLS transport method was not enabled in mqtt broker instance %s\n", config->name_debug);
 		ret = 1;
 		goto out;
 	}
@@ -225,7 +225,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 	// We require certificate for listening
 	if (data->net_transport_config.tls_certificate_file == NULL && data->do_transport_tls != 0) {
 		RRR_MSG_0("TLS certificate not specified in mqtt_broker_tls_certificate_file but mqtt_transport_type was 'both' or 'tls' for mqtt broker instance %s\n",
-				config->name);
+				config->name_debug);
 		ret = 1;
 		goto out;
 	}

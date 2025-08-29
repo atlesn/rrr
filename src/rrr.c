@@ -337,6 +337,7 @@ static void main_loop_log_hook (RRR_LOG_HOOK_ARGS) {
 	(void)(line);
 	(void)(loglevel_orig);
 	(void)(loglevel_translated);
+	(void)(flags);
 	(void)(prefix);
 
 	if (rrr_stats_engine_push_log_message (
@@ -1054,20 +1055,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	if (cmd_exists(&cmd, "log-socket", 0)) {
-		const char *log_socket = cmd_get_value(&cmd, "log-socket", 0);
-		if (cmd_get_value(&cmd, "log-socket", 1) != NULL) {
-			RRR_MSG_0("Multiple log-socket arguments were specified\n");
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
-		if (rrr_log_socket_connect(log_socket) != 0) {
-			RRR_MSG_0("Connection to log socket '%s' failed\n", log_socket);
-			ret = EXIT_FAILURE;
-			goto out_cleanup_signal;
-		}
-	}
-
 	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_signal;
 	}
@@ -1122,7 +1109,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			ret = EXIT_FAILURE;
 		}
 
-		goto out_cleanup_signal;
+		goto out_destroy_events;
 	}
 	else {
 		// Load configuration and fork
