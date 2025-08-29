@@ -912,10 +912,11 @@ and
 .PP
 The module is controlled using array command messages from sender instances, and there are no configuration parameters.
 .PP
-When a command is received, a connection is established with the specified modbus server and polling starts.
-The command may be repeated at a specified interval, and stops when an equal command has not been received for two seconds.
-.PP
-The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+When a command is received, a connection is established with the specified modbus server and the request is sent. The configuration parameters
+.B modbus_oneshot_timeout_ms
+and
+.B modbus_interval_ms
+controls wether or not a command is to be repeated or sent only once.
 .PP
 If different commands are used on the same server, they will share connection.
 .PP
@@ -965,7 +966,37 @@ The raw data to write in
 and
 .B Write Multiple Registers (0x10).
 .It modbus_interval_ms
-If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed.
+If given, the command is repeated at the given interval for two seconds. Defaults to 0 which means that repeat is not performed. May not
+be given if
+.B modbus_oneshot_timeout_ms
+is given.
+The interval for a command may be changed by passing a command message with all other parameters being equal as another active command.
+After a command has been received, it is repeated for at most two seconds at the given interval.
+
+For continuous operation, a new message with the same interval must be sent before the timeout is encountered.
+Sending multiple (equal) command messages repeatedly does not cause extra commands being passed to the modbus device,
+commands are only sent at the given intervals.
+
+Whenever a new interval is set or and old interval is changed, no command will be sent to the modbus device before this interval has passed.
+.It modbus_oneshot_timeout_ms
+If given, the command will only be sent once with the specified timeout. Must be greater than 0. May not be given if
+.B modbus_interval_ms
+is given.
+
+When the message has been queued for sending after a connection is established, or when a send timeout occurs, a status message is generated
+containing the following fields:
+.Bl -tag -width -indent
+.It modbus_oneshot_status
+Set to either
+.B timeout
+or
+.B queued
+indicating that the given command has been queued for sending to the modbus device or that the given timeout was exceeded.
+.El
+
+When using this parameter, it is guaranteed that exactly one command is sent to the modbus device (or attempt is made)
+for each received command message and that one response message is generated either with and error message set or
+containing modbus response data.
 .El
 .PP
 The following response messages and array fields are generated as a result of the modbus server
@@ -1015,16 +1046,15 @@ or
 .B Write Multiple Registers (0x10)
 response.
 .It modbus_contents
-For 
+For
 .B Read Holding Registers (0x03), Read Input Registers (0x04)
 a blob containing response data from of a length indicated by
 .B modbus_bytes.
 .br
-For 
+For
 .B Write Single Register (0x06)
 a blob containing response data of length 2.
-.B 
-.El
+.B
 .PP
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
