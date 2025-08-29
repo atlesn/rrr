@@ -12,6 +12,7 @@ rrr (1.37-1) trixie; urgency=medium
       messages prior to them being printed.
     * Configurable sub instances in cmodules
     * Native JSON logging from log daemon
+    * Ability to send single ModBus commands (oneshot commands)
 
   * Improvements:
     * In httpserver, use blob array types when receiving
