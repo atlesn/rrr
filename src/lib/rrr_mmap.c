@@ -105,7 +105,7 @@ struct rrr_mmap_heap_block_index {
 };
 
 #define LOCK(collection) \
-	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled lock error %s in %s, cannot continue.\n", rrr_strerror(ret_tmp), __func__);
+	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled lock error in %s, cannot continue. The owner has died.\n", __func__);
 #define UNLOCK(collection) \
 	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled unlock error %s in %s, cannot continue\n", rrr_strerror(ret_tmp), __func__); }} while(0)
 #define INIT(collection, is_pshared) \
