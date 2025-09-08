@@ -97,6 +97,8 @@ struct rrr_mmap_collection {
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
+
+	char creator[64];
 };
 
 struct rrr_mmap_heap_block_index {
@@ -105,13 +107,13 @@ struct rrr_mmap_heap_block_index {
 };
 
 #define LOCK(collection) \
-	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled lock error in %s, cannot continue. The owner has died.\n", __func__);
+	do {int ret_tmp = rrr_posix_mutex_robust_lock(&collection->index_lock, collection->creator); if (ret_tmp != 0) RRR_BUG("Unhandled lock error in %s, cannot continue. The owner has died.\n", __func__);
 #define UNLOCK(collection) \
 	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("Unhandled unlock error %s in %s, cannot continue\n", rrr_strerror(ret_tmp), __func__); }} while(0)
 #define INIT(collection, is_pshared) \
 	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ROBUST : 0))
 #define DESTROY(collection) \
-	rrr_posix_mutex_robust_destroy(&collection->index_lock)
+	rrr_posix_mutex_robust_destroy(&collection->index_lock, collection->creator)
 
 void *__rrr_mmap_resolve (
 		struct rrr_mmap *mmap,
@@ -742,6 +744,8 @@ static int __rrr_mmap_collection_init (
 		ret = 1;
 		goto out;
 	}
+
+	strncpy(target->creator, creator, sizeof(target->creator) - 1);
 
 	if (is_pshared) {
 		// Note : Allocated using shared memory. After fork(), all processes

@@ -199,13 +199,13 @@ static void __rrr_message_broker_friends_clear (
 static int __rrr_message_broker_costumer_split_buffer_lock (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	return rrr_posix_mutex_robust_lock(&costumer->split_buffers.lock);
+	return rrr_posix_mutex_robust_lock(&costumer->split_buffers.lock, costumer->name);
 }
 
 static int __rrr_message_broker_costumer_split_buffer_trylock (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	return rrr_posix_mutex_robust_trylock(&costumer->split_buffers.lock);
+	return rrr_posix_mutex_robust_trylock(&costumer->split_buffers.lock, costumer->name);
 }
 
 static void __rrr_message_broker_costumer_split_buffer_unlock (
@@ -229,7 +229,7 @@ static void __rrr_message_broker_costumer_destroy (
 	}
 
 	rrr_fifo_protected_destroy(&costumer->main_queue);
-	rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
+	rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock, costumer->name);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
 	rrr_free(costumer);
@@ -317,7 +317,7 @@ static int __rrr_message_broker_costumer_new (
 
 	goto out;
 	out_destroy_split_buffer_lock:
-		rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock);
+		rrr_posix_mutex_robust_destroy(&costumer->split_buffers.lock, name_unique);
 	out_destroy_fifo:
 		rrr_fifo_protected_destroy(&costumer->main_queue);
 	out_free_name:

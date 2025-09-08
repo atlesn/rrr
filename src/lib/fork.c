@@ -71,9 +71,10 @@ static const char *__rrr_fork_get_name (
 }
 
 static int __rrr_fork_handler_lock (
-		struct rrr_fork_handler *handler
+		struct rrr_fork_handler *handler,
+		const char *ctx
 ) {
-	return rrr_posix_mutex_robust_lock (&handler->lock);
+	return rrr_posix_mutex_robust_lock (&handler->lock, ctx);
 }
 
 static void __rrr_fork_handler_unlock (
@@ -144,7 +145,7 @@ void rrr_fork_handler_destroy (
 ) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
 
-	if (__rrr_fork_handler_lock(handler) != 0) {
+	if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 		RRR_MSG_0("Warning: Lock was inconsistent while destroying fork handler, another fork might have died while holding it.\n");
 	}
 
@@ -161,7 +162,7 @@ void rrr_fork_handler_destroy (
 
 	__rrr_fork_handler_unlock(handler);
 
-	rrr_posix_mutex_robust_destroy(&handler->lock);
+	rrr_posix_mutex_robust_destroy(&handler->lock, "fork handler destroy");
 
 	__rrr_fork_handler_free(handler);
 }
@@ -259,7 +260,7 @@ static void __rrr_fork_wait_loop (
 
 		__rrr_fork_handler_unlock (handler);
 		rrr_posix_usleep(RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS * 1000);
-		if (__rrr_fork_handler_lock (handler) != 0) {
+		if (__rrr_fork_handler_lock (handler, __func__) != 0) {
 			RRR_MSG_0("Warning: Lock was inconsistent while waiting for forks in parent %i, a fork might have died while holding it.\n", getpid());
 		}
 	} while (*active_forks_found != 0);
@@ -280,7 +281,7 @@ void rrr_fork_send_sigusr1_and_wait (
 
 	pid_t self = getpid();
 
-	if (__rrr_fork_handler_lock(handler) != 0) {
+	if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 		RRR_MSG_0("Warning: Lock was inconsistent when sending SIGUSR1 to all forks in parent %i, a fork might have died while holding it.\n", getpid());
 	}
 
@@ -332,7 +333,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed (
 
 	// We cannot lock this because it's written to within signal context
 	if (rrr_fork_handler_signal_pending != 0 || force_wait_all) {
-		if (__rrr_fork_handler_lock(handler) != 0) {
+		if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 			RRR_MSG_0("Warning: Lock was inconsistent while handling SIGCHLD in parent %i, a fork might have died while holding it.\n", getpid());
 		}
 		rrr_fork_handler_signal_pending = 0;
@@ -418,7 +419,7 @@ pid_t rrr_fork (
 ) {
 	pid_t ret = 0;
 
-	if (__rrr_fork_handler_lock(handler) != 0) {
+	if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 		__rrr_fork_handler_unlock(handler);
 		RRR_MSG_0("Lock was inconsistent before forking in parent %i, a fork might have died while holding it.\n", getpid());
 		ret = -1;
@@ -454,7 +455,7 @@ pid_t rrr_fork (
 	RRR_DBG_1("=== FORK PID %i [%s] ========================================================================================\n",
 		ret, name);
 
-	if (__rrr_fork_handler_lock(handler) != 0) {
+	if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 		RRR_BUG("Lock was inconsistent after forking in parent %i, a fork might have died while holding it. Cannot handle this situation.\n", getpid());
 	}
 
@@ -479,7 +480,7 @@ void rrr_fork_unregister_exit_handler (
 		return;
 	}
 
-	if (__rrr_fork_handler_lock(handler) != 0) {
+	if (__rrr_fork_handler_lock(handler, __func__) != 0) {
 		__rrr_fork_handler_unlock(handler);
 		RRR_MSG_0("Warning: Lock was inconsistent while unregistering exit handler in parent %i, a fork might have died while holding it.\n", getpid());
 	}

@@ -48,9 +48,9 @@ int rrr_posix_strncasecmp (const char *a, const char *b, size_t n);
 int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags);
 int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags);
 int rrr_posix_cond_init (pthread_cond_t *mutex, int flags);
-int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex);
-int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex);
-void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex);
+int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex, const char *caller);
+int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex, const char *caller);
+void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex, const char *caller);
 
 #if RRR_BIGLENGTH_MAX > SIZE_MAX
 
