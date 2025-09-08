@@ -1020,6 +1020,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	rrr_strerror_init();
 
 	int is_child = 0;
+	int ghost_situation = 0;
 
 	struct rrr_event_queue *queue = NULL;
 
@@ -1219,7 +1220,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 			goto out_run_cleanup_methods;
 		}
 
-		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_send_sigusr1_and_wait(&ghost_situation, fork_handler);
+		if (ghost_situation)
+			ret = EXIT_FAILURE;
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 

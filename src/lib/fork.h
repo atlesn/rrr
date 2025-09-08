@@ -67,6 +67,7 @@ void rrr_fork_send_sigusr1_to_pid (
 		pid_t pid
 );
 void rrr_fork_send_sigusr1_and_wait (
+		int *ghost_situation,
 		struct rrr_fork_handler *handler
 );
 void rrr_fork_handle_sigchld_and_notify_if_needed (

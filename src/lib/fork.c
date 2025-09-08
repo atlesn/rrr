@@ -275,9 +275,12 @@ void rrr_fork_send_sigusr1_to_pid (
 
 // Call from main() only
 void rrr_fork_send_sigusr1_and_wait (
+		int *ghost_situation,
 		struct rrr_fork_handler *handler
 ) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
+
+	*ghost_situation = 0;
 
 	pid_t self = getpid();
 
@@ -319,6 +322,7 @@ void rrr_fork_send_sigusr1_and_wait (
 		__rrr_fork_wait_loop(&active_forks_found, handler, 10); // 10 rounds = ~1 second
 		if (active_forks_found) {
 			RRR_MSG_0("At least one fork was still alive after waiting, we now have a possible ghost situation.\n");
+			*ghost_situation = 1;
 		}
 	}
 
