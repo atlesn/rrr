@@ -87,6 +87,7 @@ AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[en
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
 AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
+AC_ARG_ENABLE([cmodule-crash], [AS_HELP_STRING([--enable-cmodule-crash],[Enable crashing of cmodule forks for test purposes])],[enable_cmodule_crash=yes],[enable_cmodule_crash=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for JavaScript enabled])
@@ -1528,6 +1529,14 @@ AC_MSG_CHECKING([enabled printf logging])
 AS_IF([test "x$enable_printf_logging" = xyes], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_ENABLE_PRINTF_LOGGING], [1], [Enable printf logging for all log messages])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([enabled cmodule crashing])
+AS_IF([test "x$enable_cmodule_crash" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_CMODULE_CRASH], [1], [Enable cmodule crashing])
 ],[
 	AC_MSG_RESULT([no])
 ])

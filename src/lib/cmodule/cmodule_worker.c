@@ -52,7 +52,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../stats/stats_message.h"
 
-// #define RRR_CMODULE_WORKER_MMAP_CRASH 1
+#ifdef RRR_ENABLE_CMODULE_CRASH
+#define RRR_CMODULE_WORKER_MMAP_CRASH 1
+#endif
 
 #ifdef RRR_CMODULE_WORKER_MMAP_CRASH
 static int rrr_cmodule_worker_crash_grace = 10;
