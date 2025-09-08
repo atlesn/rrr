@@ -94,7 +94,7 @@ struct rrr_mmap_channel {
 };
 
 #define INDEX_LOCK(channel) \
-	do {ret = rrr_posix_mutex_robust_lock(&channel->index_lock); if (ret != 0) goto out_lock_err;
+	do {ret = rrr_posix_mutex_robust_lock(&channel->index_lock, channel->name); if (ret != 0) goto out_lock_err;
 #define INDEX_UNLOCK(channel) \
 	{ret = pthread_mutex_unlock(&channel->index_lock); if (ret != 0) RRR_BUG("BUG: INDEX_UNLOCK failed: %s\n", rrr_strerror(ret)); }} while (0)
 
@@ -168,7 +168,7 @@ static int __rrr_mmap_channel_cleanup (
 	for (int i = 0; i < RRR_MMAP_CHANNEL_SLOTS; i++) {
 		struct rrr_mmap_channel_block *block = &(target->blocks[i]);
 
-		if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
+		if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock, target->name)) != RRR_POSIX_MUTEX_ROBUST_OK) {
 			if (ret != RRR_POSIX_MUTEX_ROBUST_BUSY) {
 				goto out;
 			}
@@ -303,7 +303,7 @@ int rrr_mmap_channel_write_using_callback (
 		goto out_final;
 	}
 
-	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
+	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock, target->name)) != RRR_POSIX_MUTEX_ROBUST_OK) {
 		if (ret == RRR_POSIX_MUTEX_ROBUST_BUSY) {
 			INDEX_LOCK(target);
 			target->write_full_counter++;
@@ -435,7 +435,7 @@ int rrr_mmap_channel_read_with_callback (
 		goto out_unlock;
 	}
 
-	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock)) != RRR_POSIX_MUTEX_ROBUST_OK) {
+	if ((ret = rrr_posix_mutex_robust_trylock(&block->block_lock, source->name)) != RRR_POSIX_MUTEX_ROBUST_OK) {
 		if (ret == RRR_POSIX_MUTEX_ROBUST_BUSY) {
 			ret = RRR_MMAP_CHANNEL_EMPTY;
 		}
@@ -531,7 +531,7 @@ void rrr_mmap_channel_destroy (
 				RRR_MSG_1("Note: Pointer was still present in block while destroying MMAP channel, fork might not have exited yet or has been killed before cleanup.\n");
 			}
 		}
-		rrr_posix_mutex_robust_destroy(&target->blocks[i].block_lock);
+		rrr_posix_mutex_robust_destroy(&target->blocks[i].block_lock, target->name);
 	}
 	if (msg_count > 1) {
 		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
