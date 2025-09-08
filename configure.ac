@@ -181,6 +181,7 @@ SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
+SHELL_VARS_EXPORT([RRR_ENABLE_CMODULE_CRASH], $enable_cmodule_crash)
 
 AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
