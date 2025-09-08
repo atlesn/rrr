@@ -1141,6 +1141,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 			pid_t pid = rrr_fork (
 					fork_handler,
+					config_string,
 					rrr_fork_default_exit_notification,
 					&exit_notification_data
 			);

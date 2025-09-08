@@ -165,6 +165,7 @@ int rrr_cmodule_main_worker_fork_start (
 
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,
+			worker->name,
 			__rrr_cmodule_parent_exit_notify_handler,
 			worker
 	);

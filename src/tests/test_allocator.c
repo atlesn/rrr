@@ -52,7 +52,7 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 
 	RRR_DBG_1("SHM test fork starting\n");
 
-	pid_t pid = rrr_fork(fork_handler, __rrr_test_allocator_shm_child_exit_notify, NULL);
+	pid_t pid = rrr_fork(fork_handler, "test fork", __rrr_test_allocator_shm_child_exit_notify, NULL);
 
 	const char test_data[] = "abcdef";
 	const char test_data_success[] = "123456";

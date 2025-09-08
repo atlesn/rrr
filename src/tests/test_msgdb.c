@@ -568,7 +568,7 @@ int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
 
 	RRR_DBG_1("Forking to start message database service '" MSGDB_CMD "'...\n");
 
-	if ((msgserver_pid = rrr_fork(fork_handler, __rrr_test_msgdb_fork_exit_notify, NULL)) < 0) {
+	if ((msgserver_pid = rrr_fork(fork_handler, "test fork", __rrr_test_msgdb_fork_exit_notify, NULL)) < 0) {
 		TEST_MSG("Could not fork: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
