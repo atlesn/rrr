@@ -435,6 +435,7 @@ int main (int argc, const char **argv, const char **env) {
 	int ret = EXIT_SUCCESS;
 
 	int is_child = 0;
+	int ghost_situation = 0;
 
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_signal_handler *signal_handler_fork = NULL;
@@ -670,7 +671,9 @@ int main (int argc, const char **argv, const char **env) {
 			goto out_cleanup_cmd;
 		}
 
-		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_send_sigusr1_and_wait(&ghost_situation, fork_handler);
+		if (ghost_situation)
+			ret = EXIT_FAILURE;
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 
