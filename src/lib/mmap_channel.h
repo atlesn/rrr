@@ -51,6 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_channel;
 struct rrr_event_queue;
 
+void rrr_mmap_channel_lock_and_crash (
+		struct rrr_mmap_channel *target
+);
 int rrr_mmap_channel_count (
 		int *count,
 		struct rrr_mmap_channel *target

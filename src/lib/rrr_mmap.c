@@ -115,6 +115,15 @@ struct rrr_mmap_heap_block_index {
 #define DESTROY(collection) \
 	rrr_posix_mutex_robust_destroy(&collection->index_lock, collection->creator)
 
+void rrr_mmap_collection_lock_and_crash (
+		struct rrr_mmap_collection *collection
+) {
+	LOCK(collection);
+	RRR_BUG("Crashing intentionally while holding lock in %s using collection %s\n",
+		__func__, collection->creator);
+	UNLOCK(collection);
+}
+
 void *__rrr_mmap_resolve (
 		struct rrr_mmap *mmap,
 		struct rrr_shm_collection_slave *shm_slave,

@@ -98,6 +98,12 @@ struct rrr_mmap_channel {
 #define INDEX_UNLOCK(channel) \
 	{ret = pthread_mutex_unlock(&channel->index_lock); if (ret != 0) RRR_BUG("BUG: INDEX_UNLOCK failed: %s\n", rrr_strerror(ret)); }} while (0)
 
+void rrr_mmap_channel_lock_and_crash (
+		struct rrr_mmap_channel *target
+) {
+	rrr_mmap_collection_lock_and_crash(target->mmaps);
+}
+
 int rrr_mmap_channel_count (
 		int *count,
 		struct rrr_mmap_channel *target
