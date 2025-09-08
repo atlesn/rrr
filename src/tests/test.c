@@ -468,6 +468,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			TEST_MSG("forking and running external executable\n");
 			pid = rrr_fork (
 					fork_handler,
+					"test fork",
 					rrr_fork_default_exit_notification,
 					&exit_notification_data
 			);

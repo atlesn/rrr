@@ -57,6 +57,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FORK_HANDLER_ALLOCATION_SIZE \
 	(sizeof(struct rrr_fork_handler) + (size_t) sysconf(_SC_PAGESIZE))
 
+static const char *rrr_fork_default_name = "unknown";
+
+static const char *__rrr_fork_get_name (
+		const struct rrr_fork_handler *handler,
+		pid_t pid
+) {
+	RRR_LL_ITERATE_BEGIN(handler, const struct rrr_fork);
+		if (node->pid == pid)
+			return node->name;
+	RRR_LL_ITERATE_END();
+	return rrr_fork_default_name;
+}
 
 static int __rrr_fork_handler_lock (
 		struct rrr_fork_handler *handler
@@ -193,10 +205,11 @@ static int __rrr_fork_notify_and_clear (
 	return __rrr_fork_clear(fork);
 }
 
-static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
+static int __rrr_fork_waitpid (const struct rrr_fork_handler *handler, pid_t pid, int *status, int options) {
 	pid_t ret = waitpid(pid, status, options);
 	if (ret > 0) {
-		RRR_DBG_1("=== WAIT PID %i ========================================================================================\n", ret);
+		RRR_DBG_1("=== WAIT PID %i [%s] ========================================================================================\n",
+			ret, __rrr_fork_get_name(handler, pid));
 		if (WIFSIGNALED(*status)) {
 			int signal = WTERMSIG(*status);
 			RRR_DBG_1("Fork %i was terminated by signal %i\n", ret, signal);
@@ -231,13 +244,13 @@ static void __rrr_fork_wait_loop (
 				pid_t pid;
 				int status = 0;
 
-				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
+				if ((pid = __rrr_fork_waitpid(handler, node->pid, &status, WNOHANG)) == node->pid) {
 					RRR_DBG_1("Wait pid %i ok\n", node->pid);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
 				else if (pid == -1 && errno == ECHILD) {
-					RRR_DBG_1("Error from waitpid on pid %i in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
-							node->pid, getpid(), status, errno);
+					RRR_DBG_1("Error from waitpid on pid %i name [%s] in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+							node->pid, node->name, getpid(), status, errno);
 				}
 
 				*active_forks_found = 1;
@@ -336,9 +349,9 @@ void rrr_fork_handle_sigchld_and_notify_if_needed (
 
 		pid_t pid_tmp;
 		int status;
-		while ((pid_tmp = __rrr_fork_waitpid(-1, &status, WNOHANG)) > 0) {
+		while ((pid_tmp = __rrr_fork_waitpid(handler, -1, &status, WNOHANG)) > 0) {
 			if (pid_count == RRR_FORK_MAX_FORKS) {
-				RRR_BUG("BUG: Too many forks in rrr_fork_handle_sigchld_and_notify_if_needed\n");
+				RRR_BUG("BUG: Too many forks in %s\n", __func__);
 			}
 			waited_for_pids[pid_count++] = pid_tmp;
 			RRR_DBG_1("Fork %i exited with status %i\n", pid_tmp, status);
@@ -356,8 +369,8 @@ void rrr_fork_handle_sigchld_and_notify_if_needed (
 			else {
 				if (force_wait_all) {
 					int status;
-					RRR_DBG_1("Fork late wait for pid %i self is %i\n", node->pid, self);
-					if (__rrr_fork_waitpid(node->pid, &status, WNOHANG) > 0) {
+					RRR_DBG_1("Fork late wait for pid %i [%s] self is %i\n", node->pid, node->name, self);
+					if (__rrr_fork_waitpid(handler, node->pid, &status, WNOHANG) > 0) {
 						was_waited_for = 1;
 					}
 					else {
@@ -399,6 +412,7 @@ static struct rrr_fork *__rrr_fork_allocate_unlocked (
 
 pid_t rrr_fork (
 		struct rrr_fork_handler *handler,
+		const char *name,
 		void (*exit_notify)(pid_t pid, void *exit_notify_arg),
 		void *exit_notify_arg
 ) {
@@ -437,7 +451,8 @@ pid_t rrr_fork (
 
 	// Parent code
 
-	RRR_DBG_1("=== FORK PID %i ========================================================================================\n", ret);
+	RRR_DBG_1("=== FORK PID %i [%s] ========================================================================================\n",
+		ret, name);
 
 	if (__rrr_fork_handler_lock(handler) != 0) {
 		RRR_BUG("Lock was inconsistent after forking in parent %i, a fork might have died while holding it. Cannot handle this situation.\n", getpid());
@@ -445,6 +460,8 @@ pid_t rrr_fork (
 
 	result->parent_pid = getpid();
 	result->pid = ret;
+	memset(result->name, '\0', sizeof(result->name));
+	strncpy(result->name, name, sizeof(result->name) - 1);
 	result->exit_notify = exit_notify;
 	result->exit_notify_arg = exit_notify_arg;
 
