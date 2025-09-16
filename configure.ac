@@ -117,7 +117,7 @@ AS_IF([ test -f ".development" ], [
 ])
 
 CFLAGS_COMMON_GCC=""
-AS_IF([ test "xCC" = "xgcc" ], [
+AS_IF([ test "x$CC" = "xgcc" ], [
 	CFLAGS_COMMON_GCC="-Wno-clobbered"
 ])
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
