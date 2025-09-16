@@ -22,12 +22,14 @@
 #include <errno.h>
 #include <gtk/gtk.h>
 
+#include "cmodule.h"
 #include "../lib/log.h"
 #include "../lib/allocator.h"
-#include "cmodule.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/helpers/nullsafe_str.h"
+#include "../lib/rrr_types.h"
 
-#define DEBUG_BOXES
+// #define DEBUG_BOXES
 
 struct sound_display_data {
 	GtkWidget *window;
@@ -63,37 +65,108 @@ static void on_destroy(GtkApplication *app, gpointer *arg) {
 	data->do_stop = 1;
 }
 
+struct text_refresh_split_callback_data {
+	struct rrr_nullsafe_str *output;
+};
+
+static int text_refresh_split_callback(const struct rrr_nullsafe_str *phrase, int is_last, void *arg) {
+	struct text_refresh_split_callback_data *callback_data = arg;
+	struct rrr_nullsafe_str *output = callback_data->output;
+
+	char *str = ((void **)phrase)[0];
+
+	printf("str: %s len: %lu\n", str, rrr_nullsafe_str_len(phrase));
+
+	(void)(is_last);
+
+	static const int font_size = 1024 / 8 * 1000;
+	static const char color[] = "#333";
+	static const char open_format[] = "<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\" color=\"%s\">%s";
+	static const char close[] = "</span>";
+
+	const int is_first = rrr_nullsafe_str_len(output) == 0;
+
+	if (rrr_nullsafe_str_len(phrase) == 0)
+		return 0;
+
+	if (rrr_nullsafe_str_append_asprintf(output, open_format, font_size, color, is_first ? "" : " ") != 0)
+		return 1;
+
+	if (rrr_nullsafe_str_append(output, phrase) != 0)
+		return 1;
+
+	if (rrr_nullsafe_str_append_raw(output, close, sizeof(close) - 1) != 0)
+		return 1;
+
+	printf("len now: %lu\n", rrr_nullsafe_str_len(output));
+
+	return 0;
+};
+
 static gboolean text_refresh(gpointer arg) {
 	struct sound_display_data *data = (struct sound_display_data *) arg;
 
-	if (!data->text)
-		return TRUE;
+	struct rrr_nullsafe_str *output = NULL;
+	struct rrr_nullsafe_str *input = NULL;
+	gboolean ret = TRUE;
 
-	int font_size = 1024 / 8 * 1000;
+	if (!data->text) {
+		goto out;
+	}
 
-	const char *str = "THIS IS A VERY LONG STRING WITH MANY WORD WHICH MAY WRAP";
-	const char *format ="<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\">%s</span>";
-	size_t size = 12 + strlen(str) + strlen(format) + 1;
+	if (rrr_nullsafe_str_new_or_replace_empty(&output) != 0) {
+		ret = FALSE;
+		goto out;
+	}
 
-	char *tmp = rrr_allocate(size);
+	static const char phrase[] = "THIS IS A VERY LONG PHRASE TAKING UP MULTIPLE LINES";
 
-	sprintf(tmp, "<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\">%s</span>", font_size, str);
-	tmp[size - 1] = '\0';
-	gtk_label_set_markup(GTK_LABEL(data->text), tmp);
+	if (rrr_nullsafe_str_new_or_append_raw(&input, phrase, sizeof(phrase) - 1) != 0) {
+		ret = FALSE;
+		goto out_destroy_output;
+	}
 
-	rrr_free(tmp);
+	struct text_refresh_split_callback_data callback_data = {
+		output
+	};
 
-	return TRUE;
+	if (rrr_nullsafe_str_split(input, ' ', text_refresh_split_callback, &callback_data) != 0) {
+		ret = FALSE;
+		goto out_destroy_input;
+	}
+
+	char *output_final;
+
+	if (rrr_nullsafe_str_extract_append_null(&output_final, output) != 0) {
+		ret = FALSE;
+		goto out_destroy_input;
+	}
+
+	printf("output: %s len: %lu\n", output_final, rrr_nullsafe_str_len(output));
+
+	gtk_label_set_markup(GTK_LABEL(data->text), output_final);
+
+	rrr_free(output_final);
+
+	out_destroy_input:
+		rrr_nullsafe_str_destroy_if_not_null(&input);
+	out_destroy_output:
+		rrr_nullsafe_str_destroy_if_not_null(&output);
+	out:
+		if (ret != TRUE)
+			data->do_stop = 1;
+		return ret;
 }
 
 int init_display(struct sound_display_data *data) {
 	int ret = 0;
 
+	GdkDisplay *display;
+
 	if (data->window)
 		goto out;
 
-	GdkDisplay *display = gdk_display_get_default();
-	if (!display) {
+	if ((display = gdk_display_get_default()) == NULL) {
 		RRR_MSG_1("Sound display could not get default display (yet)...");
 		goto out;
 	}
@@ -160,7 +233,7 @@ int init_display(struct sound_display_data *data) {
 	gloop();
 
 	out:
-	return ret;
+		return ret;
 }
 
 int config(RRR_CONFIG_ARGS) {
@@ -169,8 +242,6 @@ int config(RRR_CONFIG_ARGS) {
 	int ret = 0;
 
 	struct sound_display_data *data;
-
-	gtk_init(0, NULL);
 
 	if (setenv("DISPLAY", ":0", 1) != 0) {
 		RRR_MSG_0("Failed to set DISPLAY environment variable: %s\n", rrr_strerror(errno));
@@ -189,6 +260,8 @@ int config(RRR_CONFIG_ARGS) {
 		ret = 1;
 		goto out;
 	}
+
+	gtk_init(0, NULL);
 
 	ctx->application_ptr = data;
 
