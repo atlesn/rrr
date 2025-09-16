@@ -27,15 +27,23 @@
 #include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/helpers/nullsafe_str.h"
-#include "../lib/rrr_types.h"
+#include "../lib/array.h"
+#include "../lib/map.h"
+#include "../lib/util/rrr_time.h"
 
 // #define DEBUG_BOXES
+
+#define PHRASE_EXPIRATION_HARD_US (30 * 1000 * 1000)
+#define PHRASE_EXPIRATION_SOFT_US (1 * 1000 * 1000)
 
 struct sound_display_data {
 	GtkWidget *window;
 	GtkWidget *hbox;
 	GtkWidget *grid;
 	GtkWidget *text;
+	struct rrr_map phrase_full;
+	int phrase_pos;
+	uint64_t phrase_expiration;
 	int do_stop;
 };
 
@@ -65,40 +73,28 @@ static void on_destroy(GtkApplication *app, gpointer *arg) {
 	data->do_stop = 1;
 }
 
-struct text_refresh_split_callback_data {
-	struct rrr_nullsafe_str *output;
-};
-
-static int text_refresh_split_callback(const struct rrr_nullsafe_str *phrase, int is_last, void *arg) {
-	struct text_refresh_split_callback_data *callback_data = arg;
-	struct rrr_nullsafe_str *output = callback_data->output;
-
-	char *str = ((void **)phrase)[0];
-
-	printf("str: %s len: %lu\n", str, rrr_nullsafe_str_len(phrase));
-
-	(void)(is_last);
+static int text_refresh_word_push(struct rrr_nullsafe_str *output, struct sound_display_data *data, const char *word, int idx) {
+	const int is_first = idx == 0;
+	const int is_played = idx <= data->phrase_pos;
 
 	static const int font_size = 1024 / 8 * 1000;
-	static const char color[] = "#333";
-	static const char open_format[] = "<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\" color=\"%s\">%s";
+	static const char color_unplayed[] = "#ddd";
+	static const char color_played[] = "#000";
+	static const char open_format[] = "<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\" color=\"%s\">%s%s";
 	static const char close[] = "</span>";
 
-	const int is_first = rrr_nullsafe_str_len(output) == 0;
 
-	if (rrr_nullsafe_str_len(phrase) == 0)
-		return 0;
-
-	if (rrr_nullsafe_str_append_asprintf(output, open_format, font_size, color, is_first ? "" : " ") != 0)
-		return 1;
-
-	if (rrr_nullsafe_str_append(output, phrase) != 0)
+	if (rrr_nullsafe_str_append_asprintf (
+			output,
+			open_format,
+			font_size,
+			is_played ? color_played : color_unplayed,
+			is_first ? "" : " ", word
+	) != 0)
 		return 1;
 
 	if (rrr_nullsafe_str_append_raw(output, close, sizeof(close) - 1) != 0)
 		return 1;
-
-	printf("len now: %lu\n", rrr_nullsafe_str_len(output));
 
 	return 0;
 };
@@ -107,7 +103,6 @@ static gboolean text_refresh(gpointer arg) {
 	struct sound_display_data *data = (struct sound_display_data *) arg;
 
 	struct rrr_nullsafe_str *output = NULL;
-	struct rrr_nullsafe_str *input = NULL;
 	gboolean ret = TRUE;
 
 	if (!data->text) {
@@ -119,37 +114,25 @@ static gboolean text_refresh(gpointer arg) {
 		goto out;
 	}
 
-	static const char phrase[] = "THIS IS A VERY LONG PHRASE TAKING UP MULTIPLE LINES";
-
-	if (rrr_nullsafe_str_new_or_append_raw(&input, phrase, sizeof(phrase) - 1) != 0) {
-		ret = FALSE;
-		goto out_destroy_output;
-	}
-
-	struct text_refresh_split_callback_data callback_data = {
-		output
-	};
-
-	if (rrr_nullsafe_str_split(input, ' ', text_refresh_split_callback, &callback_data) != 0) {
-		ret = FALSE;
-		goto out_destroy_input;
-	}
+	int i = 0;
+	RRR_MAP_ITERATE_BEGIN(&data->phrase_full);
+		if (text_refresh_word_push(output, data, node_tag, i++) != 0) {
+			ret = FALSE;
+			goto out_destroy_output;
+		}
+	RRR_MAP_ITERATE_END();
 
 	char *output_final;
 
 	if (rrr_nullsafe_str_extract_append_null(&output_final, output) != 0) {
 		ret = FALSE;
-		goto out_destroy_input;
+		goto out_destroy_output;
 	}
-
-	printf("output: %s len: %lu\n", output_final, rrr_nullsafe_str_len(output));
 
 	gtk_label_set_markup(GTK_LABEL(data->text), output_final);
 
 	rrr_free(output_final);
 
-	out_destroy_input:
-		rrr_nullsafe_str_destroy_if_not_null(&input);
 	out_destroy_output:
 		rrr_nullsafe_str_destroy_if_not_null(&output);
 	out:
@@ -269,6 +252,12 @@ int config(RRR_CONFIG_ARGS) {
 	return ret;
 }
 
+void phrase_reset(struct sound_display_data *data) {
+	rrr_map_clear(&data->phrase_full);
+	data->phrase_pos = 0;
+	data->phrase_expiration = rrr_time_get_64() + PHRASE_EXPIRATION_HARD_US;
+}
+
 int source(RRR_SOURCE_ARGS) {
 	struct sound_display_data *data = ctx->application_ptr;
 
@@ -279,21 +268,89 @@ int source(RRR_SOURCE_ARGS) {
 	if (data->do_stop)
 		return 1;
 
+	if (rrr_time_get_64() >= data->phrase_expiration) {
+		RRR_MSG_1("Reset phrase after timeout\n");
+		phrase_reset(data);
+	}
+
 	if (data->window)
 		gloop();
 
 	return 0;
 }
 
+int phrase_full_word_cb(int idx, const char *str, void *arg) {
+	struct sound_display_data *data = arg;
+
+	int ret = 0;
+
+	if (idx == 0) {
+		RRR_MSG_1("Reset phrase\n");
+		phrase_reset(data);
+	}
+
+	RRR_MSG_1("Adding unplayed word: %s\n", str);
+
+	if ((ret = rrr_map_item_add_new(&data->phrase_full, str, NULL)) != 0)
+		goto out;
+
+	out:
+	return ret;
+}
+
+int phrase_chunk_word_cb(int idx, const char *str, void *arg) {
+	struct sound_display_data *data = arg;
+
+	(void)(idx);
+
+	int ret = 0;
+
+	RRR_MSG_1("Marking word as played: %s\n", str);
+
+	data->phrase_pos++;
+
+	if (data->phrase_pos >= RRR_MAP_COUNT(&data->phrase_full))
+		data->phrase_expiration = rrr_time_get_64() + PHRASE_EXPIRATION_SOFT_US;
+
+	return ret;
+}
+
 int process(RRR_PROCESS_ARGS) {
 	struct sound_display_data *data = ctx->application_ptr;
+
+	(void)(message_addr);
+
+	int ret = 0;
+
+	uint16_t version_dummy;
+	struct rrr_array array = {0};
 
 	RRR_DBG_2("cmodule process timestamp %" PRIu64 " method %s\n",
 		message->timestamp, method);
 
+	if (!MSG_IS_ARRAY(message)) {
+		RRR_MSG_0("Warning: Message to sound display process function was not an array message\n");
+		goto out;
+	}
+
 	if (init_display(data) != 0 || data->do_stop) {
-		rrr_free(message);
-		return 1;
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_array_message_append_to_array(&version_dummy, &array, message) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_array_get_values_str_by_tag(&array, "phrase_full_word", phrase_full_word_cb, data) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_array_get_values_str_by_tag(&array, "phrase_chunk_word", phrase_chunk_word_cb, data) != 0) {
+		ret = 1;
+		goto out;
 	}
 
 	if (data->window)
@@ -301,7 +358,10 @@ int process(RRR_PROCESS_ARGS) {
 	else
 		RRR_MSG_1("Sound display app not yet initialized\n");
 
-	return rrr_send_and_free(ctx, message, message_addr);
+	out:
+	rrr_array_clear(&array);
+	rrr_free(message);
+	return ret;
 }
 
 int cleanup(RRR_CLEANUP_ARGS) {
@@ -309,6 +369,7 @@ int cleanup(RRR_CLEANUP_ARGS) {
 
 	RRR_MSG_1("cmodule exiting\n");
 
+	rrr_map_clear(&data->phrase_full);
 	rrr_free(data);
 
 	ctx->application_ptr = NULL;
