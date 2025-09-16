@@ -1,0 +1,5 @@
+#!/bin/sh
+
+echo "Service rrr exited with code $1, restarting"
+
+exit 0

@@ -1,0 +1,7 @@
+#!/bin/sh -e
+
+cd /opt/app
+
+rm -f $LOG_SOCKET
+
+rrr_logd -s $LOG_SOCKET -p -n -u
