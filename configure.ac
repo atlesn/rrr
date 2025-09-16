@@ -1661,6 +1661,24 @@ AS_IF([test "x$enable_openrc" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+GTK_MSG=`pkg-config --errors-to-stdout --modversion gtk+-3.0`
+GTK_OK=$?
+AC_MSG_CHECKING([for GTK 3.0])
+
+AS_IF([test $GTK_OK -eq 0], [
+	AC_MSG_RESULT([yes])
+	GTK_CFLAGS=`pkg-config --cflags gtk+-3.0`
+	GTK_LIBS=`pkg-config --libs gtk+-3.0`
+	have_gtk=yes
+], [
+	AC_MSG_RESULT([not found])
+	have_gtk=no
+])
+
+AC_SUBST([GTK_CFLAGS])
+AC_SUBST([GTK_LIBS])
+AM_CONDITIONAL([HAVE_GTK], [test "x$have_gtk" != xno])
+
 MODULE_DIR="\${exec_prefix}/lib/rrr"
 AC_MSG_CHECKING([module installation directory])
 AC_MSG_RESULT([${MODULE_DIR}])
