@@ -268,58 +268,58 @@ int rrr_posix_cond_init (pthread_cond_t *mutex, int flags) {
 		return ret;
 }
 
-static void __rrr_posix_mutex_robust_consistent (pthread_mutex_t *mutex) {
+static void __rrr_posix_mutex_robust_consistent (pthread_mutex_t *mutex, const char *caller) {
 	int ret_tmp = 0;
 
-	RRR_MSG_0("Mutex was inconsitent in %s while locking, the holder has died.\n",
-			__func__);
+	RRR_MSG_0("Mutex was inconsitent in %s while locking on behalf of caller [%s], the holder has died.\n",
+			__func__, caller);
 	if ((ret_tmp = pthread_mutex_consistent(mutex)) != 0) {
 		RRR_BUG("Failed to make mutex consistent in %s, cannot recover from this: %s\n",
 				__func__, rrr_strerror(ret_tmp));
 	}
 }
 
-int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex) {
+int rrr_posix_mutex_robust_lock (pthread_mutex_t *mutex, const char *caller) {
 	int ret = RRR_POSIX_MUTEX_ROBUST_OK;
 
 	if ((ret = pthread_mutex_lock (mutex)) != 0) {
 		if (ret == EOWNERDEAD) {
-			__rrr_posix_mutex_robust_consistent(mutex);
+			__rrr_posix_mutex_robust_consistent(mutex, caller);
 			pthread_mutex_unlock(mutex);
 			ret = RRR_POSIX_MUTEX_ROBUST_ERROR;
 		}
 		else {
-			RRR_BUG("Error returned from pthread_mutex_lock in %s, cannot recover from this: %s\n",
-				__func__, rrr_strerror(ret));
+			RRR_BUG("Error returned from pthread_mutex_lock in %s from caller [%s], cannot recover from this: %s\n",
+				__func__, caller, rrr_strerror(ret));
 		}
 	}
 
 	return ret;
 }
 
-int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex) {
+int rrr_posix_mutex_robust_trylock (pthread_mutex_t *mutex, const char *caller) {
 	int ret = RRR_POSIX_MUTEX_ROBUST_OK;
 
 	if ((ret = pthread_mutex_trylock (mutex)) != 0) {
 		if (ret == EOWNERDEAD) {
-			__rrr_posix_mutex_robust_consistent(mutex);
+			__rrr_posix_mutex_robust_consistent(mutex, caller);
 			ret = RRR_POSIX_MUTEX_ROBUST_ERROR;
 		}
 		else if (ret == EBUSY) {
 			ret = RRR_POSIX_MUTEX_ROBUST_BUSY;
 		}
 		else {
-			RRR_BUG("Error returned from pthread_mutex_lock in %s, cannot recover from this: %s\n",
-				__func__, rrr_strerror(ret));
+			RRR_BUG("Error returned from pthread_mutex_lock in %s on behalf of caller [%s], cannot recover from this: %s\n",
+				__func__, caller, rrr_strerror(ret));
 		}
 	}
 
 	return ret;
 }
 
-void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex) {
-	// Ensure lock is consisten before destroy
-	rrr_posix_mutex_robust_lock(mutex);
+void rrr_posix_mutex_robust_destroy (pthread_mutex_t *mutex, const char *caller) {
+	// Ensure lock is consistent before destroy
+	rrr_posix_mutex_robust_lock(mutex, caller);
 	pthread_mutex_unlock(mutex);
 	pthread_mutex_destroy(mutex);
 }

@@ -401,6 +401,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 	int is_child = 0;
+	int ghost_situation = 0;
 
 	struct cmd_data cmd;
 	const char *config_file, *fork_executable;
@@ -479,6 +480,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			TEST_MSG("forking and running external executable\n");
 			pid = rrr_fork (
 					fork_handler,
+					"test fork",
 					rrr_fork_default_exit_notification,
 					&exit_notification_data
 			);
@@ -572,7 +574,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 			// Only main runs fork cleanup stuff
 			goto out_cleanup_signal;
 		}
-		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_send_sigusr1_and_wait(&ghost_situation, fork_handler);
+		if (ghost_situation)
+			ret = EXIT_FAILURE;
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 

@@ -34,6 +34,7 @@ struct rrr_fork {
 	pid_t pid;
 	pid_t parent_pid;
 	int was_waited_for;
+	char name[64];
 	void (*exit_notify)(pid_t pid, void *exit_notify_arg);
 	void *exit_notify_arg;
 };
@@ -66,6 +67,7 @@ void rrr_fork_send_sigusr1_to_pid (
 		pid_t pid
 );
 void rrr_fork_send_sigusr1_and_wait (
+		int *ghost_situation,
 		struct rrr_fork_handler *handler
 );
 void rrr_fork_handle_sigchld_and_notify_if_needed (
@@ -74,6 +76,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed (
 );
 pid_t rrr_fork (
 		struct rrr_fork_handler *handler,
+		const char *name,
 		void (*exit_notify)(pid_t pid, void *exit_notify_arg),
 		void *exit_notify_arg
 );
