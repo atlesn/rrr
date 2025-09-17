@@ -150,6 +150,12 @@ int rrr_array_get_value_str_by_tag (
 		const struct rrr_array *array,
 		const char *tag
 );
+int rrr_array_get_values_str_by_tag (
+		struct rrr_array *array,
+		const char *tag,
+		int (*callback)(int idx, const char *str, void *arg),
+		void *callback_arg
+);
 /* TODO : Standardize function call names (with or without index argumemt) */
 int rrr_array_get_value_first_unsigned_64_by_tag (
 		uint64_t *result,
