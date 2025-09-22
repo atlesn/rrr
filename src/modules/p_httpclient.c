@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
+#include "../lib/message_helper.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_util.h"
@@ -56,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/msgdb/msgdb_client.h"
+#include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/random.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/gnu.h"
@@ -106,11 +108,13 @@ struct httpclient_data {
 	struct rrr_msg_holder_collection redirect_queue;
 	struct rrr_msg_holder_collection from_senders_queue;
 	struct rrr_msg_holder_collection low_pri_queue;
-	struct rrr_msg_holder_collection from_msgdb_queue;
+	struct rrr_msg_holder_collection from_msgdb_prio_queue;
+	struct rrr_msg_holder_collection from_msgdb_nonprio_queue;
 	struct rrr_msg_holder_collection periodic_request_queue;
 
 	int low_pri_queue_need_rotate;
-	int from_msgdb_queue_need_rotate;
+	int from_msgdb_prio_queue_need_rotate;
+	int from_msgdb_nonprio_queue_need_rotate;
 	rrr_length connection_soft_error_dropped_count;
 
 	struct rrr_msgdb_client_conn msgdb_conn_store;
@@ -182,6 +186,7 @@ struct httpclient_data {
 
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
+	struct rrr_mqtt_topic_token *msgdb_topic_filter_priority;
 
 	rrr_setting_uint silent_put_error_limit_us;
 	rrr_setting_uint request_interval_us;
@@ -241,7 +246,8 @@ static int httpclient_response_code_summary_consume (
 static void httpclient_check_queues_and_activate_event_as_needed (
 	struct httpclient_data *data
 ) {
-	if ( RRR_LL_COUNT(&data->from_msgdb_queue) > 0 ||
+	if ( RRR_LL_COUNT(&data->from_msgdb_prio_queue) > 0 ||
+	     RRR_LL_COUNT(&data->from_msgdb_nonprio_queue) > 0 ||
 	     RRR_LL_COUNT(&data->from_senders_queue) > 0 ||
 	     RRR_LL_COUNT(&data->redirect_queue) > 0 ||
 	     RRR_LL_COUNT(&data->low_pri_queue) > 0 ||
@@ -797,14 +803,30 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 		data->low_pri_queue_need_rotate = 1;
 	}
 	else {
-		RRR_LL_APPEND(&data->from_msgdb_queue, entry);
-		data->from_msgdb_queue_need_rotate = 1;
+		int does_match = 0;
+	
+		if (data->msgdb_topic_filter_priority != NULL) {
+			if (rrr_message_helper_entry_topic_match(&does_match, entry, data->msgdb_topic_filter_priority) != 0) {
+				RRR_MSG_0("Warning: Error when checking topic filter for message from msgdb in httpclient instance %s. Treating as non-prio.\n",
+					INSTANCE_D_NAME(data->thread_data));
+			}
+		}
+
+		if (does_match) {
+			RRR_LL_APPEND(&data->from_msgdb_prio_queue, entry);
+			data->from_msgdb_prio_queue_need_rotate = 1;
+		}
+		else {
+			RRR_LL_APPEND(&data->from_msgdb_nonprio_queue, entry);
+			data->from_msgdb_nonprio_queue_need_rotate = 1;
+		}
 	}
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
 
 	if ( RRR_LL_COUNT(&data->low_pri_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX ||
-	     RRR_LL_COUNT(&data->from_msgdb_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX
+	     RRR_LL_COUNT(&data->from_msgdb_prio_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX ||
+	     RRR_LL_COUNT(&data->from_msgdb_nonprio_queue) > RRR_HTTPCLIENT_MSGDB_POLL_MAX
 	) {
 		RRR_DBG_1("msgdb poll limit of %i reached in httpclient instance %s, aborting polling for now.\n",
 			RRR_HTTPCLIENT_MSGDB_POLL_MAX, INSTANCE_D_NAME(data->thread_data));
@@ -2081,6 +2103,8 @@ static int httpclient_parse_config (
 
 	data->msgdb_poll_interval_us *= 1000 * 1000;
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_TOPIC_FILTER("http_msgdb_priority_topic_filter", msgdb_topic_filter_priority);
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
@@ -2404,7 +2428,8 @@ static void httpclient_update_stats(struct httpclient_data *data) {
 	}
 
 	rrr_stats_instance_post_unsigned_base10_text(stats, "periodic_request_queue_count", 0, RRR_LL_COUNT(&data->periodic_request_queue));
-	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_queue));
+	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_prio_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_prio_queue));
+	rrr_stats_instance_post_unsigned_base10_text(stats, "from_msgdb_nonprio_queue_count", 0, RRR_LL_COUNT(&data->from_msgdb_nonprio_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "from_senders_queue_count", 0, RRR_LL_COUNT(&data->from_senders_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "redirect_queue_count", 0, RRR_LL_COUNT(&data->redirect_queue));
 	rrr_stats_instance_post_unsigned_base10_text(stats, "low_pri_queue_count", 0, RRR_LL_COUNT(&data->low_pri_queue));
@@ -2415,10 +2440,11 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	RRR_DBG_1("httpclient instance %s queues: periodic %i from msgdb %i senders %i redirect %i low pri %i\n",
+	RRR_DBG_1("httpclient instance %s queues: periodic %i from msgdb prio %i nonprio %i senders %i redirect %i low pri %i\n",
 		INSTANCE_D_NAME(thread_data),
 		RRR_LL_COUNT(&data->periodic_request_queue),
-		RRR_LL_COUNT(&data->from_msgdb_queue),
+		RRR_LL_COUNT(&data->from_msgdb_prio_queue),
+		RRR_LL_COUNT(&data->from_msgdb_nonprio_queue),
 		RRR_LL_COUNT(&data->from_senders_queue),
 		RRR_LL_COUNT(&data->redirect_queue),
 		RRR_LL_COUNT(&data->low_pri_queue)
@@ -2449,7 +2475,8 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	assert(low_pri_timeout_us >= data->message_queue_timeout_us);
 
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->periodic_request_queue, data);
-	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_prio_queue, data);
+	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_msgdb_nonprio_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->from_senders_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, data->message_queue_timeout_us, &data->redirect_queue, data);
 	httpclient_queue_check_timeouts(data->message_ttl_us, low_pri_timeout_us, &data->low_pri_queue, data);
@@ -2500,7 +2527,8 @@ static void httpclient_event_msgdb_poll (
 	// take some time before the msgdb is polled.
 	if ( rrr_http_client_active_transaction_count_get(data->http_client) == 0 &&
 	     RRR_LL_COUNT(&data->periodic_request_queue) == 0 &&
-	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
+	     RRR_LL_COUNT(&data->from_msgdb_prio_queue) == 0 &&
+	     RRR_LL_COUNT(&data->from_msgdb_nonprio_queue) == 0 &&
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
 	     RRR_LL_COUNT(&data->redirect_queue) == 0 &&
 	     RRR_LL_COUNT(&data->low_pri_queue) == 0
@@ -2554,16 +2582,23 @@ static void httpclient_event_queue_process (
 	// Redirects processed first
 	httpclient_queue_process(&data->redirect_queue, data);
 
-	// Priority to the msgdb queue, runs first. Needs rotating.
-	httpclient_event_queue_process_check_rotate(data, &data->from_msgdb_queue_need_rotate, &data->from_msgdb_queue);
-	httpclient_queue_process(&data->from_msgdb_queue, data);
+	// Priority to the prio/nonprio msgdb queues, they run first. Need rotating.
+	if (RRR_LL_COUNT(&data->from_msgdb_prio_queue) > 0) {
+		httpclient_event_queue_process_check_rotate(data, &data->from_msgdb_prio_queue_need_rotate, &data->from_msgdb_prio_queue);
+		httpclient_queue_process(&data->from_msgdb_prio_queue, data);
+	}
+	else {
+		httpclient_event_queue_process_check_rotate(data, &data->from_msgdb_nonprio_queue_need_rotate, &data->from_msgdb_nonprio_queue);
+		httpclient_queue_process(&data->from_msgdb_nonprio_queue, data);
+	}
 
 	// Normal flow when there are not errors. Need not rotating.
 	httpclient_queue_process(&data->periodic_request_queue, data);
 	httpclient_queue_process(&data->from_senders_queue, data);
 
 	// Process low pri if other queues are empty. Needs rotating.
-	if (RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
+	if (RRR_LL_COUNT(&data->from_msgdb_prio_queue) == 0 &&
+	    RRR_LL_COUNT(&data->from_msgdb_nonprio_queue) == 0 &&
 	    RRR_LL_COUNT(&data->from_senders_queue) == 0 &&
 	    RRR_LL_COUNT(&data->periodic_request_queue) == 0
 	) {
@@ -2652,7 +2687,8 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
 	rrr_msg_holder_collection_clear(&data->redirect_queue);
 	rrr_msg_holder_collection_clear(&data->low_pri_queue);
-	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
+	rrr_msg_holder_collection_clear(&data->from_msgdb_prio_queue);
+	rrr_msg_holder_collection_clear(&data->from_msgdb_nonprio_queue);
 	rrr_msg_holder_collection_clear(&data->periodic_request_queue);
 	RRR_FREE_IF_NOT_NULL(data->taint_tag);
 	RRR_FREE_IF_NOT_NULL(data->report_tag);
@@ -2667,6 +2703,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_map_clear(&data->meta_tags_all);
 	rrr_map_clear(&data->request_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
+	rrr_mqtt_topic_token_destroy(data->msgdb_topic_filter_priority);
 	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
 	RRR_FREE_IF_NOT_NULL(data->response_code_summaries.codes);
 }
