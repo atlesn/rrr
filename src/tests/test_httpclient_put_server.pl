@@ -59,6 +59,7 @@ sub process {
 		return 1;
 	}
 	elsif ($state == 0) {
+		$dbg->msg(1, "Received already seen endpoint, now checking for prio/nonprio order\n");
 		$state++;
 	}
 
@@ -66,8 +67,6 @@ sub process {
 		$dbg->msg(0, "Received $endpoint_type endpoint $endpoint_type multiple times\n");
 		return 0;
 	}
-
-	$dbg->msg(1, "Received already seen endpoint, checking for prio/nonprio order\n");
 
 	$seen_endpoints->{$endpoint_type}->{$endpoint_id} = 2;
 
