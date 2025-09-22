@@ -2793,6 +2793,13 @@ section for more details.
 .It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
+.It http_msgdb_priority_topic_filter=MQTT TOPIC FILTER
+When re-processing messages stored in the message DB, give priority to any messages matching the given filter,
+allowing them to be sent first.
+
+When there are no messages matching the given topic filter in the message DB, other messages are also sent.
+If not given, messages from the message DB are sent in random order.
+
 .It http_fields=HTTP FIELD NAME[=VALUE][,...]
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
 .B http_tags

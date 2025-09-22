@@ -1,11 +1,15 @@
-rrr (1.38-1.5artnet1) trixie; urgency=medium
+rrr (1.38-1.6artnet1) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
+
+  * Features:
+    * In httpclient, add ability to prioritize failed PUT request when they are
+      retried from message DB storage
 
   * Improvements:
     * Better logging of problems with forks crashing
 
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Sep 2025 12:26:23 +0200
+ -- Atle Solbakken <atle@atlegoliathdns.no>  Mon, 22 Sep 2025 12:45:04 +0200
 
 rrr (1.37-1) trixie; urgency=medium
 
