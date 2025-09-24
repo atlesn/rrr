@@ -77,7 +77,7 @@ static int text_refresh_word_push(struct rrr_nullsafe_str *output, struct sound_
 	const int is_first = idx == 0;
 	const int is_played = idx <= data->phrase_pos;
 
-	static const int font_size = 1024 / 8 * 1000;
+	static const int font_size = 1024 / 12 * 1000;
 	static const char color_unplayed[] = "#ddd";
 	static const char color_played[] = "#000";
 	static const char open_format[] = "<span font_family=\"Sans\" font_weight=\"bold\" font_size=\"%i\" color=\"%s\">%s%s";
@@ -265,8 +265,9 @@ int source(RRR_SOURCE_ARGS) {
 
 	rrr_free(message);
 
-	if (data->do_stop)
+	if (init_display(data) != 0 || data->do_stop) {
 		return 1;
+	}
 
 	if (rrr_time_get_64() >= data->phrase_expiration) {
 		RRR_DBG_2("Reset phrase after timeout\n");
@@ -330,11 +331,6 @@ int process(RRR_PROCESS_ARGS) {
 
 	if (!MSG_IS_ARRAY(message)) {
 		RRR_MSG_0("Warning: Message to sound display process function was not an array message\n");
-		goto out;
-	}
-
-	if (init_display(data) != 0 || data->do_stop) {
-		ret = 1;
 		goto out;
 	}
 
