@@ -3,6 +3,8 @@
 # Must disable auto bail
 set +e
 
+source ../../variables.sh
+
 # VALGRIND=valgrind
 # LOGD=../.libs/rrr_logd
 # POST=../.libs/rrr_post
@@ -266,4 +268,8 @@ log_delivery "$LOG_IN_JSON" "-L -a $LOG_DEF" "$LOG_OUT_JSON_ARRAY" "-j"
 # Native JSON log message delivery from JS
 ####################################################
 
-log_delivery_from_rrr_js "" test_log.mjs "\"log_message\":\"MY MESSAGE\"" "-j"
+if test "x$RRR_WITH_JS" != 'xno'; then
+	log_delivery_from_rrr_js "" test_log.mjs "\"log_message\":\"MY MESSAGE\"" "-j"
+else
+	echo "Skipped log_delivery_from_rrr_js as JS support is missing"
+fi

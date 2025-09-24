@@ -114,6 +114,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_http_report_tag.sh  \
 	test_http_headers_trap.sh\
 	test_incrementer.sh      \
+	test_httpclient_put.sh   \
 	test_ip.sh               \
 	test_ipclient.sh         \
 	test_journal.sh          \
