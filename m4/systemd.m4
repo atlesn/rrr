@@ -21,9 +21,9 @@ dnl
 # --------------
 AC_DEFUN([SYSTEMD_INIT], [[
 	
-if [ pkg-config libsystemd ]; then
+if pkg-config libsystemd; then
 	SYSTEMD_systemd_pc=libsystemd
-elif [ pkg-config systemd ]; then
+elif pkg-config systemd; then
 	SYSTEMD_systemd_pc=systemd
 else
 	] AS_MESSAGE([error: Neither libsystemd nor systemd found using pkg-config], [2]) [
