@@ -150,11 +150,11 @@ int init_display(struct sound_display_data *data) {
 		goto out;
 
 	if ((display = gdk_display_get_default()) == NULL) {
-		RRR_MSG_1("Sound display could not get default display (yet)...");
+		RRR_DBG_2("Sound display could not get default display (yet)...");
 		goto out;
 	}
 
-	RRR_MSG_1("Initializing sound display application...\n");
+	RRR_DBG_2("Initializing sound display application...\n");
 
 	g_signal_connect(display, "closed", G_CALLBACK(on_closed), data);
 
@@ -269,7 +269,7 @@ int source(RRR_SOURCE_ARGS) {
 		return 1;
 
 	if (rrr_time_get_64() >= data->phrase_expiration) {
-		RRR_MSG_1("Reset phrase after timeout\n");
+		RRR_DBG_2("Reset phrase after timeout\n");
 		phrase_reset(data);
 	}
 
@@ -285,11 +285,11 @@ int phrase_full_word_cb(int idx, const char *str, void *arg) {
 	int ret = 0;
 
 	if (idx == 0) {
-		RRR_MSG_1("Reset phrase\n");
+		RRR_DBG_2("Reset phrase\n");
 		phrase_reset(data);
 	}
 
-	RRR_MSG_1("Adding unplayed word: %s\n", str);
+	RRR_DBG_2("Adding unplayed word: %s\n", str);
 
 	if ((ret = rrr_map_item_add_new(&data->phrase_full, str, NULL)) != 0)
 		goto out;
@@ -305,7 +305,7 @@ int phrase_chunk_word_cb(int idx, const char *str, void *arg) {
 
 	int ret = 0;
 
-	RRR_MSG_1("Marking word as played: %s\n", str);
+	RRR_DBG_2("Marking word as played: %s\n", str);
 
 	data->phrase_pos++;
 
@@ -356,7 +356,7 @@ int process(RRR_PROCESS_ARGS) {
 	if (data->window)
 		gloop();
 	else
-		RRR_MSG_1("Sound display app not yet initialized\n");
+		RRR_DBG_2("Sound display app not yet initialized\n");
 
 	out:
 	rrr_array_clear(&array);
@@ -367,7 +367,7 @@ int process(RRR_PROCESS_ARGS) {
 int cleanup(RRR_CLEANUP_ARGS) {
 	struct sound_display_data *data = ctx->application_ptr;
 
-	RRR_MSG_1("cmodule exiting\n");
+	RRR_DBG_2("cmodule exiting\n");
 
 	rrr_map_clear(&data->phrase_full);
 	rrr_free(data);
