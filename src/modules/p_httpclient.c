@@ -134,6 +134,7 @@ struct httpclient_data {
 	int do_receive_404_as_empty_part;
 	int do_receive_structured;
 	int do_low_priority_put;
+	int do_msgdb_low_priority_put;
 
 	int do_endpoint_from_topic;
 	int do_endpoint_from_topic_force;
@@ -798,7 +799,7 @@ static int httpclient_msgdb_poll_callback (RRR_MSGDB_CLIENT_DELIVERY_CALLBACK_AR
 
 	rrr_msg_holder_incref(entry);
 
-	if (data->do_low_priority_put) {
+	if (data->do_msgdb_low_priority_put) {
 		RRR_LL_APPEND(&data->low_pri_queue, entry);
 		data->low_pri_queue_need_rotate = 1;
 	}
@@ -2063,6 +2064,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_404_as_empty_part", do_receive_404_as_empty_part, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_structured", do_receive_structured, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_low_priority_put", do_low_priority_put, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_msgdb_low_priority_put", do_msgdb_low_priority_put, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);
 	data->message_ttl_us *= 1000 * 1000;
