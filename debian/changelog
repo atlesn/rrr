@@ -2,6 +2,11 @@ rrr (1.38-1.6) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
+  * Changes:
+    * In httpclient, the option http_low_priority_put no longer affects
+      messages from message DB. http_msgdb_low_priority_put replaces
+      this case.
+
   * Features:
     * In httpclient, add ability to prioritize failed PUT request when they are
       retried from message DB storage

@@ -2854,6 +2854,8 @@ If the timeout is set too high or is not set, messages may accumulate in memory.
 .It http_low_priority_message_timeout_factor=FACTOR
 If
 .B http_low_priority_put
+or
+.B http_msgdb_low_priority_put
 is set to "yes", this timeout will apply to low priority messages.
 The factor given is multiplied with the value of
 .B http_message_timeout_ms
@@ -2944,9 +2946,15 @@ This parameter is not affected by
 and does not affect any other parameters.
 
 .It http_low_priority_put={yes|no}
+.It http_msgdb_low_priority_put={yes|no}
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
+
+.B http_low_priority_put
+controls this behaviour with respect to recent incoming messages from senders while
+.B http_msgdb_low_priority_put
+affects messages from the message DB.
 
 .It http_silent_put_error_limit_s=SECONDS
 If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
