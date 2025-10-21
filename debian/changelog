@@ -1,4 +1,4 @@
-rrr (1.38-1.11artnet1) trixie; urgency=medium
+rrr (1.38-1.12) trixie; urgency=medium
 
   * RUNNING DEVELOPMENT RELEASE
 
@@ -10,6 +10,7 @@ rrr (1.38-1.11artnet1) trixie; urgency=medium
   * Features:
     * In httpclient, add ability to prioritize failed PUT request when they are
       retried from message DB storage
+    * ArtNet module in main release thread, disabled by default
 
   * Improvements:
     * Better logging of problems with forks crashing
