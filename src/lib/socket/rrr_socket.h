@@ -160,6 +160,16 @@ int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
 int rrr_socket_close_all_except_array (int *fds, size_t fd_count);
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count);
+int rrr_socket_add (
+		int fd,
+		int domain,
+		int type,
+		int protocol,
+		const char *creator
+);
+int rrr_socket_remove (
+		int fd
+);
 int rrr_socket_close_all_except_cb (int (*except_cb)(int fd, void *arg), void *arg);
 int rrr_socket_close_all_except_cb_no_unlink (int (*except_cb)(int fd, void *arg), void *arg);
 int rrr_socket_dup2 (int oldfd, int newfd);

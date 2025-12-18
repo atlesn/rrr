@@ -528,6 +528,10 @@ Reads from a USB voltmeter.
 
 .It averager (PA)
 Collects point measurements and calculates average values.
+
+.It artnet (PA)
+Controls DMX devices using the Art-Net protocol.
+
 .El
 .SS dummy (S)
 This module constantly generates empty messages, optionally containing some dummy data.
@@ -2789,6 +2793,13 @@ section for more details.
 .It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
+.It http_msgdb_priority_topic_filter=MQTT TOPIC FILTER
+When re-processing messages stored in the message DB, give priority to any messages matching the given filter,
+allowing them to be sent first.
+
+When there are no messages matching the given topic filter in the message DB, other messages are also sent.
+If not given, messages from the message DB are sent in random order.
+
 .It http_fields=HTTP FIELD NAME[=VALUE][,...]
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
 .B http_tags
@@ -2847,6 +2858,8 @@ If the timeout is set too high or is not set, messages may accumulate in memory.
 .It http_low_priority_message_timeout_factor=FACTOR
 If
 .B http_low_priority_put
+or
+.B http_msgdb_low_priority_put
 is set to "yes", this timeout will apply to low priority messages.
 The factor given is multiplied with the value of
 .B http_message_timeout_ms
@@ -2937,9 +2950,15 @@ This parameter is not affected by
 and does not affect any other parameters.
 
 .It http_low_priority_put={yes|no}
+.It http_msgdb_low_priority_put={yes|no}
 If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
 can improve performance in certain applications if stores are slow.
 If set to no or left unset, PUT messages will be treated as other messages.
+
+.B http_low_priority_put
+controls this behaviour with respect to recent incoming messages from senders while
+.B http_msgdb_low_priority_put
+affects messages from the message DB.
 
 .It http_silent_put_error_limit_s=SECONDS
 If a PUT query fails due to the server returning an error code, do not print any error message about this before the message which generated the query has reached the specified age in seconds.
@@ -4071,6 +4090,100 @@ Delete messages which are not point measurements and information messages. Defau
 .It avg_message_topic=TOPIC
 MQTT topic to apply to generated messages and any forwarded point messages.
 .El
+
+.SS artnet (PA)
+The artnet module allows for DMX devices to be controlled using ArtNet.
+The module reads messages from another module creating specific control messages, possibly an instance of perl5 or python3 running a custom controller script.
+.PP
+In messages from sender instances, the following array values used for changing DMX values may be present:
+.PP
+.Bl -tag -width -indent
+.It artnet_cmd
+Must contain one of the string values
+.B set,
+.B fade,
+.B start
+or
+.B stop.
+The
+.B set
+and
+.B fade
+commands will either set DMX values or fade them gradually from the current value.
+The
+.B start
+and
+.B stop
+command commands will control whether or not the sending of control packets to the universe is active or not.
+By default, control packets are sent.
+.PP
+Sending
+.B set
+or
+.B fade
+commands implies the
+.B start
+command.
+.PP
+If no control message is received for a universe within 10 seconds, sending of control packets is switched off.
+To reset the timeout without sending any data,
+.B start
+commands may be sent.
+
+.It artnet_universe
+The index of the universe to manipulate.
+If not given, universe 0 is used.
+
+.It artnet_dmx_channel
+The first channel to manipulate.
+If not given, manipulation starts at channel 0.
+
+.It artnet_dmx_data
+The DMX data to use.
+May contain one or more channels with one byte each.
+The total length must not exceed 512 bytes or 512 minus the number of channels before the start channel.
+If not given, zeros are written to all channels.
+
+.It artnet_fade_speed
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, the value set in the
+.B artnet_fade_speed
+configuration parameter is used.
+Also refer to this parameter for details about the fade speed.
+
+.El
+.PP
+The following configuration parameters are available in the
+.B artnet
+module:
+.PP
+.Bl -tag -width -indent
+.It artnet_universes=UNSIGNED INTEGER
+Number of universes to control, the valid range is 0 through 16.
+If left unset, only one universe is controlled.
+If set to zero, no universes are controlled.
+
+.It artnet_demo={yes|no}
+If set to 'yes', a demo program will run cycling channel values in the configured universes.
+The demo will continue to run as long as no control messages are received from a sender instance.
+Defaults to 'yes'.
+
+.It artnet_fade_speed=UNSIGNED INTEGER
+A number in the range 1 through 10 controlling how fast to fade where 1 is slowest and 10 is fastest.
+If not given, a value of 5 is used.
+
+The value for each DMX channels is gradually incremented or decremented by the set fade speed
+until the specified target is reached (given by a fade command). The update occurs every 20 milliseconds.
+
+The approximate time T it takes to fade from a current value Vc to a target value Vt with fade speed S can
+be calculated using the following formula:
+
+.B T[ms] =~ 20 * (abs(Vc - Vt) / S)
+
+As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
+
+.El
+
 .SH COMMON CONFIGURATION PARAMETERS
 Replace the
 .B X

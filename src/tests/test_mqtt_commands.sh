@@ -5,6 +5,11 @@ set -e
 source ./testlib.sh
 source ../../variables.sh
 
+if test "x$RRR_ENABLE_CMODULE_CRASH" = 'xyes'; then
+	echo "Skipped test_mqtt_commands.conf as cmodule crashing is enabled"
+	exit 0
+fi
+
 if test "x$RRR_WITH_PERL5" != 'xno'; then
 	do_test_simple test_mqtt_commands.conf
 else

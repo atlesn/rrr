@@ -35,6 +35,15 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_ARTNET
+libadd_artnet = librrrartnet.la
+librrrartnet_la_SOURCES = artnet/rrr_artnet.c
+librrrartnet_la_CFLAGS = ${ARTNET_CFLAGS} 
+librrrartnet_la_LDFLAGS = ${ARTNET_LDFLAGS}
+librrrartnet_la_LIBS = ${ARTNET_LIBS}
+artnet_extra_ld = ${ARTNET_LDFLAGS} ${ARTNET_LIBS}
+endif
+
 if RRR_WITH_LUA
 libadd_lua = librrrlua.la
 librrrlua_la_SOURCES = lua/lua.c \
@@ -118,6 +127,7 @@ librrropenssl_la_SOURCES = net_transport/net_transport_openssl_common.c net_tran
 librrropenssl_la_CFLAGS = ${OPENSSL_CFLAGS} ${AM_CFLAGS}
 librrropenssl_la_LDFLAGS = ${OPENSSL_LDFLAGS}
 librrropenssl_la_LIBADD = ${OPENSSL_LIBADD}
+
 openssl_extra_ld = ${OPENSSL_LDFLAGS}
 openssl_extra_libadd = ${OPENSSL_LIBADD}
 endif
@@ -194,7 +204,7 @@ librrrcxx_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrrcxx_la_SOURCES = Array.cxx ${util_cxx} ${event_cxx}
 endif
 
-librrr_la_CFLAGS = ${AM_CFLAGS}
+librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
                     ${LIBBSD_LIBS} \
                     ${TLS_LDFLAGS} \
@@ -208,6 +218,7 @@ librrr_la_LDFLAGS = ${JEMALLOC_LIBS} \
 		    ${http3_extra_ld} \
                     ${crypto_extra_ld} \
                     ${openssl_extra_ld} \
+		    ${artnet_extra_ld} \
                     ${libressl_extra_ld}
 librrr_la_CXXFLAGS = ${AM_CXXFLAGS} -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
@@ -277,6 +288,7 @@ sha1_libsha1_la_SOURCES = sha1/sha1.c
 libadd_all =                         \
     ${libadd_python3}                \
     ${libadd_perl5}                  \
+    ${libadd_artnet}                 \
     ${libadd_lua}                    \
     ${libadd_jsonc}                  \
     ${libadd_zlib}                   \

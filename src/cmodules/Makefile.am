@@ -8,3 +8,11 @@ dummy_la_LDFLAGS = ${cmodule_ldflags}
 dummy_la_SOURCES = dummy.c dummy/extra.c
 
 lib_LTLIBRARIES = dummy.la
+
+if HAVE_GTK
+sound_display_la_CFLAGS = ${cmodule_cflags} ${GTK_CFLAGS}
+sound_display_la_LDFLAGS = ${cmodule_ldflags} ${GTK_LIBS}
+sound_display_la_SOURCES = sound_display.c
+
+lib_LTLIBRARIES += sound_display.la
+endif

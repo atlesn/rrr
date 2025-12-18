@@ -1,3 +1,23 @@
+rrr (1.39-1) trixie; urgency=medium
+
+  * Changes:
+    * In httpclient, the option http_low_priority_put no longer affects
+      messages from message DB. http_msgdb_low_priority_put replaces
+      this case.
+
+  * Features:
+    * In httpclient, add ability to prioritize failed PUT request when they are
+      retried from message DB storage
+    * ArtNet module in main release thread, disabled by default
+
+  * Improvements:
+    * Better logging of problems with forks crashing
+
+  * Misc:
+    * New cmodule with GTK example code
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Dec 2025 08:39:26 +0100
+
 rrr (1.37-1) trixie; urgency=medium
 
   * Changes:
@@ -23,6 +43,7 @@ rrr (1.37-1) trixie; urgency=medium
       program exit when triggered
     * FALSE value in method and route definitions not working, TRUE was pushed
       instead
+    * Missing check for overshoot and undershoot while fading in ArtNet
     * Incorrect counting of FIFO buffer entries in certain situations, could
       possibly result in buffers over time being reported as full when they
       were not. The problem only affected counting of retained messages in MQTT
@@ -137,6 +158,7 @@ rrr (1.29-2) bookworm; urgency=medium
       configuration parameters
     * New conversion type "hchar2str" in mangler module to convert individual
       bytes to strings
+    * New module artnet for controlling DMX devices over ArtNet protocol
     * New OS object in javascript (operating-system) and ability to obtain
       hostname
     * New ModBus TCP module

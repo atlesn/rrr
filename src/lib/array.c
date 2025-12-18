@@ -455,7 +455,7 @@ int rrr_array_push_value_str_with_tag (
 
 static int __rrr_array_get_value_64_by_tag (
 		void *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index,
 		int do_signed
@@ -469,6 +469,12 @@ static int __rrr_array_get_value_64_by_tag (
 
 	if ((value = rrr_array_value_get_by_tag_const(array, tag)) == NULL) {
 		RRR_MSG_0("Could not find value '%s' in array while getting 64-value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (!RRR_TYPE_IS_64(value->definition->type)) {
+		RRR_MSG_0("Array value '%s' not a 64 type while getting 64 value", tag);
 		ret = 1;
 		goto out;
 	}
@@ -506,7 +512,7 @@ static int __rrr_array_get_value_64_by_tag (
 
 int rrr_array_get_value_unsigned_64_by_tag (
 		uint64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
@@ -515,7 +521,7 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 int rrr_array_get_value_signed_64_by_tag (
 		int64_t *result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag,
 		unsigned int index
 ) {
@@ -551,7 +557,7 @@ int rrr_array_get_value_ull_by_tag (
 
 int rrr_array_get_value_str_by_tag (
 		char **result,
-		struct rrr_array *array,
+		const struct rrr_array *array,
 		const char *tag
 ) {
 	int ret = 0;
@@ -580,6 +586,40 @@ int rrr_array_get_value_str_by_tag (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(str);
+	return ret;
+}
+
+int rrr_array_get_values_str_by_tag (
+		struct rrr_array *array,
+		const char *tag,
+		int (*callback)(int idx, const char *str, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	int cb_idx = 0;
+
+	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
+		if (!rrr_type_value_is_tag(node, tag))
+			RRR_LL_ITERATE_NEXT();
+
+		if (node->definition->to_str == NULL) {
+			RRR_MSG_0("Value '%s' of type '%s' can't be converted to string\n", tag, node->definition->identifier);
+			ret = 1;
+			goto out;
+		}
+
+		char *str;
+		if ((ret = node->definition->to_str(&str, node)) != 0)
+			goto out;
+
+		if ((ret = callback(cb_idx++, str, callback_arg)) != 0)
+			goto out;
+
+		rrr_free(str);
+	RRR_LL_ITERATE_END();
+
+	out:
 	return ret;
 }
 

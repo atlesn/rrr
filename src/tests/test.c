@@ -60,6 +60,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ZLIB
 #	include "test_zlib.h"
 #endif
+#ifdef RRR_WITH_ARTNET
+#	include "test_artnet.h"
+#endif
 #ifdef RRR_WITH_LUA
 #	include "test_lua.h"
 #endif
@@ -222,6 +225,14 @@ int rrr_test_library_functions (
 #ifdef RRR_WITH_ZLIB
 	TEST_BEGIN("zlib compression and decompression") {
 		ret_tmp = rrr_test_zlib();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_ARTNET
+	TEST_BEGIN("artnet library") {
+		ret_tmp = rrr_test_artnet();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -390,6 +401,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 	int is_child = 0;
+	int ghost_situation = 0;
 
 	struct cmd_data cmd;
 	const char *config_file, *fork_executable;
@@ -468,6 +480,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 			TEST_MSG("forking and running external executable\n");
 			pid = rrr_fork (
 					fork_handler,
+					"test fork",
 					rrr_fork_default_exit_notification,
 					&exit_notification_data
 			);
@@ -561,7 +574,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 			// Only main runs fork cleanup stuff
 			goto out_cleanup_signal;
 		}
-		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_send_sigusr1_and_wait(&ghost_situation, fork_handler);
+		if (ghost_situation)
+			ret = EXIT_FAILURE;
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 

@@ -69,6 +69,7 @@ AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGH
 AC_ARG_WITH([http3],[AS_HELP_STRING([--without-http3],[build without the NGHTTP3 and NGTCP2 bindings])],[enable_http3=no],[enable_http3=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
+AC_ARG_WITH([artnet],[AS_HELP_STRING([--with-artnet],[build with the libartnet bindings])],[enable_artnet=yes],[enable_artnet=no])
 AC_ARG_WITH([lua],[AS_HELP_STRING([--without-lua],[build without the Lua bindings])],[enable_lua=no],[enable_lua=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
@@ -87,6 +88,7 @@ AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[en
 AC_ARG_ENABLE([printf-logging], [AS_HELP_STRING([--enable-printf-logging],[use plain printf calls in all log messages. All messages will be printed regardless of debuglevel. Most useful to make compiler validate the log calls.])],[enable_printf_logging=yes],[enable_printf_logging=no])
 AC_ARG_ENABLE([log-timestamps], [AS_HELP_STRING([--enable-log-timestamps],[include timestamps (microseconds since startup) in log messages printed to standard output.])],[enable_log_timestamps=yes],[enable_log_timestamps=no])
 AC_ARG_ENABLE([v8-sandbox], [AS_HELP_STRING([--enable-v8-sandbox],[Enable V8 sandboxing, this must be done if the installed V8 library has sandboxing enabled.])],[enable_v8_sandbox=yes],[enable_v8_sandbox=no])
+AC_ARG_ENABLE([cmodule-crash], [AS_HELP_STRING([--enable-cmodule-crash],[Enable crashing of cmodule forks for test purposes])],[enable_cmodule_crash=yes],[enable_cmodule_crash=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for JavaScript enabled])
@@ -115,8 +117,12 @@ AS_IF([ test -f ".development" ], [
 	AC_MSG_RESULT([none])
 ])
 
+CFLAGS_COMMON_GCC=""
+AS_IF([ test "x$CC" = "xgcc" ], [
+	CFLAGS_COMMON_GCC="-Wno-clobbered"
+])
 CFLAGS_CONFIG="-include $srcdir/config.h -include $srcdir/build_timestamp.h"
-CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra -Wno-clobbered -D_XOPEN_SOURCE=700 -gdwarf-4"
+CFLAGS_COMMON="-include $srcdir/src/lib/intercept.h -Wunreachable-code -Wextra $CFLAGS_COMMON_GCC -D_XOPEN_SOURCE=700 -gdwarf-4"
 CPPFLAGS="-I/usr/local/include -I/usr/include"
 LDFLAGS="-L/usr/local/lib -L/usr/lib -L/lib"
 AM_CFLAGS="$AM_CFLAGS -std=c11 $CFLAGS_CONFIG $CFLAGS_COMMON -Wall -Wstrict-prototypes -Werror=implicit-function-declaration -O2"
@@ -173,9 +179,11 @@ SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_HTTP3], $enable_http3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_LUA], $enable_lua)
+SHELL_VARS_EXPORT([RRR_WITH_ARTNET], $enable_artnet)
 SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 SHELL_VARS_EXPORT([RRR_WITH_JS], $enable_js)
+SHELL_VARS_EXPORT([RRR_ENABLE_CMODULE_CRASH], $enable_cmodule_crash)
 
 AM_CONDITIONAL([RRR_WITH_CXX], [test "x$enable_cxx" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
@@ -188,6 +196,7 @@ AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_HTTP3], [test "x$enable_http3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_ARTNET], [test "x$enable_artnet" != xno])
 AM_CONDITIONAL([RRR_WITH_LUA], [test "x$enable_lua" != xno])
 AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
 AM_CONDITIONAL([RRR_WITH_ZLIB], [test "x$enable_zlib" != xno])
@@ -1331,6 +1340,40 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+AC_MSG_CHECKING([for ArtNet enabled])
+AS_IF([test "x$enable_artnet" = xno], [
+	AC_MSG_RESULT([Not compiling with ArtNet])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_ARTNET], [1], [Compile with libartnet bindings])
+	AC_CHECK_HEADERS([artnet/artnet.h])
+	AC_CHECK_LIB(artnet, artnet_new, [], AC_MSG_ERROR([artnet_net from libartnet not found]))
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <artnet/artnet.h>
+			
+			int main (int argc, char *argv[]) {
+				artnet_node node;
+				node = artnet_new("0.0.0.0");
+				artnet_destroy(node);
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([Test of symbols from artnet.h failed, make sure libartnet-dev is installed.])
+	])
+
+	ARTNET_CFLAGS=""
+	ARTNET_LDFLAGS=""
+	ARTNET_LIBS="-lartnet"
+
+	AC_SUBST([ARTNET_CFLAGS])
+	AC_SUBST([ARTNET_LDFLAGS])
+	AC_SUBST([ARTNET_LIBS])
+])
+
 # Make sure json-c-test does not include any libraries
 LIBS=""
 
@@ -1528,6 +1571,14 @@ AS_IF([test "x$enable_printf_logging" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([enabled cmodule crashing])
+AS_IF([test "x$enable_cmodule_crash" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_CMODULE_CRASH], [1], [Enable cmodule crashing])
+],[
+	AC_MSG_RESULT([no])
+])
+
 AC_MSG_CHECKING([enabled log timestamps])
 AS_IF([test "x$enable_log_timestamps" = xyes], [
 	AC_MSG_RESULT([yes])
@@ -1646,6 +1697,24 @@ AS_IF([test "x$enable_openrc" = xyes], [
 ],[
 	AC_MSG_RESULT([no])
 ])
+
+GTK_MSG=`pkg-config --errors-to-stdout --modversion gtk+-3.0`
+GTK_OK=$?
+AC_MSG_CHECKING([for GTK 3.0])
+
+AS_IF([test $GTK_OK -eq 0], [
+	AC_MSG_RESULT([yes])
+	GTK_CFLAGS=`pkg-config --cflags gtk+-3.0`
+	GTK_LIBS=`pkg-config --libs gtk+-3.0`
+	have_gtk=yes
+], [
+	AC_MSG_RESULT([not found])
+	have_gtk=no
+])
+
+AC_SUBST([GTK_CFLAGS])
+AC_SUBST([GTK_LIBS])
+AM_CONDITIONAL([HAVE_GTK], [test "x$have_gtk" != xno])
 
 MODULE_DIR="\${exec_prefix}/lib/rrr"
 AC_MSG_CHECKING([module installation directory])

@@ -76,6 +76,9 @@ struct rrr_mmap_collection_private_data {
 	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
 };
 
+void rrr_mmap_collection_lock_and_crash (
+		struct rrr_mmap_collection *collection
+);
 void *rrr_mmap_collection_resolve (
 		struct rrr_mmap_collection *collection,
 		rrr_shm_handle shm_handle,

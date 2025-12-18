@@ -52,6 +52,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../stats/stats_message.h"
 
+#ifdef RRR_ENABLE_CMODULE_CRASH
+#define RRR_CMODULE_WORKER_MMAP_CRASH 1
+#endif
+
+#ifdef RRR_CMODULE_WORKER_MMAP_CRASH
+static int rrr_cmodule_worker_crash_grace = 10;
+#endif
+
 #define ALLOCATE_TMP_NAME(target, name1, name2)                              \
     if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {                 \
         RRR_MSG_0("Could not allocate temporary string for name\n");         \
@@ -635,6 +643,11 @@ int __rrr_cmodule_worker_send_pong (
 	if (ret == 0) {
 		worker->total_msg_mmap_to_parent++;
 	}
+
+#ifdef RRR_CMODULE_WORKER_MMAP_CRASH
+	if (--rrr_cmodule_worker_crash_grace <= 0)
+		rrr_mmap_channel_lock_and_crash(worker->channel_to_parent);
+#endif
 
 	// Errors propagate
 

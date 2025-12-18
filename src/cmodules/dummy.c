@@ -1,7 +1,7 @@
 /*
  * Licensed under RRR MODULE LICENSE VERSION 1.
  *
- * Copyright 2020 Atle Solbakken <atle@goliathdns.no>
+ * Copyright 2025 Atle Solbakken <atle@goliathdns.no>
  *
  * This file may be expanded, modified and customized and re-licensed under
  * the terms of either

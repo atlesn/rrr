@@ -13,6 +13,10 @@ if RRR_WITH_ZLIB
 test_zlib = test_zlib.c
 endif
 
+if RRR_WITH_ARTNET
+test_artnet = test_artnet.c
+endif
+
 if RRR_WITH_LUA
 test_lua = test_lua.c
 endif
@@ -45,6 +49,7 @@ test_SOURCES = test.c \
 	${test_tls_common} \
 	${test_jsonc} \
 	${test_zlib} \
+	${test_artnet} \
 	${test_lua} \
 	${test_quic} \
 	test_conversion.c \
@@ -99,6 +104,7 @@ sha256_shatest_LDFLAGS = ${ldflags} ${PERL5_LDFLAGS} -pie
 
 TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test.sh                  \
+	test_artnet.sh           \
 	test_averager.sh         \
 	test_cacher.sh           \
 	test_cmodule.sh          \
@@ -114,6 +120,7 @@ TESTS = test_passwd.sh sha1/shatest sha256/shatest ${testcxx_test} \
 	test_http_report_tag.sh  \
 	test_http_headers_trap.sh\
 	test_incrementer.sh      \
+	test_httpclient_put.sh   \
 	test_ip.sh               \
 	test_ipclient.sh         \
 	test_journal.sh          \
