@@ -63,6 +63,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_ARTNET
 #	include "test_artnet.h"
 #endif
+#ifdef RRR_WITH_FFMPEG
+#	include "test_ffmpeg.h"
+#endif
 #ifdef RRR_WITH_LUA
 #	include "test_lua.h"
 #endif
@@ -233,6 +236,14 @@ int rrr_test_library_functions (
 #ifdef RRR_WITH_ARTNET
 	TEST_BEGIN("artnet library") {
 		ret_tmp = rrr_test_artnet();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+#endif
+
+#ifdef RRR_WITH_FFMPEG
+	TEST_BEGIN("ffmpeg library") {
+		ret_tmp = rrr_test_ffmpeg();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

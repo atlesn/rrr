@@ -18,11 +18,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "test.h"
-#include "../lib/log.h"
-
-int rrr_test_ffmpeg (void) {
-	int ret = 0;
-
-	return ret;
-}
+int rrr_test_ffmpeg (void);
