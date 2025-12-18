@@ -1,4 +1,4 @@
-.Dd 2025-02-25
+.Dd 2025-12-18
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -531,6 +531,9 @@ Collects point measurements and calculates average values.
 
 .It artnet (PA)
 Controls DMX devices using the Art-Net protocol.
+
+.It ffmpeg (PA)
+Video capture and transcoding using FFmpeg libraries.
 
 .El
 .SS dummy (S)
@@ -4181,6 +4184,34 @@ be calculated using the following formula:
 .B T[ms] =~ 20 * (abs(Vc - Vt) / S)
 
 As an example, if the fade speed is 5, a fade from 0 to 255 will take about 1000 milliseconds.
+
+.El
+
+.SS ffmpeg (PA)
+The
+.B ffmpeg
+module takes command messages from reader instances and sets up pipelines for video processing.
+
+Audio is not supported.
+
+Any output will be in MP4 format using libx264 encoding.
+.PP
+The following configuration parameters are available in the
+.B ffmpeg
+module:
+.PP
+.Bl -tag -width -indent
+.It ffmpeg_source=URL
+A URL describing the video source.
+If not given, a dummy stream will be generated.
+
+.It ffmpeg_filter_scale=WIDTHxHEIGHT
+If given, the video stream is run through a scaling filter to produce the chosen dimensions.
+
+.It ffmpeg_output_directory=PATH
+Output directory for video files.
+The files will be named after the local time when created with the format YYYY-MM-DD HH:MM:SS.mp4.
+Any existing files will be overwritten.
 
 .El
 

@@ -17,6 +17,10 @@ if RRR_WITH_ARTNET
 test_artnet = test_artnet.c
 endif
 
+if RRR_WITH_FFMPEG
+test_ffmpeg = test_ffmpeg.c
+endif
+
 if RRR_WITH_LUA
 test_lua = test_lua.c
 endif
@@ -50,6 +54,7 @@ test_SOURCES = test.c \
 	${test_jsonc} \
 	${test_zlib} \
 	${test_artnet} \
+	${test_ffmpeg} \
 	${test_lua} \
 	${test_quic} \
 	test_conversion.c \
